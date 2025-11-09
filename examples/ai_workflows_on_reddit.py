@@ -25,15 +25,19 @@ objective = """
 Goal: Find examples of AI workflows on Reddit and compile a markdown report of subreddits, posts, and top comments.
 
 1) discover_posts (mode="discover")
-   - Gather up to 10 recent Reddit posts relevant to "AI workflows".
+   - Gather up to 50 recent Reddit posts relevant to "AI workflows".
+   - Try many different search queries to find posts.
+   - Discover related keywords to find posts.
 
 2) process_posts (mode="process")
-   - For each post, append ".json" and fetch via BrowserTool.
-   - For each post, extract the post title, author, date, and full text.
+   - For each post, strip trailing slash and append ".json" and fetch via BrowserTool.
+   - For example, if the post url is https://www.reddit.com/r/AI/comments/1234567890/, the url to fetch is https://www.reddit.com/r/AI/comments/1234567890.json
+   - For each post, extract the post title, selftext, and comments.
 
 3) aggregate_report (mode="aggregate")
-    - Aggregate the posts into a markdown string.
-    - If no posts are discovered or fetched, return a short markdown section explaining the limitation.
+    - Aggregate the posts into structured markdown.
+    - Summarize the posts into a short summary.
+    - Summarize each post+comments as separate markdown sections.
 """
 
 

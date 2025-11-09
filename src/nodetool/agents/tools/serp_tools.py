@@ -549,7 +549,7 @@ async def _get_configured_serp_provider(context: ProcessingContext) -> (
         return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
         return None, {
-            "error": "No SERP provider is configured. Please set credentials for DataForSEO (DATA_FOR_SEO_LOGIN, DATA_FOR_SEO_PASSWORD) or SerpApi (SERPAPI_API_KEY)."
+            "error": "NoERP provider is configured. Please set credentials for SerpApi or DataForSEO."
         }
 
 

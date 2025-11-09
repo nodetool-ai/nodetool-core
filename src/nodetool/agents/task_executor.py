@@ -348,10 +348,10 @@ class TaskExecutor:
         self, subtask: SubTask, item: Any, index: int
     ) -> str:
         """Render the process subtask's content template against an item."""
-        template = (subtask.content or "").strip()
+        template = (subtask.item_template or subtask.content or "").strip()
         if not template:
             raise ValueError(
-                f"Process subtask '{subtask.id}' must define non-empty content with placeholders."
+                f"Process subtask '{subtask.id}' must define an item_template describing per-item instructions."
             )
         context_vars: dict[str, Any] = {
             "item": item,
@@ -367,12 +367,22 @@ class TaskExecutor:
         except KeyError as exc:
             missing = exc.args[0]
             raise ValueError(
-                f"Process subtask '{subtask.id}' content references missing field '{missing}'. "
+                f"Process subtask '{subtask.id}' per-item template references missing field '{missing}'. "
                 "Ensure the discovery output provides this value."
             ) from exc
 
     def _item_output_schema(self, process_subtask: SubTask) -> str:
-        """Extract the per-item schema from the parent process subtask."""
+        """Return the JSON schema string for an individual item."""
+        item_schema_str = (process_subtask.item_output_schema or "").strip()
+        if item_schema_str:
+            try:
+                json.loads(item_schema_str)
+            except Exception as exc:  # pragma: no cover - defensive
+                raise ValueError(
+                    f"Process subtask '{process_subtask.id}' item_output_schema is not valid JSON: {exc}"
+                ) from exc
+            return item_schema_str
+
         schema_str = getattr(process_subtask, "output_schema", "") or ""
         if not schema_str:
             raise ValueError(
@@ -391,7 +401,7 @@ class TaskExecutor:
         item_schema = schema_obj.get("items")
         if not item_schema:
             raise ValueError(
-                f"Process subtask '{process_subtask.id}' output_schema must include an 'items' schema."
+                f"Process subtask '{process_subtask.id}' output_schema must include an 'items' schema or set item_output_schema."
             )
         return json.dumps(item_schema)
 

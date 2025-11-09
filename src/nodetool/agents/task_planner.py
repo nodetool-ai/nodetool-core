@@ -73,79 +73,12 @@ digraph DataPipeline {
 Used for concise subtask representation.
 """
 
+SUBTASK_JSON_SCHEMA = json.dumps(SubTask.model_json_schema(), indent=2)
+
 # --- Task Naming Convention ---
 # Use short names, prefixed with $, for conceptual tasks or process steps (e.g., $read_data, $process_logs, $generate_report).
 # These names should be unique and descriptive of the step.
 
-
-class CreateTaskTool(Tool):
-    """
-    Task Creator - Tool for generating a task with subtasks
-
-    DEPRECATED: This tool is no longer used by the TaskPlanner.
-    The planner now uses JSON output instead of tool calls.
-    This class is kept for backward compatibility only.
-    """
-
-    name = "create_task"
-    description = "Create a single task with subtasks"
-
-    input_schema = {
-        "type": "object",
-        "required": ["title", "subtasks"],
-        "additionalProperties": False,
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "The objective of the task",
-            },
-            "subtasks": {
-                "type": "array",
-                "description": "The subtasks of the task",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "The unique identifier for the subtask.",
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "High-level natural language instructions for the agent executing this subtask.",
-                        },
-                        "input_tasks": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "description": "The ID of an upstream subtask or input key that this subtask depends on.",
-                            },
-                            "description": "List of subtask IDs or input keys from the inputs dictionary that this subtask depends on for input data.",
-                        },
-                        "output_schema": {
-                            "type": "string",
-                            "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
-                        },
-                    },
-                    "required": ["id", "content", "output_schema", "input_tasks"],
-                },
-            },
-        },
-    }
-
-    async def process(self, context: ProcessingContext, params: dict):
-        """Process the CreateTaskTool call.
-
-        This method is called when the LLM uses the 'create_task' tool.
-        However, the actual validation and processing of the task and subtask
-        data are handled by the `TaskPlanner`.
-
-        Args:
-            context: The processing context.
-            params: The parameters provided by the LLM for the tool call,
-                    matching the `input_schema`.
-        """
-        pass
 
 
 # Planning system prompt with discover → process → aggregate contract
@@ -189,7 +122,7 @@ Before outputting the final JSON plan, verify:
 - All referenced task IDs and input keys exist
 - Subtasks are atomic (smallest executable units)
 - Plan includes exactly one discover-mode subtask, one process-mode subtask, and one aggregate-mode subtask
-- Discover and process subtasks declare array output schemas; process content includes `{placeholder}` references
+- Discover and process subtasks declare array output schemas; process item_template includes `{placeholder}` references and item_output_schema is valid JSON
 - The aggregate subtask depends on the process subtask and produces the declared overall output schema
 - Execution subtasks do not duplicate discovery logic outside the dedicated discover step
 - Final output conforms to required schema
@@ -256,8 +189,9 @@ Describe how the runtime discover → process → aggregate pattern will work, f
 2. Detail the `process_*` subtask:
    - It must depend on `discover_*`
    - Identify the list it will iterate (e.g., `posts`)
-   - Specify the natural-language `content` template (use `{field}` placeholders)
-   - List per-item outputs that form the new array
+   - Specify the natural-language `item_template` that will be formatted with `{field}` placeholders
+   - Describe the per-item outputs and the JSON schema to store in `item_output_schema`
+   - Explain how the collected array is stored in `output_schema`
 3. Detail the `aggregate_*` subtask:
    - Inputs (the processed list)
    - Final output format (should align with task `output_schema`)
@@ -268,7 +202,7 @@ Describe how the runtime discover → process → aggregate pattern will work, f
 <output_format>
 <data_flow_design>
 - Discover output structure (list fields, caps)
-- Process templating strategy + per-item schema
+- Process templating strategy (`item_template`) + per-item schema (`item_output_schema`)
 - Aggregate inputs + final transformation notes
 - Dependency summary
 </data_flow_design>
@@ -300,14 +234,14 @@ PLAN_CREATION_TEMPLATE = """
 <phase>PHASE 2: PLAN CREATION</phase>
 
 <goal>
-Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `aggregate_*`. Process subtasks must rely on templated natural-language content instead of explicit fan-out configs.
+Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `aggregate_*`. Process subtasks must populate `item_template` (per-item instructions) and `item_output_schema` instead of legacy fan-out configs.
 </goal>
 
 <output_format>
 1. Brief Justification (<200 tokens, no chain-of-thought):
    <plan_construction>
    - How discover/process/aggregate map to subtasks
-   - Key decisions for `content`, `input_tasks`, `output_schema`
+   - Key decisions for `content`, `item_template`, `item_output_schema`, `input_tasks`, `output_schema`
    - Data flow + dependency summary
    - Validation checklist confirmation
    </plan_construction>
@@ -332,6 +266,8 @@ Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `
 - Exactly three subtasks, ordered discover → process → aggregate.
 - `input_tasks`: discover=[], process=[discover_id], aggregate=[process_id].
 - Every `output_schema` is a JSON string. Discover/process schemas MUST declare `"type": "array"` at the top level.
+- `item_template` must describe how to run each discovered item using `{placeholder}` syntax; `item_output_schema` must be a JSON string describing a single processed item.
+- The executor automatically sets the process `output_schema` to an array of `item_output_schema` and applies the agent-level output schema to the aggregate subtask when available.
 - `tools` is optional; include only when restricting execution tools.
 
 ### Discover Subtask (`mode="discover"`)
@@ -339,21 +275,23 @@ Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `
 - Output schema: array describing each discovered item.
 
 ### Process Subtask (`mode="process"`)
-- `content` is a natural-language template that references discovery fields via `{field}` placeholders (e.g., `"Fetch {post_url} via browser and summarize comments."`).
+- `item_template` is the natural-language instruction applied per item, referencing discovery fields via `{field}` placeholders (e.g., `"Fetch {post_url}.json via the browser and summarize comments."`).
+- `item_output_schema` is a JSON string describing the shape of a single processed item.
+- The executor automatically wraps `item_output_schema` into the list-level `output_schema`, so you do not need to craft the array schema manually.
+- `content` can summarize the overall processing goal (non-templated).
 - Must depend on the discover subtask and treat its result as a list.
-- Output schema: array describing per-item enriched results (this array becomes the subtask's stored result).
 
 ### Aggregate Subtask (`mode="aggregate"`)
 - Depends on the process subtask.
 - `content` explains how to transform the processed list into the final output schema (handle empty lists explicitly).
-- `output_schema` must match the agent's requested overall schema when provided.
+- If the agent provided an overall output schema, the executor automatically applies it to the aggregate subtask.
 
 Pre-Output Validation Checklist:
 ✓ Three subtasks present with correct modes/order
 ✓ Discover + process output schemas are arrays
-✓ Process `content` references fields from the discover list (templated instructions)
+✓ Process `item_template` references fields from the discover list and `item_output_schema` is valid JSON
 ✓ Aggregate subtask consumes the process result and emits the declared overall schema
-✓ All `output_schema` values are JSON strings
+✓ All schema fields (`output_schema`, `item_output_schema`) are JSON strings
 ✓ DAG dependencies are valid and acyclic
 </json_task_structure>
 
@@ -363,6 +301,7 @@ Available Inputs: {{ inputs_info }}
 Output Schema: {{ output_schema }}
 LLM Models: Primary={{ model }}, Reasoning={{ reasoning_model }}
 Execution Tools: {{ execution_tools_info }}
+SubTask JSON Schema: {{ subtask_schema }}
 </context>
 """
 
@@ -373,14 +312,14 @@ Before outputting the JSON task definition, verify:
 
 1. Clarity of Purpose
    - `discover_*`: runtime discovery instructions + list output schema
-   - `process_*`: templated content referencing list item fields; list output schema
+   - `process_*`: `item_template` referencing list item fields, `item_output_schema` for each item, and list-level `output_schema`
    - `aggregate_*`: describes how to turn the processed list into the final schema
 2. Self-Containment: `input_tasks` cover all upstream dependencies
 3. Output Precision: every `output_schema` is a JSON string and matches the described payload
 4. DAG Integrity: dependencies exist and form an acyclic graph
 5. Naming: subtask IDs are unique, descriptive, and consistent with `input_tasks`
 6. Structure: exactly one discover, one process, one aggregate subtask
-7. Discover/process schemas declare `"type": "array"`; aggregate matches {{ output_schema }}
+7. Discover/process schemas declare `"type": "array"`; aggregate matches {{ output_schema }}; `item_output_schema` is valid JSON
 8. No per-item subtasks enumerated—the executor handles fan-out automatically
 
 Verify plan addresses: {{ objective }}
@@ -579,6 +518,7 @@ class TaskPlanner:
             "output_schema": overall_output_schema_str,
             "inputs_info": inputs_info,
             "COMPACT_SUBTASK_NOTATION_DESCRIPTION": COMPACT_SUBTASK_NOTATION_DESCRIPTION,
+            "subtask_schema": SUBTASK_JSON_SCHEMA,
         }
 
     def _render_prompt(
@@ -794,6 +734,32 @@ class TaskPlanner:
                 f"Missing for: {', '.join(missing_mode)}"
             ]
         return self._validate_process_mode_semantics(subtasks)
+    def _apply_schema_overrides(self, subtasks: List[SubTask]) -> None:
+        """
+        Normalize process/aggregate output schemas:
+        - Wrap `item_output_schema` into the process `output_schema` array
+        - Apply overall agent output schema to the aggregate subtask when provided
+        """
+        process_subtasks = [st for st in subtasks if st.mode == "process"]
+        if process_subtasks:
+            process_subtask = process_subtasks[0]
+            item_schema_str = (process_subtask.item_output_schema or "").strip()
+            if item_schema_str:
+                try:
+                    item_schema = json.loads(item_schema_str)
+                except Exception as exc:
+                    raise ValueError(
+                        f"Process subtask '{process_subtask.id}' item_output_schema must be valid JSON: {exc}"
+                    ) from exc
+                process_subtask.output_schema = json.dumps(
+                    {"type": "array", "items": item_schema}
+                )
+
+        if self.output_schema:
+            aggregate_subtasks = [st for st in subtasks if st.mode == "aggregate"]
+            if aggregate_subtasks:
+                aggregate_subtask = aggregate_subtasks[0]
+                aggregate_subtask.output_schema = json.dumps(self.output_schema)
 
     def _validate_process_mode_semantics(self, subtasks: List[SubTask]) -> List[str]:
         """Validate discover/process/aggregate pattern plans."""
@@ -854,27 +820,34 @@ class TaskPlanner:
                 errors.append(
                     f"Process subtask '{process_subtask.id}' must depend on discover subtask '{discover_id}'."
                 )
-            content = (process_subtask.content or "").strip()
-            if not content:
+            item_template = (process_subtask.item_template or "").strip()
+            if not item_template:
                 errors.append(
-                    f"Process subtask '{process_subtask.id}' content must describe the per-item instructions."
+                    f"Process subtask '{process_subtask.id}' must define item_template with placeholders referencing discovery fields."
                 )
-            elif "{" not in content or "}" not in content:
+            elif "{" not in item_template or "}" not in item_template:
                 errors.append(
-                    f"Process subtask '{process_subtask.id}' content must include placeholder fields like '{{url}}' referencing discovery items."
+                    f"Process subtask '{process_subtask.id}' item_template must include placeholder fields like '{{url}}' referencing discovery items."
                 )
+
+            item_schema_str = (process_subtask.item_output_schema or "").strip()
+            if not item_schema_str:
+                errors.append(
+                    f"Process subtask '{process_subtask.id}' must define item_output_schema describing a single processed item."
+                )
+            else:
+                try:
+                    json.loads(item_schema_str)
+                except Exception:
+                    errors.append(
+                        f"Process subtask '{process_subtask.id}' item_output_schema must be valid JSON."
+                    )
 
         if aggregate_subtask and process_subtask:
             process_id = process_subtask.id
             if process_id not in (aggregate_subtask.input_tasks or []):
                 errors.append(
                     f"Aggregate subtask '{aggregate_subtask.id}' must depend on process subtask '{process_id}'."
-                )
-            schema_dict = _parse_schema(getattr(aggregate_subtask, "output_schema", None))
-            overall_schema = self.output_schema or None
-            if overall_schema and schema_dict and schema_dict != overall_schema:
-                errors.append(
-                    f"Aggregate subtask '{aggregate_subtask.id}' output_schema must match overall output schema."
                 )
 
         return errors
@@ -2473,6 +2446,12 @@ class TaskPlanner:
 
         # --- Validate Dependencies *after* collecting all subtasks ---
         # Only run if there were subtasks and no fundamental structural errors earlier
+        if all_subtasks:
+            try:
+                self._apply_schema_overrides(all_subtasks)
+            except ValueError as exc:
+                all_validation_errors.append(str(exc))
+
         if all_subtasks and not any(
             "must be a list" in e for e in all_validation_errors
         ):

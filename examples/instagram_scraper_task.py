@@ -66,24 +66,9 @@ async def test_instagram_scraper_task(
                         "type": "object",
                         "properties": {
                             "hashtag": {"type": "string"},
-                            "description": {"type": "string"},
-                            "example_post": {
-                                "type": "object",
-                                "properties": {
-                                    "post_url": {"type": "string"},
-                                    "caption": {"type": "string"},
-                                    "likes": {"type": "integer"},
-                                    "comments": {"type": "integer"},
-                                },
-                                "required": [
-                                    "post_url",
-                                    "caption",
-                                    "likes",
-                                    "comments",
-                                ],
-                            },
+                            "description": {"type": "string"}
                         },
-                        "required": ["hashtag", "description", "example_post"],
+                        "required": ["hashtag", "description"],
                     },
                 },
             },
