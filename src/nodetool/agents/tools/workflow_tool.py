@@ -155,10 +155,16 @@ class GraphTool(Tool):
             and edge.target not in excluded_source_ids
         ]
 
-        # If there is only one node in the graph, automatically add a ToolResult node
-        # and connect all outputs from the single node to the ToolResult node.
-        if len(self.graph.nodes) == 1:
-            single_node = self.graph.nodes[0]
+        # Check if there's already a ToolResultNode in the graph
+        has_tool_result_node = any(
+            isinstance(node, ToolResultNode) for node in self.graph.nodes
+            if node.id not in excluded_source_ids
+        )
+
+        # If there is only one node in the graph and no ToolResult node,
+        # automatically add a ToolResult node and connect all outputs from the single node to it.
+        if len([n for n in self.graph.nodes if n.id not in excluded_source_ids]) == 1 and not has_tool_result_node:
+            single_node = next(n for n in self.graph.nodes if n.id not in excluded_source_ids)
             result_node_id = uuid4().hex
 
             # Append ToolResult node to API graph
@@ -186,6 +192,7 @@ class GraphTool(Tool):
                         ui_properties={},
                     )
                 )
+            has_tool_result_node = True
 
         try:
             req = RunJobRequest(
@@ -218,6 +225,59 @@ class GraphTool(Tool):
             # Collect all messages from workflow execution
             result = {}
             runner = WorkflowRunner(job_id=uuid4().hex, disable_caching=True)
+            
+            # Determine if we need to capture outputs from leaf nodes
+            # (when there's no ToolResultNode)
+            need_leaf_output = not has_tool_result_node
+            
+            # Find leaf nodes (nodes with no outgoing edges) if needed
+            leaf_node_id: str | None = None
+            leaf_output_slot: str | None = None
+            if need_leaf_output:
+                # Build set of node IDs that have outgoing edges in the final graph
+                nodes_with_outgoing = {edge.source for edge in edges}
+                # Find nodes that are in the graph but have no outgoing edges
+                # (these are the leaf/terminal nodes)
+                leaf_nodes = [
+                    node for node in self.graph.nodes
+                    if node.id not in excluded_source_ids
+                    and node.id not in nodes_with_outgoing
+                ]
+                
+                if len(leaf_nodes) == 1:
+                    leaf_node = leaf_nodes[0]
+                    outputs = leaf_node.outputs_for_instance()
+                    # Check for default output: "output" slot or exactly one output slot
+                    default_output = None
+                    for output_slot in outputs:
+                        if output_slot.name == "output":
+                            default_output = output_slot.name
+                            break
+                    if default_output is None and len(outputs) == 1:
+                        default_output = outputs[0].name
+                    
+                    if default_output:
+                        leaf_node_id = leaf_node.id
+                        leaf_output_slot = default_output
+                    else:
+                        raise ValueError(
+                            f"Tool graph has no ToolResult node and the leaf node "
+                            f"({leaf_node.get_node_type()}) has no default output. "
+                            f"Available outputs: {[o.name for o in outputs]}. "
+                            f"Either add a ToolResult node or ensure the leaf node has an 'output' slot."
+                        )
+                elif len(leaf_nodes) > 1:
+                    raise ValueError(
+                        f"Tool graph has no ToolResult node and multiple leaf nodes "
+                        f"({len(leaf_nodes)}). Cannot determine which node's output to use. "
+                        f"Either add a ToolResult node or ensure there's only one leaf node with a default output."
+                    )
+                elif len(leaf_nodes) == 0:
+                    raise ValueError(
+                        "Tool graph has no ToolResult node and no leaf nodes found. "
+                        "Either add a ToolResult node or ensure the graph has terminal nodes."
+                    )
+            
             async for msg in run_workflow(
                 request=req,
                 runner=runner,
@@ -245,6 +305,22 @@ class GraphTool(Tool):
                                 result[key] += value
                             else:
                                 result[key] = value
+                elif need_leaf_output and isinstance(msg, OutputUpdate):
+                    # Capture output from leaf node if no ToolResult node
+                    if msg.node_id == leaf_node_id and msg.output_name == leaf_output_slot:
+                        value = msg.value
+                        if hasattr(value, "model_dump"):
+                            value = value.model_dump()
+                        # Use output slot name as key, or "output" if it's the default
+                        key = leaf_output_slot if leaf_output_slot != "output" else "output"
+                        if result.get(key) is None:
+                            result[key] = value
+                        elif isinstance(result[key], list):
+                            result[key].append(value)
+                        elif isinstance(result[key], str):
+                            result[key] += value
+                        else:
+                            result[key] = value
 
             print("result", result)
 
