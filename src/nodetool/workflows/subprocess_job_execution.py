@@ -645,6 +645,8 @@ class SubprocessJobExecution(JobExecution):
                 else:
                     error_msg = f"Subprocess exited with code {returncode}"
 
+                # Track error locally for fallback reporters
+                self._error = error_msg
                 await self.job_model.update(
                     status="failed", error=error_msg, finished_at=datetime.now()
                 )
@@ -664,12 +666,29 @@ class SubprocessJobExecution(JobExecution):
             log.info(f"Subprocess job {self.job_id} was cancelled")
         except Exception as e:
             self._status = "failed"
+            import traceback
             error_msg = f"Error monitoring subprocess: {str(e)}"
+            tb_text = traceback.format_exc()
+            # Track error locally for fallback reporters
+            self._error = error_msg
             await self.job_model.update(
                 status="failed", error=error_msg, finished_at=datetime.now()
             )
             self._completed_event.set()
             log.error(f"Error monitoring subprocess job {self.job_id}: {e}")
+            # Provide a final update with traceback for better visibility
+            try:
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="failed",
+                        error=error_msg,
+                        traceback=tb_text,
+                    )
+                )
+            except Exception:
+                # Best-effort; logging already captured
+                pass
 
     @classmethod
     async def create_and_start(

@@ -30,6 +30,7 @@ class JobUpdate(BaseModel):
     message: str | None = None
     result: dict | None = None
     error: str | None = None
+    traceback: str | None = None
 
 
 class JobList(BaseModel):

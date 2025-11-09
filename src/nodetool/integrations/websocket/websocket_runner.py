@@ -416,12 +416,19 @@ class WebSocketRunner:
                             workflow_id=job_ctx.workflow_id,
                         ).model_dump()
                     )
-                elif final_status == "error":
+                elif final_status in ("error", "failed"):
+                    # Try to include detailed error information from the job
+                    err = (
+                        getattr(job_ctx.job_execution, "error", None)
+                        or getattr(job_ctx.job_execution.job_model, "error", None)
+                        or "Unknown error"
+                    )
                     await self.send_message(
                         JobUpdate(
-                            status="failed",
+                            status="failed",  # Normalize error to failed for terminal update
                             job_id=job_ctx.job_id,
                             workflow_id=job_ctx.workflow_id,
+                            error=str(err),
                         ).model_dump()
                     )
                 else:
@@ -506,11 +513,18 @@ class WebSocketRunner:
                         extra={"job_id": job_id, "error": str(persist_error)},
                     )
 
+                # Include error details when reporting a finalized failed job
+                err_detail = (
+                    getattr(job_execution, "error", None)
+                    or getattr(job_execution.job_model, "error", None)
+                    or None
+                )
                 await self.send_message(
                     JobUpdate(
                         status=final_status,
                         job_id=job_id,
                         workflow_id=workflow_id,
+                        error=str(err_detail) if err_detail else None,
                     ).model_dump()
                 )
                 log.info(

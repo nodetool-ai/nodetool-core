@@ -126,18 +126,25 @@ class ThreadedJobExecution(JobExecution):
         except Exception as e:
             self.runner.status = "error"
             self._status = "error"
+            import traceback
             error_text = str(e).strip()
             error_msg = (
-                f"{e.__class__.__name__}: {error_text}"
-                if error_text
-                else repr(e)
+                f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
             )
+            tb_text = traceback.format_exc()
+            # Track error locally for fallback reporters
+            self._error = error_msg
             await self.job_model.update(
                 status="failed", error=error_msg, finished_at=datetime.now()
             )
             log.exception("Background job %s failed: %s", self.job_id, error_msg)
             self.context.post_message(
-                JobUpdate(job_id=self.job_id, status="failed", error=error_msg)
+                JobUpdate(
+                    job_id=self.job_id,
+                    status="failed",
+                    error=error_msg,
+                    traceback=tb_text,
+                )
             )
             raise
 
