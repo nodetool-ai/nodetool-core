@@ -38,7 +38,8 @@ def import_providers():
         anthropic_provider,
         gemini_provider,
         llama_provider,
-        comfy_provider,
+        comfy_local_provider,
+        comfy_runpod_provider,
         ollama_provider,
         openai_provider,
         fake_provider,
@@ -129,7 +130,7 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 
     import_providers()
 
-    # Get models from each registered chat provider
+    # Get providers from the registry
     provider_enums = list[ProviderEnum](_PROVIDER_REGISTRY.keys())
 
     # Collect all required secrets across all providers

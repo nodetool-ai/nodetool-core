@@ -150,6 +150,18 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="RUNPOD_API_KEY",
+    group="RunPod",
+    description="RunPod API key for accessing serverless endpoints (e.g., ComfyUI worker)",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="RUNPOD_COMFYUI_ENDPOINT_ID",
+    group="RunPod",
+    description="RunPod serverless endpoint ID for the ComfyUI worker (used by Comfy provider)",
+)
+register_secret(
+    package_name="nodetool",
     env_var="DATA_FOR_SEO_LOGIN",
     group="DataForSEO",
     description="DataForSEO login for accessing DataForSEO's API",

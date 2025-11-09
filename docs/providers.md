@@ -407,53 +407,78 @@ async def test_generate_message():
 - [Chat API](chat-api.md) - WebSocket API for chat interactions
 - [Agents](agents.md) - Using providers with the agent system
 - [Workflow API](workflow-api.md) - Building workflows with providers
-#### ComfyUI (`comfy_provider.py`)
+#### ComfyUI (Local + RunPod)
 
-Capabilities: Local image generation via a running ComfyUI server
+Two providers are available for ComfyUI workflows:
 
-- TEXT_TO_IMAGE: Uses ComfyUI graph with CheckpointLoaderSimple → CLIPTextEncode → KSampler → VAEDecode → SaveImageWebsocket
-- IMAGE_TO_IMAGE: Uploads input to ComfyUI via POST /upload/image, then runs LoadImage → VAEEncode → KSampler → VAEDecode → SaveImageWebsocket
+- ComfyLocal (`src/nodetool/providers/comfy_local_provider.py`): talks to a local ComfyUI instance over HTTP/WebSocket.
+- ComfyRunpod (`src/nodetool/providers/comfy_runpod_provider.py`): calls a RunPod serverless endpoint (`/run` + `/status`).
 
-Configuration (settings/env):
+Capabilities
 
-- `COMFYUI_ADDR` — server address (default `127.0.0.1:8188`)
+- TEXT_TO_IMAGE and IMAGE_TO_IMAGE supported in both providers.
+- For FLUX.1 dev, both providers use a dedicated FLUX graph (EmptySD3LatentImage → KSampler(cfg=1, scheduler=simple) → VAEDecode plus FluxGuidance).
+- For non‑FLUX models, both providers use a generic SD graph (EmptyLatentImage → KSampler(cfg, scheduler) → VAEDecode) or its image‑to‑image variant (LoadImage → VAEEncode → KSampler → VAEDecode).
 
-Model discovery:
+Configuration
 
-- Provider implements `get_available_image_models()` by calling `GET http://COMFYUI_ADDR/models/checkpoints` and returns `ImageModel` entries.
+- Local: `COMFYUI_ADDR` (default `127.0.0.1:8188`)
+- RunPod: `RUNPOD_API_KEY`, `RUNPOD_COMFYUI_ENDPOINT_ID`
 
-Usage example:
+Model Discovery
+
+- ComfyLocal: `get_available_image_models()` queries `GET http://COMFYUI_ADDR/models/checkpoints` and returns all discovered checkpoints.
+- ComfyRunpod: returns a minimal list by design (currently only `flux1-dev-fp8.safetensors`); other checkpoints can be used if present in your worker image by specifying the `model.id` explicitly.
+
+Supported Models
+
+- FLUX.1 dev (fp8): fully supported for text‑to‑image and image‑to‑image via the FLUX graph.
+- Stable Diffusion families under the generic SD graph:
+  - SDXL 1.0 and SDXL‑based checkpoints
+  - SD 1.x / 2.x checkpoints (e.g., DreamShaper, RealisticVision, etc.)
+- Notes and limitations:
+  - FLUX.1 schnell may be compatible with the FLUX graph but is not auto‑selected today; the local provider will use the generic SD graph unless the checkpoint id is `flux1-dev-fp8.safetensors`.
+  - SD3 typically requires SD3‑specific nodes/graphs (e.g., SD3 latent/image nodes). Generic SD graphs may not work; SD3 is not officially supported yet in these providers.
+  - For RunPod, ensure your worker image includes the needed checkpoint and related model files; otherwise the workflow will fail model validation.
+
+Usage Examples
+
+Python (via provider registry):
 
 ```python
-from nodetool.providers.comfy_provider import ComfyProvider
+from nodetool.providers import get_provider
+from nodetool.metadata.types import Provider, ImageModel
 
-provider = ComfyProvider()
-
-# List local checkpoints discovered by ComfyUI
-models = await provider.get_available_image_models()
-
-# Text to Image
-images = provider.text_to_image(
-    "masterpiece best quality man",
-    checkpoint="dreamshaper_8.safetensors",
-    width=512,
-    height=512,
-    steps=20,
+# Local ComfyUI
+local = await get_provider(Provider.ComfyLocal, user_id="1")
+models = await local.get_available_image_models()
+# Choose a non-FLUX model discovered by ComfyUI
+sdxl = next((m for m in models if "sdxl" in m.id.lower()), None)
+result = await local.text_to_image(
+    params=TextToImageParams(
+        model=sdxl or ImageModel(id="sdxl_model.safetensors", name="SDXL", provider=Provider.ComfyLocal),
+        prompt="cinematic photo of a mountain lake",
+        width=1024, height=1024, num_inference_steps=30, guidance_scale=6.5,
+    )
 )
-with open("out.png", "wb") as f:
-    f.write(images[0])
 
-# Image to Image
-images2 = provider.image_to_image(
-    "/path/to/image.png",
-    "cinematic lighting, dramatic shadows",
-    checkpoint="dreamshaper_8.safetensors",
-    strength=0.6,
-    steps=20,
+# RunPod ComfyUI (FLUX.1 dev)
+runpod = await get_provider(Provider.ComfyRunpod, user_id="1")
+flux_dev = ImageModel(id="flux1-dev-fp8.safetensors", name="FLUX.1 dev fp8", provider=Provider.ComfyRunpod)
+result2 = await runpod.text_to_image(
+    params=TextToImageParams(
+        model=flux_dev,
+        prompt="cute anime girl with fennec ears in a Victorian mansion",
+        width=1024, height=1024, num_inference_steps=20, guidance_scale=3.5,
+    )
 )
 ```
 
-Notes:
+Operational Notes
 
-- Requires `websocket-client` for WebSocket streaming of images. The provider always streams via `SaveImageWebsocket`.
-- Ensure the specified checkpoint exists under your ComfyUI `models/checkpoints` folder. The provider requires an explicit `checkpoint` argument; there is no environment default.
+- Local:
+  - Uses WebSocket execution; for non‑FLUX graphs, images stream via `SaveImageWebsocket`.
+  - FLUX graphs use `SaveImage` and the provider fetches images from `/history`.
+- RunPod:
+  - Sends `POST https://api.runpod.ai/v2/<ENDPOINT_ID>/run` with headers `Content-Type: application/json` and `Authorization: Bearer <API_KEY>` and polls `/status/<id>`.
+  - Returns `output.images` as base64 or S3 URLs, decoded to bytes by the provider.
