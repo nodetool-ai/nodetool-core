@@ -60,8 +60,8 @@ dependencies = [
     "langchain-text-splitters==0.3.11",
     "html2text",
     "markitdown",
-    "PyMuPDF==1.25.2",
-    "pymupdf4llm==0.0.27",
+    "PyMuPDF>=1.25.2",
+    "pymupdf4llm>=0.0.27",
     "jinja2==3.1.6",
 
     # AI dependencies
