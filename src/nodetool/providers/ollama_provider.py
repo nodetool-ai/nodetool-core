@@ -252,8 +252,9 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             async with get_ollama_client() as client:
                 models_response = await client.list()
                 models: List[LanguageModel] = []
-                for model in models_response.get("models", []):
-                    model_name = model.get("name")
+                # The Ollama client returns an object with a .models attribute
+                for model in models_response.models:
+                    model_name = model.model
                     if model_name:
                         models.append(
                             LanguageModel(
