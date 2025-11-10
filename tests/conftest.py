@@ -183,6 +183,45 @@ def _set_dummy_api_keys(monkeypatch):
     monkeypatch.setenv("FAL_API_KEY", os.getenv("FAL_API_KEY", "test-fal-key"))
 
 
+@pytest.fixture(autouse=True)
+def mock_keyring(monkeypatch):
+    """Provide an in-memory keyring implementation for tests.
+
+    The default keyring backend used in CI raises NoKeyringError because no
+    secure storage backend is available. Tests that interact with
+    ``MasterKeyManager`` need ``keyring`` to behave like a functional backend,
+    so we replace ``get_password``/``set_password``/``delete_password`` with a
+    simple dictionary-backed store.
+    """
+
+    import keyring
+    from nodetool.security.master_key import MasterKeyManager
+
+    store: dict[tuple[str, str], str] = {}
+
+    def get_password(service: str, username: str) -> str | None:
+        return store.get((service, username))
+
+    def set_password(service: str, username: str, password: str) -> None:
+        store[(service, username)] = password
+
+    def delete_password(service: str, username: str) -> None:
+        store.pop((service, username), None)
+
+    monkeypatch.setattr(keyring, "get_password", get_password)
+    monkeypatch.setattr(keyring, "set_password", set_password)
+    monkeypatch.setattr(keyring, "delete_password", delete_password)
+
+    # Ensure tests don't reuse a cached master key from previous runs
+    MasterKeyManager.clear_cache()
+
+    try:
+        yield
+    finally:
+        store.clear()
+        MasterKeyManager.clear_cache()
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Provide a shared asyncio event loop for the entire test session.
