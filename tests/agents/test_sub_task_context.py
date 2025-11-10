@@ -1,6 +1,6 @@
 import pytest
 
-from nodetool.agents.sub_task_context import SubTaskContext, DEFAULT_MAX_ITERATIONS
+from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Task, SubTask, Message
 from nodetool.providers.base import MockProvider
@@ -47,7 +47,7 @@ def create_context(
         [],
         model="gpt",
         provider=provider,
-        max_iterations=DEFAULT_MAX_ITERATIONS,
+        max_iterations=None,  # Deprecated parameter, token budget now controls termination
     )
 
 
@@ -79,7 +79,7 @@ def test_subtask_with_dependencies(tmp_path):
         [],
         model="gpt",
         provider=provider,
-        max_iterations=DEFAULT_MAX_ITERATIONS,
+        max_iterations=None,  # Deprecated parameter, token budget now controls termination
     )
     assert ctx.subtask.input_tasks == ["upstream_task"]
     assert len(ctx.subtask.input_tasks) == 1
