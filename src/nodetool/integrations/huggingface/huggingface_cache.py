@@ -537,97 +537,95 @@ huggingface_hub.utils.tqdm = CustomTqdm  # type: ignore
 
 async def huggingface_download_endpoint(websocket: WebSocket):
     """WebSocket endpoint for HuggingFace model downloads with authentication."""
-    from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+    from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider, ResourceScope
     from nodetool.config.environment import Environment
     
-    # Get auth providers
-    static_provider = get_static_auth_provider()
-    user_provider = get_user_auth_provider()
-    enforce_auth = Environment.enforce_auth()
-    
-    # Authenticate websocket
-    if not enforce_auth:
-        # In local mode, fallback to user_id "1" if no auth is provided
-        user_id = getattr(static_provider, 'user_id', None) or "1"
-        token = None
-    else:
-        token = static_provider.extract_token_from_ws(
-            websocket.headers, websocket.query_params
-        )
-        if not token:
-            await websocket.close(code=1008, reason="Missing authentication")
-            log.warning("HF download WebSocket connection rejected: Missing authentication header")
-            return
+    # Wrap entire websocket handler in ResourceScope for database access
+    async with ResourceScope():
+        # Get auth providers
+        static_provider = get_static_auth_provider()
+        user_provider = get_user_auth_provider()
+        enforce_auth = Environment.enforce_auth()
         
-        static_result = await static_provider.verify_token(token)
-        if static_result.ok and static_result.user_id:
-            user_id = static_result.user_id
-        elif Environment.get_auth_provider_kind() == "supabase" and user_provider:
-            user_result = await user_provider.verify_token(token)
-            if user_result.ok and user_result.user_id:
-                user_id = user_result.user_id
+        # Authenticate websocket
+        if not enforce_auth:
+            # In local mode, fallback to user_id "1" if no auth is provided
+            user_id = getattr(static_provider, 'user_id', None) or "1"
+            token = None
+        else:
+            token = static_provider.extract_token_from_ws(
+                websocket.headers, websocket.query_params
+            )
+            if not token:
+                await websocket.close(code=1008, reason="Missing authentication")
+                log.warning("HF download WebSocket connection rejected: Missing authentication header")
+                return
+            
+            static_result = await static_provider.verify_token(token)
+            if static_result.ok and static_result.user_id:
+                user_id = static_result.user_id
+            elif Environment.get_auth_provider_kind() == "supabase" and user_provider:
+                user_result = await user_provider.verify_token(token)
+                if user_result.ok and user_result.user_id:
+                    user_id = user_result.user_id
+                else:
+                    await websocket.close(code=1008, reason="Invalid authentication")
+                    log.warning("HF download WebSocket connection rejected: Invalid token")
+                    return
             else:
                 await websocket.close(code=1008, reason="Invalid authentication")
                 log.warning("HF download WebSocket connection rejected: Invalid token")
                 return
-        else:
-            await websocket.close(code=1008, reason="Invalid authentication")
-            log.warning("HF download WebSocket connection rejected: Invalid token")
-            return
-    
-    # Ensure user_id is set (fallback to "1" for local mode)
-    if not user_id:
-        user_id = "1"
-    
-    log.info(f"huggingface_download_endpoint: Authenticated websocket connection with user_id={user_id}")
-    
-    # Create download manager with user_id for database secret lookup
-    download_manager = await DownloadManager.create(user_id=user_id)
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_json()
-            command = data.get("command")
-            repo_id = data.get("repo_id")
-            path = data.get("path")
-            allow_patterns = data.get("allow_patterns")
-            ignore_patterns = data.get("ignore_patterns")
+        
+        # Ensure user_id is set (fallback to "1" for local mode)
+        if not user_id:
+            user_id = "1"
+        
+        log.info(f"huggingface_download_endpoint: Authenticated websocket connection with user_id={user_id}")
+        
+        # Create download manager with user_id for database secret lookup
+        download_manager = await DownloadManager.create(user_id=user_id)
+        await websocket.accept()
+        try:
+            while True:
+                data = await websocket.receive_json()
+                command = data.get("command")
+                repo_id = data.get("repo_id")
+                path = data.get("path")
+                allow_patterns = data.get("allow_patterns")
+                ignore_patterns = data.get("ignore_patterns")
 
-            if command == "start_download":
-                log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
-                print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
-                try:
-                    await download_manager.start_download(
-                        repo_id=repo_id,
-                        path=path,
-                        websocket=websocket,
-                        allow_patterns=allow_patterns,
-                        ignore_patterns=ignore_patterns,
-                        user_id=user_id,
-                    )
-                except Exception as e:
-                    # Error should already be sent by start_download, but send a final error message
-                    # in case the WebSocket update failed
+                if command == "start_download":
+                    log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
+                    print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
+                    try:
+                        await download_manager.start_download(
+                            repo_id=repo_id,
+                            path=path,
+                            websocket=websocket,
+                            allow_patterns=allow_patterns,
+                            ignore_patterns=ignore_patterns,
+                            user_id=user_id,
+                        )
+                    except Exception as e:
+                        # Error should already be sent by start_download, but send a final error message
+                        # in case the WebSocket update failed
+                        await websocket.send_json(
+                            {
+                                "status": "error",
+                                "error": str(e),
+                                "repo_id": repo_id,
+                                "path": path,
+                            }
+                        )
+                        raise  # Re-raise to be caught by outer handler
+                elif command == "cancel_download":
+                    await download_manager.cancel_download(data.get("id"))
+                else:
                     await websocket.send_json(
-                        {
-                            "status": "error",
-                            "error": str(e),
-                            "repo_id": repo_id,
-                            "path": path,
-                        }
+                        {"status": "error", "message": "Unknown command"}
                     )
-                    raise  # Re-raise to be caught by outer handler
-            elif command == "cancel_download":
-                await download_manager.cancel_download(data.get("id"))
-            else:
-                await websocket.send_json(
-                    {"status": "error", "message": "Unknown command"}
-                )
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        # print stacktrace
-        import traceback
-
-        traceback.print_exc()
-    finally:
-        await websocket.close()
+        except Exception as e:
+            log.error(f"WebSocket error: {e}", exc_info=True)
+        finally:
+            await websocket.close()
