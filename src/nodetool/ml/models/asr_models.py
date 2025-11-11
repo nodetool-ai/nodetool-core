@@ -10,7 +10,6 @@ across all registered providers that support the AUTOMATIC_SPEECH_RECOGNITION ca
 from nodetool.config.logging_config import get_logger
 from typing import List
 from nodetool.metadata.types import ASRModel
-from nodetool.ml.models.model_cache import _model_cache
 
 log = get_logger(__name__)
 

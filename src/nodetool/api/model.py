@@ -24,7 +24,12 @@ from nodetool.metadata.types import (
     ModelFile,
     LlamaModel,
     comfy_model_to_folder,
+    Provider,
 )
+from nodetool.providers import get_provider
+from nodetool.providers.base import ProviderCapability, _PROVIDER_REGISTRY, get_registered_provider
+from nodetool.providers import import_providers
+from pydantic import BaseModel
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.api.utils import current_user
@@ -105,6 +110,102 @@ async def get_language_models(user: str = "1") -> list[LanguageModel]:
     return await get_all_language_models(user)
 
 
+class ProviderInfo(BaseModel):
+    """Information about a provider including its key and capabilities."""
+    provider: Provider
+    capabilities: list[str]
+
+    class Config:
+        json_encoders = {
+            Provider: lambda v: v.value,
+        }
+
+
+async def get_providers_info(user: str) -> list[ProviderInfo]:
+    """
+    Get information about all available providers including their keys and capabilities.
+    
+    This function iterates through the provider registry and creates ProviderInfo
+    objects for each provider that can be initialized (has required secrets).
+    """
+    import_providers()
+    
+    # Get providers from the registry
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.security.secret_helper import get_secrets_batch
+    
+    provider_enums = list[ProviderEnum](_PROVIDER_REGISTRY.keys())
+    
+    # Collect all required secrets across all providers
+    all_required_secrets = set()
+    provider_secret_map = {}
+    for provider_enum in provider_enums:
+        provider_cls, kwargs = get_registered_provider(provider_enum)
+        required_secrets = provider_cls.required_secrets()
+        provider_secret_map[provider_enum] = (provider_cls, kwargs, required_secrets)
+        all_required_secrets.update(required_secrets)
+    
+    # Batch fetch all secrets in one query
+    if all_required_secrets:
+        secrets_dict = await get_secrets_batch(list(all_required_secrets), user)
+    else:
+        secrets_dict = {}
+    
+    # Build provider info list
+    providers_info = []
+    for provider_enum, (provider_cls, kwargs, required_secrets) in provider_secret_map.items():
+        # Collect this provider's secrets
+        provider_secrets = {}
+        for secret in required_secrets:
+            secret_value = secrets_dict.get(secret)
+            if secret_value:
+                provider_secrets[secret] = secret_value
+        
+        # Skip provider if required secrets are missing
+        if len(required_secrets) > 0 and len(provider_secrets) == 0:
+            log.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
+            continue
+        
+        # Initialize provider to get capabilities
+        try:
+            # Some providers (like MLX) don't accept secrets parameter
+            # Check if __init__ accepts secrets parameter
+            import inspect
+            init_signature = inspect.signature(provider_cls.__init__)
+            init_params = list(init_signature.parameters.keys())
+            
+            if "secrets" in init_params:
+                provider = provider_cls(secrets=provider_secrets, **kwargs)
+            else:
+                # Provider doesn't accept secrets, initialize without it
+                provider = provider_cls(**kwargs)
+            
+            capabilities = provider.get_capabilities()
+            capabilities_list = [cap.value for cap in capabilities]
+            
+            providers_info.append(
+                ProviderInfo(
+                    provider=provider_enum,
+                    capabilities=capabilities_list,
+                )
+            )
+        except Exception as e:
+            log.warning(f"Failed to initialize provider {provider_enum.value}: {e}", exc_info=True)
+            continue
+    
+    return providers_info
+
+
+@router.get("/providers")
+async def get_providers_endpoint(
+    user: str = Depends(current_user),
+) -> list[ProviderInfo]:
+    """
+    Get all available providers with their keys and capabilities.
+    """
+    return await get_providers_info(user)
+
+
 @router.get("/recommended")
 async def recommended_models_endpoint(
     user: str = Depends(current_user),
@@ -150,51 +251,218 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
 
 
 
-@router.get("/llm")
+async def get_language_models_by_provider(
+    provider: Provider, user: str
+) -> list[LanguageModel]:
+    """Get language models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        models = await provider_instance.get_available_language_models()
+        log.debug(
+            f"Successfully retrieved {len(models)} language models from provider {provider.value}"
+        )
+        return models
+    except ValueError as e:
+        log.warning(
+            f"Provider {provider.value} not available: {e}. "
+            "This may be expected if the provider package is not installed."
+        )
+        # For MLX provider, try to discover models from cache even if provider isn't installed
+        if provider == Provider.MLX:
+            try:
+                from nodetool.integrations.huggingface.huggingface_models import (
+                    get_mlx_language_models_from_hf_cache,
+                )
+                log.info(
+                    "MLX provider not available, attempting to discover MLX models from HF cache directly"
+                )
+                models = await get_mlx_language_models_from_hf_cache()
+                log.info(f"Discovered {len(models)} MLX models from HuggingFace cache")
+                return models
+            except Exception as cache_error:
+                log.debug(
+                    f"Failed to discover MLX models from cache: {cache_error}",
+                    exc_info=True,
+                )
+        return []
+    except Exception as e:
+        log.error(
+            f"Error getting language models from {provider.value}: {e}",
+            exc_info=True,
+        )
+        # For MLX provider, try to discover models from cache even on error
+        if provider == Provider.MLX:
+            try:
+                from nodetool.integrations.huggingface.huggingface_models import (
+                    get_mlx_language_models_from_hf_cache,
+                )
+                log.info(
+                    "Error occurred with MLX provider, attempting to discover MLX models from HF cache as fallback"
+                )
+                models = await get_mlx_language_models_from_hf_cache()
+                log.info(f"Discovered {len(models)} MLX models from HuggingFace cache")
+                return models
+            except Exception as cache_error:
+                log.warning(
+                    f"Failed to discover MLX models from cache as fallback: {cache_error}",
+                    exc_info=True,
+                )
+        return []
+
+
+async def get_image_models_by_provider(
+    provider: Provider, user: str
+) -> list[ImageModel]:
+    """Get image models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        models = await provider_instance.get_available_image_models()
+        log.debug(
+            f"Successfully retrieved {len(models)} image models from provider {provider.value}"
+        )
+        return models
+    except ValueError as e:
+        log.warning(
+            f"Provider {provider.value} not available: {e}. "
+            "This may be expected if the provider package is not installed."
+        )
+        # For MLX provider, try to discover models from cache even if provider isn't installed
+        if provider == Provider.MLX:
+            try:
+                from nodetool.integrations.huggingface.huggingface_models import (
+                    get_mlx_image_models_from_hf_cache,
+                )
+                log.info(
+                    "MLX provider not available, attempting to discover MLX image models (mflux) from HF cache directly"
+                )
+                models = await get_mlx_image_models_from_hf_cache()
+                log.info(f"Discovered {len(models)} MLX image models from HuggingFace cache")
+                return models
+            except Exception as cache_error:
+                log.debug(
+                    f"Failed to discover MLX image models from cache: {cache_error}",
+                    exc_info=True,
+                )
+        return []
+    except Exception as e:
+        log.error(
+            f"Error getting image models from {provider.value}: {e}",
+            exc_info=True,
+        )
+        # For MLX provider, try to discover models from cache even on error
+        if provider == Provider.MLX:
+            try:
+                from nodetool.integrations.huggingface.huggingface_models import (
+                    get_mlx_image_models_from_hf_cache,
+                )
+                log.info(
+                    "Error occurred with MLX provider, attempting to discover MLX image models (mflux) from HF cache as fallback"
+                )
+                models = await get_mlx_image_models_from_hf_cache()
+                log.info(f"Discovered {len(models)} MLX image models from HuggingFace cache")
+                return models
+            except Exception as cache_error:
+                log.warning(
+                    f"Failed to discover MLX image models from cache as fallback: {cache_error}",
+                    exc_info=True,
+                )
+        return []
+
+
+async def get_tts_models_by_provider(provider: Provider, user: str) -> list[TTSModel]:
+    """Get TTS models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        return await provider_instance.get_available_tts_models()
+    except ValueError as e:
+        log.warning(f"Provider {provider.value} not available: {e}")
+        return []
+    except Exception as e:
+        log.error(f"Error getting TTS models from {provider.value}: {e}")
+        return []
+
+
+async def get_asr_models_by_provider(provider: Provider, user: str) -> list[ASRModel]:
+    """Get ASR models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        return await provider_instance.get_available_asr_models()
+    except ValueError as e:
+        log.warning(f"Provider {provider.value} not available: {e}")
+        return []
+    except Exception as e:
+        log.error(f"Error getting ASR models from {provider.value}: {e}")
+        return []
+
+
+async def get_video_models_by_provider(
+    provider: Provider, user: str
+) -> list[VideoModel]:
+    """Get video models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        return await provider_instance.get_available_video_models()
+    except ValueError as e:
+        log.warning(f"Provider {provider.value} not available: {e}")
+        return []
+    except Exception as e:
+        log.error(f"Error getting video models from {provider.value}: {e}")
+        return []
+
+
+@router.get("/llm/{provider}")
 async def get_language_models_endpoint(
+    provider: Provider,
     user: str = Depends(current_user),
 ) -> list[LanguageModel]:
-    return await get_language_models(user)
+    """
+    Get all available language models from a specific provider.
+    """
+    return await get_language_models_by_provider(provider, user)
 
 
-@router.get("/image")
+@router.get("/image/{provider}")
 async def get_image_models_endpoint(
+    provider: Provider,
     user: str = Depends(current_user),
 ) -> list[ImageModel]:
     """
-    Get all available image generation models from all providers.
+    Get all available image generation models from a specific provider.
     """
-    return await get_all_image_models(user)
+    return await get_image_models_by_provider(provider, user)
 
 
-@router.get("/tts")
+@router.get("/tts/{provider}")
 async def get_tts_models_endpoint(
+    provider: Provider,
     user: str = Depends(current_user),
 ) -> list[TTSModel]:
     """
-    Get all available text-to-speech models from all providers.
+    Get all available text-to-speech models from a specific provider.
     """
-    return await get_all_tts_models(user)
+    return await get_tts_models_by_provider(provider, user)
 
 
-@router.get("/asr")
+@router.get("/asr/{provider}")
 async def get_asr_models_endpoint(
+    provider: Provider,
     user: str = Depends(current_user),
 ) -> list[ASRModel]:
     """
-    Get all available automatic speech recognition models from all providers.
+    Get all available automatic speech recognition models from a specific provider.
     """
-    return await get_all_asr_models(user)
+    return await get_asr_models_by_provider(provider, user)
 
 
-@router.get("/video")
+@router.get("/video/{provider}")
 async def get_video_models_endpoint(
+    provider: Provider,
     user: str = Depends(current_user),
 ) -> list[VideoModel]:
     """
-    Get all available video generation models from all providers.
+    Get all available video generation models from a specific provider.
     """
-    return await get_all_video_models(user)
+    return await get_video_models_by_provider(provider, user)
 
 
 @router.get("/ollama_model_info")

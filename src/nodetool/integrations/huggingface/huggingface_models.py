@@ -27,6 +27,7 @@ from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
     LanguageModel,
+    ImageModel,
     Provider,
 )
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -496,7 +497,7 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     for MLX runtime (Apple Silicon). We use heuristics:
 
     - Prefer repos under the "mlx-community" org
-    - Additionally include repos that have tags containing "mlx" in their model info
+    - Additionally include repos that have tags containing "mlx" or "mflux" in their model info
 
     Each qualifying repo yields a LanguageModel with id "<repo_id>" (no file suffix),
     because MLX loaders typically resolve the correct shard/quantization internally.
@@ -504,12 +505,39 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files(tags=["mlx", "text-generation"])
+    # Search for models with "mlx" or "mflux" tags - both are MLX-compatible
+    # Use any_tags=True to find models with either tag
+    cached = await read_cached_hf_files(tags=["mlx", "mflux"], any_tags=True)
     result: dict[str, LanguageModel] = {}
 
     for model in cached:
+        # read_cached_hf_files already filtered by tags, so all models here have either "mlx" or "mflux" tag
         display = model.repo_id.split("/")[-1]
         result[model.repo_id] = LanguageModel(
+            id=model.repo_id,
+            name=display,
+            provider=Provider.MLX,
+        )
+
+    return list(result.values())
+
+
+async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
+    """
+    Return ImageModel entries for cached Hugging Face repos that are mflux models
+    (MLX-compatible image generation models).
+
+    Returns:
+        List[ImageModel]: MLX-compatible image models (mflux) discovered in the HF cache
+    """
+    # Search for models with "mflux" tag - these are MLX-compatible image generation models
+    cached = await read_cached_hf_files(tags=["mflux"])
+    result: dict[str, ImageModel] = {}
+
+    for model in cached:
+        # read_cached_hf_files already filtered by mflux tag
+        display = model.repo_id.split("/")[-1]
+        result[model.repo_id] = ImageModel(
             id=model.repo_id,
             name=display,
             provider=Provider.MLX,

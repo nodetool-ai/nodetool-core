@@ -30,6 +30,9 @@ from nodetool.providers.fake_provider import (
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 from nodetool.security.secret_helper import get_secret, get_secrets_batch
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 def import_providers():
@@ -47,27 +50,35 @@ def import_providers():
         vllm_provider,
     )
 
-    # TODO: implement better discovery of providers
+    # Optional providers that may have missing dependencies
+    # These are imported with better error handling and logging
     try:
         import nodetool.mlx.mlx_provider  # type: ignore  # noqa: F401
-    except ImportError:
-        pass
+        log.debug("MLX provider imported successfully")
+    except ImportError as e:
+        log.warning(
+            f"MLX provider could not be imported (some features may be unavailable): {e}. "
+            "This is expected if optional MLX dependencies (e.g., mflux) are not installed. "
+            "MLX language models can still be discovered from the HuggingFace cache."
+        )
+    except Exception as e:
+        log.warning(
+            f"Unexpected error importing MLX provider: {e}. "
+            "MLX language models can still be discovered from the HuggingFace cache."
+        )
 
     try:
         import nodetool.huggingface.huggingface_local_provider  # type: ignore  # noqa: F401
-    except ImportError:
-        pass
+        log.debug("HuggingFace local provider imported successfully")
+    except ImportError as e:
+        log.debug(f"HuggingFace local provider could not be imported: {e}")
+    except Exception as e:
+        log.warning(f"Unexpected error importing HuggingFace local provider: {e}")
 
 
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock = asyncio.Lock()
-
-# Provider list cache (per user_id) with timestamp
-_provider_list_cache: dict[str, tuple[list["BaseProvider"], float]] = {}
-_provider_list_cache_lock = asyncio.Lock()
-_PROVIDER_LIST_CACHE_TTL = 60.0  # Cache for 60 seconds
-
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
     """
@@ -120,14 +131,6 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
     import logging
     logger = logging.getLogger(__name__)
 
-    # Check cache first
-    async with _provider_list_cache_lock:
-        if user_id in _provider_list_cache:
-            cached_providers, cache_time = _provider_list_cache[user_id]
-            if time.time() - cache_time < _PROVIDER_LIST_CACHE_TTL:
-                logger.debug(f"Returning cached providers for user {user_id}")
-                return cached_providers
-
     import_providers()
 
     # Get providers from the registry
@@ -167,11 +170,6 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
         provider = provider_cls(secrets=provider_secrets, **kwargs)
         providers.append(provider)
 
-    # Cache the result
-    async with _provider_list_cache_lock:
-        _provider_list_cache[user_id] = (providers, time.time())
-
-    logger.debug(f"Cached {len(providers)} providers for user {user_id}")
     return providers
 
 
