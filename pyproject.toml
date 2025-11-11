@@ -116,6 +116,7 @@ dependencies = [
     "pyngrok>=7.2.8",
     "playwright>=1.40.0",
     "hf_xet>=0.0.1",
+    "hf_transfer",
 
     # Authentication and security
     "annotated-types>=0.7.0",
