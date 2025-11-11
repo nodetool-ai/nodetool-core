@@ -526,7 +526,8 @@ async def huggingface_download_endpoint(websocket: WebSocket):
     
     # Authenticate websocket
     if not enforce_auth:
-        user_id = static_provider.user_id
+        # In local mode, fallback to user_id "1" if no auth is provided
+        user_id = getattr(static_provider, 'user_id', None) or "1"
         token = None
     else:
         token = static_provider.extract_token_from_ws(
@@ -552,6 +553,10 @@ async def huggingface_download_endpoint(websocket: WebSocket):
             await websocket.close(code=1008, reason="Invalid authentication")
             log.warning("HF download WebSocket connection rejected: Invalid token")
             return
+    
+    # Ensure user_id is set (fallback to "1" for local mode)
+    if not user_id:
+        user_id = "1"
     
     # Create download manager with user_id for database secret lookup
     download_manager = await DownloadManager.create(user_id=user_id)
