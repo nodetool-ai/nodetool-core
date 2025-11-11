@@ -85,6 +85,7 @@ class DownloadState:
     downloaded_files: list[str] = field(default_factory=list)
     current_files: list[str] = field(default_factory=list)
     total_files: int = 0
+    error_message: str | None = None
 
 
 def get_repo_size(
@@ -227,7 +228,9 @@ class DownloadManager:
             self.logger.error(f"Error in download {id}: {e}")
             self.logger.error(traceback.format_exc())
             download_state.status = "error"
+            download_state.error_message = str(e)
             await self.send_update(repo_id, path)
+            raise  # Re-raise to bubble up to the endpoint
         finally:
             self.logger.info(f"Download process finished: {id}")
             queue.put(None)  # Signal to stop the progress thread
@@ -248,18 +251,19 @@ class DownloadManager:
     async def send_update(self, repo_id: str, path: str | None = None):
         id = repo_id if path is None else f"{repo_id}/{path}"
         state = self.downloads[id]
-        await state.websocket.send_json(
-            {
-                "status": state.status,
-                "repo_id": state.repo_id,
-                "path": path,
-                "downloaded_bytes": state.downloaded_bytes,
-                "total_bytes": state.total_bytes,
-                "downloaded_files": len(state.downloaded_files),
-                "current_files": state.current_files,
-                "total_files": state.total_files,
-            }
-        )
+        update = {
+            "status": state.status,
+            "repo_id": state.repo_id,
+            "path": path,
+            "downloaded_bytes": state.downloaded_bytes,
+            "total_bytes": state.total_bytes,
+            "downloaded_files": len(state.downloaded_files),
+            "current_files": state.current_files,
+            "total_files": state.total_files,
+        }
+        if state.error_message:
+            update["error"] = state.error_message
+        await state.websocket.send_json(update)
 
     async def send_progress_updates(self, repo_id: str, path: str | None, queue: Queue):
         id = repo_id if path is None else f"{repo_id}/{path}"
@@ -334,11 +338,25 @@ class DownloadManager:
             )
             tasks.append(task)
 
-        completed_tasks = await asyncio.gather(*tasks)
-        for filename, local_path in completed_tasks:
-            if local_path:
-                state.downloaded_files.append(filename)
-                self.logger.debug(f"Downloaded file: {filename}")
+        # Use return_exceptions=True to catch exceptions from individual tasks
+        # but still allow us to process successful downloads
+        completed_tasks = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Check for exceptions and raise the first one found
+        # This ensures errors like GatedRepoError bubble up properly
+        for result in completed_tasks:
+            if isinstance(result, Exception):
+                # Log the error for debugging
+                self.logger.error(f"Download task failed: {result}")
+                raise result
+        
+        # Process successful downloads
+        for result in completed_tasks:
+            if isinstance(result, tuple):
+                filename, local_path = result
+                if local_path:
+                    state.downloaded_files.append(filename)
+                    self.logger.debug(f"Downloaded file: {filename}")
 
         state.status = "completed" if not state.cancel.is_set() else "cancelled"
         self.logger.info(f"Download {state.status} for repo: {repo_id}")
@@ -408,13 +426,26 @@ async def huggingface_download_endpoint(websocket: WebSocket):
 
             if command == "start_download":
                 print(f"Starting download for {repo_id}/{path}")
-                await download_manager.start_download(
-                    repo_id=repo_id,
-                    path=path,
-                    websocket=websocket,
-                    allow_patterns=allow_patterns,
-                    ignore_patterns=ignore_patterns,
-                )
+                try:
+                    await download_manager.start_download(
+                        repo_id=repo_id,
+                        path=path,
+                        websocket=websocket,
+                        allow_patterns=allow_patterns,
+                        ignore_patterns=ignore_patterns,
+                    )
+                except Exception as e:
+                    # Error should already be sent by start_download, but send a final error message
+                    # in case the WebSocket update failed
+                    await websocket.send_json(
+                        {
+                            "status": "error",
+                            "error": str(e),
+                            "repo_id": repo_id,
+                            "path": path,
+                        }
+                    )
+                    raise  # Re-raise to be caught by outer handler
             elif command == "cancel_download":
                 await download_manager.cancel_download(data.get("id"))
             else:
