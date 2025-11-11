@@ -52,14 +52,17 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
+    log.debug(f"get_hf_token: Looking up HF_TOKEN for user_id={user_id}")
+    
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug("HF_TOKEN found in environment variables")
+        log.debug(f"get_hf_token: HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
     
     # 2. Try to get from database if user_id is available
     if user_id is None:
+        log.debug("get_hf_token: No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
         try:
             scope = maybe_scope()
@@ -69,15 +72,20 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             pass
     
     if user_id:
+        log.debug(f"get_hf_token: Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                log.debug("HF_TOKEN found in database secrets")
+                log.debug(f"get_hf_token: HF_TOKEN found in database secrets for user_id={user_id}")
                 return token
+            else:
+                log.debug(f"get_hf_token: HF_TOKEN not found in database for user_id={user_id}")
         except Exception as e:
-            log.debug(f"Failed to get HF_TOKEN from database: {e}")
+            log.debug(f"get_hf_token: Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
+    else:
+        log.debug("get_hf_token: No user_id available, skipping database lookup")
     
-    log.debug("HF_TOKEN not found in environment or database secrets")
+    log.debug(f"get_hf_token: HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
 
@@ -148,13 +156,14 @@ async def get_repo_size(
     Returns:
         int: Total size of matching files in bytes.
     """
+    log.debug(f"get_repo_size: Getting repo size for {repo_id} with user_id={user_id}")
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = await get_hf_token(user_id)
     if token:
-        log.debug(f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars)")
+        log.debug(f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars, user_id={user_id})")
         api = HfApi(token=token)
     else:
-        log.debug(f"get_repo_size: No HF_TOKEN available for repo {repo_id} - gated models may not be accessible")
+        log.debug(f"get_repo_size: No HF_TOKEN available for repo {repo_id} - gated models may not be accessible (user_id={user_id})")
         api = HfApi()
     files = api.list_repo_tree(repo_id, recursive=True)
     files = [file for file in files if isinstance(file, RepoFile)]
@@ -257,7 +266,9 @@ class DownloadManager:
         Args:
             user_id: Optional user ID for database secret lookup.
         """
+        log.debug(f"DownloadManager.create: Creating DownloadManager with user_id={user_id}")
         token = await get_hf_token(user_id)
+        log.debug(f"DownloadManager.create: Retrieved token for user_id={user_id}, token_present={token is not None}")
         return cls(token=token)
 
     async def start_download(
@@ -270,6 +281,8 @@ class DownloadManager:
         user_id: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
+
+        self.logger.info(f"start_download: Starting download for {id} with user_id={user_id}")
 
         if id in self.downloads:
             self.logger.warning(f"Download already in progress for: {id}")
@@ -376,20 +389,26 @@ class DownloadManager:
         id = repo_id if path is None else f"{repo_id}/{path}"
         state = self.downloads[id]
 
+        self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with user_id={user_id}")
+        
         # Ensure token is initialized
         if not self._token_initialized:
+            self.logger.debug(f"download_huggingface_repo: Token not initialized, fetching with user_id={user_id}")
             self.token = await get_hf_token(user_id)
             if self.token:
                 self.api = HfApi(token=self.token)
                 self._token_initialized = True
+                self.logger.debug(f"download_huggingface_repo: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
+            else:
+                self.logger.debug(f"download_huggingface_repo: No token found for user_id={user_id}")
 
         # Log HF_TOKEN presence for debugging
         if self.token:
-            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token length: {len(self.token)} chars)")
+            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
         else:
-            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN - gated models may not be accessible")
+            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
 
-        self.logger.info(f"Fetching file list for repo: {repo_id}")
+        self.logger.info(f"Fetching file list for repo: {repo_id} (user_id={user_id})")
         files = self.api.list_repo_tree(repo_id, recursive=True)
         files = [file for file in files if isinstance(file, RepoFile)]
         files = filter_repo_paths(files, allow_patterns, ignore_patterns)
@@ -412,12 +431,14 @@ class DownloadManager:
 
         loop = asyncio.get_running_loop()
         tasks = []
+        self.logger.debug(f"download_huggingface_repo: Starting download of {len(files_to_download)} files for {repo_id} (user_id={user_id})")
         for file in files_to_download:
             if state.cancel.is_set():
                 self.logger.info("Download cancelled")
                 break
             state.current_files.append(file.path)
             await self.send_update(repo_id, path)
+            self.logger.debug(f"download_huggingface_repo: Queuing download of {file.path} for {repo_id} (user_id={user_id})")
             task = loop.run_in_executor(
                 self.process_pool,
                 download_file,
@@ -558,6 +579,8 @@ async def huggingface_download_endpoint(websocket: WebSocket):
     if not user_id:
         user_id = "1"
     
+    log.info(f"huggingface_download_endpoint: Authenticated websocket connection with user_id={user_id}")
+    
     # Create download manager with user_id for database secret lookup
     download_manager = await DownloadManager.create(user_id=user_id)
     await websocket.accept()
@@ -571,7 +594,8 @@ async def huggingface_download_endpoint(websocket: WebSocket):
             ignore_patterns = data.get("ignore_patterns")
 
             if command == "start_download":
-                print(f"Starting download for {repo_id}/{path}")
+                log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
+                print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
                 try:
                     await download_manager.start_download(
                         repo_id=repo_id,

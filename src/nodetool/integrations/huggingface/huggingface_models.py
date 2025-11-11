@@ -47,14 +47,17 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
+    log.debug(f"get_hf_token (huggingface_models): Looking up HF_TOKEN for user_id={user_id}")
+    
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug("HF_TOKEN found in environment variables (huggingface_models)")
+        log.debug(f"get_hf_token (huggingface_models): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
     
     # 2. Try to get from database if user_id is available
     if user_id is None:
+        log.debug("get_hf_token (huggingface_models): No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
         try:
             scope = maybe_scope()
@@ -64,15 +67,20 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             pass
     
     if user_id:
+        log.debug(f"get_hf_token (huggingface_models): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                log.debug("HF_TOKEN found in database secrets (huggingface_models)")
+                log.debug(f"get_hf_token (huggingface_models): HF_TOKEN found in database secrets for user_id={user_id}")
                 return token
+            else:
+                log.debug(f"get_hf_token (huggingface_models): HF_TOKEN not found in database for user_id={user_id}")
         except Exception as e:
-            log.debug(f"Failed to get HF_TOKEN from database: {e}")
+            log.debug(f"get_hf_token (huggingface_models): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
+    else:
+        log.debug("get_hf_token (huggingface_models): No user_id available, skipping database lookup")
     
-    log.debug("HF_TOKEN not found in environment or database secrets (huggingface_models)")
+    log.debug(f"get_hf_token (huggingface_models): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
 # Cache configuration

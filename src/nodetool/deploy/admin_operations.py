@@ -50,14 +50,17 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
+    logger.debug(f"get_hf_token (admin_operations): Looking up HF_TOKEN for user_id={user_id}")
+    
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        logger.debug("HF_TOKEN found in environment variables (admin_operations)")
+        logger.debug(f"get_hf_token (admin_operations): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
     
     # 2. Try to get from database if user_id is available
     if user_id is None:
+        logger.debug("get_hf_token (admin_operations): No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
         try:
             scope = maybe_scope()
@@ -67,15 +70,20 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             pass
     
     if user_id:
+        logger.debug(f"get_hf_token (admin_operations): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                logger.debug("HF_TOKEN found in database secrets (admin_operations)")
+                logger.debug(f"get_hf_token (admin_operations): HF_TOKEN found in database secrets for user_id={user_id}")
                 return token
+            else:
+                logger.debug(f"get_hf_token (admin_operations): HF_TOKEN not found in database for user_id={user_id}")
         except Exception as e:
-            logger.debug(f"Failed to get HF_TOKEN from database: {e}")
+            logger.debug(f"get_hf_token (admin_operations): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
+    else:
+        logger.debug("get_hf_token (admin_operations): No user_id available, skipping database lookup")
     
-    logger.debug("HF_TOKEN not found in environment or database secrets (admin_operations)")
+    logger.debug(f"get_hf_token (admin_operations): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
 
@@ -106,7 +114,9 @@ class AdminDownloadManager:
         Args:
             user_id: Optional user ID for database secret lookup.
         """
+        logger.debug(f"AdminDownloadManager.create: Creating AdminDownloadManager with user_id={user_id}")
         token = await get_hf_token(user_id)
+        logger.debug(f"AdminDownloadManager.create: Retrieved token for user_id={user_id}, token_present={token is not None}")
         return cls(token=token)
 
     async def download_with_progress(
@@ -120,15 +130,21 @@ class AdminDownloadManager:
     ) -> AsyncGenerator[dict, None]:
         """Download HuggingFace model with detailed progress updates"""
         
+        logger.debug(f"AdminDownloadManager.download_with_progress: Starting download for {repo_id} with user_id={user_id}")
+        
         # Ensure token is initialized
         if not self._token_initialized:
+            logger.debug(f"AdminDownloadManager.download_with_progress: Token not initialized, fetching with user_id={user_id}")
             self.token = await get_hf_token(user_id)
             if self.token:
                 self.api = HfApi(token=self.token)
                 self._token_initialized = True
+                logger.debug(f"AdminDownloadManager.download_with_progress: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
+            else:
+                logger.debug(f"AdminDownloadManager.download_with_progress: No token found for user_id={user_id}")
 
         try:
-            logger.info(f"Starting HF model download with progress: {repo_id}")
+            logger.info(f"Starting HF model download with progress: {repo_id} (user_id={user_id})")
 
             # Send initial status
             yield {
@@ -147,9 +163,9 @@ class AdminDownloadManager:
                 }
                 # Use HF_TOKEN from secrets if available for gated model downloads
                 if self.token:
-                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} with HF_TOKEN (token length: {len(self.token)} chars)")
+                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
                 else:
-                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} without HF_TOKEN - gated models may not be accessible")
+                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
                 local_path = hf_hub_download(repo_id, file_path, cache_dir=cache_dir, token=self.token)
                 yield {
                     "status": "completed",
@@ -222,9 +238,9 @@ class AdminDownloadManager:
                 try:
                     # Download individual file - use HF_TOKEN from secrets if available for gated model downloads
                     if self.token:
-                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} with HF_TOKEN (token length: {len(self.token)} chars)")
+                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
                     else:
-                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} without HF_TOKEN - gated models may not be accessible")
+                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
                     local_path = hf_hub_download(
                         repo_id=repo_id, filename=file.path, cache_dir=cache_dir, token=self.token
                     )
