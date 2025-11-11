@@ -32,33 +32,48 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.recommended_models import get_recommended_models
 from nodetool.ml.models.model_cache import ModelCache
-from nodetool.security.secret_helper import get_secret_sync
+from nodetool.security.secret_helper import get_secret
+from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
 
-def get_hf_token() -> str | None:
-    """Get HF_TOKEN from environment variables or secrets.
+async def get_hf_token(user_id: str | None = None) -> str | None:
+    """Get HF_TOKEN from environment variables or database secrets (async).
+    
+    Args:
+        user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
     
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    token = get_secret_sync("HF_TOKEN")
-    if token:
-        # Check if it came from environment or database
-        if os.environ.get("HF_TOKEN"):
-            log.debug("HF_TOKEN found in environment variables (huggingface_models)")
-        else:
-            log.debug("HF_TOKEN found in database secrets (huggingface_models)")
-        return token
-    
-    # Fallback to direct environment check
+    # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug("HF_TOKEN found in environment variables - direct check (huggingface_models)")
-    else:
-        log.debug("HF_TOKEN not found in environment or database secrets (huggingface_models)")
-    return token
+        log.debug("HF_TOKEN found in environment variables (huggingface_models)")
+        return token
+    
+    # 2. Try to get from database if user_id is available
+    if user_id is None:
+        # Try to get user_id from ResourceScope if available
+        try:
+            scope = maybe_scope()
+            # Note: ResourceScope doesn't store user_id directly
+            # In real usage, user_id would come from authentication context
+        except Exception:
+            pass
+    
+    if user_id:
+        try:
+            token = await get_secret("HF_TOKEN", user_id)
+            if token:
+                log.debug("HF_TOKEN found in database secrets (huggingface_models)")
+                return token
+        except Exception as e:
+            log.debug(f"Failed to get HF_TOKEN from database: {e}")
+    
+    log.debug("HF_TOKEN not found in environment or database secrets (huggingface_models)")
+    return None
 
 # Cache configuration
 CACHE_VERSION = "1.0"
@@ -86,10 +101,11 @@ async def unified_model(
     model: HuggingFaceModel,
     model_info: ModelInfo | None = None,
     size: int | None = None,
+    user_id: str | None = None,
 ) -> UnifiedModel | None:
     if model_info is None or model_info.siblings is None:
         # Use HF_TOKEN from secrets if available for gated model downloads
-        token = get_hf_token()
+        token = await get_hf_token(user_id)
         if token:
             log.debug(f"unified_model: Fetching model info for {model.repo_id} with HF_TOKEN (token length: {len(token)} chars)")
             api = HfApi(token=token)
@@ -182,7 +198,8 @@ async def fetch_model_readme(model_id: str) -> str | None:
     # File not in cache, try to download it
     try:
         # Use HF_TOKEN from secrets if available for gated model downloads
-        token = get_hf_token()
+        # Note: user_id would need to be passed from caller context
+        token = await get_hf_token()
         if token:
             log.debug(f"fetch_model_readme: Downloading README for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
         else:
@@ -222,7 +239,8 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     # Cache miss - fetch from API
     log.debug(f"Cache miss for model info: {model_id}")
     # Use HF_TOKEN from secrets if available for gated model downloads
-    token = get_hf_token()
+    # Note: user_id would need to be passed from caller context
+    token = await get_hf_token()
     if token:
         log.debug(f"fetch_model_info: Fetching model info for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
         api = HfApi(token=token)
@@ -592,19 +610,18 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(**kwargs) -> list[ModelInfo]:
+async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
     """
     # Use HF_TOKEN from secrets if available for gated model downloads
-    token = get_hf_token()
+    token = await get_hf_token(user_id)
+    author = kwargs.get("author", "unknown")
     if token:
-        author = kwargs.get("author", "unknown")
         log.debug(f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)")
         api = HfApi(token=token)
     else:
-        author = kwargs.get("author", "unknown")
         log.debug(f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible")
         api = HfApi()
     # Run the blocking call in a thread executor
@@ -633,9 +650,11 @@ async def get_gguf_language_models_from_authors(
         List[HuggingFaceModel]: One entry per matching repo.
     """
     # Fetch authors concurrently
+    # Note: user_id would need to be passed from caller context
     results = await asyncio.gather(
         *(
             _fetch_models_by_author(
+                user_id=None,
                 author=a,
                 limit=limit,
                 sort=sort,
@@ -701,9 +720,10 @@ async def get_mlx_language_models_from_authors(
         List[HuggingFaceModel]: One entry per qualifying repo.
     """
     # Fetch authors concurrently
+    # Note: user_id would need to be passed from caller context
     results = await asyncio.gather(
         *(
-            _fetch_models_by_author(author=a, limit=limit, sort=sort, tags=tags)
+            _fetch_models_by_author(user_id=None, author=a, limit=limit, sort=sort, tags=tags)
             for a in authors
         )
     )

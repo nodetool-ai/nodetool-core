@@ -35,50 +35,79 @@ from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Manager
-from nodetool.security.secret_helper import get_secret_sync
+from nodetool.security.secret_helper import get_secret
+from nodetool.runtime.resources import maybe_scope
 
 logger = get_logger(__name__)
 
 
-def get_hf_token() -> str | None:
-    """Get HF_TOKEN from environment variables or secrets.
+async def get_hf_token(user_id: str | None = None) -> str | None:
+    """Get HF_TOKEN from environment variables or database secrets (async).
+    
+    Args:
+        user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
     
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    token = get_secret_sync("HF_TOKEN")
-    if token:
-        # Check if it came from environment or database
-        if os.environ.get("HF_TOKEN"):
-            logger.debug("HF_TOKEN found in environment variables (admin_operations)")
-        else:
-            logger.debug("HF_TOKEN found in database secrets (admin_operations)")
-        return token
-    
-    # Fallback to direct environment check
+    # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        logger.debug("HF_TOKEN found in environment variables - direct check (admin_operations)")
-    else:
-        logger.debug("HF_TOKEN not found in environment or database secrets (admin_operations)")
-    return token
+        logger.debug("HF_TOKEN found in environment variables (admin_operations)")
+        return token
+    
+    # 2. Try to get from database if user_id is available
+    if user_id is None:
+        # Try to get user_id from ResourceScope if available
+        try:
+            scope = maybe_scope()
+            # Note: ResourceScope doesn't store user_id directly
+            # In real usage, user_id would come from authentication context
+        except Exception:
+            pass
+    
+    if user_id:
+        try:
+            token = await get_secret("HF_TOKEN", user_id)
+            if token:
+                logger.debug("HF_TOKEN found in database secrets (admin_operations)")
+                return token
+        except Exception as e:
+            logger.debug(f"Failed to get HF_TOKEN from database: {e}")
+    
+    logger.debug("HF_TOKEN not found in environment or database secrets (admin_operations)")
+    return None
 
 
 class AdminDownloadManager:
     """Download manager for admin operations that yields progress updates without WebSocket dependency"""
 
-    def __init__(self):
-        # Use HF_TOKEN from secrets if available for gated model downloads
-        token = get_hf_token()
+    def __init__(self, token: str | None = None):
+        """Initialize AdminDownloadManager.
+        
+        Args:
+            token: Optional HF_TOKEN. If not provided, will be fetched async when needed.
+        """
+        self.token = token
         if token:
             logger.debug(f"AdminDownloadManager initialized with HF_TOKEN (token length: {len(token)} chars)")
             self.api = HfApi(token=token)
         else:
-            logger.debug("AdminDownloadManager initialized without HF_TOKEN - gated models may not be accessible")
+            logger.debug("AdminDownloadManager initialized without HF_TOKEN - will fetch async when needed")
             self.api = HfApi()
         self.process_pool = ThreadPoolExecutor(max_workers=4)
         self.manager = Manager()
-        self.token = token
+        self._token_initialized = token is not None
+    
+    @classmethod
+    async def create(cls, user_id: str | None = None):
+        """Create AdminDownloadManager with async token initialization.
+        
+        Args:
+            user_id: Optional user ID for database secret lookup.
+        """
+        token = await get_hf_token(user_id)
+        return cls(token=token)
 
     async def download_with_progress(
         self,
@@ -87,8 +116,16 @@ class AdminDownloadManager:
         file_path: str | None = None,
         ignore_patterns: list | None = None,
         allow_patterns: list | None = None,
+        user_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Download HuggingFace model with detailed progress updates"""
+        
+        # Ensure token is initialized
+        if not self._token_initialized:
+            self.token = await get_hf_token(user_id)
+            if self.token:
+                self.api = HfApi(token=self.token)
+                self._token_initialized = True
 
         try:
             logger.info(f"Starting HF model download with progress: {repo_id}")
@@ -330,6 +367,7 @@ async def stream_hf_model_download(
     file_path: str | None = None,
     ignore_patterns: list | None = None,
     allow_patterns: list | None = None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Stream Hugging Face model download progress using AdminDownloadManager.
@@ -340,17 +378,19 @@ async def stream_hf_model_download(
         file_path (str, optional): Specific file to download
         ignore_patterns (list, optional): Patterns to ignore
         allow_patterns (list, optional): Patterns to allow
+        user_id (str, optional): User ID for database secret lookup
 
     Yields:
         str: JSON-encoded progress updates
     """
-    download_manager = AdminDownloadManager()
+    download_manager = await AdminDownloadManager.create(user_id=user_id)
     async for progress_update in download_manager.download_with_progress(
         repo_id=repo_id,
         cache_dir=cache_dir,
         file_path=file_path,
         ignore_patterns=ignore_patterns,
         allow_patterns=allow_patterns,
+        user_id=user_id,
     ):
         yield progress_update
 
@@ -362,6 +402,7 @@ async def download_hf_model(
     ignore_patterns: list | None = None,
     allow_patterns: list | None = None,
     stream: bool = True,
+    user_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Download HuggingFace model with optional streaming."""
     if not repo_id:
@@ -374,11 +415,12 @@ async def download_hf_model(
             file_path=file_path,
             ignore_patterns=ignore_patterns,
             allow_patterns=allow_patterns,
+            user_id=user_id,
         ):
             yield chunk
     else:
         # Non-streaming download - still use the download manager but just return final result
-        download_manager = AdminDownloadManager()
+        download_manager = await AdminDownloadManager.create(user_id=user_id)
         final_result = None
         async for progress_update in download_manager.download_with_progress(
             repo_id=repo_id,
@@ -386,6 +428,7 @@ async def download_hf_model(
             file_path=file_path,
             ignore_patterns=ignore_patterns,
             allow_patterns=allow_patterns,
+            user_id=user_id,
         ):
             final_result = progress_update
 

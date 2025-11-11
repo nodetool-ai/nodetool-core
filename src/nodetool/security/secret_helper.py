@@ -10,6 +10,7 @@ import asyncio
 from typing import Optional
 from nodetool.models.secret import Secret
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import require_scope
 
 log = get_logger(__name__)
 
@@ -109,41 +110,27 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
 
     # 2. Try to get user_id from ResourceScope if not provided
     if user_id is None:
-        try:
-            from nodetool.runtime.resources import maybe_scope
-            scope = maybe_scope()
-            # Note: ResourceScope doesn't store user_id directly
-            # In real usage, user_id would come from authentication context
-            # For now, we'll skip database lookup if no user_id is provided
-        except Exception:
-            pass
+        user_id = require_scope().user_id
 
-    # 3. If we have a user_id, try to get from database using event loop
-    if user_id:
+    try:
+        loop = asyncio.get_running_loop()
+        # We're in an async context with a running loop
+        # We can't use asyncio.run() here, so we'll use nest_asyncio if available
+        # Otherwise, we'll skip database lookup to avoid blocking
         try:
-            # Check if there's a running event loop
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in an async context with a running loop
-                # We can't use asyncio.run() here, so we'll use nest_asyncio if available
-                # Otherwise, we'll skip database lookup to avoid blocking
-                try:
-                    import nest_asyncio
-                    nest_asyncio.apply()
-                    # Now we can use run_until_complete even with a running loop
-                    return loop.run_until_complete(get_secret(key, user_id, default))
-                except ImportError:
-                    # nest_asyncio not available, skip database lookup
-                    log.debug(
-                        f"Running event loop detected but nest_asyncio not available. "
-                        f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database lookup from sync context."
-                    )
-            except RuntimeError:
-                # No running event loop, we can use asyncio.run()
-                return asyncio.run(get_secret(key, user_id, default))
-        except Exception as e:
-            log.debug(f"Failed to get secret '{key}' from database: {e}")
-            # Fall through to return default
+            import nest_asyncio
+            nest_asyncio.apply()
+            # Now we can use run_until_complete even with a running loop
+            return loop.run_until_complete(get_secret(key, user_id, default))
+        except ImportError:
+            # nest_asyncio not available, skip database lookup
+            log.debug(
+                f"Running event loop detected but nest_asyncio not available. "
+                f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database lookup from sync context."
+            )
+    except RuntimeError:
+        # No running event loop, we can use asyncio.run()
+        return asyncio.run(get_secret(key, user_id, default))
 
     # 4. Return default if provided
     if default is not None:

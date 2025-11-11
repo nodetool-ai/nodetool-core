@@ -37,33 +37,48 @@ import threading
 import os
 from huggingface_hub import constants
 from nodetool.ml.models.model_cache import ModelCache
-from nodetool.security.secret_helper import get_secret_sync
+from nodetool.security.secret_helper import get_secret
+from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
 
-def get_hf_token() -> str | None:
-    """Get HF_TOKEN from environment variables or secrets.
+async def get_hf_token(user_id: str | None = None) -> str | None:
+    """Get HF_TOKEN from environment variables or database secrets (async).
+    
+    Args:
+        user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
     
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    token = get_secret_sync("HF_TOKEN")
-    if token:
-        # Check if it came from environment or database
-        if os.environ.get("HF_TOKEN"):
-            log.debug("HF_TOKEN found in environment variables")
-        else:
-            log.debug("HF_TOKEN found in database secrets")
-        return token
-    
-    # Fallback to direct environment check
+    # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug("HF_TOKEN found in environment variables (direct check)")
-    else:
-        log.debug("HF_TOKEN not found in environment or database secrets")
-    return token
+        log.debug("HF_TOKEN found in environment variables")
+        return token
+    
+    # 2. Try to get from database if user_id is available
+    if user_id is None:
+        # Try to get user_id from ResourceScope if available
+        try:
+            scope = maybe_scope()
+            # Note: ResourceScope doesn't store user_id directly
+            # In real usage, user_id would come from authentication context
+        except Exception:
+            pass
+    
+    if user_id:
+        try:
+            token = await get_secret("HF_TOKEN", user_id)
+            if token:
+                log.debug("HF_TOKEN found in database secrets")
+                return token
+        except Exception as e:
+            log.debug(f"Failed to get HF_TOKEN from database: {e}")
+    
+    log.debug("HF_TOKEN not found in environment or database secrets")
+    return None
 
 
 def has_cached_files(
@@ -115,10 +130,11 @@ class DownloadState:
     error_message: str | None = None
 
 
-def get_repo_size(
+async def get_repo_size(
     repo_id: str,
     allow_patterns: list[str] | None = None,
     ignore_patterns: list[str] | None = None,
+    user_id: str | None = None,
 ) -> int:
     """
     Get the total size of files in a Hugging Face repository that match the given patterns.
@@ -127,12 +143,13 @@ def get_repo_size(
         repo_id (str): The ID of the Hugging Face repository.
         allow_patterns (list[str] | None): List of patterns to allow.
         ignore_patterns (list[str] | None): List of patterns to ignore.
+        user_id (str | None): Optional user ID for database secret lookup.
 
     Returns:
         int: Total size of matching files in bytes.
     """
     # Use HF_TOKEN from secrets if available for gated model downloads
-    token = get_hf_token()
+    token = await get_hf_token(user_id)
     if token:
         log.debug(f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars)")
         api = HfApi(token=token)
@@ -213,21 +230,35 @@ class DownloadManager:
         | Literal["cancelled"]
     ) = "idle"
 
-    def __init__(self):
-        # Use HF_TOKEN from secrets if available for gated model downloads
-        token = get_hf_token()
+    def __init__(self, token: str | None = None):
+        """Initialize DownloadManager.
+        
+        Args:
+            token: Optional HF_TOKEN. If not provided, will be fetched async when needed.
+        """
+        self.token = token
         if token:
             log.debug(f"DownloadManager initialized with HF_TOKEN (length: {len(token)} chars)")
             self.api = HfApi(token=token)
         else:
-            log.debug("DownloadManager initialized without HF_TOKEN - gated models may not be accessible")
+            log.debug("DownloadManager initialized without HF_TOKEN - will fetch async when needed")
             self.api = HfApi()
         self.logger = get_logger(__name__)
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
         self.manager = Manager()
         self.model_cache = ModelCache("model_info")
-        self.token = token
+        self._token_initialized = token is not None
+    
+    @classmethod
+    async def create(cls, user_id: str | None = None):
+        """Create DownloadManager with async token initialization.
+        
+        Args:
+            user_id: Optional user ID for database secret lookup.
+        """
+        token = await get_hf_token(user_id)
+        return cls(token=token)
 
     async def start_download(
         self,
@@ -236,6 +267,7 @@ class DownloadManager:
         websocket: WebSocket,
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
+        user_id: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
 
@@ -265,6 +297,7 @@ class DownloadManager:
                 allow_patterns=allow_patterns,
                 ignore_patterns=ignore_patterns,
                 queue=queue,
+                user_id=user_id,
             )
         except Exception as e:
             self.logger.error(f"Error in download {id}: {e}")
@@ -338,9 +371,17 @@ class DownloadManager:
         queue: Queue,
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
+        user_id: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
         state = self.downloads[id]
+
+        # Ensure token is initialized
+        if not self._token_initialized:
+            self.token = await get_hf_token(user_id)
+            if self.token:
+                self.api = HfApi(token=self.token)
+                self._token_initialized = True
 
         # Log HF_TOKEN presence for debugging
         if self.token:
@@ -426,13 +467,15 @@ parent_queue = None
 
 
 def download_file(repo_id: str, filename: str, queue: Queue, token: str | None = None):
+    """Download a file from HuggingFace Hub.
+    
+    Note: This function runs in a separate process, so it cannot be async.
+    The token must be passed in from the parent process.
+    """
     global parent_queue
     parent_queue = queue
 
-    # Use HF_TOKEN from secrets if available for gated model downloads
-    if token is None:
-        token = get_hf_token()
-    
+    # Token should be passed from parent process (cannot call async here)
     if token:
         log.debug(f"download_file: Downloading {repo_id}/{filename} with HF_TOKEN (token length: {len(token)} chars)")
     else:
@@ -472,7 +515,46 @@ huggingface_hub.utils.tqdm = CustomTqdm  # type: ignore
 
 
 async def huggingface_download_endpoint(websocket: WebSocket):
-    download_manager = DownloadManager()
+    """WebSocket endpoint for HuggingFace model downloads with authentication."""
+    from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+    from nodetool.config.environment import Environment
+    
+    # Get auth providers
+    static_provider = get_static_auth_provider()
+    user_provider = get_user_auth_provider()
+    enforce_auth = Environment.enforce_auth()
+    
+    # Authenticate websocket
+    if not enforce_auth:
+        user_id = static_provider.user_id
+        token = None
+    else:
+        token = static_provider.extract_token_from_ws(
+            websocket.headers, websocket.query_params
+        )
+        if not token:
+            await websocket.close(code=1008, reason="Missing authentication")
+            log.warning("HF download WebSocket connection rejected: Missing authentication header")
+            return
+        
+        static_result = await static_provider.verify_token(token)
+        if static_result.ok and static_result.user_id:
+            user_id = static_result.user_id
+        elif Environment.get_auth_provider_kind() == "supabase" and user_provider:
+            user_result = await user_provider.verify_token(token)
+            if user_result.ok and user_result.user_id:
+                user_id = user_result.user_id
+            else:
+                await websocket.close(code=1008, reason="Invalid authentication")
+                log.warning("HF download WebSocket connection rejected: Invalid token")
+                return
+        else:
+            await websocket.close(code=1008, reason="Invalid authentication")
+            log.warning("HF download WebSocket connection rejected: Invalid token")
+            return
+    
+    # Create download manager with user_id for database secret lookup
+    download_manager = await DownloadManager.create(user_id=user_id)
     await websocket.accept()
     try:
         while True:
@@ -492,6 +574,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         websocket=websocket,
                         allow_patterns=allow_patterns,
                         ignore_patterns=ignore_patterns,
+                        user_id=user_id,
                     )
                 except Exception as e:
                     # Error should already be sent by start_download, but send a final error message

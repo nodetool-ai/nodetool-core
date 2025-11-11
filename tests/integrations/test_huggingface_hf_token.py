@@ -32,7 +32,7 @@ class TestHFTokenFromDatabase:
         os.environ["HF_TOKEN"] = test_token
 
         try:
-            result = get_hf_token()
+            result = await get_hf_token()
             assert result == test_token
         finally:
             # Clean up
@@ -97,7 +97,7 @@ class TestHFTokenFromDatabase:
 
         try:
             # Should return env token (higher priority)
-            result = get_hf_token()
+            result = await get_hf_token()
             assert result == env_token
             assert result != db_token
         finally:
@@ -112,7 +112,7 @@ class TestHFTokenFromDatabase:
         os.environ["HF_TOKEN"] = test_token
 
         try:
-            manager = DownloadManager()
+            manager = await DownloadManager.create()
             # Verify token is stored
             assert manager.token == test_token
             # Verify HfApi was initialized with token
@@ -160,7 +160,7 @@ class TestHFTokenFromDatabase:
         os.environ["HF_TOKEN"] = test_token
 
         try:
-            manager = AdminDownloadManager()
+            manager = await AdminDownloadManager.create()
             # Verify token is stored
             assert manager.token == test_token
             # Verify HfApi was initialized with token
@@ -245,7 +245,7 @@ class TestHFTokenFromDatabase:
         env_token = os.environ.pop("HF_TOKEN", None)
 
         try:
-            result = get_hf_token()
+            result = await get_hf_token()
             assert result is None
         finally:
             if env_token:
@@ -260,9 +260,9 @@ class TestHFTokenFromDatabase:
 
         try:
             # All should return the same value
-            token_cache = get_hf_token()
-            token_models = get_hf_token_models()
-            token_admin = get_hf_token_admin()
+            token_cache = await get_hf_token()
+            token_models = await get_hf_token_models()
+            token_admin = await get_hf_token_admin()
 
             assert token_cache == test_token
             assert token_models == test_token
@@ -303,7 +303,7 @@ class TestHFTokenDatabaseIntegration:
                     "nodetool.integrations.huggingface.huggingface_cache.get_hf_token",
                     return_value=retrieved_token,
                 ):
-                    manager = DownloadManager()
+                    manager = await DownloadManager.create()
                     assert manager.token == db_token
                     assert manager.api.token == db_token
         finally:
@@ -324,12 +324,12 @@ class TestHFTokenDatabaseIntegration:
 
         try:
             # get_hf_token should return env token
-            token = get_hf_token()
+            token = await get_hf_token()
             assert token == env_token
             assert token != db_token
 
             # DownloadManager should use env token
-            manager = DownloadManager()
+            manager = await DownloadManager.create()
             assert manager.token == env_token
         finally:
             if "HF_TOKEN" in os.environ:
