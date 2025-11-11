@@ -108,6 +108,62 @@ class TestSecretHelper:
         result = get_secret_sync("NONEXISTENT_SYNC_SECRET", default=default_value)
         assert result == default_value
 
+    @pytest.mark.asyncio
+    async def test_get_secret_sync_from_database(self):
+        """Test that get_secret_sync can retrieve from database when user_id is provided."""
+        user_id = "test_user_sync_db"
+        key = "TEST_SYNC_DB_SECRET"
+        value = "test_sync_db_value_123"
+
+        # Create secret in database
+        await Secret.create(user_id=user_id, key=key, value=value)
+
+        # Remove env var to ensure we check database
+        env_value = os.environ.pop(key, None)
+
+        try:
+            # Retrieve using sync function with user_id
+            result = get_secret_sync(key, user_id=user_id)
+
+            assert result == value
+        finally:
+            # Restore env var if it existed
+            if env_value:
+                os.environ[key] = env_value
+
+    @pytest.mark.asyncio
+    async def test_get_secret_sync_env_overrides_database(self):
+        """Test that environment variables take priority over database in sync function."""
+        user_id = "test_user_sync_priority"
+        key = "TEST_SYNC_PRIORITY_SECRET"
+        env_value = "env_value_sync"
+        db_value = "db_value_sync"
+
+        # Create secret in database
+        await Secret.create(user_id=user_id, key=key, value=db_value)
+
+        # Set environment variable
+        os.environ[key] = env_value
+
+        try:
+            # Should return env value (higher priority)
+            result = get_secret_sync(key, user_id=user_id)
+            assert result == env_value
+            assert result != db_value
+        finally:
+            if key in os.environ:
+                del os.environ[key]
+
+    def test_get_secret_sync_no_user_id_skips_database(self):
+        """Test that get_secret_sync skips database lookup when no user_id is provided."""
+        # Without user_id, should only check environment
+        result = get_secret_sync("NONEXISTENT_SECRET_NO_USER")
+        assert result is None
+
+        # With default but no user_id
+        result_with_default = get_secret_sync("NONEXISTENT_SECRET_NO_USER", default="default")
+        assert result_with_default == "default"
+
     async def test_has_secret_in_database(self):
         """Test has_secret returns True for database secret."""
         user_id = "test_user_has"

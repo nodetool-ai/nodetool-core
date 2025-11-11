@@ -401,7 +401,7 @@ def download_file(repo_id: str, filename: str, queue: Queue, token: str | None =
     # Use HF_TOKEN from secrets if available for gated model downloads
     if token is None:
         token = get_hf_token()
-    
+
     local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,

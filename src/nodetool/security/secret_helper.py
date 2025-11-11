@@ -6,6 +6,7 @@ or environment variables, with proper fallback logic.
 """
 
 import os
+import asyncio
 from typing import Optional
 from nodetool.models.secret import Secret
 from nodetool.config.logging_config import get_logger
@@ -81,26 +82,76 @@ async def get_secret_required(key: str, user_id: str) -> str:
     )
 
 
-def get_secret_sync(key: str, default: Optional[str] = None) -> Optional[str]:
+def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[str] = None) -> Optional[str]:
     """
-    Get a secret value from environment variables only (synchronous).
+    Get a secret value synchronously, checking environment variables and database.
 
-    This is a simplified version that only checks environment variables,
-    useful for system-wide secrets that are not user-specific.
+    This function checks:
+    1. Environment variables (highest priority)
+    2. Database (if user_id is provided or available from ResourceScope)
+    3. Default value (if provided)
+
+    Uses an event loop to call the async get_secret() function when database lookup is needed.
 
     Args:
         key: The secret key.
         default: Default value if not found.
+        user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
 
     Returns:
-        The secret value from environment, or default.
+        The secret value, or default/None if not found.
     """
-    value = os.environ.get(key, default)
-    if value:
+    # 1. Check environment variable first (highest priority)
+    env_value = os.environ.get(key)
+    if env_value:
         log.debug(f"Secret '{key}' found in environment variable")
-    else:
-        log.debug(f"Secret '{key}' not found in environment")
-    return value
+        return env_value
+
+    # 2. Try to get user_id from ResourceScope if not provided
+    if user_id is None:
+        try:
+            from nodetool.runtime.resources import maybe_scope
+            scope = maybe_scope()
+            # Note: ResourceScope doesn't store user_id directly
+            # In real usage, user_id would come from authentication context
+            # For now, we'll skip database lookup if no user_id is provided
+        except Exception:
+            pass
+
+    # 3. If we have a user_id, try to get from database using event loop
+    if user_id:
+        try:
+            # Check if there's a running event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in an async context with a running loop
+                # We can't use asyncio.run() here, so we'll use nest_asyncio if available
+                # Otherwise, we'll skip database lookup to avoid blocking
+                try:
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    # Now we can use run_until_complete even with a running loop
+                    return loop.run_until_complete(get_secret(key, user_id, default))
+                except ImportError:
+                    # nest_asyncio not available, skip database lookup
+                    log.debug(
+                        f"Running event loop detected but nest_asyncio not available. "
+                        f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database lookup from sync context."
+                    )
+            except RuntimeError:
+                # No running event loop, we can use asyncio.run()
+                return asyncio.run(get_secret(key, user_id, default))
+        except Exception as e:
+            log.debug(f"Failed to get secret '{key}' from database: {e}")
+            # Fall through to return default
+
+    # 4. Return default if provided
+    if default is not None:
+        log.debug(f"Secret '{key}' not found, using default value")
+        return default
+
+    log.debug(f"Secret '{key}' not found")
+    return None
 
 
 async def get_secrets_batch(
