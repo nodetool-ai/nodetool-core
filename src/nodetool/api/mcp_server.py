@@ -63,8 +63,19 @@ from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.agents.tools.email_tools import SearchEmailTool
 from nodetool.workflows.types import Chunk
+from nodetool.security.secret_helper import get_secret_sync
+import os
 
 log = get_logger(__name__)
+
+
+def get_hf_token() -> str | None:
+    """Get HF_TOKEN from environment variables or secrets.
+    
+    Returns:
+        HF_TOKEN if available, None otherwise.
+    """
+    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
 
 # Initialize FastMCP server
 mcp = FastMCP("NodeTool API Server")
@@ -2107,7 +2118,9 @@ async def query_hf_model_files(
     from dataclasses import asdict
 
     try:
-        api = HfApi()
+        # Use HF_TOKEN from secrets if available for gated model downloads
+        token = get_hf_token()
+        api = HfApi(token=token) if token else HfApi()
         file_infos = api.list_repo_files(
             repo_id=repo_id, repo_type=repo_type, revision=revision
         )
@@ -2170,7 +2183,9 @@ async def search_hf_hub_models(
 
     from huggingface_hub import HfApi
 
-    api = HfApi()
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    token = get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
 
     # Parse filter
     filter_dict = {}
@@ -2209,7 +2224,10 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
     """
     from huggingface_hub import HfApi
 
-    return asdict(HfApi().model_info(repo_id))
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    token = get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
+    return asdict(api.model_info(repo_id))
 
 
 # ============================================================================

@@ -35,17 +35,30 @@ from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Manager
+from nodetool.security.secret_helper import get_secret_sync
 
 logger = get_logger(__name__)
+
+
+def get_hf_token() -> str | None:
+    """Get HF_TOKEN from environment variables or secrets.
+    
+    Returns:
+        HF_TOKEN if available, None otherwise.
+    """
+    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
 
 
 class AdminDownloadManager:
     """Download manager for admin operations that yields progress updates without WebSocket dependency"""
 
     def __init__(self):
-        self.api = HfApi()
+        # Use HF_TOKEN from secrets if available for gated model downloads
+        token = get_hf_token()
+        self.api = HfApi(token=token) if token else HfApi()
         self.process_pool = ThreadPoolExecutor(max_workers=4)
         self.manager = Manager()
+        self.token = token
 
     async def download_with_progress(
         self,
@@ -75,7 +88,8 @@ class AdminDownloadManager:
                     "message": f"Downloading single file: {file_path}",
                     "current_file": file_path,
                 }
-                local_path = hf_hub_download(repo_id, file_path, cache_dir=cache_dir)
+                # Use HF_TOKEN from secrets if available for gated model downloads
+                local_path = hf_hub_download(repo_id, file_path, cache_dir=cache_dir, token=self.token)
                 yield {
                     "status": "completed",
                     "repo_id": repo_id,
@@ -145,9 +159,9 @@ class AdminDownloadManager:
                 }
 
                 try:
-                    # Download individual file
+                    # Download individual file - use HF_TOKEN from secrets if available for gated model downloads
                     local_path = hf_hub_download(
-                        repo_id=repo_id, filename=file.path, cache_dir=cache_dir
+                        repo_id=repo_id, filename=file.path, cache_dir=cache_dir, token=self.token
                     )
                     downloaded_files.append(file.path)
                     downloaded_size += file.size

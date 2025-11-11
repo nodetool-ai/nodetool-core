@@ -32,8 +32,18 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.recommended_models import get_recommended_models
 from nodetool.ml.models.model_cache import ModelCache
+from nodetool.security.secret_helper import get_secret_sync
 
 log = get_logger(__name__)
+
+
+def get_hf_token() -> str | None:
+    """Get HF_TOKEN from environment variables or secrets.
+    
+    Returns:
+        HF_TOKEN if available, None otherwise.
+    """
+    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
 
 # Cache configuration
 CACHE_VERSION = "1.0"
@@ -63,9 +73,12 @@ async def unified_model(
     size: int | None = None,
 ) -> UnifiedModel | None:
     if model_info is None or model_info.siblings is None:
+        # Use HF_TOKEN from secrets if available for gated model downloads
+        token = get_hf_token()
+        api = HfApi(token=token) if token else HfApi()
         # Run blocking HfApi call in thread executor
         model_info = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: HfApi().model_info(model.repo_id, files_metadata=True)
+            None, lambda: api.model_info(model.repo_id, files_metadata=True)
         )
 
     # After this point, model_info is guaranteed to be not None
@@ -148,10 +161,12 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
     # File not in cache, try to download it
     try:
+        # Use HF_TOKEN from secrets if available for gated model downloads
+        token = get_hf_token()
         readme_path = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: hf_hub_download(
-                repo_id=model_id, filename="README.md", repo_type="model"
+                repo_id=model_id, filename="README.md", repo_type="model", token=token
             ),
         )
         with open(readme_path, "r", encoding="utf-8") as f:
@@ -182,7 +197,9 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
 
     # Cache miss - fetch from API
     log.debug(f"Cache miss for model info: {model_id}")
-    api = HfApi()
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    token = get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
     try:
         model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
             None, lambda: api.model_info(model_id, files_metadata=True)
@@ -551,7 +568,9 @@ async def _fetch_models_by_author(**kwargs) -> list[ModelInfo]:
 
     Returns raw model dicts from the public API.
     """
-    api = HfApi()
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    token = get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
     # Run the blocking call in a thread executor
     models = await asyncio.get_event_loop().run_in_executor(
         None, lambda: api.list_models(**kwargs)

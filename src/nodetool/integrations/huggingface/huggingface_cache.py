@@ -37,6 +37,18 @@ import threading
 import os
 from huggingface_hub import constants
 from nodetool.ml.models.model_cache import ModelCache
+from nodetool.security.secret_helper import get_secret_sync
+
+log = get_logger(__name__)
+
+
+def get_hf_token() -> str | None:
+    """Get HF_TOKEN from environment variables or secrets.
+    
+    Returns:
+        HF_TOKEN if available, None otherwise.
+    """
+    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
 
 
 def has_cached_files(
@@ -104,7 +116,9 @@ def get_repo_size(
     Returns:
         int: Total size of matching files in bytes.
     """
-    api = HfApi()
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    token = get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
     files = api.list_repo_tree(repo_id, recursive=True)
     files = [file for file in files if isinstance(file, RepoFile)]
     filtered_files = filter_repo_paths(files, allow_patterns, ignore_patterns)
@@ -180,12 +194,15 @@ class DownloadManager:
     ) = "idle"
 
     def __init__(self):
-        self.api = HfApi()
+        # Use HF_TOKEN from secrets if available for gated model downloads
+        token = get_hf_token()
+        self.api = HfApi(token=token) if token else HfApi()
         self.logger = get_logger(__name__)
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
         self.manager = Manager()
         self.model_cache = ModelCache("model_info")
+        self.token = token
 
     async def start_download(
         self,
@@ -335,6 +352,7 @@ class DownloadManager:
                 repo_id,
                 file.path,
                 queue,
+                self.token,  # Pass token for gated model downloads
             )
             tasks.append(task)
 
@@ -376,13 +394,18 @@ class DownloadManager:
 parent_queue = None
 
 
-def download_file(repo_id: str, filename: str, queue: Queue):
+def download_file(repo_id: str, filename: str, queue: Queue, token: str | None = None):
     global parent_queue
     parent_queue = queue
 
+    # Use HF_TOKEN from secrets if available for gated model downloads
+    if token is None:
+        token = get_hf_token()
+    
     local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
+        token=token,
     )
     return filename, local_path
 

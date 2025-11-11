@@ -25,6 +25,8 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.security.secret_helper import get_secret_sync
+import os
 
 log = get_logger(__name__)
 
@@ -760,9 +762,10 @@ if __name__ == "__main__":
         print("TEST 2: Gemma Model (Tool Emulation)")
         print("=" * 60 + "\n")
 
-        # Download Gemma model
+        # Download Gemma model - use HF_TOKEN from secrets if available for gated model downloads
+        token = get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
         hf_hub_download(
-            "ggml-org/gemma-3-1b-it-GGUF", filename="gemma-3-1b-it-Q4_K_M.gguf"
+            "ggml-org/gemma-3-1b-it-GGUF", filename="gemma-3-1b-it-Q4_K_M.gguf", token=token
         )
         gemma_model = "ggml-org/gemma-3-1b-it-GGUF"
         calculator_tools: list[Tool] = [CalculatorTool()]

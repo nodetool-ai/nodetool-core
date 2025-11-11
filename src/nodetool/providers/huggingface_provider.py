@@ -9,7 +9,6 @@ import json
 import asyncio
 import logging
 import traceback
-from functools import lru_cache
 from typing import Any, AsyncGenerator, List, Literal, Sequence
 import aiohttp
 import requests
@@ -41,6 +40,9 @@ from nodetool.workflows.types import Chunk
 from pydantic import BaseModel
 
 log = get_logger(__name__)
+
+# Simple cache for context window lookups (public models only)
+_context_window_cache: dict[str, int | None] = {}
 
 PROVIDER_T = Literal[
     "black-forest-labs",
@@ -83,13 +85,24 @@ HF_PROVIDER_MAPPING = {
 }
 
 
-@lru_cache(maxsize=128)
-def get_remote_context_window(model_id: str) -> int | None:
+def get_remote_context_window(model_id: str, token: str | None = None) -> int | None:
     """Fetch context window info from the model's Hugging Face config, if available."""
+    # Note: We don't cache when token is provided since cache keys can't include tokens
+    # For public models (no token), we can use a simple cache
+    cache_key = f"{model_id}:{bool(token)}"
+    
+    # Try to get from cache if no token (public model)
+    if not token:
+        cached = _context_window_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     url = f"https://huggingface.co/{model_id}/raw/main/config.json"
     try:
-        response = requests.get(url, timeout=5)
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        response = requests.get(url, headers=headers, timeout=5)
     except Exception as exc:  # pragma: no cover - network failure fallback
         log.debug("Failed to fetch remote config for %s: %s", model_id, exc)
         return None
@@ -117,7 +130,11 @@ def get_remote_context_window(model_id: str) -> int | None:
         if key in cfg:
             value = cfg[key]
             try:
-                return int(value)
+                result = int(value)
+                # Cache result for public models (no token)
+                if not token:
+                    _context_window_cache[cache_key] = result
+                return result
             except (TypeError, ValueError):
                 log.debug(
                     "Context length key %s in %s was non-integer: %s",
@@ -127,6 +144,9 @@ def get_remote_context_window(model_id: str) -> int | None:
                 )
                 continue
 
+    # Cache None result for public models to avoid repeated failed requests
+    if not token:
+        _context_window_cache[cache_key] = None
     return None
 
 
@@ -532,7 +552,8 @@ class HuggingFaceProvider(BaseProvider):
         """Get the maximum token limit for a given model."""
         log.debug(f"Getting context length for model: {model}")
 
-        remote_context = get_remote_context_window(model)
+        # Use HF_TOKEN from secrets if available for gated models
+        remote_context = get_remote_context_window(model, token=self.api_key)
         if remote_context:
             log.debug(
                 "Using remote config context length: %s tokens (model=%s)",

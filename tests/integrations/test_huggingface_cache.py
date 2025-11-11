@@ -151,7 +151,11 @@ class TestDownloadManager:
             # Mock asyncio.gather to return an exception
             test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
             import asyncio
-            with patch("asyncio.gather", return_value=[test_error]):
+            
+            async def mock_gather(*args, **kwargs):
+                return [test_error]
+            
+            with patch("asyncio.gather", side_effect=mock_gather):
                 with pytest.raises(GatedRepoError) as exc_info:
                     await manager.download_huggingface_repo(
                         repo_id="test/repo",
@@ -189,7 +193,11 @@ class TestDownloadManager:
             
             # Mock asyncio.gather to return exceptions
             import asyncio
-            with patch("asyncio.gather", return_value=[error1, error2]):
+            
+            async def mock_gather(*args, **kwargs):
+                return [error1, error2]
+            
+            with patch("asyncio.gather", side_effect=mock_gather):
                 with pytest.raises(GatedRepoError) as exc_info:
                     await manager.download_huggingface_repo(
                         repo_id="test/repo",
