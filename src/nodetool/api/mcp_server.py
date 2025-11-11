@@ -75,7 +75,22 @@ def get_hf_token() -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
+    token = get_secret_sync("HF_TOKEN")
+    if token:
+        # Check if it came from environment or database
+        if os.environ.get("HF_TOKEN"):
+            log.debug("HF_TOKEN found in environment variables (mcp_server)")
+        else:
+            log.debug("HF_TOKEN found in database secrets (mcp_server)")
+        return token
+    
+    # Fallback to direct environment check
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        log.debug("HF_TOKEN found in environment variables - direct check (mcp_server)")
+    else:
+        log.debug("HF_TOKEN not found in environment or database secrets (mcp_server)")
+    return token
 
 # Initialize FastMCP server
 mcp = FastMCP("NodeTool API Server")
@@ -2120,7 +2135,12 @@ async def query_hf_model_files(
     try:
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = get_hf_token()
-        api = HfApi(token=token) if token else HfApi()
+        if token:
+            log.debug(f"query_hf_model_files: Querying files for {repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+            api = HfApi(token=token)
+        else:
+            log.debug(f"query_hf_model_files: Querying files for {repo_id} without HF_TOKEN - gated models may not be accessible")
+            api = HfApi()
         file_infos = api.list_repo_files(
             repo_id=repo_id, repo_type=repo_type, revision=revision
         )
@@ -2185,7 +2205,12 @@ async def search_hf_hub_models(
 
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = get_hf_token()
-    api = HfApi(token=token) if token else HfApi()
+    if token:
+        log.debug(f"search_hf_hub_models: Searching with query '{query}' using HF_TOKEN (token length: {len(token)} chars)")
+        api = HfApi(token=token)
+    else:
+        log.debug(f"search_hf_hub_models: Searching with query '{query}' without HF_TOKEN - gated models may not be accessible")
+        api = HfApi()
 
     # Parse filter
     filter_dict = {}
@@ -2226,7 +2251,12 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
 
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = get_hf_token()
-    api = HfApi(token=token) if token else HfApi()
+    if token:
+        log.debug(f"get_hf_model_info: Fetching model info for {repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+        api = HfApi(token=token)
+    else:
+        log.debug(f"get_hf_model_info: Fetching model info for {repo_id} without HF_TOKEN - gated models may not be accessible")
+        api = HfApi()
     return asdict(api.model_info(repo_id))
 
 

@@ -43,7 +43,22 @@ def get_hf_token() -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
+    token = get_secret_sync("HF_TOKEN")
+    if token:
+        # Check if it came from environment or database
+        if os.environ.get("HF_TOKEN"):
+            log.debug("HF_TOKEN found in environment variables (huggingface_models)")
+        else:
+            log.debug("HF_TOKEN found in database secrets (huggingface_models)")
+        return token
+    
+    # Fallback to direct environment check
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        log.debug("HF_TOKEN found in environment variables - direct check (huggingface_models)")
+    else:
+        log.debug("HF_TOKEN not found in environment or database secrets (huggingface_models)")
+    return token
 
 # Cache configuration
 CACHE_VERSION = "1.0"
@@ -75,7 +90,12 @@ async def unified_model(
     if model_info is None or model_info.siblings is None:
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = get_hf_token()
-        api = HfApi(token=token) if token else HfApi()
+        if token:
+            log.debug(f"unified_model: Fetching model info for {model.repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+            api = HfApi(token=token)
+        else:
+            log.debug(f"unified_model: Fetching model info for {model.repo_id} without HF_TOKEN - gated models may not be accessible")
+            api = HfApi()
         # Run blocking HfApi call in thread executor
         model_info = await asyncio.get_event_loop().run_in_executor(
             None, lambda: api.model_info(model.repo_id, files_metadata=True)
@@ -163,6 +183,10 @@ async def fetch_model_readme(model_id: str) -> str | None:
     try:
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = get_hf_token()
+        if token:
+            log.debug(f"fetch_model_readme: Downloading README for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
+        else:
+            log.debug(f"fetch_model_readme: Downloading README for {model_id} without HF_TOKEN - gated models may not be accessible")
         readme_path = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: hf_hub_download(
@@ -199,7 +223,12 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     log.debug(f"Cache miss for model info: {model_id}")
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = get_hf_token()
-    api = HfApi(token=token) if token else HfApi()
+    if token:
+        log.debug(f"fetch_model_info: Fetching model info for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
+        api = HfApi(token=token)
+    else:
+        log.debug(f"fetch_model_info: Fetching model info for {model_id} without HF_TOKEN - gated models may not be accessible")
+        api = HfApi()
     try:
         model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
             None, lambda: api.model_info(model_id, files_metadata=True)
@@ -570,7 +599,14 @@ async def _fetch_models_by_author(**kwargs) -> list[ModelInfo]:
     """
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = get_hf_token()
-    api = HfApi(token=token) if token else HfApi()
+    if token:
+        author = kwargs.get("author", "unknown")
+        log.debug(f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)")
+        api = HfApi(token=token)
+    else:
+        author = kwargs.get("author", "unknown")
+        log.debug(f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible")
+        api = HfApi()
     # Run the blocking call in a thread executor
     models = await asyncio.get_event_loop().run_in_executor(
         None, lambda: api.list_models(**kwargs)

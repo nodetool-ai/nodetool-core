@@ -48,7 +48,22 @@ def get_hf_token() -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
+    token = get_secret_sync("HF_TOKEN")
+    if token:
+        # Check if it came from environment or database
+        if os.environ.get("HF_TOKEN"):
+            log.debug("HF_TOKEN found in environment variables")
+        else:
+            log.debug("HF_TOKEN found in database secrets")
+        return token
+    
+    # Fallback to direct environment check
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        log.debug("HF_TOKEN found in environment variables (direct check)")
+    else:
+        log.debug("HF_TOKEN not found in environment or database secrets")
+    return token
 
 
 def has_cached_files(
@@ -118,7 +133,12 @@ def get_repo_size(
     """
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = get_hf_token()
-    api = HfApi(token=token) if token else HfApi()
+    if token:
+        log.debug(f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars)")
+        api = HfApi(token=token)
+    else:
+        log.debug(f"get_repo_size: No HF_TOKEN available for repo {repo_id} - gated models may not be accessible")
+        api = HfApi()
     files = api.list_repo_tree(repo_id, recursive=True)
     files = [file for file in files if isinstance(file, RepoFile)]
     filtered_files = filter_repo_paths(files, allow_patterns, ignore_patterns)
@@ -196,7 +216,12 @@ class DownloadManager:
     def __init__(self):
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = get_hf_token()
-        self.api = HfApi(token=token) if token else HfApi()
+        if token:
+            log.debug(f"DownloadManager initialized with HF_TOKEN (length: {len(token)} chars)")
+            self.api = HfApi(token=token)
+        else:
+            log.debug("DownloadManager initialized without HF_TOKEN - gated models may not be accessible")
+            self.api = HfApi()
         self.logger = get_logger(__name__)
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
@@ -317,6 +342,12 @@ class DownloadManager:
         id = repo_id if path is None else f"{repo_id}/{path}"
         state = self.downloads[id]
 
+        # Log HF_TOKEN presence for debugging
+        if self.token:
+            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token length: {len(self.token)} chars)")
+        else:
+            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN - gated models may not be accessible")
+
         self.logger.info(f"Fetching file list for repo: {repo_id}")
         files = self.api.list_repo_tree(repo_id, recursive=True)
         files = [file for file in files if isinstance(file, RepoFile)]
@@ -401,7 +432,12 @@ def download_file(repo_id: str, filename: str, queue: Queue, token: str | None =
     # Use HF_TOKEN from secrets if available for gated model downloads
     if token is None:
         token = get_hf_token()
-
+    
+    if token:
+        log.debug(f"download_file: Downloading {repo_id}/{filename} with HF_TOKEN (token length: {len(token)} chars)")
+    else:
+        log.debug(f"download_file: Downloading {repo_id}/{filename} without HF_TOKEN - gated models may not be accessible")
+    
     local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,

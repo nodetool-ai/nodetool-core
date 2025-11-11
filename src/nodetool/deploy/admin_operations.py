@@ -46,7 +46,22 @@ def get_hf_token() -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    return get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
+    token = get_secret_sync("HF_TOKEN")
+    if token:
+        # Check if it came from environment or database
+        if os.environ.get("HF_TOKEN"):
+            logger.debug("HF_TOKEN found in environment variables (admin_operations)")
+        else:
+            logger.debug("HF_TOKEN found in database secrets (admin_operations)")
+        return token
+    
+    # Fallback to direct environment check
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        logger.debug("HF_TOKEN found in environment variables - direct check (admin_operations)")
+    else:
+        logger.debug("HF_TOKEN not found in environment or database secrets (admin_operations)")
+    return token
 
 
 class AdminDownloadManager:
@@ -55,7 +70,12 @@ class AdminDownloadManager:
     def __init__(self):
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = get_hf_token()
-        self.api = HfApi(token=token) if token else HfApi()
+        if token:
+            logger.debug(f"AdminDownloadManager initialized with HF_TOKEN (token length: {len(token)} chars)")
+            self.api = HfApi(token=token)
+        else:
+            logger.debug("AdminDownloadManager initialized without HF_TOKEN - gated models may not be accessible")
+            self.api = HfApi()
         self.process_pool = ThreadPoolExecutor(max_workers=4)
         self.manager = Manager()
         self.token = token
@@ -89,6 +109,10 @@ class AdminDownloadManager:
                     "current_file": file_path,
                 }
                 # Use HF_TOKEN from secrets if available for gated model downloads
+                if self.token:
+                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} with HF_TOKEN (token length: {len(self.token)} chars)")
+                else:
+                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} without HF_TOKEN - gated models may not be accessible")
                 local_path = hf_hub_download(repo_id, file_path, cache_dir=cache_dir, token=self.token)
                 yield {
                     "status": "completed",
@@ -160,6 +184,10 @@ class AdminDownloadManager:
 
                 try:
                     # Download individual file - use HF_TOKEN from secrets if available for gated model downloads
+                    if self.token:
+                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} with HF_TOKEN (token length: {len(self.token)} chars)")
+                    else:
+                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} without HF_TOKEN - gated models may not be accessible")
                     local_path = hf_hub_download(
                         repo_id=repo_id, filename=file.path, cache_dir=cache_dir, token=self.token
                     )
