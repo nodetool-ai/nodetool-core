@@ -163,10 +163,17 @@ async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> 
     """
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(f"http://127.0.0.1:{port}/api/tags")
-            return response.status_code == 200
+            # Try localhost first, then 127.0.0.1
+            for host in ("localhost", "127.0.0.1"):
+                try:
+                    response = await client.get(f"http://{host}:{port}/api/tags")
+                    if response.status_code == 200:
+                        return True
+                except Exception:
+                    continue
     except Exception:
-        return False
+        pass
+    return False
 
 
 def setup_ollama_url():
@@ -183,22 +190,28 @@ def setup_ollama_url():
         # Use synchronous check during startup
         import httpx
 
-        try:
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get("http://127.0.0.1:11434/api/tags")
-                if response.status_code == 200:
-                    os.environ["OLLAMA_API_URL"] = "http://127.0.0.1:11434"
-                    log.info(
-                        "Detected Ollama running on port 11434, set OLLAMA_API_URL"
-                    )
-                    return
-        except Exception:
-            pass
+        with httpx.Client(timeout=2.0) as client:
+            # Prefer localhost (per developer request), fallback to 127.0.0.1
+            candidates = [
+                ("http://localhost:11434", "/api/tags"),
+                ("http://127.0.0.1:11434", "/api/tags"),
+            ]
+            for base, path in candidates:
+                try:
+                    response = client.get(base + path)
+                    if response.status_code == 200:
+                        os.environ["OLLAMA_API_URL"] = base
+                        log.info(
+                            f"Detected Ollama at {base}, enabling provider via OLLAMA_API_URL"
+                        )
+                        return
+                except Exception:
+                    continue
     except Exception as e:
         log.debug(f"Could not check Ollama availability: {e}")
 
     log.info(
-        "Ollama not detected at port 11434, using default OLLAMA_API_URL from environment"
+        "Ollama not detected at localhost:11434, using OLLAMA_API_URL from environment if provided"
     )
 
 
