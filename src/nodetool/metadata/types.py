@@ -495,6 +495,8 @@ class LanguageModel(BaseType):
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""
+    path: str | None = None
+    supported_tasks: list[str] = Field(default_factory=list)
 
 
 class ImageModel(BaseType):
@@ -502,6 +504,8 @@ class ImageModel(BaseType):
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""
+    path: str | None = None
+    supported_tasks: list[str] = Field(default_factory=list)
 
 
 class TTSModel(BaseType):
@@ -509,6 +513,7 @@ class TTSModel(BaseType):
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""
+    path: str | None = None
     voices: list[str] = Field(default_factory=list)
     selected_voice: str = ""
 
@@ -518,6 +523,7 @@ class ASRModel(BaseType):
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""
+    path: str | None = None
 
 
 class VideoModel(BaseType):
@@ -525,6 +531,8 @@ class VideoModel(BaseType):
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""
+    path: str | None = None
+    supported_tasks: list[str] = Field(default_factory=list)
 
 
 class LlamaModel(BaseType):
@@ -616,34 +624,6 @@ class HFTextToImage(HuggingFaceModel):
     type: Literal["hf.text_to_image"] = "hf.text_to_image"
 
 
-class HFCheckpointModel(HuggingFaceModel):
-    type: Literal["hf.checkpoint_model"] = "hf.checkpoint_model"
-
-
-class HFStableDiffusion(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion"] = "hf.stable_diffusion"  # type: ignore[override]
-
-
-class HFStableDiffusionXL(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion_xl"] = "hf.stable_diffusion_xl"  # type: ignore[override]
-
-
-class HFStableDiffusion3(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion_3"] = "hf.stable_diffusion_3"  # type: ignore[override]
-
-
-class HFFlux(HFCheckpointModel):
-    type: Literal["hf.flux"] = "hf.flux"  # type: ignore[override]
-
-
-class HFQwenImage(HFCheckpointModel):
-    type: Literal["hf.qwen_image"] = "hf.qwen_image"  # type: ignore[override]
-
-
-class HFLTXV(HFCheckpointModel):
-    type: Literal["hf.ltxv"] = "hf.ltxv"  # type: ignore[override]
-
-
 class HFControlNet(HuggingFaceModel):
     type: Literal["hf.controlnet"] = "hf.controlnet"
 
@@ -674,14 +654,6 @@ class HFLoraSDXL(HuggingFaceModel):
 
 class HFLoraQwenImage(HuggingFaceModel):
     type: Literal["hf.lora_qwen_image"] = "hf.lora_qwen_image"
-
-
-class HFStableDiffusionXLTurbo(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_xl_turbo"] = "hf.stable_diffusion_xl_turbo"
-
-
-class HFStableDiffusionUpscale(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_upscale"] = "hf.stable_diffusion_upscale"
 
 
 class HFImageToText(HuggingFaceModel):

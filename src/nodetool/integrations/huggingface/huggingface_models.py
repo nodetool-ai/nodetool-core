@@ -14,7 +14,6 @@ The module uses a hybrid caching approach:
 """
 
 import asyncio
-import aiofiles
 from nodetool.types.model import CachedFileInfo, UnifiedModel
 from huggingface_hub import CacheNotFound, scan_cache_dir, HfApi, ModelInfo
 from typing import List
@@ -47,52 +46,21 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    log.debug(f"get_hf_token (huggingface_models): Looking up HF_TOKEN for user_id={user_id}")
     
-    # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug(f"get_hf_token (huggingface_models): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
     
-    # 2. Try to get from database if user_id is available
-    if user_id is None:
-        log.debug("get_hf_token (huggingface_models): No user_id provided, checking ResourceScope")
-        # Try to get user_id from ResourceScope if available
-        try:
-            scope = maybe_scope()
-            # Note: ResourceScope doesn't store user_id directly
-            # In real usage, user_id would come from authentication context
-        except Exception:
-            pass
-    
     if user_id:
-        log.debug(f"get_hf_token (huggingface_models): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
-        try:
-            token = await get_secret("HF_TOKEN", user_id)
-            if token:
-                log.debug(f"get_hf_token (huggingface_models): HF_TOKEN found in database secrets for user_id={user_id}")
-                return token
-            else:
-                log.debug(f"get_hf_token (huggingface_models): HF_TOKEN not found in database for user_id={user_id}")
-        except Exception as e:
-            log.debug(f"get_hf_token (huggingface_models): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
-    else:
-        log.debug("get_hf_token (huggingface_models): No user_id available, skipping database lookup")
-    
-    log.debug(f"get_hf_token (huggingface_models): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
+        return await get_secret("HF_TOKEN", user_id)
     return None
 
-# Cache configuration
-CACHE_VERSION = "1.0"
-CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
-
 # Model info cache instance - 24 hour TTL for model metadata
-_model_info_cache = ModelCache("model_info")
-MODEL_INFO_CACHE_TTL = 24 * 3600  # 24 hours in seconds
+MODEL_INFO_CACHE = ModelCache("model_info")
+MODEL_INFO_CACHE_TTL = 30 * 24 * 3600  # 30 days in seconds
 
-GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
-MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
+# GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
+# MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
 
 
 def size_on_disk(model_info: ModelInfo) -> int:
@@ -138,6 +106,7 @@ async def unified_model(
 
     if size is None:
         if model.path:
+            # For single-file models, only get the size of the specific file
             size = next(
                 (
                     sib.size
@@ -146,9 +115,10 @@ async def unified_model(
                 ),
                 None,
             )
-            if size is None:
-                size = size_on_disk(model_info)
+            # Don't fall back to entire repo size for single-file models
+            # If the file size isn't found, keep it as None
         else:
+            # For multi-file models without a specific path, use total repo size
             size = size_on_disk(model_info)
     return UnifiedModel(
         id=model_id,
@@ -236,16 +206,13 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     Returns:
         ModelInfo: The model info, or None if not found.
     """
-    cache_key = f"model_info:{model_id}"
-
+    # cache_key = f"model_info:{model_id}"
     # Try to get from cache first
-    cached_result = _model_info_cache.get(cache_key)
-    if cached_result is not None:
-        log.debug(f"Cache hit for model info: {model_id}")
-        return cached_result
+    # cached_result = MODEL_INFO_CACHE.get(cache_key)
+    # if cached_result is not None:
+    #     log.debug(f"Cache hit for model info: {model_id}")
+    #     return cached_result
 
-    # Cache miss - fetch from API
-    log.debug(f"Cache miss for model info: {model_id}")
     # Use HF_TOKEN from secrets if available for gated model downloads
     # Note: user_id would need to be passed from caller context
     token = await get_hf_token()
@@ -255,18 +222,14 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     else:
         log.debug(f"fetch_model_info: Fetching model info for {model_id} without HF_TOKEN - gated models may not be accessible")
         api = HfApi()
-    try:
-        model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: api.model_info(model_id, files_metadata=True)
-        )
 
-        # Store in cache for future use
-        _model_info_cache.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
-        log.debug(f"Cached model info for: {model_id}")
+    model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: api.model_info(model_id, files_metadata=True)
+    )
 
-    except Exception as e:
-        log.debug(f"Failed to fetch model info for {model_id}: {e}")
-        return None
+    # # Store in cache for future use
+    # MODEL_INFO_CACHE.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
+    # log.debug(f"Cached model info for: {model_id}")
 
     return model_info
 
@@ -302,23 +265,32 @@ def model_type_from_model_info(
 
 
 async def read_cached_hf_files(
-    tags: list[str] = [], any_tags: bool = False
+    pipeline_tag: str,
+    library_name: str | None = None,
+    tags: list[str] = [], 
 ) -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
-    Results are cached for 1 hour to avoid repeated filesystem scanning.
 
     Returns:
         List[CachedFileInfo]: A list of CachedFileInfo objects found in the cache.
     """
+    tags = [tag.lower() for tag in tags]
+
     # Create cache key based on tags filter
-    cache_key = f"cached_hf_files:{','.join(sorted(tags))}:{any_tags}"
+    cache_key_parts = [pipeline_tag]
+
+    if library_name:
+        cache_key_parts.append(library_name)
+    if tags:
+        cache_key_parts.extend(tags)
 
     # Check cache first
-    cached_result = _model_info_cache.get(cache_key)
-    if cached_result is not None:
-        log.debug(f"Returning {len(cached_result)} cached HF files from cache")
-        return cached_result
+    # cache_key = ":".join(cache_key_parts)
+    # cached_result = MODEL_INFO_CACHE.get(cache_key)
+    # if cached_result is not None:
+    #     log.debug(f"Returning {len(cached_result)} cached HF files from cache")
+    #     return cached_result
 
     # Offload scanning HF cache to a thread (filesystem heavy)
     try:
@@ -330,53 +302,45 @@ async def read_cached_hf_files(
 
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
     log.debug(
-        f"Scanning {len(model_repos)} HF repos for files with tags={tags}, any_tags={any_tags}"
+        f"Scanning {len(model_repos)} HF repos for files with tags={tags}"
     )
 
     cached_files = []
 
-    try:
-        model_infos = await asyncio.gather(
-            *[fetch_model_info(repo.repo_id) for repo in model_repos],
-            return_exceptions=True,  # Don't fail entire operation if one model fails
-        )
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo.repo_id) for repo in model_repos],
+        return_exceptions=True,  # Don't fail entire operation if one model fails
+    )
 
-        for repo, model_info in zip(model_repos, model_infos):
-            # Handle exceptions from individual fetch_model_info calls
-            if isinstance(model_info, Exception):
-                log.debug(
-                    f"Failed to fetch model info for {repo.repo_id}: {model_info}"
-                )
-                continue
+    for repo, model_info in zip(model_repos, model_infos):
+        # Handle exceptions from individual fetch_model_info calls
+        if isinstance(model_info, BaseException):
+            log.debug(
+                f"Failed to fetch model info for {repo.repo_id}: {model_info}"
+            )
+            continue
 
-            # Get cached files from all revisions
-            if model_info is None:
-                continue
-            if any_tags:
-                if tags and not any(tag in (model_info.tags or []) for tag in tags):
-                    continue
-            else:
-                if tags and not all(tag in (model_info.tags or []) for tag in tags):
-                    continue
-            for revision in repo.revisions:
-                for file_info in revision.files:
-                    cached_files.append(
-                        CachedFileInfo(
-                            repo_id=repo.repo_id,
-                            file_name=file_info.file_name,
-                            size_on_disk=file_info.size_on_disk,
-                        )
+        # Get cached files from all revisions
+        if model_info is None:
+            continue
+        if model_info.pipeline_tag != pipeline_tag:
+            continue
+        if library_name and model_info.library_name != library_name:
+            continue
+        if tags and not all(tag.lower() in (model_info.tags or []) for tag in tags):
+            continue
+        for revision in repo.revisions:
+            for file_info in revision.files:
+                cached_files.append(
+                    CachedFileInfo(
+                        repo_id=repo.repo_id,
+                        file_name=file_info.file_name,
+                        size_on_disk=file_info.size_on_disk,
                     )
+                )
 
-        # Cache for 1 hour (3600 seconds) - even partial results
-        _model_info_cache.set(cache_key, cached_files, ttl=3600)
-        log.debug(
-            f"Cached {len(cached_files)} HF files with tags={tags}, any_tags={any_tags}"
-        )
-
-    except Exception as e:
-        log.error(f"Error processing cached HF files: {e}", exc_info=True)
-        # Return what we have, don't cache on error
+    # Cache for 1 hour (3600 seconds) - even partial results
+    # MODEL_INFO_CACHE.set(cache_key, cached_files, ttl=MODEL_INFO_CACHE_TTL)
 
     return cached_files
 
@@ -392,7 +356,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     cache_key = "cached_hf_models:all"
 
     # Check cache first
-    cached_result = _model_info_cache.get(cache_key)
+    cached_result = MODEL_INFO_CACHE.get(cache_key)
     if cached_result is not None:
         log.info(
             f"✓ CACHE HIT: Returning {len(cached_result)} cached HF models (skipping scan)"
@@ -423,7 +387,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
 
         for repo, model_info in zip(model_repos, model_infos):
             # Handle exceptions from individual fetch_model_info calls
-            if isinstance(model_info, Exception):
+            if isinstance(model_info, BaseException):
                 log.debug(
                     f"Failed to fetch model info for {repo.repo_id}: {model_info}"
                 )
@@ -461,7 +425,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
         log.info(
             f"💾 Attempting to cache {len(models)} HF models with key: {cache_key}"
         )
-        _model_info_cache.set(cache_key, models, ttl=3600)
+        MODEL_INFO_CACHE.set(cache_key, models, ttl=3600)
         log.info(f"✓ Successfully cached {len(models)} HF models (TTL: 1 hour)")
 
     except Exception as e:
@@ -483,8 +447,7 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files(tags=["gguf", "text-generation"])
-    seen: set[str] = set()
+    cached = await read_cached_hf_files("text-generation", "transformers", tags=["gguf"])
     results: list[LanguageModel] = []
 
     for f in cached:
@@ -494,14 +457,12 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
         if not fname.lower().endswith(".gguf"):
             continue
         model_id = f"{f.repo_id}:{fname}"
-        if model_id in seen:
-            continue
-        seen.add(model_id)
         display = f"{f.repo_id.split('/')[-1]} • {fname}"
         results.append(
             LanguageModel(
                 id=model_id,
                 name=display,
+                path=fname,
                 provider=Provider.LlamaCpp,
             )
         )
@@ -511,28 +472,9 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-VLLM_SUPPORTED = {
-    "llama",
-    "mistral",
-    "mixtral",
-    "falcon",
-    "baichuan",
-    "qwen",
-    "qwen2",
-    "chatglm",
-    "opt",
-    "bloom",
-    "gpt_neox",
-    "gptj",
-    "gpt_neo",
-    "pythia",
-    "yi",
-}
-
-
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     """Return LanguageModel entries tagged as vLLM in cached metadata files."""
-    cached = await read_cached_hf_files(tags=list(VLLM_SUPPORTED), any_tags=True)
+    cached = await read_cached_hf_files("text-generation", "transformers", tags=["vllm"])
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
 
@@ -566,10 +508,7 @@ async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
 async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos that look suitable
-    for MLX runtime (Apple Silicon). We use heuristics:
-
-    - Prefer repos under the "mlx-community" org
-    - Additionally include repos that have tags containing "mlx" or "mflux" in their model info
+    for MLX runtime (Apple Silicon). 
 
     Each qualifying repo yields a LanguageModel with id "<repo_id>" (no file suffix),
     because MLX loaders typically resolve the correct shard/quantization internally.
@@ -577,9 +516,7 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    # Search for models with "mlx" or "mflux" tags - both are MLX-compatible
-    # Use any_tags=True to find models with either tag
-    cached = await read_cached_hf_files(tags=["mlx", "mflux"], any_tags=True)
+    cached = await read_cached_hf_files("text-generation", "mlx")
     result: dict[str, LanguageModel] = {}
 
     for model in cached:
@@ -594,6 +531,64 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     return list(result.values())
 
 
+async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
+    """
+    Return ImageModel entries for cached Hugging Face repos that are text-to-image models
+    """
+    cached = await read_cached_hf_files("text-to-image", None)
+    result: dict[str, ImageModel] = {}
+
+    for model in cached:
+        fname = model.file_name
+        display = model.repo_id.split("/")[-1]
+        if fname.lower().endswith(".gguf"):
+            model_id = f"{model.repo_id}:{fname}"
+            result[model_id] = ImageModel(
+                id=model.repo_id,
+                name=display,
+                path=fname,
+                provider=Provider.HuggingFace,
+                supported_tasks=["text_to_image"],
+            )
+        else:
+            result[model.repo_id] = ImageModel(
+                id=model.repo_id,
+                name=display,
+                provider=Provider.HuggingFace,
+                supported_tasks=["text_to_image"],
+            )
+
+    return list(result.values())
+
+async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
+    """
+    Return ImageModel entries for cached Hugging Face repos that are text-to-image models
+    """
+    cached = await read_cached_hf_files("image-to-image", None)
+    result: dict[str, ImageModel] = {}
+
+    for model in cached:
+        fname = model.file_name
+        display = model.repo_id.split("/")[-1]
+        if fname.lower().endswith(".gguf"):
+            model_id = f"{model.repo_id}:{fname}"
+            result[model_id] = ImageModel(
+                id=model.repo_id,
+                name=display,
+                path=fname,
+                provider=Provider.HuggingFace,
+                supported_tasks=["image_to_image"],
+            )
+        else:
+            result[model.repo_id] = ImageModel(
+                id=model.repo_id,
+                name=display,
+                provider=Provider.HuggingFace,
+                supported_tasks=["image_to_image"],
+            )
+
+    return list(result.values())
+
 async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are mflux models
@@ -603,7 +598,7 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
         List[ImageModel]: MLX-compatible image models (mflux) discovered in the HF cache
     """
     # Search for models with "mflux" tag - these are MLX-compatible image generation models
-    cached = await read_cached_hf_files(tags=["mflux"])
+    cached = await read_cached_hf_files("text-to-image", None, tags=["mflux"])
     result: dict[str, ImageModel] = {}
 
     for model in cached:
@@ -764,15 +759,15 @@ def delete_cached_hf_model(model_id: str) -> bool:
 
                 # Purge all HuggingFace caches after successful deletion
                 log.info("Purging HuggingFace model caches after model deletion")
-                _model_info_cache.delete_pattern("cached_hf_*")
+                MODEL_INFO_CACHE.delete_pattern("cached_hf_*")
 
                 return True
     return False
 
 
-GGUF_AUTHORS = [
-    "unsloth",
-    "ggml-org",
+# GGUF_AUTHORS = [
+    # "unsloth",
+    # "ggml-org",
     # "LiquidAI",
     # "gabriellarson",
     # "openbmb",
@@ -784,40 +779,44 @@ GGUF_AUTHORS = [
     # "mtgv",
     # "lm-sys",
     # "NousResearch",
-]
-MLX_AUTHORS = ["mlx-community"]
+# ]
+# MLX_AUTHORS = ["mlx-community"]
 
 
-async def save_gguf_models_to_file() -> None:
-    models = await get_gguf_language_models_from_authors(
-        GGUF_AUTHORS, limit=500, sort="downloads", tags="gguf"
-    )
-    with open(GGUF_MODELS_FILE, "w") as f:
-        json.dump(
-            [model.model_dump() for model in models if model is not None], f, indent=2
-        )
+# async def save_gguf_models_to_file() -> None:
+#     models = await get_gguf_language_models_from_authors(
+#         GGUF_AUTHORS, limit=500, sort="downloads", tags="gguf"
+#     )
+#     with open(GGUF_MODELS_FILE, "w") as f:
+#         json.dump(
+#             [model.model_dump() for model in models if model is not None], f, indent=2
+#         )
 
 
-async def save_mlx_models_to_file() -> None:
-    models = await get_mlx_language_models_from_authors(
-        MLX_AUTHORS, limit=1000, sort="downloads", tags="mlx"
-    )
-    with open(MLX_MODELS_FILE, "w") as f:
-        json.dump([model.model_dump() for model in models], f, indent=2)
+# async def save_mlx_models_to_file() -> None:
+#     models = await get_mlx_language_models_from_authors(
+#         MLX_AUTHORS, limit=1000, sort="downloads", tags="mlx"
+#     )
+#     with open(MLX_MODELS_FILE, "w") as f:
+#         json.dump([model.model_dump() for model in models], f, indent=2)
 
 
-async def load_gguf_models_from_file() -> List[UnifiedModel]:
-    async with aiofiles.open(GGUF_MODELS_FILE, "r") as f:
-        content = await f.read()
-        return [UnifiedModel(**model) for model in json.loads(content)]
+# async def load_gguf_models_from_file() -> List[UnifiedModel]:
+#     async with aiofiles.open(GGUF_MODELS_FILE, "r") as f:
+#         content = await f.read()
+#         return [UnifiedModel(**model) for model in json.loads(content)]
 
 
-async def load_mlx_models_from_file() -> List[UnifiedModel]:
-    async with aiofiles.open(MLX_MODELS_FILE, "r") as f:
-        content = await f.read()
-        return [UnifiedModel(**model) for model in json.loads(content)]
+# async def load_mlx_models_from_file() -> List[UnifiedModel]:
+#     async with aiofiles.open(MLX_MODELS_FILE, "r") as f:
+#         content = await f.read()
+#         return [UnifiedModel(**model) for model in json.loads(content)]
 
 
 if __name__ == "__main__":
-    asyncio.run(save_gguf_models_to_file())
-    asyncio.run(save_mlx_models_to_file())
+    async def main():
+        cached = await read_cached_hf_files("text-to-image", None)
+        for model in cached:
+            print(model)
+    
+    asyncio.run(main())

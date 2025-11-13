@@ -279,7 +279,6 @@ class SQLiteScopeResources(DBResources):
 
         # Return memoized adapter if available
         if table_name in self._adapters:
-            log.debug(f"Using memoized SQLite adapter for table '{table_name}'")
             return self._adapters[table_name]
 
         # Create new adapter

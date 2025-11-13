@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from nodetool.config.environment import Environment
 
-from nodetool.integrations.huggingface.huggingface_cache import (
+from nodetool.integrations.huggingface.hf_websocket import (
     huggingface_download_endpoint,
 )
 from nodetool.integrations.websocket.websocket_runner import WebSocketRunner

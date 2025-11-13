@@ -5,9 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch, Mock
 from huggingface_hub.errors import GatedRepoError
 from huggingface_hub.hf_api import RepoFile
 
-from nodetool.integrations.huggingface.huggingface_cache import (
+from nodetool.integrations.huggingface.hf_download import (
     DownloadManager,
     DownloadState,
+)
+from nodetool.integrations.huggingface.hf_cache import (
     filter_repo_paths,
     has_cached_files,
 )
@@ -138,8 +140,8 @@ class TestDownloadManager:
         
         # Mock try_to_load_from_cache to return None (files not cached)
         with (
-            patch("nodetool.integrations.huggingface.huggingface_cache.try_to_load_from_cache", return_value=None),
-            patch("nodetool.integrations.huggingface.huggingface_cache.filter_repo_paths") as mock_filter,
+            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
+            patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
             patch("asyncio.get_running_loop") as mock_loop,
         ):
             # Mock filter to return files
@@ -179,8 +181,8 @@ class TestDownloadManager:
         manager.downloads["test/repo"] = state
         
         with (
-            patch("nodetool.integrations.huggingface.huggingface_cache.try_to_load_from_cache", return_value=None),
-            patch("nodetool.integrations.huggingface.huggingface_cache.filter_repo_paths") as mock_filter,
+            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
+            patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
         ):
             mock_file = MagicMock(spec=RepoFile)
             mock_file.path = "test.safetensors"
@@ -210,12 +212,12 @@ class TestDownloadManager:
     @pytest.mark.asyncio
     async def test_endpoint_sends_error_on_exception(self, mock_websocket):
         """Test that huggingface_download_endpoint sends error message on exception."""
-        from nodetool.integrations.huggingface.huggingface_cache import huggingface_download_endpoint
+        from nodetool.integrations.huggingface.hf_websocket import huggingface_download_endpoint
         
         test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
         
         with (
-            patch("nodetool.integrations.huggingface.huggingface_cache.DownloadManager") as mock_manager_class,
+            patch("nodetool.integrations.huggingface.hf_download.DownloadManager") as mock_manager_class,
         ):
             mock_manager = MagicMock()
             mock_manager.start_download = AsyncMock(side_effect=test_error)

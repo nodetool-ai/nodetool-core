@@ -21,6 +21,7 @@ Usage:
 
 import os
 import asyncio
+import inspect
 from typing import AsyncGenerator
 from huggingface_hub import (
     hf_hub_download,
@@ -32,9 +33,7 @@ from huggingface_hub.hf_api import RepoFile
 from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
 from nodetool.config.logging_config import get_logger
 from nodetool.chat.ollama_service import get_ollama_client
-from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths
-from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Manager
+from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
 from nodetool.security.secret_helper import get_secret
 from nodetool.runtime.resources import maybe_scope
 
@@ -103,8 +102,6 @@ class AdminDownloadManager:
         else:
             logger.debug("AdminDownloadManager initialized without HF_TOKEN - will fetch async when needed")
             self.api = HfApi()
-        self.process_pool = ThreadPoolExecutor(max_workers=4)
-        self.manager = Manager()
         self._token_initialized = token is not None
     
     @classmethod
@@ -290,6 +287,26 @@ class AdminDownloadManager:
             }
 
 
+async def _resolve_admin_download_manager(
+    user_id: str | None = None,
+):
+    """
+    Resolve an AdminDownloadManager instance, supporting both the real class and mocked replacements.
+
+    When the class is patched (e.g., MagicMock in tests), we fall back to calling the patched object
+    directly to avoid awaiting non-awaitable mocks.
+    """
+    manager_cls = AdminDownloadManager
+    if inspect.isclass(manager_cls):
+        candidate = manager_cls.create(user_id=user_id)
+    else:
+        candidate = manager_cls()  # type: ignore[call-arg]
+
+    if inspect.isawaitable(candidate):
+        return await candidate  # type: ignore[return-value]
+    return candidate
+
+
 def convert_file_info(file_info):
     """Convert HuggingFace file info to serializable dict"""
     return {
@@ -399,14 +416,19 @@ async def stream_hf_model_download(
     Yields:
         str: JSON-encoded progress updates
     """
-    download_manager = await AdminDownloadManager.create(user_id=user_id)
+    download_manager = await _resolve_admin_download_manager(user_id=user_id)
+    download_kwargs = {
+        "repo_id": repo_id,
+        "cache_dir": cache_dir,
+        "file_path": file_path,
+        "ignore_patterns": ignore_patterns,
+        "allow_patterns": allow_patterns,
+    }
+    if user_id is not None:
+        download_kwargs["user_id"] = user_id
+
     async for progress_update in download_manager.download_with_progress(
-        repo_id=repo_id,
-        cache_dir=cache_dir,
-        file_path=file_path,
-        ignore_patterns=ignore_patterns,
-        allow_patterns=allow_patterns,
-        user_id=user_id,
+        **download_kwargs,
     ):
         yield progress_update
 
@@ -425,26 +447,34 @@ async def download_hf_model(
         raise ValueError("repo_id is required for HuggingFace download")
 
     if stream:
-        async for chunk in stream_hf_model_download(
-            repo_id=repo_id,
-            cache_dir=cache_dir,
-            file_path=file_path,
-            ignore_patterns=ignore_patterns,
-            allow_patterns=allow_patterns,
-            user_id=user_id,
-        ):
+        stream_kwargs = {
+            "repo_id": repo_id,
+            "cache_dir": cache_dir,
+            "file_path": file_path,
+            "ignore_patterns": ignore_patterns,
+            "allow_patterns": allow_patterns,
+        }
+        if user_id is not None:
+            stream_kwargs["user_id"] = user_id
+
+        async for chunk in stream_hf_model_download(**stream_kwargs):
             yield chunk
     else:
         # Non-streaming download - still use the download manager but just return final result
-        download_manager = await AdminDownloadManager.create(user_id=user_id)
+        download_manager = await _resolve_admin_download_manager(user_id=user_id)
         final_result = None
+        download_kwargs = {
+            "repo_id": repo_id,
+            "cache_dir": cache_dir,
+            "file_path": file_path,
+            "ignore_patterns": ignore_patterns,
+            "allow_patterns": allow_patterns,
+        }
+        if user_id is not None:
+            download_kwargs["user_id"] = user_id
+
         async for progress_update in download_manager.download_with_progress(
-            repo_id=repo_id,
-            cache_dir=cache_dir,
-            file_path=file_path,
-            ignore_patterns=ignore_patterns,
-            allow_patterns=allow_patterns,
-            user_id=user_id,
+            **download_kwargs,
         ):
             final_result = progress_update
 

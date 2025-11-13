@@ -121,6 +121,7 @@ class ComfyRunpodProvider(BaseProvider):
                 id="flux1-dev-fp8.safetensors",
                 name="flux1-dev-fp8.safetensors",
                 provider=ProviderEnum.ComfyRunpod,
+                supported_tasks=["text_to_image", "image_to_image"],
             )
         ]
 

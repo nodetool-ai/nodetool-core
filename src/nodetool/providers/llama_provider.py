@@ -26,6 +26,10 @@ from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.security.secret_helper import get_secret_sync
+from nodetool.integrations.huggingface.huggingface_models import (
+    get_llamacpp_language_models_from_hf_cache,
+)
+
 import os
 
 log = get_logger(__name__)
@@ -368,18 +372,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Returns:
             List of LanguageModel instances for Llama.cpp
         """
-        try:
-            # Import the function to get locally cached GGUF models
-            from nodetool.integrations.huggingface.huggingface_models import (
-                get_llamacpp_language_models_from_hf_cache,
-            )
-
-            models = await get_llamacpp_language_models_from_hf_cache()
-            log.debug(f"Found {len(models)} Llama.cpp (GGUF) models in HF cache")
-            return models
-        except Exception as e:
-            log.error(f"Error getting Llama.cpp models: {e}")
-            return []
+        models = await get_llamacpp_language_models_from_hf_cache()
+        log.debug(f"Found {len(models)} Llama.cpp (GGUF) models in HF cache")
+        return models
 
     async def generate_messages(
         self,

@@ -38,12 +38,6 @@ progress_manager = ProgressManager(console=console)
 def cleanup_progress():
     """Cleanup function to ensure progress bars are stopped on exit and resources are freed."""
     progress_manager.stop()
-    # Clean up thread-local resources to avoid hanging on exit
-    try:
-        Environment.sync_shutdown()
-    except Exception as e:
-        logger = get_logger("nodetool")
-        logger.debug(f"Error during environment shutdown: {e}")
 
 
 # Register cleanup function

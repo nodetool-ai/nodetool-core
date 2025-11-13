@@ -42,7 +42,6 @@ class SupabaseScopeResources(DBResources):
 
         # Return memoized adapter if available
         if table_name in self._adapters:
-            log.debug(f"Using memoized Supabase adapter for table '{table_name}'")
             return self._adapters[table_name]
 
         # Create new adapter
@@ -68,6 +67,5 @@ class SupabaseScopeResources(DBResources):
             try:
                 if hasattr(adapter, "close"):
                     await adapter.close()
-                log.debug(f"Closed Supabase adapter for table '{table_name}'")
             except Exception as e:
                 log.warning(f"Error closing Supabase adapter for '{table_name}': {e}")

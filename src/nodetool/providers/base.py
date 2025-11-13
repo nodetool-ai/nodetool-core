@@ -511,6 +511,7 @@ class BaseProvider(ABC):
         params: Any,  # TextToImageParams, but imported later to avoid circular deps
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
     ) -> bytes:
         """Generate an image from a text prompt.
 
@@ -520,7 +521,7 @@ class BaseProvider(ABC):
             params: Text-to-image generation parameters
             timeout_s: Optional timeout in seconds
             context: Optional processing context
-
+            node_id: Optional node ID for progress tracking
         Returns:
             Raw image bytes (PNG, JPEG, etc.)
 
@@ -539,6 +540,7 @@ class BaseProvider(ABC):
         params: Any,  # ImageToImageParams, but imported later to avoid circular deps
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
     ) -> bytes:
         """Transform an image based on a text prompt.
 
@@ -549,7 +551,7 @@ class BaseProvider(ABC):
             params: Image-to-image generation parameters
             timeout_s: Optional timeout in seconds
             context: Optional processing context
-
+            node_id: Optional node ID for progress tracking
         Returns:
             Raw image bytes (PNG, JPEG, etc.)
 
@@ -643,6 +645,7 @@ class BaseProvider(ABC):
         params: Any,  # TextToVideoParams, but imported later to avoid circular deps
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
     ) -> bytes:
         """Generate a video from a text prompt.
 
@@ -659,7 +662,7 @@ class BaseProvider(ABC):
                 - resolution: Video resolution (e.g., "720p", "1080p")
             timeout_s: Optional timeout in seconds
             context: Optional processing context
-
+            node_id: Optional node ID for progress tracking
         Returns:
             Raw video bytes (MP4, WebM, etc.)
 
@@ -678,6 +681,7 @@ class BaseProvider(ABC):
         params: Any,  # ImageToVideoParams, but imported later to avoid circular deps
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
         **kwargs: Any,
     ) -> bytes:
         """Generate a video from an input image.

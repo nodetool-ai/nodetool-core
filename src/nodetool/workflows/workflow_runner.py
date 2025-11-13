@@ -67,8 +67,8 @@ BASE_DELAY = 1  # seconds
 MAX_DELAY = 60  # seconds
 
 
-# Define a global GPU lock
-gpu_lock = asyncio.Lock()
+# Define a process-wide GPU lock that is safe across event loops/threads
+gpu_lock = threading.Lock()
 
 
 async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
@@ -77,19 +77,29 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
 
     If the lock is currently held, this function will send a "waiting"
     status update for the node before attempting to acquire the lock.
-    This function wraps the `gpu_lock.acquire()` call.
+    This function wraps the `gpu_lock.acquire()` call using a background thread
+    so the asyncio event loop remains non-blocking.
 
     Args:
         node (BaseNode): The node attempting to acquire the GPU lock.
         context (ProcessingContext): The processing context, used for sending updates.
     """
-    if gpu_lock.locked():  # Check if the lock is currently held by another coroutine
+    if gpu_lock.locked():  # Check if the lock is currently held by another task
         log.debug(
             f"Node {node.get_title()} is waiting for GPU lock as it is currently held."
         )
         await node.send_update(context, status="waiting")
-    # The acquire call itself will ensure FIFO waiting if the lock is contended.
-    await gpu_lock.acquire()
+    # Acquire the threading lock without blocking the event loop.
+    # Use short timeouts so task cancellation does not leak a held lock.
+    loop = asyncio.get_running_loop()
+    while True:
+        acquired = await loop.run_in_executor(
+            None, lambda: gpu_lock.acquire(timeout=0.2)
+        )
+        if acquired:
+            break
+        # Yield briefly before retrying to avoid busy-waiting
+        await asyncio.sleep(0.05)
     log.debug(f"Node {node.get_title()} acquired GPU lock")
 
 

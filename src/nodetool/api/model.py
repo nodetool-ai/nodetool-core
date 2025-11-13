@@ -2,7 +2,7 @@
 
 from fastapi.responses import StreamingResponse
 from fastapi import HTTPException
-from nodetool.integrations.huggingface.huggingface_cache import has_cached_files
+from nodetool.integrations.huggingface.hf_cache import has_cached_files
 from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
@@ -11,10 +11,6 @@ from nodetool.integrations.huggingface.huggingface_file import (
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
-from nodetool.ml.models.image_models import get_all_image_models
-from nodetool.ml.models.tts_models import get_all_tts_models
-from nodetool.ml.models.asr_models import get_all_asr_models
-from nodetool.ml.models.video_models import get_all_video_models
 from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
@@ -36,12 +32,22 @@ from nodetool.api.utils import current_user
 from fastapi import APIRouter, Depends, Query
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
-    load_gguf_models_from_file,
-    load_mlx_models_from_file,
     read_cached_hf_models,
 )
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
-from nodetool.workflows.recommended_models import get_recommended_models
+from nodetool.workflows.recommended_models import (
+    get_recommended_models,
+    get_recommended_image_models,
+    get_recommended_text_to_image_models,
+    get_recommended_image_to_image_models,
+    get_recommended_language_models,
+    get_recommended_language_text_generation_models,
+    get_recommended_language_embedding_models,
+    get_recommended_text_to_video_models,
+    get_recommended_image_to_video_models,
+    get_recommended_asr_models,
+    get_recommended_tts_models,
+)
 from nodetool.chat.ollama_service import (
     get_ollama_models,
     get_ollama_models_unified,
@@ -51,10 +57,15 @@ from nodetool.chat.ollama_service import (
 )
 from pathlib import Path
 import asyncio
+import os
 from nodetool.io.file_explorer import (
     get_ollama_models_dir as common_get_ollama_models_dir,
     open_in_explorer as common_open_in_explorer,
 )
+from huggingface_hub import HfApi
+from huggingface_hub.hf_api import RepoFile
+from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -79,14 +90,14 @@ async def get_all_models(user: str) -> list[UnifiedModel]:
         for model_list in get_recommended_models().values()
         for model in model_list
     ]
-    gguf_models = await load_gguf_models_from_file()
-    mlx_models = await load_mlx_models_from_file()
+    # gguf_models = await load_gguf_models_from_file()
+    # mlx_models = await load_mlx_models_from_file()
     hf_models = await read_cached_hf_models()
     ollama_models_unified = await get_ollama_models_unified()
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = (
-        hf_models + ollama_models_unified + reco_models + gguf_models + mlx_models
+        hf_models + ollama_models_unified + reco_models 
     )
     return dedupe_models(all_models)
 
@@ -98,10 +109,6 @@ async def recommended_models(user: str) -> list[UnifiedModel]:
         for model_list in get_recommended_models().values()
         for model in model_list
     ]
-    gguf_models = await load_gguf_models_from_file()
-    mlx_models = await load_mlx_models_from_file()
-    models.extend(gguf_models)
-    models.extend(mlx_models)
     return [model for model in models if model is not None]
 
 
@@ -213,6 +220,77 @@ async def recommended_models_endpoint(
     return await recommended_models(user)
 
 
+@router.get("/recommended/image")
+async def recommended_image_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    # Determine platform on the server; do not accept client override
+    return get_recommended_image_models()
+
+
+@router.get("/recommended/image/text-to-image")
+async def recommended_text_to_image_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_text_to_image_models()
+
+
+@router.get("/recommended/image/image-to-image")
+async def recommended_image_to_image_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_image_to_image_models()
+
+
+@router.get("/recommended/language")
+async def recommended_language_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_language_models()
+
+
+@router.get("/recommended/language/text-generation")
+async def recommended_language_text_generation_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_language_text_generation_models()
+
+
+@router.get("/recommended/language/embedding")
+async def recommended_language_embedding_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_language_embedding_models()
+
+
+@router.get("/recommended/asr")
+async def recommended_asr_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_asr_models()
+
+
+@router.get("/recommended/tts")
+async def recommended_tts_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_tts_models()
+
+
+@router.get("/recommended/video/text-to-video")
+async def recommended_text_to_video_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_text_to_video_models()
+
+
+@router.get("/recommended/video/image-to-video")
+async def recommended_image_to_video_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return get_recommended_image_to_video_models()
+
+
 @router.get("/all")
 async def get_all_models_endpoint(
     user: str = Depends(current_user),
@@ -267,46 +345,12 @@ async def get_language_models_by_provider(
             f"Provider {provider.value} not available: {e}. "
             "This may be expected if the provider package is not installed."
         )
-        # For MLX provider, try to discover models from cache even if provider isn't installed
-        if provider == Provider.MLX:
-            try:
-                from nodetool.integrations.huggingface.huggingface_models import (
-                    get_mlx_language_models_from_hf_cache,
-                )
-                log.info(
-                    "MLX provider not available, attempting to discover MLX models from HF cache directly"
-                )
-                models = await get_mlx_language_models_from_hf_cache()
-                log.info(f"Discovered {len(models)} MLX models from HuggingFace cache")
-                return models
-            except Exception as cache_error:
-                log.debug(
-                    f"Failed to discover MLX models from cache: {cache_error}",
-                    exc_info=True,
-                )
         return []
     except Exception as e:
         log.error(
             f"Error getting language models from {provider.value}: {e}",
             exc_info=True,
         )
-        # For MLX provider, try to discover models from cache even on error
-        if provider == Provider.MLX:
-            try:
-                from nodetool.integrations.huggingface.huggingface_models import (
-                    get_mlx_language_models_from_hf_cache,
-                )
-                log.info(
-                    "Error occurred with MLX provider, attempting to discover MLX models from HF cache as fallback"
-                )
-                models = await get_mlx_language_models_from_hf_cache()
-                log.info(f"Discovered {len(models)} MLX models from HuggingFace cache")
-                return models
-            except Exception as cache_error:
-                log.warning(
-                    f"Failed to discover MLX models from cache as fallback: {cache_error}",
-                    exc_info=True,
-                )
         return []
 
 
@@ -502,6 +546,68 @@ async def try_cache_repos(
         CachedRepo(repo_id=repo_id, downloaded=downloaded)
         for repo_id, downloaded in zip(repos, results)
     ]
+
+
+class HFCacheCheckRequest(BaseModel):
+    """
+    Request payload to check Hugging Face cache presence for matched files.
+    
+    allow_pattern and ignore_pattern accept a single pattern or a list of patterns.
+    Patterns are Unix shell-style wildcards (fnmatch).
+    """
+    repo_id: str
+    allow_pattern: str | list[str] | None = None
+    ignore_pattern: str | list[str] | None = None
+
+
+class HFCacheCheckResponse(BaseModel):
+    repo_id: str
+    all_present: bool
+    total_files: int
+    missing: list[str]
+
+
+@router.post("/huggingface/check_cache")
+async def check_huggingface_cache(
+    body: HFCacheCheckRequest, user: str = Depends(current_user)
+) -> HFCacheCheckResponse:
+    """
+    Check if all files in a Hugging Face repo that match allow/ignore patterns
+    exist in the local HF cache.
+
+    Returns a concise status including whether all are present and which are missing.
+    """
+
+    # Use HF token if available (for gated models)
+    token = await get_hf_token(user)
+    api = HfApi(token=token) if token else HfApi()
+
+    # List repo files and filter
+    items = api.list_repo_tree(body.repo_id, recursive=True)
+    files = [f for f in items if isinstance(f, RepoFile)]
+    filtered_files = filter_repo_paths(
+        files, body.allow_pattern, body.ignore_pattern
+    )
+
+    # Check cache presence concurrently (offload to threads)
+    def is_cached(file: RepoFile) -> bool:
+        try:
+            cache_path = try_to_load_from_cache(body.repo_id, file.path)
+            return cache_path is not None and os.path.exists(cache_path)
+        except Exception:
+            return False
+
+    results = await asyncio.gather(
+        *(asyncio.to_thread(is_cached, f) for f in filtered_files)
+    )
+
+    missing = [f.path for f, ok in zip(filtered_files, results) if not ok]
+    return HFCacheCheckResponse(
+        repo_id=body.repo_id,
+        all_present=len(missing) == 0,
+        total_files=len(filtered_files),
+        missing=missing,
+    )
 
 
 if not Environment.is_production():

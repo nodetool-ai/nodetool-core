@@ -40,8 +40,6 @@ from nodetool.metadata.types import (
     HFObjectDetection,
     HFImageSegmentation,
     HFTextToImage,
-    HFStableDiffusion,
-    HFStableDiffusionXL,
     HFImageToText,
     HFImageToImage,
     HFImageToVideo,
@@ -133,8 +131,6 @@ UnionType = (
     | HFObjectDetection
     | HFImageSegmentation
     | HFTextToImage
-    | HFStableDiffusion
-    | HFStableDiffusionXL
     | HFImageToText
     | HFImageToImage
     | HFImageToVideo

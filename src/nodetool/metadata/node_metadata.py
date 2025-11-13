@@ -172,32 +172,24 @@ def get_node_classes_from_module(
     Returns:
         A list of BaseNode subclasses found in the module
     """
-    try:
-        # Import the module
-        module = importlib.import_module(module_name)
+    # Import the module
+    module = importlib.import_module(module_name)
 
-        # Find all BaseNode subclasses in the module
-        node_classes = []
-        for name, obj in inspect.getmembers(module):
-            # Check if it's a class and a subclass of BaseNode (but not BaseNode itself)
-            if (
-                inspect.isclass(obj)
-                and issubclass(obj, BaseNode)
-                and obj is not BaseNode
-                and obj.__module__ == module_name
-            ):
-                node_classes.append(obj)
-                if verbose:
-                    logger.debug(f"Found node class: {obj.__name__} in {module_name}")
+    # Find all BaseNode subclasses in the module
+    node_classes = []
+    for name, obj in inspect.getmembers(module):
+        # Check if it's a class and a subclass of BaseNode (but not BaseNode itself)
+        if (
+            inspect.isclass(obj)
+            and issubclass(obj, BaseNode)
+            and obj is not BaseNode
+            and obj.__module__ == module_name
+        ):
+            node_classes.append(obj)
+            if verbose:
+                logger.debug(f"Found node class: {obj.__name__} in {module_name}")
 
-        return node_classes
-    except ImportError as e:
-        traceback.print_exc()
-        logger.error(f"Error importing module {module_name}: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Error processing module {module_name}: {e}")
-        return []
+    return node_classes
 
 
 def get_node_classes_from_namespace(

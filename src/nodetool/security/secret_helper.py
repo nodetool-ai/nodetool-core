@@ -10,7 +10,7 @@ import asyncio
 from typing import Optional
 from nodetool.models.secret import Secret
 from nodetool.config.logging_config import get_logger
-from nodetool.runtime.resources import require_scope
+from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
@@ -108,29 +108,33 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
         log.debug(f"Secret '{key}' found in environment variable")
         return env_value
 
-    # 2. Try to get user_id from ResourceScope if not provided
-    if user_id is None:
-        user_id = require_scope().user_id
+    # 2. Try to infer user_id from ResourceScope if not provided
+    resolved_user_id = user_id
+    if resolved_user_id is None:
+        scope = maybe_scope()
+        resolved_user_id = getattr(scope, "user_id", None) if scope else None
 
-    try:
-        loop = asyncio.get_running_loop()
-        # We're in an async context with a running loop
-        # We can't use asyncio.run() here, so we'll use nest_asyncio if available
-        # Otherwise, we'll skip database lookup to avoid blocking
+    # 3. If we have a user_id, attempt database lookup via the async helper
+    if resolved_user_id is not None:
         try:
-            import nest_asyncio
-            nest_asyncio.apply()
-            # Now we can use run_until_complete even with a running loop
-            return loop.run_until_complete(get_secret(key, user_id, default))
-        except ImportError:
-            # nest_asyncio not available, skip database lookup
-            log.debug(
-                f"Running event loop detected but nest_asyncio not available. "
-                f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database lookup from sync context."
-            )
-    except RuntimeError:
-        # No running event loop, we can use asyncio.run()
-        return asyncio.run(get_secret(key, user_id, default))
+            loop = asyncio.get_running_loop()
+            try:
+                import nest_asyncio
+
+                nest_asyncio.apply()
+                return loop.run_until_complete(get_secret(key, resolved_user_id, default))
+            except ImportError:
+                log.debug(
+                    f"Running event loop detected but nest_asyncio not available. "
+                    f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database "
+                    "lookup from sync context."
+                )
+        except RuntimeError:
+            return asyncio.run(get_secret(key, resolved_user_id, default))
+    else:
+        log.debug(
+            f"No user_id available for secret '{key}'. Skipping database lookup and falling back to defaults."
+        )
 
     # 4. Return default if provided
     if default is not None:

@@ -370,11 +370,13 @@ class OpenAIProvider(BaseProvider):
                 id="sora-2",
                 name="Sora 2",
                 provider=Provider.OpenAI,
+                supported_tasks=["text_to_video"],
             ),
             VideoModel(
                 id="sora-2-pro",
                 name="Sora 2 Pro",
                 provider=Provider.OpenAI,
+                supported_tasks=["text_to_video"],
             ),
         ]
 
@@ -414,11 +416,15 @@ class OpenAIProvider(BaseProvider):
 
         models: List[ImageModel] = []
         for config in image_models_config:
+            model_id = config["id"]
+            # Heuristic: GPT-Image-1 supports both generate and edit; DALL-E legacy considered text-to-image only
+            tasks = ["text_to_image", "image_to_image"] if model_id == "gpt-image-1" else ["text_to_image"]
             models.append(
                 ImageModel(
-                    id=config["id"],
+                    id=model_id,
                     name=config["name"],
                     provider=Provider.OpenAI,
+                    supported_tasks=tasks,
                 )
             )
 

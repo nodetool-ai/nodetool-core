@@ -219,11 +219,18 @@ async def fetch_image_models_from_hf_provider(
                                 )
                                 continue
 
+                            task = (
+                                "text_to_image"
+                                if pipeline_tag == "text-to-image"
+                                else "image_to_image" if pipeline_tag == "image-to-image" else None
+                            )
+                            supported = [task] if task else []
                             models.append(
                                 ImageModel(
                                     id=model_id,
                                     name=model_name,
                                     provider=provider_enum,
+                                    supported_tasks=supported,
                                 )
                             )
 
@@ -348,11 +355,18 @@ async def fetch_video_models_from_hf_provider(
                                 )
                                 continue
 
+                            task = (
+                                "text_to_video"
+                                if pipeline_tag == "text-to-video"
+                                else "image_to_video" if pipeline_tag == "image-to-video" else None
+                            )
+                            supported = [task] if task else []
                             models.append(
                                 VideoModel(
                                     id=model_id,
                                     name=model_name,
                                     provider=provider_enum,
+                                    supported_tasks=supported,
                                 )
                             )
 
@@ -1406,9 +1420,25 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
-            models = await fetch_image_models_from_hf_provider(
+            # Fetch both text-to-image and image-to-image and union tasks by model id
+            t2i = await fetch_image_models_from_hf_provider(
                 self.inference_provider, "text-to-image", self.api_key
             )
+            i2i = await fetch_image_models_from_hf_provider(
+                self.inference_provider, "image-to-image", self.api_key
+            )
+            by_id: dict[str, ImageModel] = {}
+            for m in t2i + i2i:
+                if m.id not in by_id:
+                    by_id[m.id] = m
+                else:
+                    # Union supported tasks
+                    existing = by_id[m.id]
+                    tasks = set(existing.supported_tasks or [])
+                    for t in (m.supported_tasks or []):
+                        tasks.add(t)
+                    existing.supported_tasks = list(tasks)
+            models = list(by_id.values())
             log.debug(
                 f"Fetched {len(models)} image models for HF inference provider: {self.inference_provider}"
             )
@@ -1437,9 +1467,24 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
-            models = await fetch_video_models_from_hf_provider(
+            # Fetch both text-to-video and image-to-video and union tasks by model id
+            t2v = await fetch_video_models_from_hf_provider(
                 self.inference_provider, "text-to-video"
             )
+            i2v = await fetch_video_models_from_hf_provider(
+                self.inference_provider, "image-to-video"
+            )
+            by_id: dict[str, VideoModel] = {}
+            for m in t2v + i2v:
+                if m.id not in by_id:
+                    by_id[m.id] = m
+                else:
+                    existing = by_id[m.id]
+                    tasks = set(existing.supported_tasks or [])
+                    for t in (m.supported_tasks or []):
+                        tasks.add(t)
+                    existing.supported_tasks = list(tasks)
+            models = list(by_id.values())
             log.debug(
                 f"Fetched {len(models)} video models for HF inference provider: {self.inference_provider}"
             )

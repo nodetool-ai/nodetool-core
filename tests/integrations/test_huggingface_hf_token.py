@@ -4,8 +4,8 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from nodetool.models.secret import Secret
-from nodetool.integrations.huggingface.huggingface_cache import (
-    get_hf_token,
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
+from nodetool.integrations.huggingface.hf_download import (
     DownloadManager,
     download_file,
 )
@@ -137,7 +137,7 @@ class TestHFTokenFromDatabase:
 
             # Mock hf_hub_download to verify token is passed
             with patch(
-                "nodetool.integrations.huggingface.huggingface_cache.hf_hub_download"
+                "nodetool.integrations.huggingface.hf_download.hf_hub_download"
             ) as mock_download:
                 mock_download.return_value = "/path/to/file"
 
@@ -300,7 +300,7 @@ class TestHFTokenDatabaseIntegration:
                 # Verify DownloadManager would use this token
                 # (In real implementation, we'd pass user_id and use async get_secret)
                 with patch(
-                    "nodetool.integrations.huggingface.huggingface_cache.get_hf_token",
+                    "nodetool.integrations.huggingface.hf_auth.get_hf_token",
                     return_value=retrieved_token,
                 ):
                     manager = await DownloadManager.create()

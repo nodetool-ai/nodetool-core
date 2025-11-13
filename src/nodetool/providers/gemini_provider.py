@@ -166,32 +166,38 @@ class GeminiProvider(BaseProvider):
                 id="gemini-2.0-flash-preview-image-generation",
                 name="Gemini 2.0 Flash Preview (Image Gen)",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image", "image_to_image"],
             ),
             ImageModel(
                 id="gemini-2.5-flash-image-preview",
                 name="Gemini 2.5 Flash (Image Preview)",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image", "image_to_image"],
             ),
             # Imagen models (text-to-image only)
             ImageModel(
                 id="imagen-3.0-generate-001",
                 name="Imagen 3.0 Generate 001",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image"],
             ),
             ImageModel(
                 id="imagen-3.0-generate-002",
                 name="Imagen 3.0 Generate 002",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image"],
             ),
             ImageModel(
                 id="imagen-4.0-generate-preview-06-06",
                 name="Imagen 4.0 Preview",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image"],
             ),
             ImageModel(
                 id="imagen-4.0-ultra-generate-preview-06-06",
                 name="Imagen 4.0 Ultra Preview",
                 provider=Provider.Gemini,
+                supported_tasks=["text_to_image"],
             ),
         ]
 

@@ -56,7 +56,12 @@ class ComfyLocalProvider(BaseProvider):
                 name = item.get("name") if isinstance(item, dict) else str(item)
                 if name:
                     models.append(
-                        ImageModel(id=name, name=name, provider=ProviderEnum.ComfyLocal)
+                        ImageModel(
+                            id=name,
+                            name=name,
+                            provider=ProviderEnum.ComfyLocal,
+                            supported_tasks=["text_to_image", "image_to_image"],
+                        )
                     )
             if not models:
                 log.warning("No checkpoints reported by local ComfyUI")
