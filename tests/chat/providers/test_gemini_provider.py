@@ -269,21 +269,35 @@ class TestGeminiProvider(BaseProviderTest):
 
         async def mock_stream():
             for chunk in gemini_chunks:
+                part_text = chunk["candidates"][0]["content"]["parts"][0]["text"]
+                mock_part = MagicMock()
+                mock_part.text = part_text
+
+                mock_content = MagicMock()
+                mock_content.parts = [mock_part]
+
+                mock_candidate = MagicMock()
+                mock_candidate.content = mock_content
+
                 mock_chunk = MagicMock()
-                mock_chunk.text = chunk["candidates"][0]["content"]["parts"][0]["text"]
+                mock_chunk.candidates = [mock_candidate]
                 yield mock_chunk
 
-        return patch(
-            "google.generativeai.GenerativeModel.generate_content",
-            return_value=mock_stream(),
-        )  # type: ignore[return-value]
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content_stream = AsyncMock(return_value=mock_stream())
+        mock_client.models = mock_models
+
+        return patch.object(GeminiProvider, "get_client", return_value=mock_client)
 
     def mock_error_response(self, error_type: str) -> MagicMock:
         """Mock Gemini API error response."""
         error = self.create_gemini_error(error_type)
-        return patch(
-            "google.generativeai.GenerativeModel.generate_content", side_effect=error
-        )  # type: ignore[return-value]
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content = AsyncMock(side_effect=error)
+        mock_client.models = mock_models
+        return patch.object(GeminiProvider, "get_client", return_value=mock_client)
 
     def create_mock_tool(self):
         """Create a mock tool for testing tool calling."""
