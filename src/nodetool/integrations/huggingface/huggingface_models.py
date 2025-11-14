@@ -21,6 +21,7 @@ import os
 import shutil
 import json
 from pathlib import Path
+from fnmatch import fnmatch
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
@@ -33,6 +34,18 @@ from nodetool.workflows.recommended_models import get_recommended_models
 from nodetool.ml.models.model_cache import ModelCache
 from nodetool.security.secret_helper import get_secret
 from nodetool.runtime.resources import maybe_scope
+
+SINGLE_FILE_DIFFUSION_EXTENSIONS = (
+    ".safetensors",
+    ".ckpt",
+    ".bin",
+    ".pt",
+    ".pth",
+)
+SINGLE_FILE_DIFFUSION_TAGS = {
+    "diffusers:stablediffusionpipeline",
+    "diffusers:stablediffusionxlpipeline",
+}
 
 log = get_logger(__name__)
 
@@ -58,19 +71,77 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
 # Model info cache instance - 24 hour TTL for model metadata
 MODEL_INFO_CACHE = ModelCache("model_info")
 MODEL_INFO_CACHE_TTL = 30 * 24 * 3600  # 30 days in seconds
+# Backwards compatibility alias for legacy references in tests
+_model_info_cache = MODEL_INFO_CACHE  # noqa: F841
 
 # GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
 # MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
 
 
-def size_on_disk(model_info: ModelInfo) -> int:
-    return sum(sib.size for sib in (model_info.siblings or []) if sib.size is not None)
+def size_on_disk(
+    model_info: ModelInfo,
+    allow_patterns: list[str] | None = None,
+    ignore_patterns: list[str] | None = None,
+) -> int:
+    """Calculate the total size of files matching the given patterns.
+    
+    Args:
+        model_info: ModelInfo object containing siblings list
+        allow_patterns: List of patterns to allow (Unix shell-style wildcards)
+        ignore_patterns: List of patterns to ignore (Unix shell-style wildcards)
+    
+    Returns:
+        Total size in bytes of matching files
+    """
+    siblings = model_info.siblings or []
+    total_size = 0
+    
+    for sib in siblings:
+        if sib.size is None:
+            continue
+        
+        if not sib.rfilename:
+            continue
+        
+        if allow_patterns is not None and not any(
+            fnmatch(sib.rfilename, pattern) for pattern in allow_patterns
+        ):
+            continue
+        
+        if ignore_patterns is not None and any(
+            fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns
+        ):
+            continue
+        
+        total_size += sib.size
+    
+    return total_size
 
 
 def has_model_index(model_info: ModelInfo) -> bool:
     return any(
         sib.rfilename == "model_index.json" for sib in (model_info.siblings or [])
     )
+
+
+def _is_single_file_diffusion_weight(file_name: str) -> bool:
+    """
+    Heuristically detect raw checkpoint files (e.g. Stable Diffusion .safetensors)
+    that live at the repo root inside the HF cache.
+    """
+    normalized = file_name.replace("\\", "/")
+    if "/" in normalized:
+        return False
+    lower = normalized.lower()
+    return lower.endswith(SINGLE_FILE_DIFFUSION_EXTENSIONS)
+
+
+def _repo_supports_root_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
+    """Return True if the repo advertises a compatible Stable Diffusion pipeline."""
+    if model_info is None or not model_info.tags:
+        return False
+    tags = {tag.lower() for tag in model_info.tags}
+    return any(tag in tags for tag in SINGLE_FILE_DIFFUSION_TAGS)
 
 
 async def unified_model(
@@ -101,9 +172,6 @@ async def unified_model(
         f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
     )
 
-    # cache_path = try_to_load_from_cache(
-    #     model.repo_id, model.path if model.path is not None else "config.json"
-
     if size is None:
         if model.path:
             # For single-file models, only get the size of the specific file
@@ -119,7 +187,12 @@ async def unified_model(
             # If the file size isn't found, keep it as None
         else:
             # For multi-file models without a specific path, use total repo size
-            size = size_on_disk(model_info)
+            # Respect allow_patterns and ignore_patterns when calculating size
+            size = size_on_disk(
+                model_info,
+                allow_patterns=model.allow_patterns,
+                ignore_patterns=model.ignore_patterns,
+            )
     return UnifiedModel(
         id=model_id,
         repo_id=model.repo_id,
@@ -533,16 +606,22 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
 
 async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     """
-    Return ImageModel entries for cached Hugging Face repos that are text-to-image models
+    Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
+    including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
     """
     cached = await read_cached_hf_files("text-to-image", None)
     result: dict[str, ImageModel] = {}
+    repos_with_single_files: set[str] = set()
+    repo_info_cache: dict[str, ModelInfo | None] = {}
 
     for model in cached:
         fname = model.file_name
         display = model.repo_id.split("/")[-1]
-        if fname.lower().endswith(".gguf"):
+        lower_name = fname.lower()
+        if lower_name.endswith(".gguf"):
             model_id = f"{model.repo_id}:{fname}"
+            repos_with_single_files.add(model.repo_id)
+            result.pop(model.repo_id, None)
             result[model_id] = ImageModel(
                 id=model.repo_id,
                 name=display,
@@ -550,28 +629,59 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
                 provider=Provider.HuggingFace,
                 supported_tasks=["text_to_image"],
             )
-        else:
-            result[model.repo_id] = ImageModel(
-                id=model.repo_id,
-                name=display,
-                provider=Provider.HuggingFace,
-                supported_tasks=["text_to_image"],
-            )
+            continue
+
+        if _is_single_file_diffusion_weight(fname):
+            if model.repo_id not in repo_info_cache:
+                try:
+                    repo_info_cache[model.repo_id] = await fetch_model_info(model.repo_id)
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
+                    repo_info_cache[model.repo_id] = None
+            model_info = repo_info_cache[model.repo_id]
+            if _repo_supports_root_diffusion_checkpoint(model_info):
+                model_id = f"{model.repo_id}:{fname}"
+                repos_with_single_files.add(model.repo_id)
+                result.pop(model.repo_id, None)
+                result[model_id] = ImageModel(
+                    id=model.repo_id,
+                    name=display,
+                    path=fname,
+                    provider=Provider.HuggingFace,
+                    supported_tasks=["text_to_image"],
+                )
+                continue
+
+        if model.repo_id in repos_with_single_files:
+            continue
+
+        result[model.repo_id] = ImageModel(
+            id=model.repo_id,
+            name=display,
+            provider=Provider.HuggingFace,
+            supported_tasks=["text_to_image"],
+        )
 
     return list(result.values())
 
 async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     """
-    Return ImageModel entries for cached Hugging Face repos that are text-to-image models
+    Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
+    including single-file checkpoints stored at the repo root.
     """
     cached = await read_cached_hf_files("image-to-image", None)
     result: dict[str, ImageModel] = {}
+    repos_with_single_files: set[str] = set()
+    repo_info_cache: dict[str, ModelInfo | None] = {}
 
     for model in cached:
         fname = model.file_name
         display = model.repo_id.split("/")[-1]
-        if fname.lower().endswith(".gguf"):
+        lower_name = fname.lower()
+        if lower_name.endswith(".gguf"):
             model_id = f"{model.repo_id}:{fname}"
+            repos_with_single_files.add(model.repo_id)
+            result.pop(model.repo_id, None)
             result[model_id] = ImageModel(
                 id=model.repo_id,
                 name=display,
@@ -579,13 +689,38 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
                 provider=Provider.HuggingFace,
                 supported_tasks=["image_to_image"],
             )
-        else:
-            result[model.repo_id] = ImageModel(
-                id=model.repo_id,
-                name=display,
-                provider=Provider.HuggingFace,
-                supported_tasks=["image_to_image"],
-            )
+            continue
+
+        if _is_single_file_diffusion_weight(fname):
+            if model.repo_id not in repo_info_cache:
+                try:
+                    repo_info_cache[model.repo_id] = await fetch_model_info(model.repo_id)
+                except Exception as exc:  # pragma: no cover
+                    log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
+                    repo_info_cache[model.repo_id] = None
+            model_info = repo_info_cache[model.repo_id]
+            if _repo_supports_root_diffusion_checkpoint(model_info):
+                model_id = f"{model.repo_id}:{fname}"
+                repos_with_single_files.add(model.repo_id)
+                result.pop(model.repo_id, None)
+                result[model_id] = ImageModel(
+                    id=model.repo_id,
+                    name=display,
+                    path=fname,
+                    provider=Provider.HuggingFace,
+                    supported_tasks=["image_to_image"],
+                )
+                continue
+
+        if model.repo_id in repos_with_single_files:
+            continue
+
+        result[model.repo_id] = ImageModel(
+            id=model.repo_id,
+            name=display,
+            provider=Provider.HuggingFace,
+            supported_tasks=["image_to_image"],
+        )
 
     return list(result.values())
 

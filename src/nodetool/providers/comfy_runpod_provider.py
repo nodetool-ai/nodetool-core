@@ -125,7 +125,13 @@ class ComfyRunpodProvider(BaseProvider):
             )
         ]
 
-    async def text_to_image(self, params: TextToImageParams, context=None) -> ImageBytes:
+    async def text_to_image(
+        self,
+        params: TextToImageParams,
+        timeout_s: int | None = None,
+        context=None,
+        node_id: str | None = None,
+    ) -> ImageBytes:
         ckpt = params.model.id
         if not ckpt:
             raise ValueError("ComfyRunpod: model.id (checkpoint) is required")
@@ -232,7 +238,14 @@ class ComfyRunpodProvider(BaseProvider):
 
         return images[0] if images else b""
 
-    async def image_to_image(self, image_bytes: bytes, params: ImageToImageParams, context=None) -> ImageBytes:
+    async def image_to_image(
+        self,
+        image_bytes: bytes,
+        params: ImageToImageParams,
+        timeout_s: int | None = None,
+        context=None,
+        node_id: str | None = None,
+    ) -> ImageBytes:
         ckpt = params.model.id
         if not ckpt:
             raise ValueError("ComfyRunpod: model.id (checkpoint) is required")

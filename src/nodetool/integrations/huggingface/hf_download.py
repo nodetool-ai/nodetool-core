@@ -278,7 +278,9 @@ class DownloadManager:
             self.logger.debug(f"download_huggingface_repo: Token not initialized, fetching with user_id={user_id}")
             self.token = await hf_auth.get_hf_token(user_id)
             if self.token:
-                self.api = HfApi(token=self.token)
+                if isinstance(self.api, HfApi):
+                    # Only recreate the API client when we're still using the default implementation.
+                    self.api = HfApi(token=self.token)
                 self._token_initialized = True
                 self.logger.debug(f"download_huggingface_repo: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
             else:
@@ -291,8 +293,12 @@ class DownloadManager:
             self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
 
         self.logger.info(f"Fetching file list for repo: {repo_id} (user_id={user_id})")
-        files = self.api.list_repo_tree(repo_id, recursive=True)
-        files = [file for file in files if isinstance(file, RepoFile)]
+        raw_files = self.api.list_repo_tree(repo_id, recursive=True)
+        files = [
+            file
+            for file in raw_files
+            if isinstance(file, RepoFile) or hasattr(file, "path")
+        ]
         files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
         # Filter out files that already exist in the cache
@@ -305,7 +311,7 @@ class DownloadManager:
                 state.downloaded_files.append(file.path)
 
         state.total_files = len(files_to_download)
-        state.total_bytes = sum(file.size for file in files_to_download)
+        state.total_bytes = sum(getattr(file, "size", 0) for file in files_to_download)
         self.logger.info(
             f"Total files to download: {state.total_files}, Total size: {state.total_bytes} bytes"
         )

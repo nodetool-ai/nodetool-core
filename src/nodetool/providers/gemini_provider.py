@@ -499,37 +499,15 @@ class GeminiProvider(BaseProvider):
         contents = await self._prepare_messages(messages)
         log.debug(f"Making API call to model {model}")
 
-        # First, attempt the google.generativeai path to honor patched test errors
-        # This call is a no-op in normal runs (returns an async generator) but will
-        # raise immediately when tests patch it with side effects.
-        try:
-            import google.generativeai as genai  # type: ignore
-
-            if hasattr(genai, "GenerativeModel"):
-                _ = genai.GenerativeModel(model).generate_content(contents)  # type: ignore[arg-type]
-        except Exception as patched_err:
-            raise patched_err
-
         try:
             response = await client.models.generate_content(
                 model=model,
                 contents=contents,
                 config=config,
             )
-        except Exception as primary_error:
-            # Some tests patch google.generativeai.GenerativeModel.generate_content
-            # to raise specific errors. Attempt that code path to honor the patch.
-            try:
-                import google.generativeai as genai  # type: ignore
-
-                gen_model = genai.GenerativeModel(model)
-                # This call is expected to raise the patched error in tests
-                _ = gen_model.generate_content(contents)  # type: ignore[arg-type]
-            except Exception as patched_error:
-                # Raise the patched error for the test to assert on
-                raise patched_error
-            # If no patched error occurred, re-raise the original error
-            raise primary_error
+        except Exception as error:
+            log.error(f"Gemini generate_content failed: {error}")
+            raise
         log.debug("Received response from Gemini API")
 
         # Replace the existing content extraction with a call to the helper function
@@ -674,23 +652,9 @@ class GeminiProvider(BaseProvider):
                                 )
                 else:
                     log.debug("Chunk has no candidates")
-        except Exception:
-            # Fallback for tests that patch google.generativeai GenerativeModel.generate_content
-            log.debug(
-                "Falling back to google.generativeai GenerativeModel for streaming"
-            )
-            try:
-                import google.generativeai as genai  # type: ignore
-
-                model_client = genai.GenerativeModel(model)
-                stream = model_client.generate_content(contents)  # type: ignore[arg-type]
-                async for mock_chunk in stream:  # type: ignore
-                    text = getattr(mock_chunk, "text", None)
-                    if isinstance(text, str):
-                        yield Chunk(content=text, done=False)
-            except Exception as e:
-                log.error(f"Streaming fallback failed: {e}")
-                raise
+        except Exception as error:
+            log.error(f"Gemini streaming generate_content_stream failed: {error}")
+            raise
         # The Gemini API stream does not emit an explicit done flag.
         # Emit a synthetic terminal chunk so downstream consumers can close out.
         log.debug("Streaming generation completed; yielding synthetic done chunk")
@@ -711,6 +675,7 @@ class GeminiProvider(BaseProvider):
         params: Any,  # TextToImageParams
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate an image from a text prompt using Gemini models.
 
@@ -820,6 +785,7 @@ class GeminiProvider(BaseProvider):
         params: Any,  # ImageToImageParams
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Transform an image based on a text prompt using Gemini models.
 
@@ -1253,6 +1219,7 @@ class GeminiProvider(BaseProvider):
         params: Any,  # TextToVideoParams
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate a video from a text prompt using Gemini Veo models.
 
@@ -1375,6 +1342,7 @@ class GeminiProvider(BaseProvider):
         params: Any,  # ImageToVideoParams
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate a video from an input image using Gemini Veo models.
 

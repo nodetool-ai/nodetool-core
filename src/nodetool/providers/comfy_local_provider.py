@@ -70,7 +70,13 @@ class ComfyLocalProvider(BaseProvider):
             log.warning("Failed to fetch ComfyUI checkpoints: %s", exc)
             return []
 
-    async def text_to_image(self, params: TextToImageParams, context=None) -> ImageBytes:
+    async def text_to_image(
+        self,
+        params: TextToImageParams,
+        timeout_s: int | None = None,
+        context=None,
+        node_id: str | None = None,
+    ) -> ImageBytes:
         log.debug(
             "ComfyLocal.text_to_image called: model_id=%s prompt_len=%d",
             getattr(params.model, "id", ""),
@@ -190,7 +196,14 @@ class ComfyLocalProvider(BaseProvider):
 
         return images[0] if images else b""
 
-    async def image_to_image(self, image_bytes: bytes, params: ImageToImageParams, context=None) -> ImageBytes:
+    async def image_to_image(
+        self,
+        image_bytes: bytes,
+        params: ImageToImageParams,
+        timeout_s: int | None = None,
+        context=None,
+        node_id: str | None = None,
+    ) -> ImageBytes:
         log.debug(
             "ComfyLocal.image_to_image called: model_id=%s prompt_len=%d bytes=%d",
             getattr(params.model, "id", ""),

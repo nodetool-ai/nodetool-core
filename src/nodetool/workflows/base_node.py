@@ -983,7 +983,6 @@ class BaseNode(BaseModel):
         """
 
         props = self.properties_for_client()
-        print(f"properties: {properties}")
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)

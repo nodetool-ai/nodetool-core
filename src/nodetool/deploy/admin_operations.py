@@ -134,7 +134,9 @@ class AdminDownloadManager:
             logger.debug(f"AdminDownloadManager.download_with_progress: Token not initialized, fetching with user_id={user_id}")
             self.token = await get_hf_token(user_id)
             if self.token:
-                self.api = HfApi(token=self.token)
+                if isinstance(self.api, HfApi):
+                    # Recreate the API client with token only when we're still using the default implementation.
+                    self.api = HfApi(token=self.token)
                 self._token_initialized = True
                 logger.debug(f"AdminDownloadManager.download_with_progress: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
             else:
@@ -180,8 +182,12 @@ class AdminDownloadManager:
             }
 
             # Get file list
-            files = self.api.list_repo_tree(repo_id, recursive=True)
-            files = [file for file in files if isinstance(file, RepoFile)]
+            raw_files = self.api.list_repo_tree(repo_id, recursive=True)
+            files = [
+                file
+                for file in raw_files
+                if isinstance(file, RepoFile) or hasattr(file, "path")
+            ]
             files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
             # Filter out cached files
@@ -195,7 +201,7 @@ class AdminDownloadManager:
                     cached_files.append(file.path)
 
             total_files = len(files_to_download)
-            total_size = sum(file.size for file in files_to_download)
+            total_size = sum(getattr(file, "size", 0) for file in files_to_download)
 
             yield {
                 "status": "progress",
@@ -242,7 +248,7 @@ class AdminDownloadManager:
                         repo_id=repo_id, filename=file.path, cache_dir=cache_dir, token=self.token
                     )
                     downloaded_files.append(file.path)
-                    downloaded_size += file.size
+                    downloaded_size += getattr(file, "size", 0)
 
                     yield {
                         "status": "progress",

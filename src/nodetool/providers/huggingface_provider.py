@@ -1282,6 +1282,7 @@ class HuggingFaceProvider(BaseProvider):
         params: Any,  # TextToImageParams
         timeout_s: int | None = None,
         context: Any = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate an image from a text prompt using HuggingFace text-to-image models.
 
@@ -1342,6 +1343,7 @@ class HuggingFaceProvider(BaseProvider):
         params: Any,  # ImageToImageParams
         timeout_s: int | None = None,
         context: Any = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Transform an image based on a text prompt using HuggingFace image-to-image models.
 
@@ -1500,6 +1502,7 @@ class HuggingFaceProvider(BaseProvider):
         params: Any,  # TextToVideoParams
         timeout_s: int | None = None,
         context: Any = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate a video from a text prompt using HuggingFace text-to-video models.
 

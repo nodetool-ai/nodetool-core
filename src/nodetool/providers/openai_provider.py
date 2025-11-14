@@ -1409,6 +1409,7 @@ class OpenAIProvider(BaseProvider):
         params: TextToImageParams,
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Generate an image from a text prompt using OpenAI's Images API."""
         if not params.prompt:
@@ -1486,6 +1487,7 @@ class OpenAIProvider(BaseProvider):
         params: ImageToImageParams,
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
     ) -> bytes:
         """Transform an image based on a prompt using OpenAI's image editing API."""
         if not image:
@@ -1636,6 +1638,7 @@ class OpenAIProvider(BaseProvider):
         params: TextToVideoParams,
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
         **kwargs: Any,
     ) -> bytes:
         """Generate a video from a text prompt using OpenAI Sora models.
@@ -1817,6 +1820,7 @@ class OpenAIProvider(BaseProvider):
         params: ImageToVideoParams,
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
+        node_id: str | None = None,
         **kwargs: Any,
     ) -> bytes:
         """Generate a video from an input image using OpenAI Sora models.
