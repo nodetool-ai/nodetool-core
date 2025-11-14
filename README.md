@@ -78,9 +78,9 @@ See [docs/cli.md](docs/cli.md) for all commands.
 
 ## 📖 Documentation
 
-- [Concepts and Architecture](concepts/)
+- [Concepts and Architecture](docs/concepts/)
 - [Examples](examples/)
-- [Advanced Usage](advanced/)
+- [DSL & Advanced Usage](docs/dsl.md)
 
 ## 🏗️ Architecture
 
@@ -199,7 +199,7 @@ indexes the chunks in a ChromaDB vector database for later retrieval:
 
 ```python
 import asyncio
-import os
+from pathlib import Path
 from nodetool.dsl.graph import graph, run_graph
 from nodetool.dsl.chroma.collections import Collection
 from nodetool.dsl.chroma.index import IndexTextChunks
@@ -208,18 +208,17 @@ from nodetool.dsl.lib.pymupdf import ExtractText
 from nodetool.dsl.nodetool.os import LoadDocumentFile
 from nodetool.metadata.types import FilePath, LlamaModel
 
-# Set up paths
-dirname = os.path.dirname(__file__)
-file_path = os.path.join(dirname, "deepseek_r1.pdf")
+# Set up paths (sample PDF provided in examples/papers)
+file_path = Path("examples/papers/1706.03762v7.pdf").resolve()
 
 # Create indexing workflow
 g = IndexTextChunks(
     collection=Collection(name="papers"),
     text_chunks=SentenceSplitter(
         text=ExtractText(
-            pdf=LoadDocumentFile(path=FilePath(path=file_path)),
+            pdf=LoadDocumentFile(path=FilePath(path=str(file_path))),
         ),
-        document_id=file_path,
+        document_id=str(file_path),
     ),
 )
 
@@ -295,7 +294,7 @@ const outputs = await response.json();
 The WebSocket API is useful for getting real-time updates on the status of the workflow. It is similar to the streaming
 API, but it uses a more efficient binary encoding. It offers additional features like canceling jobs.
 
-See [run_workflow_websocket.js](examples/run_workflow_websocket.js) for an example.
+See [docs/workflow-api.md](docs/workflow-api.md) for a detailed walkthrough of the WebSocket protocol and sample code.
 
 ```javascript
 const socket = new WebSocket("ws://localhost:8000/predict");
