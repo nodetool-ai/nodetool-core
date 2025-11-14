@@ -140,3 +140,6 @@ nodetool = "nodetool.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nodetool"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/nodetool/py.typed" = "nodetool/py.typed"
