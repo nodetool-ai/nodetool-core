@@ -2375,7 +2375,8 @@ async def run_agent(
             else:
                 log.warning(f"Unknown tool: {tool_name}, skipping")
 
-        provider_instance = get_provider(provider)
+        provider_enum = provider if isinstance(provider, Provider) else Provider(provider)
+        provider_instance = await get_provider(provider_enum)
 
         # Create and execute agent
         agent = Agent(

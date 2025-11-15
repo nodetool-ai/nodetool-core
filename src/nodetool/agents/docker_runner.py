@@ -12,7 +12,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 
 
 async def _run(cfg: dict) -> None:
-    provider = get_provider(Provider[cfg["provider"]])
+    provider = await get_provider(Provider[cfg["provider"]])
     tools = []
     for name in cfg.get("tools", []):
         tool_cls = get_tool_by_name(name)

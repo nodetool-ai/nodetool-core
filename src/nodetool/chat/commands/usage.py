@@ -18,7 +18,7 @@ class UsageCommand(Command):
         if cli.selected_model:
             # Get the provider instance for the selected model
             try:
-                provider_instance = get_provider(cli.selected_model.provider)
+                provider_instance = await get_provider(cli.selected_model.provider)
                 cli.console.print(
                     f"[bold]Usage statistics for provider: {cli.selected_model.provider.value}[/bold]"
                 )

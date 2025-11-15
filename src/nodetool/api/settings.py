@@ -19,6 +19,7 @@ class SettingWithValue(BaseModel):
     description: str
     enum: Optional[List[str]] = None
     value: Optional[Any] = None
+    is_secret: bool = False
 
 
 class SettingsResponse(BaseModel):
@@ -64,9 +65,23 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
         )
 
     settings_registry = get_settings_registry()
+    secrets_registry = get_secrets_registry()
     current_settings = load_settings()  # Load only settings.yaml, not secrets.yaml
 
+    # Load secret values from database
+    from nodetool.models.secret import Secret
+    secret_values = {}
+    for secret_setting in secrets_registry:
+        secret = await Secret.find(user, secret_setting.env_var)
+        if secret:
+            # Don't return the actual secret value, just indicate it's configured
+            secret_values[secret_setting.env_var] = "****"
+        else:
+            secret_values[secret_setting.env_var] = None
+
     settings_with_values = []
+    
+    # Add regular settings
     for setting in settings_registry:
         value = current_settings.get(setting.env_var)
 
@@ -78,6 +93,23 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
                 description=setting.description,
                 value=value,
                 enum=setting.enum,
+                is_secret=False,
+            )
+        )
+    
+    # Add secrets (convert Secret to Setting format)
+    for secret_setting in secrets_registry:
+        value = secret_values.get(secret_setting.env_var)
+
+        settings_with_values.append(
+            SettingWithValue(
+                package_name=secret_setting.package_name,
+                env_var=secret_setting.env_var,
+                group=secret_setting.group,
+                description=secret_setting.description,
+                value=value,
+                enum=None,
+                is_secret=True,
             )
         )
 

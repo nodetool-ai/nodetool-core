@@ -120,7 +120,7 @@ class EditWorkflowCommand(Command):
 
         try:
             # Create GraphPlanner with the existing graph
-            provider = get_provider(cli.selected_model.provider)
+            provider = await get_provider(cli.selected_model.provider)
             planner = GraphPlanner(
                 provider=provider,
                 model=cli.selected_model.id,

@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 import asyncio
+import inspect
 import imaplib
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -355,12 +356,12 @@ class ProcessingContext:
         from nodetool.security.secret_helper import get_secret_required
         return await get_secret_required(key, self.user_id)
 
-    async def get_provider(self, provider_type: Provider):
+    async def get_provider(self, provider_type: Provider | str):
         """
         Get an AI provider instance.
 
         Args:
-            provider_type (Provider): The provider type enum
+            provider_type (Provider | str): The provider type enum or string
 
         Returns:
             BaseProvider: A provider instance
@@ -369,7 +370,34 @@ class ProcessingContext:
             ValueError: If the provider type is not supported
         """
         from nodetool.providers import get_provider
-        return await get_provider(provider_type, self.user_id)
+
+        if isinstance(provider_type, str):
+            provider_enum = Provider(provider_type)
+        else:
+            provider_enum = provider_type
+
+        provider = await get_provider(provider_enum, self.user_id)
+
+        # Defensive check: if provider is still awaitable, await it again
+        # This handles edge cases where get_provider might return a coroutine
+        if inspect.isawaitable(provider):
+            log.warning(
+                f"Provider was still awaitable after await, re-awaiting. "
+                f"type={type(provider)}"
+            )
+            provider = await provider
+
+        if not hasattr(provider, 'generate_messages'):
+            log.error(
+                f"Provider missing generate_messages method. type={type(provider)}, "
+                f"attributes={[x for x in dir(provider) if not x.startswith('_')][:10]}"
+            )
+            raise ValueError(
+                f"Provider {type(provider)} does not have generate_messages method. "
+                f"This indicates get_provider returned an unexpected type."
+            )
+
+        return provider
 
     def copy(self):
         """

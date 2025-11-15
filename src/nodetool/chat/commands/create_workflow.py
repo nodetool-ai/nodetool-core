@@ -78,7 +78,7 @@ class CreateWorkflowCommand(Command):
 
         try:
             # Create GraphPlanner with empty schemas for now
-            provider = get_provider(cli.selected_model.provider)
+            provider = await get_provider(cli.selected_model.provider)
             planner = GraphPlanner(
                 provider=provider,
                 model=cli.selected_model.id,
