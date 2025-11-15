@@ -27,27 +27,16 @@ if TYPE_CHECKING:  # pragma: no cover - for type checking only
 log = get_logger(__name__)
 
 TORCH_AVAILABLE = False
-COMFY_AVAILABLE = False
 
 torch: Any
-comfy: Any
 
 try:  # pragma: no cover - optional dependency
     import torch as _torch  # type: ignore
 
     torch = _torch
     TORCH_AVAILABLE = True
-    try:  # pragma: no cover - optional dependency
-        import comfy  # type: ignore
-        import comfy.utils  # type: ignore
-        import comfy.model_management  # type: ignore
-
-        COMFY_AVAILABLE = True
-    except ImportError:  # pragma: no cover - optional dependency
-        comfy = None  # type: ignore
 except ImportError:  # pragma: no cover - torch not installed
     torch = None  # type: ignore
-    comfy = None  # type: ignore
 
 
 class BaseTorchSupport:
@@ -90,48 +79,24 @@ class TorchWorkflowSupport(BaseTorchSupport):
     """Concrete torch-enabled implementation."""
 
     def get_available_vram(self) -> int:
-        if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-            props = torch.cuda.get_device_properties(0)
-            return props.total_memory - torch.cuda.memory_allocated(0)
-        return 0
+        props = torch.cuda.get_device_properties(0)
+        return props.total_memory - torch.cuda.memory_allocated(0)
 
     def log_vram_usage(self, runner: WorkflowRunner, message: str = "") -> None:
-        if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-            torch.cuda.synchronize()
-            vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
-            log.info(f"{message} VRAM: {vram:.2f} GB")
+        torch.cuda.synchronize()
+        vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
+        log.info(f"{message} VRAM: {vram:.2f} GB")
 
     @contextmanager
     def torch_context(
         self, runner: WorkflowRunner, context: ProcessingContext
     ) -> Generator[None, None, None]:
-        if COMFY_AVAILABLE and comfy is not None:
-
-            def comfy_hook(value: float, total: float, preview_image: Any) -> None:
-                if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-                    comfy.model_management.throw_exception_if_processing_interrupted()
-                context.post_message(
-                    NodeProgress(
-                        node_id=runner.current_node or "",
-                        progress=int(value),
-                        total=int(total),
-                    )
-                )
-
-            comfy.utils.set_progress_bar_global_hook(comfy_hook)
-
-        if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-            self.log_vram_usage(runner, "Before workflow")
+        self.log_vram_usage(runner, "Before workflow")
 
         try:
             yield
         finally:
-            if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-                self.log_vram_usage(runner, "After workflow")
-
-            if COMFY_AVAILABLE and comfy is not None:
-                # Reset to avoid leaking hooks across runs.
-                comfy.utils.set_progress_bar_global_hook(None)  # type: ignore[arg-type]
+            self.log_vram_usage(runner, "After workflow")
 
         log.info("Exiting torch context")
 
@@ -142,11 +107,8 @@ class TorchWorkflowSupport(BaseTorchSupport):
         node: BaseNode,
         retries: int = 0,
     ) -> Any:
-        if not TORCH_AVAILABLE or torch is None:
-            return await node.process(context)
-
         try:
-            if getattr(node, "_requires_grad: ClassVar[bool]", False):
+            if node._requires_grad:
                 return await node.process(context)
             with torch.no_grad():
                 return await node.process(context)
@@ -175,10 +137,6 @@ class TorchWorkflowSupport(BaseTorchSupport):
 
                 ModelManager.clear()
                 gc.collect()
-
-                if COMFY_AVAILABLE and comfy is not None:
-                    for model_loaded in comfy.model_management.current_loaded_models:
-                        model_loaded.model_unload()
 
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()

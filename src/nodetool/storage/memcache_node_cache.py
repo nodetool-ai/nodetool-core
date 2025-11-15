@@ -2,14 +2,6 @@ from typing import Any
 from pymemcache import Client
 from pymemcache.serde import PickleSerde
 from pymemcache.exceptions import MemcacheUnknownError
-
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-
 from .abstract_node_cache import AbstractNodeCache
 
 
@@ -26,11 +18,19 @@ class MemcachedNodeCache(AbstractNodeCache):
         )
 
     def move_to_device(self, value: Any, device: str) -> Any:
+        torch = None
+        try:
+            import torch as _torch
+
+            torch = _torch
+        except ImportError:
+            return value
+
         if isinstance(value, dict):
             return {k: self.move_to_device(v, device) for k, v in value.items()}
         if isinstance(value, list):
             return [self.move_to_device(v, device) for v in value]
-        if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
+        if torch is not None and isinstance(value, torch.Tensor):
             return value.to(device)
         return value
 

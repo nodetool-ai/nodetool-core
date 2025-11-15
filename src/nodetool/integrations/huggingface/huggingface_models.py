@@ -42,9 +42,13 @@ SINGLE_FILE_DIFFUSION_EXTENSIONS = (
     ".pt",
     ".pth",
 )
+
 SINGLE_FILE_DIFFUSION_TAGS = {
     "diffusers:stablediffusionpipeline",
     "diffusers:stablediffusionxlpipeline",
+    "diffusers:stablediffusion3pipeline",
+    "stable-diffusion",
+    "flux",
 }
 
 log = get_logger(__name__)
@@ -52,21 +56,22 @@ log = get_logger(__name__)
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
-    
+
     Args:
         user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
-    
+
     Returns:
         HF_TOKEN if available, None otherwise.
     """
-    
+
     token = os.environ.get("HF_TOKEN")
     if token:
         return token
-    
+
     if user_id:
         return await get_secret("HF_TOKEN", user_id)
     return None
+
 
 # Model info cache instance - 24 hour TTL for model metadata
 MODEL_INFO_CACHE = ModelCache("model_info")
@@ -84,37 +89,37 @@ def size_on_disk(
     ignore_patterns: list[str] | None = None,
 ) -> int:
     """Calculate the total size of files matching the given patterns.
-    
+
     Args:
         model_info: ModelInfo object containing siblings list
         allow_patterns: List of patterns to allow (Unix shell-style wildcards)
         ignore_patterns: List of patterns to ignore (Unix shell-style wildcards)
-    
+
     Returns:
         Total size in bytes of matching files
     """
     siblings = model_info.siblings or []
     total_size = 0
-    
+
     for sib in siblings:
         if sib.size is None:
             continue
-        
+
         if not sib.rfilename:
             continue
-        
+
         if allow_patterns is not None and not any(
             fnmatch(sib.rfilename, pattern) for pattern in allow_patterns
         ):
             continue
-        
+
         if ignore_patterns is not None and any(
             fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns
         ):
             continue
-        
+
         total_size += sib.size
-    
+
     return total_size
 
 
@@ -128,12 +133,35 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
     """
     Heuristically detect raw checkpoint files (e.g. Stable Diffusion .safetensors)
     that live at the repo root inside the HF cache.
+
+    Excludes standard model weight files that are part of multi-file repos:
+    - model.safetensors
+    - pytorch_model.bin
+    - model.bin
+    - model.pt
+    - model.pth
     """
     normalized = file_name.replace("\\", "/")
     if "/" in normalized:
         return False
     lower = normalized.lower()
-    return lower.endswith(SINGLE_FILE_DIFFUSION_EXTENSIONS)
+
+    # Must have a supported extension
+    if not lower.endswith(SINGLE_FILE_DIFFUSION_EXTENSIONS):
+        return False
+
+    # Exclude standard model weight filenames that are part of multi-file repos
+    standard_weight_names = {
+        "model.safetensors",
+        "pytorch_model.bin",
+        "model.bin",
+        "model.pt",
+        "model.pth",
+    }
+    if lower in standard_weight_names:
+        return False
+
+    return True
 
 
 def _repo_supports_root_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
@@ -154,10 +182,14 @@ async def unified_model(
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = await get_hf_token(user_id)
         if token:
-            log.debug(f"unified_model: Fetching model info for {model.repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+            log.debug(
+                f"unified_model: Fetching model info for {model.repo_id} with HF_TOKEN (token length: {len(token)} chars)"
+            )
             api = HfApi(token=token)
         else:
-            log.debug(f"unified_model: Fetching model info for {model.repo_id} without HF_TOKEN - gated models may not be accessible")
+            log.debug(
+                f"unified_model: Fetching model info for {model.repo_id} without HF_TOKEN - gated models may not be accessible"
+            )
             api = HfApi()
         # Run blocking HfApi call in thread executor
         model_info = await asyncio.get_event_loop().run_in_executor(
@@ -252,9 +284,13 @@ async def fetch_model_readme(model_id: str) -> str | None:
         # Note: user_id would need to be passed from caller context
         token = await get_hf_token()
         if token:
-            log.debug(f"fetch_model_readme: Downloading README for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
+            log.debug(
+                f"fetch_model_readme: Downloading README for {model_id} with HF_TOKEN (token length: {len(token)} chars)"
+            )
         else:
-            log.debug(f"fetch_model_readme: Downloading README for {model_id} without HF_TOKEN - gated models may not be accessible")
+            log.debug(
+                f"fetch_model_readme: Downloading README for {model_id} without HF_TOKEN - gated models may not be accessible"
+            )
         readme_path = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: hf_hub_download(
@@ -290,10 +326,14 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     # Note: user_id would need to be passed from caller context
     token = await get_hf_token()
     if token:
-        log.debug(f"fetch_model_info: Fetching model info for {model_id} with HF_TOKEN (token length: {len(token)} chars)")
+        log.debug(
+            f"fetch_model_info: Fetching model info for {model_id} with HF_TOKEN (token length: {len(token)} chars)"
+        )
         api = HfApi(token=token)
     else:
-        log.debug(f"fetch_model_info: Fetching model info for {model_id} without HF_TOKEN - gated models may not be accessible")
+        log.debug(
+            f"fetch_model_info: Fetching model info for {model_id} without HF_TOKEN - gated models may not be accessible"
+        )
         api = HfApi()
 
     model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
@@ -340,7 +380,7 @@ def model_type_from_model_info(
 async def read_cached_hf_files(
     pipeline_tag: str,
     library_name: str | None = None,
-    tags: list[str] = [], 
+    tags: list[str] = [],
 ) -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
@@ -374,9 +414,7 @@ async def read_cached_hf_files(
         return []
 
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-    log.debug(
-        f"Scanning {len(model_repos)} HF repos for files with tags={tags}"
-    )
+    log.debug(f"Scanning {len(model_repos)} HF repos for files with tags={tags}")
 
     cached_files = []
 
@@ -388,9 +426,7 @@ async def read_cached_hf_files(
     for repo, model_info in zip(model_repos, model_infos):
         # Handle exceptions from individual fetch_model_info calls
         if isinstance(model_info, BaseException):
-            log.debug(
-                f"Failed to fetch model info for {repo.repo_id}: {model_info}"
-            )
+            log.debug(f"Failed to fetch model info for {repo.repo_id}: {model_info}")
             continue
 
         # Get cached files from all revisions
@@ -482,9 +518,9 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
                     downloaded=repo.repo_path is not None,
                     pipeline_tag=model_info.pipeline_tag if model_info else None,
                     tags=model_info.tags if model_info else None,
-                    has_model_index=has_model_index(model_info)
-                    if model_info
-                    else False,
+                    has_model_index=(
+                        has_model_index(model_info) if model_info else False
+                    ),
                     repo_id=repo.repo_id,
                     path=None,
                     size_on_disk=repo.size_on_disk,
@@ -520,7 +556,9 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files("text-generation", "transformers", tags=["gguf"])
+    cached = await read_cached_hf_files(
+        "text-generation", "transformers", tags=["gguf"]
+    )
     results: list[LanguageModel] = []
 
     for f in cached:
@@ -547,7 +585,9 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
 
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     """Return LanguageModel entries tagged as vLLM in cached metadata files."""
-    cached = await read_cached_hf_files("text-generation", "transformers", tags=["vllm"])
+    cached = await read_cached_hf_files(
+        "text-generation", "transformers", tags=["vllm"]
+    )
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
 
@@ -581,7 +621,7 @@ async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
 async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos that look suitable
-    for MLX runtime (Apple Silicon). 
+    for MLX runtime (Apple Silicon).
 
     Each qualifying repo yields a LanguageModel with id "<repo_id>" (no file suffix),
     because MLX loaders typically resolve the correct shard/quantization internally.
@@ -634,14 +674,19 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
         if _is_single_file_diffusion_weight(fname):
             if model.repo_id not in repo_info_cache:
                 try:
-                    repo_info_cache[model.repo_id] = await fetch_model_info(model.repo_id)
+                    repo_info_cache[model.repo_id] = await fetch_model_info(
+                        model.repo_id
+                    )
                 except Exception as exc:  # pragma: no cover - defensive logging
                     log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
                     repo_info_cache[model.repo_id] = None
             model_info = repo_info_cache[model.repo_id]
+            # Include single-file checkpoints even if repo has model_index.json
+            # Prefer single-file versions over multi-file when available
             if _repo_supports_root_diffusion_checkpoint(model_info):
                 model_id = f"{model.repo_id}:{fname}"
                 repos_with_single_files.add(model.repo_id)
+                # Remove multi-file entry if it exists - prefer single-file
                 result.pop(model.repo_id, None)
                 result[model_id] = ImageModel(
                     id=model.repo_id,
@@ -652,6 +697,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
                 )
                 continue
 
+        # Skip multi-file entry if repo has single files (prefer single-file versions)
         if model.repo_id in repos_with_single_files:
             continue
 
@@ -663,6 +709,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
         )
 
     return list(result.values())
+
 
 async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     """
@@ -694,14 +741,19 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
         if _is_single_file_diffusion_weight(fname):
             if model.repo_id not in repo_info_cache:
                 try:
-                    repo_info_cache[model.repo_id] = await fetch_model_info(model.repo_id)
+                    repo_info_cache[model.repo_id] = await fetch_model_info(
+                        model.repo_id
+                    )
                 except Exception as exc:  # pragma: no cover
                     log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
                     repo_info_cache[model.repo_id] = None
             model_info = repo_info_cache[model.repo_id]
+            # Include single-file checkpoints even if repo has model_index.json
+            # Prefer single-file versions over multi-file when available
             if _repo_supports_root_diffusion_checkpoint(model_info):
                 model_id = f"{model.repo_id}:{fname}"
                 repos_with_single_files.add(model.repo_id)
+                # Remove multi-file entry if it exists - prefer single-file
                 result.pop(model.repo_id, None)
                 result[model_id] = ImageModel(
                     id=model.repo_id,
@@ -712,6 +764,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
                 )
                 continue
 
+        # Skip multi-file entry if repo has single files (prefer single-file versions)
         if model.repo_id in repos_with_single_files:
             continue
 
@@ -723,6 +776,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
         )
 
     return list(result.values())
+
 
 async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     """
@@ -748,7 +802,9 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
+async def _fetch_models_by_author(
+    user_id: str | None = None, **kwargs
+) -> list[ModelInfo]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
@@ -757,10 +813,14 @@ async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[
     token = await get_hf_token(user_id)
     author = kwargs.get("author", "unknown")
     if token:
-        log.debug(f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)")
+        log.debug(
+            f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)"
+        )
         api = HfApi(token=token)
     else:
-        log.debug(f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible")
+        log.debug(
+            f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible"
+        )
         api = HfApi()
     # Run the blocking call in a thread executor
     models = await asyncio.get_event_loop().run_in_executor(
@@ -861,7 +921,9 @@ async def get_mlx_language_models_from_authors(
     # Note: user_id would need to be passed from caller context
     results = await asyncio.gather(
         *(
-            _fetch_models_by_author(user_id=None, author=a, limit=limit, sort=sort, tags=tags)
+            _fetch_models_by_author(
+                user_id=None, author=a, limit=limit, sort=sort, tags=tags
+            )
             for a in authors
         )
     )
@@ -901,19 +963,19 @@ def delete_cached_hf_model(model_id: str) -> bool:
 
 
 # GGUF_AUTHORS = [
-    # "unsloth",
-    # "ggml-org",
-    # "LiquidAI",
-    # "gabriellarson",
-    # "openbmb",
-    # "zai-org",
-    # "vikhyatk",
-    # "01-ai",
-    # "BAAI",
-    # "Lin-Chen",
-    # "mtgv",
-    # "lm-sys",
-    # "NousResearch",
+# "unsloth",
+# "ggml-org",
+# "LiquidAI",
+# "gabriellarson",
+# "openbmb",
+# "zai-org",
+# "vikhyatk",
+# "01-ai",
+# "BAAI",
+# "Lin-Chen",
+# "mtgv",
+# "lm-sys",
+# "NousResearch",
 # ]
 # MLX_AUTHORS = ["mlx-community"]
 
@@ -949,9 +1011,10 @@ def delete_cached_hf_model(model_id: str) -> bool:
 
 
 if __name__ == "__main__":
+
     async def main():
         cached = await read_cached_hf_files("text-to-image", None)
         for model in cached:
             print(model)
-    
+
     asyncio.run(main())

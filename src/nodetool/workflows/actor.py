@@ -689,6 +689,9 @@ class NodeActor:
             finally:
                 raise
         except Exception as e:
+            import traceback
+
+            self.logger.error(traceback.format_exc())
             self.logger.error(
                 "Node execution failed: %s (%s) [%s] – %s",
                 node.get_title(),
