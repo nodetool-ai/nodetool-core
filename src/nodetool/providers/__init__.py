@@ -9,6 +9,8 @@ implement the corresponding methods.
 
 import asyncio
 import time
+import shutil
+import os
 from typing import Optional
 
 # Base provider class and testing utilities
@@ -35,12 +37,28 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
+def _is_llama_server_available() -> bool:
+    """Check if llama-server binary is available in PATH or via environment variable.
+    
+    Returns:
+        True if llama-server binary can be found, False otherwise.
+    """
+    # Check environment variable first (allows custom path)
+    binary_name = os.environ.get("LLAMA_SERVER_BINARY", "llama-server")
+    
+    # If it's an absolute path, check if file exists
+    if os.path.isabs(binary_name) or os.path.sep in binary_name:
+        return os.path.isfile(binary_name) and os.access(binary_name, os.X_OK)
+    
+    # Otherwise, check if it's in PATH
+    return shutil.which(binary_name) is not None
+
+
 def import_providers():
     # import providers to ensure they are registered
     from nodetool.providers import (  # noqa: F401
         anthropic_provider,
         gemini_provider,
-        llama_provider,
         comfy_local_provider,
         comfy_runpod_provider,
         ollama_provider,
@@ -49,6 +67,27 @@ def import_providers():
         huggingface_provider,
         vllm_provider,
     )
+
+    # Conditionally import llama_provider only if llama-server binary is available
+    if _is_llama_server_available():
+        try:
+            from nodetool.providers import llama_provider  # type: ignore  # noqa: F401
+            log.debug("Llama provider imported successfully (llama-server binary found)")
+        except ImportError as e:
+            log.warning(
+                f"Llama provider could not be imported despite binary being available: {e}. "
+                "Some llama.cpp features may be unavailable."
+            )
+        except Exception as e:
+            log.warning(
+                f"Unexpected error importing Llama provider: {e}. "
+                "Some llama.cpp features may be unavailable."
+            )
+    else:
+        log.debug(
+            "Llama provider skipped: llama-server binary not found in PATH or LLAMA_SERVER_BINARY. "
+            "Install llama.cpp to enable local LLM inference."
+        )
 
     # Optional providers that may have missing dependencies
     # These are imported with better error handling and logging
