@@ -2,6 +2,7 @@ import os
 import asyncio
 import platform
 import sys
+import logging
 from typing import Any, List
 from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
@@ -105,6 +106,23 @@ initialize_sentry()
 log = get_logger(__name__)
 
 # Silence SQLite and SQLAlchemy logging
+
+
+class HealthCheckFilter(logging.Filter):
+    """Filter to suppress logging for /health endpoint requests."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Return False to suppress health check logs."""
+        message = record.getMessage()
+        # Check if the log message contains /health endpoint
+        if "/health" in message:
+            return False
+        return True
+
+
+def create_health_check_filter():
+    """Create a filter to suppress logging for /health endpoint requests."""
+    return HealthCheckFilter()
 
 
 class ExtensionRouterRegistry:
@@ -512,6 +530,9 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     }
     log_level = Environment.get_log_level()
 
+    # Create health check filter instance
+    health_filter = create_health_check_filter()
+    
     uvicorn_log_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -542,6 +563,25 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             },
         },
     }
+
+    # Apply health check filter to suppress /health endpoint logs
+    # Apply filter after uvicorn configures logging using a short delay
+    import threading
+    import time
+    
+    def apply_health_filter():
+        """Apply health check filter after uvicorn configures logging."""
+        time.sleep(0.2)  # Give uvicorn time to configure logging
+        uvicorn_access_logger = logging.getLogger("uvicorn.access")
+        # Check if filter already exists
+        filter_exists = any(
+            isinstance(f, HealthCheckFilter) for f in uvicorn_access_logger.filters
+        )
+        if not filter_exists:
+            uvicorn_access_logger.addFilter(health_filter)
+    
+    filter_thread = threading.Thread(target=apply_health_filter, daemon=True)
+    filter_thread.start()
 
     try:
         uvicorn(
