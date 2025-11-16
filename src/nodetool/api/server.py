@@ -14,6 +14,7 @@ from nodetool.integrations.huggingface.hf_websocket import (
     huggingface_download_endpoint,
 )
 from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
+from nodetool.integrations.websocket.terminal_runner import TerminalWebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.api.middleware import ResourceScopeMiddleware
 
@@ -424,6 +425,8 @@ def create_app(
             websocket.headers, websocket.query_params
         )
         if not token:
+            # Must accept before closing to avoid 403
+            await websocket.accept()
             await websocket.close(code=1008, reason="Missing authentication")
             log.warning("WebSocket connection rejected: Missing authentication header")
             return None, None
@@ -434,6 +437,7 @@ def create_app(
 
         if Environment.get_auth_provider_kind() == "supabase":
             if not user_provider:
+                await websocket.accept()
                 await websocket.close(
                     code=1008, reason="Authentication provider not configured"
                 )
@@ -444,10 +448,12 @@ def create_app(
             user_result = await user_provider.verify_token(token)
             if user_result.ok and user_result.user_id:
                 return token, user_result.user_id
+            await websocket.accept()
             await websocket.close(code=1008, reason="Invalid authentication")
             log.warning("WebSocket connection rejected: Invalid Supabase token")
             return None, None
 
+        await websocket.accept()
         await websocket.close(code=1008, reason="Invalid authentication")
         log.warning("WebSocket connection rejected: Invalid token")
         return None, None
@@ -468,6 +474,25 @@ def create_app(
         chat_runner = ChatWebSocketRunner(auth_token=token or "")
         chat_runner.user_id = user_id
         await chat_runner.run(websocket)
+
+    @app.websocket("/terminal")
+    async def terminal_websocket_endpoint(websocket: WebSocket):
+        # Only allow terminal access when explicitly enabled and never in production
+        if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
+            await websocket.close(code=1008, reason="Terminal access disabled")
+            return
+
+        # Skip authentication in dev mode for convenience
+        if not enforce_auth:
+            token = None
+            user_id = "1"  # Default dev user
+        else:
+            token, user_id = await _authenticate_websocket(websocket)
+            if user_id is None:
+                return
+
+        runner = TerminalWebSocketRunner(auth_token=token or "", user_id=user_id)
+        await runner.run(websocket)
 
     # WebSocket endpoint for periodic system updates (e.g., system stats)
     @app.websocket("/updates")

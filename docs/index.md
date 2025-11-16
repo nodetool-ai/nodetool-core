@@ -33,6 +33,7 @@ The documentation is organized into the following sections:
 - [**Storage**](storage.md) - Asset stores and caches
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
 - [**Chat Server**](chat-server.md) - Standalone chat server with WebSocket and SSE support
+- [**Terminal WebSocket**](terminal-websocket.md) - Interactive host shell WebSocket endpoint (dev-only)
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
 - [**Providers**](providers.md) - Multi-modal AI provider system and generic nodes

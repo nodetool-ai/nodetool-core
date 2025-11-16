@@ -32,6 +32,7 @@ DEFAULT_ENV = {
     "DEBUG": None,
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
+    "NODETOOL_ENABLE_TERMINAL_WS": "1",  # Enable terminal WebSocket in dev/test (blocked in production)
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
     "SUPABASE_KEY": None,
