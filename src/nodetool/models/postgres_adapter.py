@@ -284,7 +284,7 @@ class PostgresAdapter(DatabaseAdapter):
 
     def get_desired_schema(self) -> set[str]:
         """Gets the desired schema (column names) based on the model's fields."""
-        desired_schema = set(self.fields.keys())
+        desired_schema = set(self.fields)
         return desired_schema
 
     async def create_table(self, suffix: str = "") -> None:
@@ -405,7 +405,7 @@ class PostgresAdapter(DatabaseAdapter):
             Attributes are converted back to their Python types.
         """
         primary_key = self.get_primary_key()
-        cols = ", ".join(self.fields.keys())
+        cols = ", ".join(self.fields)
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
@@ -497,7 +497,7 @@ class PostgresAdapter(DatabaseAdapter):
             cols = SQL(", ").join(
                 [
                     SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
-                    for col in self.fields.keys()
+                    for col in self.fields
                 ]
             )
 
@@ -635,6 +635,10 @@ class PostgresAdapter(DatabaseAdapter):
         except psycopg.Error as e:
             print(f"PostgreSQL error during index listing: {e}")
             raise e
+
+    async def auto_migrate(self) -> None:
+        """Auto-migration is not implemented for PostgresAdapter."""
+        raise NotImplementedError("auto_migrate is not implemented for PostgresAdapter")
 
     def __del__(self):
         """Cleanup method when the adapter object is garbage collected."""

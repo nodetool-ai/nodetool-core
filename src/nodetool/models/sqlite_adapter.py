@@ -622,15 +622,16 @@ class SQLiteAdapter(DatabaseAdapter):
         if order_by is None:
             order_by = f"{self.table_name}.{pk}"
 
-        if reverse:
-            order_by = f"{order_by} DESC"
-        else:
-            order_by = f"{order_by} ASC"
+        order_by = (
+            f"{order_by} DESC"
+            if reverse
+            else f"{order_by} ASC"
+        )
 
         if columns:
             cols = ", ".join([f"{self.table_name}.{col}" for col in columns])
         else:
-            cols = ", ".join([f"{self.table_name}.{col}" for col in self.fields.keys()])
+            cols = ", ".join([f"{self.table_name}.{col}" for col in self.fields])
 
         params = []
         where_clause = "1=1"  # Default to select all if no condition
@@ -683,7 +684,9 @@ class SQLiteAdapter(DatabaseAdapter):
                 columns = [col[0] for col in cursor.description]
                 rows = await self._execute_with_timeout(cursor.fetchall())
                 return [
-                    convert_from_sqlite_attributes(dict(zip(columns, row)), self.fields)
+                    convert_from_sqlite_attributes(
+                        dict(zip(columns, row, strict=False)), self.fields
+                    )
                     for row in rows
                 ]
             return []

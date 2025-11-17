@@ -82,13 +82,14 @@ class ChatSSERunner(BaseChatRunner):
         auth_token: str | None = None,
         default_model: str = "gpt-oss:20b",
         default_provider: str = "ollama",
-        workflows: list[Workflow] = [],
+        workflows: list[Workflow] | None = None,
     ):
         super().__init__(auth_token, default_model, default_provider)
         self.message_queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()
         self.is_connected: bool = False
         # Store the provided chat history for this request (used when database is disabled)
         self.provided_history: List[ApiMessage] = []
+        self.workflows = workflows or []
 
     async def connect(self, user_id: str | None = None, **kwargs) -> None:
         """

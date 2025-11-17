@@ -10,7 +10,7 @@ This module encapsulates:
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -20,11 +20,13 @@ from nodetool.api.workflow import WorkflowList, WorkflowRequest, from_model
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.job import JobUpdate
-from nodetool.types.workflow import Workflow
 from nodetool.workflows.processing_context import AssetOutputMode, ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
+
+if TYPE_CHECKING:
+    from nodetool.types.workflow import Workflow
 
 log = get_logger(__name__)
 

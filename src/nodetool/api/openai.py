@@ -34,7 +34,7 @@ def create_openai_compatible_router(
 
     @router.post("/chat/completions")
     async def openai_chat_completions(
-        request: Request, _user: str = Depends(current_user)
+        request: Request, user: str = Depends(current_user)
     ):
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
         try:
@@ -83,7 +83,7 @@ def create_openai_compatible_router(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/models")
-    async def openai_models(_user: str = Depends(current_user)):
+    async def openai_models(user: str = Depends(current_user)):
         """Returns list of models in OpenAI format."""
         try:
             all_models = await get_all_language_models(user)

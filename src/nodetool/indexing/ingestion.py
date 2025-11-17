@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
-import chromadb
 import pymupdf
 import pymupdf4llm
 from markitdown import MarkItDown
+
+if TYPE_CHECKING:
+    import chromadb
 
 
 class Document:

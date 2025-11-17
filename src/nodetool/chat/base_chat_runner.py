@@ -126,10 +126,11 @@ class BaseChatRunner(ABC):
         graph_obj = None
         if db_message.graph:
             try:
-                if isinstance(db_message.graph, dict):
-                    graph_obj = Graph(**db_message.graph)
-                else:
-                    graph_obj = db_message.graph
+                graph_obj = (
+                    Graph(**db_message.graph)
+                    if isinstance(db_message.graph, dict)
+                    else db_message.graph
+                )
             except Exception as e:
                 log.warning(f"Failed to convert graph to Graph object: {e}")
                 graph_obj = None
@@ -203,7 +204,7 @@ class BaseChatRunner(ABC):
                             normalized_tools.append(str(item))
                 elif isinstance(tools_value, dict):
                     # Convert dict to list of keys if client sent mapping
-                    normalized_tools = [str(k) for k in tools_value.keys()]
+                    normalized_tools = [str(k) for k in tools_value]
                 else:
                     normalized_tools = [str(tools_value)]
                 data_copy["tools"] = normalized_tools

@@ -181,9 +181,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             is_assignable(t, k) and is_assignable(u, v) for k, v in value.items()
         )
     # Handle float types, allowing integers as well.
-    if type_meta.type == "float" and (
-        isinstance(value, float) or isinstance(value, int)
-    ):
+    if type_meta.type == "float" and isinstance(value, (float, int)):
         return True
     # Handle tensor types (NPArray) - must come before asset type check
     if (

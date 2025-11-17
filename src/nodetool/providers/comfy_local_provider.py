@@ -6,11 +6,10 @@ import json
 import os
 import random
 import uuid
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
 
 import requests
 import websockets
-from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 
 from nodetool.config.logging_config import get_logger
@@ -24,7 +23,11 @@ from nodetool.providers.comfy_api import (
     queue_workflow,
     upload_images,
 )
-from nodetool.providers.types import ImageBytes, ImageToImageParams, TextToImageParams
+
+if TYPE_CHECKING:
+    from websockets.client import WebSocketClientProtocol
+
+    from nodetool.providers.types import ImageBytes, ImageToImageParams, TextToImageParams
 
 log = get_logger(__name__)
 

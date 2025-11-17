@@ -49,7 +49,7 @@ class TerminalWebSocketRunner:
     @staticmethod
     def is_enabled() -> bool:
         """Feature flag for the terminal endpoint (not surfaced via settings).
-        
+
         Reads directly from os.environ to avoid DEFAULT_ENV fallback, allowing tests
         to properly disable the feature via monkeypatch.
         """

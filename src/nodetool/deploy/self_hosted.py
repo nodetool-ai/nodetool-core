@@ -344,7 +344,7 @@ class SelfHostedDeployer:
             if self.is_localhost:
                 self._copy_file_local(src, Path(remote_path), results, label)
             else:
-                self._copy_file_to_remote(src, remote_path, results, label)
+                self._copy_file_to_remote(ssh, src, remote_path, results, label)
 
         if proxy.auto_certbot:
             self._ensure_certbot_certs(ssh, results)
@@ -356,7 +356,9 @@ class SelfHostedDeployer:
         os.chmod(dest, 0o600)
         results["steps"].append(f"  Synced TLS {label}: {dest}")
 
-    def _copy_file_to_remote(self, src: Path, dest: str, results: Dict[str, Any], label: str) -> None:
+    def _copy_file_to_remote(
+        self, ssh, src: Path, dest: str, results: Dict[str, Any], label: str
+    ) -> None:
         ssh_config = self.deployment.ssh
         if not ssh_config:
             raise RuntimeError("SSH configuration required to copy TLS files to remote host")
@@ -457,7 +459,7 @@ class SelfHostedDeployer:
 
         results["steps"].append(f"Checking proxy image: {image}")
         cmd = f"docker images -q {image}"
-        exit_code, stdout, stderr = ssh.execute(cmd, check=False)
+        _exit_code, stdout, _stderr = ssh.execute(cmd, check=False)
         if stdout.strip():
             results["steps"].append("  Proxy image already present.")
             return
@@ -470,7 +472,7 @@ class SelfHostedDeployer:
         results["steps"].append("  Proxy image missing on host; pushing from local Docker daemon...")
         self._push_image_to_remote(image)
 
-        exit_code, stdout, stderr = ssh.execute(cmd, check=False)
+        _exit_code, stdout, _stderr = ssh.execute(cmd, check=False)
         if stdout.strip():
             results["steps"].append("  Proxy image transferred successfully.")
         else:
@@ -513,8 +515,8 @@ class SelfHostedDeployer:
         )
         if save_proc.stdout:
             save_proc.stdout.close()
-        stdout, stderr = load_proc.communicate()
-        save_stdout, save_stderr = save_proc.communicate()
+        _stdout, stderr = load_proc.communicate()
+        _save_stdout, save_stderr = save_proc.communicate()
 
         if save_proc.returncode != 0:
             raise RuntimeError(
@@ -534,7 +536,7 @@ class SelfHostedDeployer:
         check_command = f"docker ps -a -q -f name={container_name}"
 
         try:
-            exit_code, stdout, _ = ssh.execute(check_command, check=False)
+            _exit_code, stdout, _ = ssh.execute(check_command, check=False)
             if stdout.strip():
                 results["steps"].append(f"  Found existing proxy: {container_name}")
                 ssh.execute(f"docker stop {container_name}", check=False, timeout=60)
@@ -556,7 +558,7 @@ class SelfHostedDeployer:
         results["steps"].append(f"  Command: {command[:120]}...")
 
         try:
-            exit_code, stdout, stderr = ssh.execute(command, check=True, timeout=300)
+            _exit_code, stdout, _stderr = ssh.execute(command, check=True, timeout=300)
             container_id = stdout.strip() or "<unknown>"
             results["steps"].append(
                 f"  Proxy container started: {container_id[:12]}"
@@ -633,7 +635,7 @@ class SelfHostedDeployer:
                 # Stop container
                 stop_command = f"docker stop {container_name}"
                 try:
-                    exit_code, stdout, stderr = ssh.execute(
+                    _exit_code, _stdout, _stderr = ssh.execute(
                         stop_command, check=False, timeout=30
                     )
                     results["steps"].append(f"Container stopped: {container_name}")
@@ -645,7 +647,7 @@ class SelfHostedDeployer:
                 # Remove container
                 rm_command = f"docker rm {container_name}"
                 try:
-                    exit_code, stdout, stderr = ssh.execute(
+                    _exit_code, _stdout, _stderr = ssh.execute(
                         rm_command, check=False, timeout=30
                     )
                     results["steps"].append(f"Container removed: {container_name}")
@@ -694,14 +696,14 @@ class SelfHostedDeployer:
                 command = (
                     f"docker ps -a -f name={container_name} --format '{{{{.Status}}}}'"
                 )
-                exit_code, stdout, stderr = ssh.execute(command, check=False)
+                _exit_code, stdout, _stderr = ssh.execute(command, check=False)
                 status_info["live_status"] = (
                     stdout.strip() if stdout else "Container not found"
                 )
 
                 # Get container ID
                 id_command = f"docker ps -a -q -f name={container_name}"
-                exit_code, id_stdout, _ = ssh.execute(id_command, check=False)
+                _exit_code, id_stdout, _ = ssh.execute(id_command, check=False)
                 if id_stdout.strip():
                     status_info["container_id"] = id_stdout.strip()
 
@@ -737,7 +739,7 @@ class SelfHostedDeployer:
 
             command += f" {container_name}"
 
-            exit_code, stdout, stderr = ssh.execute(
+            _exit_code, stdout, _stderr = ssh.execute(
                 command, check=False, timeout=None if follow else 30
             )
 

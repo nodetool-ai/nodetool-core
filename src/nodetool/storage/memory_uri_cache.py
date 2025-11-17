@@ -44,7 +44,7 @@ class MemoryUriCache(AbstractNodeCache):
         to_delete: list[str] = []
         now = self._now()
         log.debug("Cleaning up expired entries: %s", self._cache)
-        for key, (stored_value, expiry) in self._cache.items():
+        for key, (_stored_value, expiry) in self._cache.items():
             if now >= expiry:
                 to_delete.append(key)
                 continue

@@ -178,7 +178,7 @@ def get_node_classes_from_module(
 
     # Find all BaseNode subclasses in the module
     node_classes = []
-    for name, obj in inspect.getmembers(module):
+    for _name, obj in inspect.getmembers(module):
         # Check if it's a class and a subclass of BaseNode (but not BaseNode itself)
         if (
             inspect.isclass(obj)

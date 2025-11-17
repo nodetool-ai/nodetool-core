@@ -73,8 +73,8 @@ log = get_logger(__name__)
 def create_worker_app(
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] = [],
-    workflows: List[Workflow] = [],
+    tools: List[str] | None = None,
+    workflows: List[Workflow] | None = None,
 ) -> FastAPI:
     """Create a FastAPI worker application for NodeTool operations.
 
@@ -98,6 +98,8 @@ def create_worker_app(
         ...     tools=["google_search"]
         ... )
     """
+    tools = tools or []
+    workflows = workflows or []
     if Environment.is_production() and not os.environ.get(
         "SECRETS_MASTER_KEY"
     ):
@@ -177,8 +179,8 @@ def run_worker(
     port: int = 8000,
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] = [],
-    workflows: List[Workflow] = [],
+    tools: List[str] | None = None,
+    workflows: List[Workflow] | None = None,
 ):
     """Run the NodeTool worker.
 
@@ -213,6 +215,9 @@ def run_worker(
         os.environ.get("LOG_LEVEL"),
         os.environ.get("DEBUG"),
     )
+
+    tools = tools or []
+    workflows = workflows or []
 
     app = create_worker_app(provider, default_model, tools, workflows)
 

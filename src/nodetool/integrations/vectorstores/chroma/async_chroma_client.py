@@ -20,12 +20,13 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Iterable, Optional
-
-import chromadb
-from chromadb.api import ClientAPI
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from .chroma_client import get_chroma_client
+
+if TYPE_CHECKING:
+    import chromadb
+    from chromadb.api import ClientAPI
 
 
 class _SingleThreadExecutor:

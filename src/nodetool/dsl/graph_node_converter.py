@@ -71,7 +71,7 @@ class GraphNodeConverter:
         else:
             node_is_dynamic = bool(getattr(node_cls, "_is_dynamic", False))
 
-        for field_name in graph_node.model_fields.keys():
+        for field_name in graph_node.model_fields:
             if field_name == "id":
                 continue
 

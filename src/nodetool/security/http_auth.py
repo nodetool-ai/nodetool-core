@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
-from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from nodetool.security.auth_provider import AuthProvider, TokenType
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 
 def _make_response(detail: str, status_code: int = 401) -> JSONResponse:

@@ -17,10 +17,10 @@ log = get_logger(__name__)
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
-    
+
     Args:
         user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
-    
+
     Returns:
         HF_TOKEN if available, None otherwise.
     """

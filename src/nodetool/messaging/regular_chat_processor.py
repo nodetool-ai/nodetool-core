@@ -108,8 +108,9 @@ class RegularChatProcessor(MessageProcessor):
 
         if chat_history[0].role != "system":
             chat_history = [
-                Message(role="system", content=REGULAR_SYSTEM_PROMPT)
-            ] + chat_history
+                Message(role="system", content=REGULAR_SYSTEM_PROMPT),
+                *chat_history,
+            ]
 
         # Query collections if specified
         collection_context = ""
@@ -294,13 +295,14 @@ class RegularChatProcessor(MessageProcessor):
 
             if results["documents"] and results["documents"][0]:
                 collection_results = f"\n\n### Results from {collection_name}:\n"
-                for doc, metadata in zip(
+                for doc, _metadata in zip(
                     results["documents"][0],
                     (
                         results["metadatas"][0]
                         if results["metadatas"]
                         else [{}] * len(results["documents"][0])
                     ),
+                    strict=False,
                 ):
                     doc_preview = f"{doc[:200]}..." if len(doc) > 200 else doc
                     collection_results += f"\n- {doc_preview}"
@@ -325,11 +327,11 @@ class RegularChatProcessor(MessageProcessor):
                 role="system",
                 content=f"Context from knowledge base:\n{collection_context}",
             )
-            return (
-                messages[:last_user_index]
-                + [collection_message]
-                + messages[last_user_index:]
-            )
+            return [
+                *messages[:last_user_index],
+                collection_message,
+                *messages[last_user_index:],
+            ]
         return messages
 
     async def _run_tool(

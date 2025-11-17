@@ -92,7 +92,7 @@ class WorkflowMessageProcessor(MessageProcessor):
     def _create_response_message(self, result: dict, last_message: Message) -> Message:
         """Construct a response Message object from workflow results."""
         content = []
-        for key, value in result.items():
+        for _key, value in result.items():
             if isinstance(value, str):
                 content.append(MessageTextContent(text=value))
             elif isinstance(value, list):

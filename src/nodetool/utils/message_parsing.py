@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from nodetool.metadata.types import Message
+if TYPE_CHECKING:
+    from nodetool.metadata.types import Message
 
 log = logging.getLogger(__name__)
 

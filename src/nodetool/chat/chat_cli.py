@@ -313,7 +313,7 @@ class ChatCLI:
 
             self.selected_model = found_model
 
-        asyncio.create_task(load_language_models())
+        self._load_models_task = asyncio.create_task(load_language_models())
 
         # Initialize standard tools
         standard_tools = [
@@ -376,7 +376,7 @@ class ChatCLI:
         command_completer["t"] = command_completer["tools"]
         # Add completers for tool enable/disable commands
         enable_disable_completer = WordCompleter(
-            all_tool_names + ["all"], match_middle=True
+            [*all_tool_names, "all"], match_middle=True
         )
         command_completer["enable"] = enable_disable_completer
         command_completer["en"] = enable_disable_completer
@@ -643,11 +643,11 @@ class ChatCLI:
                     )
 
             elif cmd == "cd":
-                if not args:
-                    # Go to home directory if no argument provided
-                    new_dir_path = Path.home()
-                else:
-                    new_dir_path = (current_dir / args[0]).resolve()
+                new_dir_path = (
+                    Path.home()
+                    if not args
+                    else (current_dir / args[0]).resolve()
+                )
 
                 if not new_dir_path.is_dir():
                     self.console.print(

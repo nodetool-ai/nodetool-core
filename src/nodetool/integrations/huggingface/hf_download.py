@@ -53,7 +53,7 @@ parent_queue = None
 
 def download_file(repo_id: str, filename: str, queue: Queue, token: str | None = None):
     """Download a file from HuggingFace Hub.
-    
+
     Note: This function runs in a separate process, so it cannot be async.
     The token must be passed in from the parent process.
     """
@@ -120,7 +120,7 @@ class DownloadManager:
 
     def __init__(self, token: str | None = None):
         """Initialize DownloadManager.
-        
+
         Args:
             token: Optional HF_TOKEN. If not provided, will be fetched async when needed.
         """
@@ -141,7 +141,7 @@ class DownloadManager:
     @classmethod
     async def create(cls, user_id: str | None = None):
         """Create DownloadManager with async token initialization.
-        
+
         Args:
             user_id: Optional user ID for database secret lookup.
         """

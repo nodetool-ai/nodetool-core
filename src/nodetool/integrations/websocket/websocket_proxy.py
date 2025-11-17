@@ -54,9 +54,9 @@ class WebSocketProxy:
         # Accept the incoming WebSocket connection
         await websocket.accept()
 
-        async with aiohttp.ClientSession() as session:
-            # Connect to the worker WebSocket
-            async with session.ws_connect(self.worker_url) as worker_ws:
+        async with aiohttp.ClientSession() as session, session.ws_connect(
+            self.worker_url
+        ) as worker_ws:
 
                 async def send_back():
                     # Continuously receive messages from the worker and forward them to the client

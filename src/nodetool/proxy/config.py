@@ -100,10 +100,6 @@ class ProxyConfig(BaseModel):
         if len(names) != len(set(names)):
             raise ValueError("Service names must be unique")
 
-        # Check for duplicate paths (unless it's intended longest-prefix matching)
-        paths = [s.path for s in v]
-        # Warn about overlapping paths (but don't fail - longest-prefix matching handles this)
-
         return v
 
     class Config:

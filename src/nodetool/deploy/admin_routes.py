@@ -15,9 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-import chromadb
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -36,10 +35,12 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
 from nodetool.models.asset import Asset as AssetModel
-from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import require_scope
 from nodetool.types.asset import Asset, AssetList
+
+if TYPE_CHECKING:
+    from nodetool.models.database_adapter import DatabaseAdapter
 
 
 # Collection-related Pydantic models
@@ -51,7 +52,7 @@ class CollectionCreate(BaseModel):
 class CollectionResponse(BaseModel):
     name: str
     count: int
-    metadata: chromadb.CollectionMetadata
+    metadata: dict[str, Any] | None
     workflow_name: str | None = None
 
 

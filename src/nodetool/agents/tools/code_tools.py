@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from nodetool.agents.tools.base import Tool
 from nodetool.code_runners.bash_runner import BashDockerRunner
@@ -9,7 +9,9 @@ from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
 from nodetool.code_runners.python_runner import PythonDockerRunner
 from nodetool.code_runners.ruby_runner import RubyDockerRunner
 from nodetool.code_runners.runtime_base import ContainerFailureError, StreamRunnerBase
-from nodetool.workflows.processing_context import ProcessingContext
+
+if TYPE_CHECKING:
+    from nodetool.workflows.processing_context import ProcessingContext
 
 RunnerMode = Literal["docker", "subprocess"]
 

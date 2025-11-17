@@ -12,7 +12,7 @@ import ast
 import base64
 import io
 import json
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -28,7 +28,6 @@ from openai.types.chat.chat_completion_message_function_tool_call_param import (
 from pydantic import BaseModel
 from pydub import AudioSegment
 
-from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
@@ -42,6 +41,9 @@ from nodetool.metadata.types import (
 )
 
 log = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
 
 
 class OpenAICompat:
@@ -458,7 +460,7 @@ class OpenAICompat:
         elif isinstance(node, ast.Dict):
             return {
                 self._ast_to_value(k): self._ast_to_value(v)
-                for k, v in zip(node.keys, node.values)
+                for k, v in zip(node.keys, node.values, strict=False)
             }
         # Handle sets
         elif isinstance(node, ast.Set):

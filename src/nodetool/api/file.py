@@ -75,7 +75,9 @@ async def list_files(
                     *[asyncio.to_thread(os.path.exists, root) for root in roots]
                 )
 
-                existing_roots = [root for root, ok in zip(roots, exists_flags) if ok]
+                existing_roots = [
+                    root for root, ok in zip(roots, exists_flags, strict=False) if ok
+                ]
 
                 async def get_drive_mtime(root: str) -> float | None:
                     try:
@@ -91,7 +93,7 @@ async def list_files(
 
                 files: List[FileInfo] = []
                 now_iso = datetime.now(UTC).isoformat()
-                for root, mtime in zip(existing_roots, mtimes):
+                for root, mtime in zip(existing_roots, mtimes, strict=False):
                     modified = (
                         datetime.fromtimestamp(mtime, tz=UTC).isoformat()
                         if mtime is not None

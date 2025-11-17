@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import inspect
 from contextlib import suppress
-from typing import Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from .inbox import NodeInbox
 from .types import EdgeUpdate
+
+if TYPE_CHECKING:
+    from .inbox import NodeInbox
 
 
 class NodeInputs:

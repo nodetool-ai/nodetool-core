@@ -39,15 +39,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.io import NodeInputs, NodeOutputs
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import NodeUpdate
-from nodetool.workflows.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    from nodetool.workflows.base_node import BaseNode
+    from nodetool.workflows.inbox import NodeInbox
+    from nodetool.workflows.processing_context import ProcessingContext
+    from nodetool.workflows.workflow_runner import WorkflowRunner
 
 
 class NodeActor:
@@ -162,7 +164,7 @@ class NodeActor:
         tasks = {h: asyncio.create_task(first_item(h)) for h in handles}
         results = await asyncio.gather(*tasks.values())
         values: dict[str, Any] = {}
-        for h, val in zip(tasks.keys(), results):
+        for h, val in zip(tasks.keys(), results, strict=False):
             if val is not None:
                 values[h] = val
         return values
@@ -663,7 +665,6 @@ class NodeActor:
             node._id,
             node.get_node_type(),
         )
-        completed_successfully = False
         try:
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
@@ -674,7 +675,6 @@ class NodeActor:
                 await self._run_streaming_output_batched_node()
             else:
                 await self._run_buffered_node()
-            completed_successfully = True
 
         except asyncio.CancelledError:
             self.logger.info(

@@ -94,6 +94,7 @@ import re
 import traceback
 from types import UnionType
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncGenerator,
     AsyncIterator,
@@ -139,10 +140,8 @@ from nodetool.metadata.utils import (
 )
 from nodetool.types.graph import Edge
 from nodetool.types.model import UnifiedModel
+from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.types import NodeUpdate
-
-from .inbox import NodeInbox
-from .io import NodeInputs, NodeOutputs
 
 try:
     import torch
@@ -155,6 +154,15 @@ NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
 COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 
 log = get_logger(__name__)
+
+
+def _get_property_cls():
+    """Lazy import to avoid circular dependency when accessing Property."""
+    return importlib.import_module("nodetool.workflows.property").Property
+
+if TYPE_CHECKING:
+    from .io import NodeInputs, NodeOutputs
+    Property = _get_property_cls()
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -669,10 +677,7 @@ class BaseNode(BaseModel):
         Returns the node title.
         """
         class_name = cls.__name__
-        if class_name.endswith("Node"):
-            title = class_name[:-4]
-        else:
-            title = class_name
+        title = class_name[:-4] if class_name.endswith("Node") else class_name
 
         return split_camel_case(title)
 
@@ -712,7 +717,7 @@ class BaseNode(BaseModel):
                 except Exception as e:
                     future.set_exception(e)
 
-            asyncio.create_task(run_and_set_result())
+            cls._fetch_models_task = asyncio.create_task(run_and_set_result())
             return future.result()
         except RuntimeError:
             return asyncio.run(fetch_all_models())  # type: ignore
@@ -991,9 +996,7 @@ class BaseNode(BaseModel):
                     value_without_model = value.model_dump()
                     del value_without_model["model"]
                     props[p] = await context.normalize_output_value(value_without_model)
-                elif isinstance(value, AssetRef) or isinstance(
-                    value, (dict, list, tuple)
-                ):
+                elif isinstance(value, (AssetRef, dict, list, tuple)):
                     props[p] = await context.normalize_output_value(value)
                 else:
                     props[p] = value
@@ -1043,7 +1046,7 @@ class BaseNode(BaseModel):
         return not cls.is_dynamic() and not cls.is_streaming_output()
 
     def get_dynamic_properties(self):
-        from nodetool.workflows.property import Property
+        Property = _get_property_cls()
 
         return {
             name: Property(
@@ -1078,7 +1081,7 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If no property with the given name exists.
         """
-        from nodetool.workflows.property import Property
+        Property = _get_property_cls()
 
         class_properties = self.properties_dict()
 
@@ -1277,7 +1280,7 @@ class BaseNode(BaseModel):
         """
         Returns the input slots of the node, including those inherited from all base classes.
         """
-        fields = {name: field for name, field in cls.model_fields.items()}
+        fields = dict(cls.model_fields.items())
         super_fields = {}
         for base in cls.__bases__:
             if hasattr(base, "inherited_fields"):
@@ -1290,7 +1293,7 @@ class BaseNode(BaseModel):
         Returns the input slots of the node.
         """
         # avoid circular import
-        from nodetool.workflows.property import Property
+        Property = _get_property_cls()
 
         types = cls.field_types()
         fields = cls.inherited_fields()
@@ -1303,7 +1306,7 @@ class BaseNode(BaseModel):
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        from nodetool.workflows.property import Property
+        Property = _get_property_cls()
 
         # Get properties from parent classes
         parent_properties = {}
@@ -1319,7 +1322,7 @@ class BaseNode(BaseModel):
 
     def node_properties(self):
         return {
-            name: self.read_property(name) for name in self.inherited_fields().keys()
+            name: self.read_property(name) for name in self.inherited_fields()
         }
 
     async def convert_output(self, context: Any, output: Any) -> Any:
@@ -1617,7 +1620,7 @@ class OutputNode(BaseNode):
         output_type = self.__class__.__name__.replace("Output", "").lower()
 
         yielded = False
-        async for handle, value in self.iter_any_input():
+        async for _handle, value in self.iter_any_input():
             yielded = True
             normalized = (
                 await context.normalize_output_value(value)

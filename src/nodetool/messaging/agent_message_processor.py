@@ -5,10 +5,9 @@ This module provides the processor for agent mode messages.
 """
 
 import asyncio
-from typing import List
+from typing import TYPE_CHECKING, List
 from uuid import uuid4
 
-from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -27,6 +26,9 @@ from nodetool.workflows.types import (
 )
 
 from .message_processor import MessageProcessor
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
 
 log = get_logger(__name__)
 

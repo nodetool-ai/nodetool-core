@@ -10,7 +10,7 @@ production environments.
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict
+from typing import Any, AsyncIterator, ClassVar, Dict
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -32,10 +32,10 @@ class ModelManager:
         _lock_creation_lock (asyncio.Lock): Lock for safely creating new per-model locks
     """
 
-    _models: Dict[str, Any] = {}
-    _models_by_node: Dict[str, str] = {}
-    _locks: Dict[str, asyncio.Lock] = {}
-    _lock_creation_lock: asyncio.Lock = asyncio.Lock()
+    _models: ClassVar[Dict[str, Any]] = {}
+    _models_by_node: ClassVar[Dict[str, str]] = {}
+    _locks: ClassVar[Dict[str, asyncio.Lock]] = {}
+    _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     @classmethod
     def get_model(cls, model_id: str, task: str, path: str | None = None) -> Any:
@@ -240,7 +240,7 @@ class ModelManager:
         # Log which models are being cleared
         if model_count > 0:
             model_info = []
-            for key in cls._models.keys():
+            for key in cls._models:
                 parts = key.split("_", 2)
                 model_id = parts[0] if len(parts) > 0 else "unknown"
                 task = parts[1] if len(parts) > 1 else "unknown"

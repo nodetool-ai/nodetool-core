@@ -35,7 +35,7 @@ class GradioAppConfig:
 def _assign_inputs(specs: Sequence[InputSpec], args: Sequence[Any], namespace: Mapping[str, Any]) -> None:
     if len(args) != len(specs):
         raise ValueError(f"Expected {len(specs)} input values, got {len(args)}")
-    for spec, value in zip(specs, args):
+    for spec, value in zip(specs, args, strict=False):
         node = namespace.get(spec.var)
         if node is None:
             raise ValueError(f"Node variable '{spec.var}' not found in namespace")

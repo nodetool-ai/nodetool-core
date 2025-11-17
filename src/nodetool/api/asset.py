@@ -428,11 +428,11 @@ async def delete(id: str, user: str = Depends(current_user)):
 async def delete_folder(user_id: str, folder_id: str) -> List[str]:
     deleted_asset_ids = []
     try:
-        assets, next_cursor = await AssetModel.paginate(
+        assets, _next_cursor = await AssetModel.paginate(
             user_id=user_id, parent_id=folder_id, limit=10000
         )
         # Delete children first
-        for index, asset in enumerate(assets, 1):
+        for _index, asset in enumerate(assets, 1):
             if asset.content_type == "folder":
                 subfolder_deleted_ids = await delete_folder(user_id, asset.id)
                 deleted_asset_ids.extend(subfolder_deleted_ids)
