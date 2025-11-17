@@ -158,5 +158,5 @@ async def resolve_tool_by_name(
 
 if __name__ == "__main__":
     load_all_nodes()
-    for name, tool in _tool_node_registry.items():
+    for name, _tool in _tool_node_registry.items():
         print(name)

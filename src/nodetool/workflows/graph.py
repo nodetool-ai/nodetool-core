@@ -267,10 +267,11 @@ class Graph(BaseModel):
         - If a cycle exists, some nodes may be omitted from the result.
         """
         # child nodes of regular groups (no loops) can be executed like top level nodes
-        if parent_id is None:
-            group_nodes = {node.id for node in self.nodes if type(node) is GroupNode}
-        else:
-            group_nodes = set()
+        group_nodes = (
+            {node.id for node in self.nodes if type(node) is GroupNode}
+            if parent_id is None
+            else set()
+        )
 
         # Filter nodes with given parent_id
         nodes = [

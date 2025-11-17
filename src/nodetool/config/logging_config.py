@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from typing import Optional, Union
+from typing import ClassVar, Optional, Union
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(
@@ -60,7 +60,7 @@ def configure_logging(
     root = logging.getLogger()
 
     class _LevelColorFormatter(logging.Formatter):
-        COLORS = {
+        COLORS: ClassVar[dict[str, str]] = {
             "DEBUG": "\x1b[37m",  # light gray
             "INFO": "\x1b[32m",  # green
             "WARNING": "\x1b[33m",  # yellow
@@ -68,7 +68,7 @@ def configure_logging(
             "CRITICAL": "\x1b[41m",  # red background
         }
 
-        RESET = "\x1b[0m"
+        RESET: ClassVar[str] = "\x1b[0m"
 
         def format(self, record: logging.LogRecord) -> str:
             if use_color:

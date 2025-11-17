@@ -2325,7 +2325,7 @@ def deploy_edit(name: Optional[str]):
                     console.print(f"[red]Deployment '{name}' not found[/]")
                     console.print()
                     console.print("[cyan]Available deployments:[/]")
-                    for dep_name in dep_config.deployments.keys():
+                    for dep_name in dep_config.deployments:
                         console.print(f"  • {dep_name}")
                     sys.exit(1)
 
@@ -2841,7 +2841,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
 
                 # Check if asset already exists on remote
                 try:
-                    remote_asset = await client.get_asset(asset_id)
+                    await client.get_asset(asset_id)
                     console.print("    [yellow]Asset already exists on remote, skipping[/]")
                     synced_count += 1
                     continue

@@ -8,13 +8,14 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 import datetime
 import json
-from abc import ABC
+from abc import ABC, abstractmethod
 from enum import Enum
 from typing import (
     Any,
     AsyncGenerator,
     AsyncIterator,
     Callable,
+    ClassVar,
     List,
     Sequence,
     Set,
@@ -130,7 +131,7 @@ class BaseProvider(ABC):
     - get_available_language_models(), get_available_image_models(), get_available_video_models(), etc.
     """
 
-    _CAPABILITY_METHODS: dict[ProviderCapability, str] = {
+    _CAPABILITY_METHODS: ClassVar[dict[ProviderCapability, str]] = {
         ProviderCapability.GENERATE_MESSAGE: "generate_message",
         ProviderCapability.GENERATE_MESSAGES: "generate_messages",
         ProviderCapability.TEXT_TO_IMAGE: "text_to_image",
@@ -143,15 +144,17 @@ class BaseProvider(ABC):
 
     log_file: str | None = None
     cost: float = 0.0
-    usage: dict[str, int] = {}
+    usage: ClassVar[dict[str, int]] = {}
     provider_name: str = ""
 
     @classmethod
     def required_secrets(cls) -> list[str]:
+        """Secrets required for this provider. Override to declare keys."""
         return []
 
-    def __init__(self, secrets: dict[str, str] = {}):
+    def __init__(self, secrets: dict[str, str] | None = None):
         self.usage = {}
+        self.secrets = secrets or {}
 
     def get_capabilities(self) -> Set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""
@@ -445,7 +448,7 @@ class BaseProvider(ABC):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
@@ -478,7 +481,7 @@ class BaseProvider(ABC):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
@@ -756,7 +759,7 @@ class MockProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
@@ -795,7 +798,7 @@ class MockProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,

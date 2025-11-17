@@ -1339,7 +1339,7 @@ class NPArray(BaseType):
         )
 
     @staticmethod
-    def from_list(arr: list, **kwargs):
+    def from_list(arr: list, **_kwargs):
         return NPArray.from_numpy(np.array(arr))
 
 
@@ -1352,13 +1352,13 @@ def to_numpy(num: float | int | NPArray) -> np.ndarray:
         raise ValueError()
 
 
-ColumnType = Union[
-    Literal["int"],
-    Literal["float"],
-    Literal["datetime"],
-    Literal["string"],
-    Literal["object"],
-]
+ColumnType = (
+    Literal["int"]
+    | Literal["float"]
+    | Literal["datetime"]
+    | Literal["string"]
+    | Literal["object"]
+)
 
 
 class ColumnDef(BaseModel):
@@ -1392,7 +1392,7 @@ class DataframeRef(AssetRef):
         rows = data.values.tolist()
         column_defs = [
             ColumnDef(name=name, data_type=dtype_name(dtype.name))
-            for name, dtype in zip(data.columns, data.dtypes)
+            for name, dtype in zip(data.columns, data.dtypes, strict=False)
         ]
         return DataframeRef(columns=column_defs, data=rows)
 

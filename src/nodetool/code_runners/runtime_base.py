@@ -649,7 +649,7 @@ class StreamRunnerBase:
                 self.nano_cpus,
                 command,
                 command_str,
-                sorted(list(environment.keys()))[:20],
+                sorted(environment.keys())[:20],
             )
 
     def _ensure_image(
@@ -860,11 +860,11 @@ class StreamRunnerBase:
         try:
             res = container.wait()
             # Docker SDK returns {"StatusCode": int, ...}
-            status = 0
-            if isinstance(res, dict):
-                status = int(res.get("StatusCode", 0) or 0)
-            else:
-                status = int(res or 0)
+            status = (
+                int(res.get("StatusCode", 0) or 0)
+                if isinstance(res, dict)
+                else int(res or 0)
+            )
             log.debug("container exit status: %s", status)
             return status
         except Exception as e:

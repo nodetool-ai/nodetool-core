@@ -3,7 +3,7 @@ import gc
 import json
 from datetime import datetime
 from enum import Enum
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, ClassVar, Dict, Optional
 
 import msgpack
 from fastapi import WebSocket, WebSocketDisconnect
@@ -86,16 +86,12 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
     msg = await context.pop_message_async()
     if isinstance(msg, Error):
         raise Exception(msg.error)
-    else:
-        if isinstance(msg, dict):
-            msg_dict = msg
-        else:
-            msg_dict = msg.model_dump()
+    msg_dict = msg if isinstance(msg, dict) else msg.model_dump()
 
-        if explicit_types and "result" in msg_dict:
-            msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
+    if explicit_types and "result" in msg_dict:
+        msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
 
-        yield msg_dict
+    yield msg_dict
 
 
 async def process_workflow_messages(
@@ -183,7 +179,7 @@ class WebSocketRunner:
 
     websocket: WebSocket | None = None
     mode: WebSocketMode = WebSocketMode.BINARY
-    active_jobs: Dict[str, JobStreamContext] = {}
+    active_jobs: ClassVar[Dict[str, JobStreamContext]] = {}
 
     def __init__(self, auth_token: str | None = None, user_id: str | None = None):
         """
@@ -262,7 +258,7 @@ class WebSocketRunner:
         # Only attempt to close if websocket exists and is not already closed
         if (
             self.websocket
-            and not self.websocket.client_state == WebSocketState.DISCONNECTED
+            and self.websocket.client_state != WebSocketState.DISCONNECTED
         ):
             try:
                 await self.websocket.close()
@@ -720,14 +716,16 @@ class WebSocketRunner:
             log.info(
                 f"Starting workflow: {req.workflow_id} with strategy: {req.execution_strategy}"
             )
-            asyncio.create_task(self.run_job(req))
+            self._run_job_task = asyncio.create_task(self.run_job(req))
             log.debug("Run job command scheduled")
             return {"message": "Job started", "workflow_id": req.workflow_id}
         elif command.command == CommandType.RECONNECT_JOB:
             if not job_id:
                 return {"error": "job_id is required"}
             log.info(f"Reconnecting to job: {job_id}")
-            asyncio.create_task(self.reconnect_job(job_id, workflow_id))
+            self._reconnect_task = asyncio.create_task(
+                self.reconnect_job(job_id, workflow_id)
+            )
             return {
                 "message": f"Reconnecting to job {job_id}",
                 "job_id": job_id,

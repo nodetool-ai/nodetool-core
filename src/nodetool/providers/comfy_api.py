@@ -177,10 +177,11 @@ def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
             name = image["name"]
             image_data_uri = image["image"]
 
-            if "," in image_data_uri:
-                base64_data = image_data_uri.split(",", 1)[1]
-            else:
-                base64_data = image_data_uri
+            base64_data = (
+                image_data_uri.split(",", 1)[1]
+                if "," in image_data_uri
+                else image_data_uri
+            )
 
             blob = base64.b64decode(base64_data)
 
@@ -367,7 +368,6 @@ def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[b
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """Handle a job using ComfyUI via websockets for status and image retrieval."""
     job_input = job["input"]
-    job_id = job["id"]
 
     validated_data, error_message = validate_input(job_input)
     if error_message:
@@ -548,7 +548,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                         error_msg = f"Failed to fetch image data for {filename} from /view endpoint."
                         errors.append(error_msg)
 
-            other_keys = [k for k in node_output.keys() if k != "images"]
+            other_keys = [k for k in node_output if k != "images"]
             if other_keys:
                 warn_msg = f"Node {node_id} produced unhandled output keys: {other_keys}."
                 print(f"worker-comfyui - WARNING: {warn_msg}")

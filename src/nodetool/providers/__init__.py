@@ -40,7 +40,7 @@ log = get_logger(__name__)
 
 def _is_llama_server_available() -> bool:
     """Check if llama-server binary is available in PATH or via environment variable.
-    
+
     Returns:
         True if llama-server binary can be found, False otherwise.
     """

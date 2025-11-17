@@ -45,10 +45,10 @@ logger = get_logger(__name__)
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
-    
+
     Args:
         user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
-    
+
     Returns:
         HF_TOKEN if available, None otherwise.
     """
@@ -90,7 +90,7 @@ class AdminDownloadManager:
 
     def __init__(self, token: str | None = None):
         """Initialize AdminDownloadManager.
-        
+
         Args:
             token: Optional HF_TOKEN. If not provided, will be fetched async when needed.
         """
@@ -106,7 +106,7 @@ class AdminDownloadManager:
     @classmethod
     async def create(cls, user_id: str | None = None):
         """Create AdminDownloadManager with async token initialization.
-        
+
         Args:
             user_id: Optional user ID for database secret lookup.
         """
@@ -302,10 +302,11 @@ async def _resolve_admin_download_manager(
     directly to avoid awaiting non-awaitable mocks.
     """
     manager_cls = AdminDownloadManager
-    if inspect.isclass(manager_cls):
-        candidate = manager_cls.create(user_id=user_id)
-    else:
-        candidate = manager_cls()  # type: ignore[call-arg]
+    candidate = (
+        manager_cls.create(user_id=user_id)
+        if inspect.isclass(manager_cls)
+        else manager_cls()  # type: ignore[call-arg]
+    )
 
     if inspect.isawaitable(candidate):
         return await candidate  # type: ignore[return-value]
@@ -546,7 +547,7 @@ async def calculate_cache_size(
     try:
         total_size = 0
         if os.path.exists(cache_dir):
-            for dirpath, dirnames, filenames in os.walk(cache_dir):
+            for dirpath, _dirnames, filenames in os.walk(cache_dir):
                 for filename in filenames:
                     filepath = os.path.join(dirpath, filename)
                     if os.path.exists(filepath):

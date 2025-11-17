@@ -6,7 +6,7 @@ import os
 import random
 import time
 import uuid
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import requests
 
@@ -14,7 +14,13 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import ImageModel
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.types import ImageBytes, ImageToImageParams, TextToImageParams
+
+if TYPE_CHECKING:
+    from nodetool.providers.types import (
+        ImageBytes,
+        ImageToImageParams,
+        TextToImageParams,
+    )
 
 log = get_logger(__name__)
 
@@ -27,7 +33,8 @@ class ComfyRunpodProvider(BaseProvider):
     def required_secrets(cls) -> list[str]:
         return ["RUNPOD_API_KEY", "RUNPOD_COMFYUI_ENDPOINT_ID"]
 
-    def __init__(self, secrets: dict[str, str] = {}):
+    def __init__(self, secrets: dict[str, str] | None = None):
+        secrets = secrets or {}
         super().__init__(secrets=secrets)
         # Prefer secrets passed in; fall back to env
         self.api_key: str = secrets.get("RUNPOD_API_KEY") or os.environ.get("RUNPOD_API_KEY", "")

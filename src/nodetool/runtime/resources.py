@@ -6,7 +6,7 @@ with proper cleanup and connection pooling.
 """
 
 import contextvars
-from typing import Any, Optional, Protocol, Type
+from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
 import httpx
 from supabase import AsyncClient
@@ -15,8 +15,10 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.storage.abstract_storage import AbstractStorage
-from nodetool.storage.memcache_node_cache import AbstractNodeCache
-from nodetool.storage.memory_uri_cache import MemoryUriCache
+
+if TYPE_CHECKING:
+    from nodetool.storage.memcache_node_cache import AbstractNodeCache
+    from nodetool.storage.memory_uri_cache import MemoryUriCache
 
 log = get_logger(__name__)
 

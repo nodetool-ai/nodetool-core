@@ -5,7 +5,7 @@ import os
 import platform
 import sys
 from contextlib import asynccontextmanager
-from typing import Any, List
+from typing import Any, ClassVar, List
 
 import httpx
 from fastapi import APIRouter, FastAPI, Request, WebSocket
@@ -114,9 +114,7 @@ class HealthCheckFilter(logging.Filter):
         """Return False to suppress health check logs."""
         message = record.getMessage()
         # Check if the log message contains /health endpoint
-        if "/health" in message:
-            return False
-        return True
+        return "/health" not in message
 
 
 def create_health_check_filter():
@@ -126,11 +124,11 @@ def create_health_check_filter():
 
 class ExtensionRouterRegistry:
     _instance = None
-    _routers: List[APIRouter] = []
+    _routers: ClassVar[List[APIRouter]] = []
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(ExtensionRouterRegistry, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     @classmethod
@@ -233,11 +231,14 @@ def setup_ollama_url():
 
 
 def create_app(
-    origins: list[str] = ["*"],
-    routers: list[APIRouter] = DEFAULT_ROUTERS,
+    origins: list[str] | None = None,
+    routers: list[APIRouter] | None = None,
     static_folder: str | None = None,
     apps_folder: str | None = None,
 ):
+    origins = ["*"] if origins is None else origins
+    routers = DEFAULT_ROUTERS if routers is None else routers
+
     # Centralized dotenv loading for consistency with deploy.fastapi_server
     from nodetool.config.environment import load_dotenv_files
 
@@ -528,10 +529,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.dirname(current_dir)
     editable_dirs = get_nodetool_package_source_folders()
-    if reload:
-        reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs]
-    else:
-        reload_dirs = []
+    reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs] if reload else []
 
     use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 

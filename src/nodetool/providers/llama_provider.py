@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, AsyncIterator, List, Sequence
+from typing import Any, AsyncIterator, ClassVar, List, Sequence
 
 import httpx
 import openai
@@ -186,7 +186,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             system = Message(
                 role="system", content="\n".join(p for p in system_parts if p)
             )
-            normalized = [system] + normalized
+            normalized = [system, *normalized]
 
         # Enforce strict alternation after optional system: user, assistant, user, ...
         if not normalized:
@@ -678,7 +678,7 @@ if __name__ == "__main__":
         class EchoTool(Tool):
             name = "echo"
             description = "Echo back the provided text."
-            input_schema = {
+            input_schema: ClassVar[dict[str, Any]] = {
                 "type": "object",
                 "properties": {"text": {"type": "string"}},
                 "required": ["text"],

@@ -570,7 +570,10 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
 
 
 def create_or_update_runpod_template(
-    template_name: str, image_name: str, tag: str, env: dict[str, str] = {}
+    template_name: str,
+    image_name: str,
+    tag: str,
+    env: dict[str, str] | None = None,
 ) -> str:
     """
     Create or update a RunPod template with the latest Docker image using REST API.
@@ -603,6 +606,7 @@ def create_or_update_runpod_template(
     Note:
         Requires RUNPOD_API_KEY environment variable to be set.
     """
+    env = env or {}
     # Check if template already exists
     print(f"Checking for existing template: {template_name}")
     existing_template = get_runpod_template_by_name(template_name)

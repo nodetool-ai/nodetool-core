@@ -99,6 +99,7 @@ class JobExecution(ABC):
         """Clean up resources associated with this job."""
         pass
 
+    @abstractmethod
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
         pass

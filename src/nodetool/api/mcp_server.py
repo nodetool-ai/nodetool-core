@@ -12,11 +12,14 @@ import os
 from contextlib import suppress
 from dataclasses import asdict
 from io import BytesIO
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from fastmcp import Context, FastMCP
 from huggingface_hub.constants import HF_HUB_CACHE
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from huggingface_hub.hf_api import RepoFile, RepoFolder
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
@@ -74,10 +77,10 @@ log = get_logger(__name__)
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
-    
+
     Args:
         user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
-    
+
     Returns:
         HF_TOKEN if available, None otherwise.
     """
@@ -93,9 +96,8 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     if user_id is None:
         log.debug("get_hf_token (mcp_server): No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
-        scope = None
         with suppress(Exception):
-            scope = maybe_scope()
+            maybe_scope()
             # Note: ResourceScope doesn't store user_id directly
             # In real usage, user_id would come from authentication context
 
@@ -2157,7 +2159,6 @@ async def query_hf_model_files(
     from fnmatch import fnmatch
 
     from huggingface_hub import HfApi
-    from huggingface_hub.hf_api import RepoFile, RepoFolder
 
     try:
         # Use HF_TOKEN from secrets if available for gated model downloads

@@ -574,7 +574,7 @@ class OpenAIProvider(BaseProvider):
             height = width * (height_ratio / width_ratio)
 
         def _make_even(value: float) -> int:
-            rounded = int(round(value))
+            rounded = round(value)
             if rounded % 2 != 0:
                 rounded += 1 if rounded > 0 else 0
             return max(2, rounded)

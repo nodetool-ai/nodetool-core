@@ -8,20 +8,22 @@ endpoint for serving large language models with optimized inference.
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
 
 import httpx
 import openai
 
-from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
+    from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
 

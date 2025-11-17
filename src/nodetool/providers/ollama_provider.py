@@ -488,8 +488,9 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             else:
                 # Prepend new system message
                 modified_messages = [
-                    Message(role="system", content=tool_instruction.strip())
-                ] + modified_messages
+                    Message(role="system", content=tool_instruction.strip()),
+                    *modified_messages,
+                ]
 
             ollama_messages = [
                 self.convert_message(m, use_tool_emulation=True)

@@ -55,7 +55,7 @@ def resolve_workspace_path(workspace_dir: str, path: str) -> str:
                 f"Treating absolute path '{path}' as relative to workspace root '{workspace_dir}'."
             )
             # Attempt to get path relative to drive root
-            drive, path_part = os.path.splitdrive(normalized_path)
+            _drive, path_part = os.path.splitdrive(normalized_path)
             relative_path = path_part.lstrip(
                 "\\/"
             )  # Strip leading slashes from the part after drive

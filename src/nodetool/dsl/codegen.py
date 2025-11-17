@@ -31,7 +31,7 @@ class {{ class_name }}({{ base_classes | join(', ') }}):
 {% if line %}
     {{ line }}
 {% else %}
-    
+
 {% endif %}
 {% endfor %}
     \"\"\"
@@ -61,7 +61,7 @@ class {{ class_name }}({{ base_classes | join(', ') }}):
 {% if line %}
         {{ line }}
 {% else %}
-        
+
 {% endif %}
 {% endfor %}
         \"\"\"
@@ -243,7 +243,7 @@ def field_default(default_value: Any) -> str:
 
         # Introspect fields if it's a Pydantic model
         if isinstance(default_value, BaseModel):  # Check if it's a Pydantic BaseModel
-            for field_name in default_value.model_fields.keys():
+            for field_name in default_value.model_fields:
                 value = getattr(default_value, field_name)
                 value_str = field_default(value)  # Recursive call
                 args_strs.append(f"{field_name}={value_str}")

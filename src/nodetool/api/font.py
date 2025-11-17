@@ -107,6 +107,6 @@ async def get_system_fonts() -> FontResponse:
             print(f"Error getting Linux fonts: {e}")
 
     # Remove duplicates and sort
-    fonts = sorted(list(set(fonts)))
+    fonts = sorted(set(fonts))
 
     return FontResponse(fonts=fonts)

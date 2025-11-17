@@ -195,7 +195,7 @@ class SSHConnection:
         if not self._client:
             raise SSHConnectionError("Not connected to remote host")
 
-        stdin, stdout, stderr = self._client.exec_command(
+        _stdin, stdout, stderr = self._client.exec_command(
             command, timeout=timeout or self.timeout
         )
 

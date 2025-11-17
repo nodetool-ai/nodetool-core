@@ -79,7 +79,7 @@ class AdminHTTPClient:
             return await response.json()
 
     async def run_workflow(
-        self, workflow_id: str, params: Dict[str, Any] = None
+        self, workflow_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Run a workflow on the deployed instance."""
         if params is None:
@@ -236,36 +236,38 @@ class AdminHTTPClient:
             data["allow_patterns"] = allow_patterns
 
         timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout for large models
-        async with aiohttp.TCPConnector(force_close=True) as connector:
-            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                async with session.post(
-                    f"{self.base_url}/admin/models/huggingface/download",
-                    headers=self.headers,
-                    json=data,
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(
-                            f"HuggingFace download failed: {response.status} {await response.text()}"
-                        )
+        async with (
+            aiohttp.TCPConnector(force_close=True) as connector,
+            aiohttp.ClientSession(timeout=timeout, connector=connector) as session,
+            session.post(
+                f"{self.base_url}/admin/models/huggingface/download",
+                headers=self.headers,
+                json=data,
+            ) as response,
+        ):
+            if response.status != 200:
+                raise Exception(
+                    f"HuggingFace download failed: {response.status} {await response.text()}"
+                )
 
-                    buffer = ""
-                    async for chunk in response.content.iter_any():
-                        buffer += chunk.decode("utf-8")
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-                            if line:  # Log non-empty lines
-                                console.print(f"[dim]HF SSE: {line[:100]}...[/]" if len(line) > 100 else f"[dim]HF SSE: {line}[/]")
-                            if line.startswith("data: "):
-                                data_str = line[6:]  # Remove 'data: ' prefix
-                                if data_str == "[DONE]":
-                                    console.print("[dim]HF SSE stream completed with [DONE][/]")
-                                    return
-                                try:
-                                    yield json.loads(data_str)
-                                except json.JSONDecodeError:
-                                    console.print(f"[dim yellow]HF SSE JSON decode error: {data_str[:100]}[/]")
-                                    continue
+            buffer = ""
+            async for chunk in response.content.iter_any():
+                buffer += chunk.decode("utf-8")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if line:  # Log non-empty lines
+                        console.print(f"[dim]HF SSE: {line[:100]}...[/]" if len(line) > 100 else f"[dim]HF SSE: {line}[/]")
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove 'data: ' prefix
+                        if data_str == "[DONE]":
+                            console.print("[dim]HF SSE stream completed with [DONE][/]")
+                            return
+                        try:
+                            yield json.loads(data_str)
+                        except json.JSONDecodeError:
+                            console.print(f"[dim yellow]HF SSE JSON decode error: {data_str[:100]}[/]")
+                            continue
 
     async def download_ollama_model(
         self, model_name: str
@@ -274,32 +276,34 @@ class AdminHTTPClient:
         data = {"model_name": model_name, "stream": True}
 
         timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout for large models
-        async with aiohttp.TCPConnector(force_close=True) as connector:
-            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                async with session.post(
-                    f"{self.base_url}/admin/models/ollama/download",
-                    headers=self.headers,
-                    json=data,
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(
-                            f"Ollama download failed: {response.status} {await response.text()}"
-                        )
+        async with (
+            aiohttp.TCPConnector(force_close=True) as connector,
+            aiohttp.ClientSession(timeout=timeout, connector=connector) as session,
+            session.post(
+                f"{self.base_url}/admin/models/ollama/download",
+                headers=self.headers,
+                json=data,
+            ) as response,
+        ):
+            if response.status != 200:
+                raise Exception(
+                    f"Ollama download failed: {response.status} {await response.text()}"
+                )
 
-                    buffer = ""
-                    async for chunk in response.content.iter_any():
-                        buffer += chunk.decode("utf-8")
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-                            if line.startswith("data: "):
-                                data_str = line[6:]  # Remove 'data: ' prefix
-                                if data_str == "[DONE]":
-                                    return
-                                try:
-                                    yield json.loads(data_str)
-                                except json.JSONDecodeError:
-                                    continue
+            buffer = ""
+            async for chunk in response.content.iter_any():
+                buffer += chunk.decode("utf-8")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove 'data: ' prefix
+                        if data_str == "[DONE]":
+                            return
+                        try:
+                            yield json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
 
     async def scan_cache(self) -> Dict[str, Any]:
         """Scan HuggingFace cache directory."""

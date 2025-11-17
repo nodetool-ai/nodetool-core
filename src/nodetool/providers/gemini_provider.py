@@ -342,10 +342,7 @@ class GeminiProvider(BaseProvider):
                 log.debug(f"Skipping message {i+1} - no valid parts")
                 continue
 
-            if message.role == "user":
-                role = "user"
-            else:
-                role = "model"
+            role = "user" if message.role == "user" else "model"
             content = Content(parts=parts, role=role)
             history.append(content)
             log.debug(f"Added message to history with {len(parts)} parts")

@@ -1213,10 +1213,11 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     repo_url: str | None = None
     # PEP 621: [project].urls.Repository or .Source
     urls = project_data.get("urls") if isinstance(project_data, dict) else None
-    if isinstance(urls, dict):
-        repo_url = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
-    else:
-        repo_url = None
+    repo_url = (
+        urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+        if isinstance(urls, dict)
+        else None
+    )
 
     def _to_repo_id(url: str | None) -> str | None:
         if not url or not isinstance(url, str):

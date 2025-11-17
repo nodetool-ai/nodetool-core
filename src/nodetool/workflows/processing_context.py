@@ -1182,7 +1182,7 @@ class ProcessingContext:
                         # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:
                             # Convert numpy array to list of frames for the utility function
-                            video_frames = [frame for frame in obj]
+                            video_frames = list(obj)
 
                             # Use shared video utility for consistent behavior
                             video_bytes = export_to_video_bytes(video_frames, fps=30)
@@ -1949,7 +1949,7 @@ class ProcessingContext:
             VideoRef: The VideoRef object.
         """
         # Convert numpy array to list of frames for the utility function
-        video_frames = [frame for frame in video]
+        video_frames = list(video)
 
         # Use shared video utility for consistent behavior
         video_bytes = export_to_video_bytes(video_frames, fps=fps)
@@ -2245,7 +2245,7 @@ class ProcessingContext:
             results = await asyncio.gather(
                 *[self.assets_to_data_uri(value[k]) for k in keys]
             )
-            return {k: r for k, r in zip(keys, results)}
+            return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
             results = await asyncio.gather(
                 *[self.assets_to_data_uri(item) for item in value]
@@ -2268,7 +2268,7 @@ class ProcessingContext:
             results = await asyncio.gather(
                 *[self.assets_to_storage_url(value[k]) for k in keys]
             )
-            return {k: r for k, r in zip(keys, results)}
+            return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
             results = await asyncio.gather(
                 *[self.assets_to_storage_url(item) for item in value]
@@ -2291,7 +2291,7 @@ class ProcessingContext:
             results = await asyncio.gather(
                 *[self.assets_to_workspace_files(value[k]) for k in keys]
             )
-            return {k: r for k, r in zip(keys, results)}
+            return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
             results = await asyncio.gather(
                 *[self.assets_to_workspace_files(item) for item in value]
@@ -2323,7 +2323,7 @@ class ProcessingContext:
             results = await asyncio.gather(
                 *[self.embed_assets_in_data(value[k]) for k in keys]
             )
-            return {k: r for k, r in zip(keys, results)}
+            return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
             results = await asyncio.gather(
                 *[self.embed_assets_in_data(item) for item in value]
@@ -2371,7 +2371,7 @@ class ProcessingContext:
             results = await asyncio.gather(
                 *[self.upload_assets_to_temp(value[k]) for k in keys]
             )
-            return {k: r for k, r in zip(keys, results)}
+            return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
             results = await asyncio.gather(
                 *[self.upload_assets_to_temp(item) for item in value]

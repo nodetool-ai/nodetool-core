@@ -1,9 +1,7 @@
 import os
 
 
-def get_files(
-    path: str, extensions: list[str] = [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
-):
+def get_files(path: str, extensions: list[str] | None = None):
     """
     Recursively retrieves all files with specified extensions in the given path.
 
@@ -14,6 +12,7 @@ def get_files(
     Returns:
         list[str]: A list of file paths matching the specified extensions.
     """
+    extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
     ext = os.path.splitext(path)[1]
     if os.path.isfile(path) and ext in extensions:
         return [path]
@@ -26,7 +25,7 @@ def get_files(
 
 def get_content(
     paths: list[str],
-    extensions: list[str] = [".py", ".js", ".ts", ".jsx", ".tsx", ".md"],
+    extensions: list[str] | None = None,
 ):
     """
     Retrieves the content of files with specified extensions in the given paths.
@@ -38,6 +37,7 @@ def get_content(
     Returns:
         str: The concatenated content of all the files found.
     """
+    extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
     content = ""
     for path in paths:
         for file in get_files(path, extensions):

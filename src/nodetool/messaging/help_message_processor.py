@@ -353,7 +353,7 @@ class HelpMessageProcessor(MessageProcessor):
             ):
                 # Create proxy tools for each UI tool in the manifest
                 for (
-                    tool_name,
+                    _tool_name,
                     tool_manifest,
                 ) in processing_context.client_tools_manifest.items():
                     ui_tools.append(UIToolProxy(tool_manifest))

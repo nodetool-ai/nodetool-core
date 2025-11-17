@@ -37,10 +37,11 @@ def numpy_to_pil_image(arr: np.ndarray) -> PIL.Image.Image:
             if amin >= 0.0 and amax <= 1.0:
                 a = a * 255.0
             elif amax > 255.0 or amin < 0.0:
-                if amax != amin:
-                    a = (a - amin) * (255.0 / (amax - amin))
-                else:
-                    a = np.zeros_like(a)
+                a = (
+                    (a - amin) * (255.0 / (amax - amin))
+                    if amax != amin
+                    else np.zeros_like(a)
+                )
             a = np.clip(a, 0, 255).astype(np.uint8)
     elif a.dtype == np.uint16:
         a = (a / 257.0).astype(np.uint8)
@@ -161,10 +162,7 @@ def image_ref_to_base64_jpeg(
         return image_data_to_base64_jpeg(image_ref.data, max_size, quality)
 
     # Handle URI-based images
-    if hasattr(image_ref, "uri"):
-        uri = getattr(image_ref, "uri", "")
-    else:
-        uri = ""
+    uri = getattr(image_ref, "uri", "") if hasattr(image_ref, "uri") else ""
 
     if not uri:
         raise ValueError("ImageRef has no data or URI")
@@ -172,7 +170,7 @@ def image_ref_to_base64_jpeg(
     # Delegate URI handling to shared sync helper. For http(s), wrap errors with
     # a friendlier message expected by tests.
     try:
-        mime, data = fetch_uri_bytes_and_mime_sync(uri)
+        _mime, data = fetch_uri_bytes_and_mime_sync(uri)
     except Exception as e:
         if uri.startswith("http://") or uri.startswith("https://"):
             raise ValueError(f"Failed to download image: {e}") from e

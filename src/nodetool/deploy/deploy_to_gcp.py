@@ -120,7 +120,7 @@ def deploy_to_gcp(
     concurrency: int = 10,
     timeout: int = 3600,
     allow_unauthenticated: bool = False,
-    env: dict[str, str] = {},
+    env: dict[str, str] | None = None,
     docker_username: Optional[str] = None,
     docker_registry: str = "docker.io",
     image_name: Optional[str] = None,
@@ -166,6 +166,8 @@ def deploy_to_gcp(
         no_auto_push: Disable automatic push during build
         tools: List of tool names to enable for chat handler
     """
+    env = env or {}
+
     from .deploy import (
         get_docker_username,
     )

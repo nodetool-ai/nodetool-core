@@ -89,7 +89,7 @@ def type_to_str(tp: Type[Any]) -> str:
 
 def docstring_to_markdown(docstring):
     # Remove leading/trailing whitespace and quotes
-    cleaned = docstring.strip().strip('"""')
+    cleaned = docstring.strip().strip('"')
 
     # Split into lines
     lines = cleaned.split("\n")

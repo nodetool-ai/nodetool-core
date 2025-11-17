@@ -104,9 +104,7 @@ def _is_path_model(model: str) -> bool:
         return True
     if _is_windows_abs_path(model):
         return True
-    if model.lower().endswith(".gguf") and ":" not in model:
-        return True
-    return False
+    return model.lower().endswith(".gguf") and ":" not in model
 
 
 def _hf_cache_dir() -> str:
@@ -442,7 +440,8 @@ class LlamaServerManager:
                 "--alias",
                 alias,
                 "--jinja",
-            ] + model_args
+                *model_args,
+            ]
 
             if self._threads:
                 argv += ["--threads", str(self._threads)]
@@ -696,7 +695,7 @@ class LlamaServerManager:
                     return
                 self._shutdown_started = True
             try:
-                loop.create_task(self.stop_all())
+                self._shutdown_task = loop.create_task(self.stop_all())
             except Exception:
                 self.shutdown_sync()
 
@@ -709,7 +708,9 @@ class LlamaServerManager:
             except (NotImplementedError, RuntimeError):
                 # Fallback to basic signal module for non-asyncio environments
                 with suppress(Exception):
-                    signal.signal(sig_obj, lambda *_: _handle_signal(sig_name))
+                    signal.signal(
+                        sig_obj, lambda *_sig_args, sig=sig_name: _handle_signal(sig)
+                    )
         self._signals_installed = True
 
     def _register_instance_atexit(self) -> None:
@@ -796,7 +797,7 @@ class LlamaServerManager:
             items = list(self._servers.items())
             self._servers.clear()
         # Terminate outside lock and wait for exit
-        for key, inst in items:
+        for _key, inst in items:
             with suppress(Exception):
                 if inst.process.returncode is None:
                     inst.process.terminate()

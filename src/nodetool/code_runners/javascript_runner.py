@@ -26,7 +26,7 @@ class JavaScriptDockerRunner(StreamRunnerBase):
         *args,
         **kwargs,
     ):
-        super().__init__(timeout_seconds=timeout_seconds, *args, **kwargs)
+        super().__init__(*args, timeout_seconds=timeout_seconds, **kwargs)
         self.image = image
         self.mem_limit = mem_limit
         self.nano_cpus = nano_cpus

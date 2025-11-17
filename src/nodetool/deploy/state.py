@@ -62,32 +62,31 @@ class StateManager:
         """
         # Ensure lock file exists
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(self.lock_path, "w")
-
         start_time = time.time()
         acquired = False
 
-        try:
-            # Try to acquire lock with timeout
-            while time.time() - start_time < timeout:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    acquired = True
-                    break
-                except OSError:
-                    time.sleep(0.1)
+        with open(self.lock_path, "w") as lock_file:
+            try:
+                # Try to acquire lock with timeout
+                while time.time() - start_time < timeout:
+                    try:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        acquired = True
+                        break
+                    except OSError:
+                        time.sleep(0.1)
 
-            if not acquired:
-                raise TimeoutError(
-                    f"Could not acquire lock on {self.lock_path} within {timeout} seconds"
-                )
+                if not acquired:
+                    raise TimeoutError(
+                        f"Could not acquire lock on {self.lock_path} within {timeout} seconds"
+                    )
 
-            yield
+                yield
 
-        finally:
-            if acquired:
-                with suppress(OSError):
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            finally:
+                if acquired:
+                    with suppress(OSError):
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             lock_file.close()
 
             # Clean up lock file

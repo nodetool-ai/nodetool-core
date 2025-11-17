@@ -66,6 +66,7 @@ class ChromaTextSearchTool(Tool):
             zip(
                 result["ids"][0],
                 result["documents"][0],
+                strict=False,
             )
         )
 
@@ -227,6 +228,7 @@ class ChromaHybridSearchTool(Tool):
                     zip(
                         semantic_results["ids"][0],
                         semantic_results["documents"][0],
+                        strict=False,
                     )
                 ):
                     score = 1 / (rank + k_constant)
@@ -238,6 +240,7 @@ class ChromaHybridSearchTool(Tool):
                     zip(
                         keyword_results["ids"][0],
                         keyword_results["documents"][0],
+                        strict=False,
                     )
                 ):
                     score = 1 / (rank + k_constant)
@@ -484,7 +487,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
 
         # Index each chunk
         indexed_ids = []
-        for i, chunk in enumerate(chunks):
+        for chunk in chunks:
             # Generate a unique ID for this chunk
             unique_id = f"{doc_id}:{chunk.start_index}"
 

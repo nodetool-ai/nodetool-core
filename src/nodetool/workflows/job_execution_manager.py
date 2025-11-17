@@ -35,7 +35,7 @@ class JobExecutionManager:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(JobExecutionManager, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._jobs = {}
             cls._instance._cleanup_task = None
             cls._instance._finalizing_jobs = set()

@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, ClassVar, Dict
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import ColumnDef, RecordType
@@ -55,7 +55,7 @@ def json_schema_for_dictionary(fields: RecordType) -> dict:
 
 class GenerateStringTool(Tool):
     name: str = "generate_string"
-    input_schema: dict = {
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "string": {

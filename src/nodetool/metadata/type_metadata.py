@@ -75,18 +75,14 @@ class TypeMetadata(BaseModel):
             return all(t.is_cacheable_type() for t in self.type_args)
         if self.is_comfy_data_type():
             return True
-        if self.is_comfy_type():
-            return False
-        return True
+        return not self.is_comfy_type()
 
     def is_serializable_type(self):
         if self.is_list_type() or self.is_union_type() or self.is_dict_type():
             return all(t.is_serializable_type() for t in self.type_args)
         if self.is_comfy_data_type():
             return True
-        if self.is_comfy_type():
-            return False
-        return True
+        return not self.is_comfy_type()
 
     def is_comfy_type(self, recursive: bool = False):
         if recursive and self.is_union_type():

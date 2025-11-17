@@ -24,10 +24,7 @@ class MemoryNodeCache(AbstractNodeCache):
 
     def set(self, key: str, value: Any, ttl: int = 3600):
         # Align semantics with memcached where ttl=0 means no expiration
-        if ttl in (None, 0):
-            expiry_time = None
-        else:
-            expiry_time = time.time() + ttl
+        expiry_time = None if ttl in (None, 0) else time.time() + ttl
         self.cache[key] = (value, expiry_time)
 
     def clear(self):

@@ -161,14 +161,14 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
     module_to_classes: dict[str, list[str]] = {}
 
     def declare_for_node(node: ApiNode) -> None:
-        namespace, cls_name = _split_type(node.type)
+        _namespace, cls_name = _split_type(node.type)
         base = _sanitize_ident(_snake_case(cls_name)) or "node"
         counters.setdefault(base, 0)
         counters[base] += 1
         suffix = str(counters[base])
         var = f"{base}_{suffix}"
         var_names[node.id] = var
-        module = f"nodetool.dsl.{namespace}" if namespace else "nodetool.dsl"
+        module = f"nodetool.dsl.{_namespace}" if _namespace else "nodetool.dsl"
         module_to_classes.setdefault(module, [])
         if cls_name not in module_to_classes[module]:
             module_to_classes[module].append(cls_name)
@@ -289,7 +289,7 @@ def graph_to_gradio_py(
     counters: dict[str, int] = {}
 
     def declare_for_node(node: ApiNode) -> None:
-        namespace, cls_name = _split_type(node.type)
+        _namespace, cls_name = _split_type(node.type)
         base = _sanitize_ident(_snake_case(cls_name)) or "node"
         counters.setdefault(base, 0)
         counters[base] += 1

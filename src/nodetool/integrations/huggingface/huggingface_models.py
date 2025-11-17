@@ -160,10 +160,7 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
         "model.pt",
         "model.pth",
     }
-    if lower in standard_weight_names:
-        return False
-
-    return True
+    return lower not in standard_weight_names
 
 
 def _repo_supports_root_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
@@ -382,7 +379,7 @@ def model_type_from_model_info(
 async def read_cached_hf_files(
     pipeline_tag: str,
     library_name: str | None = None,
-    tags: list[str] = [],
+    tags: list[str] | None = None,
 ) -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
@@ -390,7 +387,7 @@ async def read_cached_hf_files(
     Returns:
         List[CachedFileInfo]: A list of CachedFileInfo objects found in the cache.
     """
-    tags = [tag.lower() for tag in tags]
+    tags = [tag.lower() for tag in (tags or [])]
 
     # Create cache key based on tags filter
     cache_key_parts = [pipeline_tag]
@@ -425,7 +422,7 @@ async def read_cached_hf_files(
         return_exceptions=True,  # Don't fail entire operation if one model fails
     )
 
-    for repo, model_info in zip(model_repos, model_infos):
+    for repo, model_info in zip(model_repos, model_infos, strict=False):
         # Handle exceptions from individual fetch_model_info calls
         if isinstance(model_info, BaseException):
             log.debug(f"Failed to fetch model info for {repo.repo_id}: {model_info}")
@@ -496,7 +493,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
             return_exceptions=True,  # Don't fail entire operation if one model fails
         )
 
-        for repo, model_info in zip(model_repos, model_infos):
+        for repo, model_info in zip(model_repos, model_infos, strict=False):
             # Handle exceptions from individual fetch_model_info calls
             if isinstance(model_info, BaseException):
                 log.debug(

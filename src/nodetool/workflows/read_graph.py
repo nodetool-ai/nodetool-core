@@ -260,7 +260,7 @@ def convert_graph(input_graph: dict[str, Any]) -> dict[str, Any]:
                     output_graph[node_id][HEIGHT_KEY] = node["size"]["1"]
             else:
                 names = get_widget_names(node["type"])
-                for name, value in zip(names, node["widgets_values"]):
+                for name, value in zip(names, node["widgets_values"], strict=False):
                     output_graph[node_id]["data"][name] = value
 
         # Process inputs

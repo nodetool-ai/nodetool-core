@@ -7,9 +7,10 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import List
+from typing import TYPE_CHECKING, List
 
-from nodetool.config.deployment import SelfHostedDeployment
+if TYPE_CHECKING:
+    from nodetool.config.deployment import SelfHostedDeployment
 
 
 class ProxyRunGenerator:

@@ -46,11 +46,13 @@ import sys
 from contextlib import suppress
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import msgpack
 import websockets
-from websockets.asyncio.client import ClientConnection
+
+if TYPE_CHECKING:
+    from websockets.asyncio.client import ClientConnection
 
 
 class MessageFormat(str, Enum):
@@ -188,10 +190,11 @@ class ChatWebSocketClient:
             assert self.websocket, "WebSocket not connected"
             async for message in self.websocket:
                 # Parse message based on format
-                if isinstance(message, bytes):
-                    data = msgpack.unpackb(message, raw=False)
-                else:
-                    data = json.loads(message)
+                data = (
+                    msgpack.unpackb(message, raw=False)
+                    if isinstance(message, bytes)
+                    else json.loads(message)
+                )
 
                 # Process based on message type
                 await self.process_message(data)

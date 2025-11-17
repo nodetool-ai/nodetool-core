@@ -25,7 +25,7 @@ def _is_opencv_available() -> bool:
 
 def _legacy_export_to_video(
     video_frames: List[np.ndarray] | List[PIL.Image.Image],
-    output_video_path: str = None,
+    output_video_path: str | None = None,
     fps: int = 10,
 ) -> str:
     """Legacy video export using OpenCV backend."""
@@ -37,7 +37,8 @@ def _legacy_export_to_video(
     import cv2
 
     if output_video_path is None:
-        output_video_path = tempfile.NamedTemporaryFile(suffix=".mp4").name
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            output_video_path = tmp_file.name
 
     if isinstance(video_frames[0], np.ndarray):
         video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]
@@ -45,7 +46,7 @@ def _legacy_export_to_video(
         video_frames = [np.array(frame) for frame in video_frames]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    h, w, c = video_frames[0].shape
+    h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter(output_video_path, fourcc, fps=fps, frameSize=(w, h))
 
     for i in range(len(video_frames)):
@@ -58,7 +59,7 @@ def _legacy_export_to_video(
 
 def export_to_video(
     video_frames: List[np.ndarray] | List[PIL.Image.Image],
-    output_video_path: str = None,
+    output_video_path: str | None = None,
     fps: int = 10,
     quality: float = 5.0,
     bitrate: Optional[int] = None,
@@ -108,7 +109,8 @@ def export_to_video(
         return _legacy_export_to_video(video_frames, output_video_path, fps)
 
     if output_video_path is None:
-        output_video_path = tempfile.NamedTemporaryFile(suffix=".mp4").name
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            output_video_path = tmp_file.name
 
     # Convert frames to uint8 format
     if isinstance(video_frames[0], np.ndarray):
@@ -221,7 +223,7 @@ def _legacy_export_to_video_bytes(
         video_frames = [np.array(frame) for frame in video_frames]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    h, w, c = video_frames[0].shape
+    h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter(
         "/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h)
     )

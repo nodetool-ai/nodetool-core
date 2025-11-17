@@ -105,7 +105,7 @@ class GraphTool(Tool):
             "type": "object",
             "properties": {
                 edge.targetHandle: get_property_schema(node, edge.targetHandle)
-                for edge, node in zip(self.initial_edges, self.initial_nodes)
+                for edge, node in zip(self.initial_edges, self.initial_nodes, strict=False)
             },
         }
 

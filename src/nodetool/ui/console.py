@@ -223,7 +223,7 @@ class AgentConsole:
 
                 if subtask_tool_calls:
                     tool_node = subtask_node.add("[cyan]🔧 Tools[/]")
-                    for i, call in enumerate(
+                    for _i, call in enumerate(
                         subtask_tool_calls[-3:]
                     ):  # Show last 3 tool calls
                         tool_name = call.name

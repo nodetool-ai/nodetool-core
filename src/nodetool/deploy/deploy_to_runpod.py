@@ -101,7 +101,7 @@ def deploy_to_runpod(
     network_volume_id: Optional[str] = None,
     allowed_cuda_versions: tuple = (),
     name: Optional[str] = None,
-    env: dict[str, str] = {},
+    env: dict[str, str] | None = None,
 ) -> None:
     """
     Deploy workflow or chat handler to RunPod serverless infrastructure.
@@ -137,6 +137,7 @@ def deploy_to_runpod(
         name: Name for the endpoint (required for all deployments)
         tools: List of tool names to enable for chat handler
     """
+    env = env or {}
     import traceback
 
     from rich.console import Console

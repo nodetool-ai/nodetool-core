@@ -51,11 +51,7 @@ class Asset(DBModel):
 
         For example, if the content type is "image/jpeg", this will return "jpeg".
         """
-        return (
-            CONTENT_TYPE_TO_EXTENSION[self.content_type]  # type: ignore
-            if self.content_type in CONTENT_TYPE_TO_EXTENSION
-            else "bin"
-        )
+        return CONTENT_TYPE_TO_EXTENSION.get(self.content_type, "bin")  # type: ignore
 
     @property
     def has_thumbnail(self) -> bool:
@@ -361,7 +357,7 @@ class Asset(DBModel):
             parent_condition = Field("user_id").equals(user_id)
             if len(all_parent_ids) == 1:
                 parent_condition = parent_condition.and_(
-                    Field("id").equals(list(all_parent_ids)[0])
+                    Field("id").equals(next(iter(all_parent_ids)))
                 )
             else:
                 parent_id_conditions = [

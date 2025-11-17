@@ -322,8 +322,8 @@ if platform.system() == "Windows" and _windows_policy is not None:
 def create_chat_server(
     provider: str,
     default_model: str = "gpt-oss:20b",
-    tools: list[str] = [],
-    workflows: list[Workflow] = [],
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ) -> FastAPI:
     """Create a FastAPI chat server instance.
 
@@ -337,6 +337,8 @@ def create_chat_server(
     # Authentication strategy is configured via AUTH_PROVIDER env var
 
     app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
+    tools = tools or []
+    workflows = workflows or []
 
     # Include OpenAI-compatible routes via router
     from nodetool.api.openai import create_openai_compatible_router
@@ -371,8 +373,8 @@ def run_chat_server(
     port: int,
     provider: str,
     default_model: str = "gpt-oss:20b",
-    tools: list[str] = [],
-    workflows: list[Workflow] = [],
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ):
     """Run the chat server.
 
@@ -389,6 +391,9 @@ def run_chat_server(
     import dotenv
 
     dotenv.load_dotenv()
+
+    tools = tools or []
+    workflows = workflows or []
 
     app = create_chat_server(provider, default_model, tools, workflows)
 

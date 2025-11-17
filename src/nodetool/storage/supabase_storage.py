@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from datetime import UTC, datetime, timezone
-from typing import IO, Any, AsyncIterator
-
-from nodetool.models.supabase_adapter import SupabaseAsyncClient
+from typing import IO, TYPE_CHECKING, Any, AsyncIterator
 
 from .abstract_storage import AbstractStorage
+
+if TYPE_CHECKING:
+    from nodetool.models.supabase_adapter import SupabaseAsyncClient
 
 
 class SupabaseStorage(AbstractStorage):
@@ -31,16 +32,16 @@ class SupabaseStorage(AbstractStorage):
 
     async def _info(self, key: str) -> dict:
         """
-        {'id': '53b47f2e-c362-4658-8672-c4a205dea61e', 
-        'name': 'cfe027d2b6e811f0b6ce0000516a875d_thumb.jpg', 
-        'version': '0c92a31f-a66f-4ca3-8134-1be8ffd2fe06', 
-        'bucket_id': 'assets', 
-        'size': 41822, 
-        'content_type': 'text/plain', 
-        'cache_control': 'no-cache', 
-        'etag': '"07451a7dd937d79d5d106c37d6a15f55"', 
-        'metadata': {}, 
-        'last_modified': '2025-11-01T06:05:49.592Z', 
+        {'id': '53b47f2e-c362-4658-8672-c4a205dea61e',
+        'name': 'cfe027d2b6e811f0b6ce0000516a875d_thumb.jpg',
+        'version': '0c92a31f-a66f-4ca3-8134-1be8ffd2fe06',
+        'bucket_id': 'assets',
+        'size': 41822,
+        'content_type': 'text/plain',
+        'cache_control': 'no-cache',
+        'etag': '"07451a7dd937d79d5d106c37d6a15f55"',
+        'metadata': {},
+        'last_modified': '2025-11-01T06:05:49.592Z',
         'created_at': '2025-11-01T06:05:49.592Z'}
         """
         return await self.bucket.info(key)
@@ -76,7 +77,6 @@ class SupabaseStorage(AbstractStorage):
         content.seek(0)
 
         # storage3 expects a filesystem path; if we get a file-like object, write to temp file first
-        file_obj = content
         tmp_path = None
         try:
             if isinstance(getattr(content, "name", None), str):

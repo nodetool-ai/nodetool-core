@@ -57,7 +57,7 @@ class ModelCache:
 
         try:
             with open(cache_path, "rb") as f:
-                stored_key, value, expiry_time = pickle.load(f)
+                _stored_key, value, expiry_time = pickle.load(f)
 
             if time.time() < expiry_time:
                 log.debug(f"Cache hit for key: {key}")

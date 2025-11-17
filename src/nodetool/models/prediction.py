@@ -89,6 +89,7 @@ class Prediction(DBModel):
             workflow_id=workflow_id,
             status=status,
             cost=cost,
+            duration=duration,
             hardware=hardware,
             created_at=created_at,
             started_at=started_at,

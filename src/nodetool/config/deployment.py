@@ -527,7 +527,7 @@ def load_deployment_config() -> DeploymentConfig:
 
     # Auto-generate worker_auth_token for self-hosted deployments that don't have one
     config_updated = False
-    for name, deployment in config.deployments.items():
+    for _name, deployment in config.deployments.items():
         if isinstance(deployment, SelfHostedDeployment):
             if not deployment.worker_auth_token:
                 deployment.worker_auth_token = secrets.token_urlsafe(32)

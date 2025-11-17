@@ -257,15 +257,15 @@ class ServerSubprocessRunner:
 
         worker = threading.Thread(
             target=self._run_worker,
-            kwargs=dict(
-                queue=queue,
-                loop=loop,
-                user_code=user_code or "",
-                env_locals=env_locals or {},
-                context=context,
-                node=node,
-                stdin_stream=stdin_stream,
-            ),
+            kwargs={
+                "queue": queue,
+                "loop": loop,
+                "user_code": user_code or "",
+                "env_locals": env_locals or {},
+                "context": context,
+                "node": node,
+                "stdin_stream": stdin_stream,
+            },
             daemon=True,
         )
         worker.start()
@@ -322,7 +322,7 @@ class ServerSubprocessRunner:
             # 3) Build argv
             templated = [arg.format(port=port) for arg in self.args_template]
             extra = shlex.split(user_code) if user_code else []
-            argv = [str(binaryPath)] + templated + extra
+            argv = [str(binaryPath), *templated, *extra]
             command_vec = argv
 
             # 4) Launch process

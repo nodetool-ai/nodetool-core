@@ -27,11 +27,7 @@ class Asset(BaseModel):
 
         For example, if the content type is "image/jpeg", this will return "jpeg".
         """
-        return (
-            CONTENT_TYPE_TO_EXTENSION[self.content_type]  # type: ignore
-            if self.content_type in CONTENT_TYPE_TO_EXTENSION
-            else "bin"
-        )
+        return CONTENT_TYPE_TO_EXTENSION.get(self.content_type, "bin")  # type: ignore
 
     @property
     def file_name(self) -> str:

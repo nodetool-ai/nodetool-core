@@ -7,7 +7,7 @@ Provides async connection pooling for SQLite with per-scope adapter memoization.
 import asyncio
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
+from typing import Any, ClassVar, Dict, Optional, Type
 
 import aiosqlite
 
@@ -23,8 +23,8 @@ class SQLiteConnectionPool:
     """Simple async connection pool for SQLite."""
 
     # Class-level pools per database path
-    _pools: Dict[str, "SQLiteConnectionPool"] = {}
-    _pools_lock = asyncio.Lock()
+    _pools: ClassVar[Dict[str, "SQLiteConnectionPool"]] = {}
+    _pools_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(self, db_path: str, pool_size: int = 10):
         """Initialize the connection pool.

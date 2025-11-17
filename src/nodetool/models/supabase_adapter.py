@@ -305,10 +305,7 @@ class SupabaseAdapter(DatabaseAdapter):
         """Queries Supabase based on conditions."""
         pk = self._get_primary_key()
 
-        if columns:
-            select_columns = ", ".join(columns)
-        else:
-            select_columns = ", ".join(self.fields.keys())
+        select_columns = ", ".join(columns) if columns else ", ".join(self.fields)
 
         # Base query
         query = self.client.table(self.table_name).select(select_columns)
@@ -322,10 +319,9 @@ class SupabaseAdapter(DatabaseAdapter):
                 log.error(f"Query failed due to unsupported operator/condition: {e}")
                 raise  # Or return empty result?
 
-        if order_by:
-            query = query.order(order_by, desc=reverse)
-        else:
-            query = query.order(pk, desc=reverse)
+        query = query.order(order_by, desc=reverse) if order_by else query.order(
+            pk, desc=reverse
+        )
 
         fetch_limit = limit + 1
         query = query.limit(fetch_limit)

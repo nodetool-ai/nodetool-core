@@ -9,7 +9,7 @@ def search_nodes(
     query: list[str],
     input_type: str | None = None,
     output_type: str | None = None,
-    exclude_namespaces: list[str] = [],
+    exclude_namespaces: list[str] | None = None,
     n_results: int = 10,
 ) -> list[NodeMetadata]:
     """
@@ -27,6 +27,7 @@ def search_nodes(
     """
     node_metadata_list = registry.get_all_installed_nodes()
     query_lower = [q.lower() for q in query]
+    exclude_namespaces = exclude_namespaces or []
 
     def type_matches(type_metadata: TypeMetadata, type_str: str) -> bool:
         if type_metadata.type == "any":

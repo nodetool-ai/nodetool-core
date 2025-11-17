@@ -121,7 +121,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
                 models.append(ollama_model)
 
         # Check for nested model references (e.g., in arrays like loras)
-        for key, value in node_data.items():
+        for _key, value in node_data.items():
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict):
