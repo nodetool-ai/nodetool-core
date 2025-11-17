@@ -20,11 +20,11 @@ def _supports_color() -> bool:
 
 
 def configure_logging(
-    level: Optional[Union[str, int]] = None,
+    level: Optional[str | int] = None,
     fmt: Optional[str] = None,
     datefmt: Optional[str] = None,
     propagate_root: bool = False,
-) -> Union[str, int]:
+) -> str | int:
     """Configure root logging once with a consistent format.
 
     Environment overrides:

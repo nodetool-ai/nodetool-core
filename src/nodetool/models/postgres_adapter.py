@@ -1,12 +1,16 @@
-from datetime import datetime
 import re
+from contextlib import asynccontextmanager
+from datetime import datetime
+from enum import EnumMeta as EnumType
+from types import UnionType
+from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
 
 # mypy: ignore-errors
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.sql import SQL, Composed, Identifier, Placeholder
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
-from types import UnionType
-from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.config.logging_config import get_logger
@@ -16,20 +20,15 @@ from nodetool.models.condition_builder import (
     ConditionGroup,
     Operator,
 )
-from contextlib import asynccontextmanager
-from .database_adapter import DatabaseAdapter
-from typing import Type, Union, get_origin
-from psycopg.types.json import Jsonb
-from psycopg.sql import SQL, Identifier, Placeholder, Composed
-from enum import EnumMeta as EnumType
 
+from .database_adapter import DatabaseAdapter
 
 log = get_logger(__name__)
 
 
 def convert_to_postgres_format(
     value: Any, py_type: Type | None
-) -> Union[int, float, str, bytes, Jsonb, None]:
+) -> int | float | str | bytes | Jsonb | None:
     """
     Convert a Python value to a format suitable for PostgreSQL based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -89,11 +88,7 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
         else:
             return value
 
-    if py_type in (str, int, float, bool, bytes, dict, list, set):
-        return value
-    elif origin in (dict, list, set):
-        return value
-    elif py_type is datetime:
+    if py_type in (str, int, float, bool, bytes, dict, list, set) or origin in (dict, list, set) or py_type is datetime:
         return value
     elif py_type.__class__ is EnumType:
         return py_type(value)
@@ -145,10 +140,7 @@ def get_postgres_type(field_type: Any) -> str:
     # Direct mapping of Python types to PostgreSQL types
     if field_type is str:
         return "TEXT"
-    elif field_type is Any:
-        return "JSONB"
-    # Serialized to JSON
-    elif field_type in (list, dict, set) or origin in (list, dict, set):
+    elif field_type is Any or field_type in (list, dict, set) or origin in (list, dict, set):
         return "JSONB"
     elif field_type is int:
         return "INTEGER"
@@ -268,28 +260,26 @@ class PostgresAdapter(DatabaseAdapter):
     async def table_exists(self) -> bool:
         """Checks if the table associated with this adapter exists in the database."""
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(
-                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)",
-                    (self.table_name,),
-                )
-                res = await cursor.fetchone()
-                if res is None:
-                    return False
-                return res["exists"]
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)",
+                (self.table_name,),
+            )
+            res = await cursor.fetchone()
+            if res is None:
+                return False
+            return res["exists"]
 
     async def get_current_schema(self) -> set[str]:
         """Retrieves the current schema (column names) of the table from the database."""
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
-                    (self.table_name,),
-                )
-                rows = await cursor.fetchall()
-                current_schema = {row["column_name"] for row in rows}
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                (self.table_name,),
+            )
+            rows = await cursor.fetchall()
+            current_schema = {row["column_name"] for row in rows}
         return current_schema
 
     def get_desired_schema(self) -> set[str]:
@@ -418,10 +408,9 @@ class PostgresAdapter(DatabaseAdapter):
         cols = ", ".join(self.fields.keys())
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(query, (key,))
-                item = await cursor.fetchone()
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(query, (key,))
+            item = await cursor.fetchone()
         if item is None:
             return None
         return convert_from_postgres_attributes(dict(item), self.fields)
@@ -441,7 +430,7 @@ class PostgresAdapter(DatabaseAdapter):
             await conn.commit()
 
     def _build_condition(
-        self, condition: Union[Condition, ConditionGroup]
+        self, condition: Condition | ConditionGroup
     ) -> tuple[Composed, list[Any]]:
         """Recursively builds a psycopg2 SQL Composed object and parameters for a WHERE clause.
 
@@ -522,14 +511,13 @@ class PostgresAdapter(DatabaseAdapter):
         )
 
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(query, params)
-                rows = await cursor.fetchall()
-                res = [
-                    convert_from_postgres_attributes(dict(row), self.fields)
-                    for row in rows
-                ]
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(query, params)
+            rows = await cursor.fetchall()
+            res = [
+                convert_from_postgres_attributes(dict(row), self.fields)
+                for row in rows
+            ]
 
         if len(res) <= limit:
             return res, ""
@@ -544,9 +532,8 @@ class PostgresAdapter(DatabaseAdapter):
     async def get_cursor(self):
         """Provides a database cursor within a context manager, handling commit/rollback."""
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                yield cursor
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            yield cursor
 
     async def execute_sql(
         self, sql: str, params: Optional[Dict[str, Any]] = None
@@ -565,16 +552,15 @@ class PostgresAdapter(DatabaseAdapter):
         """
         translated_sql, translated_params = translate_postgres_params(sql, params or {})
         pool = await self._get_pool()
-        async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(translated_sql, translated_params)
-                if cursor.description:
-                    rows = await cursor.fetchall()
-                    return [
-                        convert_from_postgres_attributes(dict(row), self.fields)
-                        for row in rows
-                    ]
-                return []
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(translated_sql, translated_params)
+            if cursor.description:
+                rows = await cursor.fetchall()
+                return [
+                    convert_from_postgres_attributes(dict(row), self.fields)
+                    for row in rows
+                ]
+            return []
 
     async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
@@ -633,20 +619,19 @@ class PostgresAdapter(DatabaseAdapter):
 
         try:
             pool = await self._get_pool()
-            async with pool.connection() as conn:
-                async with conn.cursor(row_factory=dict_row) as cursor:
-                    await cursor.execute(sql, (self.table_name,))
-                    rows = await cursor.fetchall()
-                    indexes = []
-                    for row in rows:
-                        indexes.append(
-                            {
-                                "name": row["index_name"],
-                                "columns": row["column_names"],
-                                "unique": row["is_unique"],
-                            }
-                        )
-                    return indexes
+            async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(sql, (self.table_name,))
+                rows = await cursor.fetchall()
+                indexes = []
+                for row in rows:
+                    indexes.append(
+                        {
+                            "name": row["index_name"],
+                            "columns": row["column_names"],
+                            "unique": row["is_unique"],
+                        }
+                    )
+                return indexes
         except psycopg.Error as e:
             print(f"PostgreSQL error during index listing: {e}")
             raise e

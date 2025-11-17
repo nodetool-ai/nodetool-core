@@ -19,23 +19,26 @@ Usage:
         yield chunk
 """
 
-import os
 import asyncio
 import inspect
+import os
+from contextlib import suppress
 from typing import AsyncGenerator
+
 from huggingface_hub import (
+    HfApi,
     hf_hub_download,
     scan_cache_dir,
-    HfApi,
     try_to_load_from_cache,
 )
 from huggingface_hub.hf_api import RepoFile
-from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
-from nodetool.config.logging_config import get_logger
+
 from nodetool.chat.ollama_service import get_ollama_client
+from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
-from nodetool.security.secret_helper import get_secret
+from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
 from nodetool.runtime.resources import maybe_scope
+from nodetool.security.secret_helper import get_secret
 
 logger = get_logger(__name__)
 
@@ -50,24 +53,20 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
         HF_TOKEN if available, None otherwise.
     """
     logger.debug(f"get_hf_token (admin_operations): Looking up HF_TOKEN for user_id={user_id}")
-    
+
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
         logger.debug(f"get_hf_token (admin_operations): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
-    
+
     # 2. Try to get from database if user_id is available
     if user_id is None:
         logger.debug("get_hf_token (admin_operations): No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
-        try:
-            scope = maybe_scope()
-            # Note: ResourceScope doesn't store user_id directly
-            # In real usage, user_id would come from authentication context
-        except Exception:
-            pass
-    
+        with suppress(Exception):
+            maybe_scope()
+
     if user_id:
         logger.debug(f"get_hf_token (admin_operations): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
@@ -81,7 +80,7 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             logger.debug(f"get_hf_token (admin_operations): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
     else:
         logger.debug("get_hf_token (admin_operations): No user_id available, skipping database lookup")
-    
+
     logger.debug(f"get_hf_token (admin_operations): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
@@ -103,7 +102,7 @@ class AdminDownloadManager:
             logger.debug("AdminDownloadManager initialized without HF_TOKEN - will fetch async when needed")
             self.api = HfApi()
         self._token_initialized = token is not None
-    
+
     @classmethod
     async def create(cls, user_id: str | None = None):
         """Create AdminDownloadManager with async token initialization.
@@ -126,9 +125,9 @@ class AdminDownloadManager:
         user_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Download HuggingFace model with detailed progress updates"""
-        
+
         logger.debug(f"AdminDownloadManager.download_with_progress: Starting download for {repo_id} with user_id={user_id}")
-        
+
         # Ensure token is initialized
         if not self._token_initialized:
             logger.debug(f"AdminDownloadManager.download_with_progress: Token not initialized, fetching with user_id={user_id}")

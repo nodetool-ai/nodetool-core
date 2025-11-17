@@ -1,9 +1,11 @@
 import json
 from typing import AsyncGenerator
+
+from ollama import AsyncClient
+
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import LlamaModel
 from nodetool.types.model import UnifiedModel
-from ollama import AsyncClient
 
 
 def get_ollama_client() -> AsyncClient:

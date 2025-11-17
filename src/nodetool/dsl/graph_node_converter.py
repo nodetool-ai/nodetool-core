@@ -105,10 +105,8 @@ class GraphNodeConverter:
         extra_items: dict[str, Any] = {}
         if hasattr(graph_node, "model_extra") and graph_node.model_extra:
             extra_items = dict(graph_node.model_extra)  # type: ignore[assignment]
-        elif hasattr(graph_node, "__pydantic_extra__") and getattr(
-            graph_node, "__pydantic_extra__"
-        ):
-            extra_items = dict(getattr(graph_node, "__pydantic_extra__"))
+        elif hasattr(graph_node, "__pydantic_extra__") and graph_node.__pydantic_extra__:
+            extra_items = dict(graph_node.__pydantic_extra__)
 
         for extra_name, value in extra_items.items():
             if extra_name in {"id", "dynamic_outputs"}:

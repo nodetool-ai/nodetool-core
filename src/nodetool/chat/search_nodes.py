@@ -2,7 +2,6 @@ from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.packages.registry import Registry
 
-
 registry = Registry()
 
 

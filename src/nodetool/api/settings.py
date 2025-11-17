@@ -1,13 +1,14 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException
-from nodetool.config.environment import Environment
-from nodetool.config.settings import load_settings, save_settings
-from nodetool.config.configuration import get_settings_registry, get_secrets_registry
-from nodetool.models.secret import Secret
-from nodetool.api.utils import current_user
-from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from nodetool.api.utils import current_user
+from nodetool.config.configuration import get_secrets_registry, get_settings_registry
+from nodetool.config.environment import Environment
+from nodetool.config.settings import load_settings, save_settings
+from nodetool.models.secret import Secret
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -80,7 +81,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
             secret_values[secret_setting.env_var] = None
 
     settings_with_values = []
-    
+
     # Add regular settings
     for setting in settings_registry:
         value = current_settings.get(setting.env_var)
@@ -96,7 +97,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
                 is_secret=False,
             )
         )
-    
+
     # Add secrets (convert Secret to Setting format)
     for secret_setting in secrets_registry:
         value = secret_values.get(secret_setting.env_var)
@@ -245,7 +246,7 @@ async def get_secret(
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to decrypt secret: {str(e)}"
-            )
+            ) from e
 
     return response
 
@@ -294,7 +295,7 @@ async def update_secret(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update secret: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/secrets/{key}")

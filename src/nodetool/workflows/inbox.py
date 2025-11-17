@@ -10,7 +10,7 @@ Only nodes that return ``True`` from ``is_streaming_input()`` are expected to
 drain the inbox manually via ``iter_input`` / ``iter_any``. Nodes that leave the
 flag at ``False`` will continue to rely on the actor for batching (according to
 ``sync_mode``) even if they produce streaming outputs. The inbox API itself does
-not change – the documentation here simply records the planned division of
+not change - the documentation here simply records the planned division of
 responsibilities so future edits remain consistent.
 
 Features:
@@ -31,8 +31,8 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from typing import Any, AsyncIterator
-from nodetool.config.logging_config import get_logger
 
+from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 

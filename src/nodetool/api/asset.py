@@ -2,34 +2,37 @@
 
 import asyncio
 import datetime
-import os
-from io import BytesIO
-import zipfile
 import mimetypes
+import os
+import zipfile
+from io import BytesIO
+from typing import Dict, List, Optional, Tuple, Union
+
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
+
+from nodetool.api.utils import current_user
+from nodetool.config.logging_config import get_logger
+from nodetool.media.common.media_utils import (
+    create_image_thumbnail,
+    create_video_thumbnail,
+    get_audio_duration,
+)
+from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.condition_builder import Field
+from nodetool.models.workflow import Workflow
+from nodetool.packages.registry import Registry
+from nodetool.runtime.resources import require_scope
 from nodetool.types.asset import (
     Asset,
     AssetCreateRequest,
     AssetDownloadRequest,
     AssetList,
+    AssetSearchResult,
     AssetUpdateRequest,
     AssetWithPath,
-    AssetSearchResult,
-)
-from nodetool.api.utils import current_user
-from nodetool.config.logging_config import get_logger
-from nodetool.runtime.resources import require_scope
-from typing import Dict, List, Optional, Tuple, Union
-from nodetool.models.asset import Asset as AssetModel
-from nodetool.models.workflow import Workflow
-from nodetool.packages.registry import Registry
-from pydantic import BaseModel, Field as PydanticField
-from nodetool.media.common.media_utils import (
-    create_image_thumbnail,
-    create_video_thumbnail,
-    get_audio_duration,
 )
 
 
@@ -93,7 +96,7 @@ async def index(
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
     user: str = Depends(current_user),
-    duration: Optional[int] = None,
+    _duration: Optional[int] = None,
 ) -> AssetList:
     """
     Returns all assets for a given user or workflow.
@@ -202,7 +205,9 @@ async def search_assets_global(
 
     except Exception as e:
         log.exception(f"Error searching assets for user {user}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Search temporarily unavailable")
+        raise HTTPException(
+            status_code=500, detail="Search temporarily unavailable"
+        ) from e
 
 
 # Routes for package assets
@@ -234,7 +239,7 @@ async def list_package_assets():
         log.exception(f"Error listing package assets: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error listing package assets: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/packages/{package_name}", response_model=PackageAssetList)
@@ -271,7 +276,7 @@ async def list_package_assets_by_package(package_name: str):
         raise HTTPException(
             status_code=500,
             detail=f"Error listing assets for package {package_name}: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/packages/{package_name}/{asset_name}")
@@ -333,7 +338,9 @@ async def get_package_asset(package_name: str, asset_name: str):
         log.exception(
             f"Error serving asset {asset_name} from package {package_name}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=f"Error serving asset: {str(e)}")
+        raise HTTPException(
+                status_code=500, detail=f"Error serving asset: {str(e)}"
+            ) from e
 
 
 @router.get("/{id}")
@@ -413,7 +420,9 @@ async def delete(id: str, user: str = Depends(current_user)):
         return {"deleted_asset_ids": deleted_asset_ids}
     except Exception as e:
         log.exception(f"Asset deletion failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting asset: {str(e)}"
+        ) from e
 
 
 async def delete_folder(user_id: str, folder_id: str) -> List[str]:
@@ -526,7 +535,9 @@ async def create(
         log.exception(e, stack_info=True)
         if asset:
             await asset.delete()
-        raise HTTPException(status_code=500, detail="Error uploading asset")
+        raise HTTPException(
+            status_code=500, detail="Error uploading asset"
+        ) from e
 
     return await from_model(asset)
 
@@ -607,7 +618,7 @@ async def download_assets(
 
     async def fetch_asset_content(
         asset: AssetModel,
-    ) -> Tuple[str, Union[BytesIO, None]]:
+    ) -> Tuple[str, BytesIO | None]:
         try:
             if asset.user_id != user:
                 raise HTTPException(
@@ -688,7 +699,9 @@ async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)
 
 
 @router.get("/by-filename/{filename}")
-async def get_by_filename(filename: str, user: str = Depends(current_user)) -> Asset:
+async def get_by_filename(
+    filename: str, user: str = Depends(current_user)
+) -> Asset:
     """
     Returns the asset for the given filename.
     """

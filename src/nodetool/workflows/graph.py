@@ -1,14 +1,15 @@
-from typing import Any, List, Sequence
-from collections import deque
 import logging
+from collections import deque
+from typing import Any, List, Sequence
+
+from pydantic import BaseModel, Field
 
 from nodetool.metadata.typecheck import typecheck
-from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import (
+    BaseNode,
     GroupNode,
     InputNode,
-    BaseNode,
     OutputNode,
 )
 
@@ -309,7 +310,7 @@ class Graph(BaseModel):
             if level_nodes:
                 sorted_nodes.append(level_nodes)
 
-        if any(indegree[node_id] != 0 for node_id in indegree.keys()):
+        if any(indegree[node_id] != 0 for node_id in indegree):
             print("Graph contains at least one cycle")
 
         return sorted_nodes

@@ -31,34 +31,34 @@ Example:
 """
 
 import asyncio
-from contextlib import contextmanager
 import logging
-from nodetool.config.logging_config import get_logger
-import time
 import threading
-from typing import Any, Optional
+import time
 from collections import defaultdict, deque
+from contextlib import contextmanager, suppress
+from typing import Any, Optional
 
-from nodetool.types.job import JobUpdate
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.types.graph import Edge
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
     BaseNode,
     InputNode,
     OutputNode,
 )
-from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.config.environment import Environment
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.torch_support import (
-    build_torch_support,
-    BaseTorchSupport,
     TORCH_AVAILABLE,
-    torch,
+    BaseTorchSupport,
+    build_torch_support,
     is_cuda_available,
+    torch,
 )
+from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -407,7 +407,7 @@ class WorkflowRunner:
         removed: list[str] = []  # store edge ids for logging
 
         for edge in graph.edges:
-            # 1 / 2 – both nodes must exist
+            # 1 / 2 - both nodes must exist
             source_node = graph.find_node(edge.source)
             target_node = graph.find_node(edge.target)
             if source_node is None or target_node is None:
@@ -419,13 +419,13 @@ class WorkflowRunner:
 
             target_cls = target_node.__class__
 
-            # 3 – source handle must be an output on the *source* node (instance-aware)
+            # 3 - source handle must be an output on the *source* node (instance-aware)
             if source_node.find_output_instance(edge.sourceHandle) is None:  # type: ignore
                 log.warning(f"Edge {edge.id} has a source handle that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
 
-            # 4 – target property must exist unless node is dynamic
+            # 4 - target property must exist unless node is dynamic
             if (
                 not target_cls.is_dynamic()
                 and target_node.find_property(edge.targetHandle) is None
@@ -434,7 +434,7 @@ class WorkflowRunner:
                 removed.append(edge.id or "<unknown>")
                 continue
 
-            # Edge passed all checks – keep it
+            # Edge passed all checks - keep it
             valid_edges.append(edge)
 
         # Save removed edge IDs for potential teardown notifications
@@ -683,10 +683,8 @@ class WorkflowRunner:
                             )
                         inbox = self.node_inboxes.get(node._id)
                         if inbox is not None:
-                            try:
+                            with suppress(Exception):
                                 await inbox.close_all()
-                            except Exception:
-                                pass
                 log.debug("Nodes finalized in finally block.")
 
                 self._torch_support.empty_cuda_cache()
@@ -731,7 +729,7 @@ class WorkflowRunner:
                         summarize the issues found.
         """
         log.info(
-            "Validating graph – %d nodes, %d edges", len(graph.nodes), len(graph.edges)
+            "Validating graph - %d nodes, %d edges", len(graph.nodes), len(graph.edges)
         )
         is_valid = True
         all_errors = []
@@ -902,15 +900,15 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is None:
                     continue
-                if inbox.has_buffered(edge.targetHandle) or inbox.is_open(
-                    edge.targetHandle
+                if (
+                    (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle))
+                    and edge.id
                 ):
-                    if edge.id:
-                        context.post_message(
-                            EdgeUpdate(edge_id=edge.id, status="drained")
-                        )
+                    context.post_message(
+                        EdgeUpdate(edge_id=edge.id, status="drained")
+                    )
             except Exception:
-                # Best effort – ignore errors during draining
+            # Best effort - ignore errors during draining
                 pass
 
     async def process_graph(

@@ -9,32 +9,32 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence, Dict
 from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
 
-from nodetool.workflows.processing_context import ProcessingContext
+import tiktoken
 from ollama import AsyncClient, Client
 from pydantic import BaseModel
-import tiktoken
 
-from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_compat import OpenAICompat
-from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
+from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.media.image.image_utils import (
     image_ref_to_base64_jpeg,
 )
 from nodetool.metadata.types import (
-    Message,
-    Provider,
-    ToolCall,
-    MessageImageContent,
-    MessageTextContent,
     ImageRef,
     LanguageModel,
+    Message,
+    MessageImageContent,
+    MessageTextContent,
+    Provider,
+    ToolCall,
 )
+from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.providers.openai_compat import OpenAICompat
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)

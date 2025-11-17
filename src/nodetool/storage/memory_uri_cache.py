@@ -1,6 +1,6 @@
-from typing import Any, Optional
-import time
 import threading
+import time
+from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
 

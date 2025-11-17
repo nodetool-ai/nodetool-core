@@ -1,14 +1,13 @@
 import json
-from typing import Any, Dict, Optional, TypeVar
 import time
+from typing import Any, ClassVar, Dict, Optional, TypeVar
 
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
+from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.config.environment import Environment
-from nodetool.agents.serp_providers.serp_providers import SerpProvider, ErrorResponse
-
+from nodetool.workflows.processing_context import ProcessingContext
 
 T = TypeVar("T")
 
@@ -16,7 +15,7 @@ T = TypeVar("T")
 class GoogleSearchTool(Tool):
     name = "google_search"
     description = "Search Google to retrieve organic search results. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "keyword": {
@@ -67,7 +66,7 @@ class GoogleSearchTool(Tool):
 class GoogleNewsTool(Tool):
     name = "google_news"
     description = "Search Google News to retrieve live news articles. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "keyword": {
@@ -123,7 +122,7 @@ class GoogleNewsTool(Tool):
 class GoogleImagesTool(Tool):
     name = "google_images"
     description = "Search Google Images to retrieve live image results. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "keyword": {
@@ -189,7 +188,7 @@ class GoogleImagesTool(Tool):
 class GoogleFinanceTool(Tool):
     name = "google_finance"
     description = "Retrieve financial market data from Google Finance. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -243,7 +242,7 @@ class GoogleFinanceTool(Tool):
 class GoogleJobsTool(Tool):
     name = "google_jobs"
     description = "Search Google Jobs for job listings. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -308,7 +307,7 @@ class GoogleJobsTool(Tool):
 class GoogleLensTool(Tool):
     name = "google_lens"
     description = "Search with an image URL using Google Lens to find visual matches and related content. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "image_url": {
@@ -367,7 +366,7 @@ class GoogleLensTool(Tool):
 class GoogleMapsTool(Tool):
     name = "google_maps"
     description = "Search Google Maps for places or get details about a specific place. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -424,10 +423,9 @@ class GoogleMapsTool(Tool):
 
     def user_message(self, params: dict) -> str:
         query = params.get("query")
-        if query:
-            search_term = f"'{query}'"
-        else:
-            search_term = f"'{params.get('query', 'places')}'"
+        search_term = (
+            f"'{query}'" if query else f"'{params.get('query', 'places')}'"
+        )
 
         msg = f"Searching Google Maps for {search_term}..."
         if len(msg) > 80:
@@ -438,7 +436,7 @@ class GoogleMapsTool(Tool):
 class GoogleShoppingTool(Tool):
     name = "google_shopping"
     description = "Search Google Shopping for products. Uses available SERP provider."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -700,4 +698,3 @@ if __name__ == "__main__":
 
     # Run examples if any provider is configured or to show tool's error message
     asyncio.run(run_all_examples())
-

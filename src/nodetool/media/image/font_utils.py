@@ -2,10 +2,11 @@
 Shared font-related utilities used across the codebase.
 """
 
-from nodetool.config.logging_config import get_logger
 import os
 import platform
 from typing import Dict, Optional
+
+from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 

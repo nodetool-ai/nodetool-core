@@ -2,15 +2,17 @@
 
 import traceback
 from typing import List
-from nodetool.chat.chat_cli import ChatCLI
-from rich.syntax import Syntax
+
 from rich.panel import Panel
-from .base import Command
-from nodetool.agents.graph_planner import GraphPlanner
-from nodetool.providers import get_provider
-from nodetool.workflows.types import PlanningUpdate, Chunk
+from rich.syntax import Syntax
+
+from nodetool.agents.graph_planner import GraphPlanner, print_visual_graph
+from nodetool.chat.chat_cli import ChatCLI
 from nodetool.models.workflow import Workflow
-from nodetool.agents.graph_planner import print_visual_graph
+from nodetool.providers import get_provider
+from nodetool.workflows.types import Chunk, PlanningUpdate
+
+from .base import Command
 
 
 class EditWorkflowCommand(Command):

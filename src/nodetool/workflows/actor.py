@@ -38,16 +38,16 @@ rationale for the changes that will follow.
 from __future__ import annotations
 
 import asyncio
-from nodetool.config.logging_config import get_logger
+import logging
 from typing import Any, Awaitable, Callable
 
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.io import NodeInputs, NodeOutputs
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import NodeUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.io import NodeInputs, NodeOutputs
-import logging
 
 
 class NodeActor:
@@ -357,7 +357,7 @@ class NodeActor:
         await node.pre_process(context)
 
         safe_properties = [
-            name for name in inputs.keys() if node.find_property(name) is not None
+            name for name in inputs if node.find_property(name) is not None
         ]
 
         await node.send_update(context, "running", properties=safe_properties)
@@ -497,7 +497,7 @@ class NodeActor:
                 is_sticky: dict[str, bool] = {
                     h: not handle_streaming.get(h, False) for h in handles
                 }
-                seen_counts: dict[str, int] = {h: 0 for h in handles}
+                seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
 
                 def ready_to_zip() -> bool:
                     for handle in handles:
@@ -578,7 +578,7 @@ class NodeActor:
         async for handle, item in self.inbox.iter_any():
             await self.runner.process_output_node(ctx, node, {handle: item})  # type: ignore[arg-type]
 
-        # Upstream completed – mark downstream EOS
+        # Upstream completed - mark downstream EOS
         await self._mark_downstream_eos()
 
     async def _run_streaming_input_node(self) -> None:
@@ -693,7 +693,7 @@ class NodeActor:
 
             self.logger.error(traceback.format_exc())
             self.logger.error(
-                "Node execution failed: %s (%s) [%s] – %s",
+                "Node execution failed: %s (%s) [%s] - %s",
                 node.get_title(),
                 node._id,
                 node.get_node_type(),

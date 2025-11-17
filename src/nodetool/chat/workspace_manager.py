@@ -1,9 +1,10 @@
 import os
 import platform
+import re
 import shutil
 import subprocess
-import re
 import tempfile
+from contextlib import suppress
 
 
 class WorkspaceManager:
@@ -74,24 +75,22 @@ class WorkspaceManager:
     def create_new_workspace(self):
         """Creates a new workspace named with an incrementing number."""
         existing_workspaces = []
+        items: list[str] = []
+
         try:
-            items = os.listdir(self.workspace_root)
+            with suppress(FileNotFoundError):
+                items = os.listdir(self.workspace_root)
+        except PermissionError:
+            self.workspace_root = self._fallback_workspace_root()
+            existing_workspaces = []
+        else:
             for item in items:
                 # Check if the item is a directory and its name is purely numeric
                 if os.path.isdir(os.path.join(self.workspace_root, item)):
                     match = re.match(r"^(\d+)$", item)  # Match only digits
                     if match:
-                        try:
+                        with suppress(ValueError):
                             existing_workspaces.append(int(match.group(1)))
-                        except ValueError:
-                            # Ignore items that look like numbers but aren't valid integers
-                            pass
-        except FileNotFoundError:
-            # Handle case where workspace_root doesn't exist yet (though __init__ should create it)
-            pass
-        except PermissionError:
-            self.workspace_root = self._fallback_workspace_root()
-            existing_workspaces = []
 
         next_num = 1
         if existing_workspaces:

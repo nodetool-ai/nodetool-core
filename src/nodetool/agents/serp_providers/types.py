@@ -1,32 +1,33 @@
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 from nodetool.metadata.types import (
-    OrganicResult,
-    NewsResult,
     ImageResult,
     JobResult,
-    VisualMatchResult,
     LocalResult,
+    NewsResult,
+    OrganicResult,
     ShoppingResult,
+    VisualMatchResult,
 )
 
 __all__ = [
-    "OrganicResult",
-    "NewsResult",
-    "ImageResult",
-    "JobResult",
-    "VisualMatchResult",
-    "LocalResult",
-    "ShoppingResult",
-    "GoogleSearchResponse",
-    "GoogleNewsResponse",
     "GoogleImagesResponse",
     "GoogleJobsResponse",
     "GoogleLensResponse",
     "GoogleMapsResponse",
+    "GoogleNewsResponse",
+    "GoogleSearchResponse",
     "GoogleShoppingResponse",
+    "ImageResult",
+    "JobResult",
+    "LocalResult",
+    "NewsResult",
+    "OrganicResult",
+    "ShoppingResult",
+    "VisualMatchResult",
 ]
 
 
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     import json
 
     search_results_file = Path(__file__).parent / "search_results.json"
-    with open(search_results_file, "r") as f:
+    with open(search_results_file) as f:
         data = json.load(f)
     try:
         search_results = GoogleSearchResponse(**data)

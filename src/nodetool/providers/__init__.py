@@ -8,19 +8,22 @@ implement the corresponding methods.
 """
 
 import asyncio
-import time
-import shutil
 import os
+import shutil
+import time
 from typing import Optional
+
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import Provider as ProviderEnum
 
 # Base provider class and testing utilities
 from nodetool.providers.base import (
+    _PROVIDER_REGISTRY,
     BaseProvider,
     MockProvider,
     ProviderCapability,
     get_registered_provider,
     register_provider,
-    _PROVIDER_REGISTRY,
 )
 from nodetool.providers.fake_provider import (
     FakeProvider,
@@ -29,10 +32,8 @@ from nodetool.providers.fake_provider import (
     create_streaming_fake_provider,
     create_tool_calling_fake_provider,
 )
-from nodetool.metadata.types import Provider as ProviderEnum
-from nodetool.workflows.types import Chunk
 from nodetool.security.secret_helper import get_secret, get_secrets_batch
-from nodetool.config.logging_config import get_logger
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
@@ -45,33 +46,33 @@ def _is_llama_server_available() -> bool:
     """
     # Check environment variable first (allows custom path)
     binary_name = os.environ.get("LLAMA_SERVER_BINARY", "llama-server")
-    
+
     # If it's an absolute path, check if file exists
     if os.path.isabs(binary_name) or os.path.sep in binary_name:
         return os.path.isfile(binary_name) and os.access(binary_name, os.X_OK)
-    
+
     # Otherwise, check if it's in PATH
     return shutil.which(binary_name) is not None
 
 
 def import_providers():
     # import providers to ensure they are registered
-    from nodetool.providers import (  # noqa: F401
+    from nodetool.providers import (
         anthropic_provider,
-        gemini_provider,
         comfy_local_provider,
         comfy_runpod_provider,
+        fake_provider,
+        gemini_provider,
+        huggingface_provider,
         ollama_provider,
         openai_provider,
-        fake_provider,
-        huggingface_provider,
         vllm_provider,
     )
 
     # Conditionally import llama_provider only if llama-server binary is available
     if _is_llama_server_available():
         try:
-            from nodetool.providers import llama_provider  # type: ignore  # noqa: F401
+            from nodetool.providers import llama_provider  # type: ignore
             log.debug("Llama provider imported successfully (llama-server binary found)")
         except ImportError as e:
             log.warning(
@@ -92,7 +93,7 @@ def import_providers():
     # Optional providers that may have missing dependencies
     # These are imported with better error handling and logging
     try:
-        import nodetool.mlx.mlx_provider  # type: ignore  # noqa: F401
+        import nodetool.mlx.mlx_provider  # type: ignore
         log.debug("MLX provider imported successfully")
     except ImportError as e:
         log.warning(
@@ -107,7 +108,7 @@ def import_providers():
         )
 
     try:
-        import nodetool.huggingface.huggingface_local_provider  # type: ignore  # noqa: F401
+        import nodetool.huggingface.huggingface_local_provider  # type: ignore
         log.debug("HuggingFace local provider imported successfully")
     except ImportError as e:
         log.debug(f"HuggingFace local provider could not be imported: {e}")
@@ -214,14 +215,14 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 
 __all__ = [
     "BaseProvider",
+    "Chunk",
+    "FakeProvider",
     "MockProvider",
     "ProviderCapability",
-    "register_provider",
-    "FakeProvider",
     "create_fake_tool_call",
     "create_simple_fake_provider",
     "create_streaming_fake_provider",
     "create_tool_calling_fake_provider",
-    "Chunk",
     "get_provider",
+    "register_provider",
 ]

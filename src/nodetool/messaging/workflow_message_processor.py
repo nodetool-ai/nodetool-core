@@ -4,22 +4,23 @@ Workflow message processor module.
 This module provides the processor for workflow execution messages.
 """
 
-from nodetool.config.logging_config import get_logger
-from typing import List, Optional
 import uuid
+from typing import List, Optional
 
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
-    Message,
-    MessageTextContent,
-    MessageImageContent,
-    MessageAudioContent,
-    MessageVideoContent,
-    ImageRef,
     AudioRef,
+    ImageRef,
+    Message,
+    MessageAudioContent,
+    MessageImageContent,
+    MessageTextContent,
+    MessageVideoContent,
     VideoRef,
 )
-from nodetool.workflows.types import OutputUpdate
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import OutputUpdate
+
 from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
@@ -44,9 +45,9 @@ class WorkflowMessageProcessor(MessageProcessor):
         **kwargs,
     ):
         """Process messages for workflow execution."""
-        from nodetool.workflows.workflow_runner import WorkflowRunner
         from nodetool.workflows.run_job_request import RunJobRequest
         from nodetool.workflows.run_workflow import run_workflow
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         job_id = str(uuid.uuid4())
         last_message = chat_history[-1]

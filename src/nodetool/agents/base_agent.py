@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Sequence, Any, Optional
+from collections.abc import AsyncGenerator, Sequence
+from typing import TYPE_CHECKING, Any
 
-from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Task
+from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
+
+if TYPE_CHECKING:
+    from nodetool.metadata.types import Task
 
 
 class BaseAgent(ABC):
@@ -19,10 +22,10 @@ class BaseAgent(ABC):
         objective: str,
         provider: BaseProvider,
         model: str,
-        tools: Optional[Sequence[Tool]] = None,
+        tools: Sequence[Tool] | None = None,
         inputs: dict[str, Any] | None = None,
-        system_prompt: Optional[str] = None,
-        max_token_limit: Optional[int] = None,
+        system_prompt: str | None = None,
+        max_token_limit: int | None = None,
     ):
         self.name = name
         self.objective = objective
@@ -33,7 +36,7 @@ class BaseAgent(ABC):
         self.system_prompt = system_prompt or ""  # Ensure system_prompt is a string
         self.max_token_limit = max_token_limit or provider.get_context_length(model)
         self.results: Any = None  # To store results, consistent with both agent types
-        self.task: Optional[Task] = None  # Common attribute to store the task
+        self.task: Task | None = None  # Common attribute to store the task
 
     @abstractmethod
     async def execute(

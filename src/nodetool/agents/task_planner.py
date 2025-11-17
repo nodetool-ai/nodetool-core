@@ -13,11 +13,33 @@ a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
 """
 
-from nodetool.config.logging_config import get_logger
+import json
+import re  # Added import re
 import traceback
 from copy import deepcopy
-from nodetool.providers import BaseProvider
+from pathlib import Path
+from typing import (
+    Any,
+    AsyncGenerator,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+)  # Add Optional
+
+import networkx as nx
+import yaml
+
+# Add Jinja2 imports
+from jinja2 import BaseLoader, Environment
+
+# Add jsonschema import for validation
+from jsonschema import ValidationError, validate
+from rich.text import Text  # Re-add Text import
+
 from nodetool.agents.tools.base import Tool
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
     SubTask,
@@ -25,39 +47,16 @@ from nodetool.metadata.types import (
     TaskPlan,
     ToolCall,
 )
-
-import json
-
-# Add jsonschema import for validation
-from jsonschema import validate, ValidationError
-import yaml
-import re  # Added import re
-from pathlib import Path
-from typing import (
-    Any,
-    AsyncGenerator,
-    List,
-    Sequence,
-    Dict,
-    Set,
-    Optional,
-)  # Add Optional
-
-from nodetool.workflows.processing_context import ProcessingContext
-import networkx as nx
+from nodetool.providers import BaseProvider
 
 # Removed rich imports - Console, Table, Text, Live
 from nodetool.ui.console import AgentConsole  # Import the new display manager
-from rich.text import Text  # Re-add Text import
-
-# Add Jinja2 imports
-from jinja2 import Environment, BaseLoader
-
-from nodetool.workflows.types import Chunk, PlanningUpdate
 from nodetool.utils.message_parsing import (
     extract_json_from_message,
     remove_think_tags,
 )
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk, PlanningUpdate
 
 log = get_logger(__name__)
 
@@ -89,9 +88,9 @@ You are a TaskArchitect system that transforms user objectives into executable m
 
 <goal>
 Transform the user's objective into an executable plan through three phases:
-0. Analysis – understand the goal and define the discovery target/output list
-1. Data Flow – describe how discover list → process templated items → aggregate final output will work
-2. Plan Creation – emit a JSON plan with exactly three subtasks (`discover_*`, `process_*`, `aggregate_*`)
+0. Analysis - understand the goal and define the discovery target/output list
+1. Data Flow - describe how discover list → process templated items → aggregate final output will work
+2. Plan Creation - emit a JSON plan with exactly three subtasks (`discover_*`, `process_*`, `aggregate_*`)
 
 Process subtasks no longer expose explicit fan-out configs. Instead, provide natural-language `content` that references discovery fields via `{placeholder}` syntax; the executor handles per-item execution automatically.
 </goal>
@@ -406,7 +405,7 @@ class TaskPlanner:
         workspace_dir: str,
         execution_tools: Sequence[Tool],
         reasoning_model: str | None = None,
-        inputs: dict[str, Any] = {},
+        inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
         output_schema: dict | None = None,
         enable_analysis_phase: bool = True,
@@ -439,7 +438,7 @@ class TaskPlanner:
         self.objective: str = objective
         self.workspace_dir: str = workspace_dir
         self.task_plan: TaskPlan = TaskPlan()
-        self.inputs: dict[str, Any] = inputs
+        self.inputs: dict[str, Any] = inputs or {}
         self.system_prompt: str = system_prompt or DEFAULT_PLANNING_SYSTEM_PROMPT
         self.execution_tools: Sequence[Tool] = execution_tools or []
         self._planning_context: ProcessingContext | None = None
@@ -460,7 +459,7 @@ class TaskPlanner:
         """
         if self.tasks_file_path.exists():
             try:
-                with open(self.tasks_file_path, "r") as f:
+                with open(self.tasks_file_path) as f:
                     task_plan_data: dict = yaml.safe_load(f)
                     self.task_plan = TaskPlan(**task_plan_data)
                     if self.display_manager:
@@ -1272,7 +1271,7 @@ class TaskPlanner:
                     if attempt < max_retries - 1:
                         error_feedback = Message(
                             role="user",
-                            content=f"Error: The task plan has validation errors:\n" + "\n".join(f"- {err}" for err in validation_errors) + "\n\nPlease fix these issues and output the corrected task plan as JSON."
+                            content="Error: The task plan has validation errors:\n" + "\n".join(f"- {err}" for err in validation_errors) + "\n\nPlease fix these issues and output the corrected task plan as JSON."
                         )
                         history.append(error_feedback)
                         continue
@@ -1464,9 +1463,8 @@ class TaskPlanner:
                     log.exception("Planning exception (show_locals=False)")
 
             # Add error row to table via display manager
-            if error_message:
-                if self.display_manager:
-                    self.display_manager.update_planning_display(
+            if error_message and self.display_manager:
+                self.display_manager.update_planning_display(
                         "Overall Status",
                         "Failed",
                         Text(
@@ -1919,7 +1917,7 @@ class TaskPlanner:
                         if not isinstance(yaml_candidate, dict):
                             raise ValueError(
                                 "Output schema string must describe an object structure"
-                            )
+                            ) from json_error
 
                         schema_dict = yaml_candidate
                         log.warning(
@@ -2492,7 +2490,7 @@ class TaskPlanner:
             raise ValueError(f"No tool calls found in the message: {message.content}")
 
         # Delegate the core processing and validation
-        task, validation_errors = await self._validate_and_build_task_from_tool_calls(
+        task, _validation_errors = await self._validate_and_build_task_from_tool_calls(
             message.tool_calls, history
         )
 

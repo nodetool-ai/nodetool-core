@@ -35,9 +35,9 @@ Environment Variables:
     DOCKER_REGISTRY: Docker registry URL (defaults to Docker Hub)
 """
 
+import re
 import sys
 from typing import Optional
-import re
 
 from nodetool.deploy.runpod_api import create_runpod_endpoint_graphql
 
@@ -138,15 +138,17 @@ def deploy_to_runpod(
         tools: List of tool names to enable for chat handler
     """
     import traceback
+
     from rich.console import Console
+
     from .deploy import (
         get_docker_username,
         print_deployment_summary,
     )
     from .docker import (
+        build_docker_image,
         format_image_name,
         generate_image_tag,
-        build_docker_image,
         push_to_registry,
         run_command,
     )

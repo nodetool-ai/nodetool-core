@@ -10,21 +10,21 @@ This module provides tools for working with PDF documents:
 
 import json
 import os
-from typing import Any
+from typing import Any, ClassVar
 
 import pymupdf
 import pymupdf4llm
-
 import pypandoc
 
 from nodetool.workflows.processing_context import ProcessingContext
+
 from .base import Tool
 
 
 class ExtractPDFTextTool(Tool):
     name = "extract_pdf_text"
     description = "Extract plain text from a PDF document"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "path": {
@@ -74,7 +74,7 @@ class ExtractPDFTextTool(Tool):
 class ExtractPDFTablesTool(Tool):
     name = "extract_pdf_tables"
     description = "Extract tables from a PDF document"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "path": {
@@ -156,7 +156,7 @@ class ExtractPDFTablesTool(Tool):
 class ConvertPDFToMarkdownTool(Tool):
     name = "convert_pdf_to_markdown"
     description = "Convert PDF to Markdown format"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "input_file": {
@@ -220,7 +220,7 @@ class ConvertPDFToMarkdownTool(Tool):
 class ConvertMarkdownToPDFTool(Tool):
     name = "convert_markdown_to_pdf"
     description = "Convert Markdown to PDF using Pandoc."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "input_file": {
@@ -269,7 +269,7 @@ class ConvertMarkdownToPDFTool(Tool):
 class ConvertDocumentTool(Tool):
     name = "convert_document"
     description = "Convert between document formats using Pandoc, supports markdown, docx, rst, pdf, html, etc."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "input_file": {

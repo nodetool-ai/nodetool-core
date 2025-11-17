@@ -1,32 +1,34 @@
-import os
-import sys
-import shutil
-import atexit
-import warnings
 import asyncio
+import atexit
+import os
+import shutil
+import sys
+import warnings
+from contextlib import suppress
+from typing import Any, Dict, List, Optional
+
 import click
-from typing import Optional, Dict, Any, List
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from nodetool.api.workflow import from_model
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import load_settings
-from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.deploy.docker import (
     generate_image_tag,
 )
+from nodetool.deploy.progress import ProgressManager
 from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
 from nodetool.dsl.export import graph_to_dsl_py, graph_to_gradio_py
+from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.types.graph import Graph as ApiGraph
-from nodetool.deploy.progress import ProgressManager
 
 # Add Rich for better tables and terminal output
 from nodetool.types.job import JobUpdate
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
 
 # Create console instance
 console = Console()
@@ -260,17 +262,17 @@ def run(
       cat request.json | nodetool run --stdin --jsonl
     """
     import asyncio
+    import base64
     import json
     import os
     import sys
-    import base64
     import traceback
     from typing import Any
 
+    from nodetool.types.graph import Graph
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
-    from nodetool.types.graph import Graph
 
     def _default(obj: Any) -> Any:
         """JSON serializer for objects not serializable by default json code."""
@@ -292,7 +294,7 @@ def run(
         """Parse workflow argument as ID, file path, or RunJobRequest JSON."""
         # Check if it's a file
         if os.path.isfile(value):
-            with open(value, "r", encoding="utf-8") as f:
+            with open(value, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Check if it's a full RunJobRequest or just a workflow definition
@@ -439,6 +441,7 @@ def run(
 def chat():
     """Start a nodetool chat."""
     import asyncio
+
     from nodetool.chat.chat_cli import chat_cli
 
     asyncio.run(chat_cli())
@@ -522,13 +525,15 @@ def worker(
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
 
     import json
-    from nodetool.types.workflow import Workflow
+
     import dotenv
+
+    from nodetool.types.workflow import Workflow
 
     dotenv.load_dotenv()
 
     def load_workflow(path: str) -> Workflow:
-        with open(path, "r") as f:
+        with open(path) as f:
             workflow = json.load(f)
         return Workflow.model_validate(workflow)
 
@@ -571,7 +576,7 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
         code = graph_to_dsl_py(graph)
     except Exception as e:
         click.echo(f"Error exporting workflow '{workflow_id}': {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     if output:
         try:
@@ -580,7 +585,7 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
             click.echo(f"✅ Wrote DSL to {output}")
         except Exception as e:
             click.echo(f"Error writing file '{output}': {e}", err=True)
-            raise SystemExit(1)
+            raise SystemExit(1) from e
     else:
         # Print to stdout
         click.echo(code)
@@ -653,7 +658,7 @@ def gradio_export(
         )
     except Exception as e:
         click.echo(f"Error exporting Gradio app for workflow '{workflow_id}': {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     if output:
         try:
@@ -662,7 +667,7 @@ def gradio_export(
             click.echo(f"✅ Wrote Gradio app to {output}")
         except Exception as e:
             click.echo(f"Error writing file '{output}': {e}", err=True)
-            raise SystemExit(1)
+            raise SystemExit(1) from e
     else:
         click.echo(code)
 
@@ -737,13 +742,15 @@ def chat_server(
         configure_logging(level="DEBUG")
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
     import json
-    from nodetool.types.workflow import Workflow
+
     import dotenv
+
+    from nodetool.types.workflow import Workflow
 
     dotenv.load_dotenv()
 
     def load_workflow(path: str) -> Workflow:
-        with open(path, "r") as f:
+        with open(path) as f:
             workflow = json.load(f)
         return Workflow.model_validate(workflow)
 
@@ -813,7 +820,9 @@ def chat_client(
       nodetool chat-client --runpod-endpoint my-runpod-endpoint-id
     """
     import asyncio
+
     import dotenv
+
     from nodetool.chat.chat_client import run_chat_client
 
     dotenv.load_dotenv()
@@ -853,6 +862,7 @@ def secrets():
 def secrets_list(user_id: str, limit: int) -> None:
     """List stored secret metadata without revealing values."""
     import asyncio
+
     from nodetool.models.secret import Secret
 
     async def _list() -> list[Secret]:
@@ -888,6 +898,7 @@ def secrets_store(
 ) -> None:
     """Store or update a secret value by securely prompting for input."""
     import asyncio
+
     from nodetool.models.secret import Secret
 
     secret_value: str = click.prompt(f"Enter value for secret '{key}'", hide_input=True)
@@ -1047,9 +1058,10 @@ def scan(verbose):
     """Scan current directory for nodes and create package metadata."""
     import sys
     import traceback
+
     from nodetool.packages.registry import (
-        scan_for_package_nodes,
         save_package_metadata,
+        scan_for_package_nodes,
         update_pyproject_include,
     )
 
@@ -1161,10 +1173,12 @@ def docs(output_dir: str, compact: bool, verbose: bool):
     """Generate documentation for the package nodes."""
     import os
     import sys
-    import tomli
     import traceback
-    from nodetool.packages.gen_docs import generate_documentation
+
+    import tomli
+
     from nodetool.metadata.node_metadata import get_node_classes_from_module
+    from nodetool.packages.gen_docs import generate_documentation
 
     try:
         # Add src directory to Python path temporarily
@@ -1432,6 +1446,7 @@ def scan_cache(server_url: str):
         nodetool admin scan-cache --server-url http://localhost:8000
     """
     import asyncio
+
     import dotenv
 
     dotenv.load_dotenv()
@@ -1521,6 +1536,7 @@ def delete_hf(repo_id: str, server_url: str):
         nodetool admin delete-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
     """
     import asyncio
+
     import dotenv
 
     dotenv.load_dotenv()
@@ -1579,6 +1595,7 @@ def cache_size(cache_dir: str, server_url: str, api_key: str | None):
         nodetool admin cache-size --server-url http://localhost:8000
     """
     import asyncio
+
     import dotenv
 
     dotenv.load_dotenv()
@@ -1608,7 +1625,7 @@ def cache_size(cache_dir: str, server_url: str, api_key: str | None):
 
     def _handle_cache_size_output(progress_update):
         """Handle cache size specific output."""
-        if "success" in progress_update and progress_update["success"]:
+        if progress_update.get("success"):
             total_size = progress_update.get("total_size_bytes", 0)
             size_gb = progress_update.get("size_gb", 0)
 
@@ -1638,8 +1655,8 @@ def _handle_list_options(
     from nodetool.deploy.runpod_api import (
         ComputeType,
         CPUFlavor,
-        DataCenter,
         CUDAVersion,
+        DataCenter,
     )
 
     if list_gpu_types:
@@ -1686,9 +1703,9 @@ def list_gcp_options():
 
     Shows available regions, CPU options, memory options, and Docker registry options."""
     from nodetool.deploy.google_cloud_run_api import (
-        CloudRunRegion,
         CloudRunCPU,
         CloudRunMemory,
+        CloudRunRegion,
     )
 
     console.print("[bold cyan]Google Cloud Run Options:[/]")
@@ -1721,8 +1738,8 @@ def _handle_docker_config_check(
 
     from nodetool.deploy.docker import (
         check_docker_auth,
-        get_docker_username_from_config,
         format_image_name,
+        get_docker_username_from_config,
     )
 
     console.print("🔍 Checking Docker configuration...")
@@ -1801,9 +1818,9 @@ def env_for_deploy(
 
 def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
-        SelfHostedDeployment,
-        RunPodDeployment,
         GCPDeployment,
+        RunPodDeployment,
+        SelfHostedDeployment,
     )
 
     def _inject(env: Optional[Dict[str, str]]) -> Dict[str, str]:
@@ -1863,7 +1880,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     auth_token = getattr(deployment, "worker_auth_token", None)
     if not auth_token:
         env: Optional[Dict[str, str]] = None
-        if hasattr(deployment, "environment") and getattr(deployment, "environment"):
+        if hasattr(deployment, "environment") and deployment.environment:
             env = deployment.environment
         elif hasattr(deployment, "container") and getattr(
             deployment.container, "environment", None
@@ -1886,7 +1903,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     try:
         asyncio.run(_import_secrets_to_worker(server_url, auth_token, secrets_payload))
         console.print(f"[green]Synced {len(secrets_payload)} secret(s) to '{name}'.[/]")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         console.print(
             f"[yellow]Warning: failed to sync secrets for '{name}': {exc}[/]"
         )
@@ -1904,8 +1921,8 @@ def deploy():
 def deploy_init():
     """Initialize a new deployment.yaml configuration file."""
     from nodetool.config.deployment import (
-        init_deployment_config,
         get_deployment_config_path,
+        init_deployment_config,
     )
 
     try:
@@ -1950,12 +1967,12 @@ def deploy_init():
 @click.argument("name")
 def deploy_show(name: str):
     """Display detailed information about a specific deployment."""
-    from nodetool.deploy.manager import DeploymentManager
     from nodetool.config.deployment import (
-        SelfHostedDeployment,
-        RunPodDeployment,
         GCPDeployment,
+        RunPodDeployment,
+        SelfHostedDeployment,
     )
+    from nodetool.deploy.manager import DeploymentManager
 
     try:
         manager = DeploymentManager()
@@ -2105,16 +2122,16 @@ def deploy_show(name: str):
 def deploy_add(name: str, deployment_type: str):
     """Add a new deployment to deployment.yaml interactively."""
     from nodetool.config.deployment import (
-        DeploymentConfig,
-        SelfHostedDeployment,
-        RunPodDeployment,
-        GCPDeployment,
-        SSHConfig,
-        ImageConfig,
         ContainerConfig,
+        DeploymentConfig,
+        GCPDeployment,
+        ImageConfig,
+        RunPodDeployment,
+        SelfHostedDeployment,
+        SSHConfig,
+        get_deployment_config_path,
         load_deployment_config,
         save_deployment_config,
-        get_deployment_config_path,
     )
 
     try:
@@ -2283,11 +2300,12 @@ def deploy_edit(name: Optional[str]):
     If a deployment name is provided, opens the file and shows the deployment location.
     Otherwise, opens the entire deployment.yaml file.
     """
+    import subprocess
+
     from nodetool.config.deployment import (
         get_deployment_config_path,
         load_deployment_config,
     )
-    import subprocess
 
     try:
         config_path = get_deployment_config_path()
@@ -2493,6 +2511,7 @@ def deploy_plan(name: str):
 def deploy_apply(name: str, dry_run: bool):
     """Apply deployment configuration to target platform."""
     import asyncio
+
     from nodetool.deploy.manager import DeploymentManager
     from nodetool.security.master_key import MasterKeyManager
 
@@ -2701,13 +2720,14 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
     Automatically downloads referenced models (HuggingFace, Ollama) and syncs assets."""
     import asyncio
     from io import BytesIO
-    from nodetool.deploy.manager import DeploymentManager
-    from nodetool.deploy.admin_client import AdminHTTPClient
-    from nodetool.models.workflow import Workflow
-    from nodetool.models.asset import Asset as AssetModel
+
     from nodetool.api.workflow import from_model
     from nodetool.config.environment import Environment
+    from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
     from nodetool.deploy.sync import extract_models
+    from nodetool.models.asset import Asset as AssetModel
+    from nodetool.models.workflow import Workflow
 
     async def extract_and_download_models(
         workflow_data: dict, client: AdminHTTPClient
@@ -2822,7 +2842,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 # Check if asset already exists on remote
                 try:
                     remote_asset = await client.get_asset(asset_id)
-                    console.print(f"    [yellow]Asset already exists on remote, skipping[/]")
+                    console.print("    [yellow]Asset already exists on remote, skipping[/]")
                     synced_count += 1
                     continue
                 except Exception:
@@ -2926,10 +2946,8 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
 
             # Close database connections
             from nodetool.models.base_model import close_all_database_adapters
-            try:
+            with suppress(Exception):
                 await close_all_database_adapters()
-            except Exception:
-                pass  # Ignore errors during cleanup
 
             # Give asyncio a chance to clean up any remaining tasks
             await asyncio.sleep(0.1)
@@ -2962,8 +2980,9 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
 def deploy_workflows_list(deployment_name: str):
     """List workflows on a deployed instance."""
     import asyncio
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_list():
         try:
@@ -3043,8 +3062,9 @@ def deploy_workflows_list(deployment_name: str):
 def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool):
     """Delete a workflow from a deployed instance."""
     import asyncio
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_delete():
         try:
@@ -3118,8 +3138,9 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
 def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
     """Run a workflow on a deployed instance."""
     import asyncio
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_workflow():
         try:
@@ -3203,8 +3224,9 @@ def deploy_database():
 def deploy_database_get(deployment_name: str, table: str, key: str):
     """Get an item from database table by key."""
     import asyncio
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_get():
         try:
@@ -3252,8 +3274,9 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
     """Save an item to database table."""
     import asyncio
     import json
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_save():
         try:
@@ -3309,8 +3332,9 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
 def deploy_database_delete(deployment_name: str, table: str, key: str, force: bool):
     """Delete an item from database table by key."""
     import asyncio
-    from nodetool.deploy.manager import DeploymentManager
+
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
 
     async def run_delete():
         try:
@@ -3370,8 +3394,8 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
     Creates collection on remote if needed and syncs all documents, embeddings, and metadata."""
     import asyncio
 
-    from nodetool.deploy.manager import DeploymentManager
     from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.deploy.manager import DeploymentManager
     from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
         get_async_chroma_client,
     )
@@ -3514,9 +3538,10 @@ def sync_workflow(workflow_id: str, server_url: str):
     """Push a local workflow to a remote NodeTool server."""
     import asyncio
 
+    import dotenv
+
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.models.workflow import Workflow
-    import dotenv
 
     dotenv.load_dotenv()
 
@@ -3542,7 +3567,7 @@ def sync_workflow(workflow_id: str, server_url: str):
                 console.print(f"[yellow]⚠️ Remote response: {res}[/]")
         except Exception as e:
             console.print(f"[red]❌ Failed to sync workflow: {e}[/]")
-            raise SystemExit(1)
+            raise SystemExit(1) from e
 
     asyncio.run(run_sync())
 
@@ -3662,16 +3687,16 @@ def proxy(
 
     except FileNotFoundError as e:
         console.print(f"[red]❌ {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
     except ValueError as e:
         console.print(f"[red]❌ Configuration error: {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
     except KeyboardInterrupt:
         console.print("\n[yellow]⚠️ Proxy interrupted by user[/]")
-        raise SystemExit(0)
+        raise SystemExit(0) from None
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 @cli.command("proxy-daemon")
 @click.option(
@@ -3804,20 +3829,20 @@ def proxy_status(config: str, server_url: str, bearer_token: str):
 
             console.print(table)
 
-        except httpx.ConnectError:
+        except httpx.ConnectError as exc:
             console.print(
                 f"[red]❌ Failed to connect to proxy at {server_url}[/]"
             )
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 console.print("[red]❌ Authentication failed (invalid bearer token)[/]")
             else:
                 console.print(f"[red]❌ Proxy error: {e.response.status_code}[/]")
-            raise SystemExit(1)
+            raise SystemExit(1) from e
         except Exception as e:
             console.print(f"[red]❌ Error: {e}[/]")
-            raise SystemExit(1)
+            raise SystemExit(1) from e
 
     asyncio.run(check_status())
 
@@ -3872,13 +3897,13 @@ def proxy_validate_config(config: str):
 
     except FileNotFoundError as e:
         console.print(f"[red]❌ {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
     except ValueError as e:
         console.print(f"[red]❌ Configuration error: {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

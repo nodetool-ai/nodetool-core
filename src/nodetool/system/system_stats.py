@@ -15,8 +15,10 @@ Example:
     >>> print(stats.memory_used_gb)  # prints used memory in GB
 """
 
-from pydantic import BaseModel, Field
+from contextlib import suppress
+
 import psutil
+from pydantic import BaseModel, Field
 
 try:  # nvidia-ml-py
     from nvidia import nvml  # type: ignore[attr-defined]
@@ -64,10 +66,8 @@ def get_system_stats() -> SystemStats:
             pass  # Unexpected NVML issues should not break stats collection
         finally:
             if did_init:
-                try:
+                with suppress(Exception):
                     nvml.nvmlShutdown()
-                except Exception:
-                    pass
 
     return SystemStats(
         cpu_percent=cpu_percent,

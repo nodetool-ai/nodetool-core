@@ -15,28 +15,30 @@ Subclasses should implement transport-specific methods for:
 - Protocol-specific formatting
 """
 
-from nodetool.config.logging_config import get_logger
-from abc import ABC, abstractmethod
+import asyncio
 import json
 import traceback
+from abc import ABC, abstractmethod
+from contextlib import suppress
 from typing import List, Optional
-import asyncio
 
-from supabase import create_async_client, AsyncClient
+from supabase import AsyncClient, create_async_client
 
 from nodetool.chat.ollama_service import get_ollama_models
-from nodetool.providers import get_provider
 from nodetool.config.environment import Environment
-from nodetool.models.message import Message as DBMessage
-from nodetool.models.thread import Thread
-from nodetool.metadata.types import Message as ApiMessage, Provider
-from nodetool.types.graph import Graph
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.config.logging_config import get_logger
+from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-from nodetool.messaging.help_message_processor import HelpMessageProcessor
-from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.workflow_message_processor import WorkflowMessageProcessor
+from nodetool.metadata.types import Message as ApiMessage
+from nodetool.metadata.types import Provider
+from nodetool.models.message import Message as DBMessage
+from nodetool.models.thread import Thread
+from nodetool.providers import get_provider
+from nodetool.types.graph import Graph
+from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
 
@@ -398,10 +400,8 @@ class BaseChatRunner(ABC):
         except asyncio.CancelledError:
             # If cancelled, make sure the processor task is also cancelled
             processor_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await processor_task
-            except asyncio.CancelledError:
-                pass
             raise
 
     async def process_messages(self, messages: list[ApiMessage]):
@@ -530,19 +530,15 @@ class BaseChatRunner(ABC):
         except asyncio.CancelledError:
             log.info("Message processing cancelled by user")
             # Send cancellation message
-            try:
+            with suppress(Exception):
                 await self.send_message(
                     {
                         "type": "generation_stopped",
                         "message": "Generation stopped by user",
                     }
                 )
-            except Exception:
-                pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
-            try:
+            with suppress(Exception):
                 await self.send_message(error_message)
-            except Exception:
-                pass

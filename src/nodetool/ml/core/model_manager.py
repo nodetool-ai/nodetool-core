@@ -10,7 +10,7 @@ production environments.
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Dict, Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger

@@ -1,6 +1,8 @@
 from typing import Any, List
-from nodetool.types.graph import Graph
+
 from pydantic import BaseModel
+
+from nodetool.types.graph import Graph
 
 
 class Workflow(BaseModel):

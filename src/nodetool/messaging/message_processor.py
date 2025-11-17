@@ -7,8 +7,8 @@ in the WebSocket chat system.
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
 from asyncio import Queue
+from typing import Any, Dict, List, Optional
 
 from nodetool.metadata.types import Message
 from nodetool.workflows.processing_context import ProcessingContext

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from nodetool.metadata.types import MessageContent, MessageFile, Provider, ToolCall
-from nodetool.models.base_model import DBModel, DBField, create_time_ordered_uuid
+from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
 
 
@@ -38,7 +38,7 @@ class Message(DBModel):
     @classmethod
     async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
         return await super().create(
-            id=kwargs.get("id", None) is None and create_time_ordered_uuid(),
+            id=kwargs.get("id") is None and create_time_ordered_uuid(),
             thread_id=thread_id,
             user_id=user_id,
             **kwargs,

@@ -15,17 +15,16 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from nodetool.api.utils import current_user
+from nodetool.api.workflow import WorkflowList, WorkflowRequest, from_model
 from nodetool.config.logging_config import get_logger
+from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.processing_context import AssetOutputMode, ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
-from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
-from nodetool.api.utils import current_user
-
 
 log = get_logger(__name__)
 
@@ -122,10 +121,14 @@ def create_workflow_router() -> APIRouter:
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except Exception as e:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=str(e)
+            ) from e
+        except Exception as e:
             print(f"Workflow execution error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(
+                status_code=500, detail=str(e)
+            ) from e
 
     @router.post("/workflows/{id}/run/stream")
     async def execute_workflow_stream(
@@ -171,7 +174,7 @@ def create_workflow_router() -> APIRouter:
                     yield f"data: {json.dumps(final_data)}\n\n"
                     yield "data: [DONE]\n\n"
 
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     error_data = {"type": "error", "error": str(e)}
                     yield f"data: {json.dumps(error_data)}\n\n"
 
@@ -190,9 +193,13 @@ def create_workflow_router() -> APIRouter:
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except Exception as e:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=str(e)
+            ) from e
+        except Exception as e:
             print(f"Workflow streaming error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(
+                status_code=500, detail=str(e)
+            ) from e
 
     return router

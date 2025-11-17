@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
 import asyncio
-from nodetool.config.logging_config import get_logger
 from typing import List
+
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel
 from nodetool.providers import list_providers
 

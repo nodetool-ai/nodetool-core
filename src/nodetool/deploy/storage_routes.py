@@ -10,17 +10,17 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import timezone
+from datetime import UTC, timezone
+from email.utils import parsedate_to_datetime
 from io import BytesIO
 from typing import Optional
-from email.utils import parsedate_to_datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from nodetool.config.logging_config import get_logger
-from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.runtime.resources import require_scope
+from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 
 log = get_logger(__name__)
 
@@ -70,7 +70,7 @@ async def _get_file(storage, key: str, request: Request):
 
     if "If-Modified-Since" in request.headers:
         if_modified_since = parsedate_to_datetime(request.headers["If-Modified-Since"])
-        last_modified = last_modified.replace(tzinfo=timezone.utc)
+        last_modified = last_modified.replace(tzinfo=UTC)
         if if_modified_since >= last_modified:
             raise HTTPException(status_code=304)
 

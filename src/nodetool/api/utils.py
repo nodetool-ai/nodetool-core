@@ -1,4 +1,5 @@
 from fastapi import HTTPException, Request, status
+
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import HuggingFaceModel
@@ -67,7 +68,7 @@ async def current_user(request: Request = None) -> str:
             request.state.user_id = user_result.user_id
             request.state.token_type = user_result.token_type or TokenType.USER
             return user_result.user_id
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error(f"Error validating remote authentication token: {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

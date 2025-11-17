@@ -1,5 +1,6 @@
-from nodetool.api.server import create_app
 import os
+
+from nodetool.api.server import create_app
 
 static_folder = os.getenv("STATIC_FOLDER", "web/dist")
 

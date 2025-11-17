@@ -17,10 +17,10 @@ Helpers:
 
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Optional, Iterable
-import asyncio
+from typing import Any, Iterable, Optional
 
 import chromadb
 from chromadb.api import ClientAPI

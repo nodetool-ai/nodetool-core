@@ -1,5 +1,5 @@
-from typing import Any, List, Union
 from enum import Enum
+from typing import Any, List, Union
 
 
 class Operator(Enum):
@@ -88,7 +88,7 @@ class Field:
         self.name = name
 
     def _create_condition(
-        self, operator: Operator, value: Union[Any, Variable]
+        self, operator: Operator, value: Any | Variable
     ) -> "ConditionBuilder":
         """
         Internal helper method to create a ConditionBuilder from a condition.
@@ -102,65 +102,65 @@ class Field:
         """
         return ConditionBuilder(Condition(self.name, operator, value))
 
-    def equals(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def equals(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates an 'equals' (==) condition."""
         return self._create_condition(Operator.EQ, value)
 
-    def not_equals(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def not_equals(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates a 'not equals' (!=) condition."""
         return self._create_condition(Operator.NE, value)
 
-    def greater_than(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def greater_than(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates a 'greater than' (>) condition."""
         return self._create_condition(Operator.GT, value)
 
-    def less_than(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def less_than(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates a 'less than' (<) condition."""
         return self._create_condition(Operator.LT, value)
 
-    def greater_than_or_equal(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def greater_than_or_equal(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates a 'greater than or equal to' (>=) condition."""
         return self._create_condition(Operator.GTE, value)
 
-    def less_than_or_equal(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def less_than_or_equal(self, value: Any | Variable) -> "ConditionBuilder":
         """Creates a 'less than or equal to' (<=) condition."""
         return self._create_condition(Operator.LTE, value)
 
-    def in_list(self, values: Union[List[Any], Variable]) -> "ConditionBuilder":
+    def in_list(self, values: List[Any] | Variable) -> "ConditionBuilder":
         """Creates an 'in list' (IN) condition."""
         return self._create_condition(Operator.IN, values)
 
-    def like(self, pattern: Union[str, Variable]) -> "ConditionBuilder":
+    def like(self, pattern: str | Variable) -> "ConditionBuilder":
         """Creates a 'like' (LIKE) condition for pattern matching."""
         return self._create_condition(Operator.LIKE, pattern)
 
     # --- Operator Overloads ---
 
-    def __eq__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __eq__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '==' operator to create an 'equals' condition."""
         return self.equals(value)
 
-    def __ne__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __ne__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '!=' operator to create a 'not equals' condition."""
         return self.not_equals(value)
 
-    def __gt__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __gt__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '>' operator to create a 'greater than' condition."""
         return self.greater_than(value)
 
-    def __lt__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __lt__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '<' operator to create a 'less than' condition."""
         return self.less_than(value)
 
-    def __ge__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __ge__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '>=' operator to create a 'greater than or equal to' condition."""
         return self.greater_than_or_equal(value)
 
-    def __le__(self, value: Union[Any, Variable]) -> "ConditionBuilder":
+    def __le__(self, value: Any | Variable) -> "ConditionBuilder":
         """Overloads the '<=' operator to create a 'less than or equal to' condition."""
         return self.less_than_or_equal(value)
 
-    def __contains__(self, value: Union[List[Any], Variable]) -> "ConditionBuilder":
+    def __contains__(self, value: List[Any] | Variable) -> "ConditionBuilder":
         """
         Overloads the 'in' operator (used as `value in field`)
         to create an 'in list' condition.
@@ -184,7 +184,7 @@ class ConditionBuilder:
     additional conditions using `and_` or `or_`.
     """
 
-    def __init__(self, condition: Union[Condition, ConditionGroup]):
+    def __init__(self, condition: Condition | ConditionGroup):
         """
         Initializes the ConditionBuilder with the first condition.
 
@@ -292,7 +292,7 @@ class ConditionBuilder:
         return self.root
 
     def _get_variables(
-        self, values: dict[str, Any], condition: Union[Condition, ConditionGroup]
+        self, values: dict[str, Any], condition: Condition | ConditionGroup
     ):
         """
         Recursively traverses the condition tree to find all Variable instances.

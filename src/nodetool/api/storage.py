@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 
-from datetime import timezone
-from io import BytesIO
 import os
 import re
-from typing import Optional
-from fastapi import APIRouter, Depends, Request, Response
-from fastapi import HTTPException
+from datetime import UTC, timezone
 from email.utils import parsedate_to_datetime
+from io import BytesIO
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+
 from nodetool.api.utils import current_user
-from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import require_scope
-
+from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/storage", tags=["storage"])
@@ -65,7 +65,7 @@ async def _get_file(storage, key: str, request: Request):
 
     if "If-Modified-Since" in request.headers:
         if_modified_since = parsedate_to_datetime(request.headers["If-Modified-Since"])
-        last_modified = last_modified.replace(tzinfo=timezone.utc)
+        last_modified = last_modified.replace(tzinfo=UTC)
         if if_modified_since >= last_modified:
             raise HTTPException(status_code=304)
 
@@ -158,7 +158,7 @@ async def get(key: str, request: Request):
 
 
 @router.put("/{key}")
-async def update(key: str, request: Request, user: str = Depends(current_user)):
+async def update(key: str, request: Request, _user: str = Depends(current_user)):
     """
     Updates or creates the file for the given key.
     """
@@ -167,7 +167,7 @@ async def update(key: str, request: Request, user: str = Depends(current_user)):
 
 
 @router.delete("/{key}")
-async def delete(key: str, user: str = Depends(current_user)):
+async def delete(key: str, _user: str = Depends(current_user)):
     """
     Deletes the asset for the given key.
     """
@@ -195,7 +195,7 @@ async def temp_get(key: str, request: Request):
 
 
 @temp_router.put("/{key}")
-async def temp_update(key: str, request: Request, user: str = Depends(current_user)):
+async def temp_update(key: str, request: Request, _user: str = Depends(current_user)):
     """
     Updates or creates the temp file for the given key.
     """
@@ -204,7 +204,7 @@ async def temp_update(key: str, request: Request, user: str = Depends(current_us
 
 
 @temp_router.delete("/{key}")
-async def temp_delete(key: str, user: str = Depends(current_user)):
+async def temp_delete(key: str, _user: str = Depends(current_user)):
     """
     Deletes the temp asset for the given key.
     """

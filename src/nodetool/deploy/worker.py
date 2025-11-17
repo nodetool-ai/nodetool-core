@@ -36,8 +36,8 @@ Usage:
     run_worker(host="0.0.0.0", port=8000)
 """
 
-import os
 import datetime
+import os
 import platform
 from typing import List
 
@@ -45,27 +45,26 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
-from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+from nodetool.api.openai import create_openai_compatible_router
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.api.openai import create_openai_compatible_router
-from nodetool.types.workflow import Workflow
-from nodetool.deploy.workflow_routes import (
-    create_workflow_router,
-)
 from nodetool.deploy.admin_routes import create_admin_router
+from nodetool.deploy.auth import (
+    DEPLOYMENT_CONFIG_FILE,
+    get_token_source,
+    get_worker_auth_token,
+)
 from nodetool.deploy.collection_routes import create_collection_router
 from nodetool.deploy.storage_routes import (
     create_admin_storage_router,
     create_public_storage_router,
 )
-from nodetool.deploy.auth import (
-    get_worker_auth_token,
-    get_token_source,
-    DEPLOYMENT_CONFIG_FILE,
+from nodetool.deploy.workflow_routes import (
+    create_workflow_router,
 )
+from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
 from nodetool.security.http_auth import create_http_auth_middleware
-
+from nodetool.types.workflow import Workflow
 
 console = Console()
 log = get_logger(__name__)
@@ -144,7 +143,7 @@ def create_worker_app(
             # Include storage routers (admin and public)
             app.include_router(create_admin_storage_router())
             app.include_router(create_public_storage_router())
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.error(f"Failed to include routers: {e}")
 
     @app.on_event("shutdown")
@@ -166,7 +165,9 @@ def create_worker_app(
             }
         except Exception as e:
             console.print(f"Health check error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(
+                status_code=500, detail=str(e)
+            ) from e
 
     return app
 

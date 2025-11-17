@@ -2,13 +2,14 @@ import asyncio
 from contextlib import suppress
 from typing import AsyncGenerator
 from uuid import uuid4
+
 from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.workflows.types import Error, ProcessingMessage
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 
 log = get_logger(__name__)
 
@@ -50,7 +51,7 @@ async def process_workflow_messages(
     context: ProcessingContext,
     runner: WorkflowRunner,
     sleep_interval: float = 0.01,
-    explicit_types: bool = False,
+    _explicit_types: bool = False,
 ) -> AsyncGenerator[ProcessingMessage, None]:
     """
     Process messages from a running workflow.
@@ -127,6 +128,12 @@ async def run_workflow(
             workflow_id=request.workflow_id,
         )
 
+    async def drain_pending_messages() -> AsyncGenerator[ProcessingMessage, None]:
+        """Yield any queued messages that arrived after the runner stopped."""
+        while context.has_messages():
+            async for msg in process_message(context):
+                yield msg
+
     async def run():
         try:
             if request.graph is None:
@@ -138,7 +145,7 @@ async def run_workflow(
                 if hasattr(workflow, "get_api_graph"):
                     request.graph = workflow.get_api_graph()  # type: ignore[attr-defined]
                 elif hasattr(workflow, "graph"):
-                    request.graph = getattr(workflow, "graph")
+                    request.graph = workflow.graph
                 else:
                     raise Exception("Workflow object does not provide a graph")
             # Execute runner with configured options
@@ -193,6 +200,15 @@ async def run_workflow(
                             yield msg
                     finally:
                         run_future.cancel()
+            else:
+                try:
+                    run_future.result()
+                except Exception as e:
+                    log.exception(e)
+                    async for msg in handle_runner_error(e, runner):
+                        yield msg
+            async for msg in drain_pending_messages():
+                yield msg
         else:
             # Backwards-compatible behavior: create a temporary loop for this run
             with ThreadedEventLoop() as tel:
@@ -206,12 +222,21 @@ async def run_workflow(
                     run_future.cancel()
                     async for msg in handle_runner_error(e, runner):
                         yield msg
-                try:
-                    run_future.result()
-                except Exception as e:
-                    log.exception(e)
-                    async for msg in handle_runner_error(e, runner):
-                        yield msg
+                    try:
+                        run_future.result()
+                    except Exception as e:
+                        log.exception(e)
+                        async for msg in handle_runner_error(e, runner):
+                            yield msg
+                else:
+                    try:
+                        run_future.result()
+                    except Exception as e:
+                        log.exception(e)
+                        async for msg in handle_runner_error(e, runner):
+                            yield msg
+                async for msg in drain_pending_messages():
+                    yield msg
 
     else:
         run_task = asyncio.create_task(run())
@@ -235,3 +260,5 @@ async def run_workflow(
             async for msg in handle_runner_error(exception, runner):
                 yield msg
             raise
+        async for msg in drain_pending_messages():
+            yield msg

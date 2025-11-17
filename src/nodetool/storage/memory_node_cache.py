@@ -1,5 +1,6 @@
-from typing import Any
 import time
+from typing import Any
+
 from .abstract_node_cache import AbstractNodeCache
 
 

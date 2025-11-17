@@ -24,7 +24,7 @@ def _is_opencv_available() -> bool:
 
 
 def _legacy_export_to_video(
-    video_frames: Union[List[np.ndarray], List[PIL.Image.Image]],
+    video_frames: List[np.ndarray] | List[PIL.Image.Image],
     output_video_path: str = None,
     fps: int = 10,
 ) -> str:
@@ -57,7 +57,7 @@ def _legacy_export_to_video(
 
 
 def export_to_video(
-    video_frames: Union[List[np.ndarray], List[PIL.Image.Image]],
+    video_frames: List[np.ndarray] | List[PIL.Image.Image],
     output_video_path: str = None,
     fps: int = 10,
     quality: float = 5.0,
@@ -131,7 +131,7 @@ def export_to_video(
 
 
 def export_to_video_bytes(
-    video_frames: Union[List[np.ndarray], List[PIL.Image.Image]],
+    video_frames: List[np.ndarray] | List[PIL.Image.Image],
     fps: int = 10,
     quality: float = 5.0,
     bitrate: Optional[int] = None,
@@ -204,7 +204,7 @@ def export_to_video_bytes(
 
 
 def _legacy_export_to_video_bytes(
-    video_frames: Union[List[np.ndarray], List[PIL.Image.Image]],
+    video_frames: List[np.ndarray] | List[PIL.Image.Image],
     fps: int = 10,
 ) -> bytes:
     """Legacy video export to bytes using OpenCV backend."""

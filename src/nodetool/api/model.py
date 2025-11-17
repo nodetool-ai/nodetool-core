@@ -1,69 +1,70 @@
 #!/usr/bin/env python
 
+import asyncio
+import os
+from typing import Any, Callable, ClassVar, Dict, Generator, Iterable, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from fastapi import HTTPException
-from nodetool.integrations.huggingface.hf_cache import has_cached_files
+from huggingface_hub import HfApi, try_to_load_from_cache
+from huggingface_hub.hf_api import RepoFile
+from pydantic import BaseModel
+
+from nodetool.api.utils import current_user
+from nodetool.chat.ollama_service import (
+    delete_ollama_model as _delete_ollama_model,
+)
+from nodetool.chat.ollama_service import (
+    get_ollama_model_info,
+    get_ollama_models,
+    get_ollama_models_unified,
+    stream_ollama_model_pull,
+)
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
+from nodetool.integrations.huggingface.hf_cache import filter_repo_paths, has_cached_files
 from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
     get_huggingface_file_infos_async,
 )
-from nodetool.config.environment import Environment
-from nodetool.config.logging_config import get_logger
-from nodetool.ml.models.language_models import get_all_language_models
-from nodetool.metadata.types import (
-    LanguageModel,
-    ImageModel,
-    TTSModel,
-    ASRModel,
-    VideoModel,
-    ModelFile,
-    LlamaModel,
-    comfy_model_to_folder,
-    Provider,
-)
-from nodetool.providers import get_provider
-from nodetool.providers.base import (
-    ProviderCapability,
-    _PROVIDER_REGISTRY,
-    get_registered_provider,
-)
-from nodetool.providers import import_providers
-from pydantic import BaseModel
-from huggingface_hub import try_to_load_from_cache
-from nodetool.api.utils import current_user
-from fastapi import APIRouter, Depends
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
     read_cached_hf_models,
 )
+from nodetool.metadata.types import (
+    ASRModel,
+    ImageModel,
+    LanguageModel,
+    LlamaModel,
+    ModelFile,
+    Provider,
+    TTSModel,
+    VideoModel,
+    comfy_model_to_folder,
+)
+from nodetool.ml.models.language_models import get_all_language_models
+from nodetool.providers import get_provider, import_providers
+from nodetool.providers.base import (
+    _PROVIDER_REGISTRY,
+    ProviderCapability,
+    get_registered_provider,
+)
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
 from nodetool.workflows.recommended_models import (
-    get_recommended_models,
+    get_recommended_asr_models,
     get_recommended_image_models,
-    get_recommended_text_to_image_models,
     get_recommended_image_to_image_models,
+    get_recommended_image_to_video_models,
+    get_recommended_language_embedding_models,
     get_recommended_language_models,
     get_recommended_language_text_generation_models,
-    get_recommended_language_embedding_models,
+    get_recommended_models,
+    get_recommended_text_to_image_models,
     get_recommended_text_to_video_models,
-    get_recommended_image_to_video_models,
-    get_recommended_asr_models,
     get_recommended_tts_models,
 )
-from nodetool.chat.ollama_service import (
-    get_ollama_models,
-    get_ollama_models_unified,
-    get_ollama_model_info,
-    stream_ollama_model_pull,
-    delete_ollama_model as _delete_ollama_model,
-)
-import asyncio
-import os
-from huggingface_hub import HfApi
-from huggingface_hub.hf_api import RepoFile
-from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
-from nodetool.integrations.huggingface.hf_auth import get_hf_token
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -81,7 +82,7 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
 
 
 # Exported functions for direct use (e.g., by MCP server)
-async def get_all_models(user: str) -> list[UnifiedModel]:
+async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
     reco_models = [
         model
@@ -98,7 +99,7 @@ async def get_all_models(user: str) -> list[UnifiedModel]:
     return dedupe_models(all_models)
 
 
-async def recommended_models(user: str) -> list[UnifiedModel]:
+async def recommended_models(_user: str) -> list[UnifiedModel]:
     """Get recommended models."""
     models = [
         model
@@ -120,7 +121,7 @@ class ProviderInfo(BaseModel):
     capabilities: list[str]
 
     class Config:
-        json_encoders = {
+        json_encoders: ClassVar[Dict[type, Callable[[Any], Any]]] = {
             Provider: lambda v: v.value,
         }
 
@@ -212,7 +213,7 @@ async def get_providers_info(user: str) -> list[ProviderInfo]:
 
 @router.get("/providers")
 async def get_providers_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[ProviderInfo]:
     """
     Get all available providers with their keys and capabilities.
@@ -222,14 +223,14 @@ async def get_providers_endpoint(
 
 @router.get("/recommended")
 async def recommended_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return await recommended_models(user)
 
 
 @router.get("/recommended/image")
 async def recommended_image_models_endpoint(
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     # Determine platform on the server; do not accept client override
     return get_recommended_image_models()
@@ -237,77 +238,77 @@ async def recommended_image_models_endpoint(
 
 @router.get("/recommended/image/text-to-image")
 async def recommended_text_to_image_models_endpoint(
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_text_to_image_models()
 
 
 @router.get("/recommended/image/image-to-image")
 async def recommended_image_to_image_models_endpoint(
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_image_to_image_models()
 
 
 @router.get("/recommended/language")
 async def recommended_language_models_endpoint(
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_language_models()
 
 
 @router.get("/recommended/language/text-generation")
 async def recommended_language_text_generation_models_endpoint(
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_language_text_generation_models()
 
 
 @router.get("/recommended/language/embedding")
 async def recommended_language_embedding_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_language_embedding_models()
 
 
 @router.get("/recommended/asr")
 async def recommended_asr_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_asr_models()
 
 
 @router.get("/recommended/tts")
 async def recommended_tts_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_tts_models()
 
 
 @router.get("/recommended/video/text-to-video")
 async def recommended_text_to_video_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_text_to_video_models()
 
 
 @router.get("/recommended/video/image-to-video")
 async def recommended_image_to_video_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return get_recommended_image_to_video_models()
 
 
 @router.get("/all")
 async def get_all_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return await get_all_models(user)
 
 
 @router.get("/huggingface")
 async def get_huggingface_models(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     return await read_cached_hf_models()
 
@@ -322,7 +323,7 @@ async def delete_huggingface_model(repo_id: str) -> bool:
 
 @router.get("/ollama")
 async def get_ollama_models_endpoint(
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[LlamaModel]:
     return await get_ollama_models()
 
@@ -469,7 +470,7 @@ async def get_video_models_by_provider(
 @router.get("/llm/{provider}")
 async def get_language_models_endpoint(
     provider: Provider,
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[LanguageModel]:
     """
     Get all available language models from a specific provider.
@@ -480,7 +481,7 @@ async def get_language_models_endpoint(
 @router.get("/image/{provider}")
 async def get_image_models_endpoint(
     provider: Provider,
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[ImageModel]:
     """
     Get all available image generation models from a specific provider.
@@ -491,7 +492,7 @@ async def get_image_models_endpoint(
 @router.get("/tts/{provider}")
 async def get_tts_models_endpoint(
     provider: Provider,
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[TTSModel]:
     """
     Get all available text-to-speech models from a specific provider.
@@ -502,7 +503,7 @@ async def get_tts_models_endpoint(
 @router.get("/asr/{provider}")
 async def get_asr_models_endpoint(
     provider: Provider,
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[ASRModel]:
     """
     Get all available automatic speech recognition models from a specific provider.
@@ -513,7 +514,7 @@ async def get_asr_models_endpoint(
 @router.get("/video/{provider}")
 async def get_video_models_endpoint(
     provider: Provider,
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[VideoModel]:
     """
     Get all available video generation models from a specific provider.
@@ -523,7 +524,7 @@ async def get_video_models_endpoint(
 
 @router.get("/ollama_model_info")
 async def get_ollama_model_info_endpoint(
-    model_name: str, user: str = Depends(current_user)
+    model_name: str, _user: str = Depends(current_user)
 ) -> dict | None:
     return await get_ollama_model_info(model_name)
 
@@ -531,7 +532,7 @@ async def get_ollama_model_info_endpoint(
 @router.post("/huggingface/try_cache_files")
 async def try_cache_files(
     paths: list[RepoPath],
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[RepoPath]:
     def check_path(path: RepoPath) -> bool:
         return try_to_load_from_cache(path.repo_id, path.path) is not None
@@ -547,7 +548,7 @@ async def try_cache_files(
 @router.post("/huggingface/try_cache_repos")
 async def try_cache_repos(
     repos: list[str],
-    user: str = Depends(current_user),
+    _user: str = Depends(current_user),
 ) -> list[CachedRepo]:
     def check_repo(repo_id: str) -> bool:
         return has_cached_files(repo_id)
@@ -582,7 +583,7 @@ class HFCacheCheckResponse(BaseModel):
 
 @router.post("/huggingface/check_cache")
 async def check_huggingface_cache(
-    body: HFCacheCheckRequest, user: str = Depends(current_user)
+    body: HFCacheCheckRequest, _user: str = Depends(current_user)
 ) -> HFCacheCheckResponse:
     """
     Check if all files in a Hugging Face repo that match allow/ignore patterns
@@ -624,11 +625,11 @@ async def check_huggingface_cache(
 if not Environment.is_production():
 
     @router.post("/pull_ollama_model")
-    async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
+    async def pull_ollama_model(model_name: str, _user: str = Depends(current_user)):
         # Preflight: attempt a lightweight call to detect if Ollama is reachable
         try:
             await get_ollama_models()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             api_url = Environment.get("OLLAMA_API_URL")
             raise HTTPException(
                 status_code=503,
@@ -640,7 +641,7 @@ if not Environment.is_production():
                     ),
                     "error": str(e),
                 },
-            )
+            ) from e
 
         # If reachable, start the streaming response
         return StreamingResponse(
@@ -650,14 +651,14 @@ if not Environment.is_production():
     @router.post("/huggingface/file_info")
     async def get_huggingface_file_info(
         requests: list[HFFileRequest],
-        user: str = Depends(current_user),
+        _user: str = Depends(current_user),
     ) -> list[HFFileInfo]:
         # Use async wrapper to avoid blocking the loop
         return await get_huggingface_file_infos_async(requests)
 
     # @router.get("/{model_type}")
     # async def index(
-    #     model_type: str, user: str = Depends(current_user)
+    #     model_type: str, _user: str = Depends(current_user)
     # ) -> list[ModelFile]:
     #     folder = comfy_model_to_folder(model_type)
     #     try:

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from nodetool.agents.tools.base import Tool
-from nodetool.code_runners.runtime_base import ContainerFailureError, StreamRunnerBase
-from nodetool.code_runners.python_runner import PythonDockerRunner
-from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
 from nodetool.code_runners.bash_runner import BashDockerRunner
+from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
+from nodetool.code_runners.python_runner import PythonDockerRunner
 from nodetool.code_runners.ruby_runner import RubyDockerRunner
+from nodetool.code_runners.runtime_base import ContainerFailureError, StreamRunnerBase
 from nodetool.workflows.processing_context import ProcessingContext
-
 
 RunnerMode = Literal["docker", "subprocess"]
 
@@ -54,7 +53,7 @@ class RunnerExecutionTool(Tool):
     language_label: str = "code"
     network_disabled: bool = False
 
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "code": {
@@ -277,9 +276,7 @@ class RunnerExecutionTool(Tool):
         combined = "\n".join([message, stderr_text, stdout_text])
         if any(sig.lower() in combined for sig in self.docker_error_signatures):
             return True
-        if "modulenotfounderror" in combined or "importerror" in combined:
-            return True
-        return False
+        return "modulenotfounderror" in combined or "importerror" in combined
 
 
 class ExecutePythonTool(RunnerExecutionTool):

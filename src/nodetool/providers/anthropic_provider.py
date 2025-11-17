@@ -5,35 +5,36 @@ This module implements the ChatProvider interface for Anthropic Claude models,
 handling message conversion, streaming, and tool integration.
 """
 
-import json
 import base64
-from typing import cast, Dict, List
-from typing import Any, AsyncIterator, Sequence
+import json
+from typing import Any, AsyncIterator, Dict, List, Sequence, cast
+
 import aiohttp
 import anthropic
-from anthropic.types.message_param import MessageParam
-from anthropic.types.image_block_param import ImageBlockParam
-from anthropic.types.url_image_source_param import URLImageSourceParam
 from anthropic.types.base64_image_source_param import Base64ImageSourceParam
+from anthropic.types.image_block_param import ImageBlockParam
+from anthropic.types.message_param import MessageParam
 from anthropic.types.tool_param import ToolParam
-from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
-from nodetool.providers.openai_prediction import calculate_chat_cost
+from anthropic.types.url_image_source_param import URLImageSourceParam
+from pydantic import BaseModel
+
+from nodetool.agents.tools.base import Tool
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (
+    LanguageModel,
     Message,
-    Provider,
-    ToolCall,
     MessageImageContent,
     MessageTextContent,
-    LanguageModel,
+    Provider,
+    ToolCall,
 )
-from nodetool.config.environment import Environment
+from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.workflows.base_node import ApiKeyMissingError
-from nodetool.workflows.types import Chunk
-from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
-from pydantic import BaseModel
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
@@ -178,32 +179,31 @@ class AnthropicProvider(BaseProvider):
             }
             async with aiohttp.ClientSession(
                 timeout=timeout, headers=headers
-            ) as session:
-                async with session.get(
-                    "https://api.anthropic.com/v1/models"
-                ) as response:
-                    if response.status != 200:
-                        log.warning(
-                            f"Failed to fetch Anthropic models: HTTP {response.status}"
-                        )
-                        return []
-                    payload: Dict[str, Any] = await response.json()
-                    data = payload.get("data", [])
+            ) as session, session.get(
+                "https://api.anthropic.com/v1/models"
+            ) as response:
+                if response.status != 200:
+                    log.warning(
+                        f"Failed to fetch Anthropic models: HTTP {response.status}"
+                    )
+                    return []
+                payload: Dict[str, Any] = await response.json()
+                data = payload.get("data", [])
 
-                    models: List[LanguageModel] = []
-                    for item in data:
-                        model_id = item.get("id") or item.get("name")
-                        if not model_id:
-                            continue
-                        models.append(
-                            LanguageModel(
-                                id=model_id,
-                                name=model_id,
-                                provider=Provider.Anthropic,
-                            )
+                models: List[LanguageModel] = []
+                for item in data:
+                    model_id = item.get("id") or item.get("name")
+                    if not model_id:
+                        continue
+                    models.append(
+                        LanguageModel(
+                            id=model_id,
+                            name=model_id,
+                            provider=Provider.Anthropic,
                         )
-                    log.debug(f"Fetched {len(models)} Anthropic models")
-                    return models
+                    )
+                log.debug(f"Fetched {len(models)} Anthropic models")
+                return models
         except Exception as e:
             log.error(f"Error fetching Anthropic models: {e}")
             return []
@@ -354,7 +354,7 @@ class AnthropicProvider(BaseProvider):
         """Convert tools to Anthropic's format."""
         log.debug(f"Formatting {len(tools)} tools for Anthropic API")
         formatted_tools = cast(
-            list[ToolParam],
+            "list[ToolParam]",
             [
                 {
                     "name": tool.name,

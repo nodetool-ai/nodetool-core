@@ -14,39 +14,39 @@ The implementation provides:
 5. Support for streaming results during reasoning
 """
 
+import asyncio
 import datetime
-from nodetool.config.logging_config import get_logger
 import json
 import os
-import asyncio
 import platform
 import shutil
 import sys
 import tempfile
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import AsyncGenerator, List, Sequence, Any, Optional
+from typing import Any
 
+from nodetool.agents.base_agent import BaseAgent
+from nodetool.agents.task_executor import TaskExecutor
+from nodetool.agents.task_planner import TaskPlanner
+from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
+from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_log_path
+from nodetool.metadata.types import (
+    Task,
+    ToolCall,
+)
+from nodetool.providers import BaseProvider
+from nodetool.ui.console import AgentConsole
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     SubTaskResult,
     TaskUpdate,
     TaskUpdateEvent,
 )
-from nodetool.agents.task_executor import TaskExecutor
-from nodetool.providers import BaseProvider
-from nodetool.agents.task_planner import TaskPlanner
-from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import (
-    Task,
-    ToolCall,
-)
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.ui.console import AgentConsole
-from nodetool.agents.base_agent import BaseAgent
-
 
 log = get_logger(__name__)
 
@@ -245,7 +245,7 @@ def _wrap_command_with_sandbox(
             os.close(fd)
 
         # Wrap command with sandbox-exec
-        wrapped_cmd = ["sandbox-exec", "-f", profile_path] + cmd
+        wrapped_cmd = ["sandbox-exec", "-f", profile_path, *cmd]
 
         log.info(f"Wrapping agent command with sandbox-exec: {' '.join(wrapped_cmd)}")
         log.info(f"Sandbox profile path: {profile_path}")
@@ -273,9 +273,8 @@ def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
         CPU limit percentage or None if not configured
     """
     # Check per-agent limit first
-    if resource_limits and hasattr(resource_limits, "cpu_percent"):
-        if resource_limits.cpu_percent:
-            return resource_limits.cpu_percent
+    if resource_limits and getattr(resource_limits, "cpu_percent", None):
+        return resource_limits.cpu_percent
 
     # Fall back to environment variable
     if cpu_limit := os.environ.get("NODETOOL_AGENT_CPU_LIMIT"):
@@ -352,7 +351,7 @@ def _wrap_command_with_cpu_limit(
     taskpolicy_class = _cpu_percent_to_taskpolicy_class(cpu_percent)
 
     # Wrap command with taskpolicy
-    wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class] + cmd
+    wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class, *cmd]
 
     log.info(
         f"Applying CPU limit to agent: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'"
@@ -408,14 +407,14 @@ class AgentRunner(StreamRunnerBase):
         self.resource_limits = resource_limits
 
     def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
+        self, user_code: str, _env_locals: dict[str, Any]
     ) -> list[str]:
         """
         Build the command to run the agent inside the container.
 
         Args:
             user_code: Path to the agent configuration file
-            env_locals: Additional environment variables
+            _env_locals: Additional environment variables (ignored)
 
         Returns:
             Command list for the container
@@ -465,7 +464,7 @@ class AgentRunner(StreamRunnerBase):
         """
         if cleanup_data:
             try:
-                os.unlink(cleanup_data)
+                Path(cleanup_data).unlink()
                 log.debug(f"Cleaned up sandbox profile: {cleanup_data}")
             except OSError:
                 pass
@@ -518,7 +517,7 @@ class Agent(BaseAgent):
         model: str,
         planning_model: str | None = None,
         reasoning_model: str | None = None,
-        tools: Optional[Sequence[Tool]] = None,
+        tools: Sequence[Tool] | None = None,
         description: str = "",
         inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
@@ -547,7 +546,7 @@ class Agent(BaseAgent):
             model (str): The model to use with the provider
             reasoning_model (str, optional): The model to use for reasoning, defaults to the same as the provider model
             planning_model (str, optional): The model to use for planning, defaults to the same as the provider model
-            tools (List[Tool]): List of tools available for this agent
+            tools (list[Tool]): List of tools available for this agent
             inputs (dict[str, Any], optional): Inputs to use for the agent
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum reasoning steps
@@ -615,9 +614,7 @@ class Agent(BaseAgent):
             return
 
         tools = list(self.tools)
-        task_planner_instance: Optional[TaskPlanner] = (
-            None  # Keep track of planner instance
-        )
+        task_planner_instance: TaskPlanner | None = None  # Keep track of planner instance
 
         if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
             # If self.task was set by initial_task, we skip planning.
@@ -676,7 +673,7 @@ class Agent(BaseAgent):
         if self.output_schema and len(self.task.subtasks) > 0:
             self.task.subtasks[-1].output_schema = json.dumps(self.output_schema)
 
-        tool_calls: List[ToolCall] = []
+        tool_calls: list[ToolCall] = []
 
         # Start live display managed by AgentConsole
         if self.display_manager:
@@ -765,7 +762,7 @@ class Agent(BaseAgent):
         Otherwise, return all collected results.
 
         Returns:
-            List[Any]: Results with priority given to the final subtask output
+            list[Any]: Results with priority given to the final subtask output
         """
         return self.results
 
@@ -782,6 +779,8 @@ class Agent(BaseAgent):
             mode: Execution mode ("docker" or "subprocess")
         """
         workspace = context.workspace_dir
+        assert workspace is not None, "Workspace directory is required"
+        host_workspace = Path(workspace)
 
         # Prepare workspace paths based on mode
         if mode == "docker":
@@ -790,7 +789,7 @@ class Agent(BaseAgent):
             config_filename = "docker_agent_config.json"
         else:
             workspace_path = workspace
-            result_path = os.path.join(workspace, "subprocess_result.json")
+            result_path = str(host_workspace / "subprocess_result.json")
             config_filename = "subprocess_agent_config.json"
 
         config = {
@@ -816,8 +815,8 @@ class Agent(BaseAgent):
             "result_path": result_path,
         }
 
-        host_config = os.path.join(workspace, config_filename)
-        with open(host_config, "w") as f:
+        host_config = host_workspace / config_filename
+        with host_config.open("w") as f:
             json.dump(config, f)
 
         # Collect environment variables from provider and tools
@@ -846,7 +845,7 @@ class Agent(BaseAgent):
                 mode="subprocess",
                 resource_limits=self.resource_limits,
             )
-            config_path = host_config
+            config_path = str(host_config)
 
         # Stream output from the runner
         async for slot, value in runner.stream(
@@ -862,12 +861,12 @@ class Agent(BaseAgent):
 
         # Read results if available
         if mode == "docker":
-            result_file = os.path.join(workspace, "docker_result.json")
+            result_file = host_workspace / "docker_result.json"
         else:
-            result_file = os.path.join(workspace, "subprocess_result.json")
+            result_file = host_workspace / "subprocess_result.json"
 
-        if os.path.exists(result_file):
-            with open(result_file) as f:
+        if result_file.exists():
+            with result_file.open() as f:
                 self.results = json.load(f)
 
         mode_name = "docker" if mode == "docker" else "sandbox"

@@ -3,9 +3,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import TypeAlias
 
-from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Edge as ApiEdge, Graph as ApiGraph, Node as ApiNode
 from pydantic import BaseModel
+
+from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.types.graph import Edge as ApiEdge
+from nodetool.types.graph import Graph as ApiGraph
+from nodetool.types.graph import Node as ApiNode
 
 DynamicOutputLike: TypeAlias = TypeMetadata | Mapping[str, object]
 DynamicOutputsMapping: TypeAlias = Mapping[str, DynamicOutputLike]
@@ -38,7 +41,7 @@ def _topo_order(nodes: Iterable[ApiNode], edges: Iterable[ApiEdge]) -> list[str]
     a best-effort order where remaining nodes are appended at the end.
     """
     node_ids = [n.id for n in nodes]
-    indeg: dict[str, int] = {i: 0 for i in node_ids}
+    indeg: dict[str, int] = dict.fromkeys(node_ids, 0)
     for edge in edges:
         if edge.source in indeg and edge.target in indeg:
             indeg[edge.target] += 1

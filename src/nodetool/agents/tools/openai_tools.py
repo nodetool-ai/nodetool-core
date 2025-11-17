@@ -1,9 +1,11 @@
-from typing import Dict, Any
+import base64
+from typing import Any, ClassVar, Dict
+
+from openai import AsyncClient
+
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
-import base64
-from openai import AsyncClient
 
 
 def get_openai_client() -> AsyncClient:
@@ -25,7 +27,7 @@ class OpenAIWebSearchTool(Tool):
     description = "Search the web using OpenAI's web search API"
 
     def __init__(self):
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "query": {
@@ -98,7 +100,7 @@ class OpenAIImageGenerationTool(Tool):
     description = "Generate an image from a text prompt using OpenAI DALL-E"
 
     def __init__(self):
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "prompt": {
@@ -184,7 +186,7 @@ class OpenAITextToSpeechTool(Tool):
     def __init__(self):
         # Define schema based on OpenAI API parameters for TTS
         # Reference: https://platform.openai.com/docs/api-reference/audio/createSpeech
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "input": {

@@ -6,24 +6,24 @@ by agents. Each WorkflowTool instance is configured with a specific workflow
 and uses its input schema for tool parameters.
 """
 
-from nodetool.config.logging_config import get_logger
 import re
-from typing import Any, Dict
+from typing import Any, ClassVar, Dict
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
-from nodetool.types.workflow import Workflow
+from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
+from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import (
     JobUpdate,
     OutputUpdate,
@@ -101,7 +101,7 @@ class GraphTool(Tool):
                 f"Property {handle} not found on node {node.get_node_type()} {node.id}"
             )
 
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 edge.targetHandle: get_property_schema(node, edge.targetHandle)
@@ -225,11 +225,11 @@ class GraphTool(Tool):
             # Collect all messages from workflow execution
             result = {}
             runner = WorkflowRunner(job_id=uuid4().hex, disable_caching=True)
-            
+
             # Determine if we need to capture outputs from leaf nodes
             # (when there's no ToolResultNode)
             need_leaf_output = not has_tool_result_node
-            
+
             # Find leaf nodes (nodes with no outgoing edges) if needed
             leaf_node_id: str | None = None
             leaf_output_slot: str | None = None
@@ -243,7 +243,7 @@ class GraphTool(Tool):
                     if node.id not in excluded_source_ids
                     and node.id not in nodes_with_outgoing
                 ]
-                
+
                 if len(leaf_nodes) == 1:
                     leaf_node = leaf_nodes[0]
                     outputs = leaf_node.outputs_for_instance()
@@ -255,7 +255,7 @@ class GraphTool(Tool):
                             break
                     if default_output is None and len(outputs) == 1:
                         default_output = outputs[0].name
-                    
+
                     if default_output:
                         leaf_node_id = leaf_node.id
                         leaf_output_slot = default_output
@@ -277,7 +277,7 @@ class GraphTool(Tool):
                         "Tool graph has no ToolResult node and no leaf nodes found. "
                         "Either add a ToolResult node or ensure the graph has terminal nodes."
                     )
-            
+
             async for msg in run_workflow(
                 request=req,
                 runner=runner,

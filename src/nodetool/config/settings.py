@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple
 
 import yaml
 
-from nodetool.config.configuration import register_setting, register_secret
+from nodetool.config.configuration import register_secret, register_setting
 
 # Constants
 SETTINGS_FILE = "settings.yaml"
@@ -257,7 +257,7 @@ def load_settings() -> Dict[str, Any]:
     settings: Dict[str, Any] = {}
 
     if settings_file.exists():
-        with open(settings_file, "r") as f:
+        with open(settings_file) as f:
             settings = yaml.safe_load(f) or {}
 
     return settings

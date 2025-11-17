@@ -1,18 +1,23 @@
-from typing import Dict, Any
+from typing import Any, ClassVar, Dict
+
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
-    Tool as GenAITool,
     GenerateContentConfig,
-    GoogleSearch,
     GenerateImagesConfig,
+    GoogleSearch,
 )
+from google.genai.types import (
+    Tool as GenAITool,
+)
+
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import Provider
 from nodetool.providers.gemini_provider import GeminiProvider
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
+
 
 class GoogleGroundedSearchTool(Tool):
     """
@@ -26,7 +31,7 @@ class GoogleGroundedSearchTool(Tool):
     description = "Search the web using Google's Gemini API with grounding capabilities"
 
     def __init__(self):
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "query": {
@@ -163,7 +168,7 @@ class GoogleImageGenerationTool(Tool):
     description = "Generate images based on a text prompt using Google's Gemini API"
 
     def __init__(self):
-        self.input_schema = {
+        self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "prompt": {
@@ -242,6 +247,7 @@ class GoogleImageGenerationTool(Tool):
 
 if __name__ == "__main__":
     import asyncio
+
     from nodetool.workflows.processing_context import ProcessingContext
 
     async def main():

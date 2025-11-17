@@ -15,17 +15,18 @@ import json
 from typing import Any, Sequence
 
 from openai.types.chat import (
-    ChatCompletionContentPartParam,
-    ChatCompletionToolMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
     ChatCompletionAssistantMessageParam,
+    ChatCompletionContentPartParam,
     ChatCompletionMessageFunctionToolCallParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
     Function,
 )
 from pydantic import BaseModel
+from pydub import AudioSegment
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
@@ -33,13 +34,12 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
     Message,
+    MessageAudioContent,
     MessageContent,
     MessageImageContent,
     MessageTextContent,
-    MessageAudioContent,
     ToolCall,
 )
-from pydub import AudioSegment
 
 log = get_logger(__name__)
 
@@ -82,8 +82,8 @@ class OpenAICompat:
         """Normalize a data URI and convert audio/* to MP3 base64 data URI."""
         try:
             header, data_part = uri.split(",", 1)
-        except ValueError:
-            raise ValueError(f"Invalid data URI: {uri[:64]}...")
+        except ValueError as e:
+            raise ValueError(f"Invalid data URI: {uri[:64]}...") from e
 
         is_base64 = ";base64" in header
         mime_type = "application/octet-stream"

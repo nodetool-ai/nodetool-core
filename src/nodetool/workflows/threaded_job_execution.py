@@ -3,9 +3,8 @@ Threaded job execution strategy using dedicated event loops.
 """
 
 import asyncio
-from concurrent.futures import Future
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
@@ -17,6 +16,9 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.workflows.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    from concurrent.futures import Future
 
 log = get_logger(__name__)
 

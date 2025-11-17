@@ -1,10 +1,11 @@
-from typing import List
-from nodetool.html.convert_html import convert_html_to_text
-from nodetool.metadata.types import Datetime, Email, IMAPConnection, EmailSearchCriteria
-import imaplib
 import email
+import imaplib
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
+from typing import List
+
+from nodetool.html.convert_html import convert_html_to_text
+from nodetool.metadata.types import Datetime, Email, EmailSearchCriteria, IMAPConnection
 
 
 def create_gmail_connection(email_address: str, app_password: str) -> IMAPConnection:

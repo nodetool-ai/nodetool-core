@@ -1,10 +1,10 @@
-from nodetool.metadata.type_metadata import TypeMetadata
+from typing import Any, Optional
 
 import annotated_types
 from pydantic import BaseModel, field_serializer
 from pydantic.fields import FieldInfo
 
-from typing import Any, Optional
+from nodetool.metadata.type_metadata import TypeMetadata
 
 
 class Property(BaseModel):
@@ -135,10 +135,11 @@ class Property(BaseModel):
         ge = metadata.get(annotated_types.Ge, None)
         le = metadata.get(annotated_types.Le, None)
 
-        if field.title is None:
-            title = name.replace("_", " ").title()
-        else:
-            title = field.title
+        title = (
+            name.replace("_", " ").title()
+            if field.title is None
+            else field.title
+        )
         return Property(
             name=name,
             type=type_,

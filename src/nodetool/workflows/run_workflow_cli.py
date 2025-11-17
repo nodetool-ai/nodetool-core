@@ -15,19 +15,19 @@ This module is kept for backward compatibility but may be removed in future vers
 The unified command provides the same JSONL streaming behavior plus interactive mode.
 """
 
-import sys
-import json
 import argparse
 import asyncio
 import base64
+import json
+import sys
+from contextlib import suppress
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
+from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.types.graph import Graph
-
 
 log = get_logger(__name__)
 
@@ -59,7 +59,7 @@ def _parse_request_json(value: str) -> dict[str, Any]:
     # Allow passing a file path or inline JSON
     try:
         # Try to open as a file path
-        with open(value, "r", encoding="utf-8") as f:
+        with open(value, encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         pass
@@ -98,11 +98,8 @@ async def _run(req_dict: dict[str, Any]) -> int:
     # Build RunJobRequest, handling Graph if passed as plain dict
     graph_value = req_dict.get("graph")
     if isinstance(graph_value, dict):
-        try:
+        with suppress(Exception):
             req_dict["graph"] = Graph(**graph_value)
-        except Exception:
-            # Leave as dict; run_workflow loader will adapt if needed
-            pass
 
     req = RunJobRequest(**req_dict)
 

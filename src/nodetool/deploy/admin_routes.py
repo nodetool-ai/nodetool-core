@@ -14,30 +14,32 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
-from fastapi.responses import StreamingResponse
-import chromadb
 
+import chromadb
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from nodetool.api.utils import current_user
 from nodetool.deploy.admin_operations import (
+    calculate_cache_size,
+    delete_hf_model,
     download_hf_model,
     download_ollama_model,
     scan_hf_cache,
-    calculate_cache_size,
-    delete_hf_model,
+)
+from nodetool.indexing.ingestion import find_input_nodes
+from nodetool.indexing.service import index_file_to_collection
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
 )
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.models.workflow import Workflow
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
-from nodetool.indexing.service import index_file_to_collection
-from nodetool.indexing.ingestion import find_input_nodes
-from pydantic import BaseModel
-from nodetool.types.asset import Asset, AssetList
-from nodetool.api.utils import current_user
 from nodetool.runtime.resources import require_scope
+from nodetool.types.asset import Asset, AssetList
 
 
 # Collection-related Pydantic models
@@ -138,7 +140,7 @@ def create_admin_router() -> APIRouter:
                     ):
                         yield f"data: {json.dumps(chunk)}\n\n"
                     yield "data: [DONE]\n\n"
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     error_data = {"status": "error", "error": str(e)}
                     yield f"data: {json.dumps(error_data)}\n\n"
 
@@ -155,9 +157,9 @@ def create_admin_router() -> APIRouter:
             )
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"HuggingFace download error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/models/ollama/download")
     async def download_ollama_model_endpoint(request: Request):
@@ -176,7 +178,7 @@ def create_admin_router() -> APIRouter:
                     ):
                         yield f"data: {json.dumps(chunk)}\n\n"
                     yield "data: [DONE]\n\n"
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     error_data = {"status": "error", "error": str(e)}
                     yield f"data: {json.dumps(error_data)}\n\n"
 
@@ -193,9 +195,9 @@ def create_admin_router() -> APIRouter:
             )
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"Ollama download error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/scan")
     async def scan_cache():
@@ -209,9 +211,9 @@ def create_admin_router() -> APIRouter:
                 if results
                 else {"status": "error", "message": "No cache data"}
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"Cache scan error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/size")
     async def get_cache_size(cache_dir: str = "/app/.cache/huggingface/hub"):
@@ -225,9 +227,9 @@ def create_admin_router() -> APIRouter:
                 if results
                 else {"status": "error", "message": "No size data"}
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"Cache size calculation error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/models/huggingface/{repo_id:path}")
     async def delete_huggingface_model_endpoint(repo_id: str):
@@ -241,9 +243,9 @@ def create_admin_router() -> APIRouter:
                 if results
                 else {"status": "error", "message": "Delete failed"}
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"HuggingFace model deletion error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
@@ -253,8 +255,8 @@ def create_admin_router() -> APIRouter:
             adapter = await get_model_adapter(table)
             await adapter.save(item)
             return {"status": "ok"}
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/db/{table}/{key}")
     async def db_get(table: str, key: str):
@@ -267,8 +269,8 @@ def create_admin_router() -> APIRouter:
             return item
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/db/{table}/{key}")
     async def db_delete(table: str, key: str):
@@ -277,8 +279,8 @@ def create_admin_router() -> APIRouter:
             adapter = await get_model_adapter(table)
             await adapter.delete(key)
             return {"status": "ok"}
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Collection management endpoints
     @router.post("/admin/collections", response_model=CollectionResponse)
@@ -297,8 +299,8 @@ def create_admin_router() -> APIRouter:
                 metadata=collection.metadata,
                 count=0,
             )
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/collections", response_model=CollectionList)
     async def list_collections(
@@ -329,8 +331,8 @@ def create_admin_router() -> APIRouter:
                 ],
                 count=len(collections),
             )
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/collections/{name}", response_model=CollectionResponse)
     async def get_collection(name: str) -> CollectionResponse:
@@ -344,8 +346,8 @@ def create_admin_router() -> APIRouter:
                 metadata=collection.metadata,
                 count=count,
             )
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.put("/admin/collections/{name}")
     async def update_collection(name: str, req: CollectionModify):
@@ -363,8 +365,8 @@ def create_admin_router() -> APIRouter:
             )
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/collections/{name}")
     async def delete_collection(name: str):
@@ -373,8 +375,8 @@ def create_admin_router() -> APIRouter:
             client = await get_async_chroma_client()
             await client.delete_collection(name=name)
             return {"message": f"Collection {name} deleted successfully"}
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/collections/{name}/add")
     async def add_to_collection(name: str, req: AddToCollection):
@@ -384,8 +386,8 @@ def create_admin_router() -> APIRouter:
             collection = await client.get_collection(name=name)
             await collection.add(documents=req.documents, ids=req.ids, metadatas=req.metadatas, embeddings=req.embeddings)
             return {"message": f"Documents added to collection {name} successfully"}
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Asset management endpoints
     @router.get("/admin/assets", response_model=AssetList)
@@ -417,8 +419,8 @@ def create_admin_router() -> APIRouter:
             assets = await asyncio.gather(*[asset_from_model(asset) for asset in assets])
 
             return AssetList(next=next_cursor, assets=assets)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
@@ -443,8 +445,8 @@ def create_admin_router() -> APIRouter:
                 **kwargs,
             )
             return await asset_from_model(asset)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/assets/{asset_id}", response_model=Asset)
     async def get_asset(
@@ -477,8 +479,8 @@ def create_admin_router() -> APIRouter:
             return await asset_from_model(asset)
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/assets/{asset_id}")
     async def delete_asset(asset_id: str, user: str = Depends(current_user)):
@@ -513,7 +515,7 @@ def create_admin_router() -> APIRouter:
                         await delete_single_asset(folder)
                         ids.append(folder_id)
                     return ids
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     from nodetool.config.logging_config import get_logger
 
                     log = get_logger(__name__)
@@ -526,15 +528,11 @@ def create_admin_router() -> APIRouter:
                 try:
                     await a.delete()
                     storage = require_scope().get_asset_storage()
-                    try:
+                    with suppress(Exception):
                         await storage.delete(a.thumb_file_name)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    try:
+                    with suppress(Exception):
                         await storage.delete(a.file_name)
-                    except Exception:  # noqa: BLE001
-                        pass
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     from nodetool.config.logging_config import get_logger
 
                     log = get_logger(__name__)
@@ -552,7 +550,7 @@ def create_admin_router() -> APIRouter:
             return {"deleted_asset_ids": deleted_asset_ids}
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router

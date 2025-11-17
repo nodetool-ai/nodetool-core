@@ -6,11 +6,11 @@ and text-to-video generation.
 """
 
 from pydantic import BaseModel, Field
+
 from nodetool.metadata.types import (
     ImageModel,
     VideoModel,
 )
-
 
 ImageBytes = bytes
 

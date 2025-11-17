@@ -9,8 +9,9 @@ across all registered providers that support the TEXT_TO_SPEECH capability.
 
 import asyncio
 import time
-from nodetool.config.logging_config import get_logger
 from typing import List
+
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import TTSModel
 
 log = get_logger(__name__)

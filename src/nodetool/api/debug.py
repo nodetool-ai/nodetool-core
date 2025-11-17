@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 import tempfile
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,7 +15,6 @@ from pydantic import BaseModel, Field
 from nodetool.config.settings import get_system_data_path, load_settings
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.system import system_stats
-
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
@@ -90,10 +90,8 @@ def _get_gpu_name() -> Optional[str]:
         return None
     finally:
         if did_init:
-            try:
+            with suppress(Exception):
                 nvml.nvmlShutdown()
-            except Exception:
-                pass
 
 
 def _collect_env_info() -> Dict[str, Any]:
@@ -217,11 +215,7 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
                         wf.updated_at.isoformat() if hasattr(wf, "updated_at") else None
                     ),
                     "settings": wf.settings,
-                    "graph": (
-                        wf.graph
-                        if "graph" not in workflow_payload
-                        else workflow_payload["graph"]
-                    ),
+                      "graph": workflow_payload.get("graph", wf.graph),
                 }
             )
     if payload.errors:

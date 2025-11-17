@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
@@ -18,20 +19,18 @@ import tiktoken
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_compat import OpenAICompat
-from nodetool.providers.llama_server_manager import LlamaServerManager
-from nodetool.runtime.resources import require_scope
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
-from nodetool.workflows.types import Chunk
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.security.secret_helper import get_secret_sync
 from nodetool.integrations.huggingface.huggingface_models import (
     get_llamacpp_language_models_from_hf_cache,
 )
-
-import os
+from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
+from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.providers.llama_server_manager import LlamaServerManager
+from nodetool.providers.openai_compat import OpenAICompat
+from nodetool.runtime.resources import require_scope
+from nodetool.security.secret_helper import get_secret_sync
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
@@ -330,7 +329,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             http_client = httpx.AsyncClient(
                 follow_redirects=True, timeout=600, verify=False
             )
-        
+
         # llama-server accepts any API key; None is fine when auth is disabled
         return openai.AsyncClient(
             base_url=f"{base_url}/v1",

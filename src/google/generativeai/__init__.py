@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class GenerativeModel:
     """Minimal stub for google.generativeai.GenerativeModel used in tests.
 
@@ -8,7 +11,7 @@ class GenerativeModel:
     def __init__(self, model: str):
         self.model = model
 
-    def generate_content(self, *args, **kwargs):
+    def generate_content(self, *_args: Any, **_kwargs: Any):
         async def _empty_stream():
             if False:
                 yield None

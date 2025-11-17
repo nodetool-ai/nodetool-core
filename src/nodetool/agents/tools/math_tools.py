@@ -15,7 +15,7 @@ Tools included:
 
 import math
 import statistics
-from typing import Any, Dict
+from typing import Any, ClassVar, Dict
 
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
@@ -30,7 +30,7 @@ class CalculatorTool(Tool):
         "Supports +, -, *, /, **, sqrt, abs, round, and parentheses. "
         "Use for evaluating mathematical expressions safely."
     )
-    input_schema: Dict[str, Any] = {
+    input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "expression": {
@@ -80,7 +80,7 @@ class StatisticsTool(Tool):
         "Performs statistical calculations on numerical data. "
         "Calculates mean, median, mode, standard deviation, variance, min, max, sum, and count."
     )
-    input_schema: Dict[str, Any] = {
+    input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "data": {
@@ -178,7 +178,7 @@ class GeometryTool(Tool):
         "Supports area and perimeter for 2D shapes, volume and surface area for 3D shapes, "
         "and distance calculations."
     )
-    input_schema: Dict[str, Any] = {
+    input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "shape": {
@@ -293,7 +293,7 @@ class TrigonometryTool(Tool):
         "Performs trigonometric calculations. "
         "Supports sin, cos, tan, asin, acos, atan, and angle conversions between degrees and radians."
     )
-    input_schema: Dict[str, Any] = {
+    input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "function": {
@@ -384,7 +384,7 @@ class ConversionTool(Tool):
         "Converts between different units of measurement. "
         "Supports length, weight, temperature, area, and volume conversions."
     )
-    input_schema: Dict[str, Any] = {
+    input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "value": {"type": "number", "description": "Value to convert"},

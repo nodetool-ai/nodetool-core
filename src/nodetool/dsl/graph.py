@@ -1,24 +1,24 @@
 import asyncio
-from abc import ABC, abstractmethod
 import logging
 import uuid
+from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar, cast
 
-from nodetool.config.logging_config import get_logger
-from nodetool.runtime.resources import ResourceScope
-from nodetool.types.job import JobUpdate
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from nodetool.dsl.handles import OutputHandle, OutputsProxy, DynamicOutputsProxy
+from nodetool.config.logging_config import get_logger
+from nodetool.dsl.handles import DynamicOutputsProxy, OutputHandle, OutputsProxy
 from nodetool.metadata.types import OutputSlot, ToolCall
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.graph import Graph, Node
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
+from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Error, NodeUpdate, OutputUpdate, PlanningUpdate, TaskUpdate, ToolCallUpdate
 
 log = get_logger(__name__)
@@ -90,7 +90,7 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
                 f"{self.__class__.__name__} (node type '{node_type}') has no output 'output'"
             )
 
-        return cast(OutputHandle[OutputT], OutputHandle(self, "output", py_type))
+        return cast("OutputHandle[OutputT]", OutputHandle(self, "output", py_type))
 
     def _outputs_proxy(self) -> OutputsProxy:
         if self._node_supports_dynamic_outputs():

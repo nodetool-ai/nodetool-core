@@ -1,6 +1,7 @@
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Tuple
+
 from nodetool.types.graph import Edge, Node
-from nodetool.workflows.base_node import get_node_class, get_comfy_class_by_name
+from nodetool.workflows.base_node import get_comfy_class_by_name, get_node_class
 
 """
 This module provides functionality to read and parse graph structures from JSON representations.
@@ -175,7 +176,7 @@ def get_edge_names(comfy_class: type) -> List[str]:
     """
     if comfy_class:
         inputs = list(
-            getattr(comfy_class, "INPUT_TYPES")
+            comfy_class.INPUT_TYPES
             .__func__(comfy_class)
             .get("required", {})
             .items()
@@ -199,7 +200,7 @@ def get_widget_names(class_name: str) -> List[str]:
     node_class = resolve_comfy_class(class_name)
     if node_class:
         inputs = list(
-            getattr(node_class, "INPUT_TYPES")
+            node_class.INPUT_TYPES
             .__func__(node_class)
             .get("required", {})
             .items()
@@ -356,7 +357,9 @@ def read_graph(json: Dict[str, Any]) -> Tuple[List[Edge], List[Node]]:
             nodes.append(node)
             node_by_id[node_id] = node
         except GraphParsingError as e:
-            raise GraphParsingError(f"Error creating node {node_id}: {str(e)}")
+            raise GraphParsingError(
+                f"Error creating node {node_id}: {str(e)}"
+            ) from e
 
     # Second pass: create all edges
     for node_id, node_data in json.items():
@@ -365,7 +368,7 @@ def read_graph(json: Dict[str, Any]) -> Tuple[List[Edge], List[Node]]:
         except GraphParsingError as e:
             raise GraphParsingError(
                 f"Error creating edges for node {node_id}: {str(e)}"
-            )
+            ) from e
 
     return edges, nodes
 

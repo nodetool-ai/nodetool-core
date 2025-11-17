@@ -1,22 +1,23 @@
 #!/usr/bin/env python
 
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File
-from pydantic import BaseModel
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-    get_async_collection,
-)
-import chromadb
+import asyncio
 import os
 import shutil
 import tempfile
 import traceback
-import asyncio
-import aiofiles
+from typing import List, Optional
 
-from nodetool.models.workflow import Workflow
+import aiofiles
+import chromadb
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from pydantic import BaseModel
+
 from nodetool.indexing.service import index_file_to_collection
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+    get_async_collection,
+)
+from nodetool.models.workflow import Workflow
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -70,8 +71,8 @@ async def create_collection(
 
 @router.get("/", response_model=CollectionList)
 async def list_collections(
-    offset: Optional[int] = None,
-    limit: Optional[int] = None,
+    _offset: Optional[int] = None,
+    _limit: Optional[int] = None,
 ) -> CollectionList:
     """List all collections"""
     client = await get_async_chroma_client()
@@ -169,7 +170,7 @@ def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
 async def index(
     name: str,
     file: UploadFile = File(...),
-    authorization: Optional[str] = Header(None),
+    _authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
     await get_async_collection(name)
     token = "local_token"
@@ -200,7 +201,9 @@ async def index(
         log = get_logger(__name__)
         log.error(f"Error indexing file {file.filename}: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail=str(e)
+        ) from e
     finally:
         # Ensure temporary directory is cleaned up without blocking
         await asyncio.to_thread(shutil.rmtree, tmp_dir)

@@ -5,10 +5,11 @@ This module provides utilities for encrypting and decrypting secrets using
 Fernet symmetric encryption (AES-128 in CBC mode with PKCS7 padding).
 """
 
+import base64
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
 
 
 class SecretCrypto:

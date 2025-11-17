@@ -9,20 +9,22 @@ from __future__ import annotations
 import asyncio
 import gc
 import random
-from contextlib import contextmanager
-from typing import Any, Generator, TYPE_CHECKING
+from contextlib import contextmanager, suppress
+from typing import TYPE_CHECKING, Any, Generator
+
+import numpy as np
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.workflows.types import NodeProgress
-import numpy as np
-import PIL.Image
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
+    from PIL import Image
+
+    from nodetool.metadata.types import TorchTensor
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.workflow_runner import WorkflowRunner
-    from nodetool.metadata.types import TorchTensor
 
 log = get_logger(__name__)
 
@@ -138,7 +140,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 return await node.process(context)
             with torch.no_grad():
                 return await node.process(context)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if not self.is_cuda_oom_exception(exc):
                 log.debug(
                     "Non-OOM error in process_with_gpu for node %s: %s",
@@ -207,11 +209,8 @@ class TorchWorkflowSupport(BaseTorchSupport):
 
     def empty_cuda_cache(self) -> None:
         if is_cuda_available():
-            try:
+            with suppress(RuntimeError, AttributeError):
                 torch.cuda.empty_cache()
-            except (RuntimeError, AttributeError):
-                # CUDA not available or not compiled, skip
-                pass
 
 
 class NoopTorchSupport(BaseTorchSupport):
@@ -266,7 +265,7 @@ def tensor_from_array(array: np.ndarray) -> Any:
     return torch.tensor(array).float() / 255.0
 
 
-def tensor_from_pil(image: PIL.Image.Image) -> Any:
+def tensor_from_pil(image: Image.Image) -> Any:
     """Create a tensor from a PIL image."""
     return tensor_from_array(np.array(image))
 
@@ -279,7 +278,7 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     return np.clip(255.0 * data, 0, 255).astype(np.uint8)
 
 
-def torch_tensor_to_metadata(tensor: Any) -> "TorchTensor" | Any:
+def torch_tensor_to_metadata(tensor: Any) -> TorchTensor | Any:
     """Wrap a torch tensor into metadata representation when available."""
     if not is_torch_tensor(tensor):
         return tensor

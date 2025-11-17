@@ -1,11 +1,11 @@
 """Authentication provider implementations."""
 
+from .local import LocalAuthProvider
 from .static_token import StaticTokenAuthProvider
 from .supabase import SupabaseAuthProvider
-from .local import LocalAuthProvider
 
 __all__ = [
+    "LocalAuthProvider",
     "StaticTokenAuthProvider",
     "SupabaseAuthProvider",
-    "LocalAuthProvider",
 ]

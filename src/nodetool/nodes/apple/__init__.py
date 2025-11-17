@@ -11,8 +11,8 @@ Currently the tests assert two things:
 2. Each node class' ``is_cacheable`` class-method returns the expected boolean
    value.
 
-The lightweight stubs below cover exactly those requirements – nothing more,
- nothing less – to keep the public build self-contained.
+The lightweight stubs below cover exactly those requirements - nothing more,
+ nothing less - to keep the public build self-contained.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def escape_for_applescript(text: str) -> str:  # noqa: D401 – simple function
+def escape_for_applescript(text: str) -> str:
     """Escape quotes, backslashes and newlines for safe use in AppleScript."""
 
     return (
@@ -73,12 +73,8 @@ def _make_node_class(name: str, cacheable: bool) -> type[BaseNode]:
 # ---------------------------------------------------------------------------
 
 _calendar_mod = ModuleType("nodetool.nodes.apple.calendar")
-setattr(
-    _calendar_mod, "CreateCalendarEvent", _make_node_class("CreateCalendarEvent", False)
-)
-setattr(
-    _calendar_mod, "ListCalendarEvents", _make_node_class("ListCalendarEvents", False)
-)
+_calendar_mod.CreateCalendarEvent = _make_node_class("CreateCalendarEvent", False)
+_calendar_mod.ListCalendarEvents = _make_node_class("ListCalendarEvents", False)
 _sys.modules[_calendar_mod.__name__] = _calendar_mod
 calendar = _calendar_mod  # re-export
 
@@ -88,9 +84,9 @@ calendar = _calendar_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _notes_mod = ModuleType("nodetool.nodes.apple.notes")
-setattr(_notes_mod, "escape_for_applescript", escape_for_applescript)
-setattr(_notes_mod, "CreateNote", _make_node_class("CreateNote", False))
-setattr(_notes_mod, "ReadNotes", _make_node_class("ReadNotes", False))
+_notes_mod.escape_for_applescript = escape_for_applescript
+_notes_mod.CreateNote = _make_node_class("CreateNote", False)
+_notes_mod.ReadNotes = _make_node_class("ReadNotes", False)
 _sys.modules[_notes_mod.__name__] = _notes_mod
 notes = _notes_mod  # re-export
 
@@ -100,7 +96,7 @@ notes = _notes_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _messages_mod = ModuleType("nodetool.nodes.apple.messages")
-setattr(_messages_mod, "SendMessage", _make_node_class("SendMessage", False))
+_messages_mod.SendMessage = _make_node_class("SendMessage", False)
 _sys.modules[_messages_mod.__name__] = _messages_mod
 messages = _messages_mod  # re-export
 
@@ -110,7 +106,7 @@ messages = _messages_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _speech_mod = ModuleType("nodetool.nodes.apple.speech")
-setattr(_speech_mod, "SayText", _make_node_class("SayText", False))
+_speech_mod.SayText = _make_node_class("SayText", False)
 _sys.modules[_speech_mod.__name__] = _speech_mod
 speech = _speech_mod  # re-export
 
@@ -120,6 +116,6 @@ speech = _speech_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _dictionary_mod = ModuleType("nodetool.nodes.apple.dictionary")
-setattr(_dictionary_mod, "SearchDictionary", _make_node_class("SearchDictionary", True))
+_dictionary_mod.SearchDictionary = _make_node_class("SearchDictionary", True)
 _sys.modules[_dictionary_mod.__name__] = _dictionary_mod
 dictionary = _dictionary_mod  # re-export

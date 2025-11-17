@@ -29,16 +29,16 @@ Example usage:
         # test code here
 """
 
-from typing import Any, AsyncGenerator, List, Sequence, Callable, Union
 import uuid
+from typing import Any, AsyncGenerator, Callable, List, Sequence, Union
 
-from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import (
-    Message,
-    ToolCall,
-    MessageTextContent,
     LanguageModel,
+    Message,
+    MessageTextContent,
+    ToolCall,
 )
+from nodetool.providers.base import BaseProvider
 from nodetool.workflows.types import Chunk
 
 
@@ -60,7 +60,7 @@ class FakeProvider(BaseProvider):
         should_stream: bool = True,
         chunk_size: int = 10,
         custom_response_fn: (
-            Callable[[Sequence[Message], str], Union[str, list[ToolCall]]] | None
+            Callable[[Sequence[Message], str], str | list[ToolCall]] | None
         ) = None,
     ):
         """
@@ -88,7 +88,7 @@ class FakeProvider(BaseProvider):
 
     def get_response(
         self, messages: Sequence[Message], model: str
-    ) -> Union[str, list[ToolCall]]:
+    ) -> str | list[ToolCall]:
         """Get the response to return (text or tool calls)."""
         if self.custom_response_fn:
             return self.custom_response_fn(messages, model)

@@ -8,9 +8,8 @@ unless a custom encoding is provided.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
-
 import json
+from typing import Any, Iterable, Optional
 
 try:
     import tiktoken  # type: ignore
@@ -40,7 +39,7 @@ def get_default_encoding():
             pass
 
     class _FallbackEncoder:
-        def encode(self, text: str) -> list[int]:  # noqa: D401
+        def encode(self, text: str) -> list[int]:
             # Simple approximation: split by whitespace
             if not text:
                 return []
@@ -138,8 +137,8 @@ def count_messages_tokens(messages: Iterable[Any], *, encoding=None) -> int:
 
 
 __all__ = [
-    "get_default_encoding",
-    "count_text_tokens",
     "count_message_tokens",
     "count_messages_tokens",
+    "count_text_tokens",
+    "get_default_encoding",
 ]

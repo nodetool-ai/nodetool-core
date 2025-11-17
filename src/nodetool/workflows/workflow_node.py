@@ -1,12 +1,14 @@
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.read_graph import read_graph
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.graph import Graph
-from typing import ClassVar
+from typing import Any, ClassVar
 
+from pydantic import Field
+
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.graph import Graph
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.read_graph import read_graph
+from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import (
     Chunk,
     Error,
@@ -30,7 +32,7 @@ class WorkflowNode(BaseNode):
     _dynamic = True
     _supports_dynamic_outputs: ClassVar[bool] = True
 
-    workflow_json: dict = {}
+    workflow_json: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def is_streaming_output(cls):
@@ -80,13 +82,12 @@ class WorkflowNode(BaseNode):
                         severity=msg.severity,
                     )
                 )
-            if isinstance(msg, NodeUpdate):
-                if msg.status == "completed":
-                    context.post_message(
-                        LogUpdate(
-                            node_id=self._id,
-                            node_name=msg.node_name,
-                            content=f"{msg.node_name} {msg.status}",
-                            severity="error",
-                        )
+            if isinstance(msg, NodeUpdate) and msg.status == "completed":
+                context.post_message(
+                    LogUpdate(
+                        node_id=self._id,
+                        node_name=msg.node_name,
+                        content=f"{msg.node_name} {msg.status}",
+                        severity="error",
                     )
+                )

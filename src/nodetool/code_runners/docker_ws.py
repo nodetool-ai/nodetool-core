@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import socket
+from contextlib import suppress
 
 
 class DockerHijackMultiplexDemuxer:
@@ -24,11 +26,8 @@ class DockerHijackMultiplexDemuxer:
         the container's STDIN. This lets programs like `cat` or `read` stop
         waiting for additional input without tearing down stdout/stderr streams.
         """
-        try:
+        with suppress(Exception):
             self._sock.shutdown(socket.SHUT_WR)
-        except Exception:
-            # Best-effort: ignore if already closed or not supported
-            pass
 
     def recv(self, n: int = 4096) -> bytes | None:
         return self._sock.recv(n)
@@ -59,6 +58,7 @@ if __name__ == "__main__":
     # Creates an Alpine container that reads one line from stdin and writes
     # it to both stdout and stderr with distinct prefixes.
     import sys as _sys
+
     import docker
 
     image = "bash:5.2"
@@ -129,13 +129,9 @@ if __name__ == "__main__":
     finally:
         try:
             if sock is not None:
-                try:
+                with suppress(Exception):
                     sock.close()
-                except Exception:
-                    pass
         finally:
             if container is not None:
-                try:
+                with suppress(Exception):
                     container.remove(force=True)
-                except Exception:
-                    pass

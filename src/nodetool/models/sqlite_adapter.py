@@ -1,10 +1,14 @@
-from datetime import datetime
-import re
-import aiosqlite
-import sqlite3
 import asyncio
+import json
+import re
+import sqlite3
+from datetime import datetime
+from enum import Enum
+from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Dict, List, Optional, get_args
+from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
+
+import aiosqlite
 from pydantic.fields import FieldInfo
 
 from nodetool.config.logging_config import get_logger
@@ -16,10 +20,6 @@ from nodetool.models.condition_builder import (
 )
 
 from .database_adapter import DatabaseAdapter
-from typing import Type, Union, get_origin
-import json
-from enum import EnumMeta as EnumType
-from enum import Enum
 
 log = get_logger(__name__)
 
@@ -67,7 +67,7 @@ async def retry_on_locked(func, max_retries=10, initial_delay=0.01):
 
 def convert_to_sqlite_format(
     value: Any, py_type: Type
-) -> Union[int, float, str, bytes, None]:
+) -> int | float | str | bytes | None:
     """
     Convert a Python value to a format suitable for SQLite based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -192,12 +192,7 @@ def get_sqlite_type(field_type: Any) -> str:
         return get_sqlite_type(_type)
 
     # Direct mapping of Python types to SQLite types
-    if field_type is str:
-        return "TEXT"
-    elif field_type is Any:
-        return "TEXT"
-    # Serialized to JSON
-    elif field_type in (list, dict, set) or origin in (list, dict, set):
+    if field_type is str or field_type is Any or field_type in (list, dict, set) or origin in (list, dict, set):
         return "TEXT"
     elif field_type is int or field_type is bool:  # bool is stored as INTEGER (0 or 1)
         return "INTEGER"
@@ -324,7 +319,7 @@ class SQLiteAdapter(DatabaseAdapter):
         else:
             try:
                 return await asyncio.wait_for(coro, timeout=effective_timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.error(
                     f"Query timeout ({effective_timeout}s) on table {self.table_name}. "
                     f"Shutting down: {self._is_shutting_down}"
@@ -579,7 +574,7 @@ class SQLiteAdapter(DatabaseAdapter):
         await retry_on_locked(_delete)
 
     def _build_condition(
-        self, condition: Union[Condition, ConditionGroup]
+        self, condition: Condition | ConditionGroup
     ) -> tuple[str, list[Any]]:
         """Recursively builds an SQL WHERE clause and parameters from a Condition or ConditionGroup.
 

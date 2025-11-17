@@ -1,8 +1,9 @@
-from typing import Optional
 from datetime import datetime
-from nodetool.models.base_model import DBModel, DBField, create_time_ordered_uuid
-from nodetool.models.condition_builder import Field
+from typing import Optional
+
 from nodetool.config.logging_config import get_logger
+from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
+from nodetool.models.condition_builder import Field
 
 log = get_logger(__name__)
 

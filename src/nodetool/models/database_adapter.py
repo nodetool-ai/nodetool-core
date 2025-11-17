@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from nodetool.models.condition_builder import ConditionBuilder
 from pydantic.fields import FieldInfo
 
+from nodetool.models.condition_builder import ConditionBuilder
 
 """
 Defines the Abstract Base Class (ABC) for database adapters.

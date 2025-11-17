@@ -15,10 +15,11 @@ Usage:
     python -m nodetool.security.aws_secrets_util delete --secret-name nodetool-master-key
 """
 
+import argparse
 import os
 import sys
-import argparse
 from typing import Optional
+
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)

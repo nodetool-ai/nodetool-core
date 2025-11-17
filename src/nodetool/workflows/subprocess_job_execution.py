@@ -18,15 +18,17 @@ from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
     Error as WorkflowError,
+)
+from nodetool.workflows.types import (
     ProcessingMessage,
 )
-from nodetool.runtime.resources import ResourceScope
 
 log = get_logger(__name__)
 
@@ -131,6 +133,18 @@ def _create_macos_sandbox_profile(
             "(deny system-privilege)",
         ]
     )
+
+    # While reads are allowed by default (except for the sensitive paths denied
+    # above), include any explicitly requested read paths to keep the profile
+    # self-documenting and forward compatible if stricter read rules are added.
+    if allowed_read_paths:
+        profile_lines.extend(
+            [';; Additional allowed read paths (explicitly requested)']
+            + [
+                f'(allow file-read* (subpath "{path}"))'
+                for path in allowed_read_paths
+            ]
+        )
 
     # Network access control - only apply if explicitly disabled
     if not allow_network:
@@ -327,7 +341,7 @@ def _wrap_command_with_sandbox(
 
         # Wrap command with sandbox-exec. Violation logging is controlled by
         # the profile's (debug deny), not a CLI flag.
-        wrapped_cmd = ["sandbox-exec", "-f", profile_path] + cmd
+        wrapped_cmd = ["sandbox-exec", "-f", profile_path, *cmd]
 
         log.info(f"Wrapping command with sandbox-exec: {' '.join(wrapped_cmd)}")
         log.info(f"Sandbox profile path: {profile_path}")
@@ -355,9 +369,12 @@ def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
         CPU limit percentage or None if not configured
     """
     # Check per-job limit first
-    if resource_limits and hasattr(resource_limits, "cpu_percent"):
-        if resource_limits.cpu_percent:
-            return resource_limits.cpu_percent
+    if (
+        resource_limits
+        and hasattr(resource_limits, "cpu_percent")
+        and resource_limits.cpu_percent
+    ):
+        return resource_limits.cpu_percent
 
     # Fall back to environment variable
     if cpu_limit := os.environ.get("NODETOOL_SUBPROCESS_CPU_LIMIT"):
@@ -434,7 +451,7 @@ def _wrap_command_with_cpu_limit(
     taskpolicy_class = _cpu_percent_to_taskpolicy_class(cpu_percent)
 
     # Wrap command with taskpolicy
-    wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class] + cmd
+    wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class, *cmd]
 
     log.info(
         f"Applying CPU limit: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'"
@@ -455,7 +472,7 @@ def _deserialize_processing_message(payload: dict[str, Any]) -> Any:
     msg_type: str | None = payload.get("type")
     if msg_type is None:
         return None
-    cls = MESSAGE_TYPE_MAP.get(msg_type, None)
+    cls = MESSAGE_TYPE_MAP.get(msg_type)
     if cls is None:
         return None
     try:
@@ -677,7 +694,7 @@ class SubprocessJobExecution(JobExecution):
             self._completed_event.set()
             log.error(f"Error monitoring subprocess job {self.job_id}: {e}")
             # Provide a final update with traceback for better visibility
-            try:
+            with suppress(Exception):
                 self.context.post_message(
                     JobUpdate(
                         job_id=self.job_id,
@@ -686,9 +703,6 @@ class SubprocessJobExecution(JobExecution):
                         traceback=tb_text,
                     )
                 )
-            except Exception:
-                # Best-effort; logging already captured
-                pass
 
     @classmethod
     async def create_and_start(
@@ -786,7 +800,9 @@ class SubprocessJobExecution(JobExecution):
         job_instance._stderr_task = asyncio.create_task(job_instance._stream_stderr())
 
         # Start monitoring completion
-        asyncio.create_task(job_instance._monitor_completion())
+        job_instance._monitor_task = asyncio.create_task(
+            job_instance._monitor_completion()
+        )
 
         log.info(f"Subprocess job {job_id} started with PID {process.pid}")
 
@@ -801,9 +817,11 @@ async def _test_subprocess_execution():
     CPU limits applied. Useful for testing on macOS with sandbox
     and CPU limiting features.
     """
-    from nodetool.types.graph import Graph, Node as GraphNode, Edge
-    from nodetool.workflows.run_job_request import ResourceLimits
     import logging
+
+    from nodetool.types.graph import Edge, Graph
+    from nodetool.types.graph import Node as GraphNode
+    from nodetool.workflows.run_job_request import ResourceLimits
 
     os.environ["NODETOOL_SANDBOX_DEBUG"] = "1"
 
@@ -959,7 +977,7 @@ async def _test_subprocess_execution():
         print("\n✅ Test completed!")
         return 0
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print("\n❌ Test timed out!")
         if "job_execution" in locals():
             job_execution.cancel()

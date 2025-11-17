@@ -3,7 +3,8 @@ Manager for executing workflow jobs using different execution strategies.
 """
 
 import asyncio
-from typing import Dict, Optional
+from contextlib import suppress
+from typing import ClassVar, Dict, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.docker_job_execution import DockerJobExecution
@@ -28,9 +29,9 @@ class JobExecutionManager:
     """
 
     _instance: Optional["JobExecutionManager"] = None
-    _jobs: Dict[str, JobExecution] = {}
-    _cleanup_task: Optional[asyncio.Task] = None
-    _finalizing_jobs: set[str] = set()
+    _jobs: ClassVar[Dict[str, JobExecution]] = {}
+    _cleanup_task: ClassVar[Optional[asyncio.Task]] = None
+    _finalizing_jobs: ClassVar[set[str]] = set()
 
     def __new__(cls):
         if cls._instance is None:
@@ -107,7 +108,8 @@ class JobExecutionManager:
             # Persist state asynchronously to avoid blocking caller
             if job_id not in self._finalizing_jobs:
                 self._finalizing_jobs.add(job_id)
-                asyncio.create_task(self._finalize_job_state(job))
+                task = asyncio.create_task(self._finalize_job_state(job))
+                job._finalize_task = task
             return job
 
         return job
@@ -203,10 +205,8 @@ class JobExecutionManager:
         # Cancel cleanup task
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
 
         # Cancel and cleanup all jobs
         for job in list(self._jobs.values()):

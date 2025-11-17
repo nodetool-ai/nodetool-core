@@ -9,20 +9,20 @@ This module handles deployment to self-hosted servers via SSH or locally, includ
 - Localhost detection (skips SSH for localhost deployments)
 """
 
-from typing import Dict, Any, Optional, Tuple
-import time
-import subprocess
 import os
 import shlex
 import shutil
+import subprocess
+import time
 from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 from nodetool.config.deployment import (
-    SelfHostedDeployment,
     DeploymentStatus,
+    SelfHostedDeployment,
 )
-from nodetool.deploy.ssh import SSHConnection, SSHCommandError
 from nodetool.deploy.proxy_run import ProxyRunGenerator
+from nodetool.deploy.ssh import SSHCommandError, SSHConnection
 from nodetool.deploy.state import StateManager
 
 
@@ -70,7 +70,7 @@ class LocalExecutor:
                 -1,
                 e.stdout.decode() if e.stdout else "",
                 e.stderr.decode() if e.stderr else "",
-            )
+            ) from e
 
     def mkdir(self, path: str, parents: bool = False) -> None:
         """Create a directory locally."""
@@ -459,7 +459,7 @@ class SelfHostedDeployer:
         cmd = f"docker images -q {image}"
         exit_code, stdout, stderr = ssh.execute(cmd, check=False)
         if stdout.strip():
-            results["steps"].append(f"  Proxy image already present.")
+            results["steps"].append("  Proxy image already present.")
             return
 
         if self.is_localhost:

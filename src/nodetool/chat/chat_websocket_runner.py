@@ -16,20 +16,21 @@ Example:
     await runner.run(websocket)
 """
 
-from nodetool.config.logging_config import get_logger
-import json
-import msgpack
 import asyncio
+import json
 import time
-from typing import Optional
+from contextlib import suppress
 from enum import Enum
+from typing import Optional
 
+import msgpack
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
+
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
-
 
 log = get_logger(__name__)
 
@@ -168,26 +169,21 @@ class ChatWebSocketRunner(BaseChatRunner):
 
                 # Call the implementation method with the loaded messages
                 await self.handle_message_impl(chat_history)
-
             except asyncio.CancelledError:
                 log.info("Message processing cancelled by user")
                 # Send cancellation message
-                try:
+                with suppress(Exception):
                     await self.send_message(
                         {
                             "type": "generation_stopped",
                             "message": "Generation stopped by user",
                         }
                     )
-                except Exception:
-                    pass
             except Exception as e:
                 log.error(f"Error processing message: {str(e)}", exc_info=True)
                 error_message = {"type": "error", "message": str(e)}
-                try:
+                with suppress(Exception):
                     await self.send_message(error_message)
-                except Exception:
-                    pass
 
     async def disconnect(self):
         """
@@ -204,10 +200,8 @@ class ChatWebSocketRunner(BaseChatRunner):
         # Stop heartbeat task
         if self.heartbeat_task and not self.heartbeat_task.done():
             self.heartbeat_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
-            except asyncio.CancelledError:
-                pass
         self.heartbeat_task = None
 
         if (
@@ -320,15 +314,11 @@ class ChatWebSocketRunner(BaseChatRunner):
             # Clean up any running tasks
             if self.current_task and not self.current_task.done():
                 self.current_task.cancel()
-                try:
+                with suppress(asyncio.CancelledError):
                     await self.current_task
-                except asyncio.CancelledError:
-                    pass
             # Ensure we fully disconnect and stop heartbeat
-            try:
+            with suppress(Exception):
                 await self.disconnect()
-            except Exception:
-                pass
 
     async def _receive_messages(self):
         """
@@ -397,11 +387,9 @@ class ChatWebSocketRunner(BaseChatRunner):
                 break
             except Exception as e:
                 log.error(f"Error in receive loop: {str(e)}", exc_info=True)
-                try:
-                    error_message = {"type": "error", "message": str(e)}
+                error_message = {"type": "error", "message": str(e)}
+                with suppress(Exception):
                     await self.send_message(error_message)
-                except Exception:
-                    pass  # Ignore errors when sending error message
                 continue
 
     async def _heartbeat(self):

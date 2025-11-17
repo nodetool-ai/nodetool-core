@@ -1,7 +1,7 @@
 from typing import Any, Dict
-from nodetool.metadata.types import ColumnDef, RecordType
 
 from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import ColumnDef, RecordType
 from nodetool.workflows.processing_context import ProcessingContext
 
 

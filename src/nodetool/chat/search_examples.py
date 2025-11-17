@@ -1,7 +1,6 @@
-from nodetool.packages.registry import Registry
-
-
 from typing import Any
+
+from nodetool.packages.registry import Registry
 
 
 def search_examples(query: str, n_results: int = 5) -> list[dict[str, Any]]:

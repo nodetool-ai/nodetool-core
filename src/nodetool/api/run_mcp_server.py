@@ -14,8 +14,8 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nodetool.config.logging_config import configure_logging, get_logger
 from nodetool.api.mcp_server import mcp
+from nodetool.config.logging_config import configure_logging, get_logger
 
 # Configure logging
 configure_logging()

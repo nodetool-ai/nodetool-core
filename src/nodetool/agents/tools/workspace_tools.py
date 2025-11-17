@@ -9,16 +9,19 @@ This module provides tools for managing an agent's workspace:
 
 import os
 import re
+from typing import Any, ClassVar
+
 import tiktoken
 
 from nodetool.workflows.processing_context import ProcessingContext
+
 from .base import Tool
 
 
 class WriteFileTool(Tool):
     name = "write_file"
     description = "Write content to a file in the agent workspace, creating it if it doesn't exist"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "path": {
@@ -78,7 +81,7 @@ class WriteFileTool(Tool):
 class ReadFileTool(Tool):
     name = "read_file"
     description = "Read the contents of a text file or all text files in a folder within the agent workspace. Automatically counts tokens and supports reading specific line ranges. Cannot read binary files."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "path": {
@@ -122,11 +125,11 @@ class ReadFileTool(Tool):
                 # Handle reading a single file
                 try:
                     # Check if the file is binary
-                    with open(full_path, "r", encoding="utf-8") as f:
+                    with open(full_path, encoding="utf-8") as f:
                         f.read(1024)  # Test read
 
                     # Read the file content
-                    with open(full_path, "r", encoding="utf-8") as f:
+                    with open(full_path, encoding="utf-8") as f:
                         if start_line is not None or end_line is not None:
                             # Read specified line range
                             lines = f.readlines()
@@ -253,7 +256,7 @@ class ReadFileTool(Tool):
 class ListDirectoryTool(Tool):
     name = "list_directory"
     description = "List the contents (files and subdirectories) of a directory within the agent workspace."
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "path": {

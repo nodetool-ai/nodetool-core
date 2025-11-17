@@ -11,16 +11,16 @@ import json
 from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
-from nodetool.workflows.processing_context import ProcessingContext
 import openai
 
 from nodetool.agents.tools.base import Tool
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
-from nodetool.config.environment import Environment
-from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
@@ -141,7 +141,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     timeout=self._timeout,
                     verify=self._verify_tls,
                 )
-            
+
             self._client = openai.AsyncClient(
                 base_url=f"{self._base_url}/v1",
                 api_key=api_key,

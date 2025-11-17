@@ -21,13 +21,14 @@ Usage:
     )
 """
 
+import json
 import os
 import sys
-import json
 import traceback
-import requests
 from enum import Enum
 from typing import Any, List, Optional
+
+import requests
 from runpod import error
 from runpod.user_agent import USER_AGENT
 

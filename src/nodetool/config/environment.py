@@ -1,16 +1,16 @@
 import os
-import threading
 import tempfile
+import threading
 from pathlib import Path
-from nodetool.config.logging_config import get_logger
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
+from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import (
-    get_system_data_path,
-    load_settings,
-    get_value,
-    get_system_file_path,
     SETTINGS_FILE,
+    get_system_data_path,
+    get_system_file_path,
+    get_value,
+    load_settings,
 )
 
 DEFAULT_ENV = {
@@ -66,6 +66,7 @@ storage and production deployment with cloud services.
 def load_dotenv_files():
     """Load environment variables from .env files based on current environment."""
     from dotenv import load_dotenv
+
     from nodetool.config.logging_config import get_logger
 
     logger = get_logger(__name__)
@@ -148,7 +149,7 @@ def load_dotenv_files():
         logger.debug("No notable environment variables found")
 
 
-class Environment(object):
+class Environment:
     """
     A class that manages environment variables and provides default values and type conversions.
 
@@ -556,7 +557,7 @@ class Environment(object):
         except (RuntimeError, AttributeError):
             # PyTorch not compiled with CUDA support or other CUDA-related error
             pass
-        
+
         return torch.device("cpu")
 
     @classmethod

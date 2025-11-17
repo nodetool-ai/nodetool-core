@@ -7,12 +7,13 @@ environment variables.
 """
 
 import hashlib
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 import yaml
 
 from nodetool.config.deployment import (
-    SelfHostedDeployment,
     ContainerConfig,
+    SelfHostedDeployment,
 )
 
 

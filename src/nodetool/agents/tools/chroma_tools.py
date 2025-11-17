@@ -8,15 +8,18 @@ This module provides tools for semantic and keyword searching:
 - KeywordDocSearchTool: Search documentation by keywords
 """
 
-from typing import Any
-import chromadb
 import uuid
+from typing import Any, ClassVar
+
+import chromadb
+
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaCollection,
 )
-from nodetool.workflows.processing_context import ProcessingContext
-from .base import Tool
 from nodetool.metadata.types import TextChunk
+from nodetool.workflows.processing_context import ProcessingContext
+
+from .base import Tool
 
 
 class ChromaTextSearchTool(Tool):
@@ -24,7 +27,7 @@ class ChromaTextSearchTool(Tool):
     description = (
         "Search all ChromaDB collections for similar text using semantic search"
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "text": {
@@ -77,7 +80,7 @@ class ChromaTextSearchTool(Tool):
 class ChromaIndexTool(Tool):
     name = "chroma_index"
     description = "Index a text chunk into a ChromaDB collection"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "text": {
@@ -141,7 +144,7 @@ class ChromaHybridSearchTool(Tool):
     description = (
         "Search all ChromaDB collections using both semantic and keyword-based search"
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "text": {
@@ -267,7 +270,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
     description = (
         "Split text into chunks recursively and index them into a ChromaDB collection"
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "text": {
@@ -309,8 +312,8 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
     async def _split_text_recursive(
         self, text: str, document_id: str, params: dict
     ) -> list[TextChunk]:
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
         from langchain_core.documents import Document
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=params.get("chunk_size", 1000),
@@ -400,7 +403,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
 class ChromaMarkdownSplitAndIndexTool(Tool):
     name = "chroma_markdown_split_and_index"
     description = "Split markdown text into chunks based on headers and index them into a ChromaDB collection"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "file_path": {
@@ -464,15 +467,15 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         ]
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
-        file_path = params.get("file_path", None)
+        file_path = params.get("file_path")
         if file_path:
             doc_id = file_path
             resolved_file_path = context.resolve_workspace_path(file_path)
 
-            with open(resolved_file_path, "r") as f:
+            with open(resolved_file_path) as f:
                 text = f.read()
         else:
-            text = params.get("text", None)
+            text = params.get("text")
             doc_id = str(uuid.uuid4())
             if text is None:
                 raise ValueError("Neither file_path nor text is provided")
@@ -509,7 +512,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
 class ChromaBatchIndexTool(Tool):
     name = "chroma_batch_index"
     description = "Index a batch of text chunks into a ChromaDB collection"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "chunks": {

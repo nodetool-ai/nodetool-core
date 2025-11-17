@@ -7,8 +7,9 @@ NodeOutputs: convenience helpers that validate and route outputs via WorkflowRun
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
 import inspect
+from contextlib import suppress
+from typing import Any, AsyncIterator
 
 from .inbox import NodeInbox
 from .types import EdgeUpdate
@@ -104,9 +105,9 @@ class NodeOutputs:
             capture_only: If True, collect outputs without routing them downstream.
         """
         # Lazy imports to avoid cycles
-        from .workflow_runner import WorkflowRunner
-        from .processing_context import ProcessingContext
         from .base_node import BaseNode
+        from .processing_context import ProcessingContext
+        from .workflow_runner import WorkflowRunner
 
         assert isinstance(runner, WorkflowRunner)
         assert isinstance(node, BaseNode)
@@ -192,13 +193,10 @@ class NodeOutputs:
                 if inbox is not None:
                     inbox.mark_source_done(edge.targetHandle)
                 # Notify that this specific edge has been drained
-                try:
+                with suppress(Exception):
                     self.context.post_message(
                         EdgeUpdate(edge_id=edge.id or "", status="drained")
                     )
-                except Exception:
-                    # Do not fail node execution due to update issues
-                    pass
 
     async def default(self, value: Any) -> None:
         """Convenience for emitting to the default slot.

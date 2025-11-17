@@ -8,17 +8,15 @@ It processes user input, generates responses, and handles tool calls and their r
 import json
 from typing import List, Sequence
 
-from nodetool.agents.tools.base import Tool
-from nodetool.workflows.types import Chunk
-from nodetool.providers.base import BaseProvider
-from nodetool.chat.chat import default_serializer
-from nodetool.metadata.types import Message, ToolCall
-from nodetool.workflows.processing_context import ProcessingContext
+from rich.console import Console
+from rich.status import Status
+
 from nodetool.agents.tools.asset_tools import (
     ListAssetsDirectoryTool,
     ReadAssetTool,
     SaveAssetTool,
 )
+from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
 from nodetool.agents.tools.email_tools import (
     AddLabelToEmailTool,
@@ -45,8 +43,11 @@ from nodetool.agents.tools.serp_tools import (
     GoogleNewsTool,
     GoogleSearchTool,
 )
-from rich.status import Status
-from rich.console import Console
+from nodetool.chat.chat import default_serializer
+from nodetool.metadata.types import Message, ToolCall
+from nodetool.providers.base import BaseProvider
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def run_tool(

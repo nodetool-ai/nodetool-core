@@ -8,10 +8,10 @@ locking, and timestamp tracking to ensure safe concurrent access.
 import fcntl
 import secrets
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Generator
+from typing import Any, Dict, Generator, Optional
 
 from nodetool.config.deployment import (
     DeploymentConfig,
@@ -74,7 +74,7 @@ class StateManager:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     acquired = True
                     break
-                except (IOError, OSError):
+                except OSError:
                     time.sleep(0.1)
 
             if not acquired:
@@ -86,17 +86,13 @@ class StateManager:
 
         finally:
             if acquired:
-                try:
+                with suppress(OSError):
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                except (IOError, OSError):
-                    pass  # Best effort unlock
             lock_file.close()
 
             # Clean up lock file
-            try:
+            with suppress(FileNotFoundError):
                 self.lock_path.unlink()
-            except FileNotFoundError:
-                pass
 
     def read_state(self, deployment_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -114,9 +110,10 @@ class StateManager:
         with self.lock():
             # Load config from our specific path
             import yaml
+
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -148,9 +145,10 @@ class StateManager:
         with self.lock():
             # Load config from our specific path
             import yaml
+
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -207,9 +205,10 @@ class StateManager:
         with self.lock():
             # Load config from our specific path
             import yaml
+
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -230,9 +229,10 @@ class StateManager:
         """
         with self.lock():
             import yaml
+
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -279,9 +279,10 @@ class StateManager:
         with self.lock():
             # Load config from our specific path
             import yaml
+
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 

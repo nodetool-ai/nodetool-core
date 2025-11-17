@@ -6,23 +6,25 @@ with support for multi-process downloads, progress tracking, and cancellation.
 """
 
 import asyncio
-from dataclasses import dataclass, field
 import importlib
-from nodetool.config.logging_config import get_logger
+import os
+import threading
 import traceback
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, field
+from multiprocessing import Manager
+from queue import Empty, Queue
 from typing import Literal
+
+import huggingface_hub.file_download
 from fastapi import WebSocket
 from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
 from huggingface_hub.hf_api import RepoFile
-import huggingface_hub.file_download
-from multiprocessing import Manager
-from queue import Empty, Queue
-from concurrent.futures import ProcessPoolExecutor
-import threading
-import os
-from nodetool.ml.models.model_cache import ModelCache
+
+from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
+from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
 
@@ -63,7 +65,7 @@ def download_file(repo_id: str, filename: str, queue: Queue, token: str | None =
         log.debug(f"download_file: Downloading {repo_id}/{filename} with HF_TOKEN (token length: {len(token)} chars)")
     else:
         log.debug(f"download_file: Downloading {repo_id}/{filename} without HF_TOKEN - gated models may not be accessible")
-    
+
     local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
@@ -74,7 +76,7 @@ def download_file(repo_id: str, filename: str, queue: Queue, token: str | None =
 
 class CustomTqdm(huggingface_hub.file_download.tqdm):  # type: ignore
     """Custom progress bar that sends updates through a queue for WebSocket integration."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if parent_queue and "initial" in kwargs:
@@ -101,7 +103,7 @@ huggingface_hub.utils.tqdm = CustomTqdm  # type: ignore
 
 class DownloadManager:
     """Manages concurrent downloads from Hugging Face repositories with WebSocket progress tracking."""
-    
+
     websocket: WebSocket
     cancel: asyncio.Event
     downloaded_bytes: int = 0
@@ -135,7 +137,7 @@ class DownloadManager:
         self.manager = Manager()
         self.model_cache = ModelCache("model_info")
         self._token_initialized = token is not None
-    
+
     @classmethod
     async def create(cls, user_id: str | None = None):
         """Create DownloadManager with async token initialization.
@@ -272,7 +274,7 @@ class DownloadManager:
         state = self.downloads[id]
 
         self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with user_id={user_id}")
-        
+
         # Ensure token is initialized
         if not self._token_initialized:
             self.logger.debug(f"download_huggingface_repo: Token not initialized, fetching with user_id={user_id}")
@@ -343,7 +345,7 @@ class DownloadManager:
         # Use return_exceptions=True to catch exceptions from individual tasks
         # but still allow us to process successful downloads
         completed_tasks = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Check for exceptions and raise the first one found
         # This ensures errors like GatedRepoError bubble up properly
         for result in completed_tasks:
@@ -351,7 +353,7 @@ class DownloadManager:
                 # Log the error for debugging
                 self.logger.error(f"Download task failed: {result}")
                 raise result
-        
+
         # Process successful downloads
         for result in completed_tasks:
             if isinstance(result, tuple):

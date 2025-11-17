@@ -1,9 +1,7 @@
 from datetime import datetime
 
-from nodetool.models.base_model import DBModel, DBField, create_time_ordered_uuid
-
+from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
-
 
 """
 Defines the Prediction database model.

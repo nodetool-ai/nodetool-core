@@ -1,5 +1,6 @@
-from bs4 import BeautifulSoup
 import re
+
+from bs4 import BeautifulSoup
 
 
 def convert_html_to_text(html: str, preserve_linebreaks: bool = True) -> str:

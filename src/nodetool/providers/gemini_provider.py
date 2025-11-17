@@ -1,55 +1,56 @@
-import mimetypes
-import aiohttp
 import asyncio
+import mimetypes
 from io import BytesIO
-import PIL.Image
-import numpy as np
 from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
+
+import aiohttp
+import numpy as np
+import PIL.Image
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
-    ImageOrDict,
-    Tool,
     Blob,
+    Content,
+    ContentListUnion,
+    FinishReason,
+    FunctionCall,
     FunctionDeclaration,
+    FunctionResponse,
     GenerateContentConfig,
     GenerateImagesConfig,
     GenerateVideosConfig,
-    FinishReason,
+    ImageOrDict,
     Part,
-    FunctionCall,
-    Content,
-    ToolListUnion,
-    ContentListUnion,
-    FunctionResponse,
-    SpeechConfig,
-    VoiceConfig,
     PrebuiltVoiceConfig,
+    SpeechConfig,
+    Tool,
+    ToolListUnion,
+    VoiceConfig,
 )
-from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
-from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.metadata.types import (
+    ASRModel,
+    ImageModel,
+    LanguageModel,
     Message,
     MessageAudioContent,
     MessageContent,
+    MessageFile,
     MessageImageContent,
     MessageTextContent,
     Provider,
     ToolCall,
-    MessageFile,
-    LanguageModel,
-    ImageModel,
     TTSModel,
-    ASRModel,
     VideoModel,
 )
+from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
-from nodetool.config.logging_config import get_logger
-from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 
 log = get_logger(__name__)
 
@@ -117,33 +118,32 @@ class GeminiProvider(BaseProvider):
             timeout = aiohttp.ClientTimeout(total=3)
             # API permits key either as header or query parameter; use query to avoid header nuances
             url = f"https://generativelanguage.googleapis.com/v1/models?key={self.api_key}"
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        log.warning(
-                            f"Failed to fetch Gemini models: HTTP {response.status}"
-                        )
-                        return []
-                    payload = await response.json()
-                    items = payload.get("models") or payload.get("data") or []
+            async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
+                if response.status != 200:
+                    log.warning(
+                        f"Failed to fetch Gemini models: HTTP {response.status}"
+                    )
+                    return []
+                payload = await response.json()
+                items = payload.get("models") or payload.get("data") or []
 
-                    models: List[LanguageModel] = []
-                    for item in items:
-                        # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
-                        raw_name: str | None = item.get("name")
-                        if not raw_name:
-                            continue
-                        model_id = raw_name.split("/")[-1]
-                        display_name = item.get("displayName") or model_id
-                        models.append(
-                            LanguageModel(
-                                id=model_id,
-                                name=display_name,
-                                provider=Provider.Gemini,
-                            )
+                models: List[LanguageModel] = []
+                for item in items:
+                    # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
+                    raw_name: str | None = item.get("name")
+                    if not raw_name:
+                        continue
+                    model_id = raw_name.split("/")[-1]
+                    display_name = item.get("displayName") or model_id
+                    models.append(
+                        LanguageModel(
+                            id=model_id,
+                            name=display_name,
+                            provider=Provider.Gemini,
                         )
-                    log.debug(f"Fetched {len(models)} Gemini models")
-                    return models
+                    )
+                log.debug(f"Fetched {len(models)} Gemini models")
+                return models
         except Exception as e:
             log.error(f"Error fetching Gemini models: {e}")
             return []
@@ -777,7 +777,9 @@ class GeminiProvider(BaseProvider):
 
             traceback.print_exc()
             log.error(f"Gemini text-to-image generation failed: {e}")
-            raise RuntimeError(f"Gemini text-to-image generation failed: {e}")
+            raise RuntimeError(
+                f"Gemini text-to-image generation failed: {e}"
+            ) from e
 
     async def image_to_image(
         self,
@@ -870,7 +872,9 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini image-to-image generation failed: {e}")
-            raise RuntimeError(f"Gemini image-to-image generation failed: {e}")
+            raise RuntimeError(
+                f"Gemini image-to-image generation failed: {e}"
+            ) from e
 
     async def text_to_speech(
         self,
@@ -951,7 +955,9 @@ class GeminiProvider(BaseProvider):
             log.debug("Gemini text-to-speech completed")
         except Exception as e:
             log.error(f"Gemini text-to-speech failed: {e}")
-            raise RuntimeError(f"Gemini text-to-speech generation failed: {e}")
+            raise RuntimeError(
+                f"Gemini text-to-speech generation failed: {e}"
+            ) from e
 
     async def get_available_tts_models(self) -> List[TTSModel]:
         """Get available Gemini TTS models.
@@ -1212,7 +1218,9 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini ASR transcription failed: {e}")
-            raise RuntimeError(f"Gemini ASR transcription failed: {str(e)}")
+            raise RuntimeError(
+                f"Gemini ASR transcription failed: {str(e)}"
+            ) from e
 
     async def text_to_video(
         self,
@@ -1334,7 +1342,9 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini text-to-video generation failed: {e}")
-            raise RuntimeError(f"Gemini text-to-video generation failed: {e}")
+            raise RuntimeError(
+                f"Gemini text-to-video generation failed: {e}"
+            ) from e
 
     async def image_to_video(
         self,
@@ -1487,7 +1497,9 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini image-to-video generation failed: {e}")
-            raise RuntimeError(f"Gemini image-to-video generation failed: {e}")
+            raise RuntimeError(
+                f"Gemini image-to-video generation failed: {e}"
+            ) from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

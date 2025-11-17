@@ -6,19 +6,19 @@ This module contains all Docker-related functionality for building, pushing,
 and managing Docker images for NodeTool deployments.
 """
 
+import hashlib
+import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
-import hashlib
-import time
 import tempfile
-import shutil
-from pathlib import Path
-import json
+import time
 
 # Note: no need for urllib.parse after removing editable support
 from importlib import metadata as importlib_metadata
+from pathlib import Path
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
@@ -266,7 +266,7 @@ def build_docker_image(
                 direct_url_abs = dist.locate_file(direct_url_rel)
                 if not os.path.exists(str(direct_url_abs)):
                     return None
-                with open(str(direct_url_abs), "r", encoding="utf-8") as f:
+                with open(str(direct_url_abs), encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
                 return None
@@ -318,7 +318,7 @@ def build_docker_image(
         # Inject a cache-optimized install block for nodetool packages into Dockerfile (before CMD)
         if nodetool_packages:
             dockerfile_path = os.path.join(build_dir, "Dockerfile")
-            with open(dockerfile_path, "r", encoding="utf-8") as f:
+            with open(dockerfile_path, encoding="utf-8") as f:
                 dockerfile_contents = f.read()
 
             lines = dockerfile_contents.splitlines()
@@ -459,8 +459,8 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
     Returns:
         str | None: The Docker username if found, None otherwise
     """
-    import json
     import base64
+    import json
 
     try:
         # Docker config is typically stored in ~/.docker/config.json
@@ -469,7 +469,7 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
         if not docker_config_path.exists():
             return None
 
-        with open(docker_config_path, "r") as f:
+        with open(docker_config_path) as f:
             config = json.load(f)
 
         # Check for authentication data

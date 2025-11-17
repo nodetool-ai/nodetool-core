@@ -1,8 +1,8 @@
-from nodetool.metadata.type_metadata import TypeMetadata
+from typing import Any, List
+
 from pydantic import BaseModel, Field
 
-
-from typing import Any, List
+from nodetool.metadata.type_metadata import TypeMetadata
 
 
 class Node(BaseModel):

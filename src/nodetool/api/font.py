@@ -1,9 +1,10 @@
-from fastapi import APIRouter
-from typing import List
-import platform
-import os
-from pydantic import BaseModel
 import asyncio
+import os
+import platform
+from typing import List
+
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 
 class FontResponse(BaseModel):
