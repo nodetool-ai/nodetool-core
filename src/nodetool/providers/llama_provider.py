@@ -21,6 +21,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.providers.llama_server_manager import LlamaServerManager
+from nodetool.runtime.resources import require_scope
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
 from nodetool.workflows.types import Chunk
@@ -311,19 +312,30 @@ class LlamaProvider(BaseProvider, OpenAICompat):
     def get_client(self, base_url: str) -> openai.AsyncClient:
         """Create an OpenAI-compatible async client targeting llama-server.
 
+        Uses ResourceScope's HTTP client to ensure correct event loop binding.
+
         Args:
             base_url: Base URL returned by ``LlamaServerManager.ensure_server``.
 
         Returns:
             Configured ``openai.AsyncClient`` instance.
         """
+        # Use ResourceScope's HTTP client if available, otherwise create a new one
+        try:
+            http_client = require_scope().get_http_client()
+            log.debug("Using ResourceScope HTTP client for Llama")
+        except RuntimeError:
+            # Fallback if no scope is bound (shouldn't happen in normal operation)
+            log.warning("No ResourceScope bound, creating fallback HTTP client for Llama")
+            http_client = httpx.AsyncClient(
+                follow_redirects=True, timeout=600, verify=False
+            )
+        
         # llama-server accepts any API key; None is fine when auth is disabled
         return openai.AsyncClient(
             base_url=f"{base_url}/v1",
             api_key="sk-no-key-required",
-            http_client=httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
-            ),
+            http_client=http_client,
         )
 
     def get_context_length(self, model: str) -> int:

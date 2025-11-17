@@ -60,6 +60,7 @@ from nodetool.metadata.types import (
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import require_scope, maybe_scope
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.providers.types import (
@@ -143,15 +144,26 @@ class OpenAIProvider(BaseProvider):
     ) -> openai.AsyncClient:
         """Create and return an OpenAI async client.
 
+        Uses ResourceScope's HTTP client to ensure correct event loop binding.
+
         Returns:
             An initialized ``openai.AsyncClient`` with reasonable timeouts.
         """
         log.debug("Creating OpenAI async client")
+        # Use ResourceScope's HTTP client if available, otherwise create a new one
+        try:
+            http_client = require_scope().get_http_client()
+            log.debug("Using ResourceScope HTTP client for OpenAI")
+        except RuntimeError:
+            # Fallback if no scope is bound (shouldn't happen in normal operation)
+            log.warning("No ResourceScope bound, creating fallback HTTP client for OpenAI")
+            http_client = httpx.AsyncClient(
+                follow_redirects=True, timeout=600, verify=False
+            )
+        
         client = openai.AsyncClient(
             api_key=self.api_key,
-            http_client=httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
-            ),
+            http_client=http_client,
         )
         log.debug("OpenAI async client created successfully")
         return client

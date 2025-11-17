@@ -15,6 +15,7 @@ from nodetool.models.database_adapter import DatabaseAdapter
 from supabase import AsyncClient
 from nodetool.config.logging_config import get_logger
 from nodetool.config.environment import Environment
+import httpx
 
 log = get_logger(__name__)
 
@@ -162,6 +163,7 @@ class ResourceScope:
         self._token: Optional[contextvars.Token] = None
         self.pool = pool
         self._owns_db = False  # Track if we own the db resources (vs borrowed from parent)
+        self._owns_http_client = False  # Track if we own the HTTP client (vs borrowed from parent)
         scope = maybe_scope()
         if scope:
             self.db = scope.db
@@ -169,12 +171,16 @@ class ResourceScope:
             self._temp_storage = scope.get_temp_storage()
             self._node_cache = scope.get_node_cache()
             self._memory_uri_cache = scope.get_memory_uri_cache()
+            self._http_client = scope.get_http_client()
+            # Borrowed from parent, don't own
+            self._owns_http_client = False
         else:
             self.db: Optional[DBResources] = None
             self._asset_storage: AbstractStorage | None = None
             self._temp_storage: AbstractStorage | None = None
             self._node_cache: AbstractNodeCache | None = None
             self._memory_uri_cache: MemoryUriCache | None = None
+            self._http_client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "ResourceScope":
         """Enter the async context manager.
@@ -226,12 +232,21 @@ class ResourceScope:
             log.error(f"Error exiting ResourceScope: {e}")
             raise
         finally:
+            # Clean up HTTP client if we own it (not borrowed from parent)
+            if self._http_client is not None and self._owns_http_client:
+                try:
+                    await self._http_client.aclose()
+                    log.debug("Closed HTTP client")
+                except Exception as e:
+                    log.warning(f"Error closing HTTP client: {e}")
+            
             # Ensure storage and cache references are released
             # Note: auth providers are class-level singletons, not cleaned up per-scope
             self._asset_storage = None
             self._temp_storage = None
             self._node_cache = None
             self._memory_uri_cache = None
+            self._http_client = None
 
     async def _acquire_db_resources(self) -> DBResources:
         """Acquire database resources from the appropriate pool.
@@ -470,6 +485,32 @@ class ResourceScope:
             self._memory_uri_cache = MemoryUriCache(default_ttl=300)
 
         return self._memory_uri_cache
+
+    def get_http_client(self) -> httpx.AsyncClient:
+        """Get or create the HTTP client for this scope.
+
+        The HTTP client is created per-scope to ensure it's bound to the correct
+        event loop. This prevents "Future attached to different loop" errors.
+
+        Returns:
+            httpx.AsyncClient instance for making HTTP requests
+        """
+        if self._http_client is None:
+            HTTP_HEADERS = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            log.info("Creating HTTP client for scope")
+            self._http_client = httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=600,
+                verify=False,
+                headers=HTTP_HEADERS.copy(),
+            )
+            # Mark that we own this HTTP client
+            self._owns_http_client = True
+        return self._http_client
 
     def get_static_auth_provider(self) -> Any:
         """Get or create the static token authentication provider.

@@ -479,8 +479,12 @@ def create_app(
     async def terminal_websocket_endpoint(websocket: WebSocket):
         # Only allow terminal access when explicitly enabled and never in production
         if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
+            # Must accept before closing to raise WebSocketDisconnect in tests
+            await websocket.accept()
             await websocket.close(code=1008, reason="Terminal access disabled")
-            return
+            # Raise WebSocketDisconnect so TestClient raises it immediately
+            from starlette.websockets import WebSocketDisconnect
+            raise WebSocketDisconnect(code=1008)
 
         # Skip authentication in dev mode for convenience
         if not enforce_auth:

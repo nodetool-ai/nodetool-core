@@ -191,6 +191,8 @@ class ProcessingContext:
         else:
             self.asset_output_mode = asset_output_mode
         self.chroma_client = chroma_client
+        # HTTP client is now managed by ResourceScope to ensure correct event loop binding
+        # Store passed client only as fallback if no scope is available
         if http_client is not None:
             self._http_client = http_client
         self.workspace_dir = (
@@ -244,16 +246,6 @@ class ProcessingContext:
             # No scope bound - log warning
             log.warning(f"Memory SET '{key}' failed: no ResourceScope bound")
 
-    def get_http_client(self):
-        if not hasattr(self, "_http_client"):
-            self._http_client = httpx.AsyncClient(
-                follow_redirects=True,
-                timeout=600,
-                verify=False,
-                headers=HTTP_HEADERS.copy(),
-            )
-        return self._http_client
-
     async def _http_request_with_retries(
         self,
         method: str,
@@ -275,7 +267,7 @@ class ProcessingContext:
         last_exc: Exception | None = None
         for attempt in range(max_retries):
             try:
-                response = await self.get_http_client().request(method, url, **kwargs)
+                response = await require_scope().get_http_client().request(method, url, **kwargs)
                 status = response.status_code
                 log.info(f"{method.upper()} {url} {status}")
                 # Retry on common transient statuses

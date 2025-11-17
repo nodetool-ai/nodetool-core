@@ -40,14 +40,15 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_get(self, context: ProcessingContext):
         """Test HTTP GET request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_get("http://example.com")
             assert result == mock_response
             mock_response.raise_for_status.assert_called_once()
@@ -55,14 +56,15 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_post(self, context: ProcessingContext):
         """Test HTTP POST request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_post(
                 "http://example.com", json={"test": "data"}
             )
@@ -71,56 +73,60 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_put(self, context: ProcessingContext):
         """Test HTTP PUT request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_put("http://example.com")
             assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_http_patch(self, context: ProcessingContext):
         """Test HTTP PATCH request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_patch("http://example.com")
             assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_http_delete(self, context: ProcessingContext):
         """Test HTTP DELETE request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_delete("http://example.com")
             assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_http_head(self, context: ProcessingContext):
         """Test HTTP HEAD request."""
-        with patch.object(context, "get_http_client") as mock_get_client:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = Mock()
-            mock_client_instance = AsyncMock()
-            mock_client_instance.request = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client_instance
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        mock_client_instance = AsyncMock()
+        mock_client_instance.request = AsyncMock(return_value=mock_response)
+        mock_scope = Mock()
+        mock_scope.get_http_client.return_value = mock_client_instance
 
+        with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
             result = await context.http_head("http://example.com")
             assert result == mock_response
 

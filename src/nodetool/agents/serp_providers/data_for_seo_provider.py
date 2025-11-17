@@ -1,6 +1,7 @@
 from httpx import AsyncClient, HTTPStatusError, RequestError
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools._remove_base64_images import _remove_base64_images
+from nodetool.runtime.resources import require_scope, maybe_scope
 from nodetool.config.environment import Environment
 
 
@@ -32,11 +33,25 @@ class DataForSEOProvider(SerpProvider):
         self.api_password = api_password or Environment.get("DATA_FOR_SEO_PASSWORD")
         self.location_code = location_code
         self.language_code = language_code
-        self._client = AsyncClient(timeout=60.0)  # Re-use client
+        # HTTP client will be lazily initialized from ResourceScope
+        self._client: AsyncClient | None = None
 
         if not self.api_login or not self.api_password:
             # This error will be caught by _get_auth_headers and returned as ErrorResponse
             pass
+    
+    def _get_client(self) -> AsyncClient:
+        """Get or create HTTP client from ResourceScope.
+        
+        Uses ResourceScope's HTTP client to ensure correct event loop binding.
+        """
+        if self._client is None:
+            try:
+                self._client = require_scope().get_http_client()
+            except RuntimeError:
+                # Fallback if no scope is bound (shouldn't happen in normal operation)
+                self._client = AsyncClient(timeout=60.0)
+        return self._client
 
     def _get_auth_headers(self) -> Union[Dict[str, str], ErrorResponse]:
         """
@@ -65,7 +80,7 @@ class DataForSEOProvider(SerpProvider):
             return auth_headers  # Propagate error
 
         try:
-            response = await self._client.post(
+            response = await self._get_client().post(
                 api_url, headers=auth_headers, json=payload
             )
             response.raise_for_status()
@@ -344,4 +359,14 @@ class DataForSEOProvider(SerpProvider):
 
     async def close(self) -> None:
         """Closes the HTTP client."""
-        await self._client.aclose()
+        # Only close if we created the client ourselves (not from ResourceScope)
+        if self._client is not None:
+            try:
+                # Check if this is the scope's client by trying to get scope
+                scope = maybe_scope()
+                if scope and scope.get_http_client() is self._client:
+                    # Don't close scope-managed client
+                    return
+            except Exception:
+                pass
+            await self._client.aclose()

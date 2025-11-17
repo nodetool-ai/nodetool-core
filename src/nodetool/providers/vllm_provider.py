@@ -17,6 +17,7 @@ import openai
 from nodetool.agents.tools.base import Tool
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
+from nodetool.runtime.resources import require_scope
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
@@ -121,19 +122,30 @@ class VllmProvider(BaseProvider, OpenAICompat):
     def _ensure_client(self) -> openai.AsyncClient:
         """Get or create the OpenAI async client for vLLM.
 
+        Uses ResourceScope's HTTP client to ensure correct event loop binding.
+
         Returns:
             Configured OpenAI AsyncClient instance.
         """
         if self._client is None:
             api_key = self._api_key or "sk-no-key-required"
-            self._client = openai.AsyncClient(
-                base_url=f"{self._base_url}/v1",
-                api_key=api_key,
-                http_client=httpx.AsyncClient(
+            # Use ResourceScope's HTTP client if available, otherwise create a new one
+            try:
+                http_client = require_scope().get_http_client()
+                log.debug("Using ResourceScope HTTP client for vLLM")
+            except RuntimeError:
+                # Fallback if no scope is bound (shouldn't happen in normal operation)
+                log.warning("No ResourceScope bound, creating fallback HTTP client for vLLM")
+                http_client = httpx.AsyncClient(
                     follow_redirects=True,
                     timeout=self._timeout,
                     verify=self._verify_tls,
-                ),
+                )
+            
+            self._client = openai.AsyncClient(
+                base_url=f"{self._base_url}/v1",
+                api_key=api_key,
+                http_client=http_client,
             )
         return self._client
 

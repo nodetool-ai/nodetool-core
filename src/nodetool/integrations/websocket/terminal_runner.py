@@ -47,11 +47,14 @@ class TerminalWebSocketRunner:
 
     @staticmethod
     def is_enabled() -> bool:
-        """Feature flag for the terminal endpoint (not surfaced via settings)."""
-        # Use Environment.get so DEFAULT_ENV values and settings.yaml overlays apply.
-        from nodetool.config.environment import Environment  # lazy import to avoid cycles
-
-        value = Environment.get("NODETOOL_ENABLE_TERMINAL_WS", "0")
+        """Feature flag for the terminal endpoint (not surfaced via settings).
+        
+        Reads directly from os.environ to avoid DEFAULT_ENV fallback, allowing tests
+        to properly disable the feature via monkeypatch.
+        """
+        import os  # lazy import to avoid cycles
+        
+        value = os.environ.get("NODETOOL_ENABLE_TERMINAL_WS", "0")
         return value not in ("", "0", "false", "False", "no", "NO")
 
     def _detect_platform(self) -> TerminalPlatform:

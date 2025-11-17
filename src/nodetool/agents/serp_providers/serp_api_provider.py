@@ -1,6 +1,7 @@
 from httpx import AsyncClient, HTTPStatusError, RequestError
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools._remove_base64_images import _remove_base64_images
+from nodetool.runtime.resources import require_scope, maybe_scope
 from nodetool.config.environment import Environment
 
 
@@ -27,12 +28,26 @@ class SerpApiProvider(SerpProvider):
         self.api_key = api_key or Environment.get("SERPAPI_API_KEY")
         self.gl = gl
         self.hl = hl
-        self._client = AsyncClient(timeout=60.0)
+        # HTTP client will be lazily initialized from ResourceScope
+        self._client: AsyncClient | None = None
 
         if not self.api_key:
             raise ValueError(
                 "SerpApi API key (SERPAPI_API_KEY) not found or not provided."
             )
+    
+    def _get_client(self) -> AsyncClient:
+        """Get or create HTTP client from ResourceScope.
+        
+        Uses ResourceScope's HTTP client to ensure correct event loop binding.
+        """
+        if self._client is None:
+            try:
+                self._client = require_scope().get_http_client()
+            except RuntimeError:
+                # Fallback if no scope is bound (shouldn't happen in normal operation)
+                self._client = AsyncClient(timeout=60.0)
+        return self._client
 
     async def _make_request(
         self, params: Dict[str, Any]
@@ -45,7 +60,7 @@ class SerpApiProvider(SerpProvider):
         all_params = {**params, "api_key": self.api_key}
 
         try:
-            response = await self._client.get(self.BASE_URL, params=all_params)
+            response = await self._get_client().get(self.BASE_URL, params=all_params)
             response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx responses
             return response.json()
         except HTTPStatusError as e:
@@ -440,4 +455,14 @@ class SerpApiProvider(SerpProvider):
         return _remove_base64_images(result_data)
 
     async def close(self) -> None:
-        await self._client.aclose()
+        # Only close if we created the client ourselves (not from ResourceScope)
+        if self._client is not None:
+            try:
+                # Check if this is the scope's client by trying to get scope
+                scope = maybe_scope()
+                if scope and scope.get_http_client() is self._client:
+                    # Don't close scope-managed client
+                    return
+            except Exception:
+                pass
+            await self._client.aclose()
