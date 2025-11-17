@@ -90,6 +90,7 @@ metadata generation.
 import asyncio
 import functools
 import importlib
+import logging
 import re
 import traceback
 from types import UnionType
@@ -288,23 +289,29 @@ def type_metadata(
     elif is_list_type(python_type):
         return TypeMetadata(
             type="list",
-            type_args=[type_metadata(python_type.__args__[0])]
-            if hasattr(python_type, "__args__")
-            else [],  # type: ignore
+            type_args=(
+                [type_metadata(python_type.__args__[0])]
+                if hasattr(python_type, "__args__")
+                else []
+            ),  # type: ignore
         )
     elif is_tuple_type(python_type):
         return TypeMetadata(
             type="tuple",
-            type_args=[type_metadata(t) for t in python_type.__args__]
-            if hasattr(python_type, "__args__")
-            else [],  # type: ignore
+            type_args=(
+                [type_metadata(t) for t in python_type.__args__]
+                if hasattr(python_type, "__args__")
+                else []
+            ),  # type: ignore
         )
     elif is_dict_type(python_type):
         return TypeMetadata(
             type="dict",
-            type_args=[type_metadata(t) for t in python_type.__args__]
-            if hasattr(python_type, "__args__")
-            else [],  # type: ignore
+            type_args=(
+                [type_metadata(t) for t in python_type.__args__]
+                if hasattr(python_type, "__args__")
+                else []
+            ),  # type: ignore
         )
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
@@ -315,9 +322,11 @@ def type_metadata(
     elif is_union_type(python_type):
         return TypeMetadata(
             type="union",
-            type_args=[type_metadata(t) for t in python_type.__args__]
-            if hasattr(python_type, "__args__")
-            else [],  # type: ignore
+            type_args=(
+                [type_metadata(t) for t in python_type.__args__]
+                if hasattr(python_type, "__args__")
+                else []
+            ),  # type: ignore
         )
     elif is_enum_type(python_type):
         assert not isinstance(python_type, UnionType)
@@ -423,7 +432,6 @@ class BaseNode(BaseModel):
         self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
         self._sync_mode = sync_mode
         self._inbox = None
-
 
     def required_inputs(self):
         return []
@@ -1006,9 +1014,7 @@ class BaseNode(BaseModel):
         )
 
         if result_for_client:
-            result_for_client = await context.normalize_output_value(
-                result_for_client
-            )
+            result_for_client = await context.normalize_output_value(result_for_client)
 
         update = NodeUpdate(
             node_id=self.id,
@@ -1485,7 +1491,9 @@ class BaseNode(BaseModel):
                             f"run() skipping None value: node={self.get_title()} ({self.id}), "
                             f"slot={slot_name}"
                         )
-            log.debug(f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}")
+            log.debug(
+                f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}"
+            )
         else:
             # Buffered path: single call to process() and emit converted outputs
             log.debug(f"run() buffered mode: node={self.get_title()} ({self.id})")
@@ -1841,8 +1849,13 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
     # Attempt under the standard nodes namespace
     try:
+        log.debug(f"Importing module: {module_prefix}")
         importlib.import_module(module_prefix)
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as e:
+        log.error(f"Module not found: {module_prefix}")
+        log.error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     if node_type in NODE_BY_TYPE:
         return NODE_BY_TYPE[node_type]
