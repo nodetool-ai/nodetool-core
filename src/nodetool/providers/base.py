@@ -8,7 +8,6 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 import datetime
 import json
-from abc import ABC, abstractmethod
 from enum import Enum
 from typing import (
     Any,
@@ -108,7 +107,7 @@ def get_registered_provider(
     return provider_cls, kwargs
 
 
-class BaseProvider(ABC):
+class BaseProvider:
     """
     Abstract base class for AI service providers.
 
