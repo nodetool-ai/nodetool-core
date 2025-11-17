@@ -12,6 +12,54 @@ This guide covers manual testing, automated testing, and debugging for Docker-ba
 
 ## Quick Verification
 
+### Frontend E2E API Server Image
+
+Use the dedicated `Dockerfile.e2e` to run a lightweight FastAPI server for
+frontend end-to-end tests. The container installs `nodetool-base` plus the
+current `nodetool-core` checkout, exposes port `8000`, and launches
+`uvicorn nodetool.api.app:app` bound to `0.0.0.0` so it can share the host
+network with the UI container.
+
+```bash
+# Build a public image that will be pushed to GHCR
+docker build -f Dockerfile.e2e -t ghcr.io/<org>/nodetool-e2e:latest .
+
+# Recommended: run on the same host/network namespace as the UI container
+docker run --rm --net host ghcr.io/<org>/nodetool-e2e:latest
+
+# Alternate: publish the API on localhost for UI running directly on the host
+docker run --rm -p 8000:8000 ghcr.io/<org>/nodetool-e2e:latest
+```
+
+**Publishing to GHCR** (the image should remain public for CI to consume):
+
+```bash
+export GHCR_USER=<github-username>
+export GHCR_TOKEN=<github-personal-access-token-with-write-packages>
+
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+docker push ghcr.io/<org>/nodetool-e2e:latest
+```
+
+In CI, `.github/workflows/docker-publish-e2e.yaml` automatically builds the
+same image from `Dockerfile.e2e` and publishes it to the public
+`ghcr.io/nodetool-ai/nodetool-e2e` repository on every push to `main` (or when
+the workflow is manually dispatched). Local pushes should only be needed when
+testing changes before they merge to the default branch.
+
+Override the refs that get installed if you need a different branch/tag:
+
+```bash
+docker build \
+  --build-arg NODETOOL_BASE_REF=release/2025.01 \
+  -f Dockerfile.e2e \
+  -t ghcr.io/<org>/nodetool-e2e:release-2025-01 .
+```
+
+Once the container is running, point the frontend to `http://localhost:8000`
+and keep both UI and API on the same host to avoid browser security issues
+during Cypress/Playwright runs.
+
 ### Check Image Status
 
 ```bash
