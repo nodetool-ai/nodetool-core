@@ -47,8 +47,8 @@ const outputs = await response.json();
 
 ## Streaming API
 
-The streaming API provides real-time job updates. See
-[`run_workflow_streaming.js`](../examples/run_workflow_streaming.js) for a full example.
+The streaming API provides real-time job updates. The example below works out of the box and can be pasted into any
+Node.js or browser script without additional helper files.
 
 Updates include:
 
@@ -111,8 +111,8 @@ while (true) {
 
 ## WebSocket API
 
-The WebSocket API uses a binary protocol for efficiency and allows cancelling jobs. See
-[`run_workflow_websocket.js`](../examples/run_workflow_websocket.js) for more details.
+The WebSocket API uses a binary protocol for efficiency and allows cancelling jobs. The snippet below illustrates the
+full message lifecycle.
 
 ```javascript
 const socket = new WebSocket("ws://localhost:8000/predict");
@@ -155,8 +155,5 @@ socket.send(msgpack.encode({ command: "get_status" }));
 
 ## API Demo
 
-- Download the [html file](<(api-demo.html)>)
-- Open it in a browser locally.
-- Select the endpoint (local or `api.nodetool.ai` for alpha users).
-- Enter an API token from the NodeTool settings dialog.
-- Select a workflow and run it.
+You can prototype against the HTTP and WebSocket endpoints with any REST or WebSocket client (for example, `curl`,
+HTTPie, or your browser's developer tools) using the code samples provided above.
