@@ -32,6 +32,10 @@ jobs:
           pip install git+https://github.com/nodetool-ai/nodetool-base
           pip install -r requirements-dev.txt
 
+      - name: Run Ruff
+        run: |
+          ruff check .
+
       - name: Run tests
         run: |
           pytest -v --ignore=tests/workflows/test_docker_job_execution.py
