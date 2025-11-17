@@ -109,19 +109,16 @@ Performance Optimizations:
 - Regional deployment options
 """
 
-import pytest
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch, MagicMock
+
+import pytest
+
+pytest.importorskip("google.genai")
 
 from nodetool.providers.gemini_provider import GeminiProvider
 from nodetool.metadata.types import Message, MessageTextContent
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
-
-# Import for mocking - conditionally handle missing dependency
-try:
-    from google.genai.client import AsyncClient
-except ImportError:
-    AsyncClient = None
 
 
 class TestGeminiProvider(BaseProviderTest):

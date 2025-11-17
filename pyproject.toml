@@ -31,7 +31,6 @@ dependencies = [
 
     # Utils dependencies
     "aioconsole",
-    "black>=24.10.0",
     "click>=8.1.7",
     "cryptography>=43.0.0",
     "feedparser",
@@ -130,6 +129,8 @@ dev = [
     "aioresponses>=0.7.8",
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.6.0",   # Parallel test execution
+    "mypy>=1.0.0",           # Type checking
+    "ruff>=0.8.4",           # Linting and formatting
 ]
 
 [tool.hatch.metadata]
@@ -140,3 +141,95 @@ nodetool = "nodetool.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nodetool"]
+
+# Ruff configuration for linting and formatting
+[tool.ruff]
+# Python version
+target-version = "py311"
+line-length = 120
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Enable useful rule sets
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "RUF", # Ruff-specific rules
+]
+
+# Ignore specific rules (low-value or too noisy)
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E402",   # module level import not at top of file (sometimes needed)
+    "B008",   # do not perform function calls in argument defaults
+    "C901",   # too complex
+    "F401",   # imported but unused (common in __init__.py)
+    "F811",   # redefined while unused
+    "UP006",  # use built-in collection type annotations
+    "UP035",  # deprecated typing aliases (Dict, List, etc.)
+    "UP045",  # prefer `X | None` over `Optional[X]`
+    "RUF002", # NBSP vs '-' nit in docstrings
+    "RUF010", # explicit conversion flag in f-strings
+    "SIM102", # combine nested ifs
+    "SIM105", # prefer contextlib.suppress over try/except/pass
+    "ARG002", # unused method/function argument
+    "ARG001", # unused function argument (API handlers)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ARG", "S101", "F401"]  # Allow unused args, assert, and unused imports in tests
+"**/__init__.py" = ["F401"]  # Allow unused imports in __init__
+"**/conftest.py" = ["F401"]  # Allow unused imports in conftest
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+# Automatically detect the appropriate line ending
+line-ending = "auto"
+
+# Mypy configuration for type checking
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "test_*",
+]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
