@@ -5,39 +5,39 @@ This module implements the ChatProvider interface for HuggingFace models using t
 Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 """
 
-import json
 import asyncio
+import base64
+import json
 import logging
 import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
+
 import aiohttp
-import requests
-from nodetool.workflows.processing_context import ProcessingContext
 import numpy as np
-
+import requests
 from huggingface_hub import AsyncInferenceClient
+from pydantic import BaseModel
 
-from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-import base64
-from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
+from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
+    ImageModel,
+    LanguageModel,
     Message,
-    Provider,
-    ToolCall,
     MessageImageContent,
     MessageTextContent,
-    LanguageModel,
+    Provider,
+    ToolCall,
     TTSModel,
-    ImageModel,
     VideoModel,
 )
-from nodetool.config.environment import Environment
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.workflows.base_node import ApiKeyMissingError
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
-from pydantic import BaseModel
 
 log = get_logger(__name__)
 
@@ -90,7 +90,7 @@ def get_remote_context_window(model_id: str, token: str | None = None) -> int | 
     # Note: We don't cache when token is provided since cache keys can't include tokens
     # For public models (no token), we can use a simple cache
     cache_key = f"{model_id}:{bool(token)}"
-    
+
     # Try to get from cache if no token (public model)
     if not token:
         cached = _context_window_cache.get(cache_key)
@@ -195,54 +195,53 @@ async def fetch_image_models_from_hf_provider(
         url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=100"
 
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    models_data = await response.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
+            if response.status == 200:
+                models_data = await response.json()
 
-                    models = []
-                    for model_data in models_data:
-                        model_id = model_data.get("id", "")
-                        if model_id:
-                            # Use the model name from the API if available, otherwise use the ID
-                            model_name = (
-                                model_data.get("name") or model_id.split("/")[-1]
-                                if "/" in model_id
-                                else model_id
+                models = []
+                for model_data in models_data:
+                    model_id = model_data.get("id", "")
+                    if model_id:
+                        # Use the model name from the API if available, otherwise use the ID
+                        model_name = (
+                            model_data.get("name") or model_id.split("/")[-1]
+                            if "/" in model_id
+                            else model_id
+                        )
+
+                        # Get the appropriate provider enum value
+                        provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                        if provider_enum is None:
+                            log.warning(
+                                f"Unknown image provider: {provider}, skipping model: {model_id}"
                             )
+                            continue
 
-                            # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
-                            if provider_enum is None:
-                                log.warning(
-                                    f"Unknown image provider: {provider}, skipping model: {model_id}"
-                                )
-                                continue
-
-                            task = (
-                                "text_to_image"
-                                if pipeline_tag == "text-to-image"
-                                else "image_to_image" if pipeline_tag == "image-to-image" else None
+                        task = (
+                            "text_to_image"
+                            if pipeline_tag == "text-to-image"
+                            else "image_to_image" if pipeline_tag == "image-to-image" else None
+                        )
+                        supported = [task] if task else []
+                        models.append(
+                            ImageModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=provider_enum,
+                                supported_tasks=supported,
                             )
-                            supported = [task] if task else []
-                            models.append(
-                                ImageModel(
-                                    id=model_id,
-                                    name=model_name,
-                                    provider=provider_enum,
-                                    supported_tasks=supported,
-                                )
-                            )
+                        )
 
-                    log.debug(
-                        f"Fetched {len(models)} image models from HF provider: {provider}"
-                    )
-                    return models
-                else:
-                    log.warning(
-                        f"Failed to fetch image models for provider {provider}: HTTP {response.status}"
-                    )
-                    return []
+                log.debug(
+                    f"Fetched {len(models)} image models from HF provider: {provider}"
+                )
+                return models
+            else:
+                log.warning(
+                    f"Failed to fetch image models for provider {provider}: HTTP {response.status}"
+                )
+                return []
 
     except Exception as e:
         log.error(f"Error fetching image models for provider {provider}: {e}")
@@ -266,48 +265,47 @@ async def fetch_tts_models_from_hf_provider(
         url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=1000"
 
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    models_data = await response.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
+            if response.status == 200:
+                models_data = await response.json()
 
-                    models = []
-                    for model_data in models_data:
-                        model_id = model_data.get("id", "")
-                        if model_id:
-                            # Use the model name from the API if available, otherwise use the ID
-                            model_name = (
-                                model_data.get("name") or model_id.split("/")[-1]
-                                if "/" in model_id
-                                else model_id
+                models = []
+                for model_data in models_data:
+                    model_id = model_data.get("id", "")
+                    if model_id:
+                        # Use the model name from the API if available, otherwise use the ID
+                        model_name = (
+                            model_data.get("name") or model_id.split("/")[-1]
+                            if "/" in model_id
+                            else model_id
+                        )
+
+                        # Get the appropriate provider enum value
+                        provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                        if provider_enum is None:
+                            log.warning(
+                                f"Unknown TTS provider: {provider}, skipping model: {model_id}"
                             )
+                            continue
 
-                            # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
-                            if provider_enum is None:
-                                log.warning(
-                                    f"Unknown TTS provider: {provider}, skipping model: {model_id}"
-                                )
-                                continue
-
-                            models.append(
-                                TTSModel(
-                                    id=model_id,
-                                    name=model_name,
-                                    provider=provider_enum,
-                                    voices=[],  # HF TTS models typically don't have named voices
-                                )
+                        models.append(
+                            TTSModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=provider_enum,
+                                voices=[],  # HF TTS models typically don't have named voices
                             )
+                        )
 
-                    log.debug(
-                        f"Fetched {len(models)} TTS models from HF provider: {provider}"
-                    )
-                    return models
-                else:
-                    log.warning(
-                        f"Failed to fetch TTS models for provider {provider}: HTTP {response.status}"
-                    )
-                    return []
+                log.debug(
+                    f"Fetched {len(models)} TTS models from HF provider: {provider}"
+                )
+                return models
+            else:
+                log.warning(
+                    f"Failed to fetch TTS models for provider {provider}: HTTP {response.status}"
+                )
+                return []
 
     except Exception as e:
         log.error(f"Error fetching TTS models for provider {provider}: {e}")
@@ -331,54 +329,53 @@ async def fetch_video_models_from_hf_provider(
         url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=100"
 
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    models_data = await response.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
+            if response.status == 200:
+                models_data = await response.json()
 
-                    models = []
-                    for model_data in models_data:
-                        model_id = model_data.get("id", "")
-                        if model_id:
-                            # Use the model name from the API if available, otherwise use the ID
-                            model_name = (
-                                model_data.get("name") or model_id.split("/")[-1]
-                                if "/" in model_id
-                                else model_id
+                models = []
+                for model_data in models_data:
+                    model_id = model_data.get("id", "")
+                    if model_id:
+                        # Use the model name from the API if available, otherwise use the ID
+                        model_name = (
+                            model_data.get("name") or model_id.split("/")[-1]
+                            if "/" in model_id
+                            else model_id
+                        )
+
+                        # Get the appropriate provider enum value
+                        provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                        if provider_enum is None:
+                            log.warning(
+                                f"Unknown video provider: {provider}, skipping model: {model_id}"
                             )
+                            continue
 
-                            # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
-                            if provider_enum is None:
-                                log.warning(
-                                    f"Unknown video provider: {provider}, skipping model: {model_id}"
-                                )
-                                continue
-
-                            task = (
-                                "text_to_video"
-                                if pipeline_tag == "text-to-video"
-                                else "image_to_video" if pipeline_tag == "image-to-video" else None
+                        task = (
+                            "text_to_video"
+                            if pipeline_tag == "text-to-video"
+                            else "image_to_video" if pipeline_tag == "image-to-video" else None
+                        )
+                        supported = [task] if task else []
+                        models.append(
+                            VideoModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=provider_enum,
+                                supported_tasks=supported,
                             )
-                            supported = [task] if task else []
-                            models.append(
-                                VideoModel(
-                                    id=model_id,
-                                    name=model_name,
-                                    provider=provider_enum,
-                                    supported_tasks=supported,
-                                )
-                            )
+                        )
 
-                    log.debug(
-                        f"Fetched {len(models)} video models from HF provider: {provider}"
-                    )
-                    return models
-                else:
-                    log.warning(
-                        f"Failed to fetch video models for provider {provider}: HTTP {response.status}"
-                    )
-                    return []
+                log.debug(
+                    f"Fetched {len(models)} video models from HF provider: {provider}"
+                )
+                return models
+            else:
+                log.warning(
+                    f"Failed to fetch video models for provider {provider}: HTTP {response.status}"
+                )
+                return []
 
     except Exception as e:
         log.error(f"Error fetching video models for provider {provider}: {e}")
@@ -402,48 +399,47 @@ async def fetch_models_from_hf_provider(
         url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=1000"
 
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    models_data = await response.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
+            if response.status == 200:
+                models_data = await response.json()
 
-                    models = []
-                    for model_data in models_data:
-                        model_id = model_data.get("id", "")
-                        if model_id:
-                            # Use the model name from the API if available, otherwise use the ID
-                            model_name = (
-                                model_data.get("name") or model_id.split("/")[-1]
-                                if "/" in model_id
-                                else model_id
+                models = []
+                for model_data in models_data:
+                    model_id = model_data.get("id", "")
+                    if model_id:
+                        # Use the model name from the API if available, otherwise use the ID
+                        model_name = (
+                            model_data.get("name") or model_id.split("/")[-1]
+                            if "/" in model_id
+                            else model_id
+                        )
+
+                        # Get the appropriate provider enum value
+                        provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                        if provider_enum is None:
+                            log.warning(
+                                f"Unknown provider: {provider}, skipping model: {model_id}"
                             )
+                            continue
 
-                            # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
-                            if provider_enum is None:
-                                log.warning(
-                                    f"Unknown provider: {provider}, skipping model: {model_id}"
-                                )
-                                continue
-
-                            models.append(
-                                LanguageModel(
-                                    id=model_id,
-                                    name=model_name,
-                                    provider=provider_enum,
-                                )
+                        models.append(
+                            LanguageModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=provider_enum,
                             )
+                        )
 
-                    # Preserve API order to match test expectations
-                    log.debug(
-                        f"Fetched {len(models)} language models from HF provider: {provider}"
-                    )
-                    return models
-                else:
-                    log.warning(
-                        f"Failed to fetch models for provider {provider}: HTTP {response.status}"
-                    )
-                    return []
+                # Preserve API order to match test expectations
+                log.debug(
+                    f"Fetched {len(models)} language models from HF provider: {provider}"
+                )
+                return models
+            else:
+                log.warning(
+                    f"Failed to fetch models for provider {provider}: HTTP {response.status}"
+                )
+                return []
 
     except Exception as e:
         log.error(f"Error fetching models for provider {provider}: {e}")
@@ -873,15 +869,15 @@ class HuggingFaceProvider(BaseProvider):
                                 f"422 Model '{model}' cannot process {media_str} content. "
                                 f"The model may not support multimodal input or the {media_str} format is not supported. "
                                 f"Original error: {body_text or str(e)}"
-                            )
+                            ) from e
                         else:
                             raise Exception(
                                 f"422 Model '{model}' received unprocessable input. "
                                 f"The model may not support the provided parameters or content format. "
                                 f"Original error: {body_text or str(e)}"
-                            )
+                            ) from e
                     else:
-                        raise Exception(f"{status} {body_text or str(e)}")
+                        raise Exception(f"{status} {body_text or str(e)}") from e
                 if attempt < max_retries:
                     delay = base_delay * (2**attempt)  # Exponential backoff
                     log.debug(f"Retrying in {delay} seconds...")
@@ -892,8 +888,8 @@ class HuggingFaceProvider(BaseProvider):
                     traceback.print_exc()
                     # Include status code/body text when available for clearer errors/tests
                     if status is not None:
-                        raise Exception(f"{status} {body_text or str(e)}")
-                    raise Exception(str(e))
+                        raise Exception(f"{status} {body_text or str(e)}") from e
+                    raise Exception(str(e)) from e
 
         if completion is None:
             raise RuntimeError("HuggingFace chat completion did not return a response")
@@ -1136,15 +1132,15 @@ class HuggingFaceProvider(BaseProvider):
                             f"422 Model '{model}' cannot process {media_str} content in streaming mode. "
                             f"The model may not support multimodal input or the {media_str} format is not supported. "
                             f"Original error: {body_text or str(e)}"
-                        )
+                        ) from e
                     else:
                         raise Exception(
                             f"422 Model '{model}' received unprocessable input in streaming mode. "
                             f"The model may not support the provided parameters or content format. "
                             f"Original error: {body_text or str(e)}"
-                        )
+                        ) from e
                 else:
-                    raise Exception(f"{status} {body_text or str(e)}")
+                    raise Exception(f"{status} {body_text or str(e)}") from e
             raise
 
     def get_usage(self) -> dict:
@@ -1244,7 +1240,9 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace TTS generation failed: {e}")
-            raise RuntimeError(f"HuggingFace TTS generation failed: {str(e)}")
+            raise RuntimeError(
+                f"HuggingFace TTS generation failed: {str(e)}"
+            ) from e
 
     async def get_available_tts_models(self) -> List[TTSModel]:
         """
@@ -1335,7 +1333,9 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace text-to-image generation failed: {e}")
-            raise RuntimeError(f"HuggingFace text-to-image generation failed: {str(e)}")
+            raise RuntimeError(
+                f"HuggingFace text-to-image generation failed: {str(e)}"
+            ) from e
 
     async def image_to_image(
         self,
@@ -1367,8 +1367,9 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             # Convert bytes to PIL Image for the API
-            from PIL import Image
             import io
+
+            from PIL import Image
 
             input_image = Image.open(io.BytesIO(image))
 
@@ -1402,7 +1403,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace image-to-image generation failed: {e}")
             raise RuntimeError(
                 f"HuggingFace image-to-image generation failed: {str(e)}"
-            )
+            ) from e
 
     async def get_available_image_models(self) -> List[ImageModel]:
         """
@@ -1565,4 +1566,6 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace text-to-video generation failed: {e}")
-            raise RuntimeError(f"HuggingFace text-to-video generation failed: {str(e)}")
+            raise RuntimeError(
+                f"HuggingFace text-to-video generation failed: {str(e)}"
+            ) from e

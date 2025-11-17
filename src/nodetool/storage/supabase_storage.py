@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from contextlib import suppress
+from datetime import UTC, datetime, timezone
 from typing import IO, Any, AsyncIterator
 
 from nodetool.models.supabase_adapter import SupabaseAsyncClient
@@ -56,7 +57,7 @@ class SupabaseStorage(AbstractStorage):
         # Parse ISO8601 date string with fractional seconds and Z (UTC)
         # Example: '2025-11-01T06:05:49.592Z'
         dt = datetime.strptime(last_modified, "%Y-%m-%dT%H:%M:%S.%fZ")
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
 
     async def get_size(self, key: str) -> int:
         info = await self._info(key)
@@ -80,7 +81,7 @@ class SupabaseStorage(AbstractStorage):
         try:
             if isinstance(getattr(content, "name", None), str):
                 try:
-                    # Some file objects have a valid name pointing to disk – use it directly
+                    # Some file objects have a valid name pointing to disk - use it directly
                     await self.bucket.upload(key, content.name)
                 except (TypeError, ValueError):
                     tmp_path = await self._write_temp_file(content)
@@ -95,10 +96,8 @@ class SupabaseStorage(AbstractStorage):
             if tmp_path:
                 import os
 
-                try:
+                with suppress(OSError):
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
 
     async def _write_temp_file(self, content: IO) -> str:
         import tempfile

@@ -19,11 +19,13 @@ Usage:
     )
 """
 
-import sys
 import json
 import subprocess
+import sys
+from contextlib import suppress
 from enum import Enum
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
+
 from rich.console import Console
 
 console = Console()
@@ -513,7 +515,7 @@ def deploy_to_cloud_run(
 
             # Handle unauthenticated access post-update (update may not accept the flag in all versions)
             if allow_unauthenticated:
-                try:
+                with suppress(subprocess.CalledProcessError):
                     subprocess.run(
                         [
                             "gcloud",
@@ -533,9 +535,6 @@ def deploy_to_cloud_run(
                         ],
                         check=True,
                     )
-                except subprocess.CalledProcessError:
-                    # Non-fatal; permissions may already be set or not allowed
-                    pass
 
             console.print("[bold green]✅ Successfully updated Cloud Run service[/]")
             console.print(

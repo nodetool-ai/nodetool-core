@@ -1,12 +1,13 @@
+import json
+from contextlib import suppress
+from typing import Any
+
 from httpx import AsyncClient, HTTPStatusError, RequestError
+
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools._remove_base64_images import _remove_base64_images
-from nodetool.runtime.resources import require_scope, maybe_scope
 from nodetool.config.environment import Environment
-
-
-import json
-from typing import Any, Dict, List, Union
+from nodetool.runtime.resources import maybe_scope, require_scope
 
 
 class SerpApiProvider(SerpProvider):
@@ -35,10 +36,10 @@ class SerpApiProvider(SerpProvider):
             raise ValueError(
                 "SerpApi API key (SERPAPI_API_KEY) not found or not provided."
             )
-    
+
     def _get_client(self) -> AsyncClient:
         """Get or create HTTP client from ResourceScope.
-        
+
         Uses ResourceScope's HTTP client to ensure correct event loop binding.
         """
         if self._client is None:
@@ -50,8 +51,8 @@ class SerpApiProvider(SerpProvider):
         return self._client
 
     async def _make_request(
-        self, params: Dict[str, Any]
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+        self, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
         if not self.api_key:
             return {
                 "error": "SerpApi API key (SERPAPI_API_KEY) not found or not provided."
@@ -65,20 +66,18 @@ class SerpApiProvider(SerpProvider):
             return response.json()
         except HTTPStatusError as e:
             error_body_details = e.response.text
-            try:
+            with suppress(json.JSONDecodeError):
                 error_body_details = e.response.json()
-            except json.JSONDecodeError:
-                pass
             return {
                 "error": f"SerpApi HTTP error: {e.response.status_code} - {e.response.reason_phrase}",
                 "details": error_body_details,
             }
         except RequestError as e:
-            return {"error": f"SerpApi request failed: {str(e)}"}
+            return {"error": f"SerpApi request failed: {e!s}"}
         except json.JSONDecodeError as e:
-            return {"error": f"SerpApi failed to decode JSON response: {str(e)}"}
+            return {"error": f"SerpApi failed to decode JSON response: {e!s}"}
         except Exception as e:
-            return {"error": f"Unexpected error during SerpApi request: {str(e)}"}
+            return {"error": f"Unexpected error during SerpApi request: {e!s}"}
 
     async def search(self, keyword: str, num_results: int = 10):
         params = {
@@ -111,7 +110,7 @@ class SerpApiProvider(SerpProvider):
         self,
         keyword: str,
         num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> list[dict[str, Any]] | ErrorResponse:
         params = {
             "engine": "google_news",
             "q": keyword,
@@ -143,7 +142,7 @@ class SerpApiProvider(SerpProvider):
         keyword: str | None = None,
         image_url: str | None = None,
         num_results: int = 20,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> list[dict[str, Any]] | ErrorResponse:
         if not keyword and not image_url:
             return {
                 "error": "One of 'keyword' or 'image_url' is required for image search."
@@ -160,8 +159,7 @@ class SerpApiProvider(SerpProvider):
         if image_url:
             params["engine"] = "google_reverse_image"
             params["image_url"] = image_url
-            if "q" in params:
-                del params["q"]
+            params.pop("q", None)
 
         result_data = await self._make_request(params)
 
@@ -183,7 +181,7 @@ class SerpApiProvider(SerpProvider):
 
     async def search_finance(
         self, query: str, window: str | None = None
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+    ) -> dict[str, Any] | ErrorResponse:
         """
         Retrieves financial data using SerpApi's Google Finance engine.
         """
@@ -219,8 +217,8 @@ class SerpApiProvider(SerpProvider):
         return _remove_base64_images(result_data)
 
     async def search_jobs(
-        self, query: str, location: str | None = None, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        self, query: str, location: str | None = None, _num_results: int = 10
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for jobs using SerpApi's Google Jobs engine.
         """
@@ -252,8 +250,8 @@ class SerpApiProvider(SerpProvider):
         return _remove_base64_images(result_data)
 
     async def search_lens(
-        self, image_url: str, country: str | None = None, num_results: int = 10
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+        self, image_url: str, country: str | None = None, _num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
         """
         Searches with an image URL using SerpApi's Google Lens engine.
         """
@@ -290,8 +288,8 @@ class SerpApiProvider(SerpProvider):
         ll: str | None = None,
         map_type: str = "search",
         data_id: str | None = None,
-        num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        _num_results: int = 10,
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Maps using SerpApi.
         If map_type is 'place', data_id is required and query/ll are ignored by SerpApi.
@@ -344,15 +342,12 @@ class SerpApiProvider(SerpProvider):
         if (
             map_type == "place"
             and not result_data.get("place_results")
+            and not serpapi_error_status
             and not serpapi_error_message
         ):
-            # If it's a place search and no place_results, and no explicit error, it's likely an issue.
-            if (
-                not serpapi_error_status and not serpapi_error_message
-            ):  # If no explicit error, craft one
-                raise ValueError(
-                    "SerpApi returned no place_results for the given data_id."
-                )
+            raise ValueError(
+                "SerpApi returned no place_results for the given data_id."
+            )
 
         if serpapi_error_status or serpapi_error_message:
             raise ValueError(
@@ -370,8 +365,8 @@ class SerpApiProvider(SerpProvider):
         max_price: int | None = None,
         condition: str | None = None,
         sort_by: str | None = None,
-        num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        _num_results: int = 10,
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Shopping using SerpApi.
         Ref: https://serpapi.com/google-shopping-api

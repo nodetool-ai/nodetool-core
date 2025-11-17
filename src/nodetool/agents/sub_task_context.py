@@ -158,43 +158,41 @@ import asyncio
 import base64
 import binascii
 import datetime
+import json
 import logging
 import re
-from nodetool.providers import BaseProvider
-from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall
-from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent, SubTaskResult
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.ui.console import AgentConsole
-from nodetool.utils.message_parsing import (
-    extract_json_from_message,
-    remove_think_tags,
-)
-
-import tiktoken
-
-from nodetool.chat.token_counter import (
-    count_message_tokens,
-    count_messages_tokens,
-)
-
-
-import json
 import time
 import uuid
 from typing import (
     Any,
     AsyncGenerator,
+    Dict,
     List,
+    Optional,
     Sequence,
     Union,
-    Dict,
-    Optional,
+)
+
+import tiktoken
+from jinja2 import BaseLoader, Environment
+from jsonschema import ValidationError
+from jsonschema import validate as jsonschema_validate
+
+from nodetool.agents.tools.base import Tool
+from nodetool.chat.token_counter import (
+    count_message_tokens,
+    count_messages_tokens,
 )
 from nodetool.config.logging_config import get_logger
-
-from jinja2 import Environment, BaseLoader
-from jsonschema import ValidationError, validate as jsonschema_validate
+from nodetool.metadata.types import Message, SubTask, Task, ToolCall
+from nodetool.providers import BaseProvider
+from nodetool.ui.console import AgentConsole
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk, SubTaskResult, TaskUpdate, TaskUpdateEvent
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
@@ -358,7 +356,7 @@ def _validate_and_sanitize_schema(
     try:
         result_schema = json.loads(json.dumps(schema))
     except (TypeError, ValueError) as e:
-        raise ValueError(f"Schema contains non-serializable data: {e}")
+        raise ValueError(f"Schema contains non-serializable data: {e}") from e
 
     # Ensure required fields
     if "type" not in result_schema:
@@ -396,12 +394,9 @@ def _validate_and_sanitize_schema(
             return False
 
         # Treat as object if explicitly typed or if properties imply it
-        if schema_type == "object" or (
+        return schema_type == "object" or (
             schema_type is None and obj.get("properties") is not None
-        ):
-            return True
-
-        return False
+        )
 
     def _clean_schema_recursive(obj: Any) -> Any:
         """Recursively clean schema objects to ensure compatibility."""
@@ -424,7 +419,8 @@ def _validate_and_sanitize_schema(
         import warnings
 
         warnings.warn(
-            f"Schema serialization failed after cleaning: {e}, using default object schema"
+            f"Schema serialization failed after cleaning: {e}, using default object schema",
+            stacklevel=2,
         )
         return {"type": "object", "description": default_description}
 
@@ -893,7 +889,7 @@ class SubTaskContext:
 
     async def execute(
         self,
-    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate, SubTaskResult], None]:
+    ) -> AsyncGenerator[Chunk | ToolCall | TaskUpdate | SubTaskResult, None]:
         """
         Runs a single subtask to completion using the LLM-driven execution loop.
 
@@ -922,8 +918,6 @@ class SubTaskContext:
         prompt_parts = [
             self.subtask.content,
         ]
-        input_tasks_str = ", ".join(self.subtask.input_tasks)
-
         if self.subtask.input_tasks:
             # Fetch and inject input results directly into the prompt
             for input_task_id in self.subtask.input_tasks:
@@ -1138,7 +1132,9 @@ class SubTaskContext:
         )
 
         valid_tool_messages: list[Message] = []
-        for tool_call, result in zip(valid_tool_calls, tool_results):
+        for tool_call, result in zip(
+            valid_tool_calls, tool_results, strict=True
+        ):
             if isinstance(result, Exception):
                 log.error(
                     f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}"
@@ -1294,8 +1290,7 @@ class SubTaskContext:
             tool_result[f"{artifact_type}_path"] = (
                 f"Error decoding {artifact_type}: {e}"
             )
-            if artifact_key in tool_result:
-                del tool_result[artifact_key]
+            tool_result.pop(artifact_key, None)
             if artifact_type == "audio" and "format" in tool_result:
                 del tool_result["format"]
         except Exception as e:
@@ -1304,8 +1299,7 @@ class SubTaskContext:
                     f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
                 )
             tool_result[f"{artifact_type}_path"] = f"Error saving {artifact_type}: {e}"
-            if artifact_key in tool_result:
-                del tool_result[artifact_key]
+            tool_result.pop(artifact_key, None)
             if artifact_type == "audio" and "format" in tool_result:
                 del tool_result["format"]
         return tool_result
@@ -1314,7 +1308,6 @@ class SubTaskContext:
         """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
 
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
-            action = tool_call.args.get("action", "")
             url = tool_call.args.get("url", "")
             if url and url not in self.sources:  # Avoid duplicates
                 self.sources.append(url)
@@ -1405,7 +1398,7 @@ class SubTaskContext:
 
     async def _compress_tool_result(
         self, result_content: Any, tool_name: str, tool_args: dict
-    ) -> Union[dict, str]:
+    ) -> dict | str:
         """
         Compresses large tool result content using an LLM call.
 

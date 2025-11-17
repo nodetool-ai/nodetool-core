@@ -3,10 +3,11 @@ import json
 import logging
 import os
 from typing import Any, Type, Union
+
 from pydantic import BaseModel
+
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
-
 
 # Configure logging
 logging.basicConfig(
@@ -17,7 +18,7 @@ logging.basicConfig(
 logger = get_logger(__name__)
 
 
-def defined_in_module(obj: Any, module: Union[Type[Any], Any]) -> bool:
+def defined_in_module(obj: Any, module: Type[Any] | Any) -> bool:
     """
     Check if an object is defined in a given module.
 

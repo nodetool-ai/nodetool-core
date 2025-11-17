@@ -1,7 +1,9 @@
 """Agent mode management commands."""
 
 from typing import List
+
 from nodetool.chat.chat_cli import ChatCLI
+
 from .base import Command
 
 

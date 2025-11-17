@@ -3,13 +3,16 @@
 import json
 import traceback
 from typing import List
-from nodetool.chat.chat_cli import ChatCLI
+
 from rich.syntax import Syntax
-from .base import Command
+
+from nodetool.chat.chat_cli import ChatCLI
 from nodetool.models.workflow import Workflow
 from nodetool.types.graph import get_input_schema, get_output_schema
-from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_workflow import run_workflow
+
+from .base import Command
 
 
 class RunWorkflowCommand(Command):

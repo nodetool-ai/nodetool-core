@@ -1,33 +1,34 @@
 #!/usr/bin/env python
 
-from datetime import datetime
+import asyncio
+import base64
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
+from datetime import datetime
+from typing import Any, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
-from nodetool.types.graph import Graph, remove_connected_slots
-from nodetool.types.workflow import (
-    WorkflowList,
-    Workflow,
-    WorkflowRequest,
-    WorkflowToolList,
-    WorkflowTool,
-)
+
 from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
-from typing import Any, Optional
-from nodetool.workflows.read_graph import read_graph
+from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
-import base64
+from nodetool.packages.registry import Registry
+from nodetool.runtime.resources import require_scope
+from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
+from nodetool.types.workflow import (
+    Workflow,
+    WorkflowList,
+    WorkflowRequest,
+    WorkflowTool,
+    WorkflowToolList,
+)
 from nodetool.workflows.http_stream_runner import HTTPStreamRunner
+from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.types.graph import get_input_schema, get_output_schema
-from nodetool.packages.registry import Registry
-import asyncio
-from nodetool.config.logging_config import get_logger
-from nodetool.runtime.resources import require_scope
+from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -132,7 +133,9 @@ async def create(
                 )
             )
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(
+                status_code=404, detail=str(e)
+            ) from e
     elif workflow_request.graph:
         workflow = await from_model(
             await WorkflowModel.create(
@@ -152,7 +155,9 @@ async def create(
         try:
             edges, nodes = read_graph(workflow_request.comfy_workflow)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(
+                status_code=400, detail=str(e)
+            ) from e
         workflow = await from_model(
             await WorkflowModel.create(
                 name=workflow_request.name,
@@ -441,7 +446,9 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
             )
         return workflow
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(
+            status_code=404, detail=str(e)
+        ) from e
 
 
 @router.get("/{id}")
@@ -542,7 +549,9 @@ async def save_example_workflow(
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400, detail=str(e)
+        ) from e
 
 
 class RunWorkflowRequest(BaseModel):

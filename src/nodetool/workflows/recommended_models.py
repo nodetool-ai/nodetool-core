@@ -111,10 +111,8 @@ def _is_image_model(m: UnifiedModel) -> bool:
         "hf.stable_diffusion_upscale",
         "hf.pixart_alpha",
     }
-    if t in image_types:
-        return True
     # MLX image repos typically have text-to-image pipeline tags (handled above).
-    return False
+    return t in image_types
 
 
 def _is_text_to_image_model(m: UnifiedModel) -> bool:
@@ -143,11 +141,9 @@ def _is_language_model(m: UnifiedModel) -> bool:
     pipe = (m.pipeline_tag or "").lower()
     if pipe in {"text-generation", "text2text-generation", "conversational"}:
         return True
-    if t in {"llama_cpp", "hf.text_generation", "hf.text_to_text", "mlx"}:
-        # MLX includes other modalities; rely on pipeline_tag when available.
-        # If pipeline_tag missing, treat generic MLX as language-capable by default.
-        return True
-    return False
+    # MLX includes other modalities; rely on pipeline_tag when available.
+    # If pipeline_tag missing, treat generic MLX as language-capable by default.
+    return t in {"llama_cpp", "hf.text_generation", "hf.text_to_text", "mlx"}
 
 
 def _is_language_embedding_model(m: UnifiedModel) -> bool:

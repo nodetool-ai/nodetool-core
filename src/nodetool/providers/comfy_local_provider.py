@@ -14,7 +14,8 @@ from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import ImageModel, Provider as ProviderEnum
+from nodetool.metadata.types import ImageModel
+from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.comfy_api import (
     check_server,
@@ -66,7 +67,7 @@ class ComfyLocalProvider(BaseProvider):
             if not models:
                 log.warning("No checkpoints reported by local ComfyUI")
             return models
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("Failed to fetch ComfyUI checkpoints: %s", exc)
             return []
 
@@ -344,7 +345,7 @@ class ComfyLocalProvider(BaseProvider):
         async with websockets.connect(ws_url) as ws:
             try:
                 response = await asyncio.to_thread(queue_workflow, graph, client_id)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.error("Comfy queue_workflow failed: %s", exc)
                 raise
 
@@ -410,7 +411,7 @@ class ComfyLocalProvider(BaseProvider):
     async def _fetch_history_images(self, prompt_id: str) -> list[bytes]:
         try:
             history = await asyncio.to_thread(get_history, prompt_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("Failed to fetch ComfyUI history for %s: %s", prompt_id, exc)
             return []
 
@@ -426,7 +427,7 @@ class ComfyLocalProvider(BaseProvider):
                 image_type = image_info.get("type", "output")
                 try:
                     data = await asyncio.to_thread(get_image_data, filename, subfolder, image_type)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning(
                         "Failed to retrieve image from history (node=%s filename=%s): %s",
                         node_id,

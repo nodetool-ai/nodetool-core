@@ -300,13 +300,14 @@ curl http://localhost:8080/health
 - Use secure token storage practices
 """
 
-import uvicorn
 import asyncio
 import platform
+
+import uvicorn
 from fastapi import FastAPI
-from nodetool.config.environment import Environment
 from rich.console import Console
 
+from nodetool.config.environment import Environment
 from nodetool.types.workflow import Workflow
 
 console = Console()

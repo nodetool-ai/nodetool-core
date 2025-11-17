@@ -4,14 +4,14 @@ import shlex
 import socket
 import subprocess
 import threading
+from contextlib import suppress
 from typing import Any, AsyncGenerator, AsyncIterator, Literal
 
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Notification, LogUpdate
 from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 from nodetool.config.logging_config import get_logger
-
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import LogUpdate, Notification
 
 log = get_logger(__name__)
 
@@ -164,25 +164,17 @@ class StreamRunnerBase:
             sock = self._active_sock
             container_id = self._active_container_id
         # Close socket to unblock demux loop quickly
-        try:
-            if sock is not None and getattr(sock, "_sock", None) is not None:
-                try:
-                    sock._sock.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        if sock is not None and getattr(sock, "_sock", None) is not None:
+            with suppress(Exception):
+                sock._sock.close()
         # Force remove container
         if container_id:
-            try:
+            with suppress(Exception):
                 client = self._get_docker_client()
-                try:
+                with suppress(Exception):
                     c = client.containers.get(container_id)
-                    c.remove(force=True)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                    with suppress(Exception):
+                        c.remove(force=True)
 
     def build_container_command(
         self, user_code: str, env_locals: dict[str, Any]
@@ -297,7 +289,7 @@ class StreamRunnerBase:
         if not meta:
             return
         node_id, _ = meta
-        try:
+        with suppress(Exception):
             context.post_message(
                 Notification(
                     node_id=node_id,
@@ -305,8 +297,6 @@ class StreamRunnerBase:
                     content=content,
                 )
             )
-        except Exception:
-            pass
 
     def _maybe_post_log(
         self,
@@ -321,7 +311,7 @@ class StreamRunnerBase:
         if not meta:
             return
         node_id, node_name = meta
-        try:
+        with suppress(Exception):
             context.post_message(
                 LogUpdate(
                     node_id=node_id,
@@ -330,8 +320,6 @@ class StreamRunnerBase:
                     severity=severity,  # type: ignore[arg-type]
                 )
             )
-        except Exception:
-            pass
 
     def build_container_environment(
         self,
@@ -534,12 +522,10 @@ class StreamRunnerBase:
             if self.timeout_seconds and self.timeout_seconds > 0:
 
                 def _force_kill() -> None:
-                    try:
+                    with suppress(Exception):
                         if proc and proc.poll() is None:
                             log.debug("forcing kill of local subprocess")
                             proc.terminate()
-                    except Exception:
-                        pass
 
                 cancel_timer = threading.Timer(self.timeout_seconds, _force_kill)
                 cancel_timer.daemon = True
@@ -548,16 +534,12 @@ class StreamRunnerBase:
             rc = proc.wait()
             log.debug("local subprocess exited with code %s", rc)
             # Ensure stdout/stderr reader threads have drained remaining buffered lines
-            try:
+            with suppress(Exception):
                 if stdout_thread is not None:
                     stdout_thread.join(timeout=0.5)
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 if stderr_thread is not None:
                     stderr_thread.join(timeout=0.5)
-            except Exception:
-                pass
             if rc != 0:
                 raise ContainerFailureError(f"Process exited with code {rc}", rc)
 
@@ -565,34 +547,24 @@ class StreamRunnerBase:
                 queue.put({"type": "final", "ok": True}), loop
             )
         except Exception as e:
-            try:
+            with suppress(Exception):
                 log.exception("_local_run() error for cmd=%s: %s", command_vec, e)
-            except Exception:
-                pass
             asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "final", "ok": False, "error": str(e)}), loop
             )
         finally:
-            try:
+            with suppress(Exception):
                 if cancel_timer is not None:
-                    try:
+                    with suppress(Exception):
                         cancel_timer.cancel()
-                    except Exception:
-                        pass
                 if proc is not None:
-                    try:
+                    with suppress(Exception):
                         if proc.poll() is None:
                             proc.terminate()
-                    except Exception:
-                        pass
                 # Clean up any wrapper resources (e.g., sandbox profile files)
                 if cleanup_data is not None:
-                    try:
+                    with suppress(Exception):
                         self.cleanup_subprocess_wrapper(cleanup_data)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
 
     def _reader_thread(
         self,
@@ -633,10 +605,10 @@ class StreamRunnerBase:
         client = docker.from_env()
         try:
             client.ping()
-        except Exception:
+        except Exception as e:
             raise RuntimeError(
                 "Docker daemon is not available. Please start Docker and try again."
-            )
+            ) from e
         return client
 
     def _format_command_str(self, command: list[str] | None) -> str | None:
@@ -669,7 +641,7 @@ class StreamRunnerBase:
             command_str: Shell-quoted command string.
             environment: Environment variables to pass into the container.
         """
-        try:
+        with suppress(Exception):
             log.debug(
                 "docker params: image=%s mem=%s cpus=%s cmd_list=%s cmd=%s env_keys=%s",
                 image,
@@ -679,8 +651,6 @@ class StreamRunnerBase:
                 command_str,
                 sorted(list(environment.keys()))[:20],
             )
-        except Exception:
-            pass
 
     def _ensure_image(
         self,
@@ -1002,19 +972,17 @@ class StreamRunnerBase:
             container: Container to remove.
             cancel_timer: Optional watchdog timer to cancel.
         """
-        try:
+        with suppress(Exception):
             if cancel_timer is not None:
-                try:
+                with suppress(Exception):
                     cancel_timer.cancel()
-                except Exception:
-                    pass
             if container is not None:
-                log.debug(
-                    "removing container: id=%s", getattr(container, "id", "<no-id>")
-                )
-                container.remove(force=True)
-        except Exception:
-            pass
+                with suppress(Exception):
+                    log.debug(
+                        "removing container: id=%s", getattr(container, "id", "<no-id>")
+                    )
+                with suppress(Exception):
+                    container.remove(force=True)
 
     def _handle_run_exception(
         self,

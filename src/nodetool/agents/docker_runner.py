@@ -1,13 +1,12 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
 from nodetool.agents.tools import get_tool_by_name
-
-# Import tools modules to ensure registration happens
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -47,13 +46,13 @@ async def _run(cfg: dict) -> None:
         pass
 
     results = agent.get_results()
-    with open(cfg["result_path"], "w") as f:
+    with Path(cfg["result_path"]).open("w") as f:
         json.dump(results, f)
 
 
 def main() -> None:
     config_path = sys.argv[1]
-    with open(config_path) as f:
+    with Path(config_path).open() as f:
         cfg = json.load(f)
     asyncio.run(_run(cfg))
 

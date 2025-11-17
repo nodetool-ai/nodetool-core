@@ -14,12 +14,13 @@ Key simplifications:
 
 import asyncio
 import json
-from nodetool.config.logging_config import get_logger
-from typing import Any, AsyncGenerator, Dict, Optional, Sequence, Union
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any
 
 from nodetool.agents.tools.base import Tool
-from nodetool.providers import BaseProvider
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, ToolCall
+from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
@@ -40,28 +41,23 @@ METADATA_SCHEMA = {
 }
 
 
-def json_schema_for_output_type(output_type: str) -> Dict[str, Any]:
+def json_schema_for_output_type(output_type: str) -> dict[str, Any]:
     """Generate JSON schema for different output types."""
-    if output_type == "json":
-        return {"type": "object", "description": "JSON object"}
-    elif output_type == "list":
-        return {"type": "array", "description": "Array of values"}
-    elif output_type == "string":
-        return {"type": "string", "description": "Text string"}
-    elif output_type == "number":
-        return {"type": "number", "description": "Numeric value"}
-    elif output_type == "boolean":
-        return {"type": "boolean", "description": "Boolean value"}
-    elif output_type == "markdown":
-        return {"type": "string", "description": "Markdown formatted text"}
-    elif output_type == "html":
-        return {"type": "string", "description": "HTML markup"}
-    elif output_type == "csv":
-        return {"type": "string", "description": "CSV formatted data"}
-    elif output_type == "yaml":
-        return {"type": "string", "description": "YAML formatted data"}
-    else:
-        return {"type": "string", "description": f"Output of type {output_type}"}
+    schemas: dict[str, dict[str, Any]] = {
+        "json": {"type": "object", "description": "JSON object"},
+        "list": {"type": "array", "description": "Array of values"},
+        "string": {"type": "string", "description": "Text string"},
+        "number": {"type": "number", "description": "Numeric value"},
+        "boolean": {"type": "boolean", "description": "Boolean value"},
+        "markdown": {"type": "string", "description": "Markdown formatted text"},
+        "html": {"type": "string", "description": "HTML markup"},
+        "csv": {"type": "string", "description": "CSV formatted data"},
+        "yaml": {"type": "string", "description": "YAML formatted data"},
+    }
+    return schemas.get(
+        output_type,
+        {"type": "string", "description": f"Output of type {output_type}"},
+    )
 
 
 class FinishTool(Tool):
@@ -77,10 +73,7 @@ class FinishTool(Tool):
         self.output_type = output_type
 
         # Use the provided schema or generate one from output_type
-        if output_schema:
-            result_schema = output_schema
-        else:
-            result_schema = json_schema_for_output_type(output_type)
+        result_schema = output_schema or json_schema_for_output_type(output_type)
 
         self.input_schema = {
             "type": "object",
@@ -93,8 +86,8 @@ class FinishTool(Tool):
         }
 
     async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, _context: ProcessingContext, params: dict[str, Any]
+    ) -> dict[str, Any]:
         return params
 
 
@@ -114,9 +107,9 @@ class AgentExecutor:
         provider: BaseProvider,
         model: str,
         tools: Sequence[Tool],
-        input_values: Optional[Dict[str, Any]] = None,
+        input_values: dict[str, Any] | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
-        output_schema: Optional[Any] = None,
+        output_schema: Any | None = None,
     ):
         self.objective = objective
         self.output_type = output_type
@@ -131,7 +124,7 @@ class AgentExecutor:
         self.finish_tool = FinishTool(self.output_type, output_schema)
 
         # Combine provided tools with finish tool
-        self.tools = list(tools) + [self.finish_tool]
+        self.tools = [*list(tools), self.finish_tool]
 
         # Create system prompt
         self.system_prompt = self._create_system_prompt()
@@ -155,8 +148,8 @@ Operating mode (persistence):
 - Resolve ambiguity by making reasonable assumptions and record them in `metadata.notes`.
 - Prefer tool calls and concrete actions over clarifying questions.
 
-Tool preambles:
-- First assistant message: restate the objective in one sentence and list a 1–3 step plan.
+        Tool preambles:
+        - First assistant message: restate the objective in one sentence and list a 1-3 step plan.
 - Before each tool call, add a one-sentence rationale describing what and why.
 - After tool results, update the plan only if it materially changes.
 
@@ -172,7 +165,7 @@ Safety and privacy:
 - Prefer deterministic, structured outputs over prose.
 """
 
-    async def execute(self) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
+    async def execute(self) -> AsyncGenerator[Chunk | ToolCall, None]:
         """Execute the task and yield progress updates."""
 
         logger.debug(f"Starting agent execution: {self.objective}")
@@ -276,7 +269,7 @@ Safety and privacy:
         if not self.completed:
             await self._handle_max_iterations()
 
-    async def _handle_tool_call(self, tool_call: ToolCall) -> Dict[str, Any]:
+    async def _handle_tool_call(self, tool_call: ToolCall) -> dict[str, Any]:
         """Handle execution of a tool call."""
         # Find the tool
         tool = None
@@ -323,7 +316,7 @@ Safety and privacy:
         """Get the final result of the subtask."""
         return self.result
 
-    def get_metadata(self) -> Optional[Dict[str, Any]]:
+    def get_metadata(self) -> dict[str, Any] | None:
         """Get the metadata for the result."""
         return self.metadata
 

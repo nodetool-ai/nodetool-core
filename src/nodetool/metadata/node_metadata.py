@@ -1,20 +1,21 @@
-import traceback
-from typing import Any, List
-import json
 import importlib
-import pkgutil
 import inspect
-from nodetool.config.logging_config import get_logger
-from nodetool.types.model import UnifiedModel
-from pydantic import BaseModel, Field, ConfigDict
-from nodetool.packages.types import AssetInfo
-from nodetool.workflows.property import Property
-from nodetool.metadata.types import OutputSlot
+import json
+import pkgutil
+import traceback
 from enum import Enum
+from typing import Any, List
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import OutputSlot
+from nodetool.packages.types import AssetInfo
+from nodetool.types.model import UnifiedModel
 from nodetool.workflows.base_node import (
     BaseNode,
 )
-
+from nodetool.workflows.property import Property
 
 logger = get_logger(__name__)
 
@@ -123,7 +124,7 @@ class EnumEncoder(json.JSONEncoder):
                 return ""
             return super().default(obj)
         except TypeError as e:
-            raise TypeError(f"Error encoding {obj}: {e}")
+            raise TypeError(f"Error encoding {obj}: {e}") from e
 
 
 def get_submodules(package_name: str, verbose: bool = False) -> List[str]:

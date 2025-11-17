@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
+
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -123,7 +124,7 @@ class ServiceSpec(BaseModel):
     environment: Optional[Dict[str, str]] = Field(
         default=None, description="Environment variables for the service"
     )
-    volumes: Optional[Dict[str, Union[str, Dict[str, str]]]] = Field(
+    volumes: Optional[Dict[str, str | Dict[str, str]]] = Field(
         default=None,
         description="Volume mounts (host -> container or detailed dict with bind/mode)",
     )
@@ -466,7 +467,7 @@ class DeploymentConfig(BaseModel):
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
     deployments: Dict[
-        str, Union[SelfHostedDeployment, RunPodDeployment, GCPDeployment]
+        str, SelfHostedDeployment | RunPodDeployment | GCPDeployment
     ] = {}
 
     @field_validator("deployments")
@@ -516,7 +517,7 @@ def load_deployment_config() -> DeploymentConfig:
             f"Run 'nodetool deploy init' to create it."
         )
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         data = yaml.safe_load(f)
 
     if not data:

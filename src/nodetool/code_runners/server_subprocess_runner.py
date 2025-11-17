@@ -25,24 +25,25 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-from nodetool.config.logging_config import get_logger
 import os
-from pathlib import Path
 import shlex
 import socket
 import stat
 import subprocess
 import threading
 import time
+import zipfile
+from contextlib import suppress
+from pathlib import Path
 from typing import Any, AsyncGenerator, AsyncIterator
 from urllib.parse import urlparse
 from urllib.request import urlopen
-import zipfile
 
+from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_system_data_path
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import LogUpdate
-from nodetool.config.settings import get_system_data_path
 
 
 def _safe_download_to(path: Path, url: str) -> None:
@@ -289,14 +290,10 @@ class ServerSubprocessRunner:
             self._stopped = True
             proc = self._active_proc
         if proc is not None:
-            try:
+            with suppress(Exception):
                 proc.terminate()
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 _wait_kill(proc, 2.0)
-            except Exception:
-                pass
 
     # ---- Worker implementation ----
     def _run_worker(
@@ -399,31 +396,24 @@ class ServerSubprocessRunner:
                 queue.put({"type": "final", "ok": True}), loop
             )
         except Exception as e:
-            try:
+            with suppress(Exception):
                 self._logger.exception(
                     "subprocess runner error for cmd=%s: %s", command_vec, e
                 )
-            except Exception:
-                pass
             asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "final", "ok": False, "error": str(e)}), loop
             )
         finally:
-            try:
+            with suppress(Exception):
                 if cancel_timer is not None:
-                    try:
+                    with suppress(Exception):
                         cancel_timer.cancel()
-                    except Exception:
-                        pass
                 if proc is not None:
-                    try:
+                    with suppress(Exception):
                         if proc.poll() is None:
                             _kill(proc)
-                    except Exception:
-                        pass
-            finally:
-                with self._lock:
-                    self._active_proc = None
+            with self._lock:
+                self._active_proc = None
 
     def _reader(
         self,
@@ -458,10 +448,8 @@ class ServerSubprocessRunner:
                 b = data.encode("utf-8")
                 await asyncio.to_thread(w.write, b)
                 await asyncio.to_thread(w.flush)
-            try:
+            with suppress(Exception):
                 await asyncio.to_thread(w.close)
-            except Exception:
-                pass
         except Exception as e:
             self._logger.debug("stdin feeder ended: %s", e)
 
@@ -516,30 +504,24 @@ def _wait_for_server_ready(
 
 
 def _kill(proc: subprocess.Popen[bytes]) -> None:
-    try:
+    with suppress(Exception):
         proc.terminate()
-    except Exception:
-        pass
     _wait_kill(proc, 3.0)
 
 
 def _wait_kill(proc: subprocess.Popen[bytes], grace: float) -> None:
-    try:
+    with suppress(Exception):
         proc.wait(timeout=max(0.1, grace))
         return
-    except Exception:
-        pass
-    try:
+    with suppress(Exception):
         proc.kill()
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":
     # Lightweight demo entrypoint to manually test the ZIP download + extraction
     # and server readiness using llama.cpp's prebuilt archive.
-    import asyncio as _asyncio
     import argparse as _argparse
+    import asyncio as _asyncio
     import sys as _sys
 
     class _DummyContext:
@@ -633,9 +615,7 @@ if __name__ == "__main__":
                     print(value, end="", file=_sys.stderr)
         except KeyboardInterrupt:
             print("\nStopping...")
-            try:
+            with suppress(Exception):
                 runner.stop()
-            except Exception:
-                pass
 
     _asyncio.run(_demo())

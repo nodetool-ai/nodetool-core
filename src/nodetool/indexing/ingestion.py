@@ -6,14 +6,14 @@ Extracted from nodetool.api.collection to allow reuse in the lightweight server.
 
 from __future__ import annotations
 
-from typing import List, Tuple, Dict
 import asyncio
+from contextlib import suppress
+from typing import Any, Dict, List, Tuple
 
 import chromadb
-from typing import Any
-from markitdown import MarkItDown
 import pymupdf
 import pymupdf4llm
+from markitdown import MarkItDown
 
 
 class Document:
@@ -139,10 +139,8 @@ async def default_ingestion_workflow_async(
             try:
                 return pymupdf4llm.to_markdown(doc)
             finally:
-                try:
+                with suppress(Exception):
                     doc.close()
-                except Exception:
-                    pass
 
         md_text = await asyncio.to_thread(pdf_to_markdown, file_path)
         documents = [Document(text=md_text, doc_id=file_path)]

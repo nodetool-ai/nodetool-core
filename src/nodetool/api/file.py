@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
-import os
 import asyncio
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime, timezone
 from typing import List
+
+import aiofiles
+import aiofiles.os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import aiofiles
-import aiofiles.os
+
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
 
@@ -45,17 +47,19 @@ async def get_file_info(path: str) -> FileInfo:
             size=stat.st_size,
             is_dir=is_dir,
             modified_at=datetime.fromtimestamp(
-                stat.st_mtime, tz=timezone.utc
+                stat.st_mtime, tz=UTC
             ).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
-        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        raise HTTPException(
+            status_code=404, detail=f"File not found: {path}"
+        ) from e
 
 
 @router.get("/list")
 async def list_files(
-    path: str = ".", user: str = Depends(current_user)
+    path: str = ".", __user: str = Depends(current_user)
 ) -> List[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
@@ -86,10 +90,10 @@ async def list_files(
                 )
 
                 files: List[FileInfo] = []
-                now_iso = datetime.now(timezone.utc).isoformat()
+                now_iso = datetime.now(UTC).isoformat()
                 for root, mtime in zip(existing_roots, mtimes):
                     modified = (
-                        datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                        datetime.fromtimestamp(mtime, tz=UTC).isoformat()
                         if mtime is not None
                         else now_iso
                     )
@@ -138,11 +142,11 @@ async def list_files(
         raise
     except Exception as e:
         log.error(f"Error listing files in {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/info")
-async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
+async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
     """
     Get information about a specific file or directory
     """
@@ -156,11 +160,11 @@ async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
         raise
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/download/{path:path}")
-async def download_file(path: str, user: str = Depends(current_user)):
+async def download_file(path: str, __user: str = Depends(current_user)):
     """
     Download a file from the specified path
     """
@@ -189,11 +193,13 @@ async def download_file(path: str, user: str = Depends(current_user)):
         raise
     except Exception as e:
         log.error(f"Error downloading file {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/upload/{path:path}")
-async def upload_file(path: str, file: UploadFile, user: str = Depends(current_user)):
+async def upload_file(
+    path: str, file: UploadFile, __user: str = Depends(current_user)
+):
     """
     Upload a file to the specified path
     """
@@ -212,7 +218,7 @@ async def upload_file(path: str, file: UploadFile, user: str = Depends(current_u
         raise
     except Exception as e:
         log.error(f"Error uploading file to {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Workspace-specific endpoints
@@ -267,21 +273,21 @@ async def get_workspace_info_from_path(
             size=total_size,
             file_count=file_count,
             created_at=datetime.fromtimestamp(
-                stat.st_ctime, tz=timezone.utc
+                stat.st_ctime, tz=UTC
             ).isoformat(),
             modified_at=datetime.fromtimestamp(
-                stat.st_mtime, tz=timezone.utc
+                stat.st_mtime, tz=UTC
             ).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting workspace info for {workspace_path}: {str(e)}")
         raise HTTPException(
             status_code=404, detail=f"Workspace not found: {workspace_id}"
-        )
+        ) from e
 
 
 @router.get("/workspaces")
-async def list_workspaces(user: str = Depends(current_user)) -> List[WorkspaceInfo]:
+async def list_workspaces(__user: str = Depends(current_user)) -> List[WorkspaceInfo]:
     """
     List all workspaces in ~/.nodetool-workspaces
     """
@@ -318,12 +324,12 @@ async def list_workspaces(user: str = Depends(current_user)) -> List[WorkspaceIn
         return workspaces
     except Exception as e:
         log.error(f"Error listing workspaces: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/workspaces/{workspace_id}/info")
 async def get_workspace_info(
-    workspace_id: str, user: str = Depends(current_user)
+    workspace_id: str, __user: str = Depends(current_user)
 ) -> WorkspaceInfo:
     """
     Get information about a specific workspace
@@ -343,12 +349,12 @@ async def get_workspace_info(
         raise
     except Exception as e:
         log.error(f"Error getting workspace info for {workspace_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/workspaces/{workspace_id}/list")
 async def list_workspace_files(
-    workspace_id: str, path: str = ".", user: str = Depends(current_user)
+    workspace_id: str, path: str = ".", __user: str = Depends(current_user)
 ) -> List[FileInfo]:
     """
     List files and directories in a workspace
@@ -358,10 +364,9 @@ async def list_workspace_files(
         workspace_path = os.path.join(workspace_root, workspace_id)
 
         # Construct full path within workspace
-        if path == ".":
-            full_path = workspace_path
-        else:
-            full_path = os.path.join(workspace_path, path)
+        full_path = workspace_path if path == "." else os.path.join(
+            workspace_path, path
+        )
 
         resolved_path = os.path.realpath(full_path)
 
@@ -394,12 +399,12 @@ async def list_workspace_files(
         raise
     except Exception as e:
         log.error(f"Error listing workspace files for {workspace_id}/{path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/workspaces/{workspace_id}/download/{file_path:path}")
 async def download_workspace_file(
-    workspace_id: str, file_path: str, user: str = Depends(current_user)
+    workspace_id: str, file_path: str, __user: str = Depends(current_user)
 ):
     """
     Download a file from a workspace
@@ -446,7 +451,7 @@ async def download_workspace_file(
         raise
     except Exception as e:
         log.error(f"Error downloading file {workspace_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/workspaces/{workspace_id}/upload/{file_path:path}")
@@ -454,7 +459,7 @@ async def upload_workspace_file(
     workspace_id: str,
     file_path: str,
     file: UploadFile,
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ):
     """
     Upload a file to a workspace
@@ -489,4 +494,4 @@ async def upload_workspace_file(
         raise
     except Exception as e:
         log.error(f"Error uploading file to {workspace_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

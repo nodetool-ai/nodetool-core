@@ -15,6 +15,7 @@ Key Features:
 import os
 import sys
 from typing import Optional
+
 from rich.console import Console
 
 console = Console()

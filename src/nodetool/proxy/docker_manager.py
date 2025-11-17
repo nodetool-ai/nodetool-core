@@ -7,11 +7,12 @@ Handles starting, stopping, and monitoring containers with async-friendly interf
 import asyncio
 import logging
 import time
+from contextlib import suppress
 from typing import Dict, Optional, Tuple
 
-import docker
-from docker.errors import NotFound, APIError
+from docker.errors import APIError, NotFound
 
+import docker
 from nodetool.proxy.config import ServiceConfig
 
 log = logging.getLogger(__name__)
@@ -86,10 +87,8 @@ class DockerManager:
         """Shutdown the Docker manager and clean up resources."""
         if self.idle_task:
             self.idle_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self.idle_task
-            except asyncio.CancelledError:
-                pass
         log.info("Docker manager shutdown")
 
     def register_service(self, name: str) -> ServiceRuntime:
@@ -175,7 +174,9 @@ class DockerManager:
                     log.info(f"Started container: {name}")
                 except APIError as e:
                     log.error(f"Failed to create/start container {name}: {e}")
-                    raise RuntimeError(f"Failed to start container {name}: {e}")
+                    raise RuntimeError(
+                        f"Failed to start container {name}: {e}"
+                    ) from e
             else:
                 container.reload()
                 if container.status != "running":
@@ -184,7 +185,9 @@ class DockerManager:
                         log.info(f"Restarted container: {name}")
                     except APIError as e:
                         log.error(f"Failed to restart container {name}: {e}")
-                        raise RuntimeError(f"Failed to restart container {name}: {e}")
+                        raise RuntimeError(
+                            f"Failed to restart container {name}: {e}"
+                        ) from e
 
             # Ensure container is attached to the managed network when configured
             if self.network_name:
@@ -261,7 +264,7 @@ class DockerManager:
                 key = f"{internal_port}/tcp"
 
                 # If port is published to host, test connectivity
-                if key in port_map and port_map[key]:
+                if port_map.get(key):
                     host_port = int(port_map[key][0]["HostPort"])
 
                     # Try to connect to the port

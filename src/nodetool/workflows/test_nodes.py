@@ -1,7 +1,8 @@
+from pydantic import Field
+
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_workflow import log
-from pydantic import Field
 
 
 class NumberInput(InputNode):

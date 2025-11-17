@@ -1,5 +1,12 @@
 from datetime import datetime
 from typing import Any, Optional
+
+from nodetool.models.base_model import (
+    DBField,
+    DBIndex,
+    DBModel,
+    create_time_ordered_uuid,
+)
 from nodetool.models.condition_builder import (
     ConditionBuilder,
     ConditionGroup,
@@ -7,16 +14,8 @@ from nodetool.models.condition_builder import (
     LogicalOperator,
 )
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.graph import Graph
 from nodetool.workflows.base_node import BaseNode
-
-from nodetool.models.base_model import (
-    DBModel,
-    DBField,
-    DBIndex,
-    create_time_ordered_uuid,
-)
-
+from nodetool.workflows.graph import Graph
 
 """
 Defines the Workflow database model.
@@ -70,11 +69,11 @@ class Workflow(DBModel):
             created_at=data.get("created_at", datetime.now()),
             updated_at=data.get("updated_at", datetime.now()),
             name=data.get("name", ""),
-            tool_name=data.get("tool_name", None),
+            tool_name=data.get("tool_name"),
             package_name=data.get("package_name", ""),
             tags=data.get("tags", []),
             description=data.get("description", ""),
-            thumbnail=data.get("thumbnail", None),
+            thumbnail=data.get("thumbnail"),
             settings=data.get("settings", {}),
             graph=data.get(
                 "graph",
@@ -83,7 +82,7 @@ class Workflow(DBModel):
                     "edges": [],
                 },
             ),
-            run_mode=data.get("run_mode", None),
+            run_mode=data.get("run_mode"),
         )
 
     @classmethod

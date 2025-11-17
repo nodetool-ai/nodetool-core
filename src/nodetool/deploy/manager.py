@@ -10,20 +10,20 @@ different platforms (self-hosted, RunPod, GCP). It handles:
 - Validation and error handling
 """
 
-from typing import Dict, Any, Optional, List, Union
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 from nodetool.config.deployment import (
-    SelfHostedDeployment,
-    RunPodDeployment,
     GCPDeployment,
+    RunPodDeployment,
+    SelfHostedDeployment,
     load_deployment_config,
 )
-from nodetool.deploy.state import StateManager
-from nodetool.deploy.self_hosted import SelfHostedDeployer
-from nodetool.deploy.runpod import RunPodDeployer
 from nodetool.deploy.gcp import GCPDeployer
+from nodetool.deploy.runpod import RunPodDeployer
+from nodetool.deploy.self_hosted import SelfHostedDeployer
+from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class DeploymentManager:
 
     def get_deployment(
         self, name: str
-    ) -> Union[SelfHostedDeployment, RunPodDeployment, GCPDeployment]:
+    ) -> SelfHostedDeployment | RunPodDeployment | GCPDeployment:
         """
         Get deployment configuration by name.
 

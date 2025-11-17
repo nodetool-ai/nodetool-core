@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Union
 
 
-def wrap_primitive_types(value: Any) -> Union[Dict[str, Any], List[Any], Any]:
+def wrap_primitive_types(value: Any) -> Dict[str, Any] | List[Any] | Any:
     if isinstance(value, str):
         return {"type": "string", "value": value}
     elif isinstance(value, int):

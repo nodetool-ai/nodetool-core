@@ -6,7 +6,8 @@ race conditions during schema initialization.
 """
 
 import asyncio
-from typing import Type, Set
+from typing import Set, Type
+
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
@@ -22,13 +23,13 @@ def get_all_models() -> list[Type]:
     Returns:
         List of model classes in dependency order
     """
-    from nodetool.models.workflow import Workflow
     from nodetool.models.asset import Asset
-    from nodetool.models.thread import Thread
-    from nodetool.models.message import Message
     from nodetool.models.job import Job
+    from nodetool.models.message import Message
     from nodetool.models.prediction import Prediction
     from nodetool.models.secret import Secret
+    from nodetool.models.thread import Thread
+    from nodetool.models.workflow import Workflow
 
     # Order matters: migrations run in this order to handle foreign keys
     return [

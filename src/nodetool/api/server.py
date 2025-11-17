@@ -1,28 +1,31 @@
-import os
 import asyncio
+import logging
+import mimetypes
+import os
 import platform
 import sys
-import logging
-from typing import Any, List
 from contextlib import asynccontextmanager
+from typing import Any, List
+
+import httpx
+from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from nodetool.config.environment import Environment
+from uvicorn import run as uvicorn
 
+from nodetool.api.middleware import ResourceScopeMiddleware
+from nodetool.api.openai import create_openai_compatible_router
+from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import configure_logging, get_logger
 from nodetool.integrations.huggingface.hf_websocket import (
     huggingface_download_endpoint,
 )
-from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.integrations.websocket.terminal_runner import TerminalWebSocketRunner
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
-from nodetool.api.middleware import ResourceScopeMiddleware
-
-from fastapi import APIRouter, FastAPI, Request, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
-from uvicorn import run as uvicorn
-from nodetool.config.logging_config import configure_logging, get_logger
-
+from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
+from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 from nodetool.security.http_auth import create_http_auth_middleware
@@ -30,24 +33,19 @@ from nodetool.security.http_auth import create_http_auth_middleware
 from . import (
     admin_secrets,
     asset,
-    font,
     collection,
-    file,
     debug,
-    message,
-    node,
-    storage,
-    workflow,
-    model,
-    settings,
-    thread,
+    file,
+    font,
     job,
+    message,
+    model,
+    node,
+    settings,
+    storage,
+    thread,
+    workflow,
 )
-import mimetypes
-
-from nodetool.integrations.websocket.websocket_updates import websocket_updates
-from nodetool.api.openai import create_openai_compatible_router
-import httpx
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 if platform.system() == "Windows" and _windows_policy is not None:
@@ -282,7 +280,7 @@ def create_app(
     s3_endpoint = os.environ.get("S3_ENDPOINT_URL")
 
     if supabase_url:
-        log.info(f"Asset storage: Supabase")
+        log.info("Asset storage: Supabase")
         log.debug(f"  - Asset bucket: {asset_bucket}")
         if asset_temp_bucket:
             log.debug(f"  - Temp bucket: {asset_temp_bucket}")
@@ -297,7 +295,7 @@ def create_app(
         if asset_domain:
             log.debug(f"  - Domain: {asset_domain}")
     else:
-        log.info(f"Asset storage: File-based")
+        log.info("Asset storage: File-based")
         log.debug(f"  - Asset bucket: {asset_bucket}")
 
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
@@ -561,7 +559,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
 
     # Create health check filter instance
     health_filter = create_health_check_filter()
-    
+
     uvicorn_log_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -597,7 +595,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     # Apply filter after uvicorn configures logging using a short delay
     import threading
     import time
-    
+
     def apply_health_filter():
         """Apply health check filter after uvicorn configures logging."""
         time.sleep(0.2)  # Give uvicorn time to configure logging
@@ -608,7 +606,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         )
         if not filter_exists:
             uvicorn_access_logger.addFilter(health_filter)
-    
+
     filter_thread = threading.Thread(target=apply_health_filter, daemon=True)
     filter_thread.start()
 

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import signal
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -53,7 +54,7 @@ class TerminalWebSocketRunner:
         to properly disable the feature via monkeypatch.
         """
         import os  # lazy import to avoid cycles
-        
+
         value = os.environ.get("NODETOOL_ENABLE_TERMINAL_WS", "0")
         return value not in ("", "0", "false", "False", "no", "NO")
 
@@ -77,7 +78,7 @@ class TerminalWebSocketRunner:
                     stderr=asyncio.subprocess.STDOUT,
                     env=env,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.error("Failed to start Windows terminal session", exc_info=exc)
                 return False
             log.info(
@@ -105,7 +106,7 @@ class TerminalWebSocketRunner:
                     stderr=asyncio.subprocess.STDOUT,
                     env=env,
                 )
-            except Exception as pipe_exc:  # noqa: BLE001
+            except Exception as pipe_exc:
                 log.error("Failed to start pipe-based shell", exc_info=pipe_exc)
                 return False
             log.info(
@@ -127,7 +128,7 @@ class TerminalWebSocketRunner:
                 env=env,
                 start_new_session=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.error("Failed to start PTY shell session", exc_info=exc)
             os.close(master_fd)
             os.close(slave_fd)
@@ -207,7 +208,7 @@ class TerminalWebSocketRunner:
         while True:
             try:
                 message = await self.websocket.receive()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.debug(f"WebSocket receive failed: {exc}")
                 break
 
@@ -219,14 +220,14 @@ class TerminalWebSocketRunner:
                 try:
                     data = msgpack.unpackb(message["bytes"])
                     self.mode = WebSocketMode.BINARY
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning(f"Failed to unpack msgpack message: {exc}")
                     continue
             elif "text" in message and message["text"] is not None:
                 try:
                     data = json.loads(message["text"])
                     self.mode = WebSocketMode.TEXT
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning(f"Failed to decode JSON message: {exc}")
                     continue
 
@@ -253,7 +254,7 @@ class TerminalWebSocketRunner:
         if self.master_fd is not None:
             try:
                 await asyncio.to_thread(os.write, self.master_fd, data)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.debug(f"Failed to write to PTY: {exc}")
             return
 
@@ -263,7 +264,7 @@ class TerminalWebSocketRunner:
         try:
             stdin.write(data)
             await stdin.drain()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.debug(f"Failed to write to stdin: {exc}")
 
     async def _handle_resize(self, cols: int, rows: int) -> None:
@@ -286,7 +287,7 @@ class TerminalWebSocketRunner:
 
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.debug(f"Failed to resize PTY: {exc}")
 
     async def _send_message(self, payload: dict[str, Any]) -> None:
@@ -300,15 +301,13 @@ class TerminalWebSocketRunner:
                 await self.websocket.send_bytes(packed)
             else:
                 await self.websocket.send_text(json.dumps(payload))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.debug(f"Failed to send terminal message: {exc}")
 
     async def _safe_close(self, code: int, reason: str) -> None:
         if self.websocket and self.websocket.client_state != WebSocketState.DISCONNECTED:
-            try:
+            with suppress(Exception):
                 await self.websocket.close(code=code, reason=reason)
-            except Exception:
-                pass
 
     async def disconnect(self) -> None:
         if self.receive_task and not self.receive_task.done():
@@ -320,23 +319,18 @@ class TerminalWebSocketRunner:
         self._last_resize = None
 
         if self.process and self.process.returncode is None:
-            try:
+            with suppress(Exception):
                 if os.name == "nt":
                     self.process.terminate()
                 else:
                     self.process.send_signal(signal.SIGTERM)
                 await asyncio.wait_for(self.process.wait(), timeout=2)
-            except Exception:
-                try:
-                    self.process.kill()
-                except Exception:
-                    pass
+            with suppress(Exception):
+                self.process.kill()
 
         if self.master_fd is not None:
-            try:
+            with suppress(Exception):
                 os.close(self.master_fd)
-            except Exception:
-                pass
             self.master_fd = None
 
         await self._safe_close(code=1000, reason="Terminal session closed")

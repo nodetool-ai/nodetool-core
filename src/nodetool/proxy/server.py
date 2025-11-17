@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse, RedirectResponse, Response
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
 
 from nodetool.proxy.config import ProxyConfig, ServiceConfig
 from nodetool.proxy.docker_manager import DockerManager
@@ -203,7 +203,9 @@ class AsyncReverseProxy:
 
         except httpx.RequestError as e:
             log.error(f"Upstream error for {incoming_path}: {e}")
-            raise HTTPException(status_code=502, detail=f"Upstream error: {e!s}")
+            raise HTTPException(
+                status_code=502, detail=f"Upstream error: {e!s}"
+            ) from e
 
     async def handle_status(self) -> StreamingResponse:
         """
@@ -228,7 +230,7 @@ class AsyncReverseProxy:
                 internal_key = f"{ServiceConfig.INTERNAL_PORT}/tcp"
                 host_port = None
 
-                if internal_key in port_map and port_map[internal_key]:
+                if port_map.get(internal_key):
                     host_port = int(port_map[internal_key][0]["HostPort"])
                 elif self.config.global_.connect_mode == "docker_dns":
                     host_port = ServiceConfig.INTERNAL_PORT
@@ -281,7 +283,7 @@ class AsyncReverseProxy:
                         yield chunk
 
             return StreamingResponse(stream_file(), media_type="text/plain")
-        except IOError as e:
+        except OSError as e:
             log.error(f"Failed to read ACME challenge {token}: {e}")
             return PlainTextResponse("Error reading file", status_code=500)
 

@@ -175,7 +175,7 @@ def image_ref_to_base64_jpeg(
         mime, data = fetch_uri_bytes_and_mime_sync(uri)
     except Exception as e:
         if uri.startswith("http://") or uri.startswith("https://"):
-            raise ValueError(f"Failed to download image: {e}")
+            raise ValueError(f"Failed to download image: {e}") from e
         raise
     # Accept only image-like content; attempt conversion regardless of mime
     return image_data_to_base64_jpeg(data, max_size, quality)

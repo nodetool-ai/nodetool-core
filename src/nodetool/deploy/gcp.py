@@ -8,19 +8,21 @@ This module handles deployment to Google Cloud Run, including:
 - IAM permission setup
 """
 
-from typing import Dict, Any, Optional
 import logging
+from typing import Any, Dict, Optional
 
 from nodetool.config.deployment import (
-    GCPDeployment,
     DeploymentStatus,
+    GCPDeployment,
 )
-from nodetool.deploy.state import StateManager
 from nodetool.deploy.deploy_to_gcp import (
-    deploy_to_gcp as legacy_deploy_to_gcp,
     delete_gcp_service,
     list_gcp_services,
 )
+from nodetool.deploy.deploy_to_gcp import (
+    deploy_to_gcp as legacy_deploy_to_gcp,
+)
+from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +278,7 @@ class GCPDeployer:
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to fetch logs: {e.stderr}")
+            raise RuntimeError(f"Failed to fetch logs: {e.stderr}") from e
 
     def destroy(self) -> Dict[str, Any]:
         """

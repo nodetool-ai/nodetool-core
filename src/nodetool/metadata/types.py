@@ -1,17 +1,17 @@
-from datetime import date, datetime, timedelta, timezone
-from enum import Enum
+import base64
 import enum
+from datetime import UTC, date, datetime, timedelta, timezone
+from enum import Enum
+from pathlib import Path
 from types import NoneType
+from typing import Any, Dict, List, Literal, Optional, Type, Union
+
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Literal, Optional, Type, Union
-import base64
-from pathlib import Path
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
-
 
 #######################
 # Type Name Mappings
@@ -163,7 +163,7 @@ class Datetime(BaseType):
             tzinfo=(
                 timezone(timedelta(seconds=self.utc_offset), self.tzinfo)
                 if self.utc_offset
-                else timezone.utc
+                else UTC
             ),
         )
 

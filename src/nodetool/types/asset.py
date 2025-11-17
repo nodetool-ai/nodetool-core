@@ -1,5 +1,7 @@
 from typing import Any, Optional
-from pydantic import BaseModel, Field as PydanticField
+
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
 
 from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
 

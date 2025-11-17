@@ -4,30 +4,31 @@ Help message processor module.
 This module provides the processor for help mode messages.
 """
 
-from nodetool.config.logging_config import get_logger
 import asyncio
 import json
 from typing import List
+
 import httpx
-from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from pydantic import BaseModel
 
+from nodetool.agents.tools.base import Tool
+from nodetool.agents.tools.help_tools import (
+    SearchExamplesTool,
+    SearchNodesTool,
+)
+from nodetool.agents.tools.tool_registry import resolve_tool_by_name
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
     ToolCall,
 )
+from nodetool.providers.base import BaseProvider
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     ToolCallUpdate,
 )
-from nodetool.agents.tools.help_tools import (
-    SearchNodesTool,
-    SearchExamplesTool,
-)
 
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.providers.base import BaseProvider
-from nodetool.agents.tools.base import Tool
 from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
@@ -289,8 +290,10 @@ class UIToolProxy(Tool):
                 error_msg = payload.get("error", "Unknown error")
                 raise ValueError(f"Frontend tool execution failed: {error_msg}")
 
-        except asyncio.TimeoutError:
-            raise ValueError(f"Frontend tool {self.name} timed out after 60 seconds")
+        except TimeoutError as e:
+            raise ValueError(
+                f"Frontend tool {self.name} timed out after 60 seconds"
+            ) from e
 
     def user_message(self, args: dict) -> str:
         """Generate user-friendly message for tool execution."""
@@ -439,7 +442,7 @@ class HelpMessageProcessor(MessageProcessor):
                                     timeout=60.0,
                                 )
 
-                            except asyncio.TimeoutError:
+                            except TimeoutError:
                                 result = {
                                     "ok": False,
                                     "error": f"Frontend tool {chunk.name} timed out after 60 seconds",

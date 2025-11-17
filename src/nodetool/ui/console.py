@@ -4,21 +4,21 @@ UI Console for displaying Agent progress using Rich.
 
 import json
 import time
-from typing import List, Optional, Union, TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
+from rich.columns import Columns
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
+from rich.rule import Rule
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
-from rich.syntax import Syntax
-from rich.columns import Columns
-from rich.rule import Rule
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
-    from nodetool.metadata.types import Task, ToolCall, SubTask, LogEntry
+    from nodetool.metadata.types import LogEntry, SubTask, Task, ToolCall
 
 
 class AgentConsole:
@@ -40,14 +40,14 @@ class AgentConsole:
         self.current_tree: Optional[Tree] = None
         self.phase_nodes: Dict[str, Any] = {}
         self.subtask_nodes: Dict[str, Any] = {}
-        self.current_subtask: Optional["SubTask"] = None
-        self.task: Optional["Task"] = None
+        self.current_subtask: Optional[SubTask] = None
+        self.task: Optional[Task] = None
 
         # Phase-specific logging storage
         self.phase_logs: Dict[str, List[Dict[str, Any]]] = {}
         self.current_phase: Optional[str] = None
 
-    def start_live(self, initial_content: Union[Table, Tree]) -> None:
+    def start_live(self, initial_content: Table | Tree) -> None:
         """
         Start the Rich Live display with initial content (table or tree).
 
@@ -84,7 +84,7 @@ class AgentConsole:
         self.current_phase = None
         self.task = None
 
-    def update_live(self, new_content: Union[Table, Tree]) -> None:
+    def update_live(self, new_content: Table | Tree) -> None:
         """
         Update the Rich Live display with new content.
 
@@ -119,7 +119,7 @@ class AgentConsole:
         self,
         phase_name: str,
         status: str,
-        content: Union[str, Text],
+        content: str | Text,
         is_error: bool = False,
     ) -> None:
         """

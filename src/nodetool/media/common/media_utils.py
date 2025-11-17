@@ -1,13 +1,14 @@
+import asyncio
+import os
 import subprocess
+import tempfile
+from io import BytesIO
 from typing import IO, Union
+
+import cv2
+import numpy as np
 import PIL.Image
 import pydub
-from io import BytesIO
-import tempfile
-import numpy as np
-import asyncio
-import cv2
-import os
 
 """
 Media Utilities Module
@@ -136,7 +137,7 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
         os.remove(temp_file_path)  # Ensure the temporary file is deleted
 
 
-async def get_video_duration(input_io: BytesIO) -> Union[float, None]:
+async def get_video_duration(input_io: BytesIO) -> float | None:
     """
     Get the duration of a media file using ffprobe.
 

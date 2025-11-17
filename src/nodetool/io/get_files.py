@@ -43,6 +43,6 @@ def get_content(
         for file in get_files(path, extensions):
             content += "\n\n"
             content += f"## {file}\n\n"
-            with open(file, "r", encoding="utf-8") as f:
+            with open(file, encoding="utf-8") as f:
                 content += f.read()
     return content

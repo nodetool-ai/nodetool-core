@@ -6,16 +6,17 @@ with proper cleanup and connection pooling.
 """
 
 import contextvars
-from typing import Any, Optional, Type, Protocol
+from typing import Any, Optional, Protocol, Type
 
+import httpx
+from supabase import AsyncClient
+
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.storage.abstract_storage import AbstractStorage
 from nodetool.storage.memcache_node_cache import AbstractNodeCache
 from nodetool.storage.memory_uri_cache import MemoryUriCache
-from nodetool.models.database_adapter import DatabaseAdapter
-from supabase import AsyncClient
-from nodetool.config.logging_config import get_logger
-from nodetool.config.environment import Environment
-import httpx
 
 log = get_logger(__name__)
 
@@ -239,7 +240,7 @@ class ResourceScope:
                     log.debug("Closed HTTP client")
                 except Exception as e:
                     log.warning(f"Error closing HTTP client: {e}")
-            
+
             # Ensure storage and cache references are released
             # Note: auth providers are class-level singletons, not cleaned up per-scope
             self._asset_storage = None
@@ -291,8 +292,9 @@ class ResourceScope:
                 supabase_url = Environment.get_supabase_url()
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key:
-                    from nodetool.storage.supabase_storage import SupabaseStorage
                     from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                    from nodetool.storage.supabase_storage import SupabaseStorage
 
                     log.info("Using Supabase storage for asset storage")
                     client = SupabaseAsyncClient(supabase_url, supabase_key)
@@ -329,8 +331,9 @@ class ResourceScope:
         """
         Get the S3 service.
         """
-        from nodetool.storage.s3_storage import S3Storage
         import boto3
+
+        from nodetool.storage.s3_storage import S3Storage
 
         endpoint_url = Environment.get_s3_endpoint_url()
         access_key_id = Environment.get_s3_access_key_id()
@@ -363,8 +366,9 @@ class ResourceScope:
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key and Environment.get_asset_temp_bucket():
                     try:
-                        from nodetool.storage.supabase_storage import SupabaseStorage
                         from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                        from nodetool.storage.supabase_storage import SupabaseStorage
 
                         log.info("Using Supabase storage for temp storage")
                         client = SupabaseAsyncClient(supabase_url, supabase_key)
@@ -395,8 +399,9 @@ class ResourceScope:
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key and Environment.get_asset_temp_bucket():
                     try:
-                        from nodetool.storage.supabase_storage import SupabaseStorage
                         from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                        from nodetool.storage.supabase_storage import SupabaseStorage
 
                         log.info("Using Supabase storage for temp asset storage")
                         client = SupabaseAsyncClient(supabase_url, supabase_key)

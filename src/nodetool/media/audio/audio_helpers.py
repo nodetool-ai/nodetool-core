@@ -1,10 +1,10 @@
+from typing import List, cast
+
 import numpy as np
 import pydub
-from pydub import AudioSegment
 import pydub.effects
-from typing import List, cast
-from pydub.silence import detect_nonsilent
-from pydub.silence import split_on_silence
+from pydub import AudioSegment
+from pydub.silence import detect_nonsilent, split_on_silence
 
 
 def convert_to_float(audio_data: np.ndarray):
@@ -63,7 +63,7 @@ def resize_audio(audio: AudioSegment, duration: float) -> AudioSegment:
         AudioSegment: The resized audio segment.
     """
     if len(audio) > duration:
-        return cast(AudioSegment, audio[:duration])
+        return cast("AudioSegment", audio[:duration])
     elif len(audio) < duration:
         padding = AudioSegment.silent(duration=int(len(audio) - duration))
         return audio + padding
@@ -131,7 +131,7 @@ def remove_silence(
                 silence_duration * (1 - reduction_factor), min_silence_between_parts
             )
             silence_segment = audio[prev_end : prev_end + int(reduced_silence)]
-            silence_segment = cast(AudioSegment, silence_segment)
+            silence_segment = cast("AudioSegment", silence_segment)
 
             if len(result) > 0:
                 result = result.append(
@@ -142,7 +142,7 @@ def remove_silence(
 
         # Add the non-silent part
         non_silent_segment = audio[start:end]
-        non_silent_segment = cast(AudioSegment, non_silent_segment)
+        non_silent_segment = cast("AudioSegment", non_silent_segment)
         if len(result) > 0:
             result = result.append(
                 non_silent_segment, crossfade=min(crossfade, len(non_silent_segment))
@@ -159,7 +159,7 @@ def remove_silence(
             silence_duration * (1 - reduction_factor), min_silence_between_parts
         )
         final_silence = audio[prev_end : prev_end + int(reduced_silence)]
-        final_silence = cast(AudioSegment, final_silence)
+        final_silence = cast("AudioSegment", final_silence)
         result = result.append(
             final_silence, crossfade=min(crossfade, len(final_silence))
         )
@@ -180,7 +180,7 @@ def segment_audio(audio: AudioSegment) -> List[AudioSegment]:
     res = split_on_silence(
         audio, min_silence_len=500, silence_thresh=-32, keep_silence=100
     )
-    return [cast(AudioSegment, segment) for segment in res]
+    return [cast("AudioSegment", segment) for segment in res]
 
 
 def resample_audio(audio: AudioSegment, sample_rate: int) -> AudioSegment:

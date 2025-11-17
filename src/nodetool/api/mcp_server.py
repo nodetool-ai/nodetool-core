@@ -6,66 +6,68 @@ This module provides MCP (Model Context Protocol) server integration for NodeToo
 allowing AI assistants to interact with NodeTool workflows, nodes, and assets.
 """
 
-from fastmcp import FastMCP, Context
 import asyncio
+import base64
+import os
+from contextlib import suppress
+from dataclasses import asdict
+from io import BytesIO
 from typing import Any, Optional
-from nodetool.types.job import JobUpdate
-from nodetool.workflows.types import (
-    Error,
-    LogUpdate,
-    OutputUpdate,
-    PreviewUpdate,
-    SaveUpdate,
-    NodeUpdate,
-    NodeProgress,
-)
+
+from fastmcp import Context, FastMCP
+from huggingface_hub.constants import HF_HUB_CACHE
 from pydantic import BaseModel, Field
-from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema
-from nodetool.packages.registry import Registry
-from nodetool.config.logging_config import get_logger
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.email_tools import SearchEmailTool
+from nodetool.api.model import (
+    get_all_models,
+    get_language_models,
+    recommended_models,
+)
 from nodetool.chat.search_nodes import search_nodes as search_nodes_tool
-from nodetool.models.asset import Asset as AssetModel
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+    get_async_collection,
+)
+from nodetool.metadata.types import Provider
+from nodetool.ml.models.asr_models import get_all_asr_models as get_all_asr_models_func
+from nodetool.ml.models.image_models import (
+    get_all_image_models as get_all_image_models_func,
+)
+from nodetool.ml.models.tts_models import get_all_tts_models as get_all_tts_models_func
+from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.job import Job as JobModel
+from nodetool.models.message import Message as DBMessage
+from nodetool.models.thread import Thread
+from nodetool.models.workflow import Workflow as WorkflowModel
+from nodetool.packages.registry import Registry
+from nodetool.providers import get_provider
+from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.security.secret_helper import get_secret
+from nodetool.types.graph import Graph, get_input_schema, get_output_schema
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.api.model import (
-    get_all_models,
-    recommended_models,
-    get_language_models,
+from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.types import (
+    Chunk,
+    Error,
+    LogUpdate,
+    NodeProgress,
+    NodeUpdate,
+    OutputUpdate,
+    PreviewUpdate,
+    SaveUpdate,
 )
-from nodetool.metadata.types import Provider
-from nodetool.ml.models.image_models import (
-    get_all_image_models as get_all_image_models_func,
-)
-from nodetool.ml.models.tts_models import get_all_tts_models as get_all_tts_models_func
-from nodetool.ml.models.asr_models import get_all_asr_models as get_all_asr_models_func
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-    get_async_collection,
-)
-from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
-from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.models.thread import Thread
-from nodetool.models.message import Message as DBMessage
-from nodetool.providers import get_provider
-from nodetool.runtime.resources import require_scope
-from io import BytesIO
-import base64
-from dataclasses import asdict
-from nodetool.agents.agent import Agent
-from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.agents.tools.email_tools import SearchEmailTool
-from nodetool.workflows.types import Chunk
-from nodetool.security.secret_helper import get_secret
-from nodetool.runtime.resources import maybe_scope
-import os
 
 log = get_logger(__name__)
 
@@ -80,24 +82,23 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
         HF_TOKEN if available, None otherwise.
     """
     log.debug(f"get_hf_token (mcp_server): Looking up HF_TOKEN for user_id={user_id}")
-    
+
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
         log.debug(f"get_hf_token (mcp_server): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
         return token
-    
+
     # 2. Try to get from database if user_id is available
     if user_id is None:
         log.debug("get_hf_token (mcp_server): No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
-        try:
+        scope = None
+        with suppress(Exception):
             scope = maybe_scope()
             # Note: ResourceScope doesn't store user_id directly
             # In real usage, user_id would come from authentication context
-        except Exception:
-            pass
-    
+
     if user_id:
         log.debug(f"get_hf_token (mcp_server): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
@@ -111,7 +112,7 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             log.debug(f"get_hf_token (mcp_server): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
     else:
         log.debug("get_hf_token (mcp_server): No user_id available, skipping database lookup")
-    
+
     log.debug(f"get_hf_token (mcp_server): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
@@ -211,7 +212,7 @@ async def get_workflow(workflow_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def run_workflow_tool(
-    workflow_id: str, ctx: Context, params: dict[str, Any] = {}
+    workflow_id: str, ctx: Context, params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """
     Execute a NodeTool workflow with given parameters.
@@ -227,6 +228,7 @@ async def run_workflow_tool(
     if not workflow:
         raise ValueError(f"Workflow {workflow_id} not found")
 
+    params = params or {}
     # Create run request
     request = RunJobRequest(
         workflow_id=workflow_id,
@@ -237,6 +239,7 @@ async def run_workflow_tool(
     result = {}
     preview = {}
     save = {}
+    params = params or {}
     context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
     async for msg in run_workflow(request, context=context):
         if isinstance(msg, PreviewUpdate):
@@ -277,7 +280,7 @@ async def run_workflow_tool(
 
 @mcp.tool()
 async def run_graph(
-    graph: dict[str, Any], params: dict[str, Any] = {}
+    graph: dict[str, Any], params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """
     Execute a workflow graph directly without saving it as a workflow.
@@ -335,6 +338,7 @@ async def run_graph(
     )
 
     # Run workflow
+    params = params or {}
     result = {}
     context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
     async for msg in run_workflow(request, context=context):
@@ -531,7 +535,7 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
     # Check for cycles (DAG validation)
     def has_cycle():
         WHITE, GRAY, BLACK = 0, 1, 2
-        color = {node_id: WHITE for node_id in node_ids}
+        color = dict.fromkeys(node_ids, WHITE)
 
         def dfs(node_id):
             if color[node_id] == GRAY:
@@ -546,11 +550,7 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
             color[node_id] = BLACK
             return False
 
-        for node_id in node_ids:
-            if color[node_id] == WHITE:
-                if dfs(node_id):
-                    return True
-        return False
+        return any(color[node_id] == WHITE and dfs(node_id) for node_id in node_ids)
 
     if has_cycle():
         errors.append(
@@ -1437,7 +1437,7 @@ async def get_job_logs(
 @mcp.tool()
 async def start_background_job(
     workflow_id: str,
-    params: dict[str, Any] = {},
+    params: dict[str, Any] | None = None,
     auth_token: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -1631,15 +1631,18 @@ async def list_models(
                     pass
 
             # Fallback to checking id and repo_id if provider check didn't match
-            if not matched:
-                if provider.lower() in m.id.lower():
-                    matched = True
-                elif (
-                    hasattr(m, "repo_id")
-                    and m.repo_id
-                    and provider.lower() in m.repo_id.lower()
-                ):
-                    matched = True
+            if (
+                not matched
+                and (
+                    provider.lower() in m.id.lower()
+                    or (
+                        hasattr(m, "repo_id")
+                        and m.repo_id
+                        and provider.lower() in m.repo_id.lower()
+                    )
+                )
+            ):
+                matched = True
 
             if matched:
                 filtered.append(m)
@@ -2150,10 +2153,11 @@ async def query_hf_model_files(
     Returns:
         List of files in the repository with metadata
     """
-    from huggingface_hub import HfApi
-    from fnmatch import fnmatch
-    from huggingface_hub.hf_api import RepoFile, RepoFolder
     from dataclasses import asdict
+    from fnmatch import fnmatch
+
+    from huggingface_hub import HfApi
+    from huggingface_hub.hf_api import RepoFile, RepoFolder
 
     try:
         # Use HF_TOKEN from secrets if available for gated model downloads
@@ -2201,7 +2205,7 @@ async def query_hf_model_files(
             "files": files_data,
         }
     except Exception as e:
-        raise ValueError(f"Failed to query HuggingFace Hub: {str(e)}")
+        raise ValueError(f"Failed to query HuggingFace Hub: {str(e)}") from e
 
 
 @mcp.tool()
@@ -2237,10 +2241,9 @@ async def search_hf_hub_models(
 
     # Parse filter
     filter_dict = {}
-    if model_filter:
-        if ":" in model_filter:
-            key, value = model_filter.split(":", 1)
-            filter_dict[key] = value
+    if model_filter and ":" in model_filter:
+        key, value = model_filter.split(":", 1)
+        filter_dict[key] = value
 
     models = api.list_models(
         search=query,
@@ -2293,7 +2296,7 @@ async def run_agent(
     objective: str,
     provider: Provider,
     model: str = "gpt-4o",
-    tools: list[str] = [],
+    tools: list[str] | None = None,
     output_schema: dict[str, Any] | None = None,
     enable_analysis_phase: bool = False,
     enable_data_contracts_phase: bool = False,
@@ -2358,8 +2361,10 @@ async def run_agent(
         )
         ```
     """
+    tools = tools or []
+    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+
     try:
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
 
         # Map tool names to tool instances
         tool_instances = []

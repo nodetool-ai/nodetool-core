@@ -11,7 +11,8 @@ from typing import Any, List, Optional
 import requests
 
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import ImageModel, Provider as ProviderEnum
+from nodetool.metadata.types import ImageModel
+from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.types import ImageBytes, ImageToImageParams, TextToImageParams
 
@@ -107,11 +108,11 @@ class ComfyRunpodProvider(BaseProvider):
                             results.append(r.content)
                         else:
                             log.warning("Failed to fetch S3 URL (%s): %s", r.status_code, data)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         log.warning("Error fetching S3 URL %s: %s", data, exc)
                 else:
                     log.debug("Ignoring unsupported image type from RunPod: %s", t)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 

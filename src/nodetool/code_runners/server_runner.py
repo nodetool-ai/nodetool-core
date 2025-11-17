@@ -14,14 +14,16 @@ services that the workflow needs to connect to during execution.
 from __future__ import annotations
 
 import asyncio as _asyncio
-from threading import Thread
-import time as _time
 import socket as _socket
+import time as _time
+from contextlib import suppress
+from threading import Thread
 from typing import Any, AsyncIterator
 
-from .runtime_base import StreamRunnerBase
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
+
+from .runtime_base import StreamRunnerBase
 
 
 class ServerDockerRunner(StreamRunnerBase):
@@ -175,10 +177,8 @@ class ServerDockerRunner(StreamRunnerBase):
                 self._start_stdin_feeder(sock, stdin_stream, loop)
                 cancel_timer = self._start_timeout_timer(container)
 
-                try:
+                with suppress(Exception):
                     self._wait_for_container_exit(container)
-                except Exception:
-                    pass
 
                 self._finalize_success(queue, loop)
                 self._logger.debug("server _docker_run() completed successfully")

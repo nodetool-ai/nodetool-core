@@ -25,7 +25,7 @@ router = APIRouter(prefix="/admin/secrets", tags=["admin-secrets"])
 @router.post("/import")
 async def import_secrets(
     secrets_payload: List[EncryptedSecretPayload],
-    user: str = Depends(current_user),
+    __user: str = Depends(current_user),
 ) -> dict[str, int]:
     """Import encrypted secrets (requires shared master key)."""
     try:
@@ -41,5 +41,5 @@ async def import_secrets(
             )
             imported += 1
         return {"imported": imported}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

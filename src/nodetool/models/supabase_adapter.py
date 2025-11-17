@@ -2,26 +2,27 @@
 Adapter for interacting with a Supabase backend (PostgreSQL with PostgREST).
 """
 
-from nodetool.config.logging_config import get_logger
-
-# mypy: ignore-errors
-from typing import Any, Dict, List, Type, Union, get_origin, get_args
-from pydantic.fields import FieldInfo
 from datetime import datetime
 from enum import EnumMeta as EnumType
 
+# mypy: ignore-errors
+from typing import Any, Dict, List, Type, Union, get_args, get_origin
+
+from postgrest.base_request_builder import APIResponse
+from pydantic.fields import FieldInfo
+
 # Assume supabase-py is installed (use async client)
 from supabase import AsyncClient as SupabaseAsyncClient
-from postgrest.base_request_builder import APIResponse
 
-from nodetool.models.database_adapter import DatabaseAdapter
+from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import (
     Condition,
     ConditionBuilder,
     ConditionGroup,
-    Operator,
     LogicalOperator,
+    Operator,
 )
+from nodetool.models.database_adapter import DatabaseAdapter
 
 log = get_logger(__name__)
 
@@ -232,7 +233,7 @@ class SupabaseAdapter(DatabaseAdapter):
             raise
 
     def _apply_conditions(
-        self, query_builder, condition: Union[Condition, ConditionGroup]
+        self, query_builder, condition: Condition | ConditionGroup
     ):
         """Applies conditions recursively to the Supabase query builder."""
         if isinstance(condition, Condition):

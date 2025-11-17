@@ -12,7 +12,7 @@ Tools included:
 - NodePropertiesTool: Get node properties and metadata
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
@@ -48,7 +48,7 @@ class SearchNodesTool(Tool):
         Supply a list of words to search for as array, including synonyms and related words.
         Returns a list of node metadata that match the search query.
         """
-    input_schema: dict[str, Any] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -88,8 +88,8 @@ class SearchNodesTool(Tool):
     async def process(self, context: ProcessingContext, params: dict[str, Any]):
         assert "query" in params, "query is required"
         query = params["query"]
-        input_type = params.get("input_type", None)
-        output_type = params.get("output_type", None)
+        input_type = params.get("input_type")
+        output_type = params.get("output_type")
         n_results = params.get("n_results", 10)
         exclude_namespaces = params.get("exclude_namespaces", self.exclude_namespaces)
         if input_type and input_type not in TYPES:
@@ -130,7 +130,7 @@ class SearchNodesTool(Tool):
 class SearchExamplesTool(Tool):
     name: str = "search_examples"
     description: str = "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
-    input_schema: dict[str, Any] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {

@@ -1,36 +1,36 @@
 """Command module for NodeTool chat CLI."""
 
-from .base import Command
-from .help import HelpCommand
-from .exit import ExitCommand
-from .model import ModelCommand, ModelsCommand
-from .clear import ClearCommand
 from .agent import AgentCommand
+from .base import Command
+from .clear import ClearCommand
 from .debug import DebugCommand
-from .usage import UsageCommand
+from .exit import ExitCommand
+from .help import HelpCommand
+from .model import ModelCommand, ModelsCommand
 from .tools import (
-    ToolsCommand,
-    ToolEnableCommand,
     ToolDisableCommand,
+    ToolEnableCommand,
+    ToolsCommand,
     ToolSearchCommand,
 )
-from .workspace import ChangeToWorkspaceCommand
+from .usage import UsageCommand
 from .workflow import RunWorkflowCommand
+from .workspace import ChangeToWorkspaceCommand
 
 __all__ = [
+    "AgentCommand",
+    "ChangeToWorkspaceCommand",
+    "ClearCommand",
     "Command",
-    "HelpCommand",
+    "DebugCommand",
     "ExitCommand",
+    "HelpCommand",
     "ModelCommand",
     "ModelsCommand",
-    "ClearCommand",
-    "AgentCommand",
-    "DebugCommand",
-    "UsageCommand",
-    "ToolsCommand",
-    "ToolEnableCommand",
-    "ToolDisableCommand",
-    "ToolSearchCommand",
-    "ChangeToWorkspaceCommand",
     "RunWorkflowCommand",
+    "ToolDisableCommand",
+    "ToolEnableCommand",
+    "ToolSearchCommand",
+    "ToolsCommand",
+    "UsageCommand",
 ]

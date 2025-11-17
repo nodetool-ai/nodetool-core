@@ -10,67 +10,66 @@ import asyncio
 import base64
 import imghdr
 import inspect
-import json
 import io
+import json
 import math
-import numpy as np
 from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
+from urllib.parse import unquote_to_bytes
 
 import aiohttp
 import httpx
+import numpy as np
 import openai
 from openai import Omit
+from openai._types import NotGiven
+from openai.types import Video
 from openai.types.chat import (
-    ChatCompletionMessageParam,
-    ChatCompletionToolMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
     ChatCompletionAssistantMessageParam,
-    ChatCompletionContentPartParam,
     ChatCompletionChunk,
+    ChatCompletionContentPartParam,
+    ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
-    Function,
     ChatCompletionMessageFunctionToolCallParam,
+    Function,
 )
-from openai.types import Video
+from PIL import Image
 from pydantic import BaseModel
 from pydub import AudioSegment
-from urllib.parse import unquote_to_bytes
-from PIL import Image
 
-from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.openai_prediction import calculate_chat_cost
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
+from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
+    ASRModel,
+    ImageModel,
+    LanguageModel,
     Message,
-    Provider,
-    ToolCall,
+    MessageAudioContent,
     MessageContent,
     MessageImageContent,
     MessageTextContent,
-    MessageAudioContent,
-    LanguageModel,
+    Provider,
+    ToolCall,
     TTSModel,
-    ASRModel,
     VideoModel,
-    ImageModel,
 )
-from nodetool.config.environment import Environment
-from nodetool.workflows.types import Chunk
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.runtime.resources import require_scope, maybe_scope
-from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
-from nodetool.media.image.image_utils import image_data_to_base64_jpeg
+from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.providers.types import (
     ImageToImageParams,
     ImageToVideoParams,
     TextToImageParams,
     TextToVideoParams,
 )
-from nodetool.workflows.types import NodeProgress
-from openai._types import NotGiven
+from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
 
@@ -160,7 +159,7 @@ class OpenAIProvider(BaseProvider):
             http_client = httpx.AsyncClient(
                 follow_redirects=True, timeout=600, verify=False
             )
-        
+
         client = openai.AsyncClient(
             api_key=self.api_key,
             http_client=http_client,
@@ -256,30 +255,29 @@ class OpenAIProvider(BaseProvider):
             }
             async with aiohttp.ClientSession(
                 timeout=timeout, headers=headers
-            ) as session:
-                async with session.get("https://api.openai.com/v1/models") as response:
-                    if response.status != 200:
-                        log.warning(
-                            f"Failed to fetch OpenAI models: HTTP {response.status}"
-                        )
-                        return []
-                    payload = await response.json()
-                    data = payload.get("data", [])
+            ) as session, session.get("https://api.openai.com/v1/models") as response:
+                if response.status != 200:
+                    log.warning(
+                        f"Failed to fetch OpenAI models: HTTP {response.status}"
+                    )
+                    return []
+                payload = await response.json()
+                data = payload.get("data", [])
 
-                    models: List[LanguageModel] = []
-                    for item in data:
-                        model_id = item.get("id")
-                        if not model_id:
-                            continue
-                        models.append(
-                            LanguageModel(
-                                id=model_id,
-                                name=model_id,
-                                provider=Provider.OpenAI,
-                            )
+                models: List[LanguageModel] = []
+                for item in data:
+                    model_id = item.get("id")
+                    if not model_id:
+                        continue
+                    models.append(
+                        LanguageModel(
+                            id=model_id,
+                            name=model_id,
+                            provider=Provider.OpenAI,
                         )
-                    log.debug(f"Fetched {len(models)} OpenAI models")
-                    return models
+                    )
+                log.debug(f"Fetched {len(models)} OpenAI models")
+                return models
         except Exception as e:
             log.error(f"Error fetching OpenAI models: {e}")
             return []
@@ -657,7 +655,7 @@ class OpenAIProvider(BaseProvider):
                 return width, height
         except Exception as e:
             log.error(f"Failed to extract image dimensions: {e}")
-            raise ValueError(f"Failed to extract image dimensions: {e}")
+            raise ValueError(f"Failed to extract image dimensions: {e}") from e
 
     @staticmethod
     def _resize_image(image: bytes, target_width: int, target_height: int) -> bytes:
@@ -697,7 +695,7 @@ class OpenAIProvider(BaseProvider):
                 return result
         except Exception as e:
             log.error(f"Failed to resize image: {e}")
-            raise ValueError(f"Failed to resize image: {e}")
+            raise ValueError(f"Failed to resize image: {e}") from e
 
     @staticmethod
     def _seconds_from_params(
@@ -784,9 +782,9 @@ class OpenAIProvider(BaseProvider):
         # Format: data:[<mediatype>][;base64],<data>
         try:
             header, data_part = uri.split(",", 1)
-        except ValueError:
+        except ValueError as e:
             log.error(f"Invalid data URI format: {uri[:64]}...")
-            raise ValueError(f"Invalid data URI: {uri[:64]}...")
+            raise ValueError(f"Invalid data URI: {uri[:64]}...") from e
 
         is_base64 = ";base64" in header
         mime_type = "application/octet-stream"
@@ -802,7 +800,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug(f"Decoded base64 data, length: {len(raw_bytes)}")
             except Exception as e:
                 log.error(f"Failed to decode base64 data URI: {e}")
-                raise ValueError(f"Failed to decode base64 data URI: {e}")
+                raise ValueError(f"Failed to decode base64 data URI: {e}") from e
         else:
             # Percent-decoded textual payload → bytes
             raw_bytes = unquote_to_bytes(data_part)
@@ -1106,10 +1104,10 @@ class OpenAIProvider(BaseProvider):
                 _kwargs[key] = kwargs[key]
         log.debug(f"Initial kwargs: {_kwargs}")
 
-        if kwargs.get("audio", None):
-            _kwargs["audio"] = kwargs.get("audio", None)
+        if kwargs.get("audio"):
+            _kwargs["audio"] = kwargs.get("audio")
             _kwargs["modalities"] = ["text", "audio"]
-            if not kwargs.get("audio", None):
+            if not kwargs.get("audio"):
                 _kwargs["audio"] = {
                     "voice": "alloy",
                     "format": "pcm16",
@@ -1643,7 +1641,7 @@ class OpenAIProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"OpenAI TTS streaming failed: {e}")
-            raise RuntimeError(f"OpenAI TTS generation failed: {str(e)}")
+            raise RuntimeError(f"OpenAI TTS generation failed: {str(e)}") from e
 
     async def text_to_video(
         self,
@@ -2131,7 +2129,7 @@ class OpenAIProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"OpenAI ASR transcription failed: {e}")
-            raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}")
+            raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics.

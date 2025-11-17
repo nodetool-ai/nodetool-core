@@ -9,7 +9,7 @@ This module provides tools for working with email (Gmail):
 
 import imaplib
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any, ClassVar, Dict
 
 import html2text
 
@@ -143,7 +143,7 @@ class SearchEmailTool(Tool):
         - sender: Sender's email address
         - body: Body of the email
         """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "subject": {
@@ -304,7 +304,7 @@ class SearchEmailTool(Tool):
 class ArchiveEmailTool(Tool):
     name = "archive_email"
     description = "Move specified emails to Gmail archive"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "message_ids": {
@@ -319,10 +319,9 @@ class ArchiveEmailTool(Tool):
     def user_message(self, params: dict) -> str:
         ids = params.get("message_ids", [])
         count = len(ids)
-        if count == 1:
-            msg = f"Archiving email {ids[0]}..."
-        else:
-            msg = f"Archiving {count} emails..."
+        msg = (
+            f"Archiving email {ids[0]}..." if count == 1 else f"Archiving {count} emails..."
+        )
         return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
@@ -354,7 +353,7 @@ class ArchiveEmailTool(Tool):
 class AddLabelToEmailTool(Tool):
     name = "add_label_to_email"
     description = "Add a label to a Gmail message"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "message_id": {

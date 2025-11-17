@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+
 from nodetool.metadata.types import Message, MessageContent, ToolCall
 
 

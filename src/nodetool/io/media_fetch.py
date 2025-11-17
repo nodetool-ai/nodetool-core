@@ -4,16 +4,16 @@ from io import BytesIO
 from typing import Tuple
 
 import aiohttp
-import PIL.Image
-import numpy as np
 import httpx
+import numpy as np
+import PIL.Image
 
 from nodetool.config.environment import Environment
-from nodetool.runtime.resources import require_scope
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,
 )
+from nodetool.runtime.resources import require_scope
 
 
 def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
@@ -35,7 +35,7 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
             with PIL.Image.open(BytesIO(raw)) as img:
                 return pil_to_png_bytes(img)
         except Exception as e:
-            raise ValueError(f"Bytes are not a decodable image: {e}")
+            raise ValueError(f"Bytes are not a decodable image: {e}") from e
 
     if hasattr(obj, "read"):
         try:
@@ -48,7 +48,9 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
             with PIL.Image.open(BytesIO(raw)) as img:
                 return pil_to_png_bytes(img)
         except Exception as e:
-            raise ValueError(f"File-like object could not be decoded as image: {e}")
+            raise ValueError(
+                f"File-like object could not be decoded as image: {e}"
+            ) from e
 
     raise ValueError(f"Unsupported object type for image conversion: {type(obj)}")
 
@@ -71,7 +73,7 @@ def _parse_data_uri(uri: str) -> Tuple[str, bytes]:
         return mime_type, raw
     except Exception as e:
         # Tests expect the phrase "Invalid data URI" to appear
-        raise ValueError(f"Invalid data URI: {e}")
+        raise ValueError(f"Invalid data URI: {e}") from e
 
 
 def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
@@ -85,12 +87,8 @@ def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
     path = uri[len("file://") :]
     # Normalize path
     p = pathlib.Path(path)
-    try:
-        with open(p, "rb") as f:  # type: ignore[arg-type]
-            data = f.read()
-    except Exception:
-        # Surface as FileNotFoundError or underlying IO error
-        raise
+    with open(p, "rb") as f:  # type: ignore[arg-type]
+        data = f.read()
     mime_type, _ = mimetypes.guess_type(uri)
     if not mime_type:
         mime_type = "application/octet-stream"
@@ -98,21 +96,20 @@ def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
 
 
 async def _fetch_http_uri_async(uri: str) -> Tuple[str, bytes]:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(uri) as response:
-            response.raise_for_status()
-            data = await response.read()
-            content_type = response.headers.get("Content-Type")
-            mime_type: str | None = None
-            if content_type:
-                mime_type = content_type.split(";", 1)[0]
-            if not mime_type:
-                import mimetypes
+    async with aiohttp.ClientSession() as session, session.get(uri) as response:
+        response.raise_for_status()
+        data = await response.read()
+        content_type = response.headers.get("Content-Type")
+        mime_type: str | None = None
+        if content_type:
+            mime_type = content_type.split(";", 1)[0]
+        if not mime_type:
+            import mimetypes
 
-                mime_type, _ = mimetypes.guess_type(uri)
-            if not mime_type:
-                mime_type = "application/octet-stream"
-            return mime_type, data
+            mime_type, _ = mimetypes.guess_type(uri)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+        return mime_type, data
 
 
 def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:

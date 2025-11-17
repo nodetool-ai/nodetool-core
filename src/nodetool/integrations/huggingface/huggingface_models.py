@@ -14,26 +14,28 @@ The module uses a hybrid caching approach:
 """
 
 import asyncio
-from nodetool.types.model import CachedFileInfo, UnifiedModel
-from huggingface_hub import CacheNotFound, scan_cache_dir, HfApi, ModelInfo
-from typing import List
+import json
 import os
 import shutil
-import json
-from pathlib import Path
 from fnmatch import fnmatch
+from pathlib import Path
+from typing import List
+
+from huggingface_hub import CacheNotFound, HfApi, ModelInfo, scan_cache_dir
+
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
-    LanguageModel,
     ImageModel,
+    LanguageModel,
     Provider,
 )
-from nodetool.workflows.recommended_models import get_recommended_models
 from nodetool.ml.models.model_cache import ModelCache
-from nodetool.security.secret_helper import get_secret
 from nodetool.runtime.resources import maybe_scope
+from nodetool.security.secret_helper import get_secret
+from nodetool.types.model import CachedFileInfo, UnifiedModel
+from nodetool.workflows.recommended_models import get_recommended_models
 
 SINGLE_FILE_DIFFUSION_EXTENSIONS = (
     ".safetensors",
@@ -77,7 +79,7 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
 MODEL_INFO_CACHE = ModelCache("model_info")
 MODEL_INFO_CACHE_TTL = 30 * 24 * 3600  # 30 days in seconds
 # Backwards compatibility alias for legacy references in tests
-_model_info_cache = MODEL_INFO_CACHE  # noqa: F841
+_model_info_cache = MODEL_INFO_CACHE
 
 # GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
 # MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
@@ -259,9 +261,9 @@ async def fetch_model_readme(model_id: str) -> str | None:
         str: The readme content, or None if not found.
     """
     from huggingface_hub import (
-        try_to_load_from_cache,
-        hf_hub_download,
         _CACHED_NO_EXIST,
+        hf_hub_download,
+        try_to_load_from_cache,
     )
 
     # First, try to load from the HF hub cache
@@ -270,7 +272,7 @@ async def fetch_model_readme(model_id: str) -> str | None:
     if isinstance(cached_path, str):
         # File exists in cache, read and return it
         try:
-            with open(cached_path, "r", encoding="utf-8") as f:
+            with open(cached_path, encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             log.debug(f"Failed to read cached README for {model_id}: {e}")
@@ -297,7 +299,7 @@ async def fetch_model_readme(model_id: str) -> str | None:
                 repo_id=model_id, filename="README.md", repo_type="model", token=token
             ),
         )
-        with open(readme_path, "r", encoding="utf-8") as f:
+        with open(readme_path, encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         log.debug(f"Failed to download README for {model_id}: {e}")

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.runtime_base import StreamRunnerBase
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 class CommandDockerRunner(StreamRunnerBase):

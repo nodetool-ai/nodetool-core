@@ -28,7 +28,7 @@ class SupabaseAuthProvider(AuthProvider):
         self._client: Optional[AsyncClient] = None
         self._client_lock = asyncio.Lock()
         self._token_cache: dict[str, tuple[str, float]] = {}
-        self._token_cache_order: "OrderedDict[str, None]" = OrderedDict()
+        self._token_cache_order: OrderedDict[str, None] = OrderedDict()
 
     async def _get_client(self) -> AsyncClient:
         if self._client is not None:
@@ -86,7 +86,7 @@ class SupabaseAuthProvider(AuthProvider):
         client = await self._get_client()
         try:
             user_response = await client.auth.get_user(jwt=token)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return AuthResult(ok=False, error=str(exc))
 
         supabase_user = getattr(user_response, "user", None)

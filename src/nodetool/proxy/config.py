@@ -6,7 +6,7 @@ Handles loading YAML configuration files and validating service/global settings.
 
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Literal, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -24,7 +24,7 @@ class ServiceConfig(BaseModel):
     host_port: Optional[int] = Field(None, ge=1, le=65535, description="Fixed host port (optional)")
     auth_token: Optional[str] = Field(None, description="Bearer token for upstream service authentication")
     environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for container")
-    volumes: Optional[Dict[str, Union[str, Dict[str, str]]]] = Field(None, description="Volume mounts for container")
+    volumes: Optional[Dict[str, str | Dict[str, str]]] = Field(None, description="Volume mounts for container")
     mem_limit: Optional[str] = Field(None, description="Memory limit (e.g., '1g', '512m')")
     cpus: Optional[float] = Field(None, gt=0, description="CPU limit (e.g., 0.5, 1.0)")
 
@@ -132,10 +132,10 @@ def load_config(config_path: str) -> ProxyConfig:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     try:
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             raw_config = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML in config file: {e}")
+        raise ValueError(f"Invalid YAML in config file: {e}") from e
 
     if not raw_config:
         raise ValueError("Config file is empty")
@@ -143,7 +143,7 @@ def load_config(config_path: str) -> ProxyConfig:
     try:
         config = ProxyConfig(**raw_config)
     except Exception as e:
-        raise ValueError(f"Invalid configuration: {e}")
+        raise ValueError(f"Invalid configuration: {e}") from e
 
     return config
 

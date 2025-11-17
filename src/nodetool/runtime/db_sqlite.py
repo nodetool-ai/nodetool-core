@@ -4,14 +4,15 @@ SQLite connection pool for ResourceScope.
 Provides async connection pooling for SQLite with per-scope adapter memoization.
 """
 
-import aiosqlite
 import asyncio
 import os
 from pathlib import Path
-from typing import Any, Type, Optional, Dict
+from typing import Any, Dict, Optional, Type
 
-from nodetool.config.logging_config import get_logger
+import aiosqlite
+
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.models.sqlite_adapter import SQLiteAdapter
 from nodetool.runtime.resources import DBResources
 

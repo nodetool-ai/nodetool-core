@@ -30,16 +30,17 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
+import atexit
 import dataclasses
 import os
-import shutil
 import shlex
+import shutil
 import signal
 import socket
 import time
-import atexit
-from typing import Dict, Optional, Tuple, TYPE_CHECKING, Any
 import weakref
+from contextlib import suppress
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import httpx
 
@@ -197,12 +198,12 @@ def _parse_model_args(model: str) -> Tuple[list[str], str]:
             if resolved:
                 return ["-m", resolved], alias
             raise FileNotFoundError(
-                (
+
                     "Hugging Face model file not found in local cache: "
                     f"{repo_id}:{tail}. Please download the model file locally "
                     "(e.g., via 'huggingface_hub' or 'git lfs') so it appears in your HF hub cache, "
                     "or provide an absolute path to the .gguf file."
-                )
+
             )
         else:
             # quant or tag appended to repo
@@ -243,8 +244,6 @@ def _gpu_seems_available() -> bool:
     return False
 
 
-if TYPE_CHECKING:  # pragma: no cover - typing hints only
-    pass
 
 
 @dataclasses.dataclass
@@ -284,10 +283,8 @@ def _register_pid(pid: int) -> None:
     Args:
         pid: Process ID to track.
     """
-    try:
+    with suppress(Exception):
         _GLOBAL_PIDS.add(pid)
-    except Exception:
-        pass
 
 
 def _unregister_pid(pid: int) -> None:
@@ -296,10 +293,8 @@ def _unregister_pid(pid: int) -> None:
     Args:
         pid: Process ID to stop tracking.
     """
-    try:
+    with suppress(Exception):
         _GLOBAL_PIDS.discard(pid)
-    except Exception:
-        pass
 
 
 def _kill_pid(pid: int, sig: int) -> None:
@@ -330,10 +325,8 @@ def _atexit_kill_all() -> None:  # pragma: no cover - runs at interpreter shutdo
     # Try graceful first
     for pid in pids:
         _kill_pid(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT)
-    try:
+    with suppress(Exception):
         time.sleep(0.5)
-    except Exception:
-        pass
     # Force kill any stragglers
     for pid in list(_GLOBAL_PIDS):
         _kill_pid(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
@@ -538,17 +531,13 @@ class LlamaServerManager:
 
                     def terminate(self):
                         """Request graceful process termination."""
-                        try:
+                        with suppress(Exception):
                             self._popen.terminate()
-                        except Exception:
-                            pass
 
                     def kill(self):
                         """Forcefully kill the process."""
-                        try:
+                        with suppress(Exception):
                             self._popen.kill()
-                        except Exception:
-                            pass
 
                 proc = _ProcShim(pid, popen)  # type: ignore[assignment]
             if proc.pid is not None:
@@ -590,22 +579,15 @@ class LlamaServerManager:
 
             ok = await self._wait_ready(base_url)
             if not ok:
-                try:
+                with suppress(Exception):
                     proc.terminate()
-                except Exception:
-                    pass
-                try:
+                with suppress(Exception):
                     await asyncio.wait_for(proc.wait(), timeout=2.0)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-                try:
+                with suppress(Exception):
+                    proc.kill()
+                with suppress(Exception):
                     if proc.pid is not None:
                         _unregister_pid(proc.pid)
-                except Exception:
-                    pass
                 raise RuntimeError("llama-server did not become ready in time")
 
             # Query model capabilities after server is ready
@@ -709,13 +691,10 @@ class LlamaServerManager:
 
         # Install best-effort handlers; not all platforms allow this
         def _handle_signal(signame: str) -> None:
-            try:
-                # Avoid re-entrancy
+            with suppress(Exception):
                 if getattr(self, "_shutdown_started", False):
                     return
-                setattr(self, "_shutdown_started", True)
-            except Exception:
-                pass
+                self._shutdown_started = True
             try:
                 loop.create_task(self.stop_all())
             except Exception:
@@ -729,10 +708,8 @@ class LlamaServerManager:
                 loop.add_signal_handler(sig_obj, _handle_signal, sig_name)
             except (NotImplementedError, RuntimeError):
                 # Fallback to basic signal module for non-asyncio environments
-                try:
+                with suppress(Exception):
                     signal.signal(sig_obj, lambda *_: _handle_signal(sig_name))
-                except Exception:
-                    pass
         self._signals_installed = True
 
     def _register_instance_atexit(self) -> None:
@@ -747,26 +724,18 @@ class LlamaServerManager:
                 return
             loop = mgr._loop
             if loop and not loop.is_closed():
-                try:
+                with suppress(Exception):
                     fut = asyncio.run_coroutine_threadsafe(mgr.stop_all(), loop)
-                    try:
+                    with suppress(Exception):
                         fut.result(timeout=2.5)
                         return
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
             # Fallback sync kill
-            try:
+            with suppress(Exception):
                 mgr.shutdown_sync()
-            except Exception:
-                pass
 
-        try:
+        with suppress(Exception):
             atexit.register(_cleanup_instance)
             self._atexit_registered = True
-        except Exception:
-            pass
 
     async def _prune_loop(self) -> None:
         """Periodic loop that prunes expired or dead servers."""
@@ -790,30 +759,23 @@ class LlamaServerManager:
                     expired.append(key)
                     continue
                 if now - inst.last_used > self._ttl_seconds:
-                    try:
+                    with suppress(Exception):
                         inst.process.terminate()
-                    except Exception:
-                        pass
                     expired.append(key)
             # Cleanup expired instances (cancel log tasks, ensure process exit)
             for key in expired:
                 inst = self._servers.pop(key, None)
                 if not inst:
                     continue
-                try:
+                with suppress(Exception):
                     if inst.stdout_task:
                         inst.stdout_task.cancel()
                     if inst.stderr_task:
                         inst.stderr_task.cancel()
-                except Exception:
-                    pass
-                try:
+                with suppress(Exception):
                     await asyncio.wait_for(inst.process.wait(), timeout=1.0)
-                except Exception:
-                    try:
-                        inst.process.kill()
-                    except Exception:
-                        pass
+                with suppress(Exception):
+                    inst.process.kill()
                 if inst.process.pid is not None:
                     _unregister_pid(inst.process.pid)
 
@@ -835,32 +797,23 @@ class LlamaServerManager:
             self._servers.clear()
         # Terminate outside lock and wait for exit
         for key, inst in items:
-            try:
+            with suppress(Exception):
                 if inst.process.returncode is None:
                     inst.process.terminate()
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 if inst.stdout_task:
                     inst.stdout_task.cancel()
                 if inst.stderr_task:
                     inst.stderr_task.cancel()
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 await asyncio.wait_for(inst.process.wait(), timeout=2.0)
-            except Exception:
-                try:
-                    inst.process.kill()
-                except Exception:
-                    pass
+            with suppress(Exception):
+                inst.process.kill()
             if inst.process.pid is not None:
                 _unregister_pid(inst.process.pid)
-        if self._pruner_task:
-            try:
+        with suppress(Exception):
+            if self._pruner_task:
                 self._pruner_task.cancel()
-            except Exception:
-                pass
 
     def shutdown_sync(self) -> None:
         """Best-effort synchronous shutdown for interpreter exit.
@@ -871,7 +824,7 @@ class LlamaServerManager:
         Notes:
             Normal code paths should prefer the async `stop_all`.
         """
-        try:
+        with suppress(Exception):
             procs = []
             for inst in list(self._servers.values()):
                 if inst.process.pid is not None:
@@ -880,15 +833,11 @@ class LlamaServerManager:
                 _kill_pid(
                     pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT
                 )
-            try:
+            with suppress(Exception):
                 time.sleep(0.3)
-            except Exception:
-                pass
             for pid in procs:
                 _kill_pid(
                     pid,
                     signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM,
                 )
                 _unregister_pid(pid)
-        except Exception:
-            pass

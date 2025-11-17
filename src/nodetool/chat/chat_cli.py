@@ -17,42 +17,38 @@ Features:
 import asyncio
 import json
 import os
-import subprocess
-import traceback
-import sys
-from typing import List, Optional, Dict, Any
-from pathlib import Path
-import shutil  # Add shutil for cp and mv
 import re  # Add re for grep
+import shutil  # Add shutil for cp and mv
+import subprocess
+import sys
+import traceback
+from contextlib import suppress
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from nodetool.config.logging_config import configure_logging
-
-# New imports
-from nodetool.ml.models.language_models import get_all_language_models
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import WordCompleter, NestedCompleter, PathCompleter
+from prompt_toolkit.completion import NestedCompleter, PathCompleter, WordCompleter
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.syntax import Syntax
+from pydantic import ValidationError
 from rich.align import Align
 from rich.columns import Columns  # Add Columns
+from rich.console import Console
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.table import Table
 
-# Existing imports
-from nodetool.providers import get_provider
-from nodetool.messaging.agent_message_processor import AgentMessageProcessor
-from nodetool.messaging.message_processor import MessageProcessor
-from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-from nodetool.metadata.types import Message, LanguageModel
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
 from nodetool.agents.tools.email_tools import (
     AddLabelToEmailTool,
     ArchiveEmailTool,
     SearchEmailTool,
+)
+from nodetool.agents.tools.filesystem_tools import (
+    ListDirectoryTool,
+    ReadFileTool,
+    WriteFileTool,
 )
 from nodetool.agents.tools.google_tools import (
     GoogleGroundedSearchTool,
@@ -74,13 +70,18 @@ from nodetool.agents.tools.serp_tools import (
     GoogleNewsTool,
     GoogleSearchTool,
 )
-from nodetool.agents.tools.filesystem_tools import (
-    ListDirectoryTool,
-    ReadFileTool,
-    WriteFileTool,
-)
-from pydantic import ValidationError
+from nodetool.config.logging_config import configure_logging
+from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.message_processor import MessageProcessor
+from nodetool.messaging.regular_chat_processor import RegularChatProcessor
+from nodetool.metadata.types import LanguageModel, Message
 
+# New imports
+from nodetool.ml.models.language_models import get_all_language_models
+
+# Existing imports
+from nodetool.providers import get_provider
+from nodetool.workflows.processing_context import ProcessingContext
 
 # Helper --------------------------------------------------------------------
 
@@ -221,9 +222,10 @@ class ChatCLI:
     def load_all_node_packages(self):
         """Load all available node packages to populate NODE_BY_TYPE registry."""
         try:
-            from nodetool.packages.registry import Registry
-            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
             import importlib
+
+            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
+            from nodetool.packages.registry import Registry
 
             registry = Registry()
             packages = registry.list_installed_packages()
@@ -355,9 +357,7 @@ class ChatCLI:
     async def setup_prompt_session(self):
         """Set up prompt_toolkit session with completers and styling."""
         # Create nested completer for commands
-        command_completer: Dict[str, Optional[WordCompleter]] = {
-            cmd: None for cmd in self.commands.keys()
-        }
+        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
         # Get model IDs from the loaded models
         model_ids = [model.id for model in self.language_models]
         # Get tool names for completion (use all_tools instead of just enabled tools)
@@ -556,12 +556,10 @@ class ChatCLI:
 
             await processor_task
         finally:
-            if not processor_task.done():
-                processor_task.cancel()
-                try:
-                    await processor_task
-                except asyncio.CancelledError:
-                    pass
+                if not processor_task.done():
+                    processor_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await processor_task
 
     async def process_agent_response(self, problem: str):
         """Process input in agent mode using the messaging processors."""
@@ -926,16 +924,11 @@ class ChatCLI:
                                 highlighted_line = (
                                     line.strip()
                                 )  # Process stripped line first
-                                try:
-                                    # Use original pattern for highlighting
+                                with suppress(Exception):
                                     highlighted_line = regex.sub(
                                         lambda m: f"[bold yellow]{m.group(0)}[/bold yellow]",
                                         highlighted_line,
                                     )
-                                except (
-                                    Exception
-                                ):  # Fallback if complex regex causes issues with sub
-                                    pass  # Keep original line if highlighting fails
 
                                 self.console.print(
                                     f"  [cyan]{i+1}:[/cyan] {highlighted_line}"
@@ -993,7 +986,7 @@ class ChatCLI:
         """Load settings from the dotfile."""
         try:
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, "r") as f:
+                with open(self.settings_file) as f:
                     settings = json.load(f)
 
                 # Load the model ID preference to be used in initialize()

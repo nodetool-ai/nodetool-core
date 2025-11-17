@@ -7,12 +7,13 @@ when deployed in Docker or other production environments.
 The token is auto-generated on first run and saved to a deployment config file.
 """
 
-from typing import Optional
-from fastapi import HTTPException, Header, status
 import os
 import secrets
-import yaml
 from pathlib import Path
+from typing import Optional
+
+import yaml
+from fastapi import Header, HTTPException, status
 
 # Deployment config file path
 DEPLOYMENT_CONFIG_FILE = Path.home() / ".config" / "nodetool" / "deployment.yaml"
@@ -39,7 +40,7 @@ def load_deployment_config() -> dict:
         return {}
 
     try:
-        with open(DEPLOYMENT_CONFIG_FILE, "r") as f:
+        with open(DEPLOYMENT_CONFIG_FILE) as f:
             config = yaml.safe_load(f) or {}
             return config
     except Exception:

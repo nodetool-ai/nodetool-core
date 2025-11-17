@@ -6,13 +6,15 @@ in the system keychain (macOS Keychain, Windows Credential Manager, Linux Secret
 or AWS Secrets Manager.
 """
 
-import os
 import logging
+import os
 from typing import Optional
-import keyring
-from keyring.errors import KeyringError
+
 import boto3
+import keyring
 from botocore.exceptions import ClientError
+from keyring.errors import KeyringError
+
 from nodetool.security.crypto import SecretCrypto
 
 # Keyring service name for storing the master key

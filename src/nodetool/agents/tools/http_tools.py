@@ -1,8 +1,10 @@
-from typing import Any
+import os
+from typing import Any, ClassVar
+
+import aiohttp
+
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
-import aiohttp
-import os
 
 
 class DownloadFileTool(Tool):
@@ -16,7 +18,7 @@ class DownloadFileTool(Tool):
 
     name = "download_file"
     description = "Download a text or binaryfile from a URL and save it to disk"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -71,35 +73,34 @@ class DownloadFileTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, headers=merged_headers, timeout=timeout
-                ) as response:
-                    if response.status != 200:
-                        return {
-                            "url": url,
-                            "output_file": output_file,
-                            "success": False,
-                            "error": f"HTTP request failed with status {response.status}",
-                            "status_code": response.status,
-                        }
-
-                    # Get content type and size
-                    content_type = response.headers.get("Content-Type", "unknown")
-                    content_length = response.headers.get("Content-Length")
-                    file_size = int(content_length) if content_length else None
-
-                    # Read the file data and write to disk
-                    with open(full_path, "wb") as f:
-                        f.write(await response.read())
-
+            async with aiohttp.ClientSession() as session, session.get(
+                url, headers=merged_headers, timeout=timeout
+            ) as response:
+                if response.status != 200:
                     return {
                         "url": url,
                         "output_file": output_file,
-                        "success": True,
-                        "content_type": content_type,
-                        "file_size_bytes": file_size,
+                        "success": False,
+                        "error": f"HTTP request failed with status {response.status}",
+                        "status_code": response.status,
                     }
+
+                # Get content type and size
+                content_type = response.headers.get("Content-Type", "unknown")
+                content_length = response.headers.get("Content-Length")
+                file_size = int(content_length) if content_length else None
+
+                # Read the file data and write to disk
+                with open(full_path, "wb") as f:
+                    f.write(await response.read())
+
+                return {
+                    "url": url,
+                    "output_file": output_file,
+                    "success": True,
+                    "content_type": content_type,
+                    "file_size_bytes": file_size,
+                }
 
         except Exception as e:
             return {"error": f"Error in download process: {str(e)}"}

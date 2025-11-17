@@ -7,26 +7,26 @@ ephemeral subtask. Results are aggregated into a simple list that downstream
 aggregate subtasks consume.
 """
 
-from nodetool.agents.wrap_generators_parallel import (
-    wrap_generators_parallel,
-)
-from nodetool.providers import BaseProvider
+import asyncio
+import hashlib
+import json
+import os
+import time
+from typing import Any, AsyncGenerator, List, Sequence, Union
+
 from nodetool.agents.sub_task_context import (
     SubTaskContext,
     TaskUpdate,
 )
 from nodetool.agents.tools.base import Tool
+from nodetool.agents.wrap_generators_parallel import (
+    wrap_generators_parallel,
+)
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import SubTask, Task, ToolCall
-import os
-import asyncio
-import json
-import time
-import hashlib
-from typing import AsyncGenerator, List, Sequence, Union, Any
-
+from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, SubTaskResult, TaskUpdateEvent
-from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
@@ -49,7 +49,7 @@ class TaskExecutor:
         tools: Sequence[Tool],
         task: Task,
         system_prompt: str | None = None,
-        inputs: dict[str, Any] = {},
+        inputs: dict[str, Any] | None = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 10,
         max_token_limit: int = 100000,
@@ -76,7 +76,7 @@ class TaskExecutor:
         self.tools = tools
         self.task = task
         self.processing_context = processing_context
-        self.inputs = inputs
+        self.inputs = inputs or {}
         self.max_token_limit = max_token_limit
         self.system_prompt = system_prompt
         self.max_steps = max_steps
@@ -91,7 +91,7 @@ class TaskExecutor:
     async def execute_tasks(
         self,
         context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall], None]:
+    ) -> AsyncGenerator[TaskUpdate | Chunk | ToolCall, None]:
         """
         🎭 The Conductor - Orchestrates task execution with dependencies
 
@@ -257,10 +257,7 @@ class TaskExecutor:
         Returns:
             bool: True if all tasks are complete, False otherwise
         """
-        for subtask in self.task.subtasks:
-            if not subtask.completed:
-                return False
-        return True
+        return all(subtask.completed for subtask in self.task.subtasks)
 
     def _is_finish_subtask(self, subtask: SubTask) -> bool:
         if self._finish_subtask_id:
@@ -409,7 +406,7 @@ class TaskExecutor:
         """Filter the global tool list to match the subtask's declared tools."""
         if not subtask.tools:
             return list(self.tools)
-        allowed = {tool_name for tool_name in subtask.tools}
+        allowed = set(subtask.tools)
         return [tool for tool in self.tools if tool.name in allowed]
 
     def _make_ephemeral_subtask(
@@ -476,7 +473,7 @@ class TaskExecutor:
         self,
         subtask: SubTask,
         context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, SubTaskResult], None]:
+    ) -> AsyncGenerator[TaskUpdate | Chunk | ToolCall | SubTaskResult, None]:
         """Run a process-mode subtask end-to-end and emit standard task events."""
 
         subtask.start_time = int(time.time())

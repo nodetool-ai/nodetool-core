@@ -6,8 +6,9 @@ admin endpoints, including support for Server-Sent Events (SSE) streaming.
 """
 
 import json
+from typing import Any, AsyncGenerator, Dict, Optional
+
 import aiohttp
-from typing import Dict, Any, AsyncGenerator, Optional
 from rich.console import Console
 
 console = Console()
@@ -35,51 +36,47 @@ class AdminHTTPClient:
 
     async def health_check(self) -> Dict[str, Any]:
         """Perform health check."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/admin/health", headers=self.headers
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Health check failed: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/admin/health", headers=self.headers
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Health check failed: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def list_workflows(self) -> Dict[str, Any]:
         """List all workflows."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/workflows", headers=self.headers
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to list workflows: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/workflows", headers=self.headers
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to list workflows: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def update_workflow(
         self, workflow_id: str, workflow: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Update a workflow."""
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self.base_url}/workflows/{workflow_id}",
-                headers=self.headers,
-                json=workflow,
-            ) as response:
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.put(
+            f"{self.base_url}/workflows/{workflow_id}",
+            headers=self.headers,
+            json=workflow,
+        ) as response:
+            return await response.json()
 
     async def delete_workflow(self, workflow_id: str) -> Dict[str, Any]:
         """Delete a workflow."""
-        async with aiohttp.ClientSession() as session:
-            async with session.delete(
-                f"{self.base_url}/workflows/{workflow_id}", headers=self.headers
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to delete workflow: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.delete(
+            f"{self.base_url}/workflows/{workflow_id}", headers=self.headers
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to delete workflow: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def run_workflow(
         self, workflow_id: str, params: Dict[str, Any] = None
@@ -88,31 +85,29 @@ class AdminHTTPClient:
         if params is None:
             params = {}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/workflows/{workflow_id}/run",
-                headers=self.headers,
-                json=params,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to run workflow: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/workflows/{workflow_id}/run",
+            headers=self.headers,
+            json=params,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to run workflow: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def get_asset(self, asset_id: str, user_id: str = "1") -> Dict[str, Any]:
         """Get asset metadata from the deployed instance."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/admin/assets/{asset_id}",
-                headers=self.headers,
-                params={"user_id": user_id},
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to get asset: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/admin/assets/{asset_id}",
+            headers=self.headers,
+            params={"user_id": user_id},
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to get asset: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def create_asset(
         self,
@@ -139,96 +134,89 @@ class AdminHTTPClient:
         if metadata:
             data["metadata"] = metadata
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/assets",
-                headers=self.headers,
-                json=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to create asset: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/assets",
+            headers=self.headers,
+            json=data,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to create asset: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def upload_asset_file(self, file_name: str, data: bytes) -> None:
         """Upload asset file to storage on the deployed instance."""
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self.base_url}/admin/storage/assets/{file_name}",
-                headers=self.headers,
-                data=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to upload asset file: {response.status} {await response.text()}"
-                    )
+        async with aiohttp.ClientSession() as session, session.put(
+            f"{self.base_url}/admin/storage/assets/{file_name}",
+            headers=self.headers,
+            data=data,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to upload asset file: {response.status} {await response.text()}"
+                )
 
     async def download_asset_file(self, file_name: str) -> bytes:
         """Download asset file from storage on the deployed instance."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/storage/assets/{file_name}",
-                headers=self.headers,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to download asset file: {response.status} {await response.text()}"
-                    )
-                return await response.read()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/storage/assets/{file_name}",
+            headers=self.headers,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to download asset file: {response.status} {await response.text()}"
+                )
+            return await response.read()
 
     async def db_get(self, table: str, key: str) -> Dict[str, Any]:
         """Get an item from database table by key."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/admin/db/{table}/{key}",
-                headers=self.headers,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to get item: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/admin/db/{table}/{key}",
+            headers=self.headers,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to get item: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def db_save(self, table: str, item: Dict[str, Any]) -> Dict[str, Any]:
         """Save an item to database table."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/db/{table}/save",
-                headers=self.headers,
-                json=item,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to save item: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/db/{table}/save",
+            headers=self.headers,
+            json=item,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to save item: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def db_delete(self, table: str, key: str) -> None:
         """Delete an item from database table by key."""
-        async with aiohttp.ClientSession() as session:
-            async with session.delete(
-                f"{self.base_url}/admin/db/{table}/{key}",
-                headers=self.headers,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to delete item: {response.status} {await response.text()}"
-                    )
+        async with aiohttp.ClientSession() as session, session.delete(
+            f"{self.base_url}/admin/db/{table}/{key}",
+            headers=self.headers,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to delete item: {response.status} {await response.text()}"
+                )
 
     async def import_secrets(self, secrets: list[dict[str, Any]]) -> Dict[str, Any]:
         """Import encrypted secrets into the remote worker."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/secrets/import",
-                headers=self.headers,
-                json=secrets,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to import secrets: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/secrets/import",
+            headers=self.headers,
+            json=secrets,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to import secrets: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def download_huggingface_model(
         self,
@@ -315,30 +303,28 @@ class AdminHTTPClient:
 
     async def scan_cache(self) -> Dict[str, Any]:
         """Scan HuggingFace cache directory."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/admin/cache/scan", headers=self.headers
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Cache scan failed: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/admin/cache/scan", headers=self.headers
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Cache scan failed: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def get_cache_size(
         self, cache_dir: str = "/app/.cache/huggingface/hub"
     ) -> Dict[str, Any]:
         """Calculate total cache size."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/admin/cache/size?cache_dir={cache_dir}",
-                headers=self.headers,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Cache size calculation failed: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.get(
+            f"{self.base_url}/admin/cache/size?cache_dir={cache_dir}",
+            headers=self.headers,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Cache size calculation failed: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def delete_huggingface_model(self, repo_id: str) -> Dict[str, Any]:
         """Delete HuggingFace model from cache."""
@@ -347,16 +333,15 @@ class AdminHTTPClient:
 
         encoded_repo_id = urllib.parse.quote(repo_id, safe="")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.delete(
-                f"{self.base_url}/admin/models/huggingface/{encoded_repo_id}",
-                headers=self.headers,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Model deletion failed: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.delete(
+            f"{self.base_url}/admin/models/huggingface/{encoded_repo_id}",
+            headers=self.headers,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Model deletion failed: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def create_collection(
         self, name: str, embedding_model: str
@@ -364,17 +349,16 @@ class AdminHTTPClient:
         """Create a collection on the deployed instance."""
         data = {"name": name, "embedding_model": embedding_model}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/collections",
-                headers=self.headers,
-                json=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to create collection: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/collections",
+            headers=self.headers,
+            json=data,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to create collection: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     async def add_to_collection(
         self,
@@ -392,17 +376,16 @@ class AdminHTTPClient:
             "embeddings": embeddings,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/collections/{collection_name}/add",
-                headers=self.headers,
-                json=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to add to collection: {response.status} {await response.text()}"
-                    )
-                return await response.json()
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/collections/{collection_name}/add",
+            headers=self.headers,
+            json=data,
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Failed to add to collection: {response.status} {await response.text()}"
+                )
+            return await response.json()
 
     # Legacy endpoint support
     async def admin_operation(
@@ -411,33 +394,32 @@ class AdminHTTPClient:
         """Execute admin operation using legacy endpoint."""
         data = {"operation": operation, "params": params}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/operation", headers=self.headers, json=data
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Admin operation failed: {response.status} {await response.text()}"
-                    )
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{self.base_url}/admin/operation", headers=self.headers, json=data
+        ) as response:
+            if response.status != 200:
+                raise Exception(
+                    f"Admin operation failed: {response.status} {await response.text()}"
+                )
 
-                # Check if response is SSE stream
-                content_type = response.headers.get("content-type", "")
-                if "text/event-stream" in content_type:
-                    async for line in response.content:
-                        line = line.decode("utf-8").strip()
-                        if line.startswith("data: "):
-                            data_str = line[6:]  # Remove 'data: ' prefix
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                yield json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
+            # Check if response is SSE stream
+            content_type = response.headers.get("content-type", "")
+            if "text/event-stream" in content_type:
+                async for line in response.content:
+                    line = line.decode("utf-8").strip()
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove 'data: ' prefix
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            yield json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+            else:
+                # Non-streaming response
+                result = await response.json()
+                if "results" in result:
+                    for item in result["results"]:
+                        yield item
                 else:
-                    # Non-streaming response
-                    result = await response.json()
-                    if "results" in result:
-                        for item in result["results"]:
-                            yield item
-                    else:
-                        yield result
+                    yield result

@@ -103,23 +103,30 @@ separate nodes and edges arrays for execution by the WorkflowRunner.
 """
 
 import json
+import logging
 import re
-from nodetool.config.logging_config import get_logger
-from typing import Any, AsyncGenerator, Dict, List, Optional, cast
-from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.metadata.typecheck import typecheck
+from collections.abc import AsyncGenerator
+from typing import Any, cast
+
+from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from jinja2 import Environment, BaseLoader
-
-from nodetool.agents.tools.help_tools import SearchNodesTool
 from nodetool.agents.tools.base import Tool
-from nodetool.providers import BaseProvider
+from nodetool.agents.tools.help_tools import SearchNodesTool
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.metadata.typecheck import typecheck
 from nodetool.metadata.types import (
     Message,
     ToolCall,
 )
 from nodetool.packages.registry import Registry
+from nodetool.providers import BaseProvider
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
 from nodetool.workflows.base_node import (
     BaseNode,
     InputNode,
@@ -127,16 +134,9 @@ from nodetool.workflows.base_node import (
     find_node_class_by_name,
     get_node_class,
 )
+from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, PlanningUpdate
-from nodetool.utils.message_parsing import (
-    extract_json_from_message,
-    remove_think_tags,
-)
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.graph import Graph
-
-import logging
 
 # Set up logger for this module
 logger = get_logger(__name__)
@@ -153,7 +153,7 @@ class NodeSpecification(BaseModel):
         default="",
         description="The exact node type from search_nodes results (e.g., 'nodetool.agents.Agent')",
     )
-    purpose: Optional[str] = Field(
+    purpose: str | None = Field(
         default=None,
         description="What this node does in the workflow and why it's needed",
     )
@@ -204,7 +204,7 @@ class NodeSpecification(BaseModel):
             except (json.JSONDecodeError, TypeError):
                 raise ValueError(
                     f"Could not parse properties for node {self.node_id}, properties: {self.properties}"
-                )
+                ) from None
 
         return self
 
@@ -212,7 +212,7 @@ class NodeSpecification(BaseModel):
 class WorkflowDesignResult(BaseModel):
     """Result model for workflow design phase."""
 
-    node_specifications: List[NodeSpecification] = Field(
+    node_specifications: list[NodeSpecification] = Field(
         description="Detailed specifications for all nodes including Input/Output nodes"
     )
 
@@ -314,8 +314,8 @@ def print_visual_graph(graph: APIGraph) -> None:
     logger.info("  " + "=" * 50)
 
     # Build adjacency information
-    adjacency: Dict[str, List[Any]] = {}
-    reverse_adjacency: Dict[str, List[Any]] = {}
+    adjacency: dict[str, list[Any]] = {}
+    reverse_adjacency: dict[str, list[Any]] = {}
     all_nodes = {node.id: node for node in graph.nodes}
 
     for edge in graph.edges:
@@ -332,13 +332,11 @@ def print_visual_graph(graph: APIGraph) -> None:
         )
 
     # Find root nodes (no incoming edges)
-    root_nodes = [
-        node_id for node_id in all_nodes.keys() if node_id not in reverse_adjacency
-    ]
+    root_nodes = [node_id for node_id in all_nodes if node_id not in reverse_adjacency]
 
     # If no clear roots, start with first node
     if not root_nodes:
-        root_nodes = [list(all_nodes.keys())[0]] if all_nodes else []
+        root_nodes = [next(iter(all_nodes))] if all_nodes else []
 
     visited = set()
 
@@ -689,10 +687,10 @@ class GraphPlanner:
         provider: BaseProvider,
         model: str,
         objective: str,
-        input_schema: list[GraphInput] = [],
-        output_schema: list[GraphOutput] = [],
-        existing_graph: Optional[APIGraph] = None,
-        system_prompt: Optional[str] = None,
+        input_schema: list[GraphInput] | None = None,
+        output_schema: list[GraphOutput] | None = None,
+        existing_graph: APIGraph | None = None,
+        system_prompt: str | None = None,
         max_tokens: int = 8192,
         verbose: bool = True,
     ):
@@ -713,14 +711,17 @@ class GraphPlanner:
             f"GraphPlanner.__init__ called with provider={type(provider).__name__}, model={model}"
         )
         logger.debug(
-            f"Objective length: {len(objective)} chars, input_schema: {len(input_schema)} items, output_schema: {len(output_schema)} items"
+            "Objective length: %d chars, input_schema: %d items, output_schema: %d items",
+            len(objective),
+            len(input_schema) if input_schema is not None else 0,
+            len(output_schema) if output_schema is not None else 0,
         )
 
         self.provider = provider
         self.model = model
         self.objective = objective
-        self.input_schema = input_schema
-        self.output_schema = output_schema
+        self.input_schema = list(input_schema) if input_schema is not None else []
+        self.output_schema = list(output_schema) if output_schema is not None else []
         self.max_tokens = max_tokens
         self.existing_graph = existing_graph
 
@@ -744,21 +745,23 @@ class GraphPlanner:
         logger.debug("Jinja2 environment initialized")
 
         # Graph storage
-        self.graph: Optional[APIGraph] = None
+        self.graph: APIGraph | None = None
 
         # Cache for expensive operations
-        self._cached_node_metadata: Optional[List] = None
-        self._cached_namespaces: Optional[set[str]] = None
+        self._cached_node_metadata: list | None = None
+        self._cached_namespaces: set[str] | None = None
 
         logger.debug(f"GraphPlanner initialized for objective: {objective[:100]}...")
         logger.debug(
-            f"Input schema details: {[f'{inp.name}:{inp.type.type}' for inp in input_schema]}"
+            "Input schema details: %s",
+            [f"{inp.name}:{inp.type.type}" for inp in self.input_schema],
         )
         logger.debug(
-            f"Output schema details: {[f'{out.name}:{out.type.type}' for out in output_schema]}"
+            "Output schema details: %s",
+            [f"{out.name}:{out.type.type}" for out in self.output_schema],
         )
 
-    def _get_node_metadata(self) -> List:
+    def _get_node_metadata(self) -> list:
         """Get node metadata with caching."""
         logger.debug(
             f"_get_node_metadata called, cached: {self._cached_node_metadata is not None}"
@@ -785,14 +788,14 @@ class GraphPlanner:
             )
         return self._cached_namespaces
 
-    def _convert_graph_to_specifications(self, graph: APIGraph) -> List[Dict[str, Any]]:
+    def _convert_graph_to_specifications(self, graph: APIGraph) -> list[dict[str, Any]]:
         """Converts an APIGraph object into the node_specifications format."""
         logger.debug(
             f"Converting APIGraph to specifications: {len(graph.nodes)} nodes, {len(graph.edges)} edges"
         )
         node_specs = []
         # Create a lookup for edges by their target node ID
-        edges_by_target: Dict[str, List[Any]] = {}
+        edges_by_target: dict[str, list[Any]] = {}
         for edge in graph.edges:
             target_id = edge.target
             if target_id not in edges_by_target:
@@ -828,8 +831,8 @@ class GraphPlanner:
 
     def _build_nodes_and_edges_from_specifications(
         self,
-        node_specifications: List[NodeSpecification],
-    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        node_specifications: list[NodeSpecification],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Build nodes and edges from node specifications.
 
@@ -933,7 +936,7 @@ class GraphPlanner:
         logger.debug(f"Built {len(nodes)} nodes and {len(edges)} edges total")
         return nodes, edges
 
-    def _get_prompt_context(self, **kwargs: Any) -> Dict[str, Any]:
+    def _get_prompt_context(self, **kwargs: Any) -> dict[str, Any]:
         """Build context for Jinja2 prompt rendering."""
         logger.debug(f"Building prompt context with {len(kwargs)} additional kwargs")
         context = {
@@ -1044,11 +1047,11 @@ class GraphPlanner:
     async def _run_workflow_design_phase(
         self,
         context: ProcessingContext,
-        history: List[Message],
+        history: list[Message],
     ) -> AsyncGenerator[
         Chunk
         | ToolCall
-        | tuple[List[Message], WorkflowDesignResult, Optional[PlanningUpdate]],
+        | tuple[list[Message], WorkflowDesignResult, PlanningUpdate | None],
         None,
     ]:
         """Run the workflow design phase with SearchNodesTool, using JSON output for final result."""
@@ -1299,7 +1302,7 @@ class GraphPlanner:
 
         except Exception as e:
             logger.error(f"Error validating graph edge types: {e}", exc_info=True)
-            return f"Failed to validate graph structure: {str(e)}"
+            return f"Failed to validate graph structure: {e!s}"
 
     def _validate_input_output_nodes(self, graph: Graph) -> str:
         """Validate InputNode and OutputNode instances against input and output schemas."""
@@ -1365,9 +1368,7 @@ class GraphPlanner:
                     break
 
         # Check for missing input nodes
-        required_input_names = set(
-            schema_input.name for schema_input in self.input_schema
-        )
+        required_input_names = {schema_input.name for schema_input in self.input_schema}
         missing_input_names = required_input_names - found_input_names
         logger.debug(
             f"Required inputs: {required_input_names}, Found: {found_input_names}, Missing: {missing_input_names}"
@@ -1378,9 +1379,9 @@ class GraphPlanner:
             error_messages.append(error_msg)
 
         # Check for missing output nodes
-        required_output_names = set(
+        required_output_names = {
             schema_output.name for schema_output in self.output_schema
-        )
+        }
         missing_output_names = required_output_names - found_output_names
         logger.debug(
             f"Required outputs: {required_output_names}, Found: {found_output_names}, Missing: {missing_output_names}"
@@ -1478,7 +1479,7 @@ class GraphPlanner:
 
         # Count node types
         logger.debug("Computing node type distribution")
-        node_type_counts: Dict[str, int] = {}
+        node_type_counts: dict[str, int] = {}
         for node in self.graph.nodes:
             node_type = node.type
             node_type_counts[node_type] = node_type_counts.get(node_type, 0) + 1
@@ -1529,7 +1530,7 @@ class GraphPlanner:
         logger.debug(
             f"Initializing history with system prompt: {len(self.system_prompt)} chars"
         )
-        history: List[Message] = [
+        history: list[Message] = [
             Message(role="system", content=self.system_prompt),
         ]
         logger.debug(f"History initialized with {len(history)} messages")

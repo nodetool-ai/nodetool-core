@@ -6,27 +6,27 @@ Provides an interactive chat interface that connects to a running chat server wi
 """
 
 import asyncio
-import sys
 import os
-from typing import Optional, List, Dict
+import sys
+from typing import Dict, List, Optional
+
 from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
     ChatCompletionUserMessageParam,
 )
-from rich.console import Console
-from rich.panel import Panel
-from rich.live import Live
-from rich.markdown import Markdown
 
 # Prompt toolkit imports for advanced input handling
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import NestedCompleter, Completer
+from prompt_toolkit.completion import Completer, NestedCompleter
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
-
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
 
 console = Console()
 

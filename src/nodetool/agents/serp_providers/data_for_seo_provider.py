@@ -1,13 +1,14 @@
-from httpx import AsyncClient, HTTPStatusError, RequestError
-from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
-from nodetool.agents.tools._remove_base64_images import _remove_base64_images
-from nodetool.runtime.resources import require_scope, maybe_scope
-from nodetool.config.environment import Environment
-
-
 import base64
 import json
-from typing import Any, Dict, List, Union
+from contextlib import suppress
+from typing import Any
+
+from httpx import AsyncClient, HTTPStatusError, RequestError
+
+from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
+from nodetool.agents.tools._remove_base64_images import _remove_base64_images
+from nodetool.config.environment import Environment
+from nodetool.runtime.resources import maybe_scope, require_scope
 
 
 class DataForSEOProvider(SerpProvider):
@@ -39,10 +40,10 @@ class DataForSEOProvider(SerpProvider):
         if not self.api_login or not self.api_password:
             # This error will be caught by _get_auth_headers and returned as ErrorResponse
             pass
-    
+
     def _get_client(self) -> AsyncClient:
         """Get or create HTTP client from ResourceScope.
-        
+
         Uses ResourceScope's HTTP client to ensure correct event loop binding.
         """
         if self._client is None:
@@ -53,7 +54,7 @@ class DataForSEOProvider(SerpProvider):
                 self._client = AsyncClient(timeout=60.0)
         return self._client
 
-    def _get_auth_headers(self) -> Union[Dict[str, str], ErrorResponse]:
+    def _get_auth_headers(self) -> dict[str, str] | ErrorResponse:
         """
         Retrieves DataForSEO credentials and returns auth headers.
         Returns ErrorResponse if credentials are not found.
@@ -71,7 +72,7 @@ class DataForSEOProvider(SerpProvider):
 
     async def _make_request(
         self, api_url: str, payload: list[dict]
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+    ) -> dict[str, Any] | ErrorResponse:
         """
         Makes an asynchronous POST request to the DataForSEO API.
         """
@@ -87,24 +88,22 @@ class DataForSEOProvider(SerpProvider):
             return response.json()
         except HTTPStatusError as e:
             error_body_details = e.response.text  # Default to text
-            try:
+            with suppress(json.JSONDecodeError):
                 error_body_details = e.response.json()  # Try to parse JSON
-            except json.JSONDecodeError:
-                pass  # Keep text if JSON parsing fails
             return {
                 "error": f"HTTP error occurred: {e.response.status_code} - {e.response.reason_phrase}",
                 "details": error_body_details,
             }
         except RequestError as e:
-            return {"error": f"HTTP request failed: {str(e)}"}
+            return {"error": f"HTTP request failed: {e!s}"}
         except json.JSONDecodeError as e:  # For errors during response.json() decoding
-            return {"error": f"Failed to decode JSON response: {str(e)}"}
+            return {"error": f"Failed to decode JSON response: {e!s}"}
         except Exception as e:
-            return {"error": f"Unexpected error during DataForSEO request: {str(e)}"}
+            return {"error": f"Unexpected error during DataForSEO request: {e!s}"}
 
     async def search(
         self, keyword: str, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> list[dict[str, Any]] | ErrorResponse:
         payload_dict = {
             "keyword": keyword,
             "location_code": self.location_code,
@@ -150,7 +149,7 @@ class DataForSEOProvider(SerpProvider):
                             )
         except Exception as e:
             return {
-                "error": f"Error processing DataForSEO organic search results: {str(e)}",
+                "error": f"Error processing DataForSEO organic search results: {e!s}",
                 "details": result_data,
             }
 
@@ -160,7 +159,7 @@ class DataForSEOProvider(SerpProvider):
         self,
         keyword: str,
         num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> list[dict[str, Any]] | ErrorResponse:
         payload_dict = {
             "keyword": keyword,
             "location_code": self.location_code,
@@ -217,7 +216,7 @@ class DataForSEOProvider(SerpProvider):
                             )
         except Exception as e:
             return {
-                "error": f"Error processing DataForSEO news search results: {str(e)}",
+                "error": f"Error processing DataForSEO news search results: {e!s}",
                 "details": result_data,
             }
 
@@ -228,7 +227,7 @@ class DataForSEOProvider(SerpProvider):
         keyword: str | None = None,
         image_url: str | None = None,
         num_results: int = 20,  # Default from old tool
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> list[dict[str, Any]] | ErrorResponse:
         if not keyword and not image_url:
             return {
                 "error": "One of 'keyword' or 'image_url' is required for image search."
@@ -294,15 +293,15 @@ class DataForSEOProvider(SerpProvider):
                                     )
         except Exception as e:
             return {
-                "error": f"Error processing DataForSEO image search results: {str(e)}",
+                "error": f"Error processing DataForSEO image search results: {e!s}",
                 "details": result_data,
             }
 
         return _remove_base64_images(image_items_transformed)
 
     async def search_finance(
-        self, query: str, window: str | None = None
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+        self, _query: str, _window: str | None = None
+    ) -> dict[str, Any] | ErrorResponse:
         """
         Retrieves financial data. Not currently supported by DataForSEOProvider.
         """
@@ -311,16 +310,16 @@ class DataForSEOProvider(SerpProvider):
         }
 
     async def search_jobs(
-        self, query: str, location: str | None = None, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        self, _query: str, _location: str | None = None, _num_results: int = 10
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for jobs. Not currently supported by DataForSEOProvider.
         """
         return {"error": "Google Jobs search is not supported by DataForSEOProvider."}
 
     async def search_lens(
-        self, image_url: str, country: str | None = None, num_results: int = 10
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+        self, _image_url: str, _country: str | None = None, _num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
         """
         Searches using an image URL (Google Lens). Not currently supported by DataForSEOProvider.
         """
@@ -328,12 +327,12 @@ class DataForSEOProvider(SerpProvider):
 
     async def search_maps(
         self,
-        query: str,
-        ll: str | None = None,
-        map_type: str = "search",
-        data_id: str | None = None,
-        num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        _query: str,
+        _ll: str | None = None,
+        _map_type: str = "search",
+        _data_id: str | None = None,
+        _num_results: int = 10,
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Maps. Not currently supported by DataForSEOProvider.
         """
@@ -341,15 +340,15 @@ class DataForSEOProvider(SerpProvider):
 
     async def search_shopping(
         self,
-        query: str,
-        country: str | None = None,
-        domain: str | None = None,
-        min_price: int | None = None,
-        max_price: int | None = None,
-        condition: str | None = None,
-        sort_by: str | None = None,
-        num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+        _query: str,
+        _country: str | None = None,
+        _domain: str | None = None,
+        _min_price: int | None = None,
+        _max_price: int | None = None,
+        _condition: str | None = None,
+        _sort_by: str | None = None,
+        _num_results: int = 10,
+    ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for shopping results. Not currently supported by DataForSEOProvider.
         """

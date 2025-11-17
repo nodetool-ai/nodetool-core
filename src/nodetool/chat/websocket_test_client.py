@@ -38,16 +38,18 @@ python websocket_test_client.py --binary
 on websocket_test_client.py --url ws://localhost:8000/chat --token your_jwt_token
 """
 
+import argparse
 import asyncio
 import json
-import argparse
-import sys
 import readline
-from typing import Optional, Dict, Any
+import sys
+from contextlib import suppress
 from datetime import datetime
-import websockets
-import msgpack
 from enum import Enum
+from typing import Any, Dict, Optional
+
+import msgpack
+import websockets
 from websockets.asyncio.client import ClientConnection
 
 
@@ -132,10 +134,8 @@ class ChatWebSocketClient:
 
         if self.receive_task:
             self.receive_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self.receive_task
-            except asyncio.CancelledError:
-                pass
 
         if self.websocket:
             await self.websocket.close()

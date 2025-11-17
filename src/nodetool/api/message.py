@@ -2,16 +2,16 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
 from nodetool.api.utils import current_user
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
-from nodetool.config.logging_config import get_logger
-
 from nodetool.models.thread import Thread
 from nodetool.types.chat import MessageCreateRequest, MessageList
-
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
@@ -21,10 +21,11 @@ router = APIRouter(prefix="/api/messages", tags=["messages"])
 async def create(
     req: MessageCreateRequest, user: str = Depends(current_user)
 ) -> Message:
-    if req.thread_id is None:
-        thread_id = (await Thread.create(user_id=user)).id
-    else:
-        thread_id = req.thread_id
+    thread_id = (
+        (await Thread.create(user_id=user)).id
+        if req.thread_id is None
+        else req.thread_id
+    )
     return Message.from_model(
         await MessageModel.create(
             user_id=user,

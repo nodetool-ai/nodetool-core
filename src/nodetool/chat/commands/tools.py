@@ -1,17 +1,20 @@
 """Tool management commands."""
 
 import asyncio
-from typing import List
+import os
 import sys
 import termios
 import tty
-import os
-from nodetool.chat.chat_cli import ChatCLI
-from rich.table import Table
-from rich.panel import Panel
-from rich.live import Live
-from rich.text import Text
+from typing import List
+
 from rich.console import Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from nodetool.chat.chat_cli import ChatCLI
+
 from .base import Command
 
 

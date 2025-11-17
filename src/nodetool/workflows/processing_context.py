@@ -1,34 +1,72 @@
-from datetime import datetime
-from enum import Enum
 import asyncio
-import inspect
+import base64
 import imaplib
-from typing import TYPE_CHECKING
-from urllib.parse import urlparse
-from playwright.async_api import async_playwright, Browser
+import inspect
 import io
 import json
 import os
 import queue
 import urllib.parse
 import uuid
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
 import httpx
 import joblib
-import base64
-import PIL.Image
-import PIL.ImageOps
 import numpy as np
 import pandas as pd
+import PIL.Image
+import PIL.ImageOps
+from playwright.async_api import Browser, async_playwright
 from pydub import AudioSegment
 
 if TYPE_CHECKING:
     from sklearn.base import BaseEstimator
 
+from io import BytesIO
+from pickle import loads
+from typing import IO, Any, AsyncGenerator, Callable
+
+from chromadb.api import ClientAPI
+
+from nodetool.chat.workspace_manager import WorkspaceManager
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
+from nodetool.io.uri_utils import create_file_uri as _create_file_uri
+from nodetool.media.common.media_constants import (
+    DEFAULT_AUDIO_SAMPLE_RATE,
+)
+from nodetool.media.image.font_utils import (
+    get_system_font_path as _get_system_font_path_util,
+)
+from nodetool.media.image.image_utils import (
+    numpy_to_pil_image as _numpy_to_pil_image_util,
+)
+from nodetool.media.video.video_utils import export_to_video_bytes
+from nodetool.metadata.types import (
+    AssetRef,
+    AudioRef,
+    DataframeRef,
+    ImageRef,
+    ModelRef,
+    NPArray,
+    Provider,
+    TextRef,
+    VideoRef,
+    asset_types,
+)
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
-from nodetool.models.workflow import Workflow
 from nodetool.models.message import Message as DBMessage
+from nodetool.models.workflow import Workflow
+from nodetool.runtime.resources import require_scope
 from nodetool.types.chat import (
     MessageCreateRequest,
 )
@@ -36,29 +74,8 @@ from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
-from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.metadata.types import (
-    NPArray,
-    Provider,
-    asset_types,
-)
-from nodetool.workflows.graph import Graph
-from nodetool.workflows.types import (
-    ProcessingMessage,
-)
-from nodetool.metadata.types import (
-    AssetRef,
-    AudioRef,
-    DataframeRef,
-    ImageRef,
-    ModelRef,
-    TextRef,
-    VideoRef,
-)
-from nodetool.config.environment import Environment
-from nodetool.config.logging_config import get_logger
-from nodetool.runtime.resources import require_scope
 from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.graph import Graph
 from nodetool.workflows.property import Property
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
@@ -68,28 +85,9 @@ from nodetool.workflows.torch_support import (
     tensor_to_image_array,
     torch_tensor_to_metadata,
 )
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
+from nodetool.workflows.types import (
+    ProcessingMessage,
 )
-from nodetool.metadata.types import Provider
-
-
-from io import BytesIO
-from typing import IO, Any, AsyncGenerator, Callable
-from chromadb.api import ClientAPI
-from pickle import loads
-from nodetool.media.common.media_constants import (
-    DEFAULT_AUDIO_SAMPLE_RATE,
-)
-from nodetool.io.uri_utils import create_file_uri as _create_file_uri
-from nodetool.media.image.image_utils import (
-    numpy_to_pil_image as _numpy_to_pil_image_util,
-)
-from nodetool.media.image.font_utils import (
-    get_system_font_path as _get_system_font_path_util,
-)
-from nodetool.media.video.video_utils import export_to_video_bytes
-
 
 log = get_logger(__name__)
 
@@ -340,7 +338,7 @@ class ProcessingContext:
         """
         from nodetool.security.secret_helper import get_secret
         return await get_secret(key, self.user_id)
-    
+
     async def get_secret_required(self, key: str) -> str:
         """
         Get a required secret value.
@@ -363,10 +361,7 @@ class ProcessingContext:
         """
         from nodetool.providers import get_provider
 
-        if isinstance(provider_type, str):
-            provider_enum = Provider(provider_type)
-        else:
-            provider_enum = provider_type
+        provider_enum = Provider(provider_type) if isinstance(provider_type, str) else provider_type
 
         provider = await get_provider(provider_enum, self.user_id)
 
@@ -513,7 +508,7 @@ class ProcessingContext:
         self.message_queue.put_nowait(message)
 
         # Store latest status for each node and edge for reconnection replay
-        from nodetool.workflows.types import NodeUpdate, EdgeUpdate
+        from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
         if isinstance(message, NodeUpdate):
             self.node_statuses[message.node_id] = message
@@ -527,7 +522,7 @@ class ProcessingContext:
         Returns:
             bool: True if the message queue is not empty, False otherwise.
         """
-        return not self.message_queue.qsize() == 0
+        return self.message_queue.qsize() != 0
 
     async def asset_storage_url(self, key: str) -> str:
         """
@@ -1039,12 +1034,11 @@ class ProcessingContext:
                 if os.name == "nt":
                     # Windows handling: drive letters and UNC paths
                     if netloc:
-                        if ":" in netloc:
-                            # Drive letter path: file://C:/path
-                            path = Path(netloc + path_part)
-                        else:
-                            # UNC path: file://server/share
-                            path = Path("//" + netloc + path_part)
+                        path = (
+                            Path(netloc + path_part)
+                            if ":" in netloc
+                            else Path("//" + netloc + path_part)
+                        )
                     else:
                         # file:///C:/path comes through as path_part="/C:/path"; strip leading slash
                         if (
@@ -1056,10 +1050,9 @@ class ProcessingContext:
                         path = Path(path_part)
                 else:
                     # POSIX: netloc is typically empty or localhost; for others, treat as network path
-                    if netloc:
-                        path = Path("//" + netloc + path_part)
-                    else:
-                        path = Path(path_part)
+                    path = (
+                        Path("//" + netloc + path_part) if netloc else Path(path_part)
+                    )
 
                 resolved_path = path.expanduser()
                 if not resolved_path.exists():
@@ -1069,7 +1062,7 @@ class ProcessingContext:
 
                 return open(resolved_path, "rb")
             except Exception as e:
-                raise FileNotFoundError(f"Failed to access file: {e}")
+                raise FileNotFoundError(f"Failed to access file: {e}") from e
 
         # Check URI cache first for downloaded content
         try:
@@ -1083,10 +1076,8 @@ class ProcessingContext:
         content = response.content
 
         # Store downloaded bytes in URI cache for 5 minutes
-        try:
+        with suppress(Exception):
             require_scope().get_memory_uri_cache().set(url, bytes(content))
-        except Exception:
-            pass
 
         return BytesIO(content)
 
@@ -1199,7 +1190,9 @@ class ProcessingContext:
                             out.seek(0)
                             return out
                         except Exception as e:
-                            raise ValueError(f"Failed to encode numpy video: {e}")
+                            raise ValueError(
+                                f"Failed to encode numpy video: {e}"
+                            ) from e
                     else:
                         # Generic fallback: return raw bytes
                         return BytesIO(obj.tobytes())
@@ -1357,9 +1350,8 @@ class ProcessingContext:
         ):
             key = image_ref.uri
             obj = self._memory_get(key)
-            if obj is not None:
-                if isinstance(obj, PIL.Image.Image):
-                    return obj.convert("RGB")
+            if obj is not None and isinstance(obj, PIL.Image.Image):
+                return obj.convert("RGB")
                 # Fall through to regular conversion if not a PIL Image
 
         buffer = await self.asset_to_io(image_ref)
@@ -1456,9 +1448,8 @@ class ProcessingContext:
         ):
             key = audio_ref.uri
             obj = self._memory_get(key)
-            if obj is not None:
-                if isinstance(obj, AudioSegment):
-                    return obj
+            if obj is not None and isinstance(obj, AudioSegment):
+                return obj
                 # Fall through to regular conversion if not an AudioSegment
 
         import pydub
@@ -1892,9 +1883,8 @@ class ProcessingContext:
             ):
                 key = text_ref.uri
                 obj = self._memory_get(key)
-                if obj is not None:
-                    if isinstance(obj, str):
-                        return obj
+                if obj is not None and isinstance(obj, str):
+                    return obj
                     # Fall through to regular conversion if not a string
 
             stream = await self.asset_to_io(text_ref)
@@ -1933,6 +1923,7 @@ class ProcessingContext:
         parent_id: str | None = None,
     ) -> VideoRef:
         import tempfile
+
         from nodetool.media.video.video_utils import export_to_video
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
@@ -2460,7 +2451,7 @@ class ProcessingContext:
         Returns:
             A Playwright browser instance.
         """
-        from urllib.parse import urlunparse, parse_qs, urlencode
+        from urllib.parse import parse_qs, urlencode, urlunparse
 
         if getattr(self, "_browser", None):
             return self._browser  # type: ignore
@@ -2570,10 +2561,8 @@ class ProcessingContext:
         """
         # AbstractNodeCache does not support partial clears by pattern.
         # For now, perform a full clear when requested.
-        try:
+        with suppress(Exception):
             require_scope().get_node_cache().clear()
-        except Exception:
-            pass
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """

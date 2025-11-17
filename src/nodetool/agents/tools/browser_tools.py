@@ -4,21 +4,21 @@ Browser interaction tools.
 This module provides tools for interacting with web browsers and web pages.
 """
 
-import os
-from typing import Any, Dict, Optional
-import html2text
+import asyncio
 import json
+import os
+from contextlib import suppress
+from typing import Any, ClassVar, Dict, Optional
 from urllib.parse import urlparse
 
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.base import Tool
-from playwright.async_api import Page, ElementHandle
-from nodetool.metadata.types import Message, ToolCall
-
-import asyncio
-
-import os
+import html2text
 from huggingface_hub import AsyncInferenceClient, InferenceClient
+from playwright.async_api import ElementHandle, Page
+
+from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import Message, ToolCall
+from nodetool.workflows.processing_context import ProcessingContext
+
 
 class ReaderTool:
     """
@@ -29,7 +29,7 @@ class ReaderTool:
     description = (
         "Send a chat completion request to jinaai/ReaderLM-v2:featherless-ai on HuggingFace Hub."
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "message": {
@@ -269,7 +269,7 @@ class BrowserTool(Tool):
 
     name = "browser"
     description = "Fetch content from a web page"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -370,7 +370,7 @@ class BrowserTool(Tool):
             return {
                 "success": True,
                 "url": url,
-                "content": content,   
+                "content": content,
                 "metadata": metadata,
             }
 
@@ -381,10 +381,8 @@ class BrowserTool(Tool):
         finally:
             # Always close the browser session
             if browser_context:
-                try:
+                with suppress(Exception):
                     await browser_context.close()
-                except Exception:
-                    pass
 
 
 class ScreenshotTool(Tool):
@@ -399,7 +397,7 @@ class ScreenshotTool(Tool):
     description = (
         "Take a screenshot of the current browser window or a specific element"
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -462,10 +460,8 @@ class ScreenshotTool(Tool):
         finally:
             # Always close the browser session
             if browser_context:
-                try:
+                with suppress(Exception):
                     await browser_context.close()
-                except Exception:
-                    pass
 
 
 class DOMExamineTool(Tool):
@@ -477,7 +473,7 @@ class DOMExamineTool(Tool):
 
     name = "dom_examine"
     description = "Examine DOM structure and get detailed information about elements"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -601,7 +597,7 @@ class DOMSearchTool(Tool):
 
     name = "dom_search"
     description = "Search for DOM elements using various criteria"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -737,7 +733,7 @@ class DOMSearchTool(Tool):
                     info["xpath"] = xpath
 
                     results.append(info)
-                except Exception:  # noqa: S110
+                except Exception:
                     continue
 
             return {
@@ -762,7 +758,7 @@ class DOMExtractTool(Tool):
 
     name = "dom_extract"
     description = "Extract content from specific DOM elements"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {
@@ -1105,7 +1101,7 @@ class AgenticBrowserTool(Tool):
     description = (
         "Intelligently extract specific content from web pages using an AI agent"
     )
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "url": {

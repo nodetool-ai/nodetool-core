@@ -3,9 +3,9 @@ Job-specific logging handler that captures logs for background jobs.
 """
 
 import logging
-from datetime import datetime
-from typing import Optional
 from collections import deque
+from datetime import datetime
+from typing import ClassVar, Optional
 
 
 class JobLogHandler(logging.Handler):
@@ -17,7 +17,7 @@ class JobLogHandler(logging.Handler):
     """
 
     # Class-level registry of active job log handlers
-    _active_handlers: dict[str, "JobLogHandler"] = {}
+    _active_handlers: ClassVar[dict[str, "JobLogHandler"]] = {}
 
     def __init__(
         self,

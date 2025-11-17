@@ -46,33 +46,33 @@ Usage:
     example = registry.find_example_by_name("example_name")
 """
 
-from enum import Enum
-import json
-import os
-import subprocess
-import requests
-import tomli
-import re
+import asyncio
 import importlib
 import importlib.metadata
-from nodetool.config.logging_config import get_logger
+import json
+import os
+import re
+import subprocess
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
-import httpx
-import asyncio
+
 import click
+import httpx
+import requests
+import tomli
 import tomlkit
+from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_system_file_path
-from nodetool.metadata.node_metadata import NodeMetadata, PackageModel, ExampleMetadata
+from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
 from nodetool.packages.types import AssetInfo, PackageInfo
-from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph as APIGraph
-
+from nodetool.types.workflow import Workflow
 
 # Constants
 PACKAGES_DIR = "packages"
@@ -602,7 +602,7 @@ class Registry:
                 if not example_path.exists():
                     continue
 
-                with open(example_path, "r", encoding="utf-8") as f:
+                with open(example_path, encoding="utf-8") as f:
                     try:
                         workflow_data = json.load(f)
 
@@ -657,7 +657,7 @@ class Registry:
             ExampleWorkflow: The loaded example workflow with metadata
         """
         try:
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 props = json.load(f)
                 props["package_name"] = package_name
                 if not Environment.is_production():
@@ -1153,10 +1153,12 @@ def get_nodetool_package_source_folders() -> List[Path]:
 
 def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     """Scan current directory for nodes and create package metadata."""
+    import json
     import os
     import sys
+
     import tomli
-    import json
+
     from nodetool.metadata.node_metadata import (
         EnumEncoder,
         PackageModel,
@@ -1323,8 +1325,9 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     Returns:
         str: The path to the saved metadata file
     """
-    import os
     import json
+    import os
+
     from nodetool.metadata.node_metadata import EnumEncoder
 
     # Create metadata directory if it doesn't exist
@@ -1374,7 +1377,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         return
 
     # Read the pyproject.toml file
-    with open(pyproject_path, "r", encoding="utf-8") as f:
+    with open(pyproject_path, encoding="utf-8") as f:
         content = f.read()
 
     # Parse with tomlkit to preserve formatting and comments
@@ -1461,8 +1464,9 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
 
 
 def load_node_packages():
-    from nodetool.metadata.node_metadata import get_node_classes_from_namespace
     import importlib
+
+    from nodetool.metadata.node_metadata import get_node_classes_from_namespace
 
     registry = Registry()
     packages = registry.list_installed_packages()

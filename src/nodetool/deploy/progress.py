@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from rich.console import Console
 from rich.progress import (
-    Progress,
     BarColumn,
+    Progress,
+    SpinnerColumn,
     TaskID,
+    TaskProgressColumn,
     TextColumn,
     TimeRemainingColumn,
-    TaskProgressColumn,
-    SpinnerColumn,
 )
 
 

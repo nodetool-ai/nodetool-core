@@ -1,21 +1,21 @@
-import base64
 import asyncio
+import base64
 import os
 import traceback
-from dotenv import load_dotenv
 from io import BytesIO
 from typing import Any, AsyncGenerator, Dict
-from nodetool.workflows.base_node import ApiKeyMissingError
+
 import openai
 import pydub
 import pydub.silence
-
+from dotenv import load_dotenv
 from openai.types.chat import ChatCompletion
 from openai.types.images_response import ImagesResponse
 
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import OpenAIModel
 from nodetool.types.prediction import Prediction, PredictionResult
+from nodetool.workflows.base_node import ApiKeyMissingError
 
 # --- New Credit-Based Pricing System ---
 # 1 credit = $0.01 USD (i.e., 1000 credits = $10 USD)

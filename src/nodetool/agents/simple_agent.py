@@ -4,20 +4,22 @@ Chain of Thought (CoT) Agent implementation with tool calling capabilities.
 """
 
 import json
-from typing import AsyncGenerator, Sequence, Any
+from typing import Any, AsyncGenerator, Sequence
 
+from jinja2 import BaseLoader
+from jinja2 import Environment as JinjaEnvironment
+
+from nodetool.agents.base_agent import BaseAgent
 from nodetool.agents.sub_task_context import SubTaskContext
-from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     SubTask,
     Task,
     ToolCall,
 )
+from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import SubTaskResult
-from jinja2 import Environment as JinjaEnvironment, BaseLoader
-from nodetool.agents.base_agent import BaseAgent
 
 
 class SimpleAgent(BaseAgent):

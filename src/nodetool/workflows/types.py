@@ -1,8 +1,9 @@
-from pydantic import BaseModel
 from enum import Enum
-
 from typing import Any, Literal
-from nodetool.metadata.types import BaseType, Chunk, Task, SubTask
+
+from pydantic import BaseModel
+
+from nodetool.metadata.types import BaseType, Chunk, SubTask, Task
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 

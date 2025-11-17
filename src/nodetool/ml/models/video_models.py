@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 import asyncio
-from nodetool.config.logging_config import get_logger
 from typing import List
-from nodetool.metadata.types import VideoModel
 
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import VideoModel
 from nodetool.providers import list_providers
 
 log = get_logger(__name__)

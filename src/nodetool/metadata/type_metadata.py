@@ -1,6 +1,6 @@
-from pydantic import BaseModel
 from typing import Any, Optional
 
+from pydantic import BaseModel
 
 ALL_TYPES = [
     "str",

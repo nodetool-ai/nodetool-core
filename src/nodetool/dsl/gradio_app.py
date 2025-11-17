@@ -50,8 +50,8 @@ def _assign_inputs(specs: Sequence[InputSpec], args: Sequence[Any], namespace: M
 
 async def _execute_workflow(workflow: Any) -> None:
     try:
-        from nodetool.workflows.workflow_runner import WorkflowRunner
         from nodetool.workflows.processing_context import ProcessingContext
+        from nodetool.workflows.workflow_runner import WorkflowRunner
     except Exception as exc:  # pragma: no cover - runtime availability guard
         raise RuntimeError(
             "NodeTool runtime is required to execute this workflow. Install nodetool-core "
@@ -83,9 +83,9 @@ def _collect_outputs(specs: Sequence[OutputSpec], namespace: Mapping[str, Any]) 
             continue
         value = getattr(node, "value", None)
         if value is None and hasattr(node, "output"):
-            value = getattr(node, "output")
+            value = node.output
         if value is None and hasattr(node, "out"):
-            value = getattr(node, "out")
+            value = node.out
         results.append(value)
     return results
 

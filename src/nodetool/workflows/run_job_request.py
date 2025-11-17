@@ -1,12 +1,10 @@
-from nodetool.metadata.types import Message
-from nodetool.types.graph import Graph
-
+from enum import Enum
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
-
-from typing import Any, Literal
-from enum import Enum
+from nodetool.metadata.types import Message
+from nodetool.types.graph import Graph
 
 
 class ResourceLimits(BaseModel):

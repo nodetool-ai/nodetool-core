@@ -1,21 +1,21 @@
-from enum import Enum
-import os
-import sys
+import importlib
 import inspect
+import os
 import pkgutil
+import shutil
+import subprocess
+import sys
+import typing
+from enum import Enum
 from types import GenericAlias, UnionType
 from typing import Any, Union
-import importlib
-import shutil
-import typing
-from pydantic import BaseModel
+
 from jinja2 import BaseLoader, Environment
-import subprocess
+from pydantic import BaseModel
 
 from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
 from nodetool.workflows.base_node import BaseNode
-
 
 _JINJA_ENV = Environment(loader=BaseLoader(), trim_blocks=True, lstrip_blocks=True)
 

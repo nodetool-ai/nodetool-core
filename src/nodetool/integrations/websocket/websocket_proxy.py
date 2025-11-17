@@ -1,9 +1,9 @@
 import asyncio
+
 import aiohttp
 from fastapi import WebSocket, WebSocketDisconnect
 
 from nodetool.config.logging_config import get_logger
-
 
 log = get_logger(__name__)
 

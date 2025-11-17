@@ -1,11 +1,11 @@
 import asyncio
-from asyncio import AbstractEventLoop
-from concurrent.futures import Future
 import contextvars
 import threading
-from typing import Callable, Coroutine, Any, Optional, TypeVar
-from nodetool.config.logging_config import get_logger
+from asyncio import AbstractEventLoop
+from concurrent.futures import Future
+from typing import Any, Callable, Coroutine, Optional, TypeVar
 
+from nodetool.config.logging_config import get_logger
 
 T = TypeVar("T")
 log = get_logger(__name__)  # Setup logger
@@ -134,7 +134,7 @@ class ThreadedEventLoop:
                 asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0
             )
             log.debug("All cancellable tasks finished after cancellation signal.")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning(
                 "Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
             )
@@ -167,7 +167,9 @@ class ThreadedEventLoop:
                     "Loop was already stopped before explicit stop in shutdown_sequence."
                 )
 
-        asyncio.ensure_future(shutdown_sequence_coro(), loop=self._loop)
+        self._shutdown_future = asyncio.ensure_future(
+            shutdown_sequence_coro(), loop=self._loop
+        )
 
     def stop(self) -> None:
         """Stop the event loop and wait for the thread to finish."""

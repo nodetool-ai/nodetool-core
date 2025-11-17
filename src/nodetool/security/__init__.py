@@ -11,6 +11,6 @@ from nodetool.security.master_key import MasterKeyManager
 # Import them directly: from nodetool.security.secret_helper import get_secret
 
 __all__ = [
-    "SecretCrypto",
     "MasterKeyManager",
+    "SecretCrypto",
 ]

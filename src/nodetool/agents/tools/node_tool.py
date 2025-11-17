@@ -7,8 +7,11 @@ as a tool for use by agents, enabling individual nodes to be executed
 independently within agent workflows.
 """
 
-from typing import Any, Dict, Type
+import json
+from typing import Any, ClassVar, Dict, Type
+
 from nodetool.agents.tools.base import Tool
+from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.workflows.base_node import (
     ApiKeyMissingError,
     BaseNode,
@@ -16,8 +19,6 @@ from nodetool.workflows.base_node import (
     sanitize_node_name,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.node_metadata import NodeMetadata
-import json
 
 
 class NodeTool(Tool):
@@ -83,7 +84,7 @@ class NodeTool(Tool):
             except Exception:
                 pass
 
-        self.input_schema = {"type": "object", "properties": properties}
+        self.input_schema: ClassVar[dict[str, Any]] = {"type": "object", "properties": properties}
 
         if required:
             self.input_schema["required"] = required

@@ -6,8 +6,8 @@ supporting GPU assignments, volume mounts, and environment variables.
 """
 
 import hashlib
-from typing import List
 import json
+from typing import List
 
 from nodetool.config.deployment import (
     SelfHostedDeployment,

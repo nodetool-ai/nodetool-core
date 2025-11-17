@@ -1,7 +1,9 @@
 from typing import Any
+
 from pymemcache import Client
-from pymemcache.serde import PickleSerde
 from pymemcache.exceptions import MemcacheUnknownError
+from pymemcache.serde import PickleSerde
+
 from .abstract_node_cache import AbstractNodeCache
 
 

@@ -24,9 +24,10 @@ import os
 import random
 import sys
 import time
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, List, Optional, Protocol, Sequence, Tuple, cast
-
+from pathlib import Path
+from typing import Any, Protocol, cast
 
 ProviderKey = str
 ModelName = str
@@ -68,7 +69,7 @@ class EvaluationResult:
     """Full evaluation output returned by AgentEvaluator.evaluate()."""
 
     stats: dict[str, ModelStats]
-    logs: List[LogEntry]
+    logs: list[LogEntry]
 
 
 @dataclass
@@ -105,7 +106,7 @@ class SingleAgentRunner(Protocol):
         provider_key: ProviderKey,
         model: ModelName,
         problem: Any,
-        tools: Optional[Sequence[Any]] = None,
+        tools: Sequence[Any] | None = None,
     ) -> Awaitable[SingleAgentRunResult]:
         ...
 
@@ -132,17 +133,15 @@ class AgentEvaluator:
 
     def __init__(
         self,
-        models: Sequence[Tuple[ProviderKey, ModelName]],
+        models: Sequence[tuple[ProviderKey, ModelName]],
         problems: Iterable[Any],
         result_checker: ResultCheckerFn,
-        tools: Optional[Sequence[Any]] = None,
+        tools: Sequence[Any] | None = None,
         concurrency: int = 8,
-        on_update: Optional[
-            Callable[[dict[str, ModelStats], List[LogEntry]], None]
-        ] = None,
-        subprocess_runner_path: Optional[str] = None,
-        subprocess_agent: Optional[str] = None,
-        single_agent_runner: Optional[SingleAgentRunner] = None,
+        on_update: Callable[[dict[str, ModelStats], list[LogEntry]], None] | None = None,
+        subprocess_runner_path: str | None = None,
+        subprocess_agent: str | None = None,
+        single_agent_runner: SingleAgentRunner | None = None,
     ) -> None:
         self.models = list(models)
         self.problems = list(problems)
@@ -159,8 +158,8 @@ class AgentEvaluator:
         provider_key: ProviderKey,
         model: ModelName,
         *,
-        run_agent_fn: Optional[SingleAgentRunner] = None,
-        rng: Optional[ChoiceGenerator] = None,
+            run_agent_fn: SingleAgentRunner | None = None,
+            rng: ChoiceGenerator | None = None,
     ) -> SingleRunReport:
         """Execute a single agent for a random problem in-process.
 
@@ -179,7 +178,7 @@ class AgentEvaluator:
         if not self.problems:
             raise ValueError("No problems available to evaluate.")
 
-        chooser = cast(ChoiceGenerator, rng or random)
+        chooser = cast("ChoiceGenerator", rng or random)
         problem_entry = chooser.choice(self.problems)
         if isinstance(problem_entry, (tuple, list)) and len(problem_entry) >= 2:
             problem_payload, expected = problem_entry[0], problem_entry[1]
@@ -218,7 +217,7 @@ class AgentEvaluator:
                 )
 
         usage = _coerce_usage(outcome.usage)
-        is_correct: Optional[bool] = None
+        is_correct: bool | None = None
         if expected is not None:
             is_correct = bool(self.result_checker(outcome.result, expected))
 
@@ -245,7 +244,7 @@ class AgentEvaluator:
         Returns EvaluationResult containing per-model aggregated stats and per-run logs.
         """
         stats: dict[str, ModelStats] = {model: ModelStats() for _, model in self.models}
-        logs: List[LogEntry] = []
+        logs: list[LogEntry] = []
         lock = asyncio.Lock()
         if not (self.subprocess_runner_path and self.subprocess_agent):
             raise RuntimeError(
@@ -289,10 +288,13 @@ class AgentEvaluator:
                     output_json_path,
                 ]
                 start_time = time.perf_counter()
-                os.makedirs(os.path.dirname(stdout_path), exist_ok=True)
+                stdout_path_obj = Path(stdout_path)
+                stderr_path_obj = Path(stderr_path)
+                output_json_path_obj = Path(output_json_path)
+                stdout_path_obj.parent.mkdir(parents=True, exist_ok=True)
                 with (
-                    open(stdout_path, "a", encoding="utf-8") as stdout_file,
-                    open(stderr_path, "a", encoding="utf-8") as stderr_file,
+                    stdout_path_obj.open("a", encoding="utf-8") as stdout_file,
+                    stderr_path_obj.open("a", encoding="utf-8") as stderr_file,
                 ):
                     proc = await asp.create_subprocess_exec(
                         *cmd,
@@ -305,8 +307,8 @@ class AgentEvaluator:
                 result: Any | None = None
                 input_toks = 0
                 output_toks = 0
-                if os.path.exists(output_json_path):
-                    with open(output_json_path, "r", encoding="utf-8") as f:
+                if output_json_path_obj.exists():
+                    with output_json_path_obj.open(encoding="utf-8") as f:
                         payload = json.load(f)
                     result = payload.get("result")
                     input_toks = int(payload.get("input_tokens", 0))
@@ -343,7 +345,7 @@ class AgentEvaluator:
                     self.on_update(stats, logs)
 
         try:
-            tasks: List[asyncio.Task[None]] = []
+            tasks: list[asyncio.Task[None]] = []
             for problem in self.problems:
                 if isinstance(problem, (tuple, list)) and len(problem) >= 2:
                     problem_payload, expected = problem[0], problem[1]

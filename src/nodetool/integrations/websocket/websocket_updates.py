@@ -3,14 +3,14 @@ Provides functionality for managing WebSocket connections and broadcasting updat
 primarily system statistics, to connected clients.
 """
 
-from fastapi import WebSocket
 import asyncio
 from typing import Literal, Set
-from nodetool.config.logging_config import get_logger
+
+from fastapi import WebSocket
 from pydantic import BaseModel
 
-from nodetool.system.system_stats import SystemStats
-from nodetool.system.system_stats import get_system_stats
+from nodetool.config.logging_config import get_logger
+from nodetool.system.system_stats import SystemStats, get_system_stats
 
 
 class SystemStatsUpdate(BaseModel):

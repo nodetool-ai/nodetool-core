@@ -60,7 +60,7 @@ The streaming refactor differentiates nodes by their declarations:
                                                handling. Actor will batch inputs
                                                (respecting `sync_mode`) and call
                                                `gen_process` **per batch**.
- ``True``                ``False``              Discouraged – node would drain inbox
+``True``                ``False``              Discouraged - node would drain inbox
                                                but emit once. Prefer avoiding this
                                                combination.
  ``True``                ``True``               Full streaming node. Actor hands over
@@ -87,50 +87,46 @@ execution of nodes, as well as providing utilities for type checking and
 metadata generation.
 """
 
+import asyncio
 import functools
 import importlib
 import re
-import asyncio
-from types import UnionType
-from weakref import WeakKeyDictionary
-from nodetool.integrations.huggingface.huggingface_models import unified_model
-from nodetool.types.model import UnifiedModel
-from pydantic import BaseModel, Field, PrivateAttr
-from pydantic.fields import FieldInfo
 import traceback
+from types import UnionType
 from typing import (
     Any,
     AsyncGenerator,
+    AsyncIterator,
     Callable,
     ClassVar,
     Optional,
     Type,
-    TypeVar,
-    AsyncIterator,
     TypedDict,
+    TypeVar,
     get_type_hints,
 )
+from weakref import WeakKeyDictionary
 
-from nodetool.types.graph import Edge
+from pydantic import BaseModel, Field, PrivateAttr
+from pydantic.fields import FieldInfo
+
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.huggingface_models import unified_model
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.metadata.types import (
-    AssetRef,
-    ComfyData,
-    ComfyModel,
-    HuggingFaceModel,
-    NPArray,
-    NameToType,
-    TypeToName,
-)
 from nodetool.metadata.typecheck import (
     is_assignable,
     is_empty,
 )
 from nodetool.metadata.types import (
+    AssetRef,
+    ComfyData,
+    ComfyModel,
+    HuggingFaceModel,
+    NameToType,
+    NPArray,
     OutputSlot,
+    TypeToName,
 )
-
 from nodetool.metadata.utils import (
     async_generator_item_type,
     get_return_annotation,
@@ -141,7 +137,8 @@ from nodetool.metadata.utils import (
     is_tuple_type,
     is_union_type,
 )
-
+from nodetool.types.graph import Edge
+from nodetool.types.model import UnifiedModel
 from nodetool.workflows.types import NodeUpdate
 
 from .inbox import NodeInbox
@@ -276,7 +273,7 @@ def type_metadata(
             return TypeMetadata(type=TypeToName[python_type])
     except Exception as e:
         log.error(f"Error getting type name for {python_type}: {e}")
-        raise ValueError(f"Error getting type name for {python_type}: {e}")
+        raise ValueError(f"Error getting type name for {python_type}: {e}") from e
 
     if python_type is Any:
         return TypeMetadata(type="any")
@@ -755,7 +752,9 @@ class BaseNode(BaseModel):
             )
         except Exception as e:
             traceback.print_exc()
-            raise ValueError(f"Error getting metadata for {cls.__name__}: {e}")
+            raise ValueError(
+                f"Error getting metadata for {cls.__name__}: {e}"
+            ) from e
 
     @classmethod
     def get_json_schema(cls):
@@ -986,9 +985,7 @@ class BaseNode(BaseModel):
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)
-                if TORCH_AVAILABLE and isinstance(value, torch.Tensor):  # type: ignore
-                    pass
-                elif isinstance(value, ComfyData):
+                if (TORCH_AVAILABLE and isinstance(value, torch.Tensor)) or isinstance(value, ComfyData):  # type: ignore
                     pass
                 elif isinstance(value, ComfyModel):
                     value_without_model = value.model_dump()
@@ -1157,7 +1154,7 @@ class BaseNode(BaseModel):
             or None if no return type is specified.
         """
         if hasattr(cls, "OutputType"):
-            return getattr(cls, "OutputType")
+            return cls.OutputType
 
         if cls.gen_process is not BaseNode.gen_process:
             gen_return = get_return_annotation(cls.gen_process)
@@ -1213,7 +1210,7 @@ class BaseNode(BaseModel):
         except ValueError as e:
             raise ValueError(
                 f"Invalid return type for node {cls.__name__}: {return_type} ({e})"
-            )
+            ) from e
 
     def get_dynamic_output_slots(self) -> list[OutputSlot]:
         """

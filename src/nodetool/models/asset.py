@@ -6,18 +6,18 @@ Includes metadata like name, content type, user association, parent folder (for 
 and optional workflow association.
 """
 
-from typing import Dict, Optional, Literal, Sequence
 from datetime import datetime
-from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
-from nodetool.config.logging_config import get_logger
+from typing import Dict, Literal, Optional, Sequence
 
+from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
-    DBModel,
     DBField,
-    create_time_ordered_uuid,
     DBIndex,
+    DBModel,
+    create_time_ordered_uuid,
 )
 from nodetool.models.condition_builder import Field
+from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
 
 log = get_logger(__name__)
 

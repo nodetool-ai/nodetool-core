@@ -3,11 +3,12 @@ Graph utilities for node and edge operations.
 """
 
 from collections import deque
+from contextlib import suppress
 
 from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
-from nodetool.types.graph import Edge
 
 
 def find_node(graph: Graph, node_id: str) -> BaseNode:
@@ -107,11 +108,8 @@ def get_downstream_subgraph(
     # Materialize node instances, skipping any missing nodes gracefully
     included_nodes: list[BaseNode] = []
     for nid in included_node_ids:
-        try:
+        with suppress(ValueError):
             included_nodes.append(find_node(graph, nid))
-        except ValueError:
-            # Skip nodes that don't exist in the graph
-            pass
 
     # Filter edges to those whose endpoints are both present in the included set
     filtered_edges = [

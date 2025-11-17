@@ -7,13 +7,13 @@ import socket
 import tempfile
 import time
 import traceback
+import urllib.parse
+import urllib.request
 import uuid
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
-import urllib.parse
-import urllib.request
 import websocket
 
 # Time to wait between API check attempts in milliseconds
@@ -40,7 +40,7 @@ def _comfy_server_status() -> Dict[str, Any]:
     try:
         resp = requests.get(f"http://{COMFY_HOST}/", timeout=5)
         return {"reachable": resp.status_code == 200, "status_code": resp.status_code}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"reachable": False, "error": str(exc)}
 
 
@@ -73,7 +73,7 @@ def _attempt_websocket_reconnect(
         srv_status = _comfy_server_status()
         if not srv_status.get("reachable", False):
             print(
-                "worker-comfyui - ComfyUI HTTP unreachable – aborting websocket reconnect: "
+                "worker-comfyui - ComfyUI HTTP unreachable - aborting websocket reconnect: "
                 f"{srv_status.get('error', 'status ' + str(srv_status.get('status_code')))}"
             )
             raise websocket.WebSocketConnectionClosedException(
@@ -88,12 +88,7 @@ def _attempt_websocket_reconnect(
             new_ws.connect(ws_url, timeout=10)
             print("worker-comfyui - Websocket reconnected successfully.")
             return new_ws
-        except (
-            websocket.WebSocketException,
-            ConnectionRefusedError,
-            socket.timeout,
-            OSError,
-        ) as reconn_err:
+        except (TimeoutError, websocket.WebSocketException, ConnectionRefusedError, OSError) as reconn_err:
             last_reconnect_error = reconn_err
             print(f"worker-comfyui - Reconnect attempt {attempt + 1} failed: {reconn_err}")
             if attempt < max_attempts - 1:
@@ -108,7 +103,7 @@ def _attempt_websocket_reconnect(
     )
 
 
-def validate_input(job_input: Union[Dict[str, Any], str, None]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def validate_input(job_input: Dict[str, Any] | str | None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Validates the input for the handler function.
 
@@ -212,7 +207,7 @@ def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
             error_msg = f"Error uploading {image.get('name', 'unknown')}: {e}"
             print(f"worker-comfyui - {error_msg}")
             upload_errors.append(error_msg)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             error_msg = f"Unexpected error uploading {image.get('name', 'unknown')}: {e}"
             print(f"worker-comfyui - {error_msg}")
             upload_errors.append(error_msg)
@@ -241,7 +236,7 @@ def get_available_models() -> Dict[str, List[str]]:
                     available_models["checkpoints"] = ckpt_options[0] if isinstance(ckpt_options[0], list) else []
 
         return available_models
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"worker-comfyui - Warning: Could not fetch available models: {e}")
         return {}
 
@@ -329,11 +324,11 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
             else:
                 raise ValueError(f"{error_message}. Raw response: {response.text}")
 
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError) as e:
             raise ValueError(
                 "ComfyUI validation failed (could not parse error response): "
                 + response.text
-            )
+            ) from e
 
     response.raise_for_status()
     return response.json()
@@ -364,7 +359,7 @@ def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[b
     except requests.RequestException as e:
         print(f"worker-comfyui - Error fetching image data for {filename}: {e}")
         return None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"worker-comfyui - Unexpected error fetching image data for {filename}: {e}")
         return None
 
@@ -416,13 +411,15 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             print(f"worker-comfyui - Queued workflow with ID: {prompt_id}")
         except requests.RequestException as e:
             print(f"worker-comfyui - Error queuing workflow: {e}")
-            raise ValueError(f"Error queuing workflow: {e}")
-        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"Error queuing workflow: {e}") from e
+        except Exception as e:
             print(f"worker-comfyui - Unexpected error queuing workflow: {e}")
             if isinstance(e, ValueError):
                 raise e
             else:
-                raise ValueError(f"Unexpected error queuing workflow: {e}")
+                raise ValueError(
+                    f"Unexpected error queuing workflow: {e}"
+                ) from e
 
         print(f"worker-comfyui - Waiting for workflow execution ({prompt_id})...")
         execution_done = False
@@ -534,7 +531,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                                 # os.remove(temp_file_path)
                                 # output_data.append({"filename": filename, "type": "s3_url", "data": s3_url})
                                 output_data.append({"filename": filename, "type": "file", "data": temp_file_path})
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:
                                 error_msg = f"Error handling upload for {filename}: {e}"
                                 print(f"worker-comfyui - {error_msg}")
                                 errors.append(error_msg)
@@ -543,7 +540,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                                 base64_image = base64.b64encode(image_bytes).decode("utf-8")
                                 output_data.append({"filename": filename, "type": "base64", "data": base64_image})
                                 print(f"worker-comfyui - Encoded {filename} as base64")
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:
                                 error_msg = f"Error encoding {filename} to base64: {e}"
                                 print(f"worker-comfyui - {error_msg}")
                                 errors.append(error_msg)
@@ -571,7 +568,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         print(f"worker-comfyui - Value Error: {e}")
         print(traceback.format_exc())
         return {"error": str(e)}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"worker-comfyui - Unexpected Handler Error: {e}")
         print(traceback.format_exc())
         return {"error": f"An unexpected error occurred: {e}"}
@@ -599,4 +596,3 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
     print(f"worker-comfyui - Job completed. Returning {len(output_data)} image(s).")
     return final_result
-

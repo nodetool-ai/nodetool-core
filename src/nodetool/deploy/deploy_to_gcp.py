@@ -30,16 +30,17 @@ Environment Variables:
 """
 
 import sys
-from typing import Optional, Dict, Any
 import traceback
+from typing import Any, Dict, Optional
+
 from rich.console import Console
 
 from .google_cloud_run_api import (
+    deploy_to_cloud_run,
+    enable_required_apis,
+    ensure_cloud_run_permissions,
     ensure_gcloud_auth,
     ensure_project_set,
-    ensure_cloud_run_permissions,
-    enable_required_apis,
-    deploy_to_cloud_run,
     push_to_gcr,
 )
 
@@ -169,9 +170,9 @@ def deploy_to_gcp(
         get_docker_username,
     )
     from .docker import (
+        build_docker_image,
         format_image_name,
         generate_image_tag,
-        build_docker_image,
         run_command,
     )
     # Note: No workflow embedding; generic builds only.

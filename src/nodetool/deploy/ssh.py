@@ -10,13 +10,13 @@ This module provides a high-level interface for SSH operations including:
 
 import os
 import time
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
-from contextlib import contextmanager
+from typing import Any, Dict, Optional, Tuple
 
 try:
     import paramiko
-    from paramiko import SSHClient, AutoAddPolicy
+    from paramiko import AutoAddPolicy, SSHClient
     from paramiko.sftp_client import SFTPClient
 
     PARAMIKO_AVAILABLE = True
@@ -148,17 +148,13 @@ class SSHConnection:
     def disconnect(self) -> None:
         """Close SSH and SFTP connections."""
         if self._sftp:
-            try:
+            with suppress(Exception):
                 self._sftp.close()
-            except Exception:
-                pass
             self._sftp = None
 
         if self._client:
-            try:
+            with suppress(Exception):
                 self._client.close()
-            except Exception:
-                pass
             self._client = None
 
     def is_connected(self) -> bool:
@@ -348,7 +344,7 @@ class SSHConnection:
                 try:
                     sftp = self._get_sftp()
                     sftp.mkdir(current, mode=mode)
-                except IOError:
+                except OSError:
                     # Directory might already exist
                     pass
         else:

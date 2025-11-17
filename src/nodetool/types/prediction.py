@@ -1,7 +1,9 @@
-from nodetool.metadata.types import Provider
-from pydantic import BaseModel, Field
-from typing import Any, List, Literal
 import base64
+from typing import Any, List, Literal
+
+from pydantic import BaseModel, Field
+
+from nodetool.metadata.types import Provider
 
 
 class Prediction(BaseModel):

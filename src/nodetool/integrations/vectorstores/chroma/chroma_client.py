@@ -20,25 +20,24 @@ Key Functions:
     - get_all_collections(): Retrieve all collections with configured embedding functions
 """
 
-import chromadb
-from chromadb.config import Settings, DEFAULT_DATABASE, DEFAULT_TENANT
+from typing import List
 from urllib.parse import urlparse
-from nodetool.config.logging_config import get_logger
 
-
-from nodetool.config.environment import Environment
+import chromadb
+from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
 from chromadb.utils.embedding_functions.ollama_embedding_function import (
     OllamaEmbeddingFunction,
 )
 from chromadb.utils.embedding_functions.sentence_transformer_embedding_function import (
     SentenceTransformerEmbeddingFunction,
 )
+from langchain_core.documents import Document
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
-from langchain_core.documents import Document
-from typing import List
 
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import TextChunk
 
 log = get_logger(__name__)
@@ -203,7 +202,7 @@ def get_all_collections() -> List[chromadb.Collection]:
                 )
                 raise ValueError(
                     f"Ollama model '{model}' for collection '{collection.name}' not available at {ollama_url}. Error: {e}"
-                )
+                ) from e
         else:
             embedding_function = SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2",

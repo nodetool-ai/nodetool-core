@@ -1,7 +1,8 @@
 from enum import Enum
 from typing import Any
+
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.metadata.types import ImageRef, NPArray, NameToType
+from nodetool.metadata.types import ImageRef, NameToType, NPArray
 
 
 def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:

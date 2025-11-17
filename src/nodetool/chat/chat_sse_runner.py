@@ -22,41 +22,43 @@ Example:
         yield event
 """
 
-from nodetool.config.logging_config import get_logger
-import json
 import asyncio
+import json
 import time
-from typing import AsyncGenerator, Iterable, Optional, List
-from typing import Union
+from contextlib import suppress
+from typing import AsyncGenerator, Iterable, List, Optional, Union
 
 from openai.types.chat import (
     ChatCompletionChunk,
-    ChatCompletionMessageParam,
-    ChatCompletionToolParam,
     ChatCompletionContentPartParam,
+    ChatCompletionMessageParam,
     ChatCompletionMessageToolCallParam,
+    ChatCompletionToolParam,
+)
+from openai.types.chat.chat_completion_assistant_message_param import (
+    ContentArrayOfContentPart,
 )
 from openai.types.chat.chat_completion_chunk import (
     Choice,
     ChoiceDelta,
 )
-from openai.types.chat.chat_completion_assistant_message_param import (
-    ContentArrayOfContentPart,
-)
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
-    Message as ApiMessage,
-    MessageContent,
-    MessageTextContent,
-    MessageImageContent,
+    AudioRef,
+    ImageRef,
     MessageAudioContent,
+    MessageContent,
+    MessageImageContent,
+    MessageTextContent,
     Provider,
     ToolCall,
-    ImageRef,
-    AudioRef,
 )
-from nodetool.config.environment import Environment
+from nodetool.metadata.types import (
+    Message as ApiMessage,
+)
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.types import Chunk
 
@@ -137,10 +139,8 @@ class ChatSSERunner(BaseChatRunner):
         if self.current_task and not self.current_task.done():
             log.debug("Stopping current task during disconnect")
             self.current_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self.current_task
-            except asyncio.CancelledError:
-                pass
 
         self.is_connected = False
         # Signal end of stream
@@ -184,22 +184,18 @@ class ChatSSERunner(BaseChatRunner):
         except asyncio.CancelledError:
             log.info("Message processing cancelled by user")
             # Send cancellation message
-            try:
+            with suppress(Exception):
                 await self.send_message(
                     {
                         "type": "generation_stopped",
                         "message": "Generation stopped by user",
                     }
                 )
-            except Exception:  # noqa: S110
-                pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
-            try:
+            with suppress(Exception):
                 await self.send_message(error_message)
-            except Exception:  # noqa: S110
-                pass
 
     def _validate_openai_request(self, request_data: dict) -> dict:
         """
@@ -232,16 +228,11 @@ class ChatSSERunner(BaseChatRunner):
             return validation_data
         except (KeyError, TypeError, AttributeError) as e:
             log.error(f"Invalid Chat Completions API request: {e}")
-            raise ValueError(f"Request validation failed: {e}")
+            raise ValueError(f"Request validation failed: {e}") from e
 
     def _convert_openai_content(
         self,
-        content: Union[
-            str,
-            Iterable[ChatCompletionContentPartParam],
-            Iterable[ContentArrayOfContentPart],
-            None,
-        ],
+        content: str | Iterable[ChatCompletionContentPartParam] | Iterable[ContentArrayOfContentPart] | None,
     ) -> List[MessageContent]:
         """
         Convert OpenAI message content to internal MessageContent list format.
@@ -328,7 +319,7 @@ class ChatSSERunner(BaseChatRunner):
             )
 
             # Convert tool calls if present
-            if "tool_calls" in msg and msg["tool_calls"]:
+            if msg.get("tool_calls"):
                 api_message.tool_calls = self._convert_openai_tool_calls(
                     msg["tool_calls"]
                 )
@@ -512,7 +503,7 @@ class ChatSSERunner(BaseChatRunner):
                         )
                         yield f"data: {openai_error.model_dump_json()}\n\n"
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Check if processing task is done
                     if self.current_task.done():
                         # Check for any exceptions

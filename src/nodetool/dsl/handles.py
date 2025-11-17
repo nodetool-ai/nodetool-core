@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, TypeVar, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, cast
 
 from pydantic import Field
 from pydantic.fields import PydanticUndefined
@@ -23,7 +23,7 @@ class OutputHandle(Generic[T]):
     Token representing a connection to a node output slot.
     """
 
-    node: "GraphNode"
+    node: GraphNode
     name: str
     py_type: Any | None = None
 
@@ -46,14 +46,14 @@ class OutputsProxy(Generic[TOutput]):
     Provides attribute and item access to output handles on a node.
     """
 
-    def __init__(self, node: "GraphNode[TOutput]") -> None:
+    def __init__(self, node: GraphNode[TOutput]) -> None:
         self._node = node
 
     @property
-    def output(self) -> "OutputHandle[TOutput]":
-        return cast(OutputHandle[TOutput], self.__getattr__("output"))
+    def output(self) -> OutputHandle[TOutput]:
+        return cast("OutputHandle[TOutput]", self.__getattr__("output"))
 
-    def __getattr__(self, name: str) -> "OutputHandle[Any]":
+    def __getattr__(self, name: str) -> OutputHandle[Any]:
         slot = self._node.find_output_instance(name)
         if slot is None:
             node_type = getattr(self._node, "get_node_type", lambda: "unknown")()
@@ -70,14 +70,14 @@ class OutputsProxy(Generic[TOutput]):
 
         return OutputHandle[Any](self._node, name, py_type)
 
-    def __getitem__(self, name: str) -> "OutputHandle[Any]":
+    def __getitem__(self, name: str) -> OutputHandle[Any]:
         return self.__getattr__(name)
 
 
 class DynamicOutputsProxy(OutputsProxy[TOutput]):
     """Outputs proxy that tolerates dynamically declared slots."""
 
-    def __getattr__(self, name: str) -> "OutputHandle[Any]":
+    def __getattr__(self, name: str) -> OutputHandle[Any]:
         try:
             return super().__getattr__(name)
         except TypeError:
@@ -190,9 +190,9 @@ def connect_field(
 
 
 __all__ = [
+    "Connect",
+    "DynamicOutputsProxy",
     "OutputHandle",
     "OutputsProxy",
-    "DynamicOutputsProxy",
-    "Connect",
     "connect_field",
 ]

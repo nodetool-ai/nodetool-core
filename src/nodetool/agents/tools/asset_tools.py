@@ -8,16 +8,17 @@ This module provides tools for managing assets:
 """
 
 from io import BytesIO
-from typing import Any
+from typing import Any, ClassVar
 
 from nodetool.workflows.processing_context import ProcessingContext
+
 from .base import Tool
 
 
 class SaveAssetTool(Tool):
-    name = "save_text_asset"
-    description = "Save text content as an asset file in the assets directory"
-    input_schema = {
+    name: ClassVar[str] = "save_text_asset"
+    description: ClassVar[str] = "Save text content as an asset file in the assets directory"
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "text": {
@@ -71,7 +72,7 @@ class SaveAssetTool(Tool):
 class ReadAssetTool(Tool):
     name = "read_asset"
     description = "Read content from an asset file"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "filename": {
@@ -120,7 +121,7 @@ class ReadAssetTool(Tool):
 class ListAssetsDirectoryTool(Tool):
     name = "list_assets_directory"
     description = "List assets in a directory"
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "parent_id": {

@@ -9,8 +9,10 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import suppress
 from typing import Any
 from uuid import uuid4
+
 from docker.types import DeviceRequest
 
 from nodetool.code_runners.runtime_base import StreamRunnerBase
@@ -22,8 +24,8 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
     JobUpdate,
-    NodeUpdate,
     NodeProgress,
+    NodeUpdate,
     ProcessingMessage,
 )
 
@@ -433,10 +435,8 @@ class DockerJobExecution(JobExecution):
             # Cancel the execution task if running
             if self._execution_task and not self._execution_task.done():
                 self._execution_task.cancel()
-                try:
+                with suppress(asyncio.CancelledError):
                     await self._execution_task
-                except asyncio.CancelledError:
-                    pass
 
             # Update database
             if self._job_model:
@@ -460,7 +460,7 @@ class DockerJobExecution(JobExecution):
                 self._execution_task.cancel()
                 try:
                     await asyncio.wait_for(self._execution_task, timeout=2.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
+                except (TimeoutError, asyncio.CancelledError):
                     log.debug("Execution task cancelled or timed out during cleanup")
                 except Exception as e:
                     # Suppress any other exceptions from the task to prevent "never retrieved" errors
@@ -468,9 +468,8 @@ class DockerJobExecution(JobExecution):
             elif self._execution_task and self._execution_task.done():
                 # Retrieve the exception from the completed task to prevent "never retrieved" errors
                 try:
-                    self._execution_task.exception()
-                except (asyncio.CancelledError, asyncio.InvalidStateError):
-                    pass
+                    with suppress(asyncio.CancelledError, asyncio.InvalidStateError):
+                        self._execution_task.exception()
                 except Exception as e:
                     log.debug(f"Retrieved exception from completed execution task: {e}")
 
@@ -611,7 +610,8 @@ class DockerJobExecution(JobExecution):
 # ---- Manual CLI for smoke testing ----
 if __name__ == "__main__":
     import argparse
-    from nodetool.types.graph import Graph, Node, Edge
+
+    from nodetool.types.graph import Edge, Graph, Node
 
     def _build_simple_workflow_graph() -> Graph:
         """Build a simple workflow graph for testing."""

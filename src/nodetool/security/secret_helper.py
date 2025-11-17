@@ -5,11 +5,12 @@ This module provides utilities to get secret values from the encrypted database
 or environment variables, with proper fallback logic.
 """
 
-import os
 import asyncio
+import os
 from typing import Optional
-from nodetool.models.secret import Secret
+
 from nodetool.config.logging_config import get_logger
+from nodetool.models.secret import Secret
 from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
