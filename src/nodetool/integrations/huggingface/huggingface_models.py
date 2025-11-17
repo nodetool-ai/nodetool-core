@@ -49,6 +49,7 @@ SINGLE_FILE_DIFFUSION_TAGS = {
     "diffusers:stablediffusionpipeline",
     "diffusers:stablediffusionxlpipeline",
     "diffusers:stablediffusion3pipeline",
+    "diffusion-single-file",
     "stable-diffusion",
     "flux",
 }
@@ -163,8 +164,8 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
     return lower not in standard_weight_names
 
 
-def _repo_supports_root_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
-    """Return True if the repo advertises a compatible Stable Diffusion pipeline."""
+def _repo_supports_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
+    """Return True if the repo advertises a compatible diffusion checkpoint."""
     if model_info is None or not model_info.tags:
         return False
     tags = {tag.lower() for tag in model_info.tags}
@@ -377,7 +378,7 @@ def model_type_from_model_info(
 
 
 async def read_cached_hf_files(
-    pipeline_tag: str,
+    pipeline_tag: str | None = None,
     library_name: str | None = None,
     tags: list[str] | None = None,
 ) -> List[CachedFileInfo]:
@@ -390,8 +391,9 @@ async def read_cached_hf_files(
     tags = [tag.lower() for tag in (tags or [])]
 
     # Create cache key based on tags filter
-    cache_key_parts = [pipeline_tag]
-
+    cache_key_parts = []
+    if pipeline_tag:
+        cache_key_parts.append(pipeline_tag)
     if library_name:
         cache_key_parts.append(library_name)
     if tags:
@@ -648,7 +650,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
     """
-    cached = await read_cached_hf_files("text-to-image", None)
+    cached = await read_cached_hf_files()
     result: dict[str, ImageModel] = {}
     repos_with_single_files: set[str] = set()
     repo_info_cache: dict[str, ModelInfo | None] = {}
@@ -682,7 +684,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
             model_info = repo_info_cache[model.repo_id]
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
-            if _repo_supports_root_diffusion_checkpoint(model_info):
+            if _repo_supports_diffusion_checkpoint(model_info):
                 model_id = f"{model.repo_id}:{fname}"
                 repos_with_single_files.add(model.repo_id)
                 # Remove multi-file entry if it exists - prefer single-file
@@ -715,7 +717,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
     """
-    cached = await read_cached_hf_files("image-to-image", None)
+    cached = await read_cached_hf_files()
     result: dict[str, ImageModel] = {}
     repos_with_single_files: set[str] = set()
     repo_info_cache: dict[str, ModelInfo | None] = {}
@@ -749,7 +751,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
             model_info = repo_info_cache[model.repo_id]
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
-            if _repo_supports_root_diffusion_checkpoint(model_info):
+            if _repo_supports_diffusion_checkpoint(model_info):
                 model_id = f"{model.repo_id}:{fname}"
                 repos_with_single_files.add(model.repo_id)
                 # Remove multi-file entry if it exists - prefer single-file
@@ -1012,8 +1014,8 @@ def delete_cached_hf_model(model_id: str) -> bool:
 if __name__ == "__main__":
 
     async def main():
-        cached = await read_cached_hf_files("text-to-image", None)
+        cached = await get_text_to_image_models_from_hf_cache()
         for model in cached:
-            print(model)
+            print(model.id)
 
     asyncio.run(main())
