@@ -57,6 +57,7 @@ from nodetool.workflows.torch_support import (
     BaseTorchSupport,
     TORCH_AVAILABLE,
     torch,
+    is_cuda_available,
 )
 
 log = get_logger(__name__)
@@ -177,7 +178,7 @@ class WorkflowRunner:
         else:
             self.device = "cpu"
             if TORCH_AVAILABLE:
-                if torch.cuda.is_available():
+                if is_cuda_available():
                     self.device = "cuda"
                 elif (
                     hasattr(torch.backends, "mps") and torch.backends.mps.is_available()

@@ -549,12 +549,15 @@ class Environment(object):
             pass
 
         try:
-            import torch.cuda
-
-            if torch.cuda.device_count() > 0:
-                return torch.device("cuda")
-        except Exception:
-            return torch.device("cpu")
+            # Check if CUDA is available - this can raise RuntimeError if CUDA is not compiled
+            if hasattr(torch, "cuda") and torch.cuda.is_available():
+                if torch.cuda.device_count() > 0:
+                    return torch.device("cuda")
+        except (RuntimeError, AttributeError):
+            # PyTorch not compiled with CUDA support or other CUDA-related error
+            pass
+        
+        return torch.device("cpu")
 
     @classmethod
     def get_asset_temp_bucket(cls):

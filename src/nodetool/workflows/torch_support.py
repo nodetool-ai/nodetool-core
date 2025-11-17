@@ -39,6 +39,21 @@ except ImportError:  # pragma: no cover - torch not installed
     torch = None  # type: ignore
 
 
+def is_cuda_available() -> bool:
+    """Safely check if CUDA is available, handling cases where PyTorch is not compiled with CUDA support."""
+    if not TORCH_AVAILABLE or torch is None:
+        return False
+    try:
+        # Check if cuda module exists
+        if not hasattr(torch, "cuda"):
+            return False
+        # Try to check availability - this can raise RuntimeError if CUDA is not compiled
+        return torch.cuda.is_available()
+    except (RuntimeError, AttributeError):
+        # PyTorch not compiled with CUDA support or other CUDA-related error
+        return False
+
+
 class BaseTorchSupport:
     """Interface describing torch specific hooks used by ``WorkflowRunner``."""
 
@@ -79,13 +94,24 @@ class TorchWorkflowSupport(BaseTorchSupport):
     """Concrete torch-enabled implementation."""
 
     def get_available_vram(self) -> int:
-        props = torch.cuda.get_device_properties(0)
-        return props.total_memory - torch.cuda.memory_allocated(0)
+        if not is_cuda_available():
+            return 0
+        try:
+            props = torch.cuda.get_device_properties(0)
+            return props.total_memory - torch.cuda.memory_allocated(0)
+        except (RuntimeError, AttributeError):
+            return 0
 
     def log_vram_usage(self, runner: WorkflowRunner, message: str = "") -> None:
-        torch.cuda.synchronize()
-        vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
-        log.info(f"{message} VRAM: {vram:.2f} GB")
+        if not is_cuda_available():
+            return
+        try:
+            torch.cuda.synchronize()
+            vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
+            log.info(f"{message} VRAM: {vram:.2f} GB")
+        except (RuntimeError, AttributeError):
+            # CUDA not available or not compiled, skip logging
+            pass
 
     @contextmanager
     def torch_context(
@@ -130,18 +156,22 @@ class TorchWorkflowSupport(BaseTorchSupport):
             )
             retries += 1
 
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-                vram_before_cleanup = self.get_available_vram()
-                log.error(f"VRAM before cleanup: {vram_before_cleanup} GB")
+            if is_cuda_available():
+                try:
+                    torch.cuda.synchronize()
+                    vram_before_cleanup = self.get_available_vram()
+                    log.error(f"VRAM before cleanup: {vram_before_cleanup} GB")
 
-                ModelManager.clear()
-                gc.collect()
+                    ModelManager.clear()
+                    gc.collect()
 
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
-                torch.cuda.synchronize()
-                log.error(f"VRAM after cleanup: {self.get_available_vram()} GB")
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                    torch.cuda.synchronize()
+                    log.error(f"VRAM after cleanup: {self.get_available_vram()} GB")
+                except (RuntimeError, AttributeError):
+                    # CUDA not available or not compiled, skip cleanup
+                    pass
 
             if retries >= self.max_retries:
                 log.error(
@@ -166,15 +196,22 @@ class TorchWorkflowSupport(BaseTorchSupport):
             return await self.process_with_gpu(runner, context, node, retries + 1)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
-        return (
-            TORCH_AVAILABLE
-            and torch is not None
-            and isinstance(exc, torch.cuda.OutOfMemoryError)
-        )
+        if not TORCH_AVAILABLE or torch is None:
+            return False
+        try:
+            if not is_cuda_available():
+                return False
+            return isinstance(exc, torch.cuda.OutOfMemoryError)
+        except (RuntimeError, AttributeError):
+            return False
 
     def empty_cuda_cache(self) -> None:
-        if TORCH_AVAILABLE and torch is not None and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if is_cuda_available():
+            try:
+                torch.cuda.empty_cache()
+            except (RuntimeError, AttributeError):
+                # CUDA not available or not compiled, skip
+                pass
 
 
 class NoopTorchSupport(BaseTorchSupport):
