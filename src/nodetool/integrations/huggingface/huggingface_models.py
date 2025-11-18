@@ -23,6 +23,7 @@ from typing import List
 
 from huggingface_hub import CacheNotFound, HfApi, ModelInfo, scan_cache_dir
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -81,6 +82,9 @@ MODEL_INFO_CACHE = ModelCache("model_info")
 MODEL_INFO_CACHE_TTL = 30 * 24 * 3600  # 30 days in seconds
 # Backwards compatibility alias for legacy references in tests
 _model_info_cache = MODEL_INFO_CACHE
+
+# Fast HF cache view for local snapshot lookups.
+HF_FAST_CACHE = HfFastCache()
 
 # GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
 # MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
@@ -938,18 +942,21 @@ def delete_cached_hf_model(model_id: str) -> bool:
     Args:
         model_id (str): The ID of the model to delete.
     """
-    cache_info = scan_cache_dir()
-    for repo in cache_info.repos:
-        if repo.repo_type == "model" and repo.repo_id == model_id:
-            if os.path.exists(repo.repo_path):
-                shutil.rmtree(repo.repo_path)
+    # Use HfFastCache to resolve the repo root without walking the entire cache.
+    repo_root = HF_FAST_CACHE.repo_root(model_id, repo_type="model")
+    if not repo_root:
+        return False
 
-                # Purge all HuggingFace caches after successful deletion
-                log.info("Purging HuggingFace model caches after model deletion")
-                MODEL_INFO_CACHE.delete_pattern("cached_hf_*")
+    if not os.path.exists(repo_root):
+        return False
 
-                return True
-    return False
+    shutil.rmtree(repo_root)
+
+    # Purge all HuggingFace caches after successful deletion
+    log.info("Purging HuggingFace model caches after model deletion")
+    MODEL_INFO_CACHE.delete_pattern("cached_hf_*")
+    HF_FAST_CACHE.invalidate(model_id, repo_type="model")
+    return True
 
 
 # GGUF_AUTHORS = [

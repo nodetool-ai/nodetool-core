@@ -13,6 +13,9 @@ from nodetool.integrations.huggingface.hf_cache import (
     filter_repo_paths,
     has_cached_files,
 )
+from nodetool.integrations.huggingface.huggingface_models import (
+    delete_cached_hf_model,
+)
 
 
 @pytest.fixture
@@ -325,3 +328,95 @@ class TestHasCachedFiles:
         result = has_cached_files("test/repo")
         assert result is False
 
+
+class TestDeleteCachedHfModel:
+    """Tests for delete_cached_hf_model using the fast HF cache."""
+
+    def test_delete_cached_hf_model_success(self):
+        """Model is present in fast cache and deleted successfully."""
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                return_value="/fake/cache/models--org--repo",
+            ) as mock_repo_root,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.os.path.exists",
+                return_value=True,
+            ) as mock_exists,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
+            ) as mock_rmtree,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+            ) as mock_delete_pattern,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+            ) as mock_invalidate,
+        ):
+            result = delete_cached_hf_model("org/repo")
+
+        assert result is True
+        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
+        mock_rmtree.assert_called_once_with("/fake/cache/models--org--repo")
+        mock_delete_pattern.assert_called_once_with("cached_hf_*")
+        mock_invalidate.assert_called_once_with("org/repo", repo_type="model")
+
+    def test_delete_cached_hf_model_repo_not_found(self):
+        """Model is not present in fast cache; nothing is deleted."""
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                return_value=None,
+            ) as mock_repo_root,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.os.path.exists"
+            ) as mock_exists,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
+            ) as mock_rmtree,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+            ) as mock_delete_pattern,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+            ) as mock_invalidate,
+        ):
+            result = delete_cached_hf_model("org/repo")
+
+        assert result is False
+        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_exists.assert_not_called()
+        mock_rmtree.assert_not_called()
+        mock_delete_pattern.assert_not_called()
+        mock_invalidate.assert_not_called()
+
+    def test_delete_cached_hf_model_repo_path_missing(self):
+        """Fast cache resolves repo_root, but on-disk path is missing."""
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                return_value="/fake/cache/models--org--repo",
+            ) as mock_repo_root,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.os.path.exists",
+                return_value=False,
+            ) as mock_exists,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
+            ) as mock_rmtree,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+            ) as mock_delete_pattern,
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+            ) as mock_invalidate,
+        ):
+            result = delete_cached_hf_model("org/repo")
+
+        assert result is False
+        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
+        mock_rmtree.assert_not_called()
+        mock_delete_pattern.assert_not_called()
+        mock_invalidate.assert_not_called()
