@@ -2,11 +2,14 @@
 
 # DSL & Node Authoring
 
+**Audience:** Contributors building nodes or writing workflows programmatically.  
+**What you will learn:** How the DSL maps to nodes, how to generate wrappers, and how to work with generic nodes.
+
 NodeTool workflows are composed of nodes (`BaseNode` subclasses) and constructed using a Python DSL that mirrors the node graph. This guide covers how to create nodes, generate DSL wrappers, and integrate them with agents and workflows.
 
 ## BaseNode Fundamentals
 
-All nodes inherit from `BaseNode` (`src/nodetool/workflows/base_node.py:11`) and declare inputs/outputs using Pydantic fields:
+All nodes inherit from `BaseNode` (`src/nodetool/workflows/base_node.py`) and declare inputs/outputs using Pydantic fields:
 
 ```python
 from nodetool.workflows.base_node import BaseNode
@@ -23,7 +26,7 @@ class ConcatenateNode(BaseNode):
 Key features:
 
 - **Schema generation** – field metadata becomes node schema; required parameters are enforced at runtime.
-- **Streaming support** – implement `gen_process()` and set `is_streaming_input()` / `is_streaming_output()` when consuming or producing streams (see the streaming matrix in `src/nodetool/workflows/base_node.py:53`).
+- **Streaming support** – implement `gen_process()` and set `is_streaming_input()` / `is_streaming_output()` when consuming or producing streams (see the streaming matrix in `src/nodetool/workflows/base_node.py`).
 - **Context access** – `ProcessingContext` (`src/nodetool/workflows/processing_context.py`) provides helpers for storage, assets, and upstream dependencies.
 
 ## Node Registration
@@ -32,7 +35,7 @@ Node classes register automatically when imported. Registration maps the fully-q
 
 ## Generating DSL Modules
 
-DSL wrappers expose node classes as composable Python functions/classes. `nodetool codegen` calls `create_dsl_modules()` (`src/nodetool/dsl/codegen.py:19`) to:
+DSL wrappers expose node classes as composable Python functions/classes. `nodetool codegen` calls `create_dsl_modules()` to:
 
 1. Inspect node modules under `src/nodetool/nodes/**`.
 2. Generate SDK-style wrappers under `src/nodetool/dsl/<namespace>/`.
@@ -88,10 +91,23 @@ prompt_with_connection = Template(
 )
 ```
 
+## Generic Nodes
+
+Generic nodes let you switch AI providers without changing your workflow graph. They accept a `model` field and route to the correct provider at runtime.
+
+Common generic nodes include:
+
+- `nodetool.agents.Agent` — multi-step agent compatible with OpenAI, Anthropic, Gemini, Ollama, and more.
+- `nodetool.image.TextToImage` — text-to-image that maps parameters across OpenAI, HuggingFace, and local runtimes.
+- `nodetool.video.TextToVideo` — routes to Gemini or other video-capable providers.
+- `nodetool.audio.TextToSpeech` and `nodetool.text.AutomaticSpeechRecognition` — speech-capable nodes.
+
+Use generic nodes whenever possible to keep workflows portable; see [Providers](providers.md) for supported backends.
+
 ## Graph Utilities
 
-- `graph(*nodes)` (`src/nodetool/dsl/graph.py:26`) – converts DSL instances to a `Graph` model.
-- `run_graph(graph, asset_output_mode=None)` (`src/nodetool/dsl/graph.py:53`) – executes the graph via the workflow engine; pass an `AssetOutputMode` to control how assets are serialized.
+- `graph(*nodes)` (`src/nodetool/dsl/graph.py`) – converts DSL instances to a `Graph` model.
+- `run_graph(graph, asset_output_mode=None)` (`src/nodetool/dsl/graph.py`) – executes the graph via the workflow engine; pass an `AssetOutputMode` to control how assets are serialized.
 - Helper functions like `graph_result()` simplify unit testing DSL examples.
 
 ## Exposing Nodes as Tools

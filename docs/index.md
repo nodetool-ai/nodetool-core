@@ -1,7 +1,40 @@
 # NodeTool Core Documentation
 
-Welcome to the NodeTool Core documentation! This guide will help you understand how to use NodeTool Core to build and
-run AI workflows.
+**Audience:** Developers who want to run NodeTool locally or deploy it.  
+**What you will learn:** How to get started in five minutes and where to find deeper references.
+
+## Quickstart
+
+1. **Install and set up**
+   ```bash
+   pip install -e .
+   pip install -r requirements-dev.txt
+   ```
+2. **Start the local API**
+   ```bash
+   nodetool serve --reload
+   ```
+3. **List models (OpenAI-compatible)**
+   ```bash
+   curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/v1/models
+   ```
+4. **Chat once**
+   ```bash
+   curl -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -X POST http://127.0.0.1:8000/v1/chat/completions \
+     -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}],"stream":false}'
+   ```
+5. **Run a workflow**
+   ```bash
+   curl -X POST "http://127.0.0.1:8000/api/workflows/<workflow_id>/run" \
+     -H "Content-Type: application/json" \
+     -d '{"params":{}}'
+   ```
+6. **Try the CLI**
+   ```bash
+   nodetool chat
+   ```
 
 ## What is NodeTool Core?
 
@@ -22,30 +55,35 @@ NodeTool Core provides a wide range of features:
 
 ## Sections
 
-The documentation is organized into the following sections:
+Documentation is organized into focused guides:
 
+- [**API Reference**](api-reference.md) - Canonical endpoint matrix (health, chat, workflows, WebSocket, SSE)
+- [**Quickstart**](#quickstart) - Fast path to a working local instance
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
-- [**API Server**](api-server.md) - Overview of the FastAPI backend
+- [**Architecture & Lifecycle**](architecture.md) - Component diagram and job lifecycle
+- [**Execution Strategies**](execution-strategies.md) - Threaded, subprocess, and Docker runners
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
-- [**Chat API**](chat-api.md) - Real time chat endpoint
+- [**Chat API**](chat-api.md) - Real time OpenAI-compatible endpoints
+- [**Chat Server**](chat-server.md) - Standalone chat server with WebSocket and SSE support
+- [**API Server**](api-server.md) - Overview of the FastAPI backend
 - [**CLI Reference**](cli.md) - Command line usage
 - [**Configuration**](configuration.md) - Environment, settings, and secrets
+- [**Security Hardening**](security-hardening.md) - Checklists for dev/staging/production
 - [**Storage**](storage.md) - Asset stores and caches
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
-- [**Chat Server**](chat-server.md) - Standalone chat server with WebSocket and SSE support
 - [**Terminal WebSocket**](terminal-websocket.md) - Interactive host shell WebSocket endpoint (dev-only)
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
-- [**Providers**](providers.md) - Multi-modal AI provider system and generic nodes
+- [**Providers**](providers.md) - Provider comparison and per-provider guides
 - [**Messaging**](messaging.md) - Chat processors and streaming events
 - [**DSL & Nodes**](dsl.md) - Authoring nodes and using the DSL
 - [**Packages**](packages.md) - Creating and publishing node packages
 - [**Indexing**](indexing.md) - Vector store ingestion workflows
-- [**Docker Execution**](docker-execution.md) - Containerized workflow execution
-- [**Self-Hosted Deployment**](self_hosted.md) - Proxy-based infrastructure guide
-- [**Deployment Guide**](deployment.md) - RunPod, Cloud Run, and self-hosted automation
+- [**Deployment Journeys**](deployment-journeys.md) - Self-hosted proxy, RunPod serverless, and Cloud Run
 - [**Proxy Reference**](proxy.md) - TLS, routing, and status endpoints
 - [**Runpod Testing Guide**](runpod_testing_guide.md) - Validate cloud deployments
+- [**Glossary**](glossary.md) - Standardized terminology
+- [**Docs Style Guide**](style-guide.md) - Writing conventions for contributors
 - [**Examples**](../examples/README.md) - Example workflows
 
 ## Community

@@ -2,7 +2,11 @@
 
 # NodeTool Worker Authentication
 
-The NodeTool worker uses token-based authentication to secure all endpoints when deployed.
+**Audience:** Operators securing NodeTool deployments.  
+**What you will learn:** How tokens are issued, how to configure `AUTH_PROVIDER`, and which endpoints remain public.
+
+See [API Reference](api-reference.md) for a matrix of endpoints, auth requirements, and streaming behavior. The NodeTool
+worker uses token-based authentication to secure all endpoints when deployed.
 
 ## Quick Start
 
@@ -518,3 +522,13 @@ For authentication issues:
 - Verify token format (no spaces, newlines)
 - Ensure file permissions are correct
 - Test with public `/health` endpoint first
+
+______________________________________________________________________
+
+## Security Hardening
+
+- Production: set `AUTH_PROVIDER` to `supabase` or `static`, terminate TLS in front of all non-public endpoints, and rotate worker/proxy tokens via your secrets manager.
+- Staging: disable terminal WebSocket (`NODETOOL_ENABLE_TERMINAL_WS` unset), keep asset buckets private or signed, and run workflows in subprocess or Docker isolation.
+- Development: keep `AUTH_PROVIDER=local` to isolated machines only and avoid storing real secrets in `.env.development`.
+
+See [Security Hardening](security-hardening.md) for detailed checklists across dev, staging, and production.

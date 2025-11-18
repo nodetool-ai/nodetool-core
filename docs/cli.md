@@ -147,6 +147,23 @@ Starts the NodeTool Model Context Protocol (MCP) server implementation. This ena
 nodetool mcp
 ```
 
+### `nodetool test-runpod`
+
+Runs an automated health and inference check against a RunPod endpoint.
+
+**Options:**
+- `--endpoint-id` (required) — RunPod serverless endpoint ID.
+- `--params` — JSON file with request parameters.
+- `--timeout` — request timeout in seconds (default 60).
+- `--output` — write JSON results to a file.
+- `--verbose` / `-v` — enable DEBUG logs.
+
+**Examples:**
+```bash
+nodetool test-runpod --endpoint-id YOUR_ENDPOINT_ID
+nodetool test-runpod --endpoint-id YOUR_ENDPOINT_ID --params examples/test_params_basic.json --timeout 30
+```
+
 ### `nodetool codegen`
 
 Regenerates DSL (Domain-Specific Language) modules from node definitions. Scans node packages and generates Python code for type-safe workflow creation.

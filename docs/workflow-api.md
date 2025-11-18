@@ -2,8 +2,17 @@
 
 # Workflow API Guide
 
-NodeTool exposes an HTTP and WebSocket API so you can integrate workflows into your own applications. This page collects
-the basics from the project README.
+**Audience:** API consumers and automation engineers.  
+**What you will learn:** How to list workflows, run them via HTTP, and stream results across the Editor and Worker APIs.
+
+NodeTool exposes workflow endpoints in two places:
+
+- The **Editor API** (`nodetool serve`) uses `/api/workflows` for CRUD and query operations backing the local app.  
+- The **Worker API** (`nodetool worker`) uses `/workflows` and `/workflows/{id}/run` for deployed workflow execution.
+
+This page collects the basics from the project README. See [API Reference](api-reference.md#unified-endpoint-matrix) for
+the canonical endpoint matrix and auth requirements. When `AUTH_PROVIDER` is `static` or `supabase`, include
+`Authorization: Bearer <token>`; tokens are optional only in `local`/`none` modes.
 
 ## Loading Workflows
 
@@ -18,6 +27,7 @@ const workflows = await response.json();
 
 ```bash
 curl -X POST "http://localhost:8000/api/workflows/<workflow_id>/run" \
+-H "Authorization: Bearer YOUR_TOKEN" \
 -H "Content-Type: application/json" \
 -d '{
     "params": {
@@ -33,6 +43,7 @@ const response = await fetch(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": "Bearer YOUR_TOKEN",
     },
     body: JSON.stringify({
       params: params,
@@ -48,7 +59,9 @@ const outputs = await response.json();
 ## Streaming API
 
 The streaming API provides real-time job updates. See
-[`run_workflow_streaming.js`](../examples/run_workflow_streaming.js) for a full example.
+[`run_workflow_streaming.js`](../examples/run_workflow_streaming.js) for a full example. On deployed workers, use
+`/workflows/{id}/run/stream` for SSE streaming; on the Editor API, prefer the WebSocket `/predict` endpoint for
+long-running jobs.
 
 Updates include:
 
@@ -63,6 +76,7 @@ const response = await fetch(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": "Bearer YOUR_TOKEN",
     },
     body: JSON.stringify({
       params: params,

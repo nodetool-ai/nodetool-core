@@ -3,7 +3,7 @@
 # RunPod Workflow Testing Guide
 
 This guide explains how to test your deployed NodeTool workflows on RunPod serverless infrastructure using the
-integrated CLI commands.
+integrated CLI commands. See [`nodetool test-runpod`](cli.md#nodetool-test-runpod) for the full command reference.
 
 ## Prerequisites
 

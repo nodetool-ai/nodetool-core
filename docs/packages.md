@@ -14,7 +14,7 @@ A package is a standard Python project that exposes nodes under the `nodetool.no
 - `examples/` – optional workflow examples.
 - `assets/` – optional static assets used by nodes.
 
-`Registry` (`src/nodetool/packages/registry.py:16`) loads `nodes.json`, discovers examples/assets, and exposes helper methods for installation and updates.
+`Registry` (see `src/nodetool/packages/registry.py`) loads `nodes.json`, discovers examples/assets, and exposes helper methods for installation and updates.
 
 ## Managing Packages via CLI
 
@@ -25,7 +25,7 @@ nodetool package list
 nodetool package list --available    # fetch registry index
 ```
 
-Displays installed packages (local metadata) or remote entries hosted at `PACKAGE_INDEX_URL` (`src/nodetool/packages/registry.py:80`).
+Displays installed packages (local metadata) or remote entries hosted at `PACKAGE_INDEX_URL` (see `src/nodetool/packages/registry.py`).
 
 ### Install / Update / Uninstall
 
@@ -43,7 +43,7 @@ Commands wrap pip/uv to install the package, then refresh metadata caches stored
 nodetool package scan [--verbose]
 ```
 
-Runs `scan_for_package_nodes()` (`src/nodetool/packages/registry.py:281`) to inspect the current repository, generate `nodes.json`, and update `pyproject.toml` include rules.
+Runs `scan_for_package_nodes()` to inspect the current repository, generate `nodes.json`, and update `pyproject.toml` include rules.
 
 ### Initialize Package
 
@@ -51,7 +51,7 @@ Runs `scan_for_package_nodes()` (`src/nodetool/packages/registry.py:281`) to ins
 nodetool package init
 ```
 
-Scaffolds a minimal Hatch project pointing dependencies to `nodetool-core` (`src/nodetool/cli.py:902`).
+Scaffolds a minimal Hatch project pointing dependencies to `nodetool-core` (implemented in `src/nodetool/cli.py`).
 
 ### Generate Documentation
 
@@ -60,7 +60,7 @@ nodetool package docs --output-dir docs/nodes
 nodetool package docs --compact     # shorter summaries for LLM prompts
 ```
 
-Invokes `generate_documentation()` (`src/nodetool/packages/gen_docs.py:1`) to create Markdown documentation for all nodes in the project.
+Invokes `generate_documentation()` (see `src/nodetool/packages/gen_docs.py`) to create Markdown documentation for all nodes in the project.
 
 ## Publishing Packages
 
@@ -74,7 +74,7 @@ To add the package to the public index, create an entry in the [registry reposit
 
 ## Programmatic Use
 
-The `Registry` class (`src/nodetool/packages/registry.py:16`) exposes methods for advanced scenarios:
+The `Registry` class (see `src/nodetool/packages/registry.py`) exposes methods for advanced scenarios:
 
 - `list_installed_packages()` / `list_available_packages()` – enumerate packages.
 - `install_package(repo_id)` – install from GitHub-style `owner/repo` identifiers.

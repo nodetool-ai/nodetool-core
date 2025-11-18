@@ -2,7 +2,7 @@
 
 # Self-Hosted Deployment Guide
 
-This guide explains how to deploy Nodetool in self-hosted environments using the
+This guide explains how to deploy NodeTool in self-hosted environments using the
 built-in FastAPI proxy. It covers the proxy architecture, configuration,
 container images, deployment model (`deployment.yaml`), persistent storage, TLS,
 and common operational tasks.
@@ -15,7 +15,7 @@ Self-hosted deployments now manage two key containers:
    - Terminates HTTP/HTTPS traffic.
    - Authenticates every request (Bearer token).
    - Talks to the Docker socket to start/stop service containers on demand.
-2. **Service container(s)** – e.g. the Nodetool worker image (`nodetool`), which
+2. **Service container(s)** – e.g. the NodeTool worker image (`nodetool`), which
    run only when traffic arrives.
 
 `nodetool deploy apply <deployment>` orchestrates everything: it renders the

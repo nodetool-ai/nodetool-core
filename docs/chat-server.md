@@ -2,171 +2,105 @@
 
 # NodeTool Chat Server
 
-The NodeTool CLI now includes a `chat-server` command that allows you to run standalone chat servers using either
-WebSocket or Server-Sent Events (SSE) protocols.
+**Audience:** Operators running standalone chat endpoints.  
+**What you will learn:** How to run the chat-only OpenAI-compatible server, authenticate clients, and test health.
+
+The `nodetool chat-server` command runs a **chat-only HTTP API** exposing OpenAI-compatible endpoints for
+`/v1/chat/completions` and `/v1/models`, plus a `/health` check. It does **not** expose the `/chat` WebSocket endpoint;
+that lives on the Editor API (`nodetool serve`). See [API Reference](api-reference.md#api-families-and-why-they-exist)
+for how the Chat Server fits into the broader API surface.
 
 ## Quick Start
 
-### WebSocket Server
-
 ```bash
-# Start WebSocket server on default port 8080
+# Start chat server on default port 8080
 nodetool chat-server
 
-# Start on custom port
-nodetool chat-server --port 3000 --protocol websocket
+# Start on custom host/port
+nodetool chat-server --host 0.0.0.0 --port 3000
+
+# Use a custom provider/model
+nodetool chat-server --provider openai --default-model gpt-4
 ```
 
-### SSE Server
+## OpenAI-Compatible HTTP API
 
-```bash
-# Start SSE server on port 8080
-nodetool chat-server --protocol sse
+### Chat Completions: `POST /v1/chat/completions`
 
-# Start on custom port  
-nodetool chat-server --port 3000 --protocol sse
-```
+**URL:** `http://localhost:8080/v1/chat/completions`
 
-### With Authentication
+**Headers:**
 
-```bash
-# Select auth provider (requires env for Supabase)
-nodetool chat-server --auth-provider supabase
-```
+- `Content-Type: application/json`
+- `Authorization: Bearer YOUR_TOKEN` (required when auth is enforced)
 
-### Database-Free Mode
-
-```bash
-# Run WebSocket server without database (uses in-memory storage)
-nodetool chat-server --no-database
-
-# Run SSE server without database (expects history in requests)
-nodetool chat-server --protocol sse --no-database
-```
-
-## Usage Examples
-
-### WebSocket Protocol
-
-Connect to: `ws://127.0.0.1:8080/chat`
-
-Send messages in this format:
+**Request Body:**
 
 ```json
 {
-  "thread_id": "thread_123",
-  "role": "user",
-  "content": "Hello, world!",
   "model": "gpt-4",
-  "provider": "openai",
-  "tools": ["optional_tool_list"]
+  "messages": [
+    {"role": "user", "content": "Hello, how are you?"}
+  ],
+  "stream": true
 }
 ```
 
-Authentication (preferred header, required when auth is enforced):
+**Response (streaming SSE):**
 
-```
-Authorization: Bearer YOUR_AUTH_TOKEN
-```
+Server-Sent Events with OpenAI-compatible payloads:
 
-WebSocket query fallback (legacy clients):
-
-```
-ws://127.0.0.1:8080/chat?token=YOUR_AUTH_TOKEN
+```text
+data: {"id": "...", "object": "chat.completion.chunk", ...}
+data: {"id": "...", "object": "chat.completion.chunk", ...}
+data: [DONE]
 ```
 
-### SSE Protocol
-
-Send POST requests to: `http://127.0.0.1:8080/chat/sse`
-
-Request format:
+**Response (non-streaming):**
 
 ```json
 {
-  "thread_id": "thread_456",
-  "role": "user",
-  "content": "Hello via SSE!",
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1694268190,
   "model": "gpt-4",
-  "provider": "openai"
-}
-```
-
-#### SSE with Database-Free Mode
-
-When using `--no-database`, include the full conversation history in the request:
-
-```json
-{
-  "thread_id": "thread_456",
-  "role": "user",
-  "content": "What's the capital of France?",
-  "model": "gpt-4",
-  "provider": "openai",
-  "history": [
+  "choices": [
     {
-      "role": "user",
-      "content": "Hello!",
-      "thread_id": "thread_456"
-    },
-    {
-      "role": "assistant",
-      "content": "Hi there! How can I help you today?",
-      "thread_id": "thread_456"
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking."
+      },
+      "finish_reason": "stop"
     }
-  ]
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 15,
+    "total_tokens": 27
+  }
 }
 ```
 
-Headers:
+### Models: `GET /v1/models`
 
+**URL:** `http://localhost:8080/v1/models`
+
+```bash
+curl http://localhost:8080/v1/models \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
-Content-Type: application/json
-Accept: text/event-stream
-Authorization: Bearer YOUR_AUTH_TOKEN
-```
-
-Response format (SSE):
-
-```
-data: {"type": "content", "content": "Response text"}
-
-event: error
-data: {"type": "error", "message": "Error description"}
-
-event: end  
-data: {"type": "end"}
-```
-
-## Protocol Comparison
-
-| Feature               | WebSocket                          | SSE                              |
-| --------------------- | ---------------------------------- | -------------------------------- |
-| **Direction**         | Bidirectional                      | Server-to-client only            |
-| **Connection**        | Persistent                         | Request-response with streaming  |
-| **Protocol**          | `ws://`                            | `http://`                        |
-| **Message Format**    | JSON or MessagePack                | JSON over SSE                    |
-| **Authentication**    | Query param or header              | Authorization header             |
-| **Browser Support**   | Requires WebSocket API             | Uses standard EventSource API    |
-| **Firewall Friendly** | Sometimes blocked                  | HTTP-based, rarely blocked       |
-| **Database Mode**     | Persistent or in-memory per thread | Persistent or history in request |
-| **Use Case**          | Real-time chat apps                | Web dashboards, notifications    |
 
 ## Health Check
 
-Both protocols expose a health endpoint:
+The chat server exposes a simple health endpoint:
 
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
-Response:
-
-```json
-{
-  "status": "healthy",
-  "protocol": "websocket"
-}
-```
+`/health` returns a JSON body indicating server status. It is public by default; put it behind a proxy if you need it
+private.
 
 ## Testing
 
@@ -174,7 +108,7 @@ Run the example client:
 
 ```bash
 # Start the server in one terminal
-nodetool chat-server --protocol websocket
+nodetool chat-server
 
 # Test in another terminal
 python examples/chat_server_examples.py
@@ -202,58 +136,21 @@ python examples/chat_server_examples.py
 - Validates tokens against Supabase auth
 - Suitable for production deployments
 
-### Storage Modes
-
-**Database Mode (default):**
-
-- Messages are persisted to database
-- Chat history is maintained automatically
-- Suitable for multi-session conversations
-
-**Database-Free Mode (`--no-database`):**
-
-- WebSocket: Messages stored in-memory per thread_id (lost on disconnect)
-- SSE: Full chat history must be included in each request
-- Suitable for stateless deployments or testing
-
-## Integration Examples
-
-### JavaScript WebSocket Client
+## Integration Example (JavaScript)
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/chat?token=AUTH_TOKEN');
-
-ws.onopen = () => {
-  ws.send(JSON.stringify({
-    thread_id: 'thread_123',
-    role: 'user',
-    content: 'Hello from JavaScript!',
-    model: 'gpt-4',
-    provider: 'openai'
-  }));
-};
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Received:', data);
-};
-```
-
-### JavaScript SSE Client
-
-```javascript
-const response = await fetch('http://localhost:8080/chat/sse', {
+const response = await fetch('http://localhost:8080/v1/chat/completions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer AUTH_TOKEN'
+    'Authorization': 'Bearer YOUR_TOKEN'
   },
   body: JSON.stringify({
-    thread_id: 'thread_456',
-    role: 'user',
-    content: 'Hello from SSE!',
     model: 'gpt-4',
-    provider: 'openai'
+    messages: [
+      { role: 'user', content: 'Hello, AI!' }
+    ],
+    stream: true
   })
 });
 
@@ -265,42 +162,39 @@ while (true) {
   if (done) break;
 
   const chunk = decoder.decode(value);
-  console.log('SSE chunk:', chunk);
+  const lines = chunk.split('\n');
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const data = line.slice(6);
+      if (data === '[DONE]') break;
+      try {
+        const parsed = JSON.parse(data);
+        const content = parsed.choices[0]?.delta?.content;
+        if (content) {
+          console.log('AI Response:', content);
+        }
+      } catch (e) {
+        // Skip malformed JSON
+      }
+    }
+  }
 }
 ```
 
-### Python Client Examples
-
-See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) for complete WebSocket and SSE client
-implementations.
+See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) for a complete SSE client implementation.
 
 ## Error Handling
 
-### WebSocket Errors
+Errors are propagated as:
 
-- Connection errors are logged to console
-- Authentication failures close connection with code 1008
-- Runtime errors send error messages to client
-
-### SSE Errors
-
-- HTTP 401 for authentication failures
-- HTTP 500 for server errors
-- Error events in SSE stream for runtime errors
-
-## Performance Considerations
-
-- **WebSocket**: Better for high-frequency bidirectional communication
-- **SSE**: Better for server-initiated updates with simple HTTP infrastructure
-- Both support concurrent connections limited by system resources
-- Memory usage scales with number of active connections and message history
+- HTTP 401 for authentication failures.
+- HTTP 500 for server errors.
+- Error events in the SSE stream for runtime errors.
 
 ## Deployment
 
-The chat server can be deployed standalone or integrated into existing FastAPI applications by importing the runner
-classes directly:
-
-```python
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
-from nodetool.chat.chat_sse_runner import ChatSSERunner
-```
+The chat server can be deployed standalone or integrated into existing FastAPI applications by importing and mounting
+the OpenAI-compatible router from `nodetool.api.openai.create_openai_compatible_router` or by invoking `run_chat_server`
+from `nodetool.chat.server`. For full workflow execution and storage, use the Worker API described in
+[Deployment Guide](deployment.md).

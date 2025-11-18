@@ -2,11 +2,21 @@
 
 # Chat API
 
-NodeTool provides both OpenAI-compatible HTTP endpoints and WebSocket endpoints for chat interactions.
+**Audience:** API consumers and client implementers.  
+**What you will learn:** How to call NodeTool's OpenAI-compatible chat endpoints over HTTP, WebSocket, and SSE across the Editor and Worker APIs.
+
+NodeTool provides both OpenAI-compatible HTTP endpoints and WebSocket endpoints for chat interactions:
+
+- The **Editor API** (`nodetool serve`) exposes WebSocket chat at `/chat` and `/predict`, primarily for the desktop/local app.  
+- The **Worker and Chat Server APIs** (`nodetool worker`, `nodetool chat-server`) expose OpenAI-compatible HTTP endpoints (`/v1/chat/completions`, `/v1/models`) for remote clients.
+
+See the canonical matrix in [API Reference](api-reference.md#unified-endpoint-matrix) for methods, auth requirements, and streaming behavior.
 
 ## OpenAI-Compatible HTTP API
 
 NodeTool exposes OpenAI-compatible endpoints that allow you to use standard OpenAI client libraries and tools.
+When `AUTH_PROVIDER` is `static` or `supabase`, send `Authorization: Bearer <token>`; in `local`/`none` modes the token
+is optional for development.
 
 ### Chat Completions: `POST /v1/chat/completions`
 

@@ -2,20 +2,20 @@
 
 # Configuration Guide
 
-NodeTool reads configuration from layered sources so that local development, automated deployments, and production environments can share the same defaults with minimal duplication. The configuration helpers live in `src/nodetool/config/settings.py` and `src/nodetool/config/environment.py`.
+**Audience:** Operators and contributors.  
+**What you will learn:** How NodeTool reads configuration, where to store secrets, and which environment variables matter.
+
+NodeTool reads configuration from layered sources so local development, automated deployments, and production can share defaults with minimal duplication. The configuration helpers live in `src/nodetool/config/settings.py` and `src/nodetool/config/environment.py`.
 
 ## Configuration Layers
 
-`Environment.load_settings()` (`src/nodetool/config/environment.py:132`) merges values in the following order (last wins):
+`Environment.load_settings()` merges values in this order (last wins):
 
-1. **Defaults** – `DEFAULT_ENV` (`src/nodetool/config/environment.py:23`) provides sane fallbacks such as SQLite storage, local asset paths, and log levels.
-2. **Environment variables** – values exported via the shell or injected by the process supervisor.
-3. **Settings file** – `$HOME/.config/nodetool/settings.yaml` (see `get_system_file_path()` in `src/nodetool/config/settings.py:60`).
+1. **Defaults** – built-in values for SQLite storage, local asset paths, and log levels.
+2. **Environment variables** – exported via the shell or process supervisor.
+3. **Settings file** – `$HOME/.config/nodetool/settings.yaml`.
 4. **Secrets file** – `$HOME/.config/nodetool/secrets.yaml` when populated through the CLI.
-5. **`.env` files** – loaded by `load_dotenv_files()` (`src/nodetool/config/environment.py:72`) in this order:
-   - `.env`
-   - `.env.<ENV>`
-   - `.env.<ENV>.local`
+5. **`.env` files** – loaded in this order: `.env`, `.env.<ENV>`, `.env.<ENV>.local`.
 
 This hierarchy allows committed defaults, per-environment overrides, and developer-specific secrets to co-exist without file conflicts.
 
@@ -24,7 +24,7 @@ This hierarchy allows committed defaults, per-environment overrides, and develop
 - `nodetool settings show [--secrets]` – print the current values in a Rich table.
 - `nodetool settings edit [--secrets]` – open the YAML file in `$EDITOR`. Files are created on first use.
 
-Settings metadata (description, grouping) is registered via `register_setting()` and `register_secret()` (`src/nodetool/config/settings.py:17`). New environment variables should be declared there so they automatically appear in CLI tables and `.env.example`.
+Settings metadata (description, grouping) is registered via `register_setting()` and `register_secret()` in `src/nodetool/config/settings.py`. New environment variables should be declared there so they automatically appear in CLI tables and `.env.example`.
 
 ### File Locations
 
@@ -77,7 +77,7 @@ When adding a feature that requires configuration:
 1. Register the variable in `src/nodetool/config/settings.py` via `register_setting()` or `register_secret()` to document it and surface it in CLI tables.
 2. Update `.env.example` with the new entry.
 3. Reference the variable using `Environment.get("YOUR_ENV_VAR")` to respect the hierarchy.
-4. If the value is required, supply `default=NOT_GIVEN` (see `get_value()` in `src/nodetool/config/settings.py:91`) so missing keys raise a descriptive error.
+4. If the value is required, supply `default=NOT_GIVEN` (see `get_value()` in `src/nodetool/config/settings.py`) so missing keys raise a descriptive error.
 
 ## Recommended Workflow
 
@@ -112,6 +112,27 @@ Security notes:
 
 - Use the service role key only in worker/server environments. Do not expose it to clients.
 - Public buckets make `get_url()` links directly accessible. For private buckets, add a signing step.
+
+## Environment Variables Index
+
+| Variable | Purpose | Secret | Notes |
+|----------|---------|--------|-------|
+| `ENV` | Environment name (`development`, `test`, `production`) | no | Defaults to `development` |
+| `AUTH_PROVIDER` | Auth mode (`none`, `local`, `static`, `supabase`) | no | See [Authentication](authentication.md) |
+| `WORKER_AUTH_TOKEN` | Static token for auth | yes | Generated automatically if unset |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Provider access | yes | Set only the providers you use |
+| `HF_TOKEN` / `FAL_API_KEY` / `REPLICATE_API_TOKEN` | HuggingFace-family providers | yes | Optional per workflow |
+| `OLLAMA_API_URL` | Local Ollama base URL | no | Default `http://127.0.0.1:11434` |
+| `DB_PATH` | SQLite path | no | Defaults to `~/.config/nodetool/nodetool.sqlite3` |
+| `S3_*` | S3-compatible storage settings | yes | Includes access keys and region |
+| `ASSET_BUCKET` / `ASSET_TEMP_BUCKET` | Asset buckets | no | Use signed URLs for private buckets |
+| `CHROMA_PATH` / `CHROMA_URL` / `CHROMA_TOKEN` | Vector DB config | `CHROMA_TOKEN` | Path defaults to local share |
+| `NODETOOL_ENABLE_TERMINAL_WS` | Opt-in terminal WebSocket | no | Leave unset in production |
+| `LOG_LEVEL` | Logging level | no | Defaults to `INFO` |
+| `RUNPOD_API_KEY` | RunPod deployments | yes | Used by CLI and providers |
+| `PROXY_BEARER_TOKEN` | Protects proxy admin endpoints | yes | Rotate regularly |
+
+Use `nodetool settings show` to view resolved values and verify the merge order.
 
 ## Related Documentation
 
