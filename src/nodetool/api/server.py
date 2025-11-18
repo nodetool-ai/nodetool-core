@@ -100,6 +100,7 @@ def initialize_sentry():
             profiles_sample_rate=1.0,
         )
 
+
 initialize_sentry()
 
 log = get_logger(__name__)
@@ -156,7 +157,7 @@ DEFAULT_ROUTERS = [
     font.router,
     debug.router,
     job.router,
-    settings.router
+    settings.router,
 ]
 
 
@@ -366,7 +367,10 @@ def create_app(
         max_age=3600,
     )
 
-    from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+    from nodetool.runtime.resources import (
+        get_static_auth_provider,
+        get_user_auth_provider,
+    )
 
     static_provider = get_static_auth_provider()
     user_provider = get_user_auth_provider()
@@ -483,6 +487,7 @@ def create_app(
             await websocket.close(code=1008, reason="Terminal access disabled")
             # Raise WebSocketDisconnect so TestClient raises it immediately
             from starlette.websockets import WebSocketDisconnect
+
             raise WebSocketDisconnect(code=1008)
 
         # Skip authentication in dev mode for convenience
@@ -578,7 +583,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             },
             "uvicorn.error": {
                 "handlers": ["default"],
-                "level": log_level.upper(),
+                "level": "WARNING",  # Suppress DEBUG keepalive ping/pong messages
                 "propagate": False,
             },
             "uvicorn.access": {

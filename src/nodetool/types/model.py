@@ -1,5 +1,6 @@
 from huggingface_hub import ModelInfo
 from pydantic import BaseModel
+from huggingface_hub.inference._providers import PROVIDER_T
 
 
 class UnifiedModel(BaseModel):
@@ -39,3 +40,6 @@ class CachedFileInfo(BaseModel):
     file_name: str
     size_on_disk: int
     model_info: ModelInfo | None = None
+
+
+CachedFileInfo.model_rebuild()

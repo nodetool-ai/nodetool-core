@@ -101,7 +101,9 @@ def configure_logging(
     logging.getLogger("hpack").setLevel(logging.INFO)
     logging.getLogger("httpcore").setLevel(logging.INFO)
     logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.error").setLevel(
+        logging.WARNING
+    )  # Suppress DEBUG keepalive ping/pong messages
     logging.getLogger("nodetool.models.sqlite_adapter").setLevel(logging.WARNING)
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

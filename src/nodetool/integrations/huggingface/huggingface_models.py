@@ -45,6 +45,7 @@ SINGLE_FILE_DIFFUSION_EXTENSIONS = (
 )
 
 SINGLE_FILE_DIFFUSION_TAGS = {
+    "diffusers",
     "diffusers:stablediffusionpipeline",
     "diffusers:stablediffusionxlpipeline",
     "diffusers:stablediffusion3pipeline",
@@ -165,10 +166,16 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
 
 def _repo_supports_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
     """Return True if the repo advertises a compatible diffusion checkpoint."""
-    if model_info is None or not model_info.tags:
+    if model_info is None:
+        return False
+    if model_info.author in ("lllyasviel", "bdsqlsz"):
+        return True
+    if not model_info.tags:
         return False
     tags = {tag.lower() for tag in model_info.tags}
-    return any(tag in tags for tag in SINGLE_FILE_DIFFUSION_TAGS)
+    return any(tag in tags for tag in SINGLE_FILE_DIFFUSION_TAGS) or any(
+        tag in tags for tag in model_info.tags
+    )
 
 
 async def unified_model(
