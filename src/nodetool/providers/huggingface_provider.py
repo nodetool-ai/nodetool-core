@@ -35,6 +35,7 @@ from nodetool.metadata.types import (
     VideoModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.types.model import CachedFileInfo
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -62,6 +63,9 @@ PROVIDER_T = Literal[
     "sambanova",
     "together",
 ]
+
+if hasattr(CachedFileInfo, "model_rebuild"):
+    CachedFileInfo.model_rebuild()
 
 # Provider mapping for HuggingFace Hub API
 HF_PROVIDER_MAPPING = {

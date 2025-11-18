@@ -1,3 +1,4 @@
+from huggingface_hub import ModelInfo
 from pydantic import BaseModel
 
 
@@ -37,3 +38,4 @@ class CachedFileInfo(BaseModel):
     repo_id: str
     file_name: str
     size_on_disk: int
+    model_info: ModelInfo | None = None

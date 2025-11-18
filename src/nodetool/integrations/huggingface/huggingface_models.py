@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import List
 
 from huggingface_hub import CacheNotFound, HfApi, ModelInfo, scan_cache_dir
-
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
@@ -315,12 +314,11 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     Returns:
         ModelInfo: The model info, or None if not found.
     """
-    # cache_key = f"model_info:{model_id}"
-    # Try to get from cache first
-    # cached_result = MODEL_INFO_CACHE.get(cache_key)
-    # if cached_result is not None:
-    #     log.debug(f"Cache hit for model info: {model_id}")
-    #     return cached_result
+    cache_key = f"model_info:{model_id}"
+    cached_result = MODEL_INFO_CACHE.get(cache_key)
+    if cached_result is not None:
+        log.debug(f"Cache hit for model info: {model_id}")
+        return cached_result
 
     # Use HF_TOKEN from secrets if available for gated model downloads
     # Note: user_id would need to be passed from caller context
@@ -341,8 +339,8 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     )
 
     # # Store in cache for future use
-    # MODEL_INFO_CACHE.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
-    # log.debug(f"Cached model info for: {model_id}")
+    MODEL_INFO_CACHE.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
+    log.debug(f"Cached model info for: {model_id}")
 
     return model_info
 
@@ -433,7 +431,7 @@ async def read_cached_hf_files(
         # Get cached files from all revisions
         if model_info is None:
             continue
-        if model_info.pipeline_tag != pipeline_tag:
+        if pipeline_tag and model_info.pipeline_tag != pipeline_tag:
             continue
         if library_name and model_info.library_name != library_name:
             continue
@@ -446,6 +444,7 @@ async def read_cached_hf_files(
                         repo_id=repo.repo_id,
                         file_name=file_info.file_name,
                         size_on_disk=file_info.size_on_disk,
+                        model_info=model_info,
                     )
                 )
 
@@ -653,7 +652,6 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     cached = await read_cached_hf_files()
     result: dict[str, ImageModel] = {}
     repos_with_single_files: set[str] = set()
-    repo_info_cache: dict[str, ModelInfo | None] = {}
 
     for model in cached:
         fname = model.file_name
@@ -673,15 +671,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
             continue
 
         if _is_single_file_diffusion_weight(fname):
-            if model.repo_id not in repo_info_cache:
-                try:
-                    repo_info_cache[model.repo_id] = await fetch_model_info(
-                        model.repo_id
-                    )
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
-                    repo_info_cache[model.repo_id] = None
-            model_info = repo_info_cache[model.repo_id]
+            model_info = model.model_info
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
             if _repo_supports_diffusion_checkpoint(model_info):
@@ -740,15 +730,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
             continue
 
         if _is_single_file_diffusion_weight(fname):
-            if model.repo_id not in repo_info_cache:
-                try:
-                    repo_info_cache[model.repo_id] = await fetch_model_info(
-                        model.repo_id
-                    )
-                except Exception as exc:  # pragma: no cover
-                    log.debug(f"Failed to fetch model info for {model.repo_id}: {exc}")
-                    repo_info_cache[model.repo_id] = None
-            model_info = repo_info_cache[model.repo_id]
+            model_info = model.model_info
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
             if _repo_supports_diffusion_checkpoint(model_info):
