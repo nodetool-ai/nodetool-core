@@ -477,7 +477,8 @@ class TestIndividualAdminOperations:
     async def test_delete_hf_model_success(self):
         """Test successful HF model deletion."""
         with patch(
-            "nodetool.deploy.admin_operations.delete_cached_hf_model"
+            "nodetool.deploy.admin_operations.delete_cached_hf_model",
+            new_callable=AsyncMock,
         ) as mock_delete:
             results = []
             async for chunk in delete_hf_model(repo_id="test/repo"):
@@ -486,7 +487,7 @@ class TestIndividualAdminOperations:
             assert len(results) == 1
             assert results[0]["status"] == "completed"
             assert results[0]["repo_id"] == "test/repo"
-            mock_delete.assert_called_once_with("test/repo")
+            mock_delete.assert_awaited_once_with("test/repo")
 
     @pytest.mark.asyncio
     async def test_delete_hf_model_missing_repo_id(self):

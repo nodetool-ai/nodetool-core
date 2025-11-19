@@ -1,5 +1,5 @@
 """
-Fast, revision-agnostic view over the local Hugging Face Hub cache.
+Fast, revision-agnostic view over the local Hugging Face Hub cache (async).
 
 This module provides `HfFastCache`, a tiny, read-only index on top of the on-disk
 hub layout (e.g. `~/.cache/huggingface/hub`). It is optimized for *local* cache
@@ -30,42 +30,27 @@ High-level behavior
 
 Thread-safety / concurrency
 ---------------------------
-  * `HfFastCache` is safe for concurrent use across threads in a single process.
-    All mutation of internal state (`_repos`) is guarded by an `RLock`.
-  * No background threads are spawned; refresh happens on demand in the caller’s
-    thread when mtimes indicate something changed.
-
-Intended usage
---------------
-  * Fast existence checks before we attempt a download:
-
-        cache = HfFastCache()
-        if cache.exists(\"org/repo\", \"config.json\", repo_type=\"model\"):
-            ...
-
-  * Resolving a local path for a known repo + filename:
-
-        path = cache.resolve(\"org/repo\", \"models/model.safetensors\")
-        if path is not None:
-            # Use the file at `path` without any network access.
-
-  * Admin operations on a specific repo (e.g., deletion, listing):
-
-        root = cache.repo_root(\"org/repo\", repo_type=\"model\")
-        snapshot_files = cache.list_files(\"org/repo\", repo_type=\"model\")
-
-The implementation is deliberately minimal and self-contained so it can be used
-early in process startup and from environments where importing the full
-`huggingface_hub` package is undesirable.
+  * `HfFastCache` is safe for concurrent use across async tasks in a single process.
+    All mutation of internal state (`_repos`) is guarded by an `asyncio.Lock`.
+  * No background tasks are spawned; refresh happens on demand when mtimes indicate
+    something changed.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
-import threading
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+import aiofiles
+import aiofiles.os
+
+from nodetool.ml.models.model_cache import ModelCache
+
+DEFAULT_MODEL_INFO_CACHE_TTL = 30 * 24 * 3600
 
 
 def get_default_hf_cache_dir() -> Path:
@@ -96,7 +81,7 @@ def get_default_hf_cache_dir() -> Path:
 
 class HfFastCache:
     """
-    Fast, read-only view over the local HF file cache.
+    Fast, read-only view over the local HF file cache (async).
 
     Key properties:
       - No full cache walk during normal operation.
@@ -105,7 +90,12 @@ class HfFastCache:
       - Lookups are direct path joins inside the active snapshot.
     """
 
-    def __init__(self, cache_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        cache_dir: str | Path | None = None,
+        *,
+        model_info_cache: ModelCache | None = None,
+    ) -> None:
         """Initialize a fast view over a local Hugging Face cache.
 
         Args:
@@ -113,10 +103,12 @@ class HfFastCache:
                 :func:`get_default_hf_cache_dir`.
         """
         self.cache_dir = Path(cache_dir) if cache_dir else get_default_hf_cache_dir()
-        self._lock = threading.RLock()
+        self._lock = asyncio.Lock()
         self._repos: Dict[str, _RepoState] = {}
+        # Share the model info cache between callers so metadata lookups can leverage the disk cache.
+        self.model_info_cache = model_info_cache or ModelCache("model_info")
 
-    def resolve(
+    async def resolve(
         self,
         repo_id: str,
         relpath: str,
@@ -129,12 +121,12 @@ class HfFastCache:
         repo (no directory walks) and checks whether the target exists.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"`` or
-                ``\"name\"``. Also accepts prefixed forms like
-                ``\"model/owner/name\"`` or ``\"dataset/owner/name\"``.
+            repo_id: Repository identifier such as ``"owner/name"`` or
+                ``"name"``. Also accepts prefixed forms like
+                ``"model/owner/name"`` or ``"dataset/owner/name"``.
             relpath: POSIX-style relative path inside the repo snapshot.
-            repo_type: Optional repository type (``\"model\"``, ``\"dataset\"``,
-                or ``\"space\"``). If omitted, tries models, datasets, then
+            repo_type: Optional repository type (``"model"``, ``"dataset"``,
+                or ``"space"``). If omitted, tries models, datasets, then
                 spaces in that order.
             follow_symlinks: Whether to return the real path of the underlying
                 blob target instead of the snapshot path. Symlinks are not
@@ -144,34 +136,45 @@ class HfFastCache:
             Optional[str]: Absolute path to the file if present in the active
             snapshot, otherwise ``None``.
         """
-        state = self._ensure_repo_state(repo_id, repo_type)
+        state = await self._ensure_repo_state(repo_id, repo_type)
         if state is None or state.snapshot_dir is None:
             return None
 
         rel = _normalize_relpath(relpath)
         candidate = state.snapshot_dir / rel
 
-        if candidate.exists() or candidate.is_symlink():
-            return str(candidate.resolve(strict=False) if follow_symlinks else candidate)
-        return None
+        try:
+            exists = await aiofiles.os.path.exists(str(candidate))
+            is_link = await aiofiles.os.path.islink(str(candidate))
+        except OSError:
+            return None
 
-    def exists(self, repo_id: str, relpath: str, repo_type: Optional[str] = None) -> bool:
+        if not (exists or is_link):
+            return None
+
+        if follow_symlinks:
+            # Use a thread for realpath to avoid blocking the event loop on resolve
+            resolved = await asyncio.to_thread(candidate.resolve, False)
+            return str(resolved)
+        return str(candidate)
+
+    async def exists(self, repo_id: str, relpath: str, repo_type: Optional[str] = None) -> bool:
         """Return whether a repo-relative path exists in the cache.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"``.
+            repo_id: Repository identifier such as ``"owner/name"``.
             relpath: POSIX-style relative path inside the repo snapshot.
-            repo_type: Optional repository type (``\"model\"``, ``\"dataset\"``,
-                or ``\"space\"``). If omitted, tries models, datasets, then
+            repo_type: Optional repository type (``"model"``, ``"dataset"``,
+                or ``"space"``). If omitted, tries models, datasets, then
                 spaces.
 
         Returns:
             bool: ``True`` if the file exists in the active snapshot, otherwise
             ``False``.
         """
-        return self.resolve(repo_id, relpath, repo_type=repo_type) is not None
+        return (await self.resolve(repo_id, relpath, repo_type=repo_type)) is not None
 
-    def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> List[str]:
+    async def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> List[str]:
         """List files in the active snapshot for a repo.
 
         The first call for a given repo walks only that repo's active snapshot
@@ -179,30 +182,29 @@ class HfFastCache:
         the index until a change in refs or snapshot mtime is detected.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"``.
-            repo_type: Optional repository type (``\"model\"``, ``\"dataset\"``,
-                or ``\"space\"``).
+            repo_id: Repository identifier such as ``"owner/name"``.
+            repo_type: Optional repository type (``"model"``, ``"dataset"``,
+                or ``"space"``).
 
         Returns:
             list[str]: POSIX-style relative paths present in the active snapshot.
                 Returns an empty list if the repo is not cached locally.
         """
-        state = self._ensure_repo_state(repo_id, repo_type)
-        if state is None or state.snapshot_dir is None or not state.snapshot_dir.exists():
+        state = await self._ensure_repo_state(repo_id, repo_type)
+        if state is None or state.snapshot_dir is None or not await _exists(state.snapshot_dir):
             return []
 
         if state.file_index is not None:
             return list(state.file_index.keys())
 
         files: List[str] = []
-        for p in state.snapshot_dir.rglob("*"):
-            if p.is_file() or p.is_symlink():
-                files.append(p.relative_to(state.snapshot_dir).as_posix())
+        for path in await _rglob_files_async(state.snapshot_dir):
+            files.append(path.relative_to(state.snapshot_dir).as_posix())
 
         state.file_index = {rp: state.snapshot_dir / rp for rp in files}
         return files
 
-    def invalidate(self, repo_id: Optional[str] = None, repo_type: Optional[str] = None) -> None:
+    async def invalidate(self, repo_id: Optional[str] = None, repo_type: Optional[str] = None) -> None:
         """Forget cached state for one repo or all repos.
 
         Args:
@@ -211,7 +213,7 @@ class HfFastCache:
             repo_type: Optional repository type hint used to narrow the keys
                 cleared when ``repo_id`` is provided.
         """
-        with self._lock:
+        async with self._lock:
             if repo_id is None:
                 self._repos.clear()
                 return
@@ -219,37 +221,72 @@ class HfFastCache:
             for key in key_candidates:
                 self._repos.pop(key, None)
 
-    def repo_root(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
+    async def repo_root(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
         """Return the cache directory for a given repo.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"``.
-            repo_type: Optional repository type (``\"model\"``, ``\"dataset\"``,
-                or ``\"space\"``).
+            repo_id: Repository identifier such as ``"owner/name"``.
+            repo_type: Optional repository type (``"model"``, ``"dataset"``,
+                or ``"space"``).
 
         Returns:
             Optional[str]: Absolute path to the repo directory under the cache
             root, or ``None`` if the repo is not present.
         """
-        state = self._ensure_repo_state(repo_id, repo_type, create_if_missing=False)
+        state = await self._ensure_repo_state(repo_id, repo_type, create_if_missing=False)
         return str(state.repo_dir) if state is not None else None
 
-    def active_snapshot_dir(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
+    async def active_snapshot_dir(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
         """Return the active snapshot directory for a given repo.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"``.
-            repo_type: Optional repository type (``\"model\"``, ``\"dataset\"``,
-                or ``\"space\"``).
+
+            repo_id: Repository identifier such as ``"owner/name"``.
+            repo_type: Optional repository type (``"model"``, ``"dataset"``,
+                or ``"space"``).
 
         Returns:
             Optional[str]: Absolute path to the active snapshot directory, or
             ``None`` if no snapshot is available locally.
         """
-        state = self._ensure_repo_state(repo_id, repo_type)
+        state = await self._ensure_repo_state(repo_id, repo_type)
         return str(state.snapshot_dir) if state and state.snapshot_dir else None
 
-    def _ensure_repo_state(
+    async def discover_repos(self, repo_type: str = "model") -> List[Tuple[str, Path]]:
+        """Discover cached Hugging Face repos by listing the cache directory.
+
+        This is lightweight compared to scan_cache_dir as it only lists directories
+        without walking the entire tree.
+
+        Args:
+            repo_type: Repository type ("model", "dataset", or "space")
+
+        Returns:
+            List of tuples (repo_id, repo_dir) for discovered repos
+        """
+        if not await _exists(self.cache_dir):
+            return []
+
+        type_prefix = f"{repo_type}s" if not repo_type.endswith("s") else repo_type
+        repos: List[Tuple[str, Path]] = []
+
+        try:
+            for name in await aiofiles.os.listdir(str(self.cache_dir)):
+                item = self.cache_dir / name
+                if not await _is_dir(item):
+                    continue
+                if not item.name.startswith(f"{type_prefix}--"):
+                    continue
+
+                parts = item.name[len(f"{type_prefix}--") :].split("--")
+                repo_id = "/".join(parts) if len(parts) > 1 else parts[0]
+                repos.append((repo_id, item))
+        except OSError:
+            return []
+
+        return repos
+
+    async def _ensure_repo_state(
         self,
         repo_id: str,
         repo_type: Optional[str],
@@ -266,7 +303,7 @@ class HfFastCache:
         * Detects when refs or snapshot mtimes change and refreshes state.
 
         Args:
-            repo_id: Repository identifier such as ``\"owner/name\"``.
+            repo_id: Repository identifier such as ``"owner/name"``.
             repo_type: Optional repository type hint.
             create_if_missing: When ``False``, returns ``None`` if the repo is
                 not already tracked or present on disk.
@@ -278,74 +315,63 @@ class HfFastCache:
         """
         key_candidates = _candidate_repo_keys(repo_id, repo_type)
 
-        with self._lock:
+        async with self._lock:
             for key in key_candidates:
                 state = self._repos.get(key)
                 if state is not None:
-                    if not state.repo_dir.exists():
+                    if not await _exists(state.repo_dir):
                         self._repos.pop(key, None)
                         continue
-                    self._maybe_refresh_state(state)
+                    await self._maybe_refresh_state(state)
                     return state
 
             for key in key_candidates:
                 repo_type_normalized, norm_repo_id = key.split(":", 1)
-                repo_dir = _find_repo_dir(self.cache_dir, norm_repo_id, repo_type_normalized)
+                repo_dir = await _find_repo_dir_async(self.cache_dir, norm_repo_id, repo_type_normalized)
                 if repo_dir is None:
                     continue
                 state = _RepoState(repo_id=norm_repo_id, repo_type=repo_type_normalized, repo_dir=repo_dir)
-                self._populate_initial_state(state)
+                await self._populate_initial_state(state)
                 self._repos[key] = state
                 return state
 
             return None if not create_if_missing else None
 
-    def _maybe_refresh_state(self, state: "_RepoState") -> None:
-        """Refresh a repo state if refs or snapshot mtimes changed.
-
-        This method is cheap to call and is invoked on each access to ensure
-        the in-memory view stays in sync with the on-disk cache.
-
-        Args:
-            state: Repo state to refresh.
-        """
-        refs_mtime_now, commit_now = _read_current_ref(state.repo_dir)
-        snapshot_dir_now = _snapshot_dir_for_commit(state.repo_dir, commit_now)
+    async def _maybe_refresh_state(self, state: "_RepoState") -> None:
+        """Refresh a repo state if refs or snapshot mtimes changed."""
+        refs_mtime_now, commit_now = await _read_current_ref_async(state.repo_dir)
+        snapshot_dir_now = await _snapshot_dir_for_commit_async(state.repo_dir, commit_now)
 
         if _changed(refs_mtime_now, state.refs_mtime) or commit_now != state.commit:
             state.commit = commit_now
             state.refs_mtime = refs_mtime_now
             state.snapshot_dir = snapshot_dir_now
-            state.snapshot_mtime = _mtime_or_none(snapshot_dir_now)
+            state.snapshot_mtime = await _mtime_or_none_async(snapshot_dir_now)
             state.file_index = None
             return
 
-        snap_mtime_now = _mtime_or_none(snapshot_dir_now)
+        snap_mtime_now = await _mtime_or_none_async(snapshot_dir_now)
         if _changed(snap_mtime_now, state.snapshot_mtime):
             state.snapshot_mtime = snap_mtime_now
             state.file_index = None
 
-        if state.commit is None and (state.snapshot_dir is None or not state.snapshot_dir.exists()):
-            state.snapshot_dir = _pick_latest_snapshot(state.repo_dir)
-            state.snapshot_mtime = _mtime_or_none(state.snapshot_dir)
+        if state.commit is None and (state.snapshot_dir is None or not await _exists(state.snapshot_dir)):
+            state.snapshot_dir = await _pick_latest_snapshot_async(state.repo_dir)
+            state.snapshot_mtime = await _mtime_or_none_async(state.snapshot_dir)
             state.file_index = None
 
-    def _populate_initial_state(self, state: "_RepoState") -> None:
-        """Populate repo state from refs and snapshots on first discovery.
-
-        Args:
-            state: Repo state to initialize. ``repo_dir`` must be set.
-        """
-        refs_mtime, commit = _read_current_ref(state.repo_dir)
+    async def _populate_initial_state(self, state: "_RepoState") -> None:
+        """Populate repo state from refs and snapshots on first discovery."""
+        refs_mtime, commit = await _read_current_ref_async(state.repo_dir)
         state.commit = commit
         state.refs_mtime = refs_mtime
 
         if commit:
-            state.snapshot_dir = _snapshot_dir_for_commit(state.repo_dir, commit)
+            state.snapshot_dir = await _snapshot_dir_for_commit_async(state.repo_dir, commit)
         else:
-            state.snapshot_dir = _pick_latest_snapshot(state.repo_dir)
+            state.snapshot_dir = await _pick_latest_snapshot_async(state.repo_dir)
 
-        state.snapshot_mtime = _mtime_or_none(state.snapshot_dir)
+        state.snapshot_mtime = await _mtime_or_none_async(state.snapshot_dir)
 
 
 @dataclass
@@ -366,15 +392,8 @@ def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
     """Return ordered cache keys to try for locating a repo.
 
     The function normalizes the repo identifier and type and produces keys of
-    the form ``\"models:owner/name\"``. It also handles prefixed repo IDs such
-    as ``\"model/owner/name\"``.
-
-    Args:
-        repo_id: Raw repository identifier (with or without type prefix).
-        repo_type: Optional repository type hint.
-
-    Returns:
-        list[str]: Candidate keys in priority order.
+    the form ``"models:owner/name"``. It also handles prefixed repo IDs such
+    as ``"model/owner/name"``.
     """
     norm_type, norm_repo = _normalize_repo_id_and_type(repo_id, repo_type)
     types_to_try = [norm_type] if norm_type else ["models", "datasets", "spaces"]
@@ -386,20 +405,7 @@ def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
 
 
 def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple[Optional[str], str]:
-    """Normalize repo ID and type into a canonical pair.
-
-    This helper understands repo IDs that may be prefixed with their type
-    (e.g. ``\"model/owner/name\"``) and uses that information when present.
-
-    Args:
-        repo_id: Raw repository identifier, possibly including a type prefix.
-        repo_type: Optional repository type hint.
-
-    Returns:
-        Tuple[Optional[str], str]: A tuple ``(normalized_type, normalized_repo)``
-        where ``normalized_type`` is one of ``\"models\"``, ``\"datasets\"``,
-        ``\"spaces\"``, or ``None`` when no type is known.
-    """
+    """Normalize repo ID and type into a canonical pair."""
     repo_id = repo_id.strip().strip("/")
     parts = repo_id.split("/")
     inferred_type: Optional[str] = None
@@ -413,18 +419,7 @@ def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple
 
 
 def _normalize_repo_type(repo_type: Optional[str]) -> Optional[str]:
-    """Normalize a repo type string to the internal form.
-
-    Args:
-        repo_type: Raw repo type (e.g. ``\"model\"``, ``\"datasets\"``).
-
-    Returns:
-        Optional[str]: Normalized type (``\"models\"``, ``\"datasets\"``,
-        ``\"spaces\"``), or ``None`` if ``repo_type`` is ``None``.
-
-    Raises:
-        ValueError: If ``repo_type`` is not recognized.
-    """
+    """Normalize a repo type string to the internal form."""
     if repo_type is None:
         return None
     t = repo_type.lower().strip()
@@ -437,26 +432,8 @@ def _normalize_repo_type(repo_type: Optional[str]) -> Optional[str]:
     raise ValueError(f"Unknown repo_type: {repo_type}")
 
 
-def _find_repo_dir(cache_dir: Path, repo_id: str, repo_type: str) -> Optional[Path]:
-    """Translate a repo ID into an on-disk directory under the cache.
-
-    On disk the naming convention is one of:
-
-      * ``models--owner--name``
-      * ``models--name``
-      * ``datasets--owner--name``
-      * ``spaces--owner--name``
-
-    Args:
-        cache_dir: Root of the Hugging Face Hub cache.
-        repo_id: Normalized repo identifier (no type prefix).
-        repo_type: Normalized repo type (``\"models\"``, ``\"datasets\"``,
-            or ``\"spaces\"``).
-
-    Returns:
-        Optional[Path]: Path to the repo directory, or ``None`` if it does
-        not exist.
-    """
+async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) -> Optional[Path]:
+    """Translate a repo ID into an on-disk directory under the cache."""
     assert repo_type in {"models", "datasets", "spaces"}
     repo_bits = [bit for bit in repo_id.split("/") if bit]
     if not repo_bits:
@@ -470,156 +447,161 @@ def _find_repo_dir(cache_dir: Path, repo_id: str, repo_type: str) -> Optional[Pa
 
     for name in candidates:
         path = cache_dir / name
-        if path.is_dir():
+        if await _is_dir(path):
             return path
     return None
 
 
-def _read_current_ref(repo_dir: Path) -> Tuple[Optional[float], Optional[str]]:
-    """Return the mtime and commit hash for the preferred ref.
-
-    Preference order:
-
-      1. ``refs/main`` if present.
-      2. Newest regular file inside ``refs/`` by mtime.
-      3. ``None`` if no refs exist.
-
-    Args:
-        repo_dir: Path to the repo directory.
-
-    Returns:
-        Tuple[Optional[float], Optional[str]]: A pair of
-        ``(refs_mtime, commit_hash)``, where either element may be ``None``.
-    """
+async def _read_current_ref_async(repo_dir: Path) -> Tuple[Optional[float], Optional[str]]:
+    """Return the mtime and commit hash for the preferred ref."""
     refs_dir = repo_dir / "refs"
-    if not refs_dir.exists():
+    if not await _exists(refs_dir):
         return None, None
 
     main = refs_dir / "main"
-    if main.exists():
-        return _mtime_or_none(main), _read_first_line(main)
+    if await _exists(main):
+        return await _mtime_or_none_async(main), await _read_first_line_async(main)
 
     newest_mtime: Optional[float] = None
     newest_commit: Optional[str] = None
-    for file in refs_dir.iterdir():
-        if file.is_file():
-            mt = _mtime_or_none(file)
+    try:
+        for name in await aiofiles.os.listdir(str(refs_dir)):
+            file = refs_dir / name
+            if not await _is_file(file):
+                continue
+            mt = await _mtime_or_none_async(file)
             if newest_mtime is None or (mt is not None and mt > newest_mtime):
                 newest_mtime = mt
-                newest_commit = _read_first_line(file)
+                newest_commit = await _read_first_line_async(file)
+    except OSError:
+        return None, None
 
-    return (newest_mtime if newest_mtime is not None else _mtime_or_none(refs_dir), newest_commit)
+    return (newest_mtime if newest_mtime is not None else await _mtime_or_none_async(refs_dir), newest_commit)
 
 
-def _snapshot_dir_for_commit(repo_dir: Path, commit: Optional[str]) -> Optional[Path]:
-    """Return the snapshot directory for a given commit hash.
-
-    Args:
-        repo_dir: Path to the repo directory.
-        commit: Commit hash string or ``None``.
-
-    Returns:
-        Optional[Path]: Snapshot directory path if it exists, otherwise
-        ``None``.
-    """
+async def _snapshot_dir_for_commit_async(repo_dir: Path, commit: Optional[str]) -> Optional[Path]:
+    """Return the snapshot directory for a given commit hash."""
     if not commit:
         return None
     snapshot = repo_dir / "snapshots" / commit.strip()
-    return snapshot if snapshot.exists() else None
+    return snapshot if await _exists(snapshot) else None
 
 
-def _pick_latest_snapshot(repo_dir: Path) -> Optional[Path]:
-    """Return the newest snapshot directory for a repo by mtime.
-
-    Args:
-        repo_dir: Path to the repo directory.
-
-    Returns:
-        Optional[Path]: Path to the newest snapshot directory, or ``None`` if
-        no snapshots exist.
-    """
+async def _pick_latest_snapshot_async(repo_dir: Path) -> Optional[Path]:
+    """Return the newest snapshot directory for a repo by mtime."""
     snapshots_dir = repo_dir / "snapshots"
-    if not snapshots_dir.exists():
+    if not await _exists(snapshots_dir):
         return None
     newest_path: Optional[Path] = None
     newest_mtime: Optional[float] = None
-    for path in snapshots_dir.iterdir():
-        if path.is_dir():
-            mt = _mtime_or_none(path)
+    try:
+        for name in await aiofiles.os.listdir(str(snapshots_dir)):
+            path = snapshots_dir / name
+            if not await _is_dir(path):
+                continue
+            mt = await _mtime_or_none_async(path)
             if newest_mtime is None or (mt is not None and mt > newest_mtime):
                 newest_mtime = mt
                 newest_path = path
+    except OSError:
+        return None
     return newest_path
 
 
-def _read_first_line(path: Path) -> Optional[str]:
-    """Read and return the first line of a text file.
-
-    Args:
-        path: File path to read.
-
-    Returns:
-        Optional[str]: First line with surrounding whitespace stripped, or
-        ``None`` if the file cannot be read or is empty.
-    """
+async def _read_first_line_async(path: Path) -> Optional[str]:
+    """Read and return the first line of a text file."""
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            line = handle.readline().strip()
-        return line or None
+        async with aiofiles.open(path, "r", encoding="utf-8") as handle:
+            line = await handle.readline()
+        stripped = line.strip()
+        return stripped or None
     except OSError:
         return None
 
 
-def _mtime_or_none(path: Optional[Path]) -> Optional[float]:
-    """Return the mtime for a path, or ``None`` on error.
-
-    Args:
-        path: Path to stat, or ``None``.
-
-    Returns:
-        Optional[float]: POSIX mtime timestamp, or ``None`` if the path is
-        ``None`` or cannot be stat'ed.
-    """
+async def _mtime_or_none_async(path: Optional[Path]) -> Optional[float]:
+    """Return the mtime for a path, or ``None`` on error."""
+    if path is None:
+        return None
     try:
-        if path is None:
-            return None
-        stat_result = path.stat()
+        stat_result = await aiofiles.os.stat(str(path))
         return stat_result.st_mtime
     except OSError:
         return None
 
 
+async def _exists(path: Optional[Path]) -> bool:
+    if path is None:
+        return False
+    try:
+        return await aiofiles.os.path.exists(str(path))
+    except OSError:
+        return False
+
+
+async def _is_dir(path: Path) -> bool:
+    try:
+        st = await aiofiles.os.stat(str(path))
+        return stat.S_ISDIR(st.st_mode)
+    except OSError:
+        return False
+
+
+async def _is_file(path: Path) -> bool:
+    try:
+        st = await aiofiles.os.stat(str(path))
+        return stat.S_ISREG(st.st_mode)
+    except OSError:
+        return False
+
+
+async def _rglob_files_async(root: Path) -> List[Path]:
+    """Recursively collect files and symlinks under root without blocking the loop."""
+    results: List[Path] = []
+
+    async def _walk(dir_path: Path) -> None:
+        try:
+            entries = await aiofiles.os.listdir(str(dir_path))
+        except OSError:
+            return
+
+        for name in entries:
+            full = dir_path / name
+            try:
+                if await _is_dir(full):
+                    await _walk(full)
+                    continue
+                is_file = await _is_file(full)
+                is_link = await aiofiles.os.path.islink(str(full))
+            except OSError:
+                continue
+            if is_file or is_link:
+                results.append(full)
+
+    await _walk(root)
+    return results
+
+
 def _normalize_relpath(path: str) -> Path:
-    """Normalize a repo-relative path into a :class:`Path`.
-
-    This converts Windows separators to POSIX-style ``/`` and strips any
-    leading slashes so that the result is always relative.
-
-    Args:
-        path: Raw path string (POSIX or Windows style).
-
-    Returns:
-        Path: Normalized relative path.
-    """
+    """Normalize a repo-relative path into a :class:`Path`."""
     path = path.replace("\\", "/").lstrip("/")
     return Path(path)
 
 
 def _changed(now: Optional[float], old: Optional[float]) -> bool:
-    """Return whether two timestamps represent a change.
-
-    ``None`` is treated as "unknown"; transitioning between ``None`` and a
-    real value always counts as a change.
-
-    Args:
-        now: Current timestamp or ``None``.
-        old: Previous timestamp or ``None``.
-
-    Returns:
-        bool: ``True`` if the timestamps differ, otherwise ``False``.
-    """
+    """Return whether two timestamps represent a change."""
     if now is None and old is None:
         return False
     if now is None or old is None:
         return True
     return now != old
+
+
+if __name__ == "__main__":
+    async def main():
+        cache = HfFastCache()
+        files = await cache.list_files("h94/IP-Adapter")
+        for file in files:
+            print(file)
+
+    asyncio.run(main())

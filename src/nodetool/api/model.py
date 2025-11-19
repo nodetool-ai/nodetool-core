@@ -4,7 +4,7 @@ import asyncio
 import os
 from typing import Any, Callable, ClassVar, Dict, Generator, Iterable, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from huggingface_hub import HfApi, try_to_load_from_cache
 from huggingface_hub.hf_api import RepoFile
@@ -32,6 +32,7 @@ from nodetool.integrations.huggingface.huggingface_file import (
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
     read_cached_hf_models,
+    search_cached_hf_models,
 )
 from nodetool.metadata.types import (
     ASRModel,
@@ -313,12 +314,39 @@ async def get_huggingface_models(
     return await read_cached_hf_models()
 
 
+@router.get("/huggingface/search")
+async def search_huggingface_models_endpoint(
+    repo_pattern: list[str] | None = Query(None),
+    filename_pattern: list[str] | None = Query(None),
+    pipeline_tag: list[str] | None = Query(None),
+    tag: list[str] | None = Query(None),
+    author: list[str] | None = Query(None),
+    library_name: str | None = None,
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    """
+    Search cached Hugging Face repos by metadata and optional filename patterns.
+    """
+    if Environment.is_production():
+        log.warning("Cannot search Hugging Face models in production")
+        return []
+
+    return await search_cached_hf_models(
+        repo_patterns=repo_pattern,
+        filename_patterns=filename_pattern,
+        pipeline_tags=pipeline_tag,
+        tags=tag,
+        authors=author,
+        library_name=library_name,
+    )
+
+
 @router.delete("/huggingface")
 async def delete_huggingface_model(repo_id: str) -> bool:
     if Environment.is_production():
         log.warning("Cannot delete models in production")
         return False
-    return delete_cached_hf_model(repo_id)
+    return await delete_cached_hf_model(repo_id)
 
 
 @router.get("/ollama")

@@ -15,6 +15,10 @@ from nodetool.integrations.huggingface.hf_cache import (
 )
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
+    read_cached_hf_models,
+    search_cached_hf_models,
+    _get_file_size,
+    HF_FAST_CACHE,
 )
 
 
@@ -332,11 +336,13 @@ class TestHasCachedFiles:
 class TestDeleteCachedHfModel:
     """Tests for delete_cached_hf_model using the fast HF cache."""
 
-    def test_delete_cached_hf_model_success(self):
+    @pytest.mark.asyncio
+    async def test_delete_cached_hf_model_success(self):
         """Model is present in fast cache and deleted successfully."""
         with (
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
                 return_value="/fake/cache/models--org--repo",
             ) as mock_repo_root,
             patch(
@@ -347,26 +353,29 @@ class TestDeleteCachedHfModel:
                 "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
             ) as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
+                new_callable=AsyncMock,
             ) as mock_invalidate,
         ):
-            result = delete_cached_hf_model("org/repo")
+            result = await delete_cached_hf_model("org/repo")
 
         assert result is True
-        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
         mock_rmtree.assert_called_once_with("/fake/cache/models--org--repo")
         mock_delete_pattern.assert_called_once_with("cached_hf_*")
-        mock_invalidate.assert_called_once_with("org/repo", repo_type="model")
+        mock_invalidate.assert_awaited_once_with("org/repo", repo_type="model")
 
-    def test_delete_cached_hf_model_repo_not_found(self):
+    @pytest.mark.asyncio
+    async def test_delete_cached_hf_model_repo_not_found(self):
         """Model is not present in fast cache; nothing is deleted."""
         with (
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
                 return_value=None,
             ) as mock_repo_root,
             patch(
@@ -376,26 +385,29 @@ class TestDeleteCachedHfModel:
                 "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
             ) as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
+                new_callable=AsyncMock,
             ) as mock_invalidate,
         ):
-            result = delete_cached_hf_model("org/repo")
+            result = await delete_cached_hf_model("org/repo")
 
         assert result is False
-        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_not_called()
         mock_rmtree.assert_not_called()
         mock_delete_pattern.assert_not_called()
         mock_invalidate.assert_not_called()
 
-    def test_delete_cached_hf_model_repo_path_missing(self):
+    @pytest.mark.asyncio
+    async def test_delete_cached_hf_model_repo_path_missing(self):
         """Fast cache resolves repo_root, but on-disk path is missing."""
         with (
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
                 return_value="/fake/cache/models--org--repo",
             ) as mock_repo_root,
             patch(
@@ -406,17 +418,372 @@ class TestDeleteCachedHfModel:
                 "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
             ) as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.MODEL_INFO_CACHE.delete_pattern"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate"
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
+                new_callable=AsyncMock,
             ) as mock_invalidate,
         ):
-            result = delete_cached_hf_model("org/repo")
+            result = await delete_cached_hf_model("org/repo")
 
         assert result is False
-        mock_repo_root.assert_called_once_with("org/repo", repo_type="model")
+        mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
         mock_rmtree.assert_not_called()
         mock_delete_pattern.assert_not_called()
         mock_invalidate.assert_not_called()
+
+
+class TestDiscoverCachedRepos:
+    """Tests for HfFastCache.discover_repos method."""
+
+    @pytest.mark.asyncio
+    async def test_discover_repos_finds_models(self, tmp_path):
+        """Test that discover_repos finds model repos."""
+        from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
+
+        cache_dir = tmp_path
+        repo_dir1 = cache_dir / "models--org--repo1"
+        repo_dir2 = cache_dir / "models--repo2"
+        repo_dir1.mkdir(parents=True)
+        repo_dir2.mkdir(parents=True)
+
+        cache = HfFastCache(cache_dir=cache_dir)
+        repos = await cache.discover_repos("model")
+
+        assert len(repos) == 2
+        repo_ids = [repo_id for repo_id, _ in repos]
+        assert "org/repo1" in repo_ids
+        assert "repo2" in repo_ids
+
+    @pytest.mark.asyncio
+    async def test_discover_repos_filters_by_type(self, tmp_path):
+        """Test that discover_repos filters by repo type."""
+        from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
+
+        cache_dir = tmp_path
+        model_dir = cache_dir / "models--org--model"
+        dataset_dir = cache_dir / "datasets--org--dataset"
+        model_dir.mkdir(parents=True)
+        dataset_dir.mkdir(parents=True)
+
+        cache = HfFastCache(cache_dir=cache_dir)
+        model_repos = await cache.discover_repos("model")
+        dataset_repos = await cache.discover_repos("dataset")
+
+        assert len(model_repos) == 1
+        assert model_repos[0][0] == "org/model"
+        assert len(dataset_repos) == 1
+        assert dataset_repos[0][0] == "org/dataset"
+
+    @pytest.mark.asyncio
+    async def test_discover_repos_handles_missing_cache_dir(self, tmp_path):
+        """Test that discover_repos handles missing cache directory."""
+        from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
+
+        cache_dir = tmp_path / "nonexistent"
+        cache = HfFastCache(cache_dir=cache_dir)
+        repos = await cache.discover_repos("model")
+
+        assert repos == []
+
+
+class TestGetFileSize:
+    """Tests for _get_file_size function."""
+
+    def test_get_file_size_for_regular_file(self, tmp_path):
+        """Test that _get_file_size returns size for regular file."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test content")
+
+        size = _get_file_size(test_file)
+        assert size > 0
+
+    def test_get_file_size_for_symlink(self, tmp_path):
+        """Test that _get_file_size handles symlinks correctly."""
+        target_file = tmp_path / "target.txt"
+        target_file.write_text("target content")
+        symlink_file = tmp_path / "link.txt"
+        symlink_file.symlink_to(target_file)
+
+        size = _get_file_size(symlink_file)
+        assert size > 0
+
+    def test_get_file_size_for_nonexistent_file(self, tmp_path):
+        """Test that _get_file_size returns 0 for nonexistent file."""
+        nonexistent_file = tmp_path / "nonexistent.txt"
+
+        size = _get_file_size(nonexistent_file)
+        assert size == 0
+
+
+class TestReadCachedHfModels:
+    """Tests for read_cached_hf_models function."""
+
+    @pytest.mark.asyncio
+    async def test_read_cached_hf_models_with_no_repos(self):
+        """Test that read_cached_hf_models returns empty list when no repos found."""
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
+                return_value=None,
+            ),
+        ):
+            result = await read_cached_hf_models()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_read_cached_hf_models_uses_cache(self):
+        """Test that read_cached_hf_models uses cached results when available."""
+        mock_cached_models = [MagicMock(repo_id="org/repo")]
+
+        with patch(
+            "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
+            return_value=mock_cached_models,
+        ):
+            result = await read_cached_hf_models()
+
+        assert result == mock_cached_models
+
+    @pytest.mark.asyncio
+    async def test_read_cached_hf_models_calculates_size(self, tmp_path):
+        """Test that read_cached_hf_models calculates size correctly."""
+        cache_dir = tmp_path
+        repo_dir = cache_dir / "models--org--repo"
+        refs_dir = repo_dir / "refs"
+        snapshots_dir = repo_dir / "snapshots"
+        commit = "abc123"
+
+        refs_dir.mkdir(parents=True)
+        snapshots_dir.mkdir(parents=True)
+        snapshot_dir = snapshots_dir / commit
+        snapshot_dir.mkdir()
+        (refs_dir / "main").write_text(f"{commit}\n", encoding="utf-8")
+        (snapshot_dir / "model.bin").write_bytes(b"test" * 100)
+        (snapshot_dir / "config.json").write_bytes(b"config")
+
+        mock_model_info = MagicMock()
+        mock_model_info.pipeline_tag = "text-generation"
+        mock_model_info.tags = []
+        mock_model_info.downloads = 1000
+        mock_model_info.likes = 100
+        mock_model_info.trending_score = 50.0
+
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
+                return_value=None,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                return_value=[("org/repo", repo_dir)],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
+                new_callable=AsyncMock,
+                return_value=mock_model_info,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
+                return_value=str(repo_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.active_snapshot_dir",
+                new_callable=AsyncMock,
+                return_value=str(snapshot_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.list_files",
+                new_callable=AsyncMock,
+                return_value=["model.bin", "config.json"],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models._get_file_size",
+                side_effect=lambda p: p.stat().st_size if p.exists() else 0,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.set",
+            ),
+        ):
+            result = await read_cached_hf_models()
+
+        assert len(result) == 1
+        assert result[0].repo_id == "org/repo"
+        assert result[0].size_on_disk > 0
+
+    @pytest.mark.asyncio
+    async def test_read_cached_hf_models_handles_exceptions(self):
+        """Test that read_cached_hf_models handles exceptions gracefully."""
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
+                return_value=None,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                side_effect=Exception("Cache error"),
+            ),
+        ):
+            result = await read_cached_hf_models()
+
+        assert result == []
+
+
+class TestSearchCachedHfModels:
+    """Tests for search_cached_hf_models function."""
+
+    @pytest.mark.asyncio
+    async def test_search_cached_hf_models_filters_repo_and_files(self, tmp_path):
+        snapshot_dir = tmp_path / "models--org--repo" / "snapshots" / "abc"
+        snapshot_dir.mkdir(parents=True)
+
+        mock_model_info = MagicMock()
+        mock_model_info.pipeline_tag = "text-to-image"
+        mock_model_info.tags = ["lora", "diffusers"]
+        mock_model_info.author = "org"
+        mock_model_info.library_name = "diffusers"
+
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                return_value=[("org/repo", snapshot_dir.parent.parent)],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
+                new_callable=AsyncMock,
+                return_value=mock_model_info,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
+                return_value=str(snapshot_dir.parent),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.active_snapshot_dir",
+                new_callable=AsyncMock,
+                return_value=str(snapshot_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.list_files",
+                new_callable=AsyncMock,
+                return_value=[
+                    "models/ip_adapter.safetensors",
+                    "README.md",
+                ],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models._get_file_size",
+                side_effect=[2048, 128],
+            ),
+        ):
+            results = await search_cached_hf_models(
+                repo_patterns=["org/*"],
+                filename_patterns=["*.safetensors"],
+                pipeline_tags=["text-to-image"],
+                tags=["lora"],
+                authors=["org"],
+                library_name="diffusers",
+            )
+
+        assert len(results) == 2
+        repo_entry = next(model for model in results if model.path is None)
+        file_entry = next(model for model in results if model.path is not None)
+        assert repo_entry.repo_id == "org/repo"
+        assert file_entry.path == "models/ip_adapter.safetensors"
+        assert file_entry.size_on_disk == 2048
+
+    @pytest.mark.asyncio
+    async def test_search_cached_hf_models_includes_entries_without_metadata(self, tmp_path):
+        repo_dir = tmp_path / "models--org--repo"
+        repo_dir.mkdir(parents=True)
+        snapshot_dir = repo_dir / "snapshots" / "abc"
+        snapshot_dir.mkdir(parents=True)
+
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                return_value=[("org/repo", repo_dir)],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
+                return_value=str(repo_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.active_snapshot_dir",
+                new_callable=AsyncMock,
+                return_value=str(snapshot_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.list_files",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models._get_file_size",
+                return_value=0,
+            ),
+        ):
+            results = await search_cached_hf_models()
+
+        assert len(results) == 1
+        assert results[0].repo_id == "org/repo"
+
+    @pytest.mark.asyncio
+    async def test_search_cached_hf_models_requires_metadata_when_filters_used(self, tmp_path):
+        repo_dir = tmp_path / "models--org--repo"
+        repo_dir.mkdir(parents=True)
+        snapshot_dir = repo_dir / "snapshots" / "abc"
+        snapshot_dir.mkdir(parents=True)
+
+        with (
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
+                new_callable=AsyncMock,
+                return_value=[("org/repo", repo_dir)],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
+                new_callable=AsyncMock,
+                return_value=str(repo_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.active_snapshot_dir",
+                new_callable=AsyncMock,
+                return_value=str(snapshot_dir),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.list_files",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models._get_file_size",
+                return_value=0,
+            ),
+        ):
+            results = await search_cached_hf_models(pipeline_tags=["text-generation"])
+
+        assert results == []

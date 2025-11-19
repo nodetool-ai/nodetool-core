@@ -529,7 +529,7 @@ async def delete_hf_model(repo_id: str) -> AsyncGenerator[dict, None]:
         raise ValueError("repo_id is required for HuggingFace model deletion")
 
     try:
-        delete_cached_hf_model(repo_id)
+        await delete_cached_hf_model(repo_id)
         yield {
             "status": "completed",
             "repo_id": repo_id,

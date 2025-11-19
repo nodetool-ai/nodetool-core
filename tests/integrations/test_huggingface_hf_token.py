@@ -226,7 +226,7 @@ class TestHFTokenFromDatabase:
 
                 # Mock cache to return None (cache miss)
                 with patch(
-                    "nodetool.integrations.huggingface.huggingface_models._model_info_cache.get",
+                    "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
                     return_value=None,
                 ):
                     await fetch_model_info("test/repo")
@@ -334,4 +334,3 @@ class TestHFTokenDatabaseIntegration:
         finally:
             if "HF_TOKEN" in os.environ:
                 del os.environ["HF_TOKEN"]
-

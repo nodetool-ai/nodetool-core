@@ -143,7 +143,7 @@ class BaseProvider:
 
     log_file: str | None = None
     cost: float = 0.0
-    usage: ClassVar[dict[str, int]] = {}
+    usage: dict[str, int] = {}
     provider_name: str = ""
 
     @classmethod
@@ -152,7 +152,11 @@ class BaseProvider:
         return []
 
     def __init__(self, secrets: dict[str, str] | None = None):
-        self.usage = {}
+        self.usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
         self.secrets = secrets or {}
 
     def get_capabilities(self) -> Set[ProviderCapability]:

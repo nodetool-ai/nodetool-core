@@ -29,7 +29,8 @@ def test_get_default_hf_cache_dir_uses_hf_home(monkeypatch, tmp_path):
     assert resolved == hf_home / "hub"
 
 
-def test_hf_fast_cache_resolves_repo_and_files(tmp_path):
+@pytest.mark.asyncio
+async def test_hf_fast_cache_resolves_repo_and_files(tmp_path):
     """HfFastCache should resolve repo root, snapshot dir, and files for a simple repo."""
     cache_dir = tmp_path
     repo_dir = cache_dir / "models--org--repo"
@@ -51,24 +52,25 @@ def test_hf_fast_cache_resolves_repo_and_files(tmp_path):
 
     cache = HfFastCache(cache_dir=cache_dir)
 
-    repo_root = cache.repo_root("org/repo", repo_type="model")
+    repo_root = await cache.repo_root("org/repo", repo_type="model")
     assert repo_root is not None
     assert Path(repo_root) == repo_dir
 
-    active_snapshot = cache.active_snapshot_dir("org/repo", repo_type="model")
+    active_snapshot = await cache.active_snapshot_dir("org/repo", repo_type="model")
     assert active_snapshot is not None
     assert Path(active_snapshot) == snapshot_dir
 
-    resolved = cache.resolve("org/repo", "model.bin", repo_type="model")
+    resolved = await cache.resolve("org/repo", "model.bin", repo_type="model")
     assert resolved is not None
     assert Path(resolved) == weight_path
-    assert cache.exists("org/repo", "model.bin", repo_type="model") is True
+    assert await cache.exists("org/repo", "model.bin", repo_type="model") is True
 
-    files = cache.list_files("org/repo", repo_type="model")
+    files = await cache.list_files("org/repo", repo_type="model")
     assert "model.bin" in files
 
 
-def test_hf_fast_cache_detects_new_files_via_snapshot_mtime(tmp_path):
+@pytest.mark.asyncio
+async def test_hf_fast_cache_detects_new_files_via_snapshot_mtime(tmp_path):
     """HfFastCache should invalidate file index when snapshot dir mtime changes."""
     cache_dir = tmp_path
     repo_dir = cache_dir / "models--org--repo2"
@@ -88,7 +90,7 @@ def test_hf_fast_cache_detects_new_files_via_snapshot_mtime(tmp_path):
     cache = HfFastCache(cache_dir=cache_dir)
 
     # Initial list_files builds the file index
-    files1 = cache.list_files("org/repo2", repo_type="model")
+    files1 = await cache.list_files("org/repo2", repo_type="model")
     assert files1 == ["first.bin"]
 
     # Add a new file and bump the snapshot dir mtime
@@ -96,6 +98,5 @@ def test_hf_fast_cache_detects_new_files_via_snapshot_mtime(tmp_path):
     second_file.write_bytes(b"two")
     os.utime(snapshot_dir, None)
 
-    files2 = cache.list_files("org/repo2", repo_type="model")
+    files2 = await cache.list_files("org/repo2", repo_type="model")
     assert set(files2) == {"first.bin", "second.bin"}
-

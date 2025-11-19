@@ -19,11 +19,14 @@ import os
 import shutil
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import List
+from typing import Callable, List, Sequence
 
-from huggingface_hub import CacheNotFound, HfApi, ModelInfo, scan_cache_dir
+from huggingface_hub import HfApi, ModelInfo
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
+from nodetool.integrations.huggingface.hf_fast_cache import (
+    DEFAULT_MODEL_INFO_CACHE_TTL,
+    HfFastCache,
+)
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -31,10 +34,9 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.ml.models.model_cache import ModelCache
 from nodetool.runtime.resources import maybe_scope
 from nodetool.security.secret_helper import get_secret
-from nodetool.types.model import CachedFileInfo, UnifiedModel
+from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
 
 SINGLE_FILE_DIFFUSION_EXTENSIONS = (
@@ -57,6 +59,11 @@ SINGLE_FILE_DIFFUSION_TAGS = {
 
 log = get_logger(__name__)
 
+CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
+CACHED_HF_MODELS_TTL = 3600  # 1 hour
+
+CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
+CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
@@ -76,12 +83,6 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
         return await get_secret("HF_TOKEN", user_id)
     return None
 
-
-# Model info cache instance - 24 hour TTL for model metadata
-MODEL_INFO_CACHE = ModelCache("model_info")
-MODEL_INFO_CACHE_TTL = 30 * 24 * 3600  # 30 days in seconds
-# Backwards compatibility alias for legacy references in tests
-_model_info_cache = MODEL_INFO_CACHE
 
 # Fast HF cache view for local snapshot lookups.
 HF_FAST_CACHE = HfFastCache()
@@ -326,7 +327,7 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
         ModelInfo: The model info, or None if not found.
     """
     cache_key = f"model_info:{model_id}"
-    cached_result = MODEL_INFO_CACHE.get(cache_key)
+    cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
     if cached_result is not None:
         log.debug(f"Cache hit for model info: {model_id}")
         return cached_result
@@ -350,7 +351,11 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     )
 
     # # Store in cache for future use
-    MODEL_INFO_CACHE.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
+    HF_FAST_CACHE.model_info_cache.set(
+        cache_key,
+        model_info,
+        DEFAULT_MODEL_INFO_CACHE_TTL,
+    )
     log.debug(f"Cached model info for: {model_id}")
 
     return model_info
@@ -386,173 +391,303 @@ def model_type_from_model_info(
     return None
 
 
-async def read_cached_hf_files(
-    pipeline_tag: str | None = None,
-    library_name: str | None = None,
-    tags: list[str] | None = None,
-) -> List[CachedFileInfo]:
-    """
-    Reads all models from the Hugging Face cache.
 
-    Returns:
-        List[CachedFileInfo]: A list of CachedFileInfo objects found in the cache.
-    """
-    tags = [tag.lower() for tag in (tags or [])]
 
-    # Create cache key based on tags filter
-    cache_key_parts = []
-    if pipeline_tag:
-        cache_key_parts.append(pipeline_tag)
-    if library_name:
-        cache_key_parts.append(library_name)
-    if tags:
-        cache_key_parts.extend(tags)
-
-    # Check cache first
-    # cache_key = ":".join(cache_key_parts)
-    # cached_result = MODEL_INFO_CACHE.get(cache_key)
-    # if cached_result is not None:
-    #     log.debug(f"Returning {len(cached_result)} cached HF files from cache")
-    #     return cached_result
-
-    # Offload scanning HF cache to a thread (filesystem heavy)
+def _get_file_size(file_path: Path) -> int:
+    """Get file size, handling symlinks."""
     try:
-        cache_info = await asyncio.to_thread(scan_cache_dir)
-    except CacheNotFound:
-        log.debug("Hugging Face cache directory not found; returning empty list")
-        # Don't cache non-existence - allow retry
-        return []
+        if file_path.is_symlink():
+            # Resolve symlink to get actual file size
+            resolved = file_path.resolve(strict=False)
+            if resolved.exists():
+                return resolved.stat().st_size
+        elif file_path.exists():
+            return file_path.stat().st_size
+    except OSError:
+        pass
+    return 0
 
-    model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-    log.debug(f"Scanning {len(model_repos)} HF repos for files with tags={tags}")
 
-    cached_files = []
+async def _build_cached_repo_entry(
+    repo_id: str,
+    repo_dir: Path,
+    model_info: ModelInfo | None,
+    recommended_models: dict[str, list[UnifiedModel]],
+) -> tuple[UnifiedModel, list[tuple[str, int]]]:
+    """Build the UnifiedModel entry and collect file metadata for a cached repo."""
+    repo_root = await HF_FAST_CACHE.repo_root(repo_id, repo_type="model")
+    snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
 
-    model_infos = await asyncio.gather(
-        *[fetch_model_info(repo.repo_id) for repo in model_repos],
-        return_exceptions=True,  # Don't fail entire operation if one model fails
+    file_entries: list[tuple[str, int]] = []
+    size_on_disk = 0
+
+    if snapshot_dir:
+        snapshot_path = Path(snapshot_dir)
+        try:
+            file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        except Exception as exc:  # pragma: no cover - defensive
+            log.debug(f"Failed to list files for {repo_id}: {exc}")
+            file_list = []
+
+        for file_name in file_list:
+            file_path = snapshot_path / file_name
+            file_size = _get_file_size(file_path)
+            size_on_disk += file_size
+            file_entries.append((file_name, file_size))
+
+    repo_model = UnifiedModel(
+        id=repo_id,
+        type=model_type_from_model_info(
+            recommended_models,
+            repo_id,
+            model_info,
+        ),
+        name=repo_id,
+        cache_path=str(repo_root) if repo_root else str(repo_dir),
+        allow_patterns=None,
+        ignore_patterns=None,
+        description=None,
+        readme=None,
+        downloaded=repo_root is not None or repo_dir.exists(),
+        pipeline_tag=model_info.pipeline_tag if model_info else None,
+        tags=model_info.tags if model_info else None,
+        has_model_index=has_model_index(model_info) if model_info else False,
+        repo_id=repo_id,
+        path=None,
+        size_on_disk=size_on_disk,
+        downloads=model_info.downloads if model_info else None,
+        likes=model_info.likes if model_info else None,
+        trending_score=model_info.trending_score if model_info else None,
     )
 
-    for repo, model_info in zip(model_repos, model_infos, strict=False):
-        # Handle exceptions from individual fetch_model_info calls
-        if isinstance(model_info, BaseException):
-            log.debug(f"Failed to fetch model info for {repo.repo_id}: {model_info}")
-            continue
-
-        # Get cached files from all revisions
-        if model_info is None:
-            continue
-        if pipeline_tag and model_info.pipeline_tag != pipeline_tag:
-            continue
-        if library_name and model_info.library_name != library_name:
-            continue
-        if tags and not all(tag.lower() in (model_info.tags or []) for tag in tags):
-            continue
-        for revision in repo.revisions:
-            for file_info in revision.files:
-                cached_files.append(
-                    CachedFileInfo(
-                        repo_id=repo.repo_id,
-                        file_name=file_info.file_name,
-                        size_on_disk=file_info.size_on_disk,
-                        model_info=model_info,
-                    )
-                )
-
-    # Cache for 1 hour (3600 seconds) - even partial results
-    # MODEL_INFO_CACHE.set(cache_key, cached_files, ttl=MODEL_INFO_CACHE_TTL)
-
-    return cached_files
+    return repo_model, file_entries
 
 
 async def read_cached_hf_models() -> List[UnifiedModel]:
     """
-    Reads all models from the Hugging Face cache.
+    Reads all models from the Hugging Face cache using HfFastCache for efficient lookups.
     Results are cached for 1 hour to avoid repeated filesystem scanning.
 
     Returns:
         List[UnifiedModel]: A list of UnifiedModel objects found in the cache.
     """
-    cache_key = "cached_hf_models:all"
 
-    # Check cache first
-    cached_result = MODEL_INFO_CACHE.get(cache_key)
-    if cached_result is not None:
-        log.info(
-            f"✓ CACHE HIT: Returning {len(cached_result)} cached HF models (skipping scan)"
-        )
-        return cached_result
+    cached_models = HF_FAST_CACHE.model_info_cache.get(CACHED_HF_MODELS_CACHE_KEY)
+    if cached_models is not None:
+        return cached_models
 
-    log.info("✗ CACHE MISS: Scanning HF cache directory for models")
-
-    # Offload scanning HF cache to a thread (filesystem heavy)
     try:
-        cache_info = await asyncio.to_thread(scan_cache_dir)
-    except CacheNotFound:
-        log.debug("Hugging Face cache directory not found; returning empty model list")
-        # Don't cache non-existence - allow retry
+        # Discover repos by listing cache directory (lightweight)
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive guard
+        log.warning(f"Failed to discover cached HF repos: {exc}")
         return []
-
-    model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-    log.debug(f"Fetching info for {len(model_repos)} cached HF models")
 
     recommended_models = get_recommended_models()
     models: list[UnifiedModel] = []
 
-    try:
-        model_infos = await asyncio.gather(
-            *[fetch_model_info(repo.repo_id) for repo in model_repos],
-            return_exceptions=True,  # Don't fail entire operation if one model fails
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
+        return_exceptions=True,  # Don't fail entire operation if one model fails
+    )
+
+    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
+        # Handle exceptions from individual fetch_model_info calls
+        if isinstance(model_info, BaseException):
+            log.debug(f"Failed to fetch model info for {repo_id}: {model_info}")
+            # Still create a basic model entry without the extra metadata
+            model_info = None
+
+        repo_model, _ = await _build_cached_repo_entry(
+            repo_id,
+            repo_dir,
+            model_info,
+            recommended_models,
         )
+        models.append(repo_model)
 
-        for repo, model_info in zip(model_repos, model_infos, strict=False):
-            # Handle exceptions from individual fetch_model_info calls
-            if isinstance(model_info, BaseException):
-                log.debug(
-                    f"Failed to fetch model info for {repo.repo_id}: {model_info}"
-                )
-                # Still create a basic model entry without the extra metadata
-                model_info = None
+    HF_FAST_CACHE.model_info_cache.set(
+        CACHED_HF_MODELS_CACHE_KEY,
+        models,
+        CACHED_HF_MODELS_TTL,
+    )
 
-            models.append(
-                UnifiedModel(
-                    id=repo.repo_id,
-                    type=model_type_from_model_info(
-                        recommended_models, repo.repo_id, model_info
-                    ),
-                    name=repo.repo_id,
-                    cache_path=str(repo.repo_path),
+    return models
+
+
+def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        if value is None:
+            continue
+        trimmed = value.strip()
+        if not trimmed:
+            continue
+        normalized.append(trimmed.lower() if lower else trimmed)
+    return normalized
+
+
+def _matches_any_pattern(value: str, patterns: list[str]) -> bool:
+    if not patterns:
+        return True
+    return any(fnmatch(value, pattern) for pattern in patterns)
+
+
+def _repo_tags_match_patterns(repo_tags: list[str], patterns: list[str]) -> bool:
+    if not patterns:
+        return True
+    if not repo_tags:
+        return False
+    for pattern in patterns:
+        if not any(fnmatch(tag, pattern) for tag in repo_tags):
+            return False
+    return True
+
+
+async def search_cached_hf_models(
+    repo_patterns: Sequence[str] | None = None,
+    filename_patterns: Sequence[str] | None = None,
+    pipeline_tags: Sequence[str] | None = None,
+    tags: Sequence[str] | None = None,
+    authors: Sequence[str] | None = None,
+    library_name: str | None = None,
+) -> List[UnifiedModel]:
+    """
+    Search the Hugging Face cache by repo metadata and optional filename patterns.
+    Returns matching repo entries and (optionally) file-level entries.
+    """
+
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive guard
+        log.warning(f"Failed to discover cached HF repos: {exc}")
+        return []
+
+    if not repo_list:
+        return []
+
+    repo_pattern_list = _normalize_patterns(repo_patterns)
+    filename_pattern_list = _normalize_patterns(filename_patterns)
+    pipeline_tag_patterns = _normalize_patterns(pipeline_tags, lower=True)
+    tag_patterns = _normalize_patterns(tags, lower=True)
+    author_patterns = _normalize_patterns(authors, lower=True)
+    library_pattern = (
+        library_name.strip().lower() if library_name and library_name.strip() else None
+    )
+
+    recommended_models = get_recommended_models()
+    results: list[UnifiedModel] = []
+    requires_metadata = any(
+        [pipeline_tag_patterns, tag_patterns, author_patterns, library_pattern]
+    )
+
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
+        return_exceptions=True,
+    )
+
+    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
+        info: ModelInfo | None
+        if isinstance(model_info, BaseException):
+            log.debug(f"Failed to fetch model info for {repo_id}: {model_info}")
+            info = None
+        else:
+            info = model_info
+
+        if repo_pattern_list and not _matches_any_pattern(repo_id, repo_pattern_list):
+            continue
+
+        if requires_metadata and info is None:
+            continue
+
+        if info:
+            pipeline_value = (info.pipeline_tag or "").lower()
+            if pipeline_tag_patterns and not _matches_any_pattern(
+                pipeline_value, pipeline_tag_patterns
+            ):
+                continue
+
+            repo_tags = [tag.lower() for tag in (info.tags or [])]
+            if not _repo_tags_match_patterns(repo_tags, tag_patterns):
+                continue
+
+            author_value = (info.author or "").lower()
+            if author_patterns and not _matches_any_pattern(
+                author_value, author_patterns
+            ):
+                continue
+
+            library_value = (getattr(info, "library_name", "") or "").lower()
+            if library_pattern and not fnmatch(library_value, library_pattern):
+                continue
+
+        repo_model, file_entries = await _build_cached_repo_entry(
+            repo_id,
+            repo_dir,
+            info,
+            recommended_models,
+        )
+        results.append(repo_model)
+
+        if filename_pattern_list and file_entries:
+            for relative_name, file_size in file_entries:
+                if not _matches_any_pattern(relative_name, filename_pattern_list):
+                    continue
+
+                file_model = UnifiedModel(
+                    id=f"{repo_id}:{relative_name}",
+                    type=repo_model.type,
+                    name=f"{repo_id}/{relative_name}",
+                    repo_id=repo_id,
+                    path=relative_name,
+                    cache_path=repo_model.cache_path,
                     allow_patterns=None,
                     ignore_patterns=None,
                     description=None,
                     readme=None,
-                    downloaded=repo.repo_path is not None,
-                    pipeline_tag=model_info.pipeline_tag if model_info else None,
-                    tags=model_info.tags if model_info else None,
-                    has_model_index=(
-                        has_model_index(model_info) if model_info else False
-                    ),
-                    repo_id=repo.repo_id,
-                    path=None,
-                    size_on_disk=repo.size_on_disk,
-                    downloads=model_info.downloads if model_info else None,
-                    likes=model_info.likes if model_info else None,
-                    trending_score=model_info.trending_score if model_info else None,
+                    size_on_disk=file_size,
+                    downloaded=repo_model.downloaded,
+                    pipeline_tag=repo_model.pipeline_tag,
+                    tags=repo_model.tags,
+                    has_model_index=repo_model.has_model_index,
+                    downloads=repo_model.downloads,
+                    likes=repo_model.likes,
+                    trending_score=repo_model.trending_score,
                 )
-            )
+                results.append(file_model)
 
-        # Cache for 1 hour (3600 seconds) - even partial results
-        log.info(
-            f"💾 Attempting to cache {len(models)} HF models with key: {cache_key}"
-        )
-        MODEL_INFO_CACHE.set(cache_key, models, ttl=3600)
-        log.info(f"✓ Successfully cached {len(models)} HF models (TTL: 1 hour)")
+    return results
 
-    except Exception as e:
-        log.error(f"✗ Error processing cached HF models: {e}", exc_info=True)
-        # Return what we have, don't cache on error
 
-    return models
+async def _filter_repos_by_metadata(
+    pipeline_tag: str | None = None,
+    library_name: str | None = None,
+    tags: list[str] | None = None,
+    predicate: Callable[[ModelInfo], bool] | None = None,
+) -> list[tuple[str, Path, ModelInfo]]:
+    """Return repo tuples filtered by metadata before any file scans."""
+    tags = [tag.lower() for tag in (tags or [])]
+
+    repo_list = await HF_FAST_CACHE.discover_repos("model")
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
+        return_exceptions=True,
+    )
+
+    filtered: list[tuple[str, Path, ModelInfo]] = []
+    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
+        if isinstance(model_info, BaseException) or model_info is None:
+            continue
+        if pipeline_tag and model_info.pipeline_tag != pipeline_tag:
+            continue
+        if library_name and model_info.library_name != library_name:
+            continue
+        if tags and not all(tag in (model_info.tags or []) for tag in tags):
+            continue
+        if predicate and not predicate(model_info):
+            continue
+        filtered.append((repo_id, repo_dir, model_info))
+    return filtered
 
 
 async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
@@ -567,27 +702,29 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files(
-        "text-generation", "transformers", tags=["gguf"]
+    filtered_repos = await _filter_repos_by_metadata(
+        pipeline_tag="text-generation", library_name="transformers", tags=["gguf"]
     )
     results: list[LanguageModel] = []
 
-    for f in cached:
-        fname = f.file_name
-        if not fname:
+    for repo_id, _repo_dir, model_info in filtered_repos:
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        if not snapshot_dir:
             continue
-        if not fname.lower().endswith(".gguf"):
-            continue
-        model_id = f"{f.repo_id}:{fname}"
-        display = f"{f.repo_id.split('/')[-1]} • {fname}"
-        results.append(
-            LanguageModel(
-                id=model_id,
-                name=display,
-                path=fname,
-                provider=Provider.LlamaCpp,
+        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        for fname in file_list:
+            if not fname.lower().endswith(".gguf"):
+                continue
+            model_id = f"{repo_id}:{fname}"
+            display = f"{repo_id.split('/')[-1]} • {fname}"
+            results.append(
+                LanguageModel(
+                    id=model_id,
+                    name=display,
+                    path=fname,
+                    provider=Provider.LlamaCpp,
+                )
             )
-        )
 
     # Sort for stability: by repo then filename
     results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
@@ -596,36 +733,28 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
 
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     """Return LanguageModel entries tagged as vLLM in cached metadata files."""
-    cached = await read_cached_hf_files(
-        "text-generation", "transformers", tags=["vllm"]
+    filtered_repos = await _filter_repos_by_metadata(
+        pipeline_tag="text-generation", library_name="transformers", tags=["vllm"]
     )
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
 
     SUPPORTED_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth")
 
-    for f in cached:
-        # Skip cache entries without an actual weight filename to point at
-        if not f.file_name:
+    for repo_id, _repo_dir, _info in filtered_repos:
+        if repo_id in seen_repos:
             continue
-
-        lower_name = f.file_name.lower()
-        if not lower_name.endswith(SUPPORTED_WEIGHT_EXTENSIONS):
-            continue
-
-        # We only need a single listing per repo, so collapse duplicates
-        if f.repo_id in seen_repos:
-            continue
-        seen_repos.add(f.repo_id)
-
-        repo_display = f.repo_id.split("/")[-1]
-        results.append(
-            LanguageModel(
-                id=f.repo_id,
-                name=repo_display,
-                provider=Provider.VLLM,
+        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        if any(fname.lower().endswith(SUPPORTED_WEIGHT_EXTENSIONS) for fname in file_list):
+            seen_repos.add(repo_id)
+            repo_display = repo_id.split("/")[-1]
+            results.append(
+                LanguageModel(
+                    id=repo_id,
+                    name=repo_display,
+                    provider=Provider.VLLM,
+                )
             )
-        )
     return results
 
 
@@ -640,14 +769,15 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files("text-generation", "mlx")
+    filtered_repos = await _filter_repos_by_metadata(
+        pipeline_tag="text-generation", library_name="mlx"
+    )
     result: dict[str, LanguageModel] = {}
 
-    for model in cached:
-        # read_cached_hf_files already filtered by tags, so all models here have either "mlx" or "mflux" tag
-        display = model.repo_id.split("/")[-1]
-        result[model.repo_id] = LanguageModel(
-            id=model.repo_id,
+    for repo_id, _repo_dir, _info in filtered_repos:
+        display = repo_id.split("/")[-1]
+        result[repo_id] = LanguageModel(
+            id=repo_id,
             name=display,
             provider=Provider.MLX,
         )
@@ -660,20 +790,29 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
     """
-    cached = await read_cached_hf_files()
+    def _is_image_repo(info: ModelInfo) -> bool:
+        if info.pipeline_tag in {"text-to-image", "image-to-image"}:
+            return True
+        return _repo_supports_diffusion_checkpoint(info)
+
+    filtered_repos = await _filter_repos_by_metadata(predicate=_is_image_repo)
     result: dict[str, ImageModel] = {}
     repos_with_single_files: set[str] = set()
 
-    for model in cached:
-        fname = model.file_name
-        display = model.repo_id.split("/")[-1]
+    for repo_id, _repo_dir, model_info in filtered_repos:
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        if not snapshot_dir:
+            continue
+        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        for fname in file_list:
+            display = repo_id.split("/")[-1]
         lower_name = fname.lower()
         if lower_name.endswith(".gguf"):
-            model_id = f"{model.repo_id}:{fname}"
-            repos_with_single_files.add(model.repo_id)
-            result.pop(model.repo_id, None)
+            model_id = f"{repo_id}:{fname}"
+            repos_with_single_files.add(repo_id)
+            result.pop(repo_id, None)
             result[model_id] = ImageModel(
-                id=model.repo_id,
+                id=repo_id,
                 name=display,
                 path=fname,
                 provider=Provider.HuggingFace,
@@ -682,16 +821,15 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
             continue
 
         if _is_single_file_diffusion_weight(fname):
-            model_info = model.model_info
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
             if _repo_supports_diffusion_checkpoint(model_info):
-                model_id = f"{model.repo_id}:{fname}"
-                repos_with_single_files.add(model.repo_id)
+                model_id = f"{repo_id}:{fname}"
+                repos_with_single_files.add(repo_id)
                 # Remove multi-file entry if it exists - prefer single-file
-                result.pop(model.repo_id, None)
+                result.pop(repo_id, None)
                 result[model_id] = ImageModel(
-                    id=model.repo_id,
+                    id=repo_id,
                     name=display,
                     path=fname,
                     provider=Provider.HuggingFace,
@@ -700,11 +838,11 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
                 continue
 
         # Skip multi-file entry if repo has single files (prefer single-file versions)
-        if model.repo_id in repos_with_single_files:
+        if repo_id in repos_with_single_files:
             continue
 
-        result[model.repo_id] = ImageModel(
-            id=model.repo_id,
+        result[repo_id] = ImageModel(
+            id=repo_id,
             name=display,
             provider=Provider.HuggingFace,
             supported_tasks=["text_to_image"],
@@ -718,21 +856,29 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
     """
-    cached = await read_cached_hf_files()
+    def _is_image_repo(info: ModelInfo) -> bool:
+        if info.pipeline_tag in {"image-to-image", "text-to-image"}:
+            return True
+        return _repo_supports_diffusion_checkpoint(info)
+
+    filtered_repos = await _filter_repos_by_metadata(predicate=_is_image_repo)
     result: dict[str, ImageModel] = {}
     repos_with_single_files: set[str] = set()
-    repo_info_cache: dict[str, ModelInfo | None] = {}
 
-    for model in cached:
-        fname = model.file_name
-        display = model.repo_id.split("/")[-1]
+    for repo_id, _repo_dir, model_info in filtered_repos:
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        if not snapshot_dir:
+            continue
+        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        for fname in file_list:
+            display = repo_id.split("/")[-1]
         lower_name = fname.lower()
         if lower_name.endswith(".gguf"):
-            model_id = f"{model.repo_id}:{fname}"
-            repos_with_single_files.add(model.repo_id)
-            result.pop(model.repo_id, None)
+            model_id = f"{repo_id}:{fname}"
+            repos_with_single_files.add(repo_id)
+            result.pop(repo_id, None)
             result[model_id] = ImageModel(
-                id=model.repo_id,
+                id=repo_id,
                 name=display,
                 path=fname,
                 provider=Provider.HuggingFace,
@@ -741,16 +887,15 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
             continue
 
         if _is_single_file_diffusion_weight(fname):
-            model_info = model.model_info
             # Include single-file checkpoints even if repo has model_index.json
             # Prefer single-file versions over multi-file when available
             if _repo_supports_diffusion_checkpoint(model_info):
-                model_id = f"{model.repo_id}:{fname}"
-                repos_with_single_files.add(model.repo_id)
+                model_id = f"{repo_id}:{fname}"
+                repos_with_single_files.add(repo_id)
                 # Remove multi-file entry if it exists - prefer single-file
-                result.pop(model.repo_id, None)
+                result.pop(repo_id, None)
                 result[model_id] = ImageModel(
-                    id=model.repo_id,
+                    id=repo_id,
                     name=display,
                     path=fname,
                     provider=Provider.HuggingFace,
@@ -759,11 +904,11 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
                 continue
 
         # Skip multi-file entry if repo has single files (prefer single-file versions)
-        if model.repo_id in repos_with_single_files:
+        if repo_id in repos_with_single_files:
             continue
 
-        result[model.repo_id] = ImageModel(
-            id=model.repo_id,
+        result[repo_id] = ImageModel(
+            id=repo_id,
             name=display,
             provider=Provider.HuggingFace,
             supported_tasks=["image_to_image"],
@@ -781,14 +926,15 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
         List[ImageModel]: MLX-compatible image models (mflux) discovered in the HF cache
     """
     # Search for models with "mflux" tag - these are MLX-compatible image generation models
-    cached = await read_cached_hf_files("text-to-image", None, tags=["mflux"])
+    filtered_repos = await _filter_repos_by_metadata(
+        pipeline_tag="text-to-image", tags=["mflux"]
+    )
     result: dict[str, ImageModel] = {}
 
-    for model in cached:
-        # read_cached_hf_files already filtered by mflux tag
-        display = model.repo_id.split("/")[-1]
-        result[model.repo_id] = ImageModel(
-            id=model.repo_id,
+    for repo_id, _repo_dir, _info in filtered_repos:
+        display = repo_id.split("/")[-1]
+        result[repo_id] = ImageModel(
+            id=repo_id,
             name=display,
             provider=Provider.MLX,
         )
@@ -935,7 +1081,7 @@ async def get_mlx_language_models_from_authors(
     return [entry for entry in entries if entry is not None]
 
 
-def delete_cached_hf_model(model_id: str) -> bool:
+async def delete_cached_hf_model(model_id: str) -> bool:
     """
     Deletes a model from the Hugging Face cache and the disk cache.
 
@@ -943,19 +1089,19 @@ def delete_cached_hf_model(model_id: str) -> bool:
         model_id (str): The ID of the model to delete.
     """
     # Use HfFastCache to resolve the repo root without walking the entire cache.
-    repo_root = HF_FAST_CACHE.repo_root(model_id, repo_type="model")
+    repo_root = await HF_FAST_CACHE.repo_root(model_id, repo_type="model")
     if not repo_root:
         return False
 
-    if not os.path.exists(repo_root):
+    if not await asyncio.to_thread(os.path.exists, repo_root):
         return False
 
     shutil.rmtree(repo_root)
 
     # Purge all HuggingFace caches after successful deletion
     log.info("Purging HuggingFace model caches after model deletion")
-    MODEL_INFO_CACHE.delete_pattern("cached_hf_*")
-    HF_FAST_CACHE.invalidate(model_id, repo_type="model")
+    HF_FAST_CACHE.model_info_cache.delete_pattern("cached_hf_*")
+    await HF_FAST_CACHE.invalidate(model_id, repo_type="model")
     return True
 
 
@@ -1010,8 +1156,9 @@ def delete_cached_hf_model(model_id: str) -> bool:
 if __name__ == "__main__":
 
     async def main():
-        cached = await get_text_to_image_models_from_hf_cache()
+        cached = await get_image_to_image_models_from_hf_cache()
         for model in cached:
-            print(model.id)
+            if "IP-Adapter" in model.id:
+                print(model.path)
 
     asyncio.run(main())

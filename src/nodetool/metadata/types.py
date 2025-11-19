@@ -624,6 +624,34 @@ class HFTextToImage(HuggingFaceModel):
     type: Literal["hf.text_to_image"] = "hf.text_to_image"
 
 
+class HFStableDiffusion(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion"] = "hf.stable_diffusion"
+
+
+class HFStableDiffusionXL(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_xl"] = "hf.stable_diffusion_xl"
+
+
+class HFStableDiffusion3(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_3"] = "hf.stable_diffusion_3"
+
+
+class HFStableDiffusionXLRefiner(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_xl_refiner"] = "hf.stable_diffusion_xl_refiner"
+
+
+class HFFlux(HuggingFaceModel):
+    type: Literal["hf.flux"] = "hf.flux"
+
+
+class HFQwenImage(HuggingFaceModel):
+    type: Literal["hf.qwen_image"] = "hf.qwen_image"
+
+
+class HFQwenImageEdit(HuggingFaceModel):
+    type: Literal["hf.qwen_image_edit"] = "hf.qwen_image_edit"
+
+
 class HFControlNet(HuggingFaceModel):
     type: Literal["hf.controlnet"] = "hf.controlnet"
 
@@ -1113,7 +1141,6 @@ class LogEntry(BaseType):
     timestamp: int = Field(default=0, description="The timestamp of the log entry")
 
 
-
 class SubTask(BaseType):
     """A subtask item with completion status, dependencies, and tools."""
 
@@ -1125,7 +1152,9 @@ class SubTask(BaseType):
 
     content: str = Field(description="Instructions for the subtask")
     logs: list[LogEntry] = Field(default=[], description="The logs of the subtask")
-    tools: list[str] = Field(default=[], description="The tools available to the subtask")
+    tools: list[str] = Field(
+        default=[], description="The tools available to the subtask"
+    )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
@@ -1534,6 +1563,7 @@ MessageContent = (
     | MessageDocumentContent
 )
 
+
 class Chunk(BaseType):
     """
     A message representing a chunk of streamed content from a provider.
@@ -1548,7 +1578,6 @@ class Chunk(BaseType):
     content: str = ""
     content_metadata: dict[str, Any] = {}
     done: bool = False
-
 
 
 class MessageFile(BaseModel):
