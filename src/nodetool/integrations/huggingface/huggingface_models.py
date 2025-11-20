@@ -17,12 +17,17 @@ import asyncio
 import json
 import os
 import shutil
+from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.artifact_inspector import (
+    ArtifactDetection,
+    inspect_paths,
+)
 from nodetool.integrations.huggingface.hf_fast_cache import (
     DEFAULT_MODEL_INFO_CACHE_TTL,
     HfFastCache,
@@ -64,6 +69,14 @@ CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
 CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
 CACHED_HF_MODELS_TTL = 3600  # 1 hour
+
+
+class RepoPackagingHint(str, Enum):
+    """Hint describing how a HF repo should be presented to the user."""
+
+    REPO_BUNDLE = "repo_bundle"  # Treat repo as a single unit (diffusers-style)
+    PER_FILE = "per_file"  # Present independent model files (gguf, loras, adapters)
+    UNKNOWN = "unknown"  # Not enough signal to decide
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
@@ -136,6 +149,148 @@ def has_model_index(model_info: ModelInfo) -> bool:
         sib.rfilename == "model_index.json" for sib in (model_info.siblings or [])
     )
 
+
+# Packaging heuristics ---------------------------------------------------------
+_WEIGHT_EXTENSIONS = (
+    ".safetensors",
+    ".bin",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".gguf",
+    ".ggml",
+    ".onnx",
+)
+_INDEX_FILENAMES = {
+    "model.safetensors.index.json",
+    "pytorch_model.bin.index.json",
+    "model.bin.index.json",
+    "model.index.json",
+}
+_SMALL_ADAPTER_MAX_BYTES = 30 * 1024 * 1024
+_QUANT_MARKERS = (
+    "gptq",
+    "awq",
+    "exl2",
+    "exl",
+    "q2",
+    "q3",
+    "q4",
+    "q5",
+    "q6",
+    "q8",
+)
+_ADAPTER_MARKERS = (
+    "lora",
+    "adapter",
+    "embedding",
+    "textual_inversion",
+    "ti_",
+    "control",
+    "ip-adapter",
+    "style",
+)
+
+
+def detect_repo_packaging(
+    repo_id: str,
+    model_info: ModelInfo | None,
+    file_entries: Sequence[tuple[str, int]],
+) -> RepoPackagingHint:
+    weight_entries = [
+        (name, size)
+        for name, size in file_entries
+        if _is_weight_file(name)
+    ]
+    weight_files = [name for name, _ in weight_entries]
+    lower_weight_files = [name.lower() for name in weight_files]
+
+    if _has_bundle_metadata(model_info):
+        return RepoPackagingHint.REPO_BUNDLE
+    if _has_sharded_weights(lower_weight_files):
+        return RepoPackagingHint.REPO_BUNDLE
+    if _has_quantized_variants(lower_weight_files):
+        return RepoPackagingHint.PER_FILE
+    if _has_adapter_candidates(weight_entries):
+        return RepoPackagingHint.PER_FILE
+    if len(weight_files) == 1:
+        return RepoPackagingHint.REPO_BUNDLE
+    if _all_same_family(weight_files):
+        return RepoPackagingHint.REPO_BUNDLE
+    if len(weight_files) >= 4 and not model_info:
+        return RepoPackagingHint.PER_FILE
+    return RepoPackagingHint.UNKNOWN
+
+
+def _is_weight_file(file_name: str) -> bool:
+    lower = file_name.lower()
+    return lower.endswith(_WEIGHT_EXTENSIONS)
+
+
+def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
+    if model_info is None:
+        return False
+    if model_info.pipeline_tag:
+        return True
+    if has_model_index(model_info):
+        return True
+    library_name = getattr(model_info, "library_name", None)
+    if library_name and str(library_name).lower() in ("diffusers", "transformers"):
+        return True
+    return False
+
+
+def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
+    for name in weight_files:
+        lower = name.lower()
+        if lower in _INDEX_FILENAMES:
+            return True
+        if "-00001-of-" in lower:
+            return True
+        if lower.endswith(".index.json"):
+            return True
+    return False
+
+
+def _has_quantized_variants(weight_files: Sequence[str]) -> bool:
+    quantized = 0
+    for name in weight_files:
+        lower = name.lower()
+        if lower.endswith(".gguf") or "ggml" in lower:
+            quantized += 1
+            continue
+        if any(marker in lower for marker in _QUANT_MARKERS):
+            quantized += 1
+    return quantized >= 2
+
+
+def _has_adapter_candidates(weight_entries: Sequence[tuple[str, int]]) -> bool:
+    adapter_like = []
+    for name, size in weight_entries:
+        lower = name.lower()
+        if any(marker in lower for marker in _ADAPTER_MARKERS):
+            adapter_like.append((name, size))
+            continue
+        if (
+            lower.endswith(".safetensors")
+            and size
+            and size < _SMALL_ADAPTER_MAX_BYTES
+            and len(weight_entries) > 1
+        ):
+            adapter_like.append((name, size))
+    return len(adapter_like) >= 1
+
+
+def _all_same_family(weight_files: Sequence[str]) -> bool:
+    if not weight_files or len(weight_files) > 3:
+        return False
+    normalized_stems: set[str] = set()
+    for name in weight_files:
+        stem = Path(name).stem.lower()
+        for marker in _QUANT_MARKERS:
+            stem = stem.replace(marker, "")
+        normalized_stems.add(stem)
+    return len(normalized_stems) == 1
 
 def _is_single_file_diffusion_weight(file_name: str) -> bool:
     """
@@ -435,6 +590,17 @@ async def _build_cached_repo_entry(
             size_on_disk += file_size
             file_entries.append((file_name, file_size))
 
+    artifact_detection: ArtifactDetection | None = None
+    if file_entries:
+        artifact_paths = [
+            str((snapshot_dir and Path(snapshot_dir) / name) or (repo_dir / name))
+            for name, _ in file_entries
+        ]
+        try:
+            artifact_detection = inspect_paths(artifact_paths)
+        except Exception as exc:  # pragma: no cover - best effort only
+            log.debug(f"Artifact detection failed for {repo_id}: {exc}")
+
     repo_model = UnifiedModel(
         id=repo_id,
         type=model_type_from_model_info(
@@ -458,6 +624,10 @@ async def _build_cached_repo_entry(
         downloads=model_info.downloads if model_info else None,
         likes=model_info.likes if model_info else None,
         trending_score=model_info.trending_score if model_info else None,
+        artifact_family=artifact_detection.family if artifact_detection else None,
+        artifact_component=artifact_detection.component if artifact_detection else None,
+        artifact_confidence=artifact_detection.confidence if artifact_detection else None,
+        artifact_evidence=artifact_detection.evidence if artifact_detection else None,
     )
 
     return repo_model, file_entries
@@ -653,6 +823,10 @@ async def search_cached_hf_models(
                     downloads=repo_model.downloads,
                     likes=repo_model.likes,
                     trending_score=repo_model.trending_score,
+                    artifact_family=repo_model.artifact_family,
+                    artifact_component=repo_model.artifact_component,
+                    artifact_confidence=repo_model.artifact_confidence,
+                    artifact_evidence=repo_model.artifact_evidence,
                 )
                 results.append(file_model)
 

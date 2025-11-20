@@ -9,6 +9,11 @@ class UnifiedModel(BaseModel):
     name: str
     repo_id: str | None
     path: str | None = None
+    # Optional artifact detection metadata (safetensors/gguf/bin/config).
+    artifact_family: str | None = None
+    artifact_component: str | None = None
+    artifact_confidence: float | None = None
+    artifact_evidence: list[str] | None = None
     cache_path: str | None = None
     allow_patterns: list[str] | None = None
     ignore_patterns: list[str] | None = None

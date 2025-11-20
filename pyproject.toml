@@ -79,7 +79,7 @@ dependencies = [
 
     # Media dependencies
     "ffmpeg-python>=0.2.0",
-    "pillow>=11.0.0",                    # due to mflux
+    "pillow < 11.0.0",                    # due to mflux
     "imageio>=2.37.0",
     "imageio-ffmpeg>=0.6.0",
     "pydub>=0.25.1",
