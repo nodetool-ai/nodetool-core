@@ -644,6 +644,22 @@ class HFFlux(HuggingFaceModel):
     type: Literal["hf.flux"] = "hf.flux"
 
 
+class HFFluxKontext(HuggingFaceModel):
+    type: Literal["hf.flux_kontext"] = "hf.flux_kontext"
+
+
+class HFFluxDepth(HuggingFaceModel):
+    type: Literal["hf.flux_depth"] = "hf.flux_depth"
+
+
+class HFFluxRedux(HuggingFaceModel):
+    type: Literal["hf.flux_redux"] = "hf.flux_redux"
+
+
+class HFFluxFill(HuggingFaceModel):
+    type: Literal["hf.inpainting"] = "hf.inpainting"
+
+
 class HFQwenImage(HuggingFaceModel):
     type: Literal["hf.qwen_image"] = "hf.qwen_image"
 
@@ -690,14 +706,6 @@ class HFImageToText(HuggingFaceModel):
 
 class HFImageToImage(HuggingFaceModel):
     type: Literal["hf.image_to_image"] = "hf.image_to_image"
-
-
-class HFInpainting(HuggingFaceModel):
-    type: Literal["hf.inpainting"] = "hf.inpainting"
-
-
-class HFOutpainting(HuggingFaceModel):
-    type: Literal["hf.outpainting"] = "hf.outpainting"
 
 
 class HFImageToVideo(HuggingFaceModel):
@@ -848,14 +856,6 @@ class HFRealESRGAN(HuggingFaceModel):
 
 class HFVoiceActivityDetection(HuggingFaceModel):
     type: Literal["hf.voice_activity_detection"] = "hf.voice_activity_detection"
-
-
-class HFDepthGeneration(HuggingFaceModel):
-    type: Literal["hf.depth_generation"] = "hf.depth_generation"
-
-
-class HFReduxGeneration(HuggingFaceModel):
-    type: Literal["hf.redux_generation"] = "hf.redux_generation"
 
 
 class HFLoraSDConfig(BaseType):
@@ -2137,10 +2137,6 @@ class Source(BaseType):
     type: Literal["source"] = "source"
     title: str = ""
     url: str = ""
-
-
-class HFKontextGeneration(HuggingFaceModel):
-    type: Literal["hf.kontext_generation"] = "hf.kontext_generation"
 
 
 #######################
