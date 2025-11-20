@@ -52,6 +52,23 @@ if TYPE_CHECKING:
     from nodetool.workflows.workflow_runner import WorkflowRunner
 
 
+def _device_move_plan(device: Any) -> tuple[str | None, str | None]:
+    """Return (target_device, restore_device) for node.move_to_device calls."""
+    if device is None:
+        return (None, None)
+
+    normalized = str(device).lower()
+    if normalized.startswith("cuda"):
+        # Move to explicit CUDA device and free VRAM by restoring to CPU afterwards
+        return (str(device), "cpu")
+
+    if normalized == "mps":
+        # Avoid thrashing models between CPU and MPS; leave them where they are.
+        return (None, None)
+
+    return (None, None)
+
+
 class NodeActor:
     """Drives a single node to completion.
 
@@ -279,20 +296,27 @@ class NodeActor:
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
                     )
-                    await node.move_to_device(self.runner.device)
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    target_device, restore_device = _device_move_plan(
+                        self.runner.device
                     )
+                    if target_device:
+                        await node.move_to_device(target_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {target_device}"
+                        )
+                    else:
+                        restore_device = None  # Nothing to restore if we skipped move
 
                     await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after run completion"
                     )
                 finally:
-                    await node.move_to_device("cpu")
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                    )
+                    if restore_device:
+                        await node.move_to_device(restore_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {restore_device}"
+                        )
                     release_gpu_lock()
             else:
                 await node.preload_model(context)
@@ -397,11 +421,16 @@ class NodeActor:
                         f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
                     )
 
-                    await node.move_to_device(self.runner.device)
-
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    target_device, restore_device = _device_move_plan(
+                        self.runner.device
                     )
+                    if target_device:
+                        await node.move_to_device(target_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {target_device}"
+                        )
+                    else:
+                        restore_device = None
 
                     await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
 
@@ -423,10 +452,11 @@ class NodeActor:
                     )
                     raise
                 finally:
-                    await node.move_to_device("cpu")
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                    )
+                    if restore_device:
+                        await node.move_to_device(restore_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {restore_device}"
+                        )
                     release_gpu_lock()
             else:
                 await node.preload_model(context)
@@ -613,10 +643,16 @@ class NodeActor:
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
                     )
-                    await node.move_to_device(self.runner.device)
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    target_device, restore_device = _device_move_plan(
+                        self.runner.device
                     )
+                    if target_device:
+                        await node.move_to_device(target_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {target_device}"
+                        )
+                    else:
+                        restore_device = None
 
                     await node.run(
                         ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
@@ -639,10 +675,11 @@ class NodeActor:
                     )
                     raise e
                 finally:
-                    await node.move_to_device("cpu")
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                    )
+                    if restore_device:
+                        await node.move_to_device(restore_device)
+                        self.runner.log_vram_usage(
+                            f"Node {node.get_title()} ({node._id}) VRAM after move to {restore_device}"
+                        )
                     release_gpu_lock()
             else:
                 await node.preload_model(ctx)

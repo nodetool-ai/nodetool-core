@@ -9,13 +9,33 @@ production environments.
 """
 
 import asyncio
+import gc
+import time
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, ClassVar, Dict
+from typing import Any, AsyncIterator, ClassVar, Dict, NamedTuple
+
+import psutil
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+class MemorySnapshot(NamedTuple):
+    """Light-weight container for system/process memory telemetry.
+
+    Attributes:
+        percent: Percentage of system RAM currently in use.
+        available_gb: Free system memory in gigabytes.
+        total_gb: Total system memory in gigabytes.
+        process_rss_gb: Current process Resident Set Size in gigabytes.
+    """
+
+    percent: float
+    available_gb: float
+    total_gb: float
+    process_rss_gb: float
 
 
 class ModelManager:
@@ -36,6 +56,10 @@ class ModelManager:
     _models_by_node: ClassVar[Dict[str, str]] = {}
     _locks: ClassVar[Dict[str, asyncio.Lock]] = {}
     _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    _last_memory_cleanup: ClassVar[float] = 0.0
+    _DEFAULT_MAX_MEMORY_PERCENT: ClassVar[float] = 92.0
+    _DEFAULT_MIN_AVAILABLE_GB: ClassVar[float] = 1.0
+    _DEFAULT_MEMORY_COOLDOWN_SECONDS: ClassVar[float] = 30.0
 
     @classmethod
     def get_model(cls, model_id: str, task: str, path: str | None = None) -> Any:
@@ -84,6 +108,10 @@ class ModelManager:
             path (str | None): Optional path parameter
         """
         if not Environment.is_production():
+            cls._ensure_memory_capacity(
+                reason=f"Preparing to cache model {model_id} (task: {task}, path: {path})"
+            )
+
             key = f"{model_id}_{task}_{path}"
             was_existing = key in cls._models
             cls._models[key] = model
@@ -262,3 +290,143 @@ class ModelManager:
             logger.info(
                 f"✅ Cache cleared successfully: {model_count} models removed, {lock_count} locks removed"
             )
+
+    # ------------------------------------------------------------------
+    # Memory management helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def free_memory_if_needed(cls, reason: str = "manual request") -> None:
+        """Force a cache purge regardless of current telemetry.
+
+        Args:
+            reason: Human-readable reason for the manual cleanup. This is surfaced
+                in logs to correlate cache purges with upstream triggers.
+        """
+        cls._ensure_memory_capacity(reason=reason, aggressive=True)
+
+    @classmethod
+    def _ensure_memory_capacity(cls, *, reason: str, aggressive: bool = False) -> None:
+        """Check current memory pressure and clear cached models if needed.
+
+        Args:
+            reason: Short description, propagated to log messages when the cache
+                is purged so operators can attribute the cleanup.
+            aggressive: When True, bypasses thresholds/cooldowns and clears
+                models even if telemetry is unavailable.
+        """
+        if Environment.is_production():
+            return
+
+        snapshot = cls._capture_memory_snapshot()
+        if snapshot is None:
+            if aggressive:
+                logger.warning(
+                    "Memory cleanup requested (%s) but unable to capture memory stats. Clearing cached models anyway.",
+                    reason,
+                )
+                cls.clear()
+                gc.collect()
+                cls._last_memory_cleanup = time.monotonic()
+            return
+
+        if not aggressive and not cls._needs_memory_cleanup(snapshot):
+            return
+
+        cooldown = cls._get_memory_cleanup_cooldown()
+        now = time.monotonic()
+        if (
+            not aggressive
+            and cooldown > 0
+            and (now - cls._last_memory_cleanup) < cooldown
+        ):
+            remaining = cooldown - (now - cls._last_memory_cleanup)
+            logger.debug(
+                "Memory pressure detected but cleanup throttled for %.2fs (usage %.2f%%, %.2f GB free)",
+                max(remaining, 0.0),
+                snapshot.percent,
+                snapshot.available_gb,
+            )
+            return
+
+        cls._perform_memory_cleanup(snapshot, reason)
+        cls._last_memory_cleanup = now
+
+    @classmethod
+    def _perform_memory_cleanup(cls, snapshot: MemorySnapshot, reason: str) -> None:
+        """Clear cached models and collect garbage when memory is constrained.
+
+        Args:
+            snapshot: Memory telemetry captured immediately before the cleanup.
+            reason: Textual justification that will be rendered in the warning log.
+        """
+        removed = len(cls._models)
+        logger.warning(
+            (
+                "Memory pressure detected (usage %.2f%%, %.2f GB free of %.2f GB total, "
+                "process RSS %.2f GB). Clearing %d cached model(s). Reason: %s"
+            ),
+            snapshot.percent,
+            snapshot.available_gb,
+            snapshot.total_gb,
+            snapshot.process_rss_gb,
+            removed,
+            reason,
+        )
+        cls.clear()
+        gc.collect()
+
+    @classmethod
+    def _needs_memory_cleanup(cls, snapshot: MemorySnapshot) -> bool:
+        """Return True if current memory snapshot violates thresholds."""
+        max_percent, min_available = cls._get_memory_thresholds()
+        return snapshot.percent >= max_percent or snapshot.available_gb <= min_available
+
+    @classmethod
+    def _capture_memory_snapshot(cls) -> MemorySnapshot | None:
+        """Capture system + process memory usage for evaluating pressure.
+
+        Returns:
+            MemorySnapshot containing usage stats, or None when psutil raises an
+            unexpected error (extremely rare).
+        """
+        try:
+            vm = psutil.virtual_memory()
+            process = psutil.Process()
+            mem = process.memory_info()
+            available_gb = float(vm.available) / (1024**3)
+            total_gb = float(vm.total) / (1024**3)
+            rss_gb = float(mem.rss) / (1024**3)
+            snapshot = MemorySnapshot(
+                percent=float(vm.percent),
+                available_gb=available_gb,
+                total_gb=total_gb,
+                process_rss_gb=rss_gb,
+            )
+            logger.debug(
+                "Memory snapshot captured: %.2f%% used, %.2f GB available, process RSS %.2f GB",
+                snapshot.percent,
+                snapshot.available_gb,
+                snapshot.process_rss_gb,
+            )
+            return snapshot
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to capture memory stats: %s", exc)
+            return None
+
+    @classmethod
+    def _get_memory_thresholds(cls) -> tuple[float, float]:
+        """Return thresholds for cleanup decisions (constants for now).
+
+        Returns:
+            Tuple of (max_percent, min_available_gb) representing the point at
+            which the cache should be purged.
+        """
+        max_percent = min(max(cls._DEFAULT_MAX_MEMORY_PERCENT, 10.0), 99.0)
+        min_available = max(cls._DEFAULT_MIN_AVAILABLE_GB, 0.0)
+        return max_percent, min_available
+
+    @classmethod
+    def _get_memory_cleanup_cooldown(cls) -> float:
+        """Seconds to wait between automatic cleanups."""
+        return max(cls._DEFAULT_MEMORY_COOLDOWN_SECONDS, 0.0)

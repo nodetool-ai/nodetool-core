@@ -108,6 +108,40 @@ HTTP_HEADERS = {
 }
 
 
+def _resolve_default_device(explicit_device: str | None = None) -> str | None:
+    """
+    Pick the default execution device for workflows.
+
+    Prefers Apple Metal (MPS) when available so that HuggingFace workloads run on
+    the GPU by default, otherwise falls back to CUDA (if available) or CPU.
+    """
+    if explicit_device:
+        return explicit_device
+
+    try:
+        import torch  # type: ignore
+
+        if (
+            hasattr(torch, "backends")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
+            return "mps"
+
+        if hasattr(torch, "cuda"):
+            try:
+                if torch.cuda.is_available():
+                    return "cuda"
+            except (RuntimeError, AttributeError):
+                # CUDA not compiled in or other runtime issue
+                pass
+    except Exception:
+        # torch may be unavailable during installation or CPU-only deployments
+        pass
+
+    return "cpu"
+
+
 class AssetOutputMode(str, Enum):
     """Controls how assets are materialized when emitting workflow messages."""
 
@@ -171,7 +205,7 @@ class ProcessingContext:
         self.job_id = job_id
         self.graph = graph or Graph()
         self.message_queue = message_queue if message_queue else queue.Queue()
-        self.device = device
+        self.device = _resolve_default_device(device)
         self.variables: dict[str, Any] = variables if variables else {}
         self.environment: dict[str, str] = Environment.get_environment()
         if environment:

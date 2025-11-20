@@ -116,7 +116,9 @@ class NodeTool(Tool):
             await node.initialize(context)
             await node.preload_model(context)
             if context.device:
-                await node.move_to_device(context.device)
+                device_str = str(context.device).lower()
+                if not device_str.startswith("mps"):
+                    await node.move_to_device(context.device)
 
             # Execute the node
             result = await node.process(context)
