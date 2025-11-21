@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import imaplib
@@ -6,6 +8,7 @@ import io
 import json
 import os
 import queue
+import platform
 import urllib.parse
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -21,30 +24,34 @@ import numpy as np
 import pandas as pd
 import PIL.Image
 import PIL.ImageOps
-from playwright.async_api import Browser, async_playwright
 from pydub import AudioSegment
 
 if TYPE_CHECKING:
+    from chromadb.api import ClientAPI
     from sklearn.base import BaseEstimator
+
+    from nodetool.types.chat import MessageCreateRequest
+    from nodetool.workflows.base_node import BaseNode
+    from nodetool.workflows.types import ProcessingMessage
+
+
+try:  # Optional dependency used by browser helpers
+    from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+except ImportError:  # pragma: no cover - playwright is optional
+    async_playwright = None  # type: ignore
+    Browser = BrowserContext = Page = object  # type: ignore
+
 
 from io import BytesIO
 from pickle import loads
 from typing import IO, Any, AsyncGenerator, Callable
 
-from chromadb.api import ClientAPI
-
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
-)
-from nodetool.media.image.font_utils import (
-    get_system_font_path as _get_system_font_path_util,
 )
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image as _numpy_to_pil_image_util,
@@ -60,23 +67,17 @@ from nodetool.metadata.types import (
     Provider,
     TextRef,
     VideoRef,
-    asset_types,
 )
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import require_scope
-from nodetool.types.chat import (
-    MessageCreateRequest,
-)
 from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
-from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.property import Property
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     detach_tensors_recursively,
@@ -84,9 +85,6 @@ from nodetool.workflows.torch_support import (
     tensor_from_pil,
     tensor_to_image_array,
     torch_tensor_to_metadata,
-)
-from nodetool.workflows.types import (
-    ProcessingMessage,
 )
 
 log = get_logger(__name__)
@@ -299,7 +297,11 @@ class ProcessingContext:
         last_exc: Exception | None = None
         for attempt in range(max_retries):
             try:
-                response = await require_scope().get_http_client().request(method, url, **kwargs)
+                response = (
+                    await require_scope()
+                    .get_http_client()
+                    .request(method, url, **kwargs)
+                )
                 status = response.status_code
                 log.info(f"{method.upper()} {url} {status}")
                 # Retry on common transient statuses
@@ -313,7 +315,11 @@ class ProcessingContext:
                         header_delay = float(retry_after) if retry_after else None
                     except Exception:
                         header_delay = None
-                    delay = header_delay if header_delay is not None else backoff_seconds * (2 ** attempt)
+                    delay = (
+                        header_delay
+                        if header_delay is not None
+                        else backoff_seconds * (2**attempt)
+                    )
                     log.warning(
                         f"{method.upper()} {url} got {status}; retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
                     )
@@ -327,7 +333,7 @@ class ProcessingContext:
                 last_exc = e
                 if attempt == max_retries - 1:
                     raise
-                delay = backoff_seconds * (2 ** attempt)
+                delay = backoff_seconds * (2**attempt)
                 log.warning(
                     f"{method.upper()} {url} transport error: {e}; retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
                 )
@@ -355,6 +361,7 @@ class ProcessingContext:
             ValueError: If email_address or app_password is empty
         """
         from nodetool.security.secret_helper import get_secret_required
+
         if hasattr(self, "_gmail_connection"):
             return self._gmail_connection
 
@@ -371,6 +378,7 @@ class ProcessingContext:
         Get a secret value.
         """
         from nodetool.security.secret_helper import get_secret
+
         return await get_secret(key, self.user_id)
 
     async def get_secret_required(self, key: str) -> str:
@@ -378,6 +386,7 @@ class ProcessingContext:
         Get a required secret value.
         """
         from nodetool.security.secret_helper import get_secret_required
+
         return await get_secret_required(key, self.user_id)
 
     async def get_provider(self, provider_type: Provider | str):
@@ -395,7 +404,9 @@ class ProcessingContext:
         """
         from nodetool.providers import get_provider
 
-        provider_enum = Provider(provider_type) if isinstance(provider_type, str) else provider_type
+        provider_enum = (
+            Provider(provider_type) if isinstance(provider_type, str) else provider_type
+        )
 
         provider = await get_provider(provider_enum, self.user_id)
 
@@ -408,7 +419,7 @@ class ProcessingContext:
             )
             provider = await provider
 
-        if not hasattr(provider, 'generate_messages'):
+        if not hasattr(provider, "generate_messages"):
             log.error(
                 f"Provider missing generate_messages method. type={type(provider)}, "
                 f"attributes={[x for x in dir(provider) if not x.startswith('_')][:10]}"
@@ -2250,7 +2261,9 @@ class ProcessingContext:
         uri = await storage.upload(key, BytesIO(data_bytes))
         return {"type": asset.type, "uri": uri, "asset_id": asset.asset_id}
 
-    async def _asset_to_workspace_file(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
+    async def _asset_to_workspace_file(
+        self, asset: AssetRef
+    ) -> dict[str, Any] | AssetRef:
         """Persist asset to local workspace and return file path reference."""
         if isinstance(asset, DataframeRef):
             return await self.embed_assets_in_data(asset)
@@ -2451,7 +2464,9 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the font file cannot be found in system locations
         """
-        return _get_system_font_path_util(font_name, self.environment)
+        from nodetool.media.image.font_utils import get_system_font_path
+
+        return get_system_font_path(font_name, self.environment)
 
     def resolve_workspace_path(self, path: str) -> str:
         """
@@ -2486,6 +2501,12 @@ class ProcessingContext:
             A Playwright browser instance.
         """
         from urllib.parse import parse_qs, urlencode, urlunparse
+
+        if async_playwright is None:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "Playwright is required for browser automation. Install optional dependencies "
+                "or set BROWSER_URL to disable local browser usage."
+            )
 
         if getattr(self, "_browser", None):
             return self._browser  # type: ignore

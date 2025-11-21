@@ -9,7 +9,6 @@ import contextvars
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
 import httpx
-from supabase import AsyncClient
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -17,6 +16,7 @@ from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.storage.abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
+    from supabase import AsyncClient
     from nodetool.storage.memcache_node_cache import AbstractNodeCache
     from nodetool.storage.memory_uri_cache import MemoryUriCache
 
@@ -265,6 +265,14 @@ class ResourceScope:
 
         if supabase_url and supabase_key:
             from nodetool.runtime.db_supabase import SupabaseScopeResources
+
+            try:
+                from supabase import AsyncClient
+            except ImportError as exc:  # pragma: no cover - only hit when optional dep missing
+                raise ImportError(
+                    "Supabase support requires the 'supabase' package. Install optional "
+                    "dependencies or unset SUPABASE_URL/SUPABASE_KEY."
+                ) from exc
 
             client = AsyncClient(supabase_url, supabase_key)
             return SupabaseScopeResources(client)

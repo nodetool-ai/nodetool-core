@@ -6,6 +6,8 @@ This module provides MCP (Model Context Protocol) server integration for NodeToo
 allowing AI assistants to interact with NodeTool workflows, nodes, and assets.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import os
@@ -21,9 +23,9 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from huggingface_hub.hf_api import RepoFile, RepoFolder
 
-from nodetool.agents.agent import Agent
-from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.agents.tools.email_tools import SearchEmailTool
+    from nodetool.metadata.types import Provider
+
+
 from nodetool.api.model import (
     get_all_models,
     get_language_models,
@@ -32,12 +34,11 @@ from nodetool.api.model import (
 from nodetool.chat.search_nodes import search_nodes as search_nodes_tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
     get_async_collection,
 )
-from nodetool.metadata.types import Provider
+from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 from nodetool.ml.models.asr_models import get_all_asr_models as get_all_asr_models_func
 from nodetool.ml.models.image_models import (
     get_all_image_models as get_all_image_models_func,
@@ -49,9 +50,9 @@ from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.packages.registry import Registry
-from nodetool.providers import get_provider
 from nodetool.runtime.resources import maybe_scope, require_scope
 from nodetool.security.secret_helper import get_secret
+from nodetool.metadata.types import Provider
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution_manager import JobExecutionManager
@@ -62,7 +63,6 @@ from nodetool.workflows.processing_context import (
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import (
-    Chunk,
     Error,
     LogUpdate,
     NodeProgress,

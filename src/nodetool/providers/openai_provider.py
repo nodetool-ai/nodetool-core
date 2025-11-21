@@ -6,6 +6,8 @@ handling message conversion, streaming, and tool integration.
 
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import imghdr
@@ -13,7 +15,7 @@ import inspect
 import io
 import json
 import math
-from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
 from urllib.parse import unquote_to_bytes
 
 import aiohttp
@@ -22,7 +24,6 @@ import numpy as np
 import openai
 from openai import Omit
 from openai._types import NotGiven
-from openai.types import Video
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
@@ -40,8 +41,19 @@ from PIL import Image
 from pydantic import BaseModel
 from pydub import AudioSegment
 
-from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
+if TYPE_CHECKING:
+    from openai.types import Video
+
+    from nodetool.agents.tools.base import Tool
+    from nodetool.metadata.types import MessageContent
+    from nodetool.providers.types import (
+        ImageToImageParams,
+        ImageToVideoParams,
+        TextToImageParams,
+        TextToVideoParams,
+    )
+    from nodetool.workflows.processing_context import ProcessingContext
+
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
@@ -51,7 +63,6 @@ from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageAudioContent,
-    MessageContent,
     MessageImageContent,
     MessageTextContent,
     Provider,
@@ -61,14 +72,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
-from nodetool.providers.types import (
-    ImageToImageParams,
-    ImageToVideoParams,
-    TextToImageParams,
-    TextToVideoParams,
-)
 from nodetool.runtime.resources import maybe_scope, require_scope
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
@@ -155,7 +159,9 @@ class OpenAIProvider(BaseProvider):
             log.debug("Using ResourceScope HTTP client for OpenAI")
         except RuntimeError:
             # Fallback if no scope is bound (shouldn't happen in normal operation)
-            log.warning("No ResourceScope bound, creating fallback HTTP client for OpenAI")
+            log.warning(
+                "No ResourceScope bound, creating fallback HTTP client for OpenAI"
+            )
             http_client = httpx.AsyncClient(
                 follow_redirects=True, timeout=600, verify=False
             )
@@ -253,9 +259,10 @@ class OpenAIProvider(BaseProvider):
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
             }
-            async with aiohttp.ClientSession(
-                timeout=timeout, headers=headers
-            ) as session, session.get("https://api.openai.com/v1/models") as response:
+            async with (
+                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+                session.get("https://api.openai.com/v1/models") as response,
+            ):
                 if response.status != 200:
                     log.warning(
                         f"Failed to fetch OpenAI models: HTTP {response.status}"
@@ -428,7 +435,11 @@ class OpenAIProvider(BaseProvider):
         for config in image_models_config:
             model_id = config["id"]
             # Heuristic: GPT-Image-1 supports both generate and edit; DALL-E legacy considered text-to-image only
-            tasks = ["text_to_image", "image_to_image"] if model_id == "gpt-image-1" else ["text_to_image"]
+            tasks = (
+                ["text_to_image", "image_to_image"]
+                if model_id == "gpt-image-1"
+                else ["text_to_image"]
+            )
             models.append(
                 ImageModel(
                     id=model_id,
@@ -1008,7 +1019,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
                     role=message.role,
-                    content=content, # type: ignore
+                    content=content,  # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )
         else:
@@ -1178,16 +1189,16 @@ class OpenAIProvider(BaseProvider):
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens
                 ):
-                    self.usage["cached_prompt_tokens"] += (
-                        chunk.usage.prompt_tokens_details.cached_tokens
-                    )
+                    self.usage[
+                        "cached_prompt_tokens"
+                    ] += chunk.usage.prompt_tokens_details.cached_tokens
                 if (
                     chunk.usage.completion_tokens_details
                     and chunk.usage.completion_tokens_details.reasoning_tokens
                 ):
-                    self.usage["reasoning_tokens"] += (
-                        chunk.usage.completion_tokens_details.reasoning_tokens
-                    )
+                    self.usage[
+                        "reasoning_tokens"
+                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
                 log.debug(f"Updated usage stats: {self.usage}")
 
             if not chunk.choices:

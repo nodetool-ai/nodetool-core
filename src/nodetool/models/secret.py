@@ -6,13 +6,15 @@ per-user encryption isolation.
 """
 
 from datetime import UTC, datetime, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
-from nodetool.security.crypto import SecretCrypto
-from nodetool.security.master_key import MasterKeyManager
+
+if TYPE_CHECKING:
+    from nodetool.security.crypto import SecretCrypto
+    from nodetool.security.master_key import MasterKeyManager
 
 log = get_logger(__name__)
 
@@ -61,6 +63,9 @@ class Secret(DBModel):
         Returns:
             The newly created Secret instance.
         """
+        from nodetool.security.crypto import SecretCrypto
+        from nodetool.security.master_key import MasterKeyManager
+
         # Get master key and encrypt the value
         master_key = await MasterKeyManager.get_master_key()
         encrypted_value = SecretCrypto.encrypt(value, master_key, user_id)
@@ -133,6 +138,9 @@ class Secret(DBModel):
         Raises:
             Exception: If decryption fails (e.g., wrong master key).
         """
+        from nodetool.security.crypto import SecretCrypto
+        from nodetool.security.master_key import MasterKeyManager
+
         master_key = await MasterKeyManager.get_master_key()
         return SecretCrypto.decrypt(self.encrypted_value, master_key, self.user_id)
 
@@ -143,6 +151,9 @@ class Secret(DBModel):
         Args:
             new_value: The new plaintext value to encrypt and store.
         """
+        from nodetool.security.crypto import SecretCrypto
+        from nodetool.security.master_key import MasterKeyManager
+
         master_key = await MasterKeyManager.get_master_key()
         self.encrypted_value = SecretCrypto.encrypt(new_value, master_key, self.user_id)
         await self.save()
@@ -210,6 +221,9 @@ class Secret(DBModel):
         Returns:
             The Secret instance (created or updated).
         """
+        from nodetool.security.crypto import SecretCrypto
+        from nodetool.security.master_key import MasterKeyManager
+
         existing = await cls.find(user_id, key)
 
         if existing:
