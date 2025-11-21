@@ -1,20 +1,13 @@
-"""
-PDF tools module.
-
-This module provides tools for working with PDF documents:
-- ExtractPDFTextTool: Extract text from PDFs
-- ExtractPDFTablesTool: Extract tables from PDFs
-- ConvertPDFToMarkdownTool: Convert PDFs to markdown
-- ConvertMarkdownToPDFTool: Convert Markdown to PDF using Pandoc
-"""
+"""PDF tools module."""
 
 import json
 import os
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TYPE_CHECKING
 
-import pymupdf
-import pymupdf4llm
-import pypandoc
+if TYPE_CHECKING:
+    import pymupdf
+    import pymupdf4llm
+    import pypandoc
 
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -47,6 +40,8 @@ class ExtractPDFTextTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
+            import pymupdf
+
             path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
@@ -101,6 +96,8 @@ class ExtractPDFTablesTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
+            import pymupdf
+
             path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
@@ -183,6 +180,9 @@ class ConvertPDFToMarkdownTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict):
         try:
+            import pymupdf
+            import pymupdf4llm
+
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
@@ -237,6 +237,8 @@ class ConvertMarkdownToPDFTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
+            import pypandoc
+
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
@@ -302,6 +304,8 @@ class ConvertDocumentTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
+            import pypandoc
+
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 

@@ -96,6 +96,18 @@ def create_health_check_filter():
     return HealthCheckFilter()
 
 
+def get_nodetool_package_source_folders() -> list[str]:
+    """
+    Thin wrapper to expose package source folders without importing the package registry at import time.
+
+    This helper is patched in tests; the real implementation is loaded lazily to avoid heavy imports
+    unless the folders are needed for reload/watch mode.
+    """
+    from nodetool.packages.registry import get_nodetool_package_source_folders as _impl
+
+    return [str(path) for path in _impl()]
+
+
 class ExtensionRouterRegistry:
     _instance = None
     _routers: ClassVar[List[APIRouter]] = []
@@ -541,12 +553,10 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         port: The port to run on.
         reload: Whether to reload the server on changes.
     """
-    from nodetool.packages.registry import get_nodetool_package_source_folders
-
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.dirname(current_dir)
     editable_dirs = get_nodetool_package_source_folders()
-    reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs] if reload else []
+    reload_dirs = [parent_dir] + editable_dirs if reload else []
 
     use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 

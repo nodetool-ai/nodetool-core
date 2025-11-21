@@ -1040,7 +1040,6 @@ def list_packages(available):
 def scan(verbose):
     """Scan current directory for nodes and create package metadata."""
     import sys
-    import traceback
 
     from nodetool.packages.registry import (
         save_package_metadata,
@@ -1071,8 +1070,7 @@ def scan(verbose):
 
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
-        if verbose:
-            traceback.print_exc()
+        console.print_exception()
         sys.exit(1)
 
 

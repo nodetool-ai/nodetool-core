@@ -19,14 +19,14 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
-import joblib
-import numpy as np
-import pandas as pd
-import PIL.Image
-import PIL.ImageOps
-from pydub import AudioSegment
 
 if TYPE_CHECKING:
+    import joblib
+    import numpy as np
+    import pandas as pd
+    import PIL.Image
+    import PIL.ImageOps
+    from pydub import AudioSegment
     from chromadb.api import ClientAPI
     from sklearn.base import BaseEstimator
 
@@ -53,10 +53,6 @@ from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
 )
-from nodetool.media.image.image_utils import (
-    numpy_to_pil_image as _numpy_to_pil_image_util,
-)
-from nodetool.media.video.video_utils import export_to_video_bytes
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
@@ -88,6 +84,61 @@ from nodetool.workflows.torch_support import (
 )
 
 log = get_logger(__name__)
+
+
+def _ensure_numpy():
+    import numpy as np
+
+    return np
+
+
+def _ensure_pandas():
+    import pandas as pd
+
+    return pd
+
+
+def _ensure_pil():
+    import PIL.Image
+    import PIL.ImageOps
+
+    return PIL.Image, PIL.ImageOps
+
+
+def _ensure_audio_segment():
+    from pydub import AudioSegment
+
+    return AudioSegment
+
+
+def _ensure_joblib():
+    import joblib
+
+    return joblib
+
+
+def _numpy_to_pil_image_util(arr: "np.ndarray"):
+    from nodetool.media.image.image_utils import numpy_to_pil_image
+
+    return numpy_to_pil_image(arr)
+
+
+def _export_to_video_bytes(
+    video_frames,
+    fps: int = 10,
+    quality: float = 5.0,
+    bitrate: int | None = None,
+    macro_block_size: int | None = 16,
+):
+    from nodetool.media.video.video_utils import export_to_video_bytes as _exporter
+
+    return _exporter(
+        video_frames,
+        fps=fps,
+        quality=quality,
+        bitrate=bitrate,
+        macro_block_size=macro_block_size,
+    )
 
 
 def create_file_uri(path: str) -> str:
@@ -1132,9 +1183,14 @@ class ProcessingContext:
         - Images/Audio: store via memory:// to defer encoding; use asset_to_io for bytes.
         - DataFrames/Numpy/Tensors: use existing typed wrappers.
         """
+        pd = _ensure_pandas()
+        PIL_Image, _ = _ensure_pil()
+        AudioSegment = _ensure_audio_segment()
+        np = _ensure_numpy()
+
         if isinstance(obj, pd.DataFrame):
             return DataframeRef.from_pandas(obj)
-        elif isinstance(obj, PIL.Image.Image):
+        elif isinstance(obj, PIL_Image.Image):
             memory_uri = f"memory://{uuid.uuid4()}"
             self._memory_set(memory_uri, obj)
             return ImageRef(uri=memory_uri)
@@ -1162,6 +1218,10 @@ class ProcessingContext:
         Raises:
             ValueError: If the AssetRef is empty or contains unsupported data.
         """
+        PIL_Image, PIL_ImageOps = _ensure_pil()
+        np = _ensure_numpy()
+        AudioSegment = _ensure_audio_segment()
+
         # Check for memory:// protocol URI first (preferred for performance)
         if (
             hasattr(asset_ref, "uri")
@@ -1174,7 +1234,7 @@ class ProcessingContext:
                 # Convert memory object to IO based on asset type and stored format
                 if isinstance(obj, bytes):
                     return BytesIO(obj)
-                elif isinstance(obj, PIL.Image.Image):
+                elif isinstance(obj, PIL_Image.Image):
                     # Convert PIL Image to PNG bytes
                     buffer = BytesIO()
                     obj.save(buffer, format="PNG")
@@ -1230,7 +1290,7 @@ class ProcessingContext:
                             video_frames = list(obj)
 
                             # Use shared video utility for consistent behavior
-                            video_bytes = export_to_video_bytes(video_frames, fps=30)
+                            video_bytes = _export_to_video_bytes(video_frames, fps=30)
                             out = BytesIO(video_bytes)
                             out.seek(0)
                             return out
@@ -1257,9 +1317,9 @@ class ProcessingContext:
             if isinstance(asset_ref, ImageRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
-                elif isinstance(data, PIL.Image.Image):
+                elif isinstance(data, PIL_Image.Image):
                     buf = BytesIO()
-                    PIL.ImageOps.exif_transpose(data).convert("RGB").save(  # type: ignore
+                    PIL_ImageOps.exif_transpose(data).convert("RGB").save(  # type: ignore
                         buf, format="PNG"
                     )
                     buf.seek(0)
@@ -1360,6 +1420,7 @@ class ProcessingContext:
         """
         Converts an AssetRef to a URI with a specific MIME type.
         """
+        pd = _ensure_pandas()
         if (
             asset_ref.data is None
             and asset_ref.uri
@@ -1387,6 +1448,7 @@ class ProcessingContext:
         Returns:
             PIL.Image.Image: The converted PIL Image object.
         """
+        PIL_Image, PIL_ImageOps = _ensure_pil()
         # Check for memory:// protocol URI first (preferred for performance)
         if (
             hasattr(image_ref, "uri")
@@ -1395,17 +1457,17 @@ class ProcessingContext:
         ):
             key = image_ref.uri
             obj = self._memory_get(key)
-            if obj is not None and isinstance(obj, PIL.Image.Image):
+            if obj is not None and isinstance(obj, PIL_Image.Image):
                 return obj.convert("RGB")
                 # Fall through to regular conversion if not a PIL Image
 
         buffer = await self.asset_to_io(image_ref)
-        image = PIL.Image.open(buffer)
+        image = PIL_Image.open(buffer)
 
         # Apply EXIF orientation if present
         try:
             # Use PIL's built-in method to handle EXIF orientation
-            rotated_image = PIL.ImageOps.exif_transpose(image)
+            rotated_image = PIL_ImageOps.exif_transpose(image)
             # exif_transpose can return None in some cases, so fallback to original
             image = rotated_image if rotated_image is not None else image
         except (AttributeError, KeyError, TypeError):
@@ -1424,6 +1486,7 @@ class ProcessingContext:
         Returns:
             np.ndarray: The image as a numpy array.
         """
+        np = _ensure_numpy()
         image = await self.image_to_pil(image_ref)
         return np.array(image)
 
@@ -1485,6 +1548,7 @@ class ProcessingContext:
         Returns:
             AudioSegment: The converted audio segment.
         """
+        AudioSegment = _ensure_audio_segment()
         # Check for memory:// protocol URI first (preferred for performance)
         if (
             hasattr(audio_ref, "uri")
@@ -1497,10 +1561,8 @@ class ProcessingContext:
                 return obj
                 # Fall through to regular conversion if not an AudioSegment
 
-        import pydub
-
         audio_bytes = await self.asset_to_io(audio_ref)
-        return pydub.AudioSegment.from_file(audio_bytes)
+        return AudioSegment.from_file(audio_bytes)
 
     async def audio_to_numpy(
         self,
@@ -1520,6 +1582,7 @@ class ProcessingContext:
             tuple[np.ndarray, int, int]: A tuple containing the audio samples as a numpy array,
                 the frame rate, and the number of channels.
         """
+        np = _ensure_numpy()
         segment = await self.audio_to_audio_segment(audio_ref)
         segment = segment.set_frame_rate(sample_rate)
         if mono and segment.channels > 1:
@@ -1632,6 +1695,8 @@ class ProcessingContext:
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
         """
+        np = _ensure_numpy()
+        AudioSegment = _ensure_audio_segment()
         if data.dtype == np.int16:
             data_bytes = data.tobytes()
         elif (
@@ -1703,6 +1768,7 @@ class ProcessingContext:
         Raises:
             AssertionError: If the deserialized object is not a pandas DataFrame.
         """
+        pd = _ensure_pandas()
         # Prefer retrieving from in-memory storage if the DataframeRef uses a memory URI
         if getattr(df, "uri", "").startswith("memory://"):
             key = df.uri
@@ -1902,9 +1968,10 @@ class ProcessingContext:
             return await self.image_from_numpy(img[0])
 
         batch = []
+        PIL_Image, _ = _ensure_pil()
         for i in range(img.shape[0]):
             buffer = BytesIO()
-            PIL.Image.fromarray(img[i]).save(buffer, format="png")
+            PIL_Image.fromarray(img[i]).save(buffer, format="png")
             batch.append(buffer.getvalue())
 
         return ImageRef(data=batch)
@@ -1997,7 +2064,7 @@ class ProcessingContext:
         video_frames = list(video)
 
         # Use shared video utility for consistent behavior
-        video_bytes = export_to_video_bytes(video_frames, fps=fps)
+        video_bytes = _export_to_video_bytes(video_frames, fps=fps)
 
         # Create BytesIO from the video bytes
         buffer = BytesIO(video_bytes)
@@ -2075,6 +2142,7 @@ class ProcessingContext:
 
         if model_ref.asset_id is None:
             raise ValueError("ModelRef is empty")
+        joblib = _ensure_joblib()
         file = await self.asset_to_io(model_ref)
         return joblib.load(file)
 
@@ -2093,6 +2161,7 @@ class ProcessingContext:
             ModelRef: A reference to the created model asset.
 
         """
+        joblib = _ensure_joblib()
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"

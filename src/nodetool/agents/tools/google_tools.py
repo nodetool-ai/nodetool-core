@@ -1,15 +1,15 @@
-from typing import Any, ClassVar, Dict
+from typing import TYPE_CHECKING, Any, ClassVar, Dict
 
-from google.genai import Client
-from google.genai.client import AsyncClient
-from google.genai.types import (
-    GenerateContentConfig,
-    GenerateImagesConfig,
-    GoogleSearch,
-)
-from google.genai.types import (
-    Tool as GenAITool,
-)
+if TYPE_CHECKING:
+    # Keep imports type-only to avoid heavy module loading during CLI startup
+    from google.genai import Client
+    from google.genai.client import AsyncClient
+    from google.genai.types import (
+        GenerateContentConfig,
+        GenerateImagesConfig,
+        GoogleSearch,
+    )
+    from google.genai.types import Tool as GenAITool
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
@@ -62,6 +62,9 @@ class GoogleGroundedSearchTool(Tool):
         query = params.get("query")
         if not query:
             raise ValueError("Search query is required")
+
+        from google.genai.types import GenerateContentConfig, GoogleSearch
+        from google.genai.types import Tool as GenAITool
 
         # Configure Google Search as a tool
         google_search_tool = GenAITool(google_search=GoogleSearch())
@@ -202,6 +205,8 @@ class GoogleImageGenerationTool(Tool):
             raise ValueError("Image generation prompt is required")
         if not output_file:
             raise ValueError("Output file is required")
+
+        from google.genai.types import GenerateImagesConfig
 
         provider = await context.get_provider(Provider.Gemini)
         assert isinstance(provider, GeminiProvider)

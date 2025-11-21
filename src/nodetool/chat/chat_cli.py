@@ -1,5 +1,4 @@
-"""
-CLI interface for the Chain of Thought (CoT) agent.
+"""CLI interface for the Chain of Thought (CoT) agent.
 
 This module provides a command-line interface for interacting with the CoT agent.
 It supports multiple LLM providers, model selection, and tool management.
@@ -70,7 +69,6 @@ from nodetool.agents.tools.serp_tools import (
     GoogleNewsTool,
     GoogleSearchTool,
 )
-from nodetool.config.logging_config import configure_logging
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
@@ -171,6 +169,7 @@ class ChatCLI:
         # Tool management
         self.enabled_tools: Dict[str, bool] = {}  # Track enabled/disabled tools
         self.all_tools: List = []  # Store all available tools
+        self.tools: List = []
 
         self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
         self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_history")
@@ -315,8 +314,8 @@ class ChatCLI:
 
         self._load_models_task = asyncio.create_task(load_language_models())
 
-        # Initialize standard tools
-        standard_tools = [
+        # Initialize standard tools (tool modules keep heavy deps lazy inside their methods)
+        self.all_tools = [
             AddLabelToEmailTool(),
             ArchiveEmailTool(),
             BrowserTool(),
@@ -334,8 +333,10 @@ class ChatCLI:
             WriteFileTool(),
             ScreenshotTool(),
             SearchEmailTool(),
+            OpenAIImageGenerationTool(),
+            OpenAITextToSpeechTool(),
+            OpenAIWebSearchTool(),
         ]
-        self.all_tools = standard_tools
 
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:
@@ -344,9 +345,7 @@ class ChatCLI:
                 self.enabled_tools[tool_name] = False  # Default to disabled
 
         # Filter tools based on enabled status
-        self.tools = [
-            tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)
-        ]
+        self.refresh_tools()
 
     def refresh_tools(self):
         """Refresh the tools list based on current enabled status."""

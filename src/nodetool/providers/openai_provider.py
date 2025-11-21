@@ -8,19 +8,13 @@ handling message conversion, streaming, and tool integration.
 
 from __future__ import annotations
 
-import asyncio
 import base64
-import imghdr
 import inspect
 import io
-import json
 import math
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
 from urllib.parse import unquote_to_bytes
 
-import aiohttp
-import httpx
-import numpy as np
 import openai
 from openai import Omit
 from openai._types import NotGiven
@@ -43,6 +37,7 @@ from pydub import AudioSegment
 
 if TYPE_CHECKING:
     from openai.types import Video
+    import numpy as np
 
     from nodetool.agents.tools.base import Tool
     from nodetool.metadata.types import MessageContent
@@ -152,19 +147,12 @@ class OpenAIProvider(BaseProvider):
         Returns:
             An initialized ``openai.AsyncClient`` with reasonable timeouts.
         """
+        import httpx
+
         log.debug("Creating OpenAI async client")
+
         # Use ResourceScope's HTTP client if available, otherwise create a new one
-        try:
-            http_client = require_scope().get_http_client()
-            log.debug("Using ResourceScope HTTP client for OpenAI")
-        except RuntimeError:
-            # Fallback if no scope is bound (shouldn't happen in normal operation)
-            log.warning(
-                "No ResourceScope bound, creating fallback HTTP client for OpenAI"
-            )
-            http_client = httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
-            )
+        http_client = require_scope().get_http_client()
 
         client = openai.AsyncClient(
             api_key=self.api_key,
@@ -250,6 +238,8 @@ class OpenAIProvider(BaseProvider):
         Returns:
             List of LanguageModel instances for OpenAI
         """
+        import aiohttp
+
         if not self.api_key:
             log.debug("No OpenAI API key configured, returning empty model list")
             return []
@@ -935,6 +925,8 @@ class OpenAIProvider(BaseProvider):
         Returns:
             OpenAI chat message structure matching the input role/content.
         """
+        import json
+
         log.debug(f"Converting message with role: {message.role}")
 
         if message.role == "tool":
@@ -1094,6 +1086,8 @@ class OpenAIProvider(BaseProvider):
             Text ``Chunk`` items and ``ToolCall`` objects when the model
             requests tool execution.
         """
+        import json
+
         log.debug(f"Starting streaming generation for model: {model}")
         log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
 
@@ -1304,6 +1298,8 @@ class OpenAIProvider(BaseProvider):
         Returns:
             A Message object containing the model's response
         """
+        import json
+
         log.debug(f"Generating non-streaming message for model: {model}")
         log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
 
@@ -1678,6 +1674,8 @@ class OpenAIProvider(BaseProvider):
             ValueError: If required parameters are missing
             RuntimeError: If generation fails or the API returns an error
         """
+        import asyncio
+
         if not params.prompt:
             raise ValueError("The input prompt cannot be empty.")
 
@@ -1864,6 +1862,9 @@ class OpenAIProvider(BaseProvider):
             ValueError: If required parameters are missing or image dimensions cannot be extracted
             RuntimeError: If generation fails or the API returns an error
         """
+        import imghdr
+        import asyncio
+
         if not image:
             raise ValueError("The input image cannot be empty.")
 

@@ -5,11 +5,6 @@ import tempfile
 from io import BytesIO
 from typing import IO, Union
 
-import cv2
-import numpy as np
-import PIL.Image
-import pydub
-
 """
 Media Utilities Module
 
@@ -33,9 +28,7 @@ Note: Some functions require external command-line tools like ffmpeg and ffprobe
 FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg")
 FFPROBE_PATH = os.environ.get("FFPROBE_PATH", "ffprobe")
 
-# Configure pydub to use our FFMPEG_PATH and FFPROBE_PATH
-pydub.AudioSegment.converter = FFMPEG_PATH
-pydub.AudioSegment.ffprobe = FFPROBE_PATH
+_pydub_configured = False
 
 
 def create_empty_video(fps: int, width: int, height: int, duration: int, filename: str):
@@ -52,6 +45,9 @@ def create_empty_video(fps: int, width: int, height: int, duration: int, filenam
     Returns:
         None
     """
+    import numpy as np
+    import cv2
+
     # Calculate the number of frames needed
     num_frames = int(fps * duration)
 
@@ -74,6 +70,8 @@ async def create_image_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     """
     Generate a thumbnail image from an image using PIL.
     """
+    import PIL.Image
+
     # Read the image from the input BytesIO object
     image = PIL.Image.open(input_io)
     input_io.seek(0)
@@ -202,6 +200,14 @@ def get_audio_duration(source_io: BytesIO) -> float:
     Returns:
         float: The duration of the audio file in seconds.
     """
+    global _pydub_configured
+    import pydub
+
+    if not _pydub_configured:
+        pydub.AudioSegment.converter = FFMPEG_PATH
+        pydub.AudioSegment.ffprobe = FFPROBE_PATH
+        _pydub_configured = True
+
     try:
         audio = pydub.AudioSegment.from_file(source_io)
         duration = len(audio) / 1000.0

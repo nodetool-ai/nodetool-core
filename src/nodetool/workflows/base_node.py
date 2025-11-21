@@ -89,6 +89,7 @@ metadata generation.
 
 import asyncio
 import functools
+import inspect
 import importlib
 import logging
 import re
@@ -1208,12 +1209,17 @@ class BaseNode(BaseModel):
             if getattr(return_type, "__annotations__", None) and not issubclass(
                 return_type, BaseModel
             ):
+                try:
+                    annotations = get_type_hints(return_type)
+                except Exception:
+                    # Fall back to raw annotations if resolution fails
+                    annotations = return_type.__annotations__
                 return [
                     OutputSlot(
                         type=type_metadata(field_type, allow_optional=False),
                         name=field,
                     )
-                    for field, field_type in return_type.__annotations__.items()
+                    for field, field_type in annotations.items()
                 ]
             return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
         except ValueError as e:
@@ -1274,7 +1280,28 @@ class BaseNode(BaseModel):
         Returns the input slots of the node, including those inherited from all base classes.
         """
         # Resolve class annotations robustly (handles postponed annotations)
-        types = get_type_hints(cls)
+        try:
+            types = get_type_hints(cls)
+        except NameError as e:
+            missing_name = getattr(e, "name", None)
+            module_path = inspect.getsourcefile(cls) or "<unknown>"
+            module_name = cls.__module__
+            missing_hint = (
+                f" Missing import for '{missing_name}' in that module."
+                if missing_name
+                else " A type annotation could not be resolved."
+            )
+            raise NameError(
+                f"Failed to resolve type hints for node {cls.__name__} "
+                f"in {module_name} ({module_path}).{missing_hint}"
+            ) from e
+        except Exception as e:
+            module_path = inspect.getsourcefile(cls) or "<unknown>"
+            module_name = cls.__module__
+            raise TypeError(
+                f"Failed to resolve type hints for node {cls.__name__} "
+                f"in {module_name} ({module_path}): {e}"
+            ) from e
         super_types = {}
         for base in cls.__bases__:
             if hasattr(base, "field_types"):

@@ -1,19 +1,15 @@
-"""
-Browser interaction tools.
-
-This module provides tools for interacting with web browsers and web pages.
-"""
+"""Browser interaction tools."""
 
 import asyncio
 import json
 import os
 from contextlib import suppress
-from typing import Any, ClassVar, Dict, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 from urllib.parse import urlparse
 
-import html2text
-from huggingface_hub import AsyncInferenceClient, InferenceClient
-from playwright.async_api import ElementHandle, Page
+if TYPE_CHECKING:
+    from huggingface_hub import AsyncInferenceClient
+    from playwright.async_api import ElementHandle, Page
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, ToolCall
@@ -45,11 +41,13 @@ class ReaderTool:
     )
     """
 
-    async def get_client(self, context: ProcessingContext) -> AsyncInferenceClient | None:
+    async def get_client(self, context: ProcessingContext) -> "AsyncInferenceClient | None":
         if not hasattr(self, "client") or self.client is None:
             hf_token = await context.get_secret("HF_TOKEN")
             if not hf_token:
                 return None
+            from huggingface_hub import AsyncInferenceClient
+
             self.client = AsyncInferenceClient(api_key=hf_token, provider="featherless-ai")
         return self.client
 
@@ -114,7 +112,7 @@ def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> st
     return selector
 
 
-async def get_element_info(element: ElementHandle) -> Dict[str, Any]:
+async def get_element_info(element: "ElementHandle") -> Dict[str, Any]:
     """
     Extract comprehensive information about a DOM element.
 
@@ -186,7 +184,7 @@ async def get_element_info(element: ElementHandle) -> Dict[str, Any]:
         return {"error": f"Failed to get element info: {str(e)}"}
 
 
-async def extract_metadata(page: Page):
+async def extract_metadata(page: "Page"):
     """
     Extract both Open Graph and standard metadata from a webpage using Playwright.
 
@@ -361,6 +359,8 @@ class BrowserTool(Tool):
             content = None
 
             # Directly use html2text on the full page content
+            import html2text
+
             h = html2text.HTML2Text(baseurl=url, bodywidth=1000)
             h.ignore_images = True
             h.ignore_mailto_links = True

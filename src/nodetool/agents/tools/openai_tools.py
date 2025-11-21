@@ -1,14 +1,17 @@
 import base64
-from typing import Any, ClassVar, Dict
+from typing import TYPE_CHECKING, Any, ClassVar, Dict
 
-from openai import AsyncClient
+if TYPE_CHECKING:
+    from openai import AsyncClient
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 
 
-def get_openai_client() -> AsyncClient:
+def get_openai_client() -> "AsyncClient":
+    from openai import AsyncClient
+
     env = Environment.get_environment()
     api_key = env.get("OPENAI_API_KEY")
     assert api_key, "OPENAI_API_KEY is not set"
