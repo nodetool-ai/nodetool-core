@@ -21,10 +21,15 @@ from nodetool.metadata.types import (
     HFAutomaticSpeechRecognition,
     HFComputerVision,
     HFDepthEstimation,
-    HFDepthGeneration,
     HFDocumentQuestionAnswering,
     HFFeatureExtraction,
     HFFillMask,
+    HFFlux,
+    HFFluxFill,
+    HFFluxKontext,
+    HFFluxRedux,
+    HFFluxDepth,
+    HFFluxRedux,
     HFImageClassification,
     HFImageFeatureExtraction,
     HFImageSegmentation,
@@ -33,12 +38,10 @@ from nodetool.metadata.types import (
     HFImageToImage,
     HFImageToText,
     HFImageToVideo,
-    HFKontextGeneration,
     HFMaskGeneration,
     HFNaturalLanguageProcessing,
     HFObjectDetection,
     HFQuestionAnswering,
-    HFReduxGeneration,
     HFSentenceSimilarity,
     HFSummarization,
     HFTableQuestionAnswering,
@@ -132,6 +135,11 @@ UnionType = (
     | HFImageClassification
     | HFObjectDetection
     | HFImageSegmentation
+    | HFFlux
+    | HFFluxKontext
+    | HFFluxRedux
+    | HFFluxDepth
+    | HFFluxFill
     | HFTextToImage
     | HFImageToText
     | HFImageToImage
@@ -186,9 +194,6 @@ UnionType = (
     | InferenceProviderImageSegmentationModel
     | ProcessingMessage
     | RunJobRequest
-    | HFDepthGeneration
-    | HFReduxGeneration
-    | HFKontextGeneration
 )
 
 
