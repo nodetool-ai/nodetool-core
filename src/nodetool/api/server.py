@@ -7,7 +7,6 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Any, ClassVar, List
 
-import httpx
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,37 +14,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn import run as uvicorn
 
-from nodetool.api.middleware import ResourceScopeMiddleware
-from nodetool.api.openai import create_openai_compatible_router
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging, get_logger
-from nodetool.integrations.huggingface.hf_websocket import (
-    huggingface_download_endpoint,
-)
-from nodetool.integrations.websocket.terminal_runner import TerminalWebSocketRunner
-from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
-from nodetool.integrations.websocket.websocket_updates import websocket_updates
-from nodetool.metadata.types import Provider
-from nodetool.packages.registry import get_nodetool_package_source_folders
-from nodetool.security.http_auth import create_http_auth_middleware
-
-from . import (
-    admin_secrets,
-    asset,
-    collection,
-    debug,
-    file,
-    font,
-    job,
-    message,
-    model,
-    node,
-    settings,
-    storage,
-    thread,
-    workflow,
-)
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 if platform.system() == "Windows" and _windows_policy is not None:
@@ -85,6 +55,10 @@ def initialize_sentry():
     """
     Initialize Sentry error tracking if SENTRY_DSN is configured.
     """
+    # Guard against repeated initialization when create_app is called multiple times
+    if getattr(initialize_sentry, "_initialized", False):
+        return
+
     sentry_dsn = Environment.get("SENTRY_DSN", None)
     if sentry_dsn:
         import sentry_sdk  # type: ignore
@@ -99,9 +73,8 @@ def initialize_sentry():
             # of sampled transactions.
             profiles_sample_rate=1.0,
         )
+        initialize_sentry._initialized = True  # type: ignore[attr-defined]
 
-
-initialize_sentry()
 
 log = get_logger(__name__)
 
@@ -144,26 +117,49 @@ class ExtensionRouterRegistry:
         return cls._routers.copy()
 
 
-DEFAULT_ROUTERS = [
-    admin_secrets.router,
-    asset.router,
-    message.router,
-    thread.router,
-    model.router,
-    node.router,
-    workflow.router,
-    storage.router,
-    storage.temp_router,
-    font.router,
-    debug.router,
-    job.router,
-    settings.router,
-]
+def _load_default_routers() -> List[APIRouter]:
+    """
+    Lazily import and assemble the default routers to avoid heavy imports at
+    module import time.
+    """
+    from . import (
+        admin_secrets,
+        asset,
+        collection,
+        debug,
+        file,
+        font,
+        job,
+        message,
+        model,
+        node,
+        settings,
+        storage,
+        thread,
+        workflow,
+    )
 
+    routers: list[APIRouter] = [
+        admin_secrets.router,
+        asset.router,
+        message.router,
+        thread.router,
+        model.router,
+        node.router,
+        workflow.router,
+        storage.router,
+        storage.temp_router,
+        font.router,
+        debug.router,
+        job.router,
+        settings.router,
+    ]
 
-if not Environment.is_production():
-    DEFAULT_ROUTERS.append(file.router)
-    DEFAULT_ROUTERS.append(collection.router)
+    if not Environment.is_production():
+        routers.append(file.router)
+        routers.append(collection.router)
+
+    return routers
 
 
 async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> bool:
@@ -178,6 +174,8 @@ async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> 
         True if Ollama is responsive, False otherwise
     """
     try:
+        import httpx
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             # Try localhost first, then 127.0.0.1
             for host in ("localhost", "127.0.0.1"):
@@ -237,8 +235,11 @@ def create_app(
     static_folder: str | None = None,
     apps_folder: str | None = None,
 ):
+    # Initialize Sentry only when the application is created, not on module import
+    initialize_sentry()
+
     origins = ["*"] if origins is None else origins
-    routers = DEFAULT_ROUTERS if routers is None else routers
+    routers = _load_default_routers() if routers is None else routers
 
     # Centralized dotenv loading for consistency with deploy.fastapi_server
     from nodetool.config.environment import load_dotenv_files
@@ -323,9 +324,7 @@ def create_app(
                 raise
 
         # Start job execution manager cleanup task
-        from nodetool.workflows.job_execution_manager import (
-            JobExecutionManager,
-        )
+        from nodetool.workflows.job_execution_manager import JobExecutionManager
 
         job_manager = JobExecutionManager.get_instance()
         await job_manager.start_cleanup_task()
@@ -338,9 +337,7 @@ def create_app(
         log.info("Server shutdown initiated - cleaning up resources")
 
         # Import here to avoid circular imports
-        from nodetool.integrations.websocket.websocket_updates import (
-            websocket_updates,
-        )
+        from nodetool.integrations.websocket.websocket_updates import websocket_updates
 
         await websocket_updates.shutdown()
         log.info("WebSocket updates shutdown complete")
@@ -371,6 +368,19 @@ def create_app(
         get_static_auth_provider,
         get_user_auth_provider,
     )
+    from nodetool.api.middleware import ResourceScopeMiddleware
+    from nodetool.api.openai import create_openai_compatible_router
+    from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+    from nodetool.integrations.huggingface.hf_websocket import (
+        huggingface_download_endpoint,
+    )
+    from nodetool.integrations.websocket.terminal_runner import (
+        TerminalWebSocketRunner,
+    )
+    from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
+    from nodetool.integrations.websocket.websocket_updates import websocket_updates
+    from nodetool.metadata.types import Provider
+    from nodetool.security.http_auth import create_http_auth_middleware
 
     static_provider = get_static_auth_provider()
     user_provider = get_user_auth_provider()
@@ -531,6 +541,8 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         port: The port to run on.
         reload: Whether to reload the server on changes.
     """
+    from nodetool.packages.registry import get_nodetool_package_source_folders
+
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.dirname(current_dir)
     editable_dirs = get_nodetool_package_source_folders()
