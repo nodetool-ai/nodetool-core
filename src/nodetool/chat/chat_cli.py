@@ -37,6 +37,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
+from nodetool.runtime.resources import ResourceScope
 
 from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
 from nodetool.agents.tools.email_tools import (
@@ -1159,7 +1160,9 @@ class ChatCLI:
 async def chat_cli():
     """Entry point for the chat CLI."""
     cli = ChatCLI()
-    await cli.run()
+    # Bind a ResourceScope so providers (HTTP clients, DB) have required context
+    async with ResourceScope():
+        await cli.run()
 
 
 if __name__ == "__main__":
