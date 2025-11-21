@@ -31,6 +31,7 @@ from nodetool.integrations.huggingface.huggingface_file import (
 )
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
+    get_models_by_hf_type,
     read_cached_hf_models,
     search_cached_hf_models,
 )
@@ -339,6 +340,21 @@ async def search_huggingface_models_endpoint(
         authors=author,
         library_name=library_name,
     )
+
+
+@router.get("/huggingface/type/{model_type}")
+async def get_huggingface_models_by_type_endpoint(
+    model_type: str,
+    task: str | None = Query(None),
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    """
+    Return cached Hugging Face models matching an hf.* type using server-side heuristics.
+    """
+    if Environment.is_production():
+        log.warning("Cannot search Hugging Face models in production")
+        return []
+    return await get_models_by_hf_type(model_type, task)
 
 
 @router.delete("/huggingface")

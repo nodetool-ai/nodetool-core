@@ -64,6 +64,104 @@ SINGLE_FILE_DIFFUSION_TAGS = {
 
 log = get_logger(__name__)
 
+HF_DEFAULT_FILE_PATTERNS = [
+    "*.safetensors",
+    "*.ckpt",
+    "*.gguf",
+    "*.bin",
+]
+
+HF_PTH_FILE_PATTERNS = ["*.pth", "*.pt"]
+
+COMFY_REPO_PATTERNS = {
+    "flux": ["Comfy-Org/flux1-dev", "Comfy-Org/flux1-schnell"],
+    "flux_vae": ["ffxvs/vae-flux"],
+    "qwen_image": ["Comfy-Org/Qwen-Image_ComfyUI", "city96/Qwen-Image-gguf"],
+    "qwen_image_edit": ["Comfy-Org/Qwen-Image-Edit_ComfyUI"],
+    "sd35": ["Comfy-Org/stable-diffusion-3.5-fp8"],
+}
+
+COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
+    "hf.flux": [*COMFY_REPO_PATTERNS["flux"]],
+    "hf.flux_fp8": [*COMFY_REPO_PATTERNS["flux"]],
+    "hf.stable_diffusion_3": [*COMFY_REPO_PATTERNS["sd35"]],
+    "hf.qwen_image": [
+        *COMFY_REPO_PATTERNS["qwen_image"],
+        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+    ],
+    "hf.qwen_image_edit": [*COMFY_REPO_PATTERNS["qwen_image_edit"]],
+    "hf.unet": [
+        *COMFY_REPO_PATTERNS["flux"],
+        *COMFY_REPO_PATTERNS["qwen_image"],
+        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        *COMFY_REPO_PATTERNS["sd35"],
+    ],
+    "hf.vae": [
+        *COMFY_REPO_PATTERNS["flux_vae"],
+        *COMFY_REPO_PATTERNS["qwen_image"],
+        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+    ],
+    "hf.clip": [
+        *COMFY_REPO_PATTERNS["sd35"],
+        *COMFY_REPO_PATTERNS["qwen_image"],
+        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+    ],
+    "hf.t5": [*COMFY_REPO_PATTERNS["sd35"]],
+}
+
+HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
+    "hf.stable_diffusion": ["stable-diffusion", "sd15"],
+    "hf.stable_diffusion_xl": ["sdxl", "stable-diffusion-xl"],
+    "hf.stable_diffusion_xl_refiner": ["refiner", "sdxl"],
+    "hf.stable_diffusion_3": ["sd3", "stable-diffusion-3"],
+    "hf.flux": ["flux"],
+    "hf.flux_fp8": ["flux", "fp8"],
+    "hf.qwen_image": ["qwen"],
+    "hf.qwen_image_edit": ["qwen"],
+    "hf.controlnet": ["control"],
+    "hf.controlnet_sdxl": ["control", "sdxl"],
+    "hf.controlnet_flux": ["control", "flux"],
+    "hf.ip_adapter": ["ip-adapter"],
+    "hf.lora_sd": ["lora"],
+    "hf.lora_sdxl": ["lora", "sdxl"],
+    "hf.lora_qwen_image": ["lora", "qwen"],
+    "hf.vae": ["vae"],
+    "hf.unet": ["unet"],
+    "hf.clip": ["clip"],
+    "hf.t5": ["t5"],
+}
+
+HF_FILE_PATTERN_TYPES = {
+    "hf.text_to_image",
+    "hf.image_to_image",
+    "hf.stable_diffusion",
+    "hf.stable_diffusion_xl",
+    "hf.stable_diffusion_xl_refiner",
+    "hf.stable_diffusion_3",
+    "hf.qwen_image",
+    "hf.qwen_image_edit",
+    "hf.controlnet",
+    "hf.controlnet_sdxl",
+    "hf.controlnet_flux",
+    "hf.ip_adapter",
+    "hf.lora_sd",
+    "hf.lora_sdxl",
+    "hf.lora_qwen_image",
+    "hf.inpainting",
+    "hf.outpainting",
+    "hf.vae",
+    "hf.unet",
+    "hf.clip",
+    "hf.t5",
+    "hf.image_to_video",
+    "hf.text_to_video",
+    "hf.text_to_speech",
+    "hf.text_to_text",
+    "hf.image_to_text",
+    "hf.text_to_audio",
+    "hf.text_generation",
+    "hf.sentence_similarity",
+}
 CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
 CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
@@ -685,6 +783,438 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     return models
 
 
+HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
+    "hf.text_to_image": {"pipeline_tag": ["text-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
+    "hf.image_to_image": {"pipeline_tag": ["image-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
+    "hf.stable_diffusion": {
+        "pipeline_tag": ["text-to-image"],
+        "tag": ["*stable-diffusion*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.stable_diffusion_xl": {
+        "tag": ["diffusers:StableDiffusionXLPipeline", "*stable-diffusion-xl*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.stable_diffusion_xl_refiner": {"tag": ["*refiner*"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
+    "hf.stable_diffusion_3": {
+        "tag": ["*stable-diffusion-3*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": COMFY_REPO_PATTERNS["sd35"],
+    },
+    "hf.flux": {
+        "tag": ["*flux*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": COMFY_REPO_PATTERNS["flux"],
+    },
+    "hf.flux_fp8": {
+        "tag": ["*flux*"],
+        "filename_pattern": [
+            "*fp8*.safetensors",
+            "*fp8*.ckpt",
+            "*fp8*.bin",
+            "*fp8*.pt",
+            "*fp8*.pth",
+        ],
+        "repo_pattern": COMFY_REPO_PATTERNS["flux"],
+    },
+    "hf.qwen_image": {
+        "tag": ["*qwen*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": COMFY_REPO_PATTERNS["qwen_image"],
+    },
+    "hf.qwen_image_edit": {
+        "pipeline_tag": ["image-to-image"],
+        "tag": ["*qwen*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": COMFY_REPO_PATTERNS["qwen_image_edit"],
+    },
+    "hf.controlnet": {
+        "repo_pattern": ["*control*"],
+        "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
+        "pipeline_tag": [],
+    },
+    "hf.controlnet_sdxl": {
+        "repo_pattern": ["*control*"],
+        "tag": ["*sdxl*"],
+        "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
+        "pipeline_tag": [],
+    },
+    "hf.controlnet_flux": {
+        "repo_pattern": ["*control*"],
+        "tag": ["*flux*"],
+        "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
+        "pipeline_tag": [],
+    },
+    "hf.ip_adapter": {
+        "repo_pattern": ["*IP-Adapter*"],
+        "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
+        "pipeline_tag": [],
+    },
+    "hf.lora_sd": {"repo_pattern": ["*lora*"], "pipeline_tag": []},
+    "hf.lora_sdxl": {"repo_pattern": ["*lora*sdxl*", "*sdxl*lora*"], "pipeline_tag": []},
+    "hf.lora_qwen_image": {"repo_pattern": ["*lora*qwen*"], "pipeline_tag": []},
+    "hf.unet": {
+        "repo_pattern": [
+            *COMFY_REPO_PATTERNS["flux"],
+            *COMFY_REPO_PATTERNS["qwen_image"],
+            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            *COMFY_REPO_PATTERNS["sd35"],
+            "*unet*",
+            "*stable-diffusion*",
+        ],
+        "filename_pattern": ["*unet*.safetensors", "*unet*.bin", "*unet*.ckpt"],
+        "pipeline_tag": [],
+    },
+    "hf.vae": {
+        "repo_pattern": [
+            *COMFY_REPO_PATTERNS["flux_vae"],
+            *COMFY_REPO_PATTERNS["qwen_image"],
+            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            "*vae*",
+            "*stable-diffusion*",
+        ],
+        "filename_pattern": ["*vae*.safetensors", "*vae*.bin", "*vae*.ckpt", "*vae*.pt"],
+        "pipeline_tag": [],
+    },
+    "hf.clip": {
+        "repo_pattern": [
+            *COMFY_REPO_PATTERNS["sd35"],
+            *COMFY_REPO_PATTERNS["qwen_image"],
+            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            "*clip*",
+            "*flux*",
+        ],
+        "filename_pattern": ["*clip*.safetensors", "*clip*.bin", "*clip*.gguf", "*clip*.ckpt"],
+        "pipeline_tag": [],
+    },
+    "hf.t5": {
+        "repo_pattern": [*COMFY_REPO_PATTERNS["sd35"], "*t5*", "*flux*"],
+        "filename_pattern": ["*t5*.safetensors", "*t5*.bin", "*t5*.gguf", "*t5*.ckpt"],
+        "pipeline_tag": [],
+    },
+    "hf.image_to_video": {"pipeline_tag": ["image-to-video"]},
+    "hf.text_to_video": {"pipeline_tag": ["text-to-video"]},
+    "hf.image_to_text": {"pipeline_tag": ["image-to-text"], "tag": ["*caption*"]},
+    "hf.inpainting": {"pipeline_tag": ["image-inpainting"], "tag": ["*inpaint*"]},
+    "hf.outpainting": {"tag": ["*outpaint*"]},
+}
+
+GENERIC_HF_TYPES = {
+    "hf.text_to_image",
+    "hf.image_to_image",
+    "hf.model",
+    "hf.model_generic",
+}
+
+
+def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str | None:
+    if task:
+        return task.replace("_", "-")
+    slug = normalized_type[3:] if normalized_type.startswith("hf.") else normalized_type
+    if slug in {
+        "stable_diffusion",
+        "stable_diffusion_xl",
+        "stable_diffusion_xl_refiner",
+        "stable_diffusion_3",
+        "flux",
+        "flux_fp8",
+        "qwen_image",
+        "ip_adapter",
+    }:
+        return "text-to-image"
+    if slug in {"qwen_image_edit", "image_to_image", "inpainting", "outpainting"}:
+        return "image-to-image"
+    if slug == "text_to_video":
+        return "text-to-video"
+    if slug == "image_to_video":
+        return "image-to-video"
+    if "text_to_image" in slug:
+        return "text-to-image"
+    if "image_to_image" in slug:
+        return "image-to-image"
+    return slug.replace("_", "-")
+
+
+def _build_search_config_for_type(
+    model_type: str, task: str | None = None
+) -> dict[str, list[str] | str] | None:
+    normalized_type = model_type.lower()
+    base_config = HF_SEARCH_TYPE_CONFIG.get(normalized_type)
+    if not base_config and not task:
+        return None
+    config: dict[str, list[str] | str] = {}
+
+    for key in ("repo_pattern", "filename_pattern", "pipeline_tag", "tag", "author", "library_name"):
+        value = base_config.get(key) if base_config else None
+        if value:
+            config[key] = list(value) if isinstance(value, list) else value
+
+    if "pipeline_tag" not in config:
+        derived = _derive_pipeline_tag(normalized_type, task)
+        if derived:
+            config["pipeline_tag"] = [derived]
+
+    if "filename_pattern" not in config and normalized_type in HF_FILE_PATTERN_TYPES:
+        config["filename_pattern"] = list(HF_DEFAULT_FILE_PATTERNS)
+
+    return config if config else None
+
+
+def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
+    matchers = COMFY_TYPE_REPO_MATCHERS.get(normalized_type)
+    if not matchers:
+        return False
+    repo_lower = repo_id.lower()
+    repo_from_id_lower = repo_id_from_id.lower()
+    return any(
+        repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower() for candidate in matchers
+    )
+
+
+def _matches_artifact_detection(
+    normalized_type: str,
+    artifact_family: str | None = None,
+    artifact_component: str | None = None,
+) -> bool:
+    fam = artifact_family or ""
+    comp = artifact_component or ""
+    if normalized_type in {"hf.flux", "hf.flux_fp8"}:
+        return "flux" in fam
+    if normalized_type == "hf.stable_diffusion":
+        return fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
+    if normalized_type == "hf.stable_diffusion_xl":
+        return "sdxl" in fam
+    if normalized_type == "hf.stable_diffusion_xl_refiner":
+        return "refiner" in fam or ("sdxl" in fam and comp == "unet")
+    if normalized_type == "hf.stable_diffusion_3":
+        return "sd3" in fam or "stable-diffusion-3" in fam
+    if normalized_type == "hf.qwen_image":
+        return "qwen" in fam
+    return False
+
+
+def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
+    normalized_type = model_type.lower()
+    model_type_lower = (model.type or "").lower()
+    repo_id = (model.repo_id or "").lower()
+    repo_id_from_id = (model.id or "").split(":")[0].lower() if model.id else ""
+
+    if model_type_lower:
+        if model_type_lower == normalized_type:
+            return True
+        if model_type_lower not in GENERIC_HF_TYPES:
+            return False
+    if _matches_repo_for_type(normalized_type, repo_id, repo_id_from_id):
+        return True
+
+    artifact_family = (getattr(model, "artifact_family", None) or "").lower()
+    artifact_component = (getattr(model, "artifact_component", None) or "").lower()
+    if artifact_family or artifact_component:
+        if _matches_artifact_detection(normalized_type, artifact_family, artifact_component):
+            return True
+
+    tags = [(tag or "").lower() for tag in (model.tags or [])]
+    keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
+    if keywords and any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
+        return True
+
+    derived_pipeline = _derive_pipeline_tag(normalized_type)
+    if derived_pipeline and model.pipeline_tag == derived_pipeline:
+        return True
+
+    return False
+
+
+async def get_models_by_hf_type(model_type: str, task: str | None = None) -> list[UnifiedModel]:
+    """
+    Return cached Hugging Face models that match a given hf.* type using
+    the same heuristics the UI previously applied client-side.
+    """
+
+    normalized_type = (model_type or "").lower()
+    config = _build_search_config_for_type(normalized_type, task)
+    if config is None:
+        return []
+
+    skip_model_info = os.environ.get("HF_HUB_OFFLINE") == "1"
+    repo_patterns = config.get("repo_pattern") or []
+    literal_repo_ids = [
+        repo for repo in repo_patterns if repo and not any(ch in repo for ch in ["*", "?", "["])
+    ]
+    if skip_model_info and literal_repo_ids:
+        offline = _build_offline_models_for_repos(
+            literal_repo_ids,
+            normalized_type,
+            config.get("filename_pattern"),
+            config.get("pipeline_tag"),
+        )
+        if offline:
+            return offline
+
+    pre_resolved_repos: list[tuple[str, Path]] = []
+    if literal_repo_ids:
+        for repo in literal_repo_ids:
+            try:
+                root = await HF_FAST_CACHE.repo_root(repo, repo_type="model")
+            except Exception as exc:  # pragma: no cover - defensive guard
+                log.debug(f"repo_root failed for {repo}: {exc}")
+                root = None
+            if root:
+                pre_resolved_repos.append((repo, Path(root)))
+
+    try:
+        models = await asyncio.wait_for(
+            search_cached_hf_models(
+                repo_patterns=config.get("repo_pattern"),
+                filename_patterns=config.get("filename_pattern"),
+                pipeline_tags=config.get("pipeline_tag"),
+                tags=config.get("tag"),
+                authors=config.get("author"),
+                library_name=config.get("library_name"),
+                skip_model_info=skip_model_info,
+                pre_resolved_repos=pre_resolved_repos or None,
+            ),
+            timeout=20,
+        )
+    except asyncio.TimeoutError:
+        log.warning(
+            "get_models_by_hf_type timed out for %s; falling back to repo-level entries",
+            normalized_type,
+        )
+        models = [_fallback_unified_model(repo_id, normalized_type) for repo_id in literal_repo_ids]
+
+    filtered: list[UnifiedModel] = []
+    repo_only_types = {"hf.flux"}
+    seen: set[str] = set()
+    for model in models:
+        if model.id in seen:
+            continue
+        if normalized_type in repo_only_types and getattr(model, "path", None):
+            continue
+        if _matches_model_type(model, normalized_type):
+            filtered.append(model)
+            seen.add(model.id)
+    return filtered
+
+
+def _fallback_unified_model(repo_id: str, model_type: str) -> UnifiedModel:
+    pipeline_tag = _derive_pipeline_tag(model_type)
+    return UnifiedModel(
+        id=repo_id,
+        repo_id=repo_id,
+        path=None,
+        type=model_type,
+        name=repo_id,
+        cache_path=None,
+        allow_patterns=None,
+        ignore_patterns=None,
+        description=None,
+        readme=None,
+        size_on_disk=None,
+        downloaded=False,
+        pipeline_tag=pipeline_tag,
+        tags=None,
+        has_model_index=None,
+        downloads=None,
+        likes=None,
+        trending_score=None,
+    )
+
+
+def _build_offline_models_for_repos(
+    repo_ids: Sequence[str],
+    model_type: str,
+    filename_patterns: Sequence[str] | None,
+    pipeline_tags: Sequence[str] | None,
+) -> list[UnifiedModel]:
+    """Build UnifiedModel entries directly from cached snapshots (offline fallback)."""
+    results: list[UnifiedModel] = []
+    pipeline_tag = pipeline_tags[0] if pipeline_tags else _derive_pipeline_tag(model_type)
+    for repo_id in repo_ids:
+        snapshot_dir = _offline_snapshot_dir(repo_id)
+        if snapshot_dir is None:
+            continue
+        repo_model = UnifiedModel(
+            id=repo_id,
+            repo_id=repo_id,
+            path=None,
+            type=model_type,
+            name=repo_id,
+            cache_path=str(snapshot_dir.parent),
+            allow_patterns=None,
+            ignore_patterns=None,
+            description=None,
+            readme=None,
+            size_on_disk=None,
+            downloaded=True,
+            pipeline_tag=pipeline_tag,
+            tags=None,
+            has_model_index=None,
+            downloads=None,
+            likes=None,
+            trending_score=None,
+        )
+        results.append(repo_model)
+        if filename_patterns:
+            rel_files = _offline_snapshot_files(snapshot_dir)
+            for relpath in rel_files:
+                if not any(fnmatch(relpath, pat) for pat in filename_patterns):
+                    continue
+                file_id = f"{repo_id}:{relpath}"
+                results.append(
+                    UnifiedModel(
+                        id=file_id,
+                        repo_id=repo_id,
+                        path=relpath,
+                        type=model_type,
+                        name=f"{repo_id}/{relpath}",
+                        cache_path=str(snapshot_dir.parent),
+                        allow_patterns=None,
+                        ignore_patterns=None,
+                        description=None,
+                        readme=None,
+                        size_on_disk=None,
+                        downloaded=True,
+                        pipeline_tag=pipeline_tag,
+                        tags=None,
+                        has_model_index=None,
+                        downloads=None,
+                        likes=None,
+                        trending_score=None,
+                    )
+                )
+    return results
+
+
+def _offline_snapshot_dir(repo_id: str) -> Path | None:
+    repo_bits = [bit for bit in repo_id.split("/") if bit]
+    if not repo_bits:
+        return None
+    repo_dir = HF_FAST_CACHE.cache_dir / ("models--" + "--".join(repo_bits))
+    snapshots_dir = repo_dir / "snapshots"
+    if not snapshots_dir.exists():
+        return None
+    newest = None
+    newest_mtime = None
+    for entry in snapshots_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        mt = entry.stat().st_mtime
+        if newest_mtime is None or mt > newest_mtime:
+            newest = entry
+            newest_mtime = mt
+    return newest
+
+
+def _offline_snapshot_files(snapshot_dir: Path) -> list[str]:
+    relpaths: list[str] = []
+    for root, _, files in os.walk(snapshot_dir):
+        for fname in files:
+            full = Path(root) / fname
+            relpaths.append(str(full.relative_to(snapshot_dir)))
+    return relpaths
+
+
 def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) -> list[str]:
     normalized: list[str] = []
     for value in values or []:
@@ -721,17 +1251,23 @@ async def search_cached_hf_models(
     tags: Sequence[str] | None = None,
     authors: Sequence[str] | None = None,
     library_name: str | None = None,
+    *,
+    skip_model_info: bool = False,
+    pre_resolved_repos: Sequence[tuple[str, Path]] | None = None,
 ) -> List[UnifiedModel]:
     """
     Search the Hugging Face cache by repo metadata and optional filename patterns.
     Returns matching repo entries and (optionally) file-level entries.
     """
 
-    try:
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive guard
-        log.warning(f"Failed to discover cached HF repos: {exc}")
-        return []
+    if pre_resolved_repos is not None:
+        repo_list = list(pre_resolved_repos)
+    else:
+        try:
+            repo_list = await HF_FAST_CACHE.discover_repos("model")
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log.warning(f"Failed to discover cached HF repos: {exc}")
+            return []
 
     if not repo_list:
         return []
@@ -747,14 +1283,17 @@ async def search_cached_hf_models(
 
     recommended_models = get_recommended_models()
     results: list[UnifiedModel] = []
-    requires_metadata = any(
+    requires_metadata = False if skip_model_info else any(
         [pipeline_tag_patterns, tag_patterns, author_patterns, library_pattern]
     )
 
-    model_infos = await asyncio.gather(
-        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
-        return_exceptions=True,
-    )
+    if skip_model_info:
+        model_infos = [None for _ in repo_list]
+    else:
+        model_infos = await asyncio.gather(
+            *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
+            return_exceptions=True,
+        )
 
     for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
         info: ModelInfo | None

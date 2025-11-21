@@ -644,6 +644,10 @@ class HFFlux(HuggingFaceModel):
     type: Literal["hf.flux"] = "hf.flux"
 
 
+class HFFluxFP8(HuggingFaceModel):
+    type: Literal["hf.flux_fp8"] = "hf.flux_fp8"
+
+
 class HFFluxKontext(HuggingFaceModel):
     type: Literal["hf.flux_kontext"] = "hf.flux_kontext"
 
@@ -728,6 +732,10 @@ class HFVAE(HuggingFaceModel):
 
 class HFCLIP(HuggingFaceModel):
     type: Literal["hf.clip"] = "hf.clip"
+
+
+class HFT5(HuggingFaceModel):
+    type: Literal["hf.t5"] = "hf.t5"
 
 
 class HFCLIPVision(HuggingFaceModel):
