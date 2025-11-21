@@ -119,44 +119,34 @@ class RunPodDeployer:
             env = (
                 dict(self.deployment.environment) if self.deployment.environment else {}
             )
+            template_name = self.deployment.template_name or self.deployment_name
 
-            # Convert GPU types to list
-            gpu_types = (
-                tuple(self.deployment.gpu_types) if self.deployment.gpu_types else ()
-            )
-
-            # Convert data centers to list
-            data_centers = (
-                tuple(self.deployment.data_centers)
-                if self.deployment.data_centers
-                else ()
-            )
+            deploy_kwargs = {
+                "deployment": self.deployment,
+                "docker_username": self.deployment.docker.username,
+                "docker_registry": self.deployment.docker.registry,
+                "image_name": self.deployment.image.name,
+                "tag": self.deployment.image.tag,
+                "template_name": template_name,
+                "platform": self.deployment.platform,
+                "gpu_types": tuple(self.deployment.gpu_types),
+                "gpu_count": self.deployment.gpu_count,
+                "data_centers": tuple(self.deployment.data_centers),
+                "workers_min": self.deployment.workers_min,
+                "workers_max": self.deployment.workers_max,
+                "idle_timeout": self.deployment.idle_timeout,
+                "execution_timeout": self.deployment.execution_timeout,
+                "flashboot": self.deployment.flashboot,
+                "env": env,
+                "skip_build": False,
+                "skip_push": False,
+                "skip_template": False,
+                "skip_endpoint": False,
+                "name": self.deployment_name,
+            }
 
             # Call legacy deploy function
-            deploy_to_runpod(
-                docker_username=self.deployment.docker.username,
-                docker_registry=self.deployment.docker.registry,
-                image_name=self.deployment.image.name,
-                tag=self.deployment.image.tag,
-                platform="linux/amd64",  # RunPod requires amd64
-                template_name=self.deployment.template_name or self.deployment_name,
-                skip_build=False,
-                skip_push=False,
-                skip_template=False,
-                skip_endpoint=False,
-                compute_type=self.deployment.compute_type,
-                gpu_types=gpu_types,
-                gpu_count=self.deployment.gpu_count,
-                data_centers=data_centers,
-                workers_min=self.deployment.workers_min,
-                workers_max=self.deployment.workers_max,
-                idle_timeout=self.deployment.idle_timeout,
-                execution_timeout=self.deployment.execution_timeout,
-                flashboot=self.deployment.flashboot,
-                network_volume_id=self.deployment.network_volume_id,
-                name=self.deployment_name,
-                env=env,
-            )
+            deploy_to_runpod(**deploy_kwargs)
 
             results["steps"].append("RunPod deployment completed")
 
@@ -167,8 +157,7 @@ class RunPodDeployer:
                 self.deployment_name,
                 {
                     "status": DeploymentStatus.ACTIVE.value,
-                    "template_name": self.deployment.template_name
-                    or self.deployment_name,
+                    "template_name": template_name,
                 },
             )
 

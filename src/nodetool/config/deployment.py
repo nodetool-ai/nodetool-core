@@ -221,10 +221,10 @@ class SelfHostedDeployment(BaseModel):
             default_service = ServiceSpec(
                 name=values.container.name,
                 path="/",
-                image=values.image.full_name,
+                image="nodetool/nodetool:latest",
             )
             values.proxy = ProxySpec(
-                image="nodetool-proxy:latest",
+                image="nodetool/proxy:latest",
                 domain=values.host,
                 email="admin@example.com",
                 services=[default_service],
@@ -326,16 +326,17 @@ class RunPodDeployment(BaseModel):
     type: Literal[DeploymentType.RUNPOD] = DeploymentType.RUNPOD
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     image: RunPodImageConfig
-    template: RunPodTemplateConfig
-    endpoint: RunPodEndpointConfig
     gpu_types: List[str] = Field(default_factory=list, description="Allowed GPU types")
     gpu_count: Optional[int] = None
+    cpu_flavors: List[str] = Field(default_factory=list, description="Allowed CPU flavors")
+    vcpu_count: Optional[int] = None
     data_centers: List[str] = Field(
         default_factory=list, description="Preferred data center locations"
     )
     network_volume_id: Optional[str] = Field(
         None, description="Network volume ID to attach"
     )
+    allowed_cuda_versions: List[str] = Field(default_factory=list, description="Allowed CUDA versions")
     docker: RunPodDockerConfig = RunPodDockerConfig()
     platform: str = "linux/amd64"
     template_name: Optional[str] = None

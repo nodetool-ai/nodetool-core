@@ -263,8 +263,8 @@ class TestComposeGenerator:
         deployment2 = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
-            image=ImageConfig(name="nodetool/nodetool", tag="v2.0"),  # Different tag
-            container=ContainerConfig(name="wf1", port=8001),
+            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+            container=ContainerConfig(name="wf1", port=8002),
         )
 
         hash1 = ComposeGenerator(deployment1).generate_hash()

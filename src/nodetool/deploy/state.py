@@ -337,7 +337,9 @@ class StateManager:
         return self.get_last_deployed(deployment_name) is not None
 
 
-def create_state_snapshot(config: DeploymentConfig) -> Dict[str, Any]:
+def create_state_snapshot(
+    config: DeploymentConfig, config_path: Optional[Path | str] = None
+) -> Dict[str, Any]:
     """
     Create a snapshot of the current state of all deployments.
 
@@ -349,11 +351,14 @@ def create_state_snapshot(config: DeploymentConfig) -> Dict[str, Any]:
     Returns:
         Dictionary containing snapshot of all deployment states
     """
-    snapshot = {
+    snapshot: Dict[str, Any] = {
         "timestamp": datetime.utcnow().isoformat(),
         "version": config.version,
         "deployments": {},
     }
+
+    if config_path:
+        snapshot["config_path"] = str(config_path)
 
     for name, deployment in config.deployments.items():
         snapshot["deployments"][name] = {
@@ -366,7 +371,9 @@ def create_state_snapshot(config: DeploymentConfig) -> Dict[str, Any]:
 
 
 def restore_state_from_snapshot(
-    snapshot: Dict[str, Any], deployment_name: Optional[str] = None
+    snapshot: Dict[str, Any],
+    deployment_name: Optional[str] = None,
+    config_path: Optional[Path | str] = None,
 ) -> None:
     """
     Restore deployment state from a snapshot.
@@ -378,10 +385,23 @@ def restore_state_from_snapshot(
     Raises:
         KeyError: If deployment_name specified but not found in snapshot
     """
-    state_manager = StateManager()
+    resolved_config_path = Path(config_path) if config_path else None
+    if not resolved_config_path and snapshot.get("config_path"):
+        resolved_config_path = Path(snapshot["config_path"])
+
+    state_manager = StateManager(config_path=resolved_config_path)
 
     with state_manager.lock():
-        config = load_deployment_config()
+        if resolved_config_path:
+            import yaml
+
+            with open(resolved_config_path) as f:
+                data = yaml.safe_load(f)
+            config = (
+                DeploymentConfig.model_validate(data) if data else DeploymentConfig()
+            )
+        else:
+            config = load_deployment_config()
 
         deployments_to_restore = (
             [deployment_name] if deployment_name else snapshot["deployments"].keys()
@@ -401,4 +421,11 @@ def restore_state_from_snapshot(
             # Restore state
             deployment.state = deployment.state.__class__.model_validate(snapshot_state)
 
-        save_deployment_config(config)
+        if resolved_config_path:
+            import yaml
+
+            data = config.model_dump(mode="json", exclude_none=True)
+            with open(resolved_config_path, "w") as f:
+                yaml.dump(data, f, default_flow_style=False)
+        else:
+            save_deployment_config(config)

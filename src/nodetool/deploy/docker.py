@@ -199,7 +199,7 @@ def build_docker_image(
     Build a Docker image for deployment.
 
     This function creates a Docker image by:
-    1. Using the Dockerfile from src/nodetool/deploy/
+    1. Using the Dockerfile from the project root
     2. Creating a temporary build directory with necessary files
     3. Building the final image using Docker buildx with optional cache optimization
 
@@ -228,7 +228,9 @@ def build_docker_image(
 
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    deploy_dockerfile_path = os.path.join(script_dir, "Dockerfile")
+    # The Dockerfile is at the project root, which is 3 levels up
+    project_root = os.path.abspath(os.path.join(script_dir, "../../.."))
+    deploy_dockerfile_path = os.path.join(project_root, "Dockerfile")
     start_script_path = os.path.join(script_dir, "start.sh")
 
     # Create a temporary build directory

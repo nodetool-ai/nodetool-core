@@ -39,6 +39,7 @@ import re
 import sys
 from typing import Optional
 
+from nodetool.config.deployment import RunPodDeployment
 from nodetool.deploy.runpod_api import create_runpod_endpoint_graphql
 
 
@@ -75,31 +76,27 @@ def sanitize_name(name: str) -> str:
 
 
 def deploy_to_runpod(
-    docker_username: Optional[str] = None,
-    docker_registry: str = "docker.io",
-    image_name: Optional[str] = None,
-    tag: Optional[str] = None,
-    platform: str = "linux/amd64",
-    template_name: Optional[str] = None,
+    deployment: RunPodDeployment,
+    docker_username: str | None = None,
+    docker_registry: str | None = None,
+    image_name: str | None = None,
+    tag: str | None = None,
+    template_name: str | None = None,
+    platform: str | None = None,
+    gpu_types: tuple[str, ...] | None = None,
+    gpu_count: int | None = None,
+    data_centers: tuple[str, ...] | None = None,
+    workers_min: int | None = None,
+    workers_max: int | None = None,
+    idle_timeout: int | None = None,
+    execution_timeout: int | None = None,
+    flashboot: bool | None = None,
     skip_build: bool = False,
     skip_push: bool = False,
     skip_template: bool = False,
     skip_endpoint: bool = False,
     no_cache: bool = False,
     no_auto_push: bool = False,
-    compute_type: str = "GPU",
-    gpu_types: tuple = (),
-    gpu_count: Optional[int] = None,
-    cpu_flavors: tuple = (),
-    vcpu_count: Optional[int] = None,
-    data_centers: tuple = (),
-    workers_min: int = 0,
-    workers_max: int = 3,
-    idle_timeout: int = 5,
-    execution_timeout: Optional[int] = None,
-    flashboot: bool = False,
-    network_volume_id: Optional[str] = None,
-    allowed_cuda_versions: tuple = (),
     name: Optional[str] = None,
     env: dict[str, str] | None = None,
 ) -> None:
@@ -107,35 +104,6 @@ def deploy_to_runpod(
     Deploy workflow or chat handler to RunPod serverless infrastructure.
 
     This is the main deployment function that orchestrates the entire deployment process.
-
-    Args:
-        docker_username: Docker Hub username or organization
-        docker_registry: Docker registry URL
-        image_name: Base name of the Docker image
-        tag: Tag of the Docker image
-        platform: Docker build platform
-        template_name: Name of the RunPod template
-        skip_build: Skip Docker build
-        skip_push: Skip pushing to registry
-        skip_template: Skip creating RunPod template
-        skip_endpoint: Skip creating RunPod endpoint
-        no_cache: Disable Docker Hub cache optimization
-        no_auto_push: Disable automatic push during optimized build
-        compute_type: Type of compute (CPU or GPU)
-        gpu_types: GPU types to use
-        gpu_count: Number of GPUs per worker
-        cpu_flavors: CPU flavors to use for CPU compute
-        vcpu_count: Number of vCPUs for CPU compute
-        data_centers: Preferred data center locations
-        workers_min: Minimum number of workers
-        workers_max: Maximum number of workers
-        idle_timeout: Seconds before scaling down idle workers
-        execution_timeout: Maximum execution time in milliseconds
-        flashboot: Enable flashboot for faster worker startup
-        network_volume_id: Network volume to attach
-        allowed_cuda_versions: Allowed CUDA versions
-        name: Name for the endpoint (required for all deployments)
-        tools: List of tool names to enable for chat handler
     """
     env = env or {}
     import traceback
@@ -158,6 +126,38 @@ def deploy_to_runpod(
     )
 
     console = Console()
+
+    docker_username = docker_username or deployment.docker.username
+    docker_registry = docker_registry or deployment.docker.registry
+    image_name = image_name or deployment.image.name
+    tag = tag or deployment.image.tag
+    platform = platform or deployment.platform
+    template_name = template_name or name or deployment.template_name
+    compute_type = deployment.compute_type
+    gpu_types = (
+        tuple(gpu_types)
+        if gpu_types is not None
+        else tuple(deployment.gpu_types)
+    )
+    gpu_count = gpu_count if gpu_count is not None else deployment.gpu_count
+    cpu_flavors: tuple = () # Not in the model
+    vcpu_count: Optional[int] = None # Not in the model
+    data_centers = (
+        tuple(data_centers)
+        if data_centers is not None
+        else tuple(deployment.data_centers)
+    )
+    workers_min = workers_min if workers_min is not None else deployment.workers_min
+    workers_max = workers_max if workers_max is not None else deployment.workers_max
+    idle_timeout = idle_timeout if idle_timeout is not None else deployment.idle_timeout
+    execution_timeout = (
+        execution_timeout
+        if execution_timeout is not None
+        else deployment.execution_timeout
+    )
+    flashboot = flashboot if flashboot is not None else deployment.flashboot
+    network_volume_id = deployment.network_volume_id
+    allowed_cuda_versions: tuple = () # Not in the model
 
     # Get Docker username
     docker_username = get_docker_username(

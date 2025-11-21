@@ -44,8 +44,6 @@ class TestDeploymentManager:
         # Create RunPod deployment
         runpod = RunPodDeployment(
             image=RunPodImageConfig(name="nodetool/nodetool", tag="latest"),
-            template=RunPodTemplateConfig(name="nodetool-template"),
-            endpoint=RunPodEndpointConfig(name="nodetool-endpoint"),
         )
 
         # Create GCP deployment

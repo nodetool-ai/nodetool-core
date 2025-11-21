@@ -16,11 +16,9 @@ from nodetool.config.deployment import (
     GCPDeployment,
 )
 from nodetool.deploy.deploy_to_gcp import (
+    deploy_to_gcp,
     delete_gcp_service,
     list_gcp_services,
-)
-from nodetool.deploy.deploy_to_gcp import (
-    deploy_to_gcp as legacy_deploy_to_gcp,
 )
 from nodetool.deploy.state import StateManager
 
@@ -66,7 +64,7 @@ class GCPDeployer:
         plan = {
             "deployment_name": self.deployment_name,
             "type": "gcp",
-            "project": self.deployment.project,
+            "project": self.deployment.project_id,
             "region": self.deployment.region,
             "changes": [],
             "will_create": [],
@@ -129,39 +127,14 @@ class GCPDeployer:
                 dict(self.deployment.environment) if self.deployment.environment else {}
             )
 
-            # Call legacy deploy function
-            # TODO: Refactor this to use direct API calls instead of legacy function
-            legacy_deploy_to_gcp(
-                service_name=self.deployment.service_name,
-                project_id=self.deployment.project,
-                region=self.deployment.region,
-                registry=self.deployment.registry,
-                cpu=self.deployment.cpu,
-                memory=self.deployment.memory,
-                gpu_type=self.deployment.gpu_type,
-                gpu_count=self.deployment.gpu_count,
-                min_instances=self.deployment.min_instances,
-                max_instances=self.deployment.max_instances,
-                concurrency=self.deployment.concurrency,
-                timeout=self.deployment.timeout,
-                allow_unauthenticated=self.deployment.allow_unauthenticated,
+            # Call deploy function
+            deploy_to_gcp(
+                deployment=self.deployment,
                 env=env,
-                docker_username=self.deployment.docker.username
-                if self.deployment.docker
-                else None,
-                docker_registry=self.deployment.docker.registry
-                if self.deployment.docker
-                else "docker.io",
-                image_name=self.deployment.image.name,
-                tag=self.deployment.image.tag,
-                platform="linux/amd64",  # Cloud Run requires amd64
                 skip_build=False,
                 skip_push=False,
                 skip_deploy=False,
                 skip_permission_setup=False,
-                service_account=self.deployment.service_account,
-                gcs_bucket=self.deployment.gcs_bucket,
-                gcs_mount_path=self.deployment.gcs_mount_path,
             )
 
             results["steps"].append("Google Cloud Run deployment completed")
@@ -172,7 +145,7 @@ class GCPDeployer:
                 {
                     "status": DeploymentStatus.SERVING.value,
                     "service_name": self.deployment.service_name,
-                    "project": self.deployment.project,
+                    "project": self.deployment.project_id,
                     "region": self.deployment.region,
                 },
             )

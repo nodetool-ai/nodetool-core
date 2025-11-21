@@ -35,12 +35,6 @@ class TestRunPodDeployer:
                 name="nodetool-workflow",
                 tag="latest",
             ),
-            template=RunPodTemplateConfig(
-                name="my-template",
-            ),
-            endpoint=RunPodEndpointConfig(
-                name="my-endpoint",
-            ),
             template_name="my-template",
             compute_type="serverless",
         )
@@ -56,20 +50,6 @@ class TestRunPodDeployer:
             image=RunPodImageConfig(
                 name="nodetool-workflow",
                 tag="v1.0.0",
-            ),
-            template=RunPodTemplateConfig(
-                name="gpu-template",
-                gpu_types=["NVIDIA RTX A5000", "NVIDIA A40"],
-                data_centers=["US-CA-1", "US-TX-1"],
-            ),
-            endpoint=RunPodEndpointConfig(
-                name="gpu-endpoint",
-                workers_min=0,
-                workers_max=3,
-                idle_timeout=5,
-                execution_timeout=300,
-                flashboot=True,
-                gpu_count=1,
             ),
             template_name="gpu-template",
             compute_type="serverless",
@@ -461,12 +441,6 @@ class TestRunPodDeployerEdgeCases:
                 name="image",
                 tag="tag",
             ),
-            template=RunPodTemplateConfig(
-                name="minimal-template",
-            ),
-            endpoint=RunPodEndpointConfig(
-                name="minimal-endpoint",
-            ),
         )
 
     def test_minimal_deployment_config(self, minimal_deployment):
@@ -494,8 +468,6 @@ class TestRunPodDeployerEdgeCases:
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             gpu_types=[],
         )
 
@@ -509,15 +481,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["gpu_types"] == ()
+                deployment = call_kwargs["deployment"]
+                assert deployment.gpu_types == []
 
     def test_none_gpu_types(self):
         """Test deployment with default GPU types (not specified)."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             # gpu_types not specified, will use default empty list
         )
 
@@ -531,15 +502,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["gpu_types"] == ()
+                deployment = call_kwargs["deployment"]
+                assert deployment.gpu_types == []
 
     def test_empty_data_centers_list(self):
         """Test deployment with empty data centers list."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             data_centers=[],
         )
 
@@ -553,15 +523,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["data_centers"] == ()
+                deployment = call_kwargs["deployment"]
+                assert deployment.data_centers == []
 
     def test_custom_compute_type(self):
         """Test deployment with custom compute type."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             compute_type="spot",
         )
 
@@ -575,15 +544,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["compute_type"] == "spot"
+                deployment = call_kwargs["deployment"]
+                assert deployment.compute_type == "spot"
 
     def test_network_volume_id(self):
         """Test deployment with network volume ID."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             network_volume_id="volume-12345",
         )
 
@@ -597,15 +565,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["network_volume_id"] == "volume-12345"
+                deployment = call_kwargs["deployment"]
+                assert deployment.network_volume_id == "volume-12345"
 
     def test_workers_scaling_config(self):
         """Test deployment with worker scaling configuration."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             workers_min=1,
             workers_max=10,
         )
@@ -620,16 +587,15 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["workers_min"] == 1
-                assert call_kwargs["workers_max"] == 10
+                deployment = call_kwargs["deployment"]
+                assert deployment.workers_min == 1
+                assert deployment.workers_max == 10
 
     def test_timeout_configs(self):
         """Test deployment with timeout configurations."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             idle_timeout=10,
             execution_timeout=600,
         )
@@ -644,16 +610,15 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["idle_timeout"] == 10
-                assert call_kwargs["execution_timeout"] == 600
+                deployment = call_kwargs["deployment"]
+                assert deployment.idle_timeout == 10
+                assert deployment.execution_timeout == 600
 
     def test_flashboot_enabled(self):
         """Test deployment with flashboot enabled."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             flashboot=True,
         )
 
@@ -667,15 +632,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["flashboot"] is True
+                deployment = call_kwargs["deployment"]
+                assert deployment.flashboot is True
 
     def test_flashboot_disabled(self):
         """Test deployment with flashboot disabled."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             flashboot=False,
         )
 
@@ -689,15 +653,14 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["flashboot"] is False
+                deployment = call_kwargs["deployment"]
+                assert deployment.flashboot is False
 
     def test_multiple_gpu_types(self):
         """Test deployment with multiple GPU type preferences."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             gpu_types=["NVIDIA A100", "NVIDIA A40", "NVIDIA RTX A6000"],
         )
 
@@ -711,19 +674,18 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["gpu_types"] == (
+                deployment = call_kwargs["deployment"]
+                assert deployment.gpu_types == [
                     "NVIDIA A100",
                     "NVIDIA A40",
                     "NVIDIA RTX A6000",
-                )
+                ]
 
     def test_multiple_data_centers(self):
         """Test deployment with multiple data center preferences."""
         deployment = RunPodDeployment(
             docker=RunPodDockerConfig(username="user", registry="docker.io"),
             image=RunPodImageConfig(name="image", tag="tag"),
-            template=RunPodTemplateConfig(name="test-template"),
-            endpoint=RunPodEndpointConfig(name="test-endpoint"),
             data_centers=["US-CA-1", "US-TX-1", "EU-NL-1"],
         )
 
@@ -737,4 +699,5 @@ class TestRunPodDeployerEdgeCases:
                 deployer.apply(dry_run=False)
 
                 call_kwargs = mock_deploy.call_args[1]
-                assert call_kwargs["data_centers"] == ("US-CA-1", "US-TX-1", "EU-NL-1")
+                deployment = call_kwargs["deployment"]
+                assert deployment.data_centers == ["US-CA-1", "US-TX-1", "EU-NL-1"]

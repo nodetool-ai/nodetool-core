@@ -782,4 +782,3 @@ class TestSelfHostedDeployer:
             call_args = mock_ssh.execute.call_args[0][0]
             assert "--tail=50" in call_args
             assert "-f" in call_args
-

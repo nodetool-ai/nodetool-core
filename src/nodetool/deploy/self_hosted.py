@@ -107,11 +107,6 @@ class SelfHostedDeployer:
         self.state_manager = state_manager or StateManager()
         self.is_localhost = is_localhost(deployment.host)
 
-        if getattr(self.deployment, "proxy", None) is None:
-            raise ValueError(
-                "Self-hosted deployment must include a proxy specification"
-            )
-
     def _get_executor(self):
         """Get appropriate executor (SSH or local) based on host."""
         if self.is_localhost:

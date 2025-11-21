@@ -2162,69 +2162,45 @@ def deploy_add(name: str, deployment_type: str):
                 "SSH key path", type=str, default="~/.ssh/id_rsa"
             )
 
-            image_name = click.prompt(
-                "Docker image name", type=str, default="nodetool/nodetool"
-            )
-            image_tag = click.prompt("Docker image tag", type=str, default="latest")
-
             # Container configuration
             console.print()
-            console.print("[cyan]Add containers (press Ctrl+C when done):[/]")
-            containers = []
+            console.print("[cyan]Container configuration:[/]")
+            
+            container_name = click.prompt(
+                f"  Container name", type=str
+            )
+            container_port = click.prompt("  Port", type=int)
 
-            while True:
-                try:
-                    console.print()
-                    container_name = click.prompt(
-                        f"  Container #{len(containers) + 1} name", type=str
-                    )
-                    container_port = click.prompt("  Port", type=int)
-
-                    # Optional GPU
-                    use_gpu = click.confirm("  Assign GPU?", default=False)
-                    gpu = None
-                    if use_gpu:
-                        gpu = click.prompt(
-                            "  GPU device(s) (e.g., '0' or '0,1')", type=str
-                        )
-
-                    # Optional workflows
-                    has_workflows = click.confirm(
-                        "  Assign specific workflows?", default=False
-                    )
-                    workflows = None
-                    if has_workflows:
-                        workflows_str = click.prompt(
-                            "  Workflow IDs (comma-separated)", type=str
-                        )
-                        workflows = [w.strip() for w in workflows_str.split(",")]
-
-                    containers.append(
-                        ContainerConfig(
-                            name=container_name,
-                            port=container_port,
-                            gpu=gpu,
-                            workflows=workflows,
-                        )
-                    )
-
-                    if not click.confirm("  Add another container?", default=True):
-                        break
-
-                except click.exceptions.Abort:
-                    break
-
-            if not containers:
-                console.print(
-                    "[yellow]No containers configured. Adding default container.[/]"
+            # Optional GPU
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                gpu = click.prompt(
+                    "  GPU device(s) (e.g., '0' or '0,1')", type=str
                 )
-                containers.append(ContainerConfig(name="default", port=8000))
+
+            # Optional workflows
+            has_workflows = click.confirm(
+                "  Assign specific workflows?", default=False
+            )
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt(
+                    "  Workflow IDs (comma-separated)", type=str
+                )
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            container = ContainerConfig(
+                    name=container_name,
+                    port=container_port,
+                    gpu=gpu,
+                    workflows=workflows,
+                )
 
             deployment = SelfHostedDeployment(
                 host=host,
                 ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
-                image=ImageConfig(name=image_name, tag=image_tag),
-                containers=containers,
+                container=container,
             )
 
         elif deployment_type == "runpod":

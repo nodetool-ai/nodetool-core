@@ -162,7 +162,7 @@ class TestConfigSerialization:
                 "test-server": SelfHostedDeployment(
                     host="localhost",
                     ssh=SSHConfig(user="test", key_path="/tmp/key"),
-                    image=ImageConfig(name="test/image", tag="latest"),
+                    image=ImageConfig(name="nodetool/nodetool", tag="latest"),
                     container=ContainerConfig(name="default", port=8000),
                 )
             }

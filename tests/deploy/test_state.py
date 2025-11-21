@@ -357,7 +357,7 @@ class TestStateSnapshot:
 
         try:
             current_config = mock_load()
-            snapshot = create_state_snapshot(current_config)
+            snapshot = create_state_snapshot(current_config, config_path=config_path)
 
             assert "timestamp" in snapshot
             assert "version" in snapshot
@@ -409,7 +409,7 @@ class TestStateSnapshot:
 
         try:
             current_config = mock_load()
-            snapshot = create_state_snapshot(current_config)
+            snapshot = create_state_snapshot(current_config, config_path=config_path)
 
             # Change state
             manager.write_state(
@@ -421,7 +421,7 @@ class TestStateSnapshot:
             assert state["status"] == "error"
 
             # Restore from snapshot
-            restore_state_from_snapshot(snapshot)
+            restore_state_from_snapshot(snapshot, config_path=config_path)
 
             # Should be back to running
             state = manager.read_state("test-server")
@@ -469,7 +469,7 @@ class TestStateSnapshot:
 
         try:
             current_config = mock_load()
-            snapshot = create_state_snapshot(current_config)
+            snapshot = create_state_snapshot(current_config, config_path=config_path)
 
             # Change both states
             manager.write_state(
@@ -480,7 +480,9 @@ class TestStateSnapshot:
             )
 
             # Restore only test-server
-            restore_state_from_snapshot(snapshot, deployment_name="test-server")
+            restore_state_from_snapshot(
+                snapshot, deployment_name="test-server", config_path=config_path
+            )
 
             # test-server should be restored, test-server-2 should still be error
             state1 = manager.read_state("test-server")

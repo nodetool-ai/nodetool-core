@@ -35,6 +35,7 @@ from typing import Any, Dict, Optional
 
 from rich.console import Console
 
+from nodetool.config.deployment import GCPDeployment
 from .google_cloud_run_api import (
     deploy_to_cloud_run,
     enable_required_apis,
@@ -107,74 +108,45 @@ def infer_registry_from_region(region: str) -> str:
 
 
 def deploy_to_gcp(
-    service_name: str = "nodetool-service",
-    project_id: Optional[str] = None,
-    region: str = "us-central1",
-    registry: Optional[str] = None,
-    cpu: str = "4",
-    memory: str = "16Gi",
-    gpu_type: str | None = "nvidia-l4",
-    gpu_count: int = 1,
-    min_instances: int = 0,
-    max_instances: int = 3,
-    concurrency: int = 10,
-    timeout: int = 3600,
-    allow_unauthenticated: bool = False,
+    deployment: GCPDeployment,
     env: dict[str, str] | None = None,
-    docker_username: Optional[str] = None,
-    docker_registry: str = "docker.io",
-    image_name: Optional[str] = None,
-    tag: Optional[str] = None,
-    platform: str = "linux/amd64",
     skip_build: bool = False,
     skip_push: bool = False,
     skip_deploy: bool = False,
     no_cache: bool = False,
-    no_auto_push: bool = False,
     skip_permission_setup: bool = False,
-    service_account: Optional[str] = None,
-    gcs_bucket: Optional[str] = None,
-    gcs_mount_path: str = "/mnt/gcs",
 ) -> None:
     """
     Deploy nodetool service to Google Cloud Run infrastructure.
 
     This is the main deployment function that orchestrates the entire deployment process.
-
-    Args:
-        service_name: Name of the Cloud Run service
-        project_id: Google Cloud project ID
-        region: Google Cloud region
-        registry: Container registry to use (gcr.io or artifact registry)
-        cpu: CPU allocation for Cloud Run service
-        memory: Memory allocation for Cloud Run service
-        min_instances: Minimum number of instances
-        max_instances: Maximum number of instances
-        concurrency: Maximum concurrent requests per instance
-        timeout: Request timeout in seconds
-        allow_unauthenticated: Allow unauthenticated access
-        env_vars: Environment variables to set
-        docker_username: Docker Hub username (for base image builds)
-        docker_registry: Docker registry for building base image
-        image_name: Name for the Docker image
-        tag: Tag for the Docker image
-        platform: Docker build platform
-        skip_build: Skip Docker build
-        skip_push: Skip pushing to registry
-        skip_deploy: Skip deploying to Cloud Run
-        no_cache: Disable Docker cache optimization
-        no_auto_push: Disable automatic push during build
-        tools: List of tool names to enable for chat handler
     """
     env = env or {}
+    
+    service_name = deployment.service_name
+    project_id = deployment.project_id
+    region = deployment.region
+    registry = deployment.image.registry
+    cpu = deployment.resources.cpu
+    memory = deployment.resources.memory
+    # TODO: Add gpu support to GCPDeployment
+    gpu_type = None
+    gpu_count = 0
+    min_instances = deployment.resources.min_instances
+    max_instances = deployment.resources.max_instances
+    concurrency = deployment.resources.concurrency
+    timeout = deployment.resources.timeout
+    allow_unauthenticated = deployment.iam.allow_unauthenticated
+    image_name = deployment.image.repository
+    tag = deployment.image.tag
+    platform = deployment.image.build.platform
+    service_account = deployment.iam.service_account
+    gcs_bucket = deployment.storage.gcs_bucket if deployment.storage else None
+    gcs_mount_path = deployment.storage.gcs_mount_path if deployment.storage else "/mnt/gcs"
 
-    from .deploy import (
-        get_docker_username,
-    )
+
     from .docker import (
         build_docker_image,
-        format_image_name,
-        generate_image_tag,
         run_command,
     )
     # Note: No workflow embedding; generic builds only.
@@ -204,22 +176,14 @@ def deploy_to_gcp(
     else:
         console.print(f"Using provided registry: {registry}")
 
-    # Get Docker username for local builds
-    docker_username = get_docker_username(
-        docker_username, docker_registry, skip_build, skip_push
-    )
-
-    # Generate unique tag if not provided
-    if tag:
-        image_tag = tag
-        console.print(f"Using provided tag: {image_tag}")
-    else:
-        image_tag = generate_image_tag()
-        console.print(f"Generated unique tag: {image_tag}")
+    image_tag = tag
+    console.print(f"Using provided tag: {image_tag}")
 
     # Use service name as image name if not provided
     if not image_name:
         image_name = service_name
+    
+    local_image_name = f"{registry}/{project_id}/{image_name}"
 
     # Check if Docker is running
     if not skip_build:
@@ -228,14 +192,6 @@ def deploy_to_gcp(
         except Exception:
             console.print("[bold red]❌ Docker is not installed or not running[/]")
             sys.exit(1)
-
-    # Format image names for both local and cloud use
-    if docker_username:
-        local_image_name = format_image_name(
-            image_name, docker_username, docker_registry
-        )
-    else:
-        local_image_name = image_name
 
     console.print(f"Local image name: {local_image_name}")
 
