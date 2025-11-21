@@ -1,10 +1,8 @@
 import asyncio
 import atexit
 import os
-import shutil
 import sys
 import warnings
-from contextlib import suppress
 from typing import Any, Dict, List, Optional
 
 import click
@@ -13,44 +11,38 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from nodetool.api.workflow import from_model
-from nodetool.config.environment import Environment
-from nodetool.config.logging_config import get_logger
-from nodetool.config.settings import load_settings
-from nodetool.deploy.docker import (
-    generate_image_tag,
-)
-from nodetool.deploy.progress import ProgressManager
-from nodetool.deploy.runpod_api import GPUType
-from nodetool.dsl.codegen import create_dsl_modules
-from nodetool.dsl.export import graph_to_dsl_py, graph_to_gradio_py
-from nodetool.runtime.resources import ResourceScope, require_scope
-from nodetool.types.graph import Graph as ApiGraph
-
-# Add Rich for better tables and terminal output
-from nodetool.types.job import JobUpdate
-
 # Create console instance
 console = Console()
 
-# Global progress manager instance
-progress_manager = ProgressManager(console=console)
+_progress_manager: Optional["ProgressManager"] = None
+
+
+def _get_progress_manager() -> "ProgressManager":
+    """Lazily create and return the shared ProgressManager."""
+    global _progress_manager
+    if _progress_manager is None:
+        from nodetool.deploy.progress import ProgressManager
+
+        _progress_manager = ProgressManager(console=console)
+    return _progress_manager
 
 
 def cleanup_progress():
     """Cleanup function to ensure progress bars are stopped on exit and resources are freed."""
-    progress_manager.stop()
+    if _progress_manager is not None:
+        _progress_manager.stop()
 
 
 # Register cleanup function
 atexit.register(cleanup_progress)
 
 
-def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
+def _load_api_graph_for_export(workflow_id: str, user_id: str) -> "ApiGraph":
     """
     Retrieve a workflow graph for export, searching the database first and
     falling back to bundled examples.
     """
+    from nodetool.types.graph import Graph as ApiGraph
     from nodetool.models.workflow import Workflow as WorkflowModel
     from nodetool.packages.registry import Registry
 
@@ -84,33 +76,12 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     return asyncio.run(_load())
 
 warnings.filterwarnings("ignore")
-log = get_logger(__name__)
 
-# Define supported GPU types for RunPod REST API
-# SUPPORTED_GPU_TYPES = [
-#     "NVIDIA GeForce RTX 4090",
-#     "NVIDIA GeForce RTX 4080",
-#     "NVIDIA GeForce RTX 4070 Ti",
-#     "NVIDIA GeForce RTX 4070",
-#     "NVIDIA GeForce RTX 4060 Ti",
-#     "NVIDIA GeForce RTX 4060",
-#     "NVIDIA GeForce RTX 3090",
-#     "NVIDIA GeForce RTX 3080",
-#     "NVIDIA GeForce RTX 3070",
-#     "NVIDIA GeForce RTX 3060",
-#     "NVIDIA RTX A6000",
-#     "NVIDIA RTX A5000",
-#     "NVIDIA RTX A4000",
-#     "NVIDIA L40S",
-#     "NVIDIA L40",
-#     "NVIDIA L4",
-#     "NVIDIA A100 80GB PCIe",
-#     "NVIDIA A100 40GB PCIe",
-#     "NVIDIA H100 PCIe",
-#     "NVIDIA H100 SXM5",
-# ]
+def _get_supported_gpu_types() -> list[str]:
+    """Return list of supported GPU types from RunPod API."""
+    from nodetool.deploy.runpod_api import GPUType
 
-SUPPORTED_GPU_TYPES = GPUType.list_values()
+    return GPUType.list_values()
 
 
 @click.group()
@@ -270,6 +241,7 @@ def run(
     from typing import Any
 
     from nodetool.types.graph import Graph
+    from nodetool.types.job import JobUpdate
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
@@ -571,6 +543,8 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
     installed example workflows. Emits Python code that mirrors the graph using
     DSL node wrappers and connections.
     """
+    from nodetool.dsl.export import graph_to_dsl_py
+
     try:
         graph = _load_api_graph_for_export(workflow_id, user_id)
         code = graph_to_dsl_py(graph)
@@ -646,6 +620,8 @@ def gradio_export(
     queue: bool,
 ):
     """Export a workflow as a standalone Gradio app script."""
+    from nodetool.dsl.export import graph_to_gradio_py
+
     try:
         graph = _load_api_graph_for_export(workflow_id, user_id)
         code = graph_to_gradio_py(
@@ -823,6 +799,7 @@ def chat_client(
 
     import dotenv
 
+    from nodetool.config.environment import Environment
     from nodetool.chat.chat_client import run_chat_client
 
     dotenv.load_dotenv()
@@ -864,6 +841,7 @@ def secrets_list(user_id: str, limit: int) -> None:
     import asyncio
 
     from nodetool.models.secret import Secret
+    from nodetool.runtime.resources import ResourceScope
 
     async def _list() -> list[Secret]:
         async with ResourceScope():
@@ -900,6 +878,7 @@ def secrets_store(
     import asyncio
 
     from nodetool.models.secret import Secret
+    from nodetool.runtime.resources import ResourceScope
 
     secret_value: str = click.prompt(f"Enter value for secret '{key}'", hide_input=True)
 
@@ -923,10 +902,14 @@ def codegen_cmd():
 
     Scans node packages and generates Python code for type-safe workflow creation.
     Completely wipes and recreates src/nodetool/dsl/<namespace>/ directories."""
+    import shutil
+
     # Add the src directory to the Python path to allow relative imports
     src_dir = os.path.abspath("src")
     if src_dir not in sys.path:
         sys.path.append(src_dir)
+
+    from nodetool.dsl.codegen import create_dsl_modules
 
     base_nodes_path = os.path.join("src", "nodetool", "nodes")
     base_dsl_path = os.path.join("src", "nodetool", "dsl")
@@ -1349,6 +1332,7 @@ def download_hf(
             console.print(f"Ignore patterns: {', '.join(ignore_patterns)}")
         console.print(f"HTTP API Server: {server_url}")
         console.print()
+        manager = _get_progress_manager()
 
         try:
             # Execute via HTTP API
@@ -1364,7 +1348,7 @@ def download_hf(
                 ignore_patterns=list(ignore_patterns) if ignore_patterns else None,
                 allow_patterns=list(allow_patterns) if allow_patterns else None,
             ):
-                progress_manager._display_progress_update(progress_update)
+                manager._display_progress_update(progress_update)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -1406,6 +1390,7 @@ def download_ollama(
         console.print(f"Model: {model_name}")
         console.print(f"HTTP API Server: {server_url}")
         console.print()
+        manager = _get_progress_manager()
 
         try:
             # Execute via HTTP API
@@ -1417,7 +1402,7 @@ def download_ollama(
             async for progress_update in client.download_ollama_model(
                 model_name=model_name
             ):
-                progress_manager._display_progress_update(progress_update)
+                manager._display_progress_update(progress_update)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -1546,6 +1531,7 @@ def delete_hf(repo_id: str, server_url: str):
         console.print(f"Repository: {repo_id}")
         console.print(f"HTTP API Server: {server_url}")
         console.print()
+        manager = _get_progress_manager()
 
         if not click.confirm(
             f"Are you sure you want to delete {repo_id} from the cache?"
@@ -1561,7 +1547,7 @@ def delete_hf(repo_id: str, server_url: str):
 
             client = AdminHTTPClient(server_url, auth_token=api_key)
             result = await client.delete_huggingface_model(repo_id=repo_id)
-            progress_manager._display_progress_update(result)
+            manager._display_progress_update(result)
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
             import traceback
@@ -1658,10 +1644,11 @@ def _handle_list_options(
         CUDAVersion,
         DataCenter,
     )
+    supported_gpu_types = _get_supported_gpu_types()
 
     if list_gpu_types:
         console.print("[bold cyan]Available GPU Types:[/]")
-        for gpu_type in SUPPORTED_GPU_TYPES:
+        for gpu_type in supported_gpu_types:
             console.print(f"  {gpu_type}")
         sys.exit(0)
 
@@ -1683,7 +1670,7 @@ def _handle_list_options(
         for compute_type in ComputeType:
             console.print(f"  {compute_type.value}")
         console.print("\n[bold]GPU Types:[/]")
-        for gpu_type in SUPPORTED_GPU_TYPES:
+        for gpu_type in supported_gpu_types:
             console.print(f"  {gpu_type}")
         console.print("\n[bold]CPU Flavors:[/]")
         for cpu_flavor in CPUFlavor:
@@ -1740,6 +1727,7 @@ def _handle_docker_config_check(
         check_docker_auth,
         format_image_name,
         get_docker_username_from_config,
+        generate_image_tag,
     )
 
     console.print("🔍 Checking Docker configuration...")
@@ -1792,6 +1780,8 @@ def env_for_deploy(
     default_model: str,
 ):
     """Get environment variables for deploy."""
+    from nodetool.config.settings import load_settings
+
     # Parse comma-separated tools string into list
     env = {
         "CHAT_PROVIDER": chat_provider,
@@ -2695,15 +2685,16 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
 
     Automatically downloads referenced models (HuggingFace, Ollama) and syncs assets."""
     import asyncio
+    from contextlib import suppress
     from io import BytesIO
 
     from nodetool.api.workflow import from_model
-    from nodetool.config.environment import Environment
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.deploy.manager import DeploymentManager
     from nodetool.deploy.sync import extract_models
     from nodetool.models.asset import Asset as AssetModel
     from nodetool.models.workflow import Workflow
+    from nodetool.runtime.resources import require_scope
 
     async def extract_and_download_models(
         workflow_data: dict, client: AdminHTTPClient
@@ -3516,6 +3507,7 @@ def sync_workflow(workflow_id: str, server_url: str):
 
     import dotenv
 
+    from nodetool.api.workflow import from_model
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.models.workflow import Workflow
 
