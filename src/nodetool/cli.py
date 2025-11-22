@@ -1254,6 +1254,78 @@ def docs(output_dir: str, compact: bool, verbose: bool):
         sys.exit(1)
 
 
+@package.command("workflow-docs")
+@click.option(
+    "--examples-dir",
+    "-e",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    help="Directory containing workflow JSON examples",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    default="docs/workflows",
+    help="Directory where workflow documentation will be generated",
+)
+@click.option(
+    "--package-name",
+    "-p",
+    default=None,
+    help="Filter workflows by package name (optional)",
+)
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Enable verbose output"
+)
+def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, verbose: bool):
+    """Generate Jekyll documentation pages for workflow examples.
+
+    Creates markdown documentation with Mermaid diagrams for each workflow
+    example found in the examples directory. Each page includes:
+    - Workflow name, description, and tags
+    - Visual Mermaid diagram of the node graph
+    - Usage instructions
+
+    Examples:
+        # Generate docs for all workflows in a package
+        nodetool package workflow-docs -e src/nodetool/examples/nodetool-base -o docs/workflows
+
+        # Generate with verbose output
+        nodetool package workflow-docs -e examples/ -o docs/ --verbose
+
+        # Filter by package name
+        nodetool package workflow-docs -e examples/ -p nodetool-base
+    """
+    from nodetool.packages.gen_workflow_docs import generate_workflow_docs
+
+    try:
+        click.echo(f"Processing workflow examples from {examples_dir}...")
+
+        total_files, created_count = generate_workflow_docs(
+            examples_dir=examples_dir,
+            output_dir=output_dir,
+            package_filter=package_name,
+            verbose=verbose
+        )
+
+        click.echo(f"✅ Created {created_count} documentation pages in {output_dir}")
+
+        if package_name and created_count == 0:
+            click.echo(f"Note: No workflows found matching package '{package_name}'", err=True)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 # Add package group to the main CLI
 cli.add_command(package)
 
