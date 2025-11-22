@@ -628,48 +628,102 @@ class HFStableDiffusion(HuggingFaceModel):
     type: Literal["hf.stable_diffusion"] = "hf.stable_diffusion"
 
 
+class HFStableDiffusionCheckpoint(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_checkpoint"] = "hf.stable_diffusion_checkpoint"
+
+
 class HFStableDiffusionXL(HuggingFaceModel):
     type: Literal["hf.stable_diffusion_xl"] = "hf.stable_diffusion_xl"
+
+
+class HFStableDiffusionXLCheckpoint(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_xl_checkpoint"] = (
+        "hf.stable_diffusion_xl_checkpoint"
+    )
 
 
 class HFStableDiffusion3(HuggingFaceModel):
     type: Literal["hf.stable_diffusion_3"] = "hf.stable_diffusion_3"
 
 
+class HFStableDiffusion3Checkpoint(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_3_checkpoint"] = (
+        "hf.stable_diffusion_3_checkpoint"
+    )
+
+
 class HFStableDiffusionXLRefiner(HuggingFaceModel):
     type: Literal["hf.stable_diffusion_xl_refiner"] = "hf.stable_diffusion_xl_refiner"
+
+
+class HFStableDiffusionXLRefinerCheckpoint(HuggingFaceModel):
+    type: Literal["hf.stable_diffusion_xl_refiner_checkpoint"] = (
+        "hf.stable_diffusion_xl_refiner_checkpoint"
+    )
 
 
 class HFFlux(HuggingFaceModel):
     type: Literal["hf.flux"] = "hf.flux"
 
 
+class HFFluxCheckpoint(HuggingFaceModel):
+    type: Literal["hf.flux_checkpoint"] = "hf.flux_checkpoint"
+
+
 class HFFluxFP8(HuggingFaceModel):
     type: Literal["hf.flux_fp8"] = "hf.flux_fp8"
+
+
+class HFFluxFP8Checkpoint(HuggingFaceModel):
+    type: Literal["hf.flux_fp8_checkpoint"] = "hf.flux_fp8_checkpoint"
 
 
 class HFFluxKontext(HuggingFaceModel):
     type: Literal["hf.flux_kontext"] = "hf.flux_kontext"
 
 
+class HFFluxKontextCheckpoint(HuggingFaceModel):
+    type: Literal["hf.flux_kontext_checkpoint"] = "hf.flux_kontext_checkpoint"
+
+
 class HFFluxDepth(HuggingFaceModel):
     type: Literal["hf.flux_depth"] = "hf.flux_depth"
+
+
+class HFFluxDepthCheckpoint(HuggingFaceModel):
+    type: Literal["hf.flux_depth_checkpoint"] = "hf.flux_depth_checkpoint"
 
 
 class HFFluxRedux(HuggingFaceModel):
     type: Literal["hf.flux_redux"] = "hf.flux_redux"
 
 
+class HFFluxReduxCheckpoint(HuggingFaceModel):
+    type: Literal["hf.flux_redux_checkpoint"] = "hf.flux_redux_checkpoint"
+
+
 class HFFluxFill(HuggingFaceModel):
     type: Literal["hf.inpainting"] = "hf.inpainting"
+
+
+class HFFluxFillCheckpoint(HuggingFaceModel):
+    type: Literal["hf.inpainting_checkpoint"] = "hf.inpainting_checkpoint"
 
 
 class HFQwenImage(HuggingFaceModel):
     type: Literal["hf.qwen_image"] = "hf.qwen_image"
 
 
+class HFQwenImageCheckpoint(HuggingFaceModel):
+    type: Literal["hf.qwen_image_checkpoint"] = "hf.qwen_image_checkpoint"
+
+
 class HFQwenImageEdit(HuggingFaceModel):
     type: Literal["hf.qwen_image_edit"] = "hf.qwen_image_edit"
+
+
+class HFQwenImageEditCheckpoint(HuggingFaceModel):
+    type: Literal["hf.qwen_image_edit_checkpoint"] = "hf.qwen_image_edit_checkpoint"
 
 
 class HFControlNet(HuggingFaceModel):

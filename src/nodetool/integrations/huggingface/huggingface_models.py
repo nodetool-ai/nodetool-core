@@ -28,10 +28,7 @@ from nodetool.integrations.huggingface.artifact_inspector import (
     ArtifactDetection,
     inspect_paths,
 )
-from nodetool.integrations.huggingface.hf_fast_cache import (
-    DEFAULT_MODEL_INFO_CACHE_TTL,
-    HfFastCache,
-)
+from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -74,7 +71,12 @@ HF_DEFAULT_FILE_PATTERNS = [
 HF_PTH_FILE_PATTERNS = ["*.pth", "*.pt"]
 
 COMFY_REPO_PATTERNS = {
-    "flux": ["Comfy-Org/flux1-dev", "Comfy-Org/flux1-schnell"],
+    "flux": [
+        "Comfy-Org/flux1-dev",
+        "Comfy-Org/flux1-schnell",
+        "black-forest-labs/FLUX.1-dev",
+        "black-forest-labs/FLUX.1-schnell",
+    ],
     "flux_vae": ["ffxvs/vae-flux"],
     "qwen_image": ["Comfy-Org/Qwen-Image_ComfyUI", "city96/Qwen-Image-gguf"],
     "qwen_image_edit": ["Comfy-Org/Qwen-Image-Edit_ComfyUI"],
@@ -109,6 +111,16 @@ COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
     "hf.t5": [*COMFY_REPO_PATTERNS["sd35"]],
 }
 
+_CHECKPOINT_BASES = {
+    "hf.stable_diffusion": "hf.stable_diffusion_checkpoint",
+    "hf.stable_diffusion_xl": "hf.stable_diffusion_xl_checkpoint",
+    "hf.stable_diffusion_3": "hf.stable_diffusion_3_checkpoint",
+    "hf.stable_diffusion_xl_refiner": "hf.stable_diffusion_xl_refiner_checkpoint",
+    "hf.flux": "hf.flux_checkpoint",
+    "hf.qwen_image": "hf.qwen_image_checkpoint",
+    "hf.qwen_image_edit": "hf.qwen_image_edit_checkpoint",
+}
+
 HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.stable_diffusion": ["stable-diffusion", "sd15"],
     "hf.stable_diffusion_xl": ["sdxl", "stable-diffusion-xl"],
@@ -130,6 +142,10 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.clip": ["clip"],
     "hf.t5": ["t5"],
 }
+# Copy keyword matchers to checkpoint variants.
+for _base, _ckpt in _CHECKPOINT_BASES.items():
+    if _base in HF_TYPE_KEYWORD_MATCHERS and _ckpt not in HF_TYPE_KEYWORD_MATCHERS:
+        HF_TYPE_KEYWORD_MATCHERS[_ckpt] = list(HF_TYPE_KEYWORD_MATCHERS[_base])
 
 HF_FILE_PATTERN_TYPES = {
     "hf.text_to_image",
@@ -149,6 +165,11 @@ HF_FILE_PATTERN_TYPES = {
     "hf.lora_qwen_image",
     "hf.inpainting",
     "hf.outpainting",
+    "hf.stable_diffusion_checkpoint",
+    "hf.stable_diffusion_xl_checkpoint",
+    "hf.stable_diffusion_3_checkpoint",
+    "hf.stable_diffusion_xl_refiner_checkpoint",
+    "hf.flux_checkpoint",
     "hf.vae",
     "hf.unet",
     "hf.clip",
@@ -442,35 +463,15 @@ async def unified_model(
     size: int | None = None,
     user_id: str | None = None,
 ) -> UnifiedModel | None:
-    if model_info is None or model_info.siblings is None:
-        # Use HF_TOKEN from secrets if available for gated model downloads
-        token = await get_hf_token(user_id)
-        if token:
-            log.debug(
-                f"unified_model: Fetching model info for {model.repo_id} with HF_TOKEN (token length: {len(token)} chars)"
-            )
-            api = HfApi(token=token)
-        else:
-            log.debug(
-                f"unified_model: Fetching model info for {model.repo_id} without HF_TOKEN - gated models may not be accessible"
-            )
-            api = HfApi()
-        # Run blocking HfApi call in thread executor
-        model_info = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: api.model_info(model.repo_id, files_metadata=True)
-        )
-
-    # After this point, model_info is guaranteed to be not None
-    if model_info is None:
-        return None
+    """Build a UnifiedModel without hitting the HF Hub."""
 
     model_id = (
         f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
     )
 
-    if size is None:
+    # Without hub lookups, size and metadata may be missing; rely on provided info only.
+    if model_info is not None and size is None:
         if model.path:
-            # For single-file models, only get the size of the specific file
             size = next(
                 (
                     sib.size
@@ -479,16 +480,13 @@ async def unified_model(
                 ),
                 None,
             )
-            # Don't fall back to entire repo size for single-file models
-            # If the file size isn't found, keep it as None
         else:
-            # For multi-file models without a specific path, use total repo size
-            # Respect allow_patterns and ignore_patterns when calculating size
             size = size_on_disk(
                 model_info,
                 allow_patterns=model.allow_patterns,
                 ignore_patterns=model.ignore_patterns,
             )
+
     return UnifiedModel(
         id=model_id,
         repo_id=model.repo_id,
@@ -502,12 +500,12 @@ async def unified_model(
         readme=None,
         size_on_disk=size,
         downloaded=False,
-        pipeline_tag=model_info.pipeline_tag,
-        tags=model_info.tags,
-        has_model_index=has_model_index(model_info),
-        downloads=model_info.downloads,
-        likes=model_info.likes,
-        trending_score=model_info.trending_score,
+        pipeline_tag=model_info.pipeline_tag if model_info else None,
+        tags=model_info.tags if model_info else None,
+        has_model_index=has_model_index(model_info) if model_info else None,
+        downloads=model_info.downloads if model_info else None,
+        likes=model_info.likes if model_info else None,
+        trending_score=model_info.trending_score if model_info else None,
     )
 
 
@@ -570,48 +568,10 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
-    Fetches model info from the cache or Hugging Face API.
-    Uses nodetool's disk-based cache with 24-hour TTL for model metadata.
-
-    Args:
-        model_id (str): The ID of the model to fetch.
-
-    Returns:
-        ModelInfo: The model info, or None if not found.
+    Offline placeholder for model metadata; hub lookups are disabled.
     """
-    cache_key = f"model_info:{model_id}"
-    cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
-    if cached_result is not None:
-        log.debug(f"Cache hit for model info: {model_id}")
-        return cached_result
-
-    # Use HF_TOKEN from secrets if available for gated model downloads
-    # Note: user_id would need to be passed from caller context
-    token = await get_hf_token()
-    if token:
-        log.debug(
-            f"fetch_model_info: Fetching model info for {model_id} with HF_TOKEN (token length: {len(token)} chars)"
-        )
-        api = HfApi(token=token)
-    else:
-        log.debug(
-            f"fetch_model_info: Fetching model info for {model_id} without HF_TOKEN - gated models may not be accessible"
-        )
-        api = HfApi()
-
-    model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: api.model_info(model_id, files_metadata=True)
-    )
-
-    # # Store in cache for future use
-    HF_FAST_CACHE.model_info_cache.set(
-        cache_key,
-        model_info,
-        DEFAULT_MODEL_INFO_CACHE_TTL,
-    )
-    log.debug(f"Cached model info for: {model_id}")
-
-    return model_info
+    log.debug("fetch_model_info: hub lookups disabled, returning None for %s", model_id)
+    return None
 
 
 def model_type_from_model_info(
@@ -753,11 +713,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
 
     recommended_models = get_recommended_models()
     models: list[UnifiedModel] = []
-
-    model_infos = await asyncio.gather(
-        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
-        return_exceptions=True,  # Don't fail entire operation if one model fails
-    )
+    model_infos = [None for _ in repo_list]
 
     for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
         # Handle exceptions from individual fetch_model_info calls
@@ -804,7 +760,7 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.flux": {
         "tag": ["*flux*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": COMFY_REPO_PATTERNS["flux"],
+        "repo_pattern": [*COMFY_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.flux_fp8": {
         "tag": ["*flux*"],
@@ -815,7 +771,7 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*fp8*.pt",
             "*fp8*.pth",
         ],
-        "repo_pattern": COMFY_REPO_PATTERNS["flux"],
+        "repo_pattern": [*COMFY_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.qwen_image": {
         "tag": ["*qwen*"],
@@ -862,7 +818,14 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*unet*",
             "*stable-diffusion*",
         ],
-        "filename_pattern": ["*unet*.safetensors", "*unet*.bin", "*unet*.ckpt"],
+        "filename_pattern": [
+            "*unet*.safetensors",
+            "*unet*.bin",
+            "*unet*.ckpt",
+            "*flux*.safetensors",
+            "*flux*.bin",
+            "*flux*.ckpt",
+        ],
         "pipeline_tag": [],
     },
     "hf.vae": {
@@ -899,6 +862,30 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.outpainting": {"tag": ["*outpaint*"]},
 }
 
+# Derive checkpoint variants (single-file) from base configs.
+for _base, _ckpt in _CHECKPOINT_BASES.items():
+    if _base in HF_SEARCH_TYPE_CONFIG and _ckpt not in HF_SEARCH_TYPE_CONFIG:
+        _base_cfg = HF_SEARCH_TYPE_CONFIG[_base]
+        HF_SEARCH_TYPE_CONFIG[_ckpt] = {k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()}
+
+def get_supported_hf_types() -> list[tuple[str, bool]]:
+    """
+    Return supported hf.* model types and whether they have built-in search config.
+
+    The boolean indicates if the type has a predefined search configuration
+    (works without a task override). Types without a configuration can still be
+    used with get_models_by_hf_type when a task is provided.
+    """
+    configured: set[str] = set(HF_SEARCH_TYPE_CONFIG.keys()) | set(COMFY_TYPE_REPO_MATCHERS.keys())
+    task_only = set(HF_FILE_PATTERN_TYPES) - configured
+
+    supported: list[tuple[str, bool]] = []
+    for model_type in sorted(configured):
+        supported.append((model_type, True))
+    for model_type in sorted(task_only):
+        supported.append((model_type, False))
+    return supported
+
 GENERIC_HF_TYPES = {
     "hf.text_to_image",
     "hf.image_to_image",
@@ -911,6 +898,8 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
     if task:
         return task.replace("_", "-")
     slug = normalized_type[3:] if normalized_type.startswith("hf.") else normalized_type
+    if slug.endswith("_checkpoint"):
+        slug = slug[: -len("_checkpoint")]
     if slug in {
         "stable_diffusion",
         "stable_diffusion_xl",
@@ -995,6 +984,10 @@ def _matches_artifact_detection(
 
 def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     normalized_type = model_type.lower()
+    checkpoint_variant = None
+    if normalized_type.endswith("_checkpoint"):
+        checkpoint_variant = normalized_type
+        normalized_type = normalized_type[: -len("_checkpoint")]
     model_type_lower = (model.type or "").lower()
     repo_id = (model.repo_id or "").lower()
     repo_id_from_id = (model.id or "").split(":")[0].lower() if model.id else ""
@@ -1017,6 +1010,9 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
     if keywords and any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
         return True
+    path_lower = (model.path or "").lower()
+    if keywords and path_lower and any(keyword in path_lower for keyword in keywords):
+        return True
 
     derived_pipeline = _derive_pipeline_tag(normalized_type)
     if derived_pipeline and model.pipeline_tag == derived_pipeline:
@@ -1035,21 +1031,22 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
     config = _build_search_config_for_type(normalized_type, task)
     if config is None:
         return []
+    log.debug(
+        "get_models_by_hf_type: type=%s task=%s repo_pattern=%s filename_pattern=%s pipeline_tag=%s tags=%s authors=%s library_name=%s",
+        normalized_type,
+        task,
+        config.get("repo_pattern"),
+        config.get("filename_pattern"),
+        config.get("pipeline_tag"),
+        config.get("tag"),
+        config.get("author"),
+        config.get("library_name"),
+    )
 
-    skip_model_info = os.environ.get("HF_HUB_OFFLINE") == "1"
     repo_patterns = config.get("repo_pattern") or []
     literal_repo_ids = [
         repo for repo in repo_patterns if repo and not any(ch in repo for ch in ["*", "?", "["])
     ]
-    if skip_model_info and literal_repo_ids:
-        offline = _build_offline_models_for_repos(
-            literal_repo_ids,
-            normalized_type,
-            config.get("filename_pattern"),
-            config.get("pipeline_tag"),
-        )
-        if offline:
-            return offline
 
     pre_resolved_repos: list[tuple[str, Path]] = []
     if literal_repo_ids:
@@ -1061,40 +1058,67 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
                 root = None
             if root:
                 pre_resolved_repos.append((repo, Path(root)))
+    has_wildcards = any(any(ch in repo for ch in ["*", "?", "["]) for repo in repo_patterns)
+    pre_resolved_for_search = None if has_wildcards else (pre_resolved_repos or None)
 
-    try:
-        models = await asyncio.wait_for(
-            search_cached_hf_models(
-                repo_patterns=config.get("repo_pattern"),
-                filename_patterns=config.get("filename_pattern"),
-                pipeline_tags=config.get("pipeline_tag"),
-                tags=config.get("tag"),
-                authors=config.get("author"),
-                library_name=config.get("library_name"),
-                skip_model_info=skip_model_info,
-                pre_resolved_repos=pre_resolved_repos or None,
-            ),
-            timeout=20,
-        )
-    except asyncio.TimeoutError:
-        log.warning(
-            "get_models_by_hf_type timed out for %s; falling back to repo-level entries",
+    def _filter_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
+        filtered: list[UnifiedModel] = []
+        repo_only_types = {"hf.flux"}
+        file_only_types = {
+            "hf.unet",
+            "hf.vae",
+            "hf.clip",
+            "hf.t5",
+            "hf.stable_diffusion_checkpoint",
+            "hf.stable_diffusion_xl_checkpoint",
+            "hf.stable_diffusion_3_checkpoint",
+            "hf.stable_diffusion_xl_refiner_checkpoint",
+            "hf.flux_checkpoint",
+        }
+        checkpoint_types = set(_CHECKPOINT_BASES.values())
+        nested_checkpoint_types = {"hf.qwen_image_checkpoint", "hf.qwen_image_edit_checkpoint"}
+        seen: set[str] = set()
+        for model in models:
+            if model.id in seen:
+                continue
+            if normalized_type in file_only_types and getattr(model, "path", None) is None:
+                continue
+            if normalized_type in checkpoint_types:
+                if not model.path:
+                    continue
+                if "/" in model.path and normalized_type not in nested_checkpoint_types:
+                    continue
+            if normalized_type in repo_only_types and getattr(model, "path", None):
+                continue
+            if _matches_model_type(model, normalized_type):
+                try:
+                    model.type = normalized_type  # type: ignore[assignment]
+                except Exception:
+                    model = model.copy(update={"type": normalized_type})
+                filtered.append(model)
+                seen.add(model.id)
+        return filtered
+
+    # Offline-first search to avoid network dependency when cache is present.
+    offline_models = await search_cached_hf_models(
+        repo_patterns=config.get("repo_pattern"),
+        filename_patterns=config.get("filename_pattern"),
+        pipeline_tags=config.get("pipeline_tag"),
+        tags=config.get("tag"),
+        authors=config.get("author"),
+        library_name=config.get("library_name"),
+        pre_resolved_repos=pre_resolved_for_search,
+    )
+    offline_filtered = _filter_models(offline_models)
+    if offline_filtered:
+        log.debug(
+            "get_models_by_hf_type: returning %d models from offline cache (type=%s)",
+            len(offline_filtered),
             normalized_type,
         )
-        models = [_fallback_unified_model(repo_id, normalized_type) for repo_id in literal_repo_ids]
+        return offline_filtered
 
-    filtered: list[UnifiedModel] = []
-    repo_only_types = {"hf.flux"}
-    seen: set[str] = set()
-    for model in models:
-        if model.id in seen:
-            continue
-        if normalized_type in repo_only_types and getattr(model, "path", None):
-            continue
-        if _matches_model_type(model, normalized_type):
-            filtered.append(model)
-            seen.add(model.id)
-    return filtered
+    return offline_filtered
 
 
 def _fallback_unified_model(repo_id: str, model_type: str) -> UnifiedModel:
@@ -1233,6 +1257,12 @@ def _matches_any_pattern(value: str, patterns: list[str]) -> bool:
     return any(fnmatch(value, pattern) for pattern in patterns)
 
 
+def _matches_any_pattern_ci(value: str, patterns: list[str]) -> bool:
+    """Case-insensitive pattern match helper."""
+    value_lower = value.lower()
+    return any(fnmatch(value_lower, pattern.lower()) for pattern in patterns)
+
+
 def _repo_tags_match_patterns(repo_tags: list[str], patterns: list[str]) -> bool:
     if not patterns:
         return True
@@ -1259,7 +1289,8 @@ async def search_cached_hf_models(
     Search the Hugging Face cache by repo metadata and optional filename patterns.
     Returns matching repo entries and (optionally) file-level entries.
     """
-
+    # Always skip hub metadata to avoid network calls.
+    skip_model_info = True
     if pre_resolved_repos is not None:
         repo_list = list(pre_resolved_repos)
     else:
@@ -1283,17 +1314,20 @@ async def search_cached_hf_models(
 
     recommended_models = get_recommended_models()
     results: list[UnifiedModel] = []
-    requires_metadata = False if skip_model_info else any(
-        [pipeline_tag_patterns, tag_patterns, author_patterns, library_pattern]
+    requires_metadata = False
+    log.debug(
+        "search_cached_hf_models: repos=%s files=%s pipeline_tags=%s tags=%s authors=%s library=%s skip_info=%s pre_resolved=%d",
+        repo_pattern_list,
+        filename_pattern_list,
+        pipeline_tag_patterns,
+        tag_patterns,
+        author_patterns,
+        library_pattern,
+        skip_model_info,
+        len(repo_list),
     )
 
-    if skip_model_info:
-        model_infos = [None for _ in repo_list]
-    else:
-        model_infos = await asyncio.gather(
-            *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
-            return_exceptions=True,
-        )
+    model_infos = [None for _ in repo_list]
 
     for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
         info: ModelInfo | None
@@ -1303,7 +1337,7 @@ async def search_cached_hf_models(
         else:
             info = model_info
 
-        if repo_pattern_list and not _matches_any_pattern(repo_id, repo_pattern_list):
+        if repo_pattern_list and not _matches_any_pattern_ci(repo_id, repo_pattern_list):
             continue
 
         if requires_metadata and info is None:
@@ -1369,6 +1403,11 @@ async def search_cached_hf_models(
                 )
                 results.append(file_model)
 
+    log.debug(
+        "search_cached_hf_models: returning %d results (repos scanned=%d)",
+        len(results),
+        len(repo_list),
+    )
     return results
 
 
@@ -1378,29 +1417,9 @@ async def _filter_repos_by_metadata(
     tags: list[str] | None = None,
     predicate: Callable[[ModelInfo], bool] | None = None,
 ) -> list[tuple[str, Path, ModelInfo]]:
-    """Return repo tuples filtered by metadata before any file scans."""
-    tags = [tag.lower() for tag in (tags or [])]
-
-    repo_list = await HF_FAST_CACHE.discover_repos("model")
-    model_infos = await asyncio.gather(
-        *[fetch_model_info(repo_id) for repo_id, _ in repo_list],
-        return_exceptions=True,
-    )
-
-    filtered: list[tuple[str, Path, ModelInfo]] = []
-    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
-        if isinstance(model_info, BaseException) or model_info is None:
-            continue
-        if pipeline_tag and model_info.pipeline_tag != pipeline_tag:
-            continue
-        if library_name and model_info.library_name != library_name:
-            continue
-        if tags and not all(tag in (model_info.tags or []) for tag in tags):
-            continue
-        if predicate and not predicate(model_info):
-            continue
-        filtered.append((repo_id, repo_dir, model_info))
-    return filtered
+    """Metadata filtering is disabled (hub-free mode); return empty list."""
+    log.debug("_filter_repos_by_metadata: metadata filtering disabled")
+    return []
 
 
 async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
@@ -1415,12 +1434,15 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    filtered_repos = await _filter_repos_by_metadata(
-        pipeline_tag="text-generation", library_name="transformers", tags=["gguf"]
-    )
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_llamacpp_language_models_from_hf_cache: discover failed: {exc}")
+        return []
+
     results: list[LanguageModel] = []
 
-    for repo_id, _repo_dir, model_info in filtered_repos:
+    for repo_id, _repo_dir in repo_list:
         snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
         if not snapshot_dir:
             continue
@@ -1445,16 +1467,18 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
 
 
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
-    """Return LanguageModel entries tagged as vLLM in cached metadata files."""
-    filtered_repos = await _filter_repos_by_metadata(
-        pipeline_tag="text-generation", library_name="transformers", tags=["vllm"]
-    )
+    """Return LanguageModel entries based on cached weight files (hub-free)."""
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_vllm_language_models_from_hf_cache: discover failed: {exc}")
+        return []
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
 
     SUPPORTED_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth")
 
-    for repo_id, _repo_dir, _info in filtered_repos:
+    for repo_id, _repo_dir in repo_list:
         if repo_id in seen_repos:
             continue
         file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
@@ -1482,12 +1506,17 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    filtered_repos = await _filter_repos_by_metadata(
-        pipeline_tag="text-generation", library_name="mlx"
-    )
-    result: dict[str, LanguageModel] = {}
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_mlx_language_models_from_hf_cache: discover failed: {exc}")
+        return []
 
-    for repo_id, _repo_dir, _info in filtered_repos:
+    result: dict[str, LanguageModel] = {}
+    for repo_id, _repo_dir in repo_list:
+        repo_lower = repo_id.lower()
+        if "mlx" not in repo_lower:
+            continue
         display = repo_id.split("/")[-1]
         result[repo_id] = LanguageModel(
             id=repo_id,
@@ -1503,63 +1532,41 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
     """
-    def _is_image_repo(info: ModelInfo) -> bool:
-        if info.pipeline_tag in {"text-to-image", "image-to-image"}:
-            return True
-        return _repo_supports_diffusion_checkpoint(info)
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_text_to_image_models_from_hf_cache: discover failed: {exc}")
+        return []
 
-    filtered_repos = await _filter_repos_by_metadata(predicate=_is_image_repo)
     result: dict[str, ImageModel] = {}
-    repos_with_single_files: set[str] = set()
-
-    for repo_id, _repo_dir, model_info in filtered_repos:
+    for repo_id, _repo_dir in repo_list:
         snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
         if not snapshot_dir:
             continue
         file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        added_single_file = False
         for fname in file_list:
-            display = repo_id.split("/")[-1]
-        lower_name = fname.lower()
-        if lower_name.endswith(".gguf"):
+            if not _is_single_file_diffusion_weight(fname):
+                continue
             model_id = f"{repo_id}:{fname}"
-            repos_with_single_files.add(repo_id)
-            result.pop(repo_id, None)
+            display = f"{repo_id.split('/')[-1]} • {fname}"
             result[model_id] = ImageModel(
-                id=repo_id,
+                id=model_id,
                 name=display,
-                path=fname,
                 provider=Provider.HuggingFace,
                 supported_tasks=["text_to_image"],
             )
-            continue
-
-        if _is_single_file_diffusion_weight(fname):
-            # Include single-file checkpoints even if repo has model_index.json
-            # Prefer single-file versions over multi-file when available
-            if _repo_supports_diffusion_checkpoint(model_info):
-                model_id = f"{repo_id}:{fname}"
-                repos_with_single_files.add(repo_id)
-                # Remove multi-file entry if it exists - prefer single-file
-                result.pop(repo_id, None)
-                result[model_id] = ImageModel(
+            added_single_file = True
+        if added_single_file:
+            result.setdefault(
+                repo_id,
+                ImageModel(
                     id=repo_id,
-                    name=display,
-                    path=fname,
+                    name=repo_id.split("/")[-1],
                     provider=Provider.HuggingFace,
                     supported_tasks=["text_to_image"],
-                )
-                continue
-
-        # Skip multi-file entry if repo has single files (prefer single-file versions)
-        if repo_id in repos_with_single_files:
-            continue
-
-        result[repo_id] = ImageModel(
-            id=repo_id,
-            name=display,
-            provider=Provider.HuggingFace,
-            supported_tasks=["text_to_image"],
-        )
+                ),
+            )
 
     return list(result.values())
 
@@ -1569,63 +1576,41 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
     """
-    def _is_image_repo(info: ModelInfo) -> bool:
-        if info.pipeline_tag in {"image-to-image", "text-to-image"}:
-            return True
-        return _repo_supports_diffusion_checkpoint(info)
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_image_to_image_models_from_hf_cache: discover failed: {exc}")
+        return []
 
-    filtered_repos = await _filter_repos_by_metadata(predicate=_is_image_repo)
     result: dict[str, ImageModel] = {}
-    repos_with_single_files: set[str] = set()
-
-    for repo_id, _repo_dir, model_info in filtered_repos:
+    for repo_id, _repo_dir in repo_list:
         snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
         if not snapshot_dir:
             continue
         file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        added_single_file = False
         for fname in file_list:
-            display = repo_id.split("/")[-1]
-        lower_name = fname.lower()
-        if lower_name.endswith(".gguf"):
+            if not _is_single_file_diffusion_weight(fname):
+                continue
             model_id = f"{repo_id}:{fname}"
-            repos_with_single_files.add(repo_id)
-            result.pop(repo_id, None)
+            display = f"{repo_id.split('/')[-1]} • {fname}"
             result[model_id] = ImageModel(
-                id=repo_id,
+                id=model_id,
                 name=display,
-                path=fname,
                 provider=Provider.HuggingFace,
                 supported_tasks=["image_to_image"],
             )
-            continue
-
-        if _is_single_file_diffusion_weight(fname):
-            # Include single-file checkpoints even if repo has model_index.json
-            # Prefer single-file versions over multi-file when available
-            if _repo_supports_diffusion_checkpoint(model_info):
-                model_id = f"{repo_id}:{fname}"
-                repos_with_single_files.add(repo_id)
-                # Remove multi-file entry if it exists - prefer single-file
-                result.pop(repo_id, None)
-                result[model_id] = ImageModel(
+            added_single_file = True
+        if added_single_file:
+            result.setdefault(
+                repo_id,
+                ImageModel(
                     id=repo_id,
-                    name=display,
-                    path=fname,
+                    name=repo_id.split("/")[-1],
                     provider=Provider.HuggingFace,
                     supported_tasks=["image_to_image"],
-                )
-                continue
-
-        # Skip multi-file entry if repo has single files (prefer single-file versions)
-        if repo_id in repos_with_single_files:
-            continue
-
-        result[repo_id] = ImageModel(
-            id=repo_id,
-            name=display,
-            provider=Provider.HuggingFace,
-            supported_tasks=["image_to_image"],
-        )
+                ),
+            )
 
     return list(result.values())
 
@@ -1638,13 +1623,16 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     Returns:
         List[ImageModel]: MLX-compatible image models (mflux) discovered in the HF cache
     """
-    # Search for models with "mflux" tag - these are MLX-compatible image generation models
-    filtered_repos = await _filter_repos_by_metadata(
-        pipeline_tag="text-to-image", tags=["mflux"]
-    )
-    result: dict[str, ImageModel] = {}
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug(f"get_mlx_image_models_from_hf_cache: discover failed: {exc}")
+        return []
 
-    for repo_id, _repo_dir, _info in filtered_repos:
+    result: dict[str, ImageModel] = {}
+    for repo_id, _repo_dir in repo_list:
+        if "mflux" not in repo_id.lower():
+            continue
         display = repo_id.split("/")[-1]
         result[repo_id] = ImageModel(
             id=repo_id,

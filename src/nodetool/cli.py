@@ -3,7 +3,7 @@ import atexit
 import os
 import sys
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import click
 from rich.console import Console
@@ -15,6 +15,9 @@ from rich.text import Text
 console = Console()
 
 _progress_manager: Optional["ProgressManager"] = None
+
+if TYPE_CHECKING:
+    from nodetool.types.model import UnifiedModel
 
 
 def _get_progress_manager() -> "ProgressManager":
@@ -82,6 +85,43 @@ def _get_supported_gpu_types() -> list[str]:
     from nodetool.deploy.runpod_api import GPUType
 
     return GPUType.list_values()
+
+def _format_size(num_bytes: int | None) -> str:
+    """Format byte counts for human-friendly display."""
+    if num_bytes is None:
+        return "-"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(num_bytes)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def _print_model_table(models: list["UnifiedModel"], title: str) -> None:
+    """Render a simple table for UnifiedModel entries."""
+    table = Table(title=title)
+    table.add_column("ID", style="cyan")
+    table.add_column("Type", style="green")
+    table.add_column("Repo", style="magenta")
+    table.add_column("Path", style="yellow")
+    table.add_column("Downloaded", style="blue")
+    table.add_column("Size", style="white")
+    table.add_column("Pipeline", style="cyan")
+
+    for model in models:
+        table.add_row(
+            model.id,
+            model.type or "-",
+            model.repo_id or "-",
+            model.path or "-",
+            "yes" if model.downloaded else "no",
+            _format_size(model.size_on_disk),
+            model.pipeline_tag or "",
+        )
+
+    console.print(table)
 
 
 @click.group()
@@ -978,6 +1018,127 @@ def show_settings():
     # Display the table
     console.print(table)
 
+
+
+@cli.group()
+def model():
+    """Model discovery utilities for local caches and HF types."""
+    pass
+
+
+@model.command("list-hf")
+@click.argument("model_type", type=str)
+@click.option(
+    "--task",
+    help="Optional HuggingFace task name for generic types (e.g., text-to-speech).",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Limit number of rows shown.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output JSON instead of a table.",
+)
+def list_hf_models(model_type: str, task: str | None, limit: int | None, as_json: bool):
+    """List cached HuggingFace models for a given hf.* type."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        get_models_by_hf_type,
+    )
+
+    models: list["UnifiedModel"] = asyncio.run(get_models_by_hf_type(model_type, task))
+
+    if limit is not None:
+        models = models[:limit]
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps([model.model_dump() for model in models], indent=2))
+        return
+
+    if not models:
+        console.print(f"[yellow]No HuggingFace models found for type '{model_type}'.[/]")
+        return
+
+    _print_model_table(models, f"HuggingFace models for {model_type}")
+
+
+@model.command("hf-types")
+def list_hf_types():
+    """List hf.* types supported by the local HuggingFace cache search."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        get_supported_hf_types,
+    )
+
+    supported = get_supported_hf_types()
+    if not supported:
+        console.print("[yellow]No HuggingFace types are configured.[/]")
+        return
+
+    table = Table(title="Supported HuggingFace types")
+    table.add_column("Type", style="cyan")
+    table.add_column("Has preset search", style="green")
+    table.add_column("Notes", style="yellow")
+
+    for model_type, configured in supported:
+        table.add_row(
+            model_type,
+            "yes" if configured else "no",
+            "" if configured else "Requires --task to set pipeline/tag search",
+        )
+
+    console.print(table)
+
+
+@model.command("hf-cache")
+@click.option(
+    "--downloaded-only",
+    is_flag=True,
+    help="Only show models that are already downloaded to the cache.",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Limit number of rows shown.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output JSON instead of a table.",
+)
+def list_cached_hf_models(downloaded_only: bool, limit: int | None, as_json: bool):
+    """Inspect HuggingFace models discovered in the local cache."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        read_cached_hf_models,
+    )
+
+    models: list["UnifiedModel"] = asyncio.run(read_cached_hf_models())
+    if downloaded_only:
+        models = [model for model in models if model.downloaded]
+    if limit is not None:
+        models = models[:limit]
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps([model.model_dump() for model in models], indent=2))
+        return
+
+    if not models:
+        console.print("[yellow]No cached HuggingFace models found.[/]")
+        return
+
+    title = "Cached HuggingFace models"
+    if downloaded_only:
+        title += " (downloaded only)"
+    _print_model_table(models, title)
 
 
 # Package Commands Group
