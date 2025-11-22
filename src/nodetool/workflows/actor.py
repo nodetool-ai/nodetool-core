@@ -280,6 +280,7 @@ class NodeActor:
                 self.runner, node, context, capture_only=True
             )
             node_inputs = NodeInputs(inbox) if inbox is not None else None
+            restore_device = None
 
             if requires_gpu and self.runner.device != "cpu":
                 from nodetool.workflows.workflow_runner import (
