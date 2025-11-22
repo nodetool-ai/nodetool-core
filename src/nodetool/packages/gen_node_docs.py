@@ -37,11 +37,26 @@ def format_type_info(type_info: Any) -> str:
     Returns:
         Formatted type string
     """
+    from nodetool.metadata.type_metadata import TypeMetadata
+
+    # Handle TypeMetadata objects directly
+    if isinstance(type_info, TypeMetadata):
+        # Use __repr__() for nice formatting like "List[str]", "Optional[int]", etc.
+        return f"`{repr(type_info)}`"
+
+    # Handle string types
     if isinstance(type_info, str):
         return f"`{type_info}`"
+
+    # Handle dict representation (for backward compatibility)
     elif isinstance(type_info, dict):
         type_name = type_info.get("type", "any")
         return f"`{type_name}`"
+
+    # Try to get type attribute if it exists (e.g., Property or OutputSlot objects)
+    if hasattr(type_info, "type"):
+        return format_type_info(type_info.type)
+
     return "`any`"
 
 

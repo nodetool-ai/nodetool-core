@@ -68,6 +68,26 @@ register_setting(
     description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:8000)",
 )
 
+# Node-specific Supabase settings (kept separate from core SUPABASE_* credentials)
+register_setting(
+    package_name="nodetool",
+    env_var="NODE_SUPABASE_URL",
+    group="NodeSupabase",
+    description="Supabase project URL used by user-provided nodes (separate from core SUPABASE_URL)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="NODE_SUPABASE_SCHEMA",
+    group="NodeSupabase",
+    description="Optional schema for user/node Supabase tables (defaults to public when unset)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="NODE_SUPABASE_TABLE_PREFIX",
+    group="NodeSupabase",
+    description="Optional prefix applied to user/node Supabase tables to avoid clashes with core tables",
+)
+
 
 # Secrets
 register_secret(
@@ -159,6 +179,12 @@ register_secret(
     env_var="RUNPOD_COMFYUI_ENDPOINT_ID",
     group="RunPod",
     description="RunPod serverless endpoint ID for the ComfyUI worker (used by Comfy provider)",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="NODE_SUPABASE_KEY",
+    group="NodeSupabase",
+    description="Supabase service key for user-provided nodes (separate from core SUPABASE_KEY)",
 )
 register_secret(
     package_name="nodetool",

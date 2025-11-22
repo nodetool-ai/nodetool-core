@@ -19,7 +19,14 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import Error, NodeUpdate, OutputUpdate, PlanningUpdate, TaskUpdate, ToolCallUpdate
+from nodetool.workflows.types import (
+    Error,
+    NodeUpdate,
+    OutputUpdate,
+    PlanningUpdate,
+    TaskUpdate,
+    ToolCallUpdate,
+)
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
@@ -154,10 +161,7 @@ def create_graph(*graph_nodes: "GraphNode[Any]"):
     return Graph(nodes=nodes, edges=g.edges)
 
 
-async def run_graph_async(
-    graph: Graph,
-    **kwargs
-):
+async def run_graph_async(graph: Graph, **kwargs):
     """
     Run the workflow with the given graph.
 

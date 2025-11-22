@@ -101,6 +101,11 @@ Set the following to enable Supabase:
 - `SUPABASE_KEY` – a service role key (server-side only)
 - `ASSET_BUCKET` – Supabase Storage bucket used for assets (e.g. `assets`)
 - `ASSET_TEMP_BUCKET` – optional bucket for temporary assets (e.g. `assets-temp`)
+- Use a separate Supabase for user-provided nodes:
+  - `NODE_SUPABASE_URL` – user/node project URL (kept distinct from core `SUPABASE_URL`)
+  - `NODE_SUPABASE_KEY` – service role key for user/node data (kept distinct from core `SUPABASE_KEY`)
+  - `NODE_SUPABASE_SCHEMA` – optional schema for node tables (defaults to `public`)
+  - `NODE_SUPABASE_TABLE_PREFIX` – optional prefix applied to node tables to avoid collisions with core tables
 
 Behavior:
 
@@ -127,6 +132,7 @@ Security notes:
 | `S3_*` | S3-compatible storage settings | yes | Includes access keys and region |
 | `ASSET_BUCKET` / `ASSET_TEMP_BUCKET` | Asset buckets | no | Use signed URLs for private buckets |
 | `CHROMA_PATH` / `CHROMA_URL` / `CHROMA_TOKEN` | Vector DB config | `CHROMA_TOKEN` | Path defaults to local share |
+| `NODE_SUPABASE_URL` / `NODE_SUPABASE_KEY` / `NODE_SUPABASE_SCHEMA` / `NODE_SUPABASE_TABLE_PREFIX` | User/node Supabase config | `NODE_SUPABASE_KEY` | Kept separate from core Supabase credentials and tables |
 | `NODETOOL_ENABLE_TERMINAL_WS` | Opt-in terminal WebSocket | no | Leave unset in production |
 | `LOG_LEVEL` | Logging level | no | Defaults to `INFO` |
 | `RUNPOD_API_KEY` | RunPod deployments | yes | Used by CLI and providers |

@@ -36,6 +36,10 @@ DEFAULT_ENV = {
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
     "SUPABASE_KEY": None,
+    "NODE_SUPABASE_URL": None,
+    "NODE_SUPABASE_KEY": None,
+    "NODE_SUPABASE_SCHEMA": None,
+    "NODE_SUPABASE_TABLE_PREFIX": None,
 }
 
 NOT_GIVEN = object()
@@ -118,6 +122,7 @@ def load_dotenv_files():
         "POSTGRES_HOST",
         "POSTGRES_PORT",
         "SUPABASE_URL",
+        "NODE_SUPABASE_URL",
         "DB_PATH",
         "OLLAMA_API_URL",
         "CHROMA_PATH",
@@ -589,6 +594,34 @@ class Environment:
         return cls.get("SUPABASE_KEY")
 
     @classmethod
+    def get_node_supabase_url(cls):
+        """
+        Supabase URL for user-provided nodes (kept separate from core SUPABASE_URL).
+        """
+        return cls.get("NODE_SUPABASE_URL")
+
+    @classmethod
+    def get_node_supabase_key(cls):
+        """
+        Supabase service key for user-provided nodes (kept separate from core SUPABASE_KEY).
+        """
+        return cls.get("NODE_SUPABASE_KEY")
+
+    @classmethod
+    def get_node_supabase_schema(cls):
+        """
+        Optional schema name for user-provided nodes.
+        """
+        return cls.get("NODE_SUPABASE_SCHEMA")
+
+    @classmethod
+    def get_node_supabase_table_prefix(cls):
+        """
+        Optional prefix applied to user-provided node tables to avoid clashes with core tables.
+        """
+        return cls.get("NODE_SUPABASE_TABLE_PREFIX")
+
+    @classmethod
     def clear_thread_caches(cls):
         """
         Clear any thread-local caches.
@@ -599,4 +632,3 @@ class Environment:
         # Currently no thread-local caches in Environment
         # This method exists to prevent errors when called from threaded_event_loop
         pass
-
