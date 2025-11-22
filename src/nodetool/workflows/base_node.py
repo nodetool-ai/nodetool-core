@@ -114,7 +114,10 @@ from pydantic import BaseModel, Field, PrivateAttr
 from pydantic.fields import FieldInfo
 
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import unified_model
+from nodetool.integrations.huggingface.huggingface_models import (
+    fetch_model_info,
+    unified_model,
+)
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import (
     is_assignable,
@@ -703,14 +706,25 @@ class BaseNode(BaseModel):
         return []
 
     @classmethod
-    def unified_recommended_models(cls) -> list[UnifiedModel]:
+    def unified_recommended_models(
+        cls, include_model_info: bool = False
+    ) -> list[UnifiedModel]:
         recommended_models = cls.get_recommended_models()
         if not recommended_models:
             return []
 
+        async def build_model(model: HuggingFaceModel) -> UnifiedModel | None:
+            info = None
+            if include_model_info and model.repo_id:
+                try:
+                    info = await fetch_model_info(model.repo_id)
+                except Exception:
+                    info = None
+            return await unified_model(model, model_info=info)
+
         async def fetch_all_models():
             return await asyncio.gather(
-                *[unified_model(model) for model in recommended_models]
+                *(build_model(model) for model in recommended_models)
             )
 
         try:
@@ -736,7 +750,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def get_metadata(cls: Type["BaseNode"]):
+    def get_metadata(cls: Type["BaseNode"], include_model_info: bool = False):
         """
         Generate comprehensive metadata for the node class.
 
@@ -757,7 +771,9 @@ class BaseNode(BaseModel):
                 outputs=cls.outputs(),
                 the_model_info=cls.get_model_info(),
                 layout=cls.layout(),
-                recommended_models=cls.unified_recommended_models(),
+                recommended_models=cls.unified_recommended_models(
+                    include_model_info=include_model_info
+                ),
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),

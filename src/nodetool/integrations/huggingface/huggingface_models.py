@@ -28,7 +28,10 @@ from nodetool.integrations.huggingface.artifact_inspector import (
     ArtifactDetection,
     inspect_paths,
 )
-from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
+from nodetool.integrations.huggingface.hf_fast_cache import (
+    DEFAULT_MODEL_INFO_CACHE_TTL,
+    HfFastCache,
+)
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -92,6 +95,10 @@ COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
         *COMFY_REPO_PATTERNS["qwen_image_edit"],
     ],
     "hf.qwen_image_edit": [*COMFY_REPO_PATTERNS["qwen_image_edit"]],
+    "hf.qwen_vl": [
+        *COMFY_REPO_PATTERNS["qwen_image"],
+        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+    ],
     "hf.unet": [
         *COMFY_REPO_PATTERNS["flux"],
         *COMFY_REPO_PATTERNS["qwen_image"],
@@ -130,6 +137,7 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.flux_fp8": ["flux", "fp8"],
     "hf.qwen_image": ["qwen"],
     "hf.qwen_image_edit": ["qwen"],
+    "hf.qwen_vl": ["vl", "text_encoder", "text-encoder", "qwen"],
     "hf.controlnet": ["control"],
     "hf.controlnet_sdxl": ["control", "sdxl"],
     "hf.controlnet_flux": ["control", "flux"],
@@ -156,6 +164,7 @@ HF_FILE_PATTERN_TYPES = {
     "hf.stable_diffusion_3",
     "hf.qwen_image",
     "hf.qwen_image_edit",
+    "hf.qwen_vl",
     "hf.controlnet",
     "hf.controlnet_sdxl",
     "hf.controlnet_flux",
@@ -568,10 +577,32 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
-    Offline placeholder for model metadata; hub lookups are disabled.
+    Fetch model info from cache or the Hugging Face Hub (with caching).
     """
-    log.debug("fetch_model_info: hub lookups disabled, returning None for %s", model_id)
-    return None
+    cache_key = f"model_info:{model_id}"
+    cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
+    if cached_result is not None:
+        log.debug("Cache hit for model info: %s", model_id)
+        return cached_result
+
+    token = await get_hf_token()
+    api = HfApi(token=token) if token else HfApi()
+
+    try:
+        model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: api.model_info(model_id, files_metadata=True)
+        )
+    except Exception as exc:
+        log.debug("fetch_model_info: failed to fetch %s: %s", model_id, exc)
+        return None
+
+    HF_FAST_CACHE.model_info_cache.set(
+        cache_key,
+        model_info,
+        DEFAULT_MODEL_INFO_CACHE_TTL,
+    )
+    log.debug("Cached model info for: %s", model_id)
+    return model_info
 
 
 def model_type_from_model_info(
@@ -784,6 +815,14 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": COMFY_REPO_PATTERNS["qwen_image_edit"],
     },
+    "hf.qwen_vl": {
+        "tag": ["*qwen*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": [
+            *COMFY_REPO_PATTERNS["qwen_image"],
+            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        ],
+    },
     "hf.controlnet": {
         "repo_pattern": ["*control*"],
         "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
@@ -977,7 +1016,7 @@ def _matches_artifact_detection(
         return "refiner" in fam or ("sdxl" in fam and comp == "unet")
     if normalized_type == "hf.stable_diffusion_3":
         return "sd3" in fam or "stable-diffusion-3" in fam
-    if normalized_type == "hf.qwen_image":
+    if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"}:
         return "qwen" in fam
     return False
 
@@ -991,12 +1030,44 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     model_type_lower = (model.type or "").lower()
     repo_id = (model.repo_id or "").lower()
     repo_id_from_id = (model.id or "").split(":")[0].lower() if model.id else ""
+    path_lower = (model.path or "").lower()
 
+    def _is_qwen_text_encoder(path: str | None) -> bool:
+        if not path:
+            return False
+        return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
+
+    def _is_qwen_vae(path: str | None) -> bool:
+        if not path:
+            return False
+        return "vae" in path
+
+    qwen_family_types = {"hf.qwen_image", "hf.qwen_image_checkpoint"}
+    target_types = {normalized_type}
+    if checkpoint_variant:
+        target_types.add(checkpoint_variant)
+    model_type_base = (
+        model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
+    )
     if model_type_lower:
-        if model_type_lower == normalized_type:
+        if model_type_lower in target_types or model_type_base == normalized_type:
+            if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"} and (
+                _is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower)
+            ):
+                return False
             return True
         if model_type_lower not in GENERIC_HF_TYPES:
+            allowed_family = normalized_type in {"hf.qwen_image_checkpoint", "hf.qwen_vl", "hf.vae"} and (
+                model_type_lower in qwen_family_types
+            )
+            if not allowed_family:
+                return False
+
+    if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"}:
+        if _is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower):
             return False
+    if normalized_type == "hf.qwen_vl":
+        return _is_qwen_text_encoder(path_lower)
     if _matches_repo_for_type(normalized_type, repo_id, repo_id_from_id):
         return True
 
@@ -1010,7 +1081,6 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
     if keywords and any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
         return True
-    path_lower = (model.path or "").lower()
     if keywords and path_lower and any(keyword in path_lower for keyword in keywords):
         return True
 
@@ -1069,6 +1139,7 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
             "hf.vae",
             "hf.clip",
             "hf.t5",
+            "hf.qwen_vl",
             "hf.stable_diffusion_checkpoint",
             "hf.stable_diffusion_xl_checkpoint",
             "hf.stable_diffusion_3_checkpoint",

@@ -791,6 +791,9 @@ class HFCLIP(HuggingFaceModel):
 class HFT5(HuggingFaceModel):
     type: Literal["hf.t5"] = "hf.t5"
 
+class HFQwenVL(HuggingFaceModel):
+    type: Literal["hf.qwen_vl"] = "hf.qwen_vl"
+
 
 class HFCLIPVision(HuggingFaceModel):
     type: Literal["hf.clip_vision"] = "hf.clip_vision"

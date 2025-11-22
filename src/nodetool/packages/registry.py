@@ -47,12 +47,13 @@ Usage:
 """
 
 import asyncio
-import importlib
 import importlib.metadata
+import importlib
 import json
 import os
 import re
 import subprocess
+from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -64,13 +65,21 @@ import httpx
 import requests
 import tomli
 import tomlkit
+from huggingface_hub import ModelInfo
 from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_system_file_path
+from nodetool.integrations.huggingface.huggingface_models import (
+    fetch_model_info,
+    has_model_index,
+    model_type_from_model_info,
+    size_on_disk,
+)
 from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
 from nodetool.packages.types import AssetInfo, PackageInfo
+from nodetool.types.model import UnifiedModel
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.types.workflow import Workflow
 
@@ -83,6 +92,8 @@ REGISTRY_URL = (
     "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
 )
 DEFAULT_REGISTRY_REPO = "https://github.com/nodetool/package-registry.git"
+
+logger = get_logger(__name__)
 
 
 def json_serializer(obj: Any) -> dict:
@@ -254,7 +265,7 @@ class Registry:
         self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
         self._index_available = None  # Cache for package index availability
-        self.logger = get_logger(__name__)
+        self.logger = logger
 
     def list_installed_packages(self) -> List[PackageModel]:
         """List all installed node packages."""
@@ -1039,6 +1050,111 @@ class Registry:
         return matching_workflows
 
 
+def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | None:
+    """Calculate model size using HF metadata, respecting optional path filters."""
+    if model_info is None:
+        return None
+
+    if model.path:
+        return next(
+            (
+                getattr(sibling, "size", None)
+                for sibling in (model_info.siblings or [])
+                if getattr(sibling, "rfilename", None) == model.path
+            ),
+            None,
+        )
+
+    return size_on_disk(
+        model_info,
+        allow_patterns=model.allow_patterns,
+        ignore_patterns=model.ignore_patterns,
+    )
+
+
+async def _enrich_nodes_with_model_info(
+    nodes: list[NodeMetadata], verbose: bool = False
+) -> None:
+    """Fetch HF model metadata to populate recommended model details (size, tags, etc.)."""
+    repo_to_models: dict[str, list[UnifiedModel]] = defaultdict(list)
+    for node in nodes:
+        for model in node.recommended_models or []:
+            if model.repo_id:
+                repo_to_models[model.repo_id].append(model)
+
+    if not repo_to_models:
+        return
+
+    repo_ids = list(repo_to_models.keys())
+    results = await asyncio.gather(
+        *(fetch_model_info(repo_id) for repo_id in repo_ids),
+        return_exceptions=True,
+    )
+
+    model_info_map: dict[str, ModelInfo] = {}
+    for repo_id, info in zip(repo_ids, results, strict=False):
+        if isinstance(info, Exception):
+            if verbose:
+                logger.warning("Failed to fetch model info for %s: %s", repo_id, info)
+            continue
+        if info:
+            model_info_map[repo_id] = info
+
+    if not model_info_map:
+        return
+
+    for node in nodes:
+        if not node.recommended_models:
+            continue
+
+        updated_models: list[UnifiedModel] = []
+        for model in node.recommended_models:
+            if not model.repo_id:
+                updated_models.append(model)
+                continue
+
+            info = model_info_map.get(model.repo_id)
+            if not info:
+                updated_models.append(model)
+                continue
+
+            updates: dict[str, Any] = {}
+            if model.size_on_disk is None:
+                size = _model_size_from_info(model, info)
+                if size is not None:
+                    updates["size_on_disk"] = size
+
+            if model.type is None:
+                inferred_type = model_type_from_model_info(
+                    repo_to_models, model.repo_id, info
+                )
+                if inferred_type:
+                    updates["type"] = inferred_type
+
+            if model.pipeline_tag is None and getattr(info, "pipeline_tag", None):
+                updates["pipeline_tag"] = info.pipeline_tag
+            if model.tags is None and getattr(info, "tags", None):
+                updates["tags"] = info.tags
+            if model.has_model_index is None:
+                updates["has_model_index"] = has_model_index(info)
+            if model.downloads is None and getattr(info, "downloads", None) is not None:
+                updates["downloads"] = info.downloads
+            if model.likes is None and getattr(info, "likes", None) is not None:
+                updates["likes"] = info.likes
+            if (
+                model.trending_score is None
+                and getattr(info, "trending_score", None) is not None
+            ):
+                updates["trending_score"] = info.trending_score
+
+            if updates:
+                updated_models.append(model.model_copy(update=updates))
+            else:
+                updated_models.append(model)
+
+        node.recommended_models = updated_models
+
+
 def discover_node_packages() -> list[PackageModel]:
     """
     Discover all installed node packages by finding packages that start with 'nodetool-'.
@@ -1151,8 +1267,15 @@ def get_nodetool_package_source_folders() -> List[Path]:
     return source_folders
 
 
-def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
-    """Scan current directory for nodes and create package metadata."""
+def scan_for_package_nodes(
+    verbose: bool = False, fetch_model_info: bool = True
+) -> PackageModel:
+    """Scan current directory for nodes and create package metadata.
+
+    Args:
+        verbose: Enable verbose output during scanning.
+        fetch_model_info: Fetch Hugging Face model metadata to include sizes and tags for recommended models.
+    """
     import json
     import os
     import sys
@@ -1288,10 +1411,28 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
                 if node_classes:
                     assert package.nodes is not None
                     package.nodes.extend(
-                        node_class.get_metadata()
+                        node_class.get_metadata(include_model_info=False)
                         for node_class in node_classes
                         if node_class.is_visible()
                     )
+
+        if fetch_model_info and package.nodes:
+            try:
+                asyncio.run(
+                    _enrich_nodes_with_model_info(
+                        package.nodes, verbose=verbose  # type: ignore[arg-type]
+                    )
+                )
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(
+                        _enrich_nodes_with_model_info(
+                            package.nodes, verbose=verbose  # type: ignore[arg-type]
+                        )
+                    )
+                finally:
+                    loop.close()
 
         # Write the single nodes.json file in the root directory
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)
