@@ -1254,6 +1254,69 @@ def docs(output_dir: str, compact: bool, verbose: bool):
         sys.exit(1)
 
 
+@package.command("node-docs")
+@click.option(
+    "--output-dir",
+    "-o",
+    default="docs/nodes",
+    help="Directory where node documentation will be generated",
+)
+@click.option(
+    "--package-name",
+    "-p",
+    default=None,
+    help="Filter nodes by package name (optional)",
+)
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Enable verbose output"
+)
+def node_docs(output_dir: str, package_name: str | None, verbose: bool):
+    """Generate documentation pages for NodeTool nodes.
+
+    Discovers all installed nodes from the registry and generates
+    markdown documentation organized by namespace structure. Each node
+    page includes:
+    - Node type and description
+    - Input/output parameters
+    - Properties and configuration options
+    - Related nodes in the same namespace
+
+    Examples:
+        # Generate docs for all installed nodes
+        nodetool package node-docs -o docs/nodes
+
+        # Generate docs with verbose output
+        nodetool package node-docs -o docs/nodes --verbose
+
+        # Filter by package name
+        nodetool package node-docs -o docs/nodes -p nodetool-base
+    """
+    from nodetool.packages.gen_node_docs import generate_node_docs
+
+    try:
+        click.echo(f"Generating node documentation...")
+
+        total_nodes, created_files = generate_node_docs(
+            output_dir=output_dir,
+            package_filter=package_name,
+            verbose=verbose
+        )
+
+        click.echo(f"✅ Documented {total_nodes} nodes, created {created_files} files in {output_dir}")
+
+        if package_name:
+            click.echo(f"Filtered to package: {package_name}")
+
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 @package.command("workflow-docs")
 @click.option(
     "--examples-dir",
