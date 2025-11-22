@@ -202,6 +202,8 @@ DEFAULT_MAX_TOKEN_LIMIT: int = 4096
 MESSAGE_COMPRESSION_THRESHOLD: int = 4096
 MAX_TOOL_RESULT_CHARS: int = 20000
 VALID_COMPLETION_STATUSES: set[str] = {"completed", "complete", "done", "success"}
+JSON_FAILURE_ALERT_THRESHOLD: int = 3
+MAX_JSON_PARSE_FAILURES: int = 6
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 # Role
@@ -517,6 +519,7 @@ class SubTaskContext:
             MESSAGE_COMPRESSION_THRESHOLD,
         )
         self._output_result = None
+        self.json_parse_failures = 0
         self.display_manager = display_manager
         self.result_schema = self._load_result_schema()
 
@@ -841,16 +844,19 @@ class SubTaskContext:
 
         parsed = extract_json_from_message(message)
         if not isinstance(parsed, dict):
+            self._register_json_failure("Response did not contain a JSON object.")
             return False, None
 
         status_value = str(parsed.get("status", "")).strip().lower()
         if status_value not in VALID_COMPLETION_STATUSES:
+            self._register_json_failure("Missing or invalid status in completion JSON.")
             return False, None
 
         if "result" not in parsed:
             self._append_completion_feedback(
                 "Missing 'result' field in completion payload.", parsed
             )
+            self._register_json_failure("Completion JSON missing result field.")
             return False, None
 
         is_valid, error_detail, normalized_result = self._validate_result_payload(
@@ -861,6 +867,9 @@ class SubTaskContext:
             self._append_completion_feedback(
                 error_detail or "Result failed schema validation.",
                 parsed.get("result"),
+            )
+            self._register_json_failure(
+                error_detail or "Result failed schema validation."
             )
             return False, None
 
@@ -880,6 +889,32 @@ class SubTaskContext:
             result=normalized_result,
             is_task_result=self.use_finish_task,
         )
+
+    def _register_json_failure(self, detail: str) -> None:
+        """Track JSON parsing/validation failures and enforce a hard stop."""
+        self.json_parse_failures += 1
+        log.warning(
+            "Subtask %s JSON parse/validation failure %d/%d: %s",
+            self.subtask.id,
+            self.json_parse_failures,
+            MAX_JSON_PARSE_FAILURES,
+            detail,
+        )
+
+        if self.json_parse_failures == JSON_FAILURE_ALERT_THRESHOLD:
+            # Push a clear system nudge and force conclusion mode
+            reminder = (
+                "SYSTEM: Output must be a single compact JSON block exactly like "
+                '{"status":"completed","result":{...}} with no markdown, commentary, '
+                "or trailing text. Use valid JSON only."
+            )
+            self.history.append(Message(role="system", content=reminder))
+            self.in_conclusion_stage = True
+
+        if self.json_parse_failures >= MAX_JSON_PARSE_FAILURES:
+            raise ValueError(
+                f"Exceeded maximum JSON parse attempts ({MAX_JSON_PARSE_FAILURES}) for subtask {self.subtask.id}."
+            )
 
     def get_result(self) -> Any | None:
         """

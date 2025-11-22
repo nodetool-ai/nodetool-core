@@ -60,6 +60,9 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 log = get_logger(__name__)
 
+PLANNING_PHASE_MAX_TOKENS = 600
+PLAN_CREATION_MAX_TOKENS = 1200
+
 
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---
@@ -143,7 +146,8 @@ Understand the user objective, constraints, and assumptions. Describe what must 
    - Query/search patterns or navigation flows
    - Normalization, deduplication, and caps (e.g., max 10 items, ≤3 per source)
 3. Sketch the structured fields the discover subtask must return (array schema only).
-4. Call out risks and fallbacks.
+4. Decide if a dedicated data flow analysis phase is needed. Default to "no" unless dependencies/schema risks are unclear. Emit `data_flow_required: yes|no` with a 1-line reason.
+5. Call out risks and fallbacks.
 </instructions>
 
 <output_format>
@@ -158,10 +162,15 @@ Understand the user objective, constraints, and assumptions. Describe what must 
 - Expected item fields (list schema sketch)
 - Risks & fallback ideas
 </discovery_plan>
+
+<data_flow_requirement>
+- data_flow_required: yes|no
+- Reason (one line)
+</data_flow_requirement>
 </output_format>
 
 <constraints>
-- Keep outputs concise and structured
+- Keep outputs concise and structured (≤220 tokens)
 - No chain-of-thought
 - Do not define concrete subtasks yet
 </constraints>
@@ -217,6 +226,7 @@ digraph DataPipeline {
 <constraints>
 - Dependencies must form a DAG
 - Refer only to defined subtasks or input keys
+- Keep response concise (≤220 tokens)
 - No chain-of-thought
 </constraints>
 
@@ -445,6 +455,7 @@ class TaskPlanner:
         self.output_schema: Optional[dict] = output_schema
         self.enable_analysis_phase: bool = enable_analysis_phase
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
+        self._data_flow_requested: bool = False
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = display_manager
@@ -959,6 +970,7 @@ class TaskPlanner:
         is_enabled: bool,
         prompt_template: str,
         phase_result_name: str,
+        skip_reason: str | None = None,
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
         """Generic method to run a planning phase.
 
@@ -977,6 +989,7 @@ class TaskPlanner:
             is_enabled: Whether this phase is enabled.
             prompt_template: The template string to render for the prompt.
             phase_result_name: The name to use in the PlanningUpdate (e.g., "Analysis", "Data Flow").
+            skip_reason: Optional message to surface when a phase is skipped.
 
         Returns:
             A tuple containing:
@@ -991,9 +1004,16 @@ class TaskPlanner:
             log.debug("Skipping %s phase: disabled by global flag", phase_name)
             if self.display_manager:
                 self.display_manager.update_planning_display(
-                    phase_display_name, "Skipped", "Phase disabled by global flag."
+                    phase_display_name,
+                    "Skipped",
+                    skip_reason or "Phase disabled by global flag.",
                 )
-            return history, None
+            planning_update = PlanningUpdate(
+                phase=phase_result_name,
+                status="Skipped",
+                content=skip_reason or "Phase disabled by global flag.",
+            )
+            return history, planning_update
 
         log.debug("Generating %s prompt", phase_name)
         prompt_content: str = self._render_prompt(prompt_template)
@@ -1021,6 +1041,7 @@ class TaskPlanner:
                 messages=history,
                 model=self.model,
                 tools=available_tools,
+                max_tokens=PLANNING_PHASE_MAX_TOKENS,
             )
             history.append(response_message)
 
@@ -1076,6 +1097,53 @@ class TaskPlanner:
 
         return history, planning_update
 
+    def _extract_data_flow_requirement(self, content: str | None) -> bool:
+        """Detect whether analysis requested a data flow phase."""
+        if not content:
+            return False
+        affirmative = re.search(
+            r"data_flow_required\s*[:=]\s*(yes|true|required|need)",
+            content,
+            re.IGNORECASE,
+        )
+        if affirmative:
+            return True
+        negative = re.search(
+            r"data_flow_required\s*[:=]\s*(no|false|not needed|skip)",
+            content,
+            re.IGNORECASE,
+        )
+        if negative:
+            return False
+        return False
+
+    def _update_data_flow_requirement_from_analysis(
+        self, history: List[Message]
+    ) -> None:
+        """Set the data flow flag based on the analysis response."""
+        if not self.enable_data_contracts_phase:
+            self._data_flow_requested = False
+            return
+        if not history:
+            self._data_flow_requested = False
+            return
+
+        # Find the latest assistant message (analysis response)
+        analysis_message = next(
+            (msg for msg in reversed(history) if msg.role == "assistant"),
+            None,
+        )
+        content = self._format_message_content_for_update(analysis_message)
+        self._data_flow_requested = self._extract_data_flow_requirement(content)
+        log.debug(
+            "Data flow requirement after analysis: %s",
+            "requested" if self._data_flow_requested else "not requested",
+        )
+
+    def _should_run_data_flow_phase(self) -> bool:
+        """Determine if the data flow phase should execute."""
+        return self.enable_data_contracts_phase and self._data_flow_requested
+
     async def _run_analysis_phase(
         self, history: List[Message]
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
@@ -1098,7 +1166,7 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
-        return await self._run_phase(
+        history, update = await self._run_phase(
             history=history,
             phase_name="analysis",
             phase_display_name="0. Analysis",
@@ -1106,10 +1174,13 @@ class TaskPlanner:
             prompt_template=ANALYSIS_PHASE_TEMPLATE,
             phase_result_name="Analysis",
         )
+        # Capture whether downstream data flow analysis is required
+        self._update_data_flow_requirement_from_analysis(history)
+        return history, update
 
 
     async def _run_data_flow_phase(
-        self, history: List[Message]
+        self, history: List[Message], should_run: bool | None = None
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
         """Handles Phase 1: Data Flow Analysis.
 
@@ -1130,13 +1201,29 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
+        is_enabled = (
+            should_run
+            if should_run is not None
+            else self._should_run_data_flow_phase()
+        )
+        skip_reason = None
+        if not is_enabled:
+            if not self.enable_data_contracts_phase:
+                skip_reason = "Data flow phase disabled by configuration."
+            elif self.enable_analysis_phase:
+                skip_reason = (
+                    "Analysis phase indicated data flow analysis is not required."
+                )
+            else:
+                skip_reason = "Data flow analysis not requested."
         return await self._run_phase(
             history=history,
             phase_name="data flow",
             phase_display_name="2. Data Contracts",
-            is_enabled=self.enable_data_contracts_phase,
+            is_enabled=is_enabled,
             prompt_template=DATA_FLOW_ANALYSIS_TEMPLATE,
             phase_result_name="Data Flow",
+            skip_reason=skip_reason,
         )
 
     async def _run_plan_creation_phase(
@@ -1218,6 +1305,7 @@ class TaskPlanner:
                     messages=history,
                     model=self.model,
                     tools=[],  # No tools, expecting JSON in content
+                    max_tokens=PLAN_CREATION_MAX_TOKENS,
                 )
                 history.append(response_message)
                 final_message = response_message
@@ -1373,8 +1461,12 @@ class TaskPlanner:
             if self.display_manager:
                 self.display_manager.set_current_phase(current_phase)
             log.debug("Entering phase: %s", current_phase)
-            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            history, planning_update = await self._run_data_flow_phase(history)
+            should_run_data_flow = self._should_run_data_flow_phase()
+            if should_run_data_flow:
+                yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
+            history, planning_update = await self._run_data_flow_phase(
+                history, should_run=should_run_data_flow
+            )
             if planning_update:
                 yield planning_update
 
@@ -2533,6 +2625,7 @@ class TaskPlanner:
                 messages=history,
                 model=self.model,
                 tools=tools,
+                max_tokens=PLAN_CREATION_MAX_TOKENS,
             )
             history.append(
                 message

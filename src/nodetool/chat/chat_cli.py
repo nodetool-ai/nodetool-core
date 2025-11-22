@@ -35,6 +35,7 @@ from rich.align import Align
 from rich.columns import Columns  # Add Columns
 from rich.console import Console
 from rich.panel import Panel
+from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.table import Table
 from nodetool.runtime.resources import ResourceScope
@@ -73,12 +74,8 @@ from nodetool.agents.tools.serp_tools import (
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-from nodetool.metadata.types import LanguageModel, Message
+from nodetool.metadata.types import LanguageModel, Message, Provider
 
-# New imports
-from nodetool.ml.models.language_models import get_all_language_models
-
-# Existing imports
 from nodetool.providers import get_provider
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -158,7 +155,10 @@ class ChatCLI:
         # Store selected LanguageModel object and model ID preference
         self.language_models: List[LanguageModel] = []
         self.selected_model: Optional[LanguageModel] = None
-        self.model_id_from_settings: Optional[str] = "gpt-4o-mini"
+        self.model_id_from_settings: Optional[str] = None
+        self.selected_provider: Optional[Provider] = None
+        self._models_by_provider: dict[Provider, List[LanguageModel]] = {}
+        self._completer = None
 
         # Model attributes for agent config (can be overridden)
         # These might eventually also become LanguageModel selections
@@ -190,6 +190,8 @@ class ChatCLI:
         from nodetool.chat.commands.exit import ExitCommand
         from nodetool.chat.commands.help import HelpCommand
         from nodetool.chat.commands.model import ModelCommand, ModelsCommand
+        from nodetool.chat.commands.provider import ProviderCommand
+        from nodetool.chat.commands.providers import ProvidersCommand
         from nodetool.chat.commands.tools import (
             ToolDisableCommand,
             ToolEnableCommand,
@@ -207,6 +209,8 @@ class ChatCLI:
             AgentCommand(),
             DebugCommand(),
             UsageCommand(),
+            ProviderCommand(),
+            ProvidersCommand(),
             ToolsCommand(),
             ToolEnableCommand(),
             ToolDisableCommand(),
@@ -294,27 +298,6 @@ class ChatCLI:
 
     async def initialize(self):
         """Initialize async components and workspace with visual feedback."""
-        # Initialize components with progress indicators
-        async def load_language_models():
-            self.language_models = await get_all_language_models("1")
-
-            # Find and set the selected model based on loaded settings or default
-            found_model = None
-            if self.model_id_from_settings:
-                for model in self.language_models:
-                    if model.id == self.model_id_from_settings:
-                        found_model = model
-                        break
-                if not found_model:
-                    self.console.print(
-                        f"[bold yellow]Warning:[/bold yellow] Saved model ID '{self.model_id_from_settings}' not found. ",
-                        end="",
-                    )
-
-            self.selected_model = found_model
-
-        self._load_models_task = asyncio.create_task(load_language_models())
-
         # Initialize standard tools (tool modules keep heavy deps lazy inside their methods)
         self.all_tools = [
             AddLabelToEmailTool(),
@@ -354,27 +337,27 @@ class ChatCLI:
             tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)
         ]
 
-    async def setup_prompt_session(self):
-        """Set up prompt_toolkit session with completers and styling."""
-        # Create nested completer for commands
-        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
-        # Get model IDs from the loaded models
+    def _build_command_completer(self) -> NestedCompleter:
+        """Construct the nested completer with provider/model/tool suggestions."""
+        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(
+            self.commands.keys()
+        )
+        provider_names = [provider.value for provider in Provider]
         model_ids = [model.id for model in self.language_models]
-        # Get tool names for completion (use all_tools instead of just enabled tools)
         all_tool_names = [tool.name for tool in self.all_tools]
 
-        # Add special completers for commands with arguments
         command_completer["agent"] = WordCompleter(["on", "off"])
         command_completer["a"] = command_completer["agent"]
         command_completer["debug"] = WordCompleter(["on", "off"])
         command_completer["d"] = command_completer["debug"]
-        # Use model IDs for completion
-        command_completer["model"] = WordCompleter(model_ids)
+        command_completer["provider"] = WordCompleter(
+            provider_names, ignore_case=True
+        )
+        command_completer["pr"] = command_completer["provider"]
+        command_completer["model"] = WordCompleter(model_ids, ignore_case=True)
         command_completer["m"] = command_completer["model"]
-        # Use tool names for completion
         command_completer["tools"] = WordCompleter(all_tool_names, match_middle=True)
         command_completer["t"] = command_completer["tools"]
-        # Add completers for tool enable/disable commands
         enable_disable_completer = WordCompleter(
             [*all_tool_names, "all"], match_middle=True
         )
@@ -383,33 +366,103 @@ class ChatCLI:
         command_completer["disable"] = enable_disable_completer
         command_completer["dis"] = enable_disable_completer
 
-        # Create nested completer with commands prefixed with "/" and workspace commands
         prefixed_command_completer = {
             f"/{cmd}": completer for cmd, completer in command_completer.items()
         }
-        completer = NestedCompleter(
+        return NestedCompleter(
             {
-                **prefixed_command_completer,  # Use the prefixed commands
+                **prefixed_command_completer,
                 "pwd": None,
-                # Add PathCompleter for ls
                 "ls": PathCompleter(only_directories=False),
-                # Use PathCompleter for cd, suggesting only directories
                 "cd": PathCompleter(only_directories=True),
-                # Use PathCompleter for mkdir, suggesting only directories
                 "mkdir": PathCompleter(only_directories=True),
-                # Use PathCompleter for rm
                 "rm": PathCompleter(only_directories=False),
-                # Use PathCompleter for open
                 "open": PathCompleter(only_directories=False),
-                # Use PathCompleter for cat
                 "cat": PathCompleter(only_directories=False),
-                # Add completers for new commands
                 "cp": PathCompleter(only_directories=False),
                 "mv": PathCompleter(only_directories=False),
-                # grep pattern doesn't have standard completion, but path does
                 "grep": PathCompleter(only_directories=False),
             }
         )
+
+    def _refresh_completer(self) -> None:
+        """Rebuild and apply the completer (used when providers/models change)."""
+        self._completer = self._build_command_completer()
+        if hasattr(self, "session"):
+            self.session.completer = self._completer
+
+    async def load_models_for_provider(self, provider: Provider) -> list[LanguageModel]:
+        """Fetch and cache models for a single provider, updating current state."""
+        if provider in self._models_by_provider:
+            models = self._models_by_provider[provider]
+        else:
+            provider_instance = await get_provider(provider, user_id="1")
+            models = await provider_instance.get_available_language_models()
+            self._models_by_provider[provider] = models
+
+        if self.selected_provider == provider:
+            self.language_models = models
+            self._refresh_completer()
+        return models
+
+    def set_selected_model(self, model: LanguageModel) -> None:
+        """Select a model and align related configuration."""
+        self.selected_model = model
+        self.selected_provider = model.provider
+        self.model_id_from_settings = model.id
+        self.planner_model_id = model.id
+        self.summarization_model_id = model.id
+        self.retrieval_model_id = model.id
+        self._refresh_completer()
+
+    def set_selected_provider(self, provider: Provider) -> None:
+        """Switch providers without loading them immediately."""
+        if self.selected_provider != provider:
+            self.selected_provider = provider
+            self.selected_model = None
+            self.language_models = self._models_by_provider.get(provider, [])
+            self._refresh_completer()
+
+    async def ensure_selected_model(self) -> None:
+        """Ensure a selected model is available, loading provider models lazily."""
+        if self.selected_model:
+            return
+
+        if not self.selected_provider:
+            raise ValueError("No provider selected")
+
+        models = await self.load_models_for_provider(self.selected_provider)
+        if not models:
+            raise ValueError(
+                f"No models available for provider {self.selected_provider.value}"
+            )
+
+        target_id = self.model_id_from_settings
+        selected = None
+        if target_id:
+            for model in models:
+                if model.id == target_id:
+                    selected = model
+                    break
+
+        if not selected:
+            selected = models[0]
+            self.console.print(
+                "[bold yellow]Warning:[/bold yellow] Defaulting to first available "
+                f"model '{selected.id}' for provider '{self.selected_provider.value}'."
+            )
+
+        self.set_selected_model(selected)
+
+    async def setup_prompt_session(self):
+        """Set up prompt_toolkit session with completers and styling."""
+        if self.selected_provider:
+            await self.ensure_selected_model()
+        self._refresh_completer()
+        completer = self._completer
+        if completer is None:
+            completer = self._build_command_completer()
+            self._completer = completer
 
         # Create prompt style
         style = Style.from_dict(
@@ -476,7 +529,6 @@ class ChatCLI:
                 processor.is_processing = False
 
         processor_task = asyncio.create_task(process())
-        chunk_printed = False
         stream_buffer: list[str] = []
 
         try:
@@ -489,12 +541,11 @@ class ChatCLI:
                         content = message.get("content") or ""
                         done = message.get("done", False)
                         if content:
-                            chunk_printed = True
                             stream_buffer.append(content)
-                            self.console.print(content, end="", highlight=False)
-                        if done and chunk_printed:
-                            self.console.print()
-                            chunk_printed = False
+                        if done and stream_buffer:
+                            full = "".join(stream_buffer)
+                            self.console.print(Markdown(full))
+                            stream_buffer.clear()
 
                     elif message_type == "message":
                         try:
@@ -534,7 +585,16 @@ class ChatCLI:
                             and parsed.content
                             and not has_streaming_output
                         ):
-                            self.console.print(parsed.content)
+                            self.console.print(Markdown(parsed.content))
+                        elif (
+                            parsed.role == "assistant"
+                            and isinstance(parsed.content, dict)
+                            and not has_streaming_output
+                        ):
+                            # If assistant returned structured content, pretty-print as Markdown code block
+                            self.console.print(
+                                Markdown(f"```json\n{json.dumps(parsed.content, indent=2)}\n```")
+                            )
 
                         if self._should_store_message(parsed):
                             self.messages.append(parsed)
@@ -563,6 +623,7 @@ class ChatCLI:
 
     async def process_agent_response(self, problem: str):
         """Process input in agent mode using the messaging processors."""
+        await self.ensure_selected_model()
         if not self.selected_model:
             raise ValueError("Cannot process agent message without a selected model")
 
@@ -580,6 +641,7 @@ class ChatCLI:
 
     async def process_regular_message(self, user_input: str) -> None:
         """Process standard chat input using the regular message processor."""
+        await self.ensure_selected_model()
         if not self.selected_model:
             raise ValueError("Cannot process chat message without a selected model")
 
@@ -969,6 +1031,7 @@ class ChatCLI:
         settings = {
             # Save the selected model's ID
             "model_id": self.selected_model.id,
+            "provider": self.selected_model.provider.value,
             "agent_mode": self.agent_mode,
             "debug_mode": self.debug_mode,
             "enabled_tools": self.enabled_tools,  # Save tool enable/disable states
@@ -993,6 +1056,10 @@ class ChatCLI:
                 self.model_id_from_settings = settings.get(
                     "model_id", self.model_id_from_settings
                 )
+                provider_value = settings.get("provider")
+                if provider_value:
+                    with suppress(Exception):
+                        self.selected_provider = Provider(provider_value)
 
                 # Load other settings
                 self.agent_mode = settings.get("agent_mode", False)
@@ -1028,20 +1095,24 @@ class ChatCLI:
 
         # Display welcome message and settings with rich formatting
         settings_list = []
-        if self.selected_model:
-            settings_list.extend(
-                [
-                    f"[bold cyan]Provider:[/bold cyan] {self.selected_model.provider.value}",
-                    f"[bold cyan]Model:[/bold cyan] {self.selected_model.id}",
-                ]
-            )
-        else:
-            settings_list.extend(
-                [
-                    "[bold cyan]Provider:[/bold cyan] None",
-                    "[bold cyan]Model:[/bold cyan] None",
-                ]
-            )
+        provider_display = (
+            self.selected_model.provider.value
+            if self.selected_model
+            else self.selected_provider.value
+            if self.selected_provider
+            else "None"
+        )
+        model_display = (
+            self.selected_model.id
+            if self.selected_model
+            else self.model_id_from_settings or "None"
+        )
+        settings_list.extend(
+            [
+                f"[bold cyan]Provider:[/bold cyan] {provider_display}",
+                f"[bold cyan]Model:[/bold cyan] {model_display}",
+            ]
+        )
 
         enabled_tools_count = len([t for t in self.enabled_tools.values() if t])
         total_tools_count = len(self.all_tools)

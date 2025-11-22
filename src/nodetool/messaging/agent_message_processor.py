@@ -235,24 +235,27 @@ class AgentMessageProcessor(MessageProcessor):
                             f"Failed to send subtask_result message: {e}", exc_info=True
                         )
 
+            # Normalize final agent output to a markdown-friendly string
+            content: str
             if isinstance(agent.results, str):
-                await self.send_message(
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": agent.results,
-                        "thread_id": last_message.thread_id,
-                    }
-                )
+                content = agent.results
             elif isinstance(agent.results, dict):
-                await self.send_message(
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": agent.results.get("markdown", str(agent.results)),
-                        "thread_id": last_message.thread_id,
-                    }
-                )
+                markdown_value = agent.results.get("markdown")
+                if isinstance(markdown_value, str):
+                    content = markdown_value
+                else:
+                    content = str(agent.results)
+            else:
+                content = str(agent.results)
+
+            await self.send_message(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": content,
+                    "thread_id": last_message.thread_id,
+                }
+            )
 
             # Signal completion
             await self.send_message({"type": "chunk", "content": "", "done": True})
