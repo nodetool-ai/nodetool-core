@@ -956,6 +956,7 @@ CLASSNAME_TO_MODEL_TYPE = {
     "FluxFillPipeline": "hf.inpainting",
     "QwenImagePipeline": "hf.qwen_image",
     "QwenImageEditPlusPipeline": "hf.qwen_image_edit",
+    "NunchakuQwenImageTransformer2DModel": "hf.qwen_image",
 }
 
 

@@ -24,6 +24,7 @@ from huggingface_hub.hf_api import RepoFile
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
+from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
 
@@ -134,6 +135,7 @@ class DownloadManager:
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
         self.manager = Manager()
+        self.model_cache = ModelCache("model_info")
         self._token_initialized = token is not None
 
     @classmethod
@@ -368,5 +370,6 @@ class DownloadManager:
             self.logger.info(
                 "Purging HuggingFace model caches after successful download"
             )
+            self.model_cache.delete_pattern("cached_hf_*")
 
         await self.send_update(repo_id, path)

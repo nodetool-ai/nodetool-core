@@ -93,7 +93,11 @@ COMFY_REPO_PATTERNS = {
         "black-forest-labs/FLUX.1-schnell",
     ],
     "flux_vae": ["ffxvs/vae-flux"],
-    "qwen_image": ["Comfy-Org/Qwen-Image_ComfyUI", "city96/Qwen-Image-gguf"],
+    "qwen_image": [
+        "Comfy-Org/Qwen-Image_ComfyUI",
+        "city96/Qwen-Image-gguf",
+        "nunchaku-tech/nunchaku-qwen-image",
+    ],
     "qwen_image_edit": ["Comfy-Org/Qwen-Image-Edit_ComfyUI"],
     "sd35": ["Comfy-Org/stable-diffusion-3.5-fp8"],
 }
@@ -150,7 +154,7 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.stable_diffusion_3": ["sd3", "stable-diffusion-3"],
     "hf.flux": ["flux"],
     "hf.flux_fp8": ["flux", "fp8"],
-    "hf.qwen_image": ["qwen"],
+    "hf.qwen_image": ["qwen", "nunchaku"],
     "hf.qwen_image_edit": ["qwen"],
     "hf.qwen_vl": ["vl", "text_encoder", "text-encoder", "qwen"],
     "hf.controlnet": ["control"],
