@@ -11,7 +11,7 @@ production environments.
 import asyncio
 import gc
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator, ClassVar, Dict, NamedTuple
 
 import psutil
@@ -38,6 +38,15 @@ class MemorySnapshot(NamedTuple):
     process_rss_gb: float
 
 
+class VramSnapshot(NamedTuple):
+    """VRAM telemetry for the current process/device."""
+
+    percent: float
+    available_gb: float
+    total_gb: float
+    process_allocated_gb: float
+
+
 class ModelManager:
     """Manages ML model instances and their associations with nodes.
 
@@ -50,6 +59,10 @@ class ModelManager:
         _models_by_node (Dict[str, str]): Mapping of node IDs to model keys
         _locks (Dict[str, asyncio.Lock]): Per-model locks for thread-safe access
         _lock_creation_lock (asyncio.Lock): Lock for safely creating new per-model locks
+        _model_last_used (Dict[str, float]): Last-used timestamps per cached model key
+        _node_last_used (Dict[str, float]): Last-used timestamps per node ID
+        _model_device (Dict[str, str]): Known device for cached models (e.g., "cpu", "cuda:0")
+        _model_size_bytes (Dict[str, int]): Approximate model size in bytes when available
     """
 
     _models: ClassVar[Dict[str, Any]] = {}
@@ -57,9 +70,17 @@ class ModelManager:
     _locks: ClassVar[Dict[str, asyncio.Lock]] = {}
     _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
     _last_memory_cleanup: ClassVar[float] = 0.0
+    _model_last_used: ClassVar[Dict[str, float]] = {}
+    _node_last_used: ClassVar[Dict[str, float]] = {}
+    _model_device: ClassVar[Dict[str, str]] = {}
+    _model_size_bytes: ClassVar[Dict[str, int]] = {}
+    _last_vram_cleanup: ClassVar[float] = 0.0
     _DEFAULT_MAX_MEMORY_PERCENT: ClassVar[float] = 92.0
     _DEFAULT_MIN_AVAILABLE_GB: ClassVar[float] = 1.0
     _DEFAULT_MEMORY_COOLDOWN_SECONDS: ClassVar[float] = 30.0
+    _DEFAULT_MAX_VRAM_PERCENT: ClassVar[float] = 92.0
+    _DEFAULT_MIN_VRAM_AVAILABLE_GB: ClassVar[float] = 1.0
+    _DEFAULT_VRAM_COOLDOWN_SECONDS: ClassVar[float] = 30.0
 
     @classmethod
     def get_model(cls, model_id: str, task: str, path: str | None = None) -> Any:
@@ -77,6 +98,7 @@ class ModelManager:
             key = f"{model_id}_{task}_{path}"
             model = cls._models.get(key)
             if model is not None:
+                cls._update_model_metadata(key, model)
                 logger.info(
                     f"✓ Cache HIT: Retrieved cached model for {model_id} (task: {task}, path: {path})"
                 )
@@ -116,6 +138,7 @@ class ModelManager:
             was_existing = key in cls._models
             cls._models[key] = model
             cls._models_by_node[node_id] = key
+            cls._update_model_metadata(key, model, node_id=node_id)
 
             if was_existing:
                 logger.info(
@@ -210,6 +233,102 @@ class ModelManager:
             finally:
                 logger.debug(f"🔓 Releasing lock for model: {key}")
 
+    # ------------------------------------------------------------------
+    # Usage tracking helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _mark_model_used(cls, key: str, node_id: str | None = None) -> None:
+        """Record the last-used timestamp for a cached model and its node(s)."""
+
+        now = time.monotonic()
+        cls._model_last_used[key] = now
+
+        if node_id is not None:
+            cls._node_last_used[node_id] = now
+            return
+
+        for mapped_node_id, mapped_key in cls._models_by_node.items():
+            if mapped_key == key:
+                cls._node_last_used[mapped_node_id] = now
+
+    @classmethod
+    def _update_model_metadata(
+        cls, key: str, model: Any, node_id: str | None = None
+    ) -> None:
+        """Refresh usage and device metadata for a cached model."""
+
+        cls._mark_model_used(key, node_id=node_id)
+        needs_device = key not in cls._model_device or cls._model_device.get(key) == "unknown"
+        needs_size = key not in cls._model_size_bytes
+
+        if needs_device or needs_size:
+            device, size_bytes = cls._detect_torch_model_device_and_size(model)
+
+            if device != "unknown":
+                cls._model_device[key] = device
+            if size_bytes is not None:
+                cls._model_size_bytes[key] = size_bytes
+
+    @classmethod
+    def get_model_last_used(cls, model_id: str, task: str, path: str | None = None) -> float | None:
+        """Return the last-used timestamp for a cached model, if available."""
+
+        key = f"{model_id}_{task}_{path}"
+        return cls._model_last_used.get(key)
+
+    @classmethod
+    def get_least_recently_used_models(cls, limit: int | None = None) -> list[tuple[str, float]]:
+        """Return cached model keys ordered from least to most recently used."""
+
+        items = sorted(cls._model_last_used.items(), key=lambda item: item[1])
+        if limit is None or limit < 0:
+            return items
+        return items[:limit]
+
+    @classmethod
+    def get_least_recently_used_nodes(cls, limit: int | None = None) -> list[tuple[str, float]]:
+        """Return node IDs ordered from least to most recently used."""
+
+        items = sorted(cls._node_last_used.items(), key=lambda item: item[1])
+        if limit is None or limit < 0:
+            return items
+        return items[:limit]
+
+    # ------------------------------------------------------------------
+    # Metadata helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_torch_model_device_and_size(model: Any) -> tuple[str, int | None]:
+        """Best-effort detection of model device and approximate size.
+
+        Returns (device, size_bytes). Device is "unknown" when torch is not
+        installed or the model does not expose device metadata.
+        """
+
+        try:  # pragma: no cover - optional dependency
+            import torch  # type: ignore
+        except Exception:
+            return "unknown", None
+
+        try:
+            if hasattr(model, "parameters"):
+                params = list(model.parameters())  # type: ignore[attr-defined]
+                if params:
+                    device = str(params[0].device)
+                    size_bytes = sum(p.numel() * p.element_size() for p in params)
+                    return device, int(size_bytes)
+
+            if all(hasattr(model, attr) for attr in ("device", "numel", "element_size")):
+                device = str(model.device)  # type: ignore[attr-defined]
+                size_bytes = int(model.numel() * model.element_size())  # type: ignore[attr-defined]
+                return device, size_bytes
+        except Exception:
+            return "unknown", None
+
+        return "unknown", None
+
     @classmethod
     def clear_unused(cls, node_ids: list[str]):
         """Removes models that are no longer associated with active nodes.
@@ -246,6 +365,12 @@ class ModelManager:
                         cleared_locks += 1
                         logger.debug(f"🔒 Removed lock for cleared model: {key}")
 
+                    cls._model_last_used.pop(key, None)
+                    cls._model_device.pop(key, None)
+                    cls._model_size_bytes.pop(key, None)
+
+                cls._node_last_used.pop(node_id, None)
+
         if cleared_count > 0:
             logger.info(
                 f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}"
@@ -264,6 +389,10 @@ class ModelManager:
         model_count = len(cls._models)
         node_count = len(cls._models_by_node)
         lock_count = len(cls._locks)
+        last_used_count = len(cls._model_last_used)
+        node_usage_count = len(cls._node_last_used)
+        device_count = len(cls._model_device)
+        size_count = len(cls._model_size_bytes)
 
         # Log which models are being cleared
         if model_count > 0:
@@ -285,10 +414,24 @@ class ModelManager:
         cls._models.clear()
         cls._models_by_node.clear()
         cls._locks.clear()
+        cls._model_last_used.clear()
+        cls._node_last_used.clear()
+        cls._model_device.clear()
+        cls._model_size_bytes.clear()
 
         if model_count > 0:
             logger.info(
-                f"✅ Cache cleared successfully: {model_count} models removed, {lock_count} locks removed"
+                (
+                    "✅ Cache cleared successfully: %d models removed, %d locks removed,"
+                    " %d usage entries removed, %d node usage entries removed,"
+                    " %d device entries removed, %d size entries removed"
+                ),
+                model_count,
+                lock_count,
+                last_used_count,
+                node_usage_count,
+                device_count,
+                size_count,
             )
 
     # ------------------------------------------------------------------
@@ -430,3 +573,330 @@ class ModelManager:
     def _get_memory_cleanup_cooldown(cls) -> float:
         """Seconds to wait between automatic cleanups."""
         return max(cls._DEFAULT_MEMORY_COOLDOWN_SECONDS, 0.0)
+
+    # ------------------------------------------------------------------
+    # VRAM management helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def free_vram_if_needed(
+        cls,
+        *,
+        reason: str = "manual request",
+        required_free_gb: float | None = None,
+        aggressive: bool = False,
+    ) -> None:
+        """Ensure sufficient VRAM is available, offloading cached GPU models first."""
+
+        cls._ensure_vram_capacity(
+            reason=reason,
+            aggressive=aggressive,
+            required_free_gb=required_free_gb,
+        )
+
+    @classmethod
+    def _ensure_vram_capacity(
+        cls,
+        *,
+        reason: str,
+        aggressive: bool = False,
+        required_free_gb: float | None = None,
+    ) -> None:
+        if Environment.is_production():
+            return
+
+        snapshot = cls._capture_vram_snapshot()
+        if snapshot is None:
+            if aggressive:
+                logger.warning(
+                    "VRAM cleanup requested (%s) but telemetry unavailable. Clearing cached models.",
+                    reason,
+                )
+                cls.clear()
+                gc.collect()
+                cls._try_empty_cuda_cache()
+                cls._last_vram_cleanup = time.monotonic()
+            return
+
+        if not aggressive and not cls._needs_vram_cleanup(
+            snapshot, required_free_gb
+        ):
+            return
+
+        cooldown = cls._get_vram_cleanup_cooldown()
+        now = time.monotonic()
+        if (
+            not aggressive
+            and cooldown > 0
+            and (now - cls._last_vram_cleanup) < cooldown
+        ):
+            remaining = cooldown - (now - cls._last_vram_cleanup)
+            logger.debug(
+                "VRAM pressure detected but cleanup throttled for %.2fs (usage %.2f%%, %.2f GB free)",
+                max(remaining, 0.0),
+                snapshot.percent,
+                snapshot.available_gb,
+            )
+            return
+
+        target_free_gb = cls._target_vram_available_gb(snapshot, required_free_gb)
+        succeeded = cls._offload_gpu_models_until_free(
+            target_free_gb=target_free_gb,
+            snapshot=snapshot,
+            reason=reason,
+        )
+        cls._last_vram_cleanup = now
+
+        if aggressive and not succeeded:
+            logger.warning(
+                "VRAM cleanup (aggressive) did not free enough space. Clearing cached models. Reason: %s",
+                reason,
+            )
+            cls.clear()
+            gc.collect()
+            cls._try_empty_cuda_cache()
+
+    @classmethod
+    def _offload_gpu_models_until_free(
+        cls,
+        *,
+        target_free_gb: float,
+        snapshot: VramSnapshot,
+        reason: str,
+    ) -> bool:
+        """Move cached GPU models to CPU until target free VRAM is reached."""
+
+        try:  # pragma: no cover - optional dependency
+            import torch  # type: ignore
+        except Exception:
+            logger.debug("VRAM cleanup requested but torch is unavailable. Reason: %s", reason)
+            return False
+
+        if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
+            logger.debug(
+                "VRAM cleanup requested but CUDA is unavailable. Reason: %s",
+                reason,
+            )
+            return False
+
+        start_available = snapshot.available_gb
+        candidates: list[tuple[float, str, Any]] = []
+
+        for key in list(cls._models.keys()):
+            model = cls._models.get(key)
+            if model is None:
+                continue
+
+            detected_device, size_bytes = cls._detect_torch_model_device_and_size(
+                model
+            )
+            device = detected_device if detected_device != "unknown" else cls._model_device.get(key)
+
+            if detected_device != "unknown":
+                cls._model_device[key] = detected_device
+            if size_bytes is not None:
+                cls._model_size_bytes[key] = size_bytes
+
+            if not cls._is_cuda_device(device):
+                continue
+
+            last_used = cls._model_last_used.get(key, 0.0)
+            candidates.append((last_used, key, model))
+
+        if not candidates:
+            logger.debug(
+                "VRAM cleanup requested but no GPU-resident cached models found. Reason: %s",
+                reason,
+            )
+            return False
+
+        candidates.sort(key=lambda item: item[0])
+
+        available = start_available
+        offloaded_keys: list[str] = []
+
+        for _, key, model in candidates:
+            if available >= target_free_gb:
+                break
+
+            try:
+                if hasattr(model, "to"):
+                    model.to("cpu")  # type: ignore[attr-defined]
+                elif hasattr(model, "cpu"):
+                    model.cpu()  # type: ignore[attr-defined]
+                else:
+                    continue
+                cls._model_device[key] = "cpu"
+                offloaded_keys.append(key)
+                if key in cls._model_size_bytes:
+                    available += cls._model_size_bytes[key] / (1024**3)
+            except Exception as exc:
+                logger.debug("Failed to offload model %s to CPU: %s", key, exc)
+                continue
+
+        cls._try_empty_cuda_cache()
+        latest = cls._capture_vram_snapshot()
+        if latest is not None:
+            available = latest.available_gb
+
+        if offloaded_keys:
+            logger.warning(
+                "VRAM cleanup: Offloaded %d cached model(s) to CPU (free %.2f GB -> %.2f GB). Reason: %s. Keys: %s",
+                len(offloaded_keys),
+                start_available,
+                available,
+                reason,
+                ", ".join(offloaded_keys),
+            )
+        else:
+            logger.debug(
+                "VRAM cleanup did not offload any models. Reason: %s (available %.2f GB, target %.2f GB)",
+                reason,
+                available,
+                target_free_gb,
+            )
+
+        return available >= target_free_gb
+
+    @classmethod
+    def _capture_vram_snapshot(cls) -> VramSnapshot | None:
+        """Capture VRAM telemetry using torch when available, NVML otherwise."""
+
+        try:  # pragma: no cover - optional dependency
+            import torch  # type: ignore
+        except Exception:
+            return cls._capture_vram_snapshot_via_system_stats()
+
+        try:
+            if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
+                return cls._capture_vram_snapshot_via_system_stats()
+
+            torch.cuda.synchronize()
+
+            available_gb: float
+            total_gb: float
+
+            try:
+                free_bytes, total_bytes = torch.cuda.mem_get_info()  # type: ignore[attr-defined]
+                available_gb = float(free_bytes) / (1024**3)
+                total_gb = float(total_bytes) / (1024**3)
+            except Exception:
+                props = torch.cuda.get_device_properties(0)  # type: ignore[attr-defined]
+                total_gb = float(props.total_memory) / (1024**3)
+                allocated_bytes = float(torch.cuda.memory_allocated(0))  # type: ignore[attr-defined]
+                available_gb = max(total_gb - allocated_bytes / (1024**3), 0.0)
+
+            allocated_gb = float(torch.cuda.memory_allocated(0)) / (1024**3)  # type: ignore[attr-defined]
+            used_percent = (
+                ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
+            )
+
+            snapshot = VramSnapshot(
+                percent=used_percent,
+                available_gb=available_gb,
+                total_gb=total_gb,
+                process_allocated_gb=allocated_gb,
+            )
+            logger.debug(
+                "VRAM snapshot captured: %.2f%% used, %.2f GB available, process allocated %.2f GB",
+                snapshot.percent,
+                snapshot.available_gb,
+                snapshot.process_allocated_gb,
+            )
+            return snapshot
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to capture VRAM stats via torch: %s", exc)
+            return cls._capture_vram_snapshot_via_system_stats()
+
+    @classmethod
+    def _capture_vram_snapshot_via_system_stats(cls) -> VramSnapshot | None:
+        """Fallback VRAM telemetry using NVML via SystemStats, if available."""
+
+        try:
+            from nodetool.system.system_stats import get_system_stats
+        except Exception:  # pragma: no cover - avoid hard dependency
+            return None
+
+        try:
+            stats = get_system_stats()
+            if (
+                stats.vram_total_gb is None
+                or stats.vram_used_gb is None
+                or stats.vram_percent is None
+            ):
+                return None
+
+            available_gb = max(float(stats.vram_total_gb - stats.vram_used_gb), 0.0)
+            snapshot = VramSnapshot(
+                percent=float(stats.vram_percent),
+                available_gb=available_gb,
+                total_gb=float(stats.vram_total_gb),
+                process_allocated_gb=0.0,
+            )
+            logger.debug(
+                "VRAM snapshot captured via NVML: %.2f%% used, %.2f GB available",
+                snapshot.percent,
+                snapshot.available_gb,
+            )
+            return snapshot
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to capture VRAM stats via NVML/SystemStats: %s", exc)
+            return None
+
+    @classmethod
+    def _needs_vram_cleanup(
+        cls, snapshot: VramSnapshot, required_free_gb: float | None
+    ) -> bool:
+        max_percent, min_available = cls._get_vram_thresholds()
+        if snapshot.percent >= max_percent or snapshot.available_gb <= min_available:
+            return True
+        if required_free_gb is not None and snapshot.available_gb < required_free_gb:
+            return True
+        return False
+
+    @classmethod
+    def _target_vram_available_gb(
+        cls, snapshot: VramSnapshot, required_free_gb: float | None
+    ) -> float:
+        max_percent, min_available = cls._get_vram_thresholds()
+        target_from_percent = snapshot.total_gb * (1 - max_percent / 100.0)
+        target = max(min_available, target_from_percent)
+        if required_free_gb is not None:
+            target = max(target, required_free_gb)
+        return max(min(target, snapshot.total_gb), 0.0)
+
+    @classmethod
+    def _get_vram_thresholds(cls) -> tuple[float, float]:
+        max_percent = min(max(cls._DEFAULT_MAX_VRAM_PERCENT, 10.0), 99.0)
+        min_available = max(cls._DEFAULT_MIN_VRAM_AVAILABLE_GB, 0.0)
+        return max_percent, min_available
+
+    @classmethod
+    def _get_vram_cleanup_cooldown(cls) -> float:
+        return max(cls._DEFAULT_VRAM_COOLDOWN_SECONDS, 0.0)
+
+    @classmethod
+    def get_vram_snapshot(cls) -> VramSnapshot | None:
+        """Public helper to capture a VRAM snapshot."""
+
+        return cls._capture_vram_snapshot()
+
+    @staticmethod
+    def _is_cuda_device(device: str | None) -> bool:
+        if device is None:
+            return False
+        return device.startswith("cuda")
+
+    @staticmethod
+    def _try_empty_cuda_cache() -> None:
+        try:  # pragma: no cover - optional dependency
+            import torch  # type: ignore
+        except Exception:
+            return
+
+        if not hasattr(torch, "cuda"):
+            return
+
+        with suppress(Exception):
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()

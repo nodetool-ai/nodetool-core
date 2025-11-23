@@ -42,7 +42,9 @@ import logging
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
+from nodetool.ml.core.model_manager import ModelManager
 from nodetool.workflows.io import NodeInputs, NodeOutputs
+from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import NodeUpdate
 
 if TYPE_CHECKING:
@@ -272,6 +274,11 @@ class NodeActor:
 
                 await acquire_gpu_lock(node, context)
                 try:
+                    if is_cuda_available():
+                        ModelManager.free_vram_if_needed(
+                            reason=f"Preloading model for node {node._id}",
+                            required_free_gb=1.0,
+                        )
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
                     )
@@ -379,6 +386,11 @@ class NodeActor:
                 await acquire_gpu_lock(node, context)
 
                 try:
+                    if is_cuda_available():
+                        ModelManager.free_vram_if_needed(
+                            reason=f"Preloading model for node {node._id}",
+                            required_free_gb=1.0,
+                        )
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
                     )
@@ -588,6 +600,11 @@ class NodeActor:
 
                 await acquire_gpu_lock(node, ctx)
                 try:
+                    if is_cuda_available():
+                        ModelManager.free_vram_if_needed(
+                            reason=f"Preloading model for node {node._id}",
+                            required_free_gb=1.0,
+                        )
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
                     )

@@ -162,15 +162,34 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 try:
                     torch.cuda.synchronize()
                     vram_before_cleanup = self.get_available_vram()
-                    log.error(f"VRAM before cleanup: {vram_before_cleanup} GB")
+                    log.error(
+                        "VRAM before cleanup: %.2f GB",
+                        vram_before_cleanup / (1024**3),
+                    )
 
-                    ModelManager.clear()
+                    snapshot = ModelManager.get_vram_snapshot()
+                    target_free = None
+                    if snapshot is not None:
+                        target_free = max(4.0, snapshot.total_gb * 0.3)
+
+                    ModelManager.free_vram_if_needed(
+                        reason=(
+                            f"CUDA OOM for node {node.get_title()} ({node._id})"
+                        ),
+                        required_free_gb=target_free,
+                        aggressive=retries >= self.max_retries,
+                    )
                     gc.collect()
 
-                    torch.cuda.empty_cache()
-                    torch.cuda.ipc_collect()
-                    torch.cuda.synchronize()
-                    log.error(f"VRAM after cleanup: {self.get_available_vram()} GB")
+                    self.empty_cuda_cache()
+                    with suppress(RuntimeError, AttributeError):
+                        torch.cuda.ipc_collect()
+                        torch.cuda.synchronize()
+                    vram_after_cleanup = self.get_available_vram()
+                    log.error(
+                        "VRAM after cleanup: %.2f GB",
+                        vram_after_cleanup / (1024**3),
+                    )
                 except (RuntimeError, AttributeError):
                     # CUDA not available or not compiled, skip cleanup
                     pass
