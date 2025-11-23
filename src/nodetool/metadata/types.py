@@ -937,10 +937,25 @@ class HFLoraSDXLConfig(BaseType):
 
 CLASSNAME_TO_MODEL_TYPE = {
     "StableDiffusionPipeline": "hf.stable_diffusion",
+    "StableDiffusionImg2ImgPipeline": "hf.stable_diffusion",
+    "StableDiffusionInpaintPipeline": "hf.inpainting",
     "StableDiffusionXLPipeline": "hf.stable_diffusion_xl",
+    "StableDiffusionXLImg2ImgPipeline": "hf.stable_diffusion_xl",
+    "StableDiffusionXLInpaintPipeline": "hf.inpainting",
+    "StableDiffusionXLRefinerPipeline": "hf.stable_diffusion_xl_refiner",
     "StableDiffusionXLControlNetPipeline": "hf.stable_diffusion_xl",
     "StableDiffusionUpscalePipeline": "hf.stable_diffusion_upscale",
+    "StableDiffusion3Pipeline": "hf.stable_diffusion_3",
+    "StableDiffusion3Img2ImgPipeline": "hf.stable_diffusion_3",
+    "StableDiffusion3InpaintPipeline": "hf.inpainting",
     "PixArtAlphaPipeline": "hf.pixart_alpha",
+    "FluxPipeline": "hf.flux",
+    "FluxKontextPipeline": "hf.flux_kontext",
+    "FluxDepthPipeline": "hf.flux_depth",
+    "FluxReduxPipeline": "hf.flux_redux",
+    "FluxFillPipeline": "hf.inpainting",
+    "QwenImagePipeline": "hf.qwen_image",
+    "QwenImageEditPlusPipeline": "hf.qwen_image_edit",
 }
 
 

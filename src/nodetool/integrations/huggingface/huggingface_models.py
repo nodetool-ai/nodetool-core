@@ -1,16 +1,21 @@
 """
-Hugging Face model management utilities for interacting with cached models and the Hugging Face API.
+Offline-first Hugging Face model discovery and typing utilities.
 
-This module provides functionality to:
-- Fetch and cache model information from the Hugging Face API (using custom disk cache)
-- Fetch README files leveraging the built-in huggingface_hub cache system
-- Read and manage locally cached Hugging Face models
-- Determine model types based on model information and recommended models
-- Delete models from the local cache
+The workflow implemented here follows a predictable sequence:
+1. Enumerate cached repositories and snapshots via `HfFastCache` without hitting the hub.
+2. Read lightweight metadata (sizes, filenames, artifacts) from the local snapshot to
+   build `UnifiedModel` records for repos and individual files.
+3. Infer model type and task:
+   - Prefer package-provided recommendations.
+   - Use hub metadata when available (pipeline tags, tags, diffusers config `_class_name`).
+   - Fall back to local `model_index.json` / `config.json` parsing and artifact inspection
+     so we can classify models even when offline or gated.
+4. Provide targeted search helpers (by hf.* type, repo/file patterns, artifact hints) for
+   workflows and UI consumers.
+5. Expose convenience lookups for common runtimes (text-to-image, llama.cpp, vLLM, MLX).
 
-The module uses a hybrid caching approach:
-- Model info: Custom disk-based cache for API metadata to persist between sessions
-- README files: Leverages huggingface_hub's built-in cache system for efficiency
+Wherever possible, the code avoids expensive I/O and network calls, preferring cached
+information and shallow file inspections to keep UI interactions fast and reliable.
 """
 
 import asyncio
@@ -44,14 +49,17 @@ from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
 
+# Extensions that identify repo-root single-file diffusion checkpoints we surface directly.
 SINGLE_FILE_DIFFUSION_EXTENSIONS = (
     ".safetensors",
     ".ckpt",
     ".bin",
     ".pt",
     ".pth",
+    ".svdq",
 )
 
+# Tags that hint at single-file diffusion checkpoints when hub metadata is present.
 SINGLE_FILE_DIFFUSION_TAGS = {
     "diffusers",
     "diffusers:stablediffusionpipeline",
@@ -64,15 +72,19 @@ SINGLE_FILE_DIFFUSION_TAGS = {
 
 log = get_logger(__name__)
 
+# Default globs used when scanning repos for general-purpose weight files.
 HF_DEFAULT_FILE_PATTERNS = [
     "*.safetensors",
     "*.ckpt",
     "*.gguf",
     "*.bin",
+    "*.svdq",
 ]
 
+# Extra globs for torch weights common in control/adapters.
 HF_PTH_FILE_PATTERNS = ["*.pth", "*.pt"]
 
+# Explicit repo-id allowlists for ComfyUI-flavored model families.
 COMFY_REPO_PATTERNS = {
     "flux": [
         "Comfy-Org/flux1-dev",
@@ -86,6 +98,7 @@ COMFY_REPO_PATTERNS = {
     "sd35": ["Comfy-Org/stable-diffusion-3.5-fp8"],
 }
 
+# Map hf.* comfy types to repo-id allowlists so type matching can succeed offline.
 COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
     "hf.flux": [*COMFY_REPO_PATTERNS["flux"]],
     "hf.flux_fp8": [*COMFY_REPO_PATTERNS["flux"]],
@@ -118,6 +131,7 @@ COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
     "hf.t5": [*COMFY_REPO_PATTERNS["sd35"]],
 }
 
+# Base → checkpoint variant mapping so heuristics propagate to single-file checkpoints.
 _CHECKPOINT_BASES = {
     "hf.stable_diffusion": "hf.stable_diffusion_checkpoint",
     "hf.stable_diffusion_xl": "hf.stable_diffusion_xl_checkpoint",
@@ -128,6 +142,7 @@ _CHECKPOINT_BASES = {
     "hf.qwen_image_edit": "hf.qwen_image_edit_checkpoint",
 }
 
+# Keyword hints across repo id/tags/paths to associate models with hf.* types.
 HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.stable_diffusion": ["stable-diffusion", "sd15"],
     "hf.stable_diffusion_xl": ["sdxl", "stable-diffusion-xl"],
@@ -155,6 +170,7 @@ for _base, _ckpt in _CHECKPOINT_BASES.items():
     if _base in HF_TYPE_KEYWORD_MATCHERS and _ckpt not in HF_TYPE_KEYWORD_MATCHERS:
         HF_TYPE_KEYWORD_MATCHERS[_ckpt] = list(HF_TYPE_KEYWORD_MATCHERS[_base])
 
+# hf.* types that should trigger filename-based searches when building search configs.
 HF_FILE_PATTERN_TYPES = {
     "hf.text_to_image",
     "hf.image_to_image",
@@ -192,6 +208,7 @@ HF_FILE_PATTERN_TYPES = {
     "hf.text_generation",
     "hf.sentence_similarity",
 }
+# Cache key/TTL used to memoize full cached-model listings to speed UI refreshes.
 CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
 CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
@@ -200,20 +217,25 @@ CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
 
 class RepoPackagingHint(str, Enum):
-    """Hint describing how a HF repo should be presented to the user."""
+    """
+    Hint describing how a HF repo should be presented to the user.
+
+    - `REPO_BUNDLE` means treat the repo as a single installable unit (typical diffusers).
+    - `PER_FILE` exposes individual weights (gguf, adapters, quant variants).
+    - `UNKNOWN` indicates insufficient signal; callers can pick a sensible default.
+    """
 
     REPO_BUNDLE = "repo_bundle"  # Treat repo as a single unit (diffusers-style)
     PER_FILE = "per_file"  # Present independent model files (gguf, loras, adapters)
     UNKNOWN = "unknown"  # Not enough signal to decide
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
-    """Get HF_TOKEN from environment variables or database secrets (async).
+    """
+    Resolve an HF access token from env or per-user secrets.
 
-    Args:
-        user_id: Optional user ID. If not provided, will try to get from ResourceScope if available.
-
-    Returns:
-        HF_TOKEN if available, None otherwise.
+    This keeps hub calls working for gated models without forcing callers to
+    know where tokens are stored. The lookup is async because secrets may live
+    in a database behind an async provider.
     """
 
     token = os.environ.get("HF_TOKEN")
@@ -231,21 +253,24 @@ HF_FAST_CACHE = HfFastCache()
 # GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
 # MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
 
+# Map transformer `model_type` values to hf.* types when configs are parsed offline.
+_CONFIG_MODEL_TYPE_MAPPING = {
+    "whisper": "hf.automatic_speech_recognition",
+}
+
 
 def size_on_disk(
     model_info: ModelInfo,
     allow_patterns: list[str] | None = None,
     ignore_patterns: list[str] | None = None,
 ) -> int:
-    """Calculate the total size of files matching the given patterns.
+    """
+    Calculate the total size of cached files for a repo using only hub metadata.
 
-    Args:
-        model_info: ModelInfo object containing siblings list
-        allow_patterns: List of patterns to allow (Unix shell-style wildcards)
-        ignore_patterns: List of patterns to ignore (Unix shell-style wildcards)
-
-    Returns:
-        Total size in bytes of matching files
+    The function intentionally works off of the `siblings` entries in the
+    `ModelInfo` payload instead of hitting the filesystem so we can quickly
+    size repos that may not be downloaded locally. Optional allow/ignore
+    patterns mimic the client-side filters we use when listing files.
     """
     siblings = model_info.siblings or []
     total_size = 0
@@ -273,12 +298,14 @@ def size_on_disk(
 
 
 def has_model_index(model_info: ModelInfo) -> bool:
+    """Return True when hub metadata lists a `model_index.json` sibling."""
     return any(
         sib.rfilename == "model_index.json" for sib in (model_info.siblings or [])
     )
 
 
 # Packaging heuristics ---------------------------------------------------------
+# Filenames/extensions used to decide whether weights belong to a bundle or per-file list.
 _WEIGHT_EXTENSIONS = (
     ".safetensors",
     ".bin",
@@ -288,6 +315,7 @@ _WEIGHT_EXTENSIONS = (
     ".gguf",
     ".ggml",
     ".onnx",
+    ".svdq",
 )
 _INDEX_FILENAMES = {
     "model.safetensors.index.json",
@@ -295,6 +323,7 @@ _INDEX_FILENAMES = {
     "model.bin.index.json",
     "model.index.json",
 }
+# Size/keyword thresholds that help spot adapters vs base weights.
 _SMALL_ADAPTER_MAX_BYTES = 30 * 1024 * 1024
 _QUANT_MARKERS = (
     "gptq",
@@ -307,6 +336,7 @@ _QUANT_MARKERS = (
     "q5",
     "q6",
     "q8",
+    "svdq",
 )
 _ADAPTER_MARKERS = (
     "lora",
@@ -325,6 +355,14 @@ def detect_repo_packaging(
     model_info: ModelInfo | None,
     file_entries: Sequence[tuple[str, int]],
 ) -> RepoPackagingHint:
+    """
+    Guess whether a repo should be presented as a single bundle or per-file list.
+
+    We prefer bundle presentation for diffusers-style repos (pipeline metadata,
+    sharded checkpoints, consistent weight naming) and flip to per-file when
+    we see multiple quantizations or adapter-style weights that likely represent
+    independent choices for the user.
+    """
     weight_entries = [
         (name, size)
         for name, size in file_entries
@@ -351,11 +389,13 @@ def detect_repo_packaging(
 
 
 def _is_weight_file(file_name: str) -> bool:
+    """Lightweight check for weight-like filenames used by packaging heuristics."""
     lower = file_name.lower()
     return lower.endswith(_WEIGHT_EXTENSIONS)
 
 
 def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
+    """Detect diffusers/transformers repos that advertise a full pipeline bundle."""
     if model_info is None:
         return False
     if model_info.pipeline_tag:
@@ -369,6 +409,7 @@ def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
 
 
 def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
+    """Return True if filenames match common sharded checkpoint patterns."""
     for name in weight_files:
         lower = name.lower()
         if lower in _INDEX_FILENAMES:
@@ -381,6 +422,7 @@ def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
 
 
 def _has_quantized_variants(weight_files: Sequence[str]) -> bool:
+    """Identify multiple quantized flavors of a model (gguf/ggml/awq/gptq/etc.)."""
     quantized = 0
     for name in weight_files:
         lower = name.lower()
@@ -393,6 +435,7 @@ def _has_quantized_variants(weight_files: Sequence[str]) -> bool:
 
 
 def _has_adapter_candidates(weight_entries: Sequence[tuple[str, int]]) -> bool:
+    """Flag repos containing small LoRA/adapter-like files instead of base weights."""
     adapter_like = []
     for name, size in weight_entries:
         lower = name.lower()
@@ -410,6 +453,12 @@ def _has_adapter_candidates(weight_entries: Sequence[tuple[str, int]]) -> bool:
 
 
 def _all_same_family(weight_files: Sequence[str]) -> bool:
+    """
+    Determine if a small set of weight files belong to the same family/variant.
+
+    Useful to keep repos with a handful of shards/quantizations grouped together
+    instead of forcing per-file selection.
+    """
     if not weight_files or len(weight_files) > 3:
         return False
     normalized_stems: set[str] = set()
@@ -453,7 +502,12 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
 
 
 def _repo_supports_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
-    """Return True if the repo advertises a compatible diffusion checkpoint."""
+    """
+    Return True if hub metadata suggests the repo contains a raw diffusion checkpoint.
+
+    We look for known authors and tags so single-file checkpoints (safetensors/ckpt)
+    can be surfaced even without diffusers metadata or README parsing.
+    """
     if model_info is None:
         return False
     if model_info.author in ("lllyasviel", "bdsqlsz"):
@@ -472,7 +526,14 @@ async def unified_model(
     size: int | None = None,
     user_id: str | None = None,
 ) -> UnifiedModel | None:
-    """Build a UnifiedModel without hitting the HF Hub."""
+    """
+    Build a `UnifiedModel` instance using only already-fetched metadata.
+
+    The helper is used when the UI hands us recommended models or when we
+    want to decorate hub results without triggering extra network calls.
+    Size/pipeline/tag information is filled from `model_info` when provided;
+    otherwise we return a minimal record so callers can still render choices.
+    """
 
     model_id = (
         f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
@@ -520,14 +581,11 @@ async def unified_model(
 
 async def fetch_model_readme(model_id: str) -> str | None:
     """
-    Fetches the readme from the Hugging Face hub cache or downloads it
-    using the huggingface_hub library, leveraging the built-in cache system.
+    Retrieve README text for a repo, preferring the local HF cache and falling back to the hub.
 
-    Args:
-        model_id (str): The ID of the model to fetch.
-
-    Returns:
-        str: The readme content, or None if not found.
+    We avoid network calls when the README is already cached. If we must download,
+    we reuse the hub's own cache layer and optionally pass the user's HF token so
+    gated models can still be read when permitted.
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
@@ -577,7 +635,10 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
-    Fetch model info from cache or the Hugging Face Hub (with caching).
+    Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
+
+    Results are memoized in our fast cache to keep repeated lookups cheap. Any
+    errors are treated as soft failures so the rest of discovery can proceed.
     """
     cache_key = f"model_info:{model_id}"
     cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
@@ -610,6 +671,16 @@ def model_type_from_model_info(
     repo_id: str,
     model_info: ModelInfo | None,
 ) -> str | None:
+    """
+    Resolve a model's canonical hf.* type using multiple sources of truth.
+
+    Priority order:
+    1) Package-provided recommended models (authoritative for known repos).
+    2) Diffusers `_class_name` in the hub config.
+    3) Hub pipeline tags and generic tag hints (mlx/gguf).
+    The function intentionally returns None when lacking signal so downstream
+    callers can try local config parsing or artifact inspection.
+    """
     recommended = recommended_models.get(repo_id, [])
     if len(recommended) == 1:
         return recommended[0].type
@@ -652,18 +723,97 @@ def _get_file_size(file_path: Path) -> int:
     return 0
 
 
+def _safe_load_json(file_path: Path) -> dict:
+    """Best-effort JSON loader that logs failures without interrupting discovery."""
+    try:
+        with file_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        log.debug("Failed to load JSON from %s: %s", file_path, exc)
+        return {}
+
+
+def _infer_model_type_from_architectures(architectures: Sequence[str]) -> str | None:
+    """Map common architecture names to hf.* types when config.json exposes them."""
+    for arch in architectures:
+        lower = arch.lower()
+        if "whisper" in lower:
+            return "hf.automatic_speech_recognition"
+    return None
+
+
+def _infer_model_type_from_local_configs(
+    file_entries: Sequence[tuple[str, int]],
+    snapshot_dir: Path | None,
+) -> str | None:
+    """
+    Infer model type by reading cached config or model_index files when hub metadata
+    is unavailable.
+
+    The logic mirrors hub-side typing: prefer diffusers `_class_name`, fall back to
+    `model_type`/`architectures` hints, and only touches local files that are already
+    present in the snapshot. This keeps offline environments functional while avoiding
+    unnecessary disk I/O.
+    """
+    if not snapshot_dir:
+        return None
+
+    config_candidates = [
+        rel_path
+        for rel_path, _ in file_entries
+        if rel_path.lower().endswith(("model_index.json", "config.json"))
+    ]
+    if not config_candidates:
+        return None
+
+    for rel_path in sorted(config_candidates, key=lambda value: (value.count("/"), len(value))):
+        config_path = snapshot_dir / rel_path
+        data = _safe_load_json(config_path)
+        if not data:
+            continue
+
+        class_name = data.get("_class_name")
+        if isinstance(class_name, str):
+            mapped = CLASSNAME_TO_MODEL_TYPE.get(class_name)
+            if mapped:
+                return mapped
+
+        model_type = str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
+        if model_type:
+            mapped = _CONFIG_MODEL_TYPE_MAPPING.get(model_type)
+            if mapped:
+                return mapped
+
+        architectures = data.get("architectures")
+        if isinstance(architectures, list):
+            mapped_arch = _infer_model_type_from_architectures([str(arch) for arch in architectures])
+            if mapped_arch:
+                return mapped_arch
+
+    return None
+
+
 async def _build_cached_repo_entry(
     repo_id: str,
     repo_dir: Path,
     model_info: ModelInfo | None,
     recommended_models: dict[str, list[UnifiedModel]],
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
-    """Build the UnifiedModel entry and collect file metadata for a cached repo."""
+    """
+    Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
+
+    The function gathers file sizes from the active snapshot, runs artifact inspection
+    for family/component hints, infers model type (recommended → hub metadata → local
+    configs), and derives a pipeline tag when none is provided. It returns both the
+    assembled `UnifiedModel` and a list of file entries so callers can emit file-level
+    models or perform additional heuristics.
+    """
     repo_root = await HF_FAST_CACHE.repo_root(repo_id, repo_type="model")
     snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
 
     file_entries: list[tuple[str, int]] = []
     size_on_disk = 0
+    snapshot_path: Path | None = None
 
     if snapshot_dir:
         snapshot_path = Path(snapshot_dir)
@@ -690,13 +840,24 @@ async def _build_cached_repo_entry(
         except Exception as exc:  # pragma: no cover - best effort only
             log.debug(f"Artifact detection failed for {repo_id}: {exc}")
 
+    model_type = model_type_from_model_info(
+        recommended_models,
+        repo_id,
+        model_info,
+    )
+    if model_type is None:
+        model_type = _infer_model_type_from_local_configs(
+            file_entries,
+            snapshot_path if snapshot_dir else None,
+        )
+
+    pipeline_tag = model_info.pipeline_tag if model_info else None
+    if pipeline_tag is None and model_type:
+        pipeline_tag = _derive_pipeline_tag(model_type)
+
     repo_model = UnifiedModel(
         id=repo_id,
-        type=model_type_from_model_info(
-            recommended_models,
-            repo_id,
-            model_info,
-        ),
+        type=model_type,
         name=repo_id,
         cache_path=str(repo_root) if repo_root else str(repo_dir),
         allow_patterns=None,
@@ -704,7 +865,7 @@ async def _build_cached_repo_entry(
         description=None,
         readme=None,
         downloaded=repo_root is not None or repo_dir.exists(),
-        pipeline_tag=model_info.pipeline_tag if model_info else None,
+        pipeline_tag=pipeline_tag,
         tags=model_info.tags if model_info else None,
         has_model_index=has_model_index(model_info) if model_info else False,
         repo_id=repo_id,
@@ -724,11 +885,11 @@ async def _build_cached_repo_entry(
 
 async def read_cached_hf_models() -> List[UnifiedModel]:
     """
-    Reads all models from the Hugging Face cache using HfFastCache for efficient lookups.
-    Results are cached for 1 hour to avoid repeated filesystem scanning.
+    Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
 
-    Returns:
-        List[UnifiedModel]: A list of UnifiedModel objects found in the cache.
+    The scan is offline-only: discover repos via `HfFastCache`, build entries using
+    `_build_cached_repo_entry`, and memoize the result for an hour to avoid repeated
+    filesystem traversal during UI interactions.
     """
 
     cached_models = HF_FAST_CACHE.model_info_cache.get(CACHED_HF_MODELS_CACHE_KEY)
@@ -770,6 +931,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     return models
 
 
+# Static search hints per hf.* type used to build repo/file queries (offline/hub).
 HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.text_to_image": {"pipeline_tag": ["text-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
     "hf.image_to_image": {"pipeline_tag": ["image-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
@@ -934,6 +1096,12 @@ GENERIC_HF_TYPES = {
 
 
 def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str | None:
+    """
+    Infer a sensible HF pipeline tag from an hf.* type or explicit task override.
+
+    This keeps pipeline tags aligned with how the UI filters models without
+    requiring every caller to supply both type and task inputs.
+    """
     if task:
         return task.replace("_", "-")
     slug = normalized_type[3:] if normalized_type.startswith("hf.") else normalized_type
@@ -946,6 +1114,9 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
         "stable_diffusion_3",
         "flux",
         "flux_fp8",
+        "flux_kontext",
+        "flux_depth",
+        "flux_redux",
         "qwen_image",
         "ip_adapter",
     }:
@@ -966,6 +1137,13 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
 def _build_search_config_for_type(
     model_type: str, task: str | None = None
 ) -> dict[str, list[str] | str] | None:
+    """
+    Construct a repository search configuration for a given hf.* type.
+
+    Combines static search hints (repo patterns, filename patterns, pipeline tags)
+    with derived pipeline tags so we can reuse the same logic for both hub and
+    offline cache searches. Returns None when the type is unsupported.
+    """
     normalized_type = model_type.lower()
     base_config = HF_SEARCH_TYPE_CONFIG.get(normalized_type)
     if not base_config and not task:
@@ -989,6 +1167,7 @@ def _build_search_config_for_type(
 
 
 def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
+    """Check if a repo id matches any hard-coded comfy-type mappings for a model type."""
     matchers = COMFY_TYPE_REPO_MATCHERS.get(normalized_type)
     if not matchers:
         return False
@@ -1004,6 +1183,12 @@ def _matches_artifact_detection(
     artifact_family: str | None = None,
     artifact_component: str | None = None,
 ) -> bool:
+    """
+    Use lightweight artifact inspection hints (family/component) to match a model type.
+
+    This enables classification for cached repos that lack explicit tags or pipeline
+    metadata but can be identified by file headers alone.
+    """
     fam = artifact_family or ""
     comp = artifact_component or ""
     if normalized_type in {"hf.flux", "hf.flux_fp8"}:
@@ -1022,6 +1207,16 @@ def _matches_artifact_detection(
 
 
 def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
+    """
+    Decide if a `UnifiedModel` fits the requested hf.* type using layered heuristics.
+
+    Checks include:
+    - Exact/variant type matches (including checkpoint variants)
+    - Repo id allowlists for comfy-specific repos
+    - Artifact detection hints (family/component)
+    - Keyword matches across repo id, tags, and file paths
+    - Derived pipeline tag alignment
+    """
     normalized_type = model_type.lower()
     checkpoint_variant = None
     if normalized_type.endswith("_checkpoint"):
@@ -1033,11 +1228,13 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     path_lower = (model.path or "").lower()
 
     def _is_qwen_text_encoder(path: str | None) -> bool:
+        """Detect qwen text encoder paths so we can exclude them from base model matches."""
         if not path:
             return False
         return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
 
     def _is_qwen_vae(path: str | None) -> bool:
+        """Detect qwen VAE paths to avoid misclassifying auxiliary components."""
         if not path:
             return False
         return "vae" in path
@@ -1093,8 +1290,11 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
 
 async def get_models_by_hf_type(model_type: str, task: str | None = None) -> list[UnifiedModel]:
     """
-    Return cached Hugging Face models that match a given hf.* type using
-    the same heuristics the UI previously applied client-side.
+    Return cached Hugging Face models matching a requested hf.* type.
+
+    The search is entirely offline: build a search config, scan cached repos/files,
+    then apply the same client-side heuristics (keyword matching, repo patterns,
+    artifact hints) to label each result with the desired type.
     """
 
     normalized_type = (model_type or "").lower()
@@ -1132,8 +1332,8 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
     pre_resolved_for_search = None if has_wildcards else (pre_resolved_repos or None)
 
     def _filter_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
+        """Apply type-specific filters to remove mismatched repo/file entries."""
         filtered: list[UnifiedModel] = []
-        repo_only_types = {"hf.flux"}
         file_only_types = {
             "hf.unet",
             "hf.vae",
@@ -1148,19 +1348,36 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
         }
         checkpoint_types = set(_CHECKPOINT_BASES.values())
         nested_checkpoint_types = {"hf.qwen_image_checkpoint", "hf.qwen_image_edit_checkpoint"}
+        single_file_repo_types = {
+            "hf.flux",
+            "hf.flux_fp8",
+            "hf.stable_diffusion",
+            "hf.stable_diffusion_xl",
+            "hf.stable_diffusion_3",
+            "hf.stable_diffusion_xl_refiner",
+        }
         seen: set[str] = set()
         for model in models:
             if model.id in seen:
                 continue
+            repo_lower = (model.repo_id or "").lower()
+            path_value = getattr(model, "path", None)
             if normalized_type in file_only_types and getattr(model, "path", None) is None:
                 continue
+            if normalized_type in single_file_repo_types:
+                # Skip repo-only entries for gguf-style repos; prefer per-file entries there.
+                if path_value is None and "gguf" in repo_lower:
+                    continue
+                if path_value:
+                    # Only keep single-file checkpoints/gguf weights to avoid auxiliary components.
+                    path_lower = path_value.lower()
+                    if not _is_single_file_diffusion_weight(path_value) and not path_lower.endswith(".gguf"):
+                        continue
             if normalized_type in checkpoint_types:
                 if not model.path:
                     continue
                 if "/" in model.path and normalized_type not in nested_checkpoint_types:
                     continue
-            if normalized_type in repo_only_types and getattr(model, "path", None):
-                continue
             if _matches_model_type(model, normalized_type):
                 try:
                     model.type = normalized_type  # type: ignore[assignment]
@@ -1193,6 +1410,7 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
 
 
 def _fallback_unified_model(repo_id: str, model_type: str) -> UnifiedModel:
+    """Build a minimal `UnifiedModel` placeholder when no metadata is available."""
     pipeline_tag = _derive_pipeline_tag(model_type)
     return UnifiedModel(
         id=repo_id,
@@ -1222,7 +1440,12 @@ def _build_offline_models_for_repos(
     filename_patterns: Sequence[str] | None,
     pipeline_tags: Sequence[str] | None,
 ) -> list[UnifiedModel]:
-    """Build UnifiedModel entries directly from cached snapshots (offline fallback)."""
+    """
+    Build `UnifiedModel` entries directly from cached snapshots (offline fallback).
+
+    Used when hub metadata is unavailable; emits a repo-level model plus per-file
+    models that match the provided filename patterns.
+    """
     results: list[UnifiedModel] = []
     pipeline_tag = pipeline_tags[0] if pipeline_tags else _derive_pipeline_tag(model_type)
     for repo_id in repo_ids:
@@ -1282,6 +1505,7 @@ def _build_offline_models_for_repos(
 
 
 def _offline_snapshot_dir(repo_id: str) -> Path | None:
+    """Return the newest snapshot directory for a repo if it exists locally."""
     repo_bits = [bit for bit in repo_id.split("/") if bit]
     if not repo_bits:
         return None
@@ -1302,6 +1526,7 @@ def _offline_snapshot_dir(repo_id: str) -> Path | None:
 
 
 def _offline_snapshot_files(snapshot_dir: Path) -> list[str]:
+    """List snapshot-relative file paths for a cached repo snapshot."""
     relpaths: list[str] = []
     for root, _, files in os.walk(snapshot_dir):
         for fname in files:
@@ -1311,6 +1536,7 @@ def _offline_snapshot_files(snapshot_dir: Path) -> list[str]:
 
 
 def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) -> list[str]:
+    """Trim/normalize pattern inputs and optionally lowercase them for matching."""
     normalized: list[str] = []
     for value in values or []:
         if value is None:
@@ -1323,18 +1549,20 @@ def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) ->
 
 
 def _matches_any_pattern(value: str, patterns: list[str]) -> bool:
+    """Case-sensitive glob check; empty pattern list means match everything."""
     if not patterns:
         return True
     return any(fnmatch(value, pattern) for pattern in patterns)
 
 
 def _matches_any_pattern_ci(value: str, patterns: list[str]) -> bool:
-    """Case-insensitive pattern match helper."""
+    """Case-insensitive glob check used when filtering by repo id."""
     value_lower = value.lower()
     return any(fnmatch(value_lower, pattern.lower()) for pattern in patterns)
 
 
 def _repo_tags_match_patterns(repo_tags: list[str], patterns: list[str]) -> bool:
+    """Ensure all requested tag patterns are present on the repo (logical AND)."""
     if not patterns:
         return True
     if not repo_tags:
@@ -1357,8 +1585,12 @@ async def search_cached_hf_models(
     pre_resolved_repos: Sequence[tuple[str, Path]] | None = None,
 ) -> List[UnifiedModel]:
     """
-    Search the Hugging Face cache by repo metadata and optional filename patterns.
-    Returns matching repo entries and (optionally) file-level entries.
+    Search the local HF cache for repos/files matching metadata and pattern filters.
+
+    The function is hub-free: it discovers repos from disk, optionally pre-resolves
+    specific repos to avoid globbing, applies pipeline/tag/author/library filters
+    when metadata is available, and emits both repo-level and file-level `UnifiedModel`
+    entries when filename patterns are provided.
     """
     # Always skip hub metadata to avoid network calls.
     skip_model_info = True
@@ -1928,6 +2160,7 @@ async def delete_cached_hf_model(model_id: str) -> bool:
 if __name__ == "__main__":
 
     async def main():
+        """Debug helper: list cached image-to-image models containing IP-Adapter."""
         cached = await get_image_to_image_models_from_hf_cache()
         for model in cached:
             if "IP-Adapter" in model.id:

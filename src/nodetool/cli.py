@@ -102,20 +102,18 @@ def _format_size(num_bytes: int | None) -> str:
 def _print_model_table(models: list["UnifiedModel"], title: str) -> None:
     """Render a simple table for UnifiedModel entries."""
     table = Table(title=title)
-    table.add_column("ID", style="cyan")
-    table.add_column("Type", style="green")
     table.add_column("Repo", style="magenta")
     table.add_column("Path", style="yellow")
+    table.add_column("Type", style="green")
     table.add_column("Downloaded", style="blue")
     table.add_column("Size", style="white")
     table.add_column("Pipeline", style="cyan")
 
     for model in models:
         table.add_row(
-            model.id,
-            model.type or "-",
             model.repo_id or "-",
             model.path or "-",
+            model.type or "-",
             "yes" if model.downloaded else "no",
             _format_size(model.size_on_disk),
             model.pipeline_tag or "",
@@ -1066,6 +1064,70 @@ def list_hf_models(model_type: str, task: str | None, limit: int | None, as_json
         return
 
     _print_model_table(models, f"HuggingFace models for {model_type}")
+
+
+@model.command("list-hf-all")
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Limit number of rows shown.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output JSON instead of a table.",
+)
+@click.option(
+    "--repo-only",
+    is_flag=True,
+    help="Show only repo-level entries (default includes file-level weights).",
+)
+def list_all_hf_models(limit: int | None, as_json: bool, repo_only: bool):
+    """List all cached HuggingFace entries without hf.* type filtering (files included by default)."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        HF_DEFAULT_FILE_PATTERNS,
+        HF_PTH_FILE_PATTERNS,
+        read_cached_hf_models,
+        search_cached_hf_models,
+    )
+
+    include_files = not repo_only
+
+    if include_files:
+        patterns = [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS]
+        models: list["UnifiedModel"] = asyncio.run(
+            search_cached_hf_models(filename_patterns=patterns)
+        )
+    else:
+        models = asyncio.run(read_cached_hf_models())
+
+    models.sort(
+        key=lambda m: (
+            m.repo_id or "",
+            m.path or "",
+            m.type or "",
+            m.id or "",
+        )
+    )
+
+    if limit is not None:
+        models = models[:limit]
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps([model.model_dump() for model in models], indent=2))
+        return
+
+    if not models:
+        console.print("[yellow]No cached HuggingFace models found.[/]")
+        return
+
+    title = "All cached HuggingFace entries"
+    title += " (repo + files)" if include_files else " (repo only)"
+    _print_model_table(models, title)
 
 
 @model.command("hf-types")
