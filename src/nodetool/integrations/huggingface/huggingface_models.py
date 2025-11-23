@@ -92,6 +92,18 @@ COMFY_REPO_PATTERNS = {
         "black-forest-labs/FLUX.1-dev",
         "black-forest-labs/FLUX.1-schnell",
     ],
+    "flux_kontext": [
+        "black-forest-labs/FLUX.1-Kontext-dev",
+        "nunchaku-tech/nunchaku-flux-kontext",
+    ],
+    "flux_canny": [
+        "black-forest-labs/FLUX.1-Canny-dev",
+        "nunchaku-tech/nunchaku-flux.1-canny-dev",
+    ],
+    "flux_depth": [
+        "black-forest-labs/FLUX.1-Depth-dev",
+        "nunchaku-tech/nunchaku-flux.1-depth-dev",
+    ],
     "flux_vae": ["ffxvs/vae-flux"],
     "qwen_image": [
         "Comfy-Org/Qwen-Image_ComfyUI",
@@ -106,6 +118,9 @@ COMFY_REPO_PATTERNS = {
 COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
     "hf.flux": [*COMFY_REPO_PATTERNS["flux"]],
     "hf.flux_fp8": [*COMFY_REPO_PATTERNS["flux"]],
+    "hf.flux_kontext": [*COMFY_REPO_PATTERNS["flux_kontext"]],
+    "hf.flux_canny": [*COMFY_REPO_PATTERNS["flux_canny"]],
+    "hf.flux_depth": [*COMFY_REPO_PATTERNS["flux_depth"]],
     "hf.stable_diffusion_3": [*COMFY_REPO_PATTERNS["sd35"]],
     "hf.qwen_image": [
         *COMFY_REPO_PATTERNS["qwen_image"],
@@ -118,6 +133,9 @@ COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
     ],
     "hf.unet": [
         *COMFY_REPO_PATTERNS["flux"],
+        *COMFY_REPO_PATTERNS["flux_kontext"],
+        *COMFY_REPO_PATTERNS["flux_canny"],
+        *COMFY_REPO_PATTERNS["flux_depth"],
         *COMFY_REPO_PATTERNS["qwen_image"],
         *COMFY_REPO_PATTERNS["qwen_image_edit"],
         *COMFY_REPO_PATTERNS["sd35"],
@@ -142,6 +160,9 @@ _CHECKPOINT_BASES = {
     "hf.stable_diffusion_3": "hf.stable_diffusion_3_checkpoint",
     "hf.stable_diffusion_xl_refiner": "hf.stable_diffusion_xl_refiner_checkpoint",
     "hf.flux": "hf.flux_checkpoint",
+    "hf.flux_kontext": "hf.flux_kontext_checkpoint",
+    "hf.flux_canny": "hf.flux_canny_checkpoint",
+    "hf.flux_depth": "hf.flux_depth_checkpoint",
     "hf.qwen_image": "hf.qwen_image_checkpoint",
     "hf.qwen_image_edit": "hf.qwen_image_edit_checkpoint",
 }
@@ -154,6 +175,9 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.stable_diffusion_3": ["sd3", "stable-diffusion-3"],
     "hf.flux": ["flux"],
     "hf.flux_fp8": ["flux", "fp8"],
+    "hf.flux_kontext": ["flux", "kontext", "nunchaku"],
+    "hf.flux_canny": ["flux", "canny", "nunchaku"],
+    "hf.flux_depth": ["flux", "depth", "nunchaku"],
     "hf.qwen_image": ["qwen", "nunchaku"],
     "hf.qwen_image_edit": ["qwen"],
     "hf.qwen_vl": ["vl", "text_encoder", "text-encoder", "qwen"],
@@ -970,6 +994,21 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         ],
         "repo_pattern": [*COMFY_REPO_PATTERNS["flux"], "*flux*"],
     },
+    "hf.flux_kontext": {
+        "tag": ["*flux*", "*kontext*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_kontext"], "*nunchaku*flux*", "*flux*kontext*"],
+    },
+    "hf.flux_canny": {
+        "tag": ["*flux*", "*canny*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_canny"], "*nunchaku*flux*canny*", "*flux*canny*"],
+    },
+    "hf.flux_depth": {
+        "tag": ["*flux*", "*depth*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_depth"], "*nunchaku*flux*depth*", "*flux*depth*"],
+    },
     "hf.qwen_image": {
         "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
@@ -1119,6 +1158,7 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
         "flux",
         "flux_fp8",
         "flux_kontext",
+        "flux_canny",
         "flux_depth",
         "flux_redux",
         "qwen_image",
@@ -1195,7 +1235,7 @@ def _matches_artifact_detection(
     """
     fam = artifact_family or ""
     comp = artifact_component or ""
-    if normalized_type in {"hf.flux", "hf.flux_fp8"}:
+    if normalized_type in {"hf.flux", "hf.flux_fp8", "hf.flux_kontext", "hf.flux_canny", "hf.flux_depth"}:
         return "flux" in fam
     if normalized_type == "hf.stable_diffusion":
         return fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
