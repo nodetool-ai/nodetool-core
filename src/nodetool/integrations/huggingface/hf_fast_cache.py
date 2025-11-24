@@ -195,6 +195,7 @@ class HfFastCache:
             return []
 
         if state.file_index is not None:
+            state.snapshot_file_count = len(state.file_index)
             return list(state.file_index.keys())
 
         files: List[str] = []
@@ -202,6 +203,7 @@ class HfFastCache:
             files.append(path.relative_to(state.snapshot_dir).as_posix())
 
         state.file_index = {rp: state.snapshot_dir / rp for rp in files}
+        state.snapshot_file_count = len(files)
         return files
 
     async def invalidate(self, repo_id: Optional[str] = None, repo_type: Optional[str] = None) -> None:
@@ -348,17 +350,26 @@ class HfFastCache:
             state.snapshot_dir = snapshot_dir_now
             state.snapshot_mtime = await _mtime_or_none_async(snapshot_dir_now)
             state.file_index = None
+            state.snapshot_file_count = None
             return
 
         snap_mtime_now = await _mtime_or_none_async(snapshot_dir_now)
-        if _changed(snap_mtime_now, state.snapshot_mtime):
+        snapshot_changed = _changed(snap_mtime_now, state.snapshot_mtime)
+        if snapshot_changed:
             state.snapshot_mtime = snap_mtime_now
             state.file_index = None
+            state.snapshot_file_count = None
+        elif state.file_index is not None and snapshot_dir_now is not None:
+            current_count = await _count_files_async(snapshot_dir_now)
+            if state.snapshot_file_count is None or current_count != state.snapshot_file_count:
+                state.file_index = None
+            state.snapshot_file_count = current_count
 
         if state.commit is None and (state.snapshot_dir is None or not await _exists(state.snapshot_dir)):
             state.snapshot_dir = await _pick_latest_snapshot_async(state.repo_dir)
             state.snapshot_mtime = await _mtime_or_none_async(state.snapshot_dir)
             state.file_index = None
+            state.snapshot_file_count = None
 
     async def _populate_initial_state(self, state: "_RepoState") -> None:
         """Populate repo state from refs and snapshots on first discovery."""
@@ -385,6 +396,7 @@ class _RepoState:
     refs_mtime: Optional[float] = None
     snapshot_dir: Optional[Path] = None
     snapshot_mtime: Optional[float] = None
+    snapshot_file_count: Optional[int] = None
     file_index: Optional[Dict[str, Path]] = field(default=None)
 
 
@@ -580,6 +592,34 @@ async def _rglob_files_async(root: Path) -> List[Path]:
 
     await _walk(root)
     return results
+
+
+async def _count_files_async(root: Path) -> int:
+    """Recursively count files and symlinks under root without storing paths."""
+    count = 0
+
+    async def _walk(dir_path: Path) -> None:
+        nonlocal count
+        try:
+            entries = await aiofiles.os.listdir(str(dir_path))
+        except OSError:
+            return
+
+        for name in entries:
+            full = dir_path / name
+            try:
+                if await _is_dir(full):
+                    await _walk(full)
+                    continue
+                is_file = await _is_file(full)
+                is_link = await aiofiles.os.path.islink(str(full))
+            except OSError:
+                continue
+            if is_file or is_link:
+                count += 1
+
+    await _walk(root)
+    return count
 
 
 def _normalize_relpath(path: str) -> Path:

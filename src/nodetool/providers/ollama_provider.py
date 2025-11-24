@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
 
@@ -44,23 +45,27 @@ log.setLevel(logging.DEBUG)
 _ollama_api_url = Environment.get("OLLAMA_API_URL")
 
 
-def get_ollama_sync_client() -> Client:
-    """Get a sync client for the Ollama API."""
-    api_url = Environment.get("OLLAMA_API_URL")
+def _resolve_ollama_api_url(explicit: str | None = None) -> str:
+    api_url = explicit or os.environ.get("OLLAMA_API_URL") or Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
-    log.debug(f"Creating sync Ollama client with URL: {api_url}")
+    return api_url
 
-    return Client(api_url)
+
+def get_ollama_sync_client(api_url: str | None = None) -> Client:
+    """Get a sync client for the Ollama API."""
+    resolved_url = _resolve_ollama_api_url(api_url)
+    log.debug(f"Creating sync Ollama client with URL: {resolved_url}")
+
+    return Client(resolved_url)
 
 
 @asynccontextmanager
-async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
+async def get_ollama_client(api_url: str | None = None) -> AsyncGenerator[AsyncClient, None]:
     """Get an AsyncClient for the Ollama API."""
-    api_url = Environment.get("OLLAMA_API_URL")
-    assert api_url, "OLLAMA_API_URL not set"
-    log.debug(f"Creating async Ollama client with URL: {api_url}")
+    resolved_url = _resolve_ollama_api_url(api_url)
+    log.debug(f"Creating async Ollama client with URL: {resolved_url}")
 
-    client = AsyncClient(api_url)
+    client = AsyncClient(resolved_url)
     try:
         yield client
     finally:
@@ -111,14 +116,22 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
     provider_name: str = "ollama"
 
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["OLLAMA_API_URL"]
+
     def __init__(self, secrets: dict[str, str], log_file=None):
         """Initialize the Ollama provider.
 
         Args:
             log_file (str, optional): Path to a file where API calls and responses will be logged.
-                If None, no logging will be performed.
+            If None, no logging will be performed.
         """
-        self.api_url = Environment.get("OLLAMA_API_URL")
+        super().__init__(secrets)
+        api_url = secrets.get("OLLAMA_API_URL") if secrets else None
+        self.api_url = api_url or Environment.get("OLLAMA_API_URL")
+        if self.api_url:
+            os.environ.setdefault("OLLAMA_API_URL", self.api_url)
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -157,7 +170,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
         # Fetch and cache
         log.debug(f"Fetching model info for: {model}")
-        client = get_ollama_sync_client()
+        client = get_ollama_sync_client(self.api_url)
         model_info = client.show(model=model)
         self._model_info_cache[model] = model_info
         log.debug(f"Cached model info for: {model}")
@@ -249,7 +262,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             List of LanguageModel instances for Ollama
         """
         try:
-            async with get_ollama_client() as client:
+            async with get_ollama_client(self.api_url) as client:
                 models_response = await client.list()
                 models: List[LanguageModel] = []
                 # The Ollama client returns an object with a .models attribute
@@ -590,7 +603,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        async with get_ollama_client() as client:
+        async with get_ollama_client(self.api_url) as client:
             params = self._prepare_request_params(
                 messages,
                 model,
@@ -692,7 +705,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        async with get_ollama_client() as client:
+        async with get_ollama_client(self.api_url) as client:
             params = self._prepare_request_params(
                 messages,
                 model,

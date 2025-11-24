@@ -4,6 +4,11 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from nodetool.config.env_guard import (
+    RUNNING_PYTEST,
+    get_system_env,
+    get_system_env_value,
+)
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import (
     SETTINGS_FILE,
@@ -44,6 +49,10 @@ DEFAULT_ENV = {
 
 NOT_GIVEN = object()
 
+
+if RUNNING_PYTEST:
+    DEFAULT_ENV["ENV"] = "test"
+
 """
 Environment Configuration Management Module
 
@@ -75,6 +84,10 @@ def load_dotenv_files():
 
     logger = get_logger(__name__)
 
+    if RUNNING_PYTEST:
+        logger.info("Skipping .env loading when running under pytest")
+        return
+
     # Get the project root directory (where .env files should be located)
     current_file = Path(__file__)
     project_root = (
@@ -82,7 +95,7 @@ def load_dotenv_files():
     )  # Go up to workspace/nodetool-core
 
     # Determine environment - check ENV var first, then default to development
-    env_name = os.environ.get("ENV", "development")
+    env_name = get_system_env_value("ENV", DEFAULT_ENV.get("ENV", "development"))
     if env_name == "test":
         logger.info("Not loading env file for tests")
         return
@@ -133,7 +146,7 @@ def load_dotenv_files():
 
     loaded_vars = {}
     for var in safe_log_vars:
-        value = os.environ.get(var)
+        value = get_system_env_value(var)
         if value:
             # Mask URLs for privacy
             if var.endswith("_URL") or var.endswith("_ENDPOINT_URL"):
@@ -192,7 +205,7 @@ class Environment:
         settings = cls.get_settings()
 
         env = DEFAULT_ENV.copy()
-        env.update(os.environ)
+        env.update(get_system_env())
 
         for k, v in settings.items():
             if v is not None:
@@ -247,13 +260,6 @@ class Environment:
         return cls.get_env() == "production"
 
     @classmethod
-    def is_test(cls):
-        """
-        Is the environment test?
-        """
-        return os.environ.get("PYTEST_CURRENT_TEST") is not None
-
-    @classmethod
     def get_auth_provider_kind(cls) -> str:
         """Return the configured auth provider: none, local, static, supabase.
 
@@ -276,7 +282,7 @@ class Environment:
 
     @classmethod
     def _get_int_setting(cls, key: str, default: int) -> int:
-        value = os.environ.get(key)
+        value = get_system_env_value(key)
         if value is not None:
             try:
                 return int(value)
@@ -296,7 +302,7 @@ class Environment:
     @classmethod
     def get_auth_cache_ttl(cls) -> int:
         # Backward compatible with REMOTE_AUTH_CACHE_TTL
-        ttl = os.environ.get("AUTH_CACHE_TTL")
+        ttl = get_system_env_value("AUTH_CACHE_TTL")
         if ttl is not None:
             try:
                 return int(ttl)
@@ -307,7 +313,7 @@ class Environment:
     @classmethod
     def get_auth_cache_max(cls) -> int:
         # Backward compatible with REMOTE_AUTH_CACHE_MAX
-        mx = os.environ.get("AUTH_CACHE_MAX")
+        mx = get_system_env_value("AUTH_CACHE_MAX")
         if mx is not None:
             try:
                 return int(mx)
@@ -331,30 +337,30 @@ class Environment:
         2) If DEBUG env is truthy, return "DEBUG"
         3) NODETOOL_LOG_LEVEL env (default "INFO")
         """
-        level = os.getenv("LOG_LEVEL")
+        level = get_system_env_value("LOG_LEVEL")
         if level:
             try:
                 return str(level).upper()
             except Exception:
                 return "INFO"
-        debug_env = os.getenv("DEBUG")
+        debug_env = get_system_env_value("DEBUG")
         if debug_env and debug_env.lower() not in ("0", "false", "no", "off", ""):
             return "DEBUG"
-        return os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
+        return get_system_env_value("NODETOOL_LOG_LEVEL", "INFO").upper()
 
     @classmethod
     def get_memcache_host(cls):
         """
         The memcache host is the host of the memcache server.
         """
-        return os.environ.get("MEMCACHE_HOST")
+        return get_system_env_value("MEMCACHE_HOST")
 
     @classmethod
     def get_memcache_port(cls):
         """
         The memcache port is the port of the memcache server.
         """
-        return os.environ.get("MEMCACHE_PORT")
+        return get_system_env_value("MEMCACHE_PORT")
 
     @classmethod
     def get_default_execution_strategy(cls):
@@ -371,7 +377,7 @@ class Environment:
         """
         The database url is the url of the slite database.
         """
-        if cls.is_test():
+        if RUNNING_PYTEST:
             raise Exception("NOPE")
         else:
             return cls.get("DB_PATH")
@@ -405,7 +411,7 @@ class Environment:
         """
         The endpoint url is the url of the S3 server.
         """
-        return os.environ.get("S3_ENDPOINT_URL", None)
+        return get_system_env_value("S3_ENDPOINT_URL", None)
 
     @classmethod
     def get_s3_access_key_id(cls):
@@ -414,7 +420,7 @@ class Environment:
         """
         # If we are in production, we don't need an access key id.
         # We use the IAM role instead.
-        return os.environ.get("S3_ACCESS_KEY_ID", None)
+        return get_system_env_value("S3_ACCESS_KEY_ID", None)
 
     @classmethod
     def get_s3_secret_access_key(cls):
@@ -423,14 +429,14 @@ class Environment:
         """
         # If we are in production, we don't need a secret access key.
         # We use the IAM role instead.
-        return os.environ.get("S3_SECRET_ACCESS_KEY", None)
+        return get_system_env_value("S3_SECRET_ACCESS_KEY", None)
 
     @classmethod
     def get_s3_region(cls):
         """
         The region name is the region of the S3 server.
         """
-        return os.environ.get("S3_REGION", cls.get_aws_region())
+        return get_system_env_value("S3_REGION", cls.get_aws_region())
 
     @classmethod
     def get_asset_domain(cls):
@@ -514,7 +520,7 @@ class Environment:
         If ASSET_BUCKET looks like a filesystem path, it will be used instead of S3.
         """
         # Check for explicit override first (for Docker/containerized deployments)
-        override = os.environ.get("ASSET_FOLDER")
+        override = get_system_env_value("ASSET_FOLDER")
         if override:
             return str(override)
 

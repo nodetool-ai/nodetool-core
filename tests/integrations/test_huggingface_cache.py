@@ -647,22 +647,11 @@ class TestSearchCachedHfModels:
         snapshot_dir = tmp_path / "models--org--repo" / "snapshots" / "abc"
         snapshot_dir.mkdir(parents=True)
 
-        mock_model_info = MagicMock()
-        mock_model_info.pipeline_tag = "text-to-image"
-        mock_model_info.tags = ["lora", "diffusers"]
-        mock_model_info.author = "org"
-        mock_model_info.library_name = "diffusers"
-
         with (
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
                 new_callable=AsyncMock,
                 return_value=[("org/repo", snapshot_dir.parent.parent)],
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
-                new_callable=AsyncMock,
-                return_value=mock_model_info,
             ),
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
@@ -690,10 +679,6 @@ class TestSearchCachedHfModels:
             results = await search_cached_hf_models(
                 repo_patterns=["org/*"],
                 filename_patterns=["*.safetensors"],
-                pipeline_tags=["text-to-image"],
-                tags=["lora"],
-                authors=["org"],
-                library_name="diffusers",
             )
 
         assert len(results) == 2
@@ -715,11 +700,6 @@ class TestSearchCachedHfModels:
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
                 new_callable=AsyncMock,
                 return_value=[("org/repo", repo_dir)],
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
-                new_callable=AsyncMock,
-                return_value=None,
             ),
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
@@ -747,7 +727,7 @@ class TestSearchCachedHfModels:
         assert results[0].repo_id == "org/repo"
 
     @pytest.mark.asyncio
-    async def test_search_cached_hf_models_requires_metadata_when_filters_used(self, tmp_path):
+    async def test_search_cached_hf_models_filters_by_repo_pattern(self, tmp_path):
         repo_dir = tmp_path / "models--org--repo"
         repo_dir.mkdir(parents=True)
         snapshot_dir = repo_dir / "snapshots" / "abc"
@@ -758,11 +738,6 @@ class TestSearchCachedHfModels:
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
                 new_callable=AsyncMock,
                 return_value=[("org/repo", repo_dir)],
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
-                new_callable=AsyncMock,
-                return_value=None,
             ),
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
@@ -784,6 +759,6 @@ class TestSearchCachedHfModels:
                 return_value=0,
             ),
         ):
-            results = await search_cached_hf_models(pipeline_tags=["text-generation"])
+            results = await search_cached_hf_models(repo_patterns=["other/*"])
 
         assert results == []

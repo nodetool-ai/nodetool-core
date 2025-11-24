@@ -22,6 +22,7 @@ import asyncio
 import json
 import os
 import shutil
+from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
@@ -237,9 +238,6 @@ HF_FILE_PATTERN_TYPES = {
     "hf.sentence_similarity",
 }
 # Cache key/TTL used to memoize full cached-model listings to speed UI refreshes.
-CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
-CACHED_HF_MODELS_TTL = 3600  # 1 hour
-
 CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
 CACHED_HF_MODELS_TTL = 3600  # 1 hour
 
@@ -529,23 +527,56 @@ def _is_single_file_diffusion_weight(file_name: str) -> bool:
     return lower not in standard_weight_names
 
 
-def _repo_supports_diffusion_checkpoint(model_info: ModelInfo | None) -> bool:
-    """
-    Return True if hub metadata suggests the repo contains a raw diffusion checkpoint.
+_DIFFUSION_COMPONENTS = {"unet", "transformer_denoiser"}
+_ARTIFACT_INSPECTION_LIMIT = 16
+_DIFFUSION_REPO_CACHE: dict[str, bool] = {}
 
-    We look for known authors and tags so single-file checkpoints (safetensors/ckpt)
-    can be surfaced even without diffusers metadata or README parsing.
-    """
-    if model_info is None:
-        return False
-    if model_info.author in ("lllyasviel", "bdsqlsz"):
+
+def _is_diffusion_artifact_candidate(file_name: str) -> bool:
+    """Return True for files that might reveal diffusion components."""
+    lower = file_name.lower()
+    if lower.endswith(("model_index.json", "config.json")):
         return True
-    if not model_info.tags:
+    return any(lower.endswith(ext) for ext in SINGLE_FILE_DIFFUSION_EXTENSIONS)
+
+
+async def _repo_has_diffusion_artifacts(
+    repo_id: str,
+    snapshot_dir: str | Path | None,
+    file_list: Sequence[str],
+) -> bool:
+    """Return True when artifact inspection identifies diffusion components."""
+    cached = _DIFFUSION_REPO_CACHE.get(repo_id)
+    if cached is not None:
+        return cached
+
+    if not snapshot_dir or not file_list:
+        _DIFFUSION_REPO_CACHE[repo_id] = False
         return False
-    tags = {tag.lower() for tag in model_info.tags}
-    return any(tag in tags for tag in SINGLE_FILE_DIFFUSION_TAGS) or any(
-        tag in tags for tag in model_info.tags
-    )
+
+    base_path = Path(snapshot_dir)
+    candidate_paths: list[str] = []
+    for fname in file_list:
+        if len(candidate_paths) >= _ARTIFACT_INSPECTION_LIMIT:
+            break
+        if not _is_diffusion_artifact_candidate(fname):
+            continue
+        candidate_paths.append(str(base_path / fname))
+
+    if not candidate_paths:
+        _DIFFUSION_REPO_CACHE[repo_id] = False
+        return False
+
+    try:
+        detection = await asyncio.to_thread(inspect_paths, candidate_paths)
+    except Exception as exc:  # pragma: no cover - best effort
+        log.debug("inspect_paths failed for %s: %s", repo_id, exc)
+        _DIFFUSION_REPO_CACHE[repo_id] = False
+        return False
+
+    matches = bool(detection and detection.component in _DIFFUSION_COMPONENTS)
+    _DIFFUSION_REPO_CACHE[repo_id] = matches
+    return matches
 
 
 async def unified_model(
@@ -826,6 +857,9 @@ async def _build_cached_repo_entry(
     repo_dir: Path,
     model_info: ModelInfo | None,
     recommended_models: dict[str, list[UnifiedModel]],
+    *,
+    snapshot_dir: Path | None = None,
+    file_list: list[str] | None = None,
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
     """
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
@@ -837,21 +871,23 @@ async def _build_cached_repo_entry(
     models or perform additional heuristics.
     """
     repo_root = await HF_FAST_CACHE.repo_root(repo_id, repo_type="model")
-    snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
-
     file_entries: list[tuple[str, int]] = []
     size_on_disk = 0
-    snapshot_path: Path | None = None
+    snapshot_path: Path | None = Path(snapshot_dir) if snapshot_dir else None
 
-    if snapshot_dir:
-        snapshot_path = Path(snapshot_dir)
-        try:
-            file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
-        except Exception as exc:  # pragma: no cover - defensive
-            log.debug(f"Failed to list files for {repo_id}: {exc}")
-            file_list = []
+    if snapshot_path is None:
+        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        snapshot_path = Path(resolved_snapshot) if resolved_snapshot else None
 
-        for file_name in file_list:
+    if snapshot_path:
+        if file_list is None:
+            try:
+                file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug(f"Failed to list files for {repo_id}: {exc}")
+                file_list = []
+
+        for file_name in file_list or []:
             file_path = snapshot_path / file_name
             file_size = _get_file_size(file_path)
             size_on_disk += file_size
@@ -933,19 +969,12 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
 
     recommended_models = get_recommended_models()
     models: list[UnifiedModel] = []
-    model_infos = [None for _ in repo_list]
 
-    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
-        # Handle exceptions from individual fetch_model_info calls
-        if isinstance(model_info, BaseException):
-            log.debug(f"Failed to fetch model info for {repo_id}: {model_info}")
-            # Still create a basic model entry without the extra metadata
-            model_info = None
-
+    for repo_id, repo_dir in repo_list:
         repo_model, _ = await _build_cached_repo_entry(
             repo_id,
             repo_dir,
-            model_info,
+            None,
             recommended_models,
         )
         models.append(repo_model)
@@ -1112,6 +1141,27 @@ for _base, _ckpt in _CHECKPOINT_BASES.items():
         _base_cfg = HF_SEARCH_TYPE_CONFIG[_base]
         HF_SEARCH_TYPE_CONFIG[_ckpt] = {k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()}
 
+HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
+    "hf.unet": {"file_only": True},
+    "hf.vae": {"file_only": True},
+    "hf.clip": {"file_only": True},
+    "hf.t5": {"file_only": True},
+    "hf.qwen_vl": {"file_only": True},
+    "hf.stable_diffusion_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.stable_diffusion_xl_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.stable_diffusion_3_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.stable_diffusion_xl_refiner_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.flux_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.qwen_image_checkpoint": {"checkpoint": True, "nested_checkpoint": True},
+    "hf.qwen_image_edit_checkpoint": {"checkpoint": True, "nested_checkpoint": True},
+    "hf.flux": {"single_file_repo": True},
+    "hf.flux_fp8": {"single_file_repo": True},
+    "hf.stable_diffusion": {"single_file_repo": True},
+    "hf.stable_diffusion_xl": {"single_file_repo": True},
+    "hf.stable_diffusion_3": {"single_file_repo": True},
+    "hf.stable_diffusion_xl_refiner": {"single_file_repo": True},
+}
+
 def get_supported_hf_types() -> list[tuple[str, bool]]:
     """
     Return supported hf.* model types and whether they have built-in search config.
@@ -1251,53 +1301,45 @@ def _matches_artifact_detection(
 
 
 def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
-    """
-    Decide if a `UnifiedModel` fits the requested hf.* type using layered heuristics.
-
-    Checks include:
-    - Exact/variant type matches (including checkpoint variants)
-    - Repo id allowlists for comfy-specific repos
-    - Artifact detection hints (family/component)
-    - Keyword matches across repo id, tags, and file paths
-    - Derived pipeline tag alignment
-    """
+    """Semantic match for hf.* types (no structural checks here)."""
     normalized_type = model_type.lower()
     checkpoint_variant = None
     if normalized_type.endswith("_checkpoint"):
         checkpoint_variant = normalized_type
         normalized_type = normalized_type[: -len("_checkpoint")]
+
     model_type_lower = (model.type or "").lower()
     repo_id = (model.repo_id or "").lower()
-    repo_id_from_id = (model.id or "").split(":")[0].lower() if model.id else ""
+    repo_id_from_id = (model.id or "").split(":", 1)[0].lower() if model.id else ""
     path_lower = (model.path or "").lower()
 
     def _is_qwen_text_encoder(path: str | None) -> bool:
-        """Detect qwen text encoder paths so we can exclude them from base model matches."""
         if not path:
             return False
         return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
 
     def _is_qwen_vae(path: str | None) -> bool:
-        """Detect qwen VAE paths to avoid misclassifying auxiliary components."""
         if not path:
             return False
         return "vae" in path
 
-    qwen_family_types = {"hf.qwen_image", "hf.qwen_image_checkpoint"}
     target_types = {normalized_type}
     if checkpoint_variant:
         target_types.add(checkpoint_variant)
-    model_type_base = (
-        model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
-    )
+
     if model_type_lower:
+        model_type_base = (
+            model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
+        )
         if model_type_lower in target_types or model_type_base == normalized_type:
             if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"} and (
                 _is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower)
             ):
                 return False
             return True
+
         if model_type_lower not in GENERIC_HF_TYPES:
+            qwen_family_types = {"hf.qwen_image", "hf.qwen_image_checkpoint"}
             allowed_family = normalized_type in {"hf.qwen_image_checkpoint", "hf.qwen_vl", "hf.vae"} and (
                 model_type_lower in qwen_family_types
             )
@@ -1307,8 +1349,10 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"}:
         if _is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower):
             return False
+
     if normalized_type == "hf.qwen_vl":
         return _is_qwen_text_encoder(path_lower)
+
     if _matches_repo_for_type(normalized_type, repo_id, repo_id_from_id):
         return True
 
@@ -1320,10 +1364,11 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
 
     tags = [(tag or "").lower() for tag in (model.tags or [])]
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
-    if keywords and any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
-        return True
-    if keywords and path_lower and any(keyword in path_lower for keyword in keywords):
-        return True
+    if keywords:
+        if any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
+            return True
+        if path_lower and any(keyword in path_lower for keyword in keywords):
+            return True
 
     derived_pipeline = _derive_pipeline_tag(normalized_type)
     if derived_pipeline and model.pipeline_tag == derived_pipeline:
@@ -1376,69 +1421,57 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
     pre_resolved_for_search = None if has_wildcards else (pre_resolved_repos or None)
 
     def _filter_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
-        """Apply type-specific filters to remove mismatched repo/file entries."""
-        filtered: list[UnifiedModel] = []
-        file_only_types = {
-            "hf.unet",
-            "hf.vae",
-            "hf.clip",
-            "hf.t5",
-            "hf.qwen_vl",
-            "hf.stable_diffusion_checkpoint",
-            "hf.stable_diffusion_xl_checkpoint",
-            "hf.stable_diffusion_3_checkpoint",
-            "hf.stable_diffusion_xl_refiner_checkpoint",
-            "hf.flux_checkpoint",
-        }
-        checkpoint_types = set(_CHECKPOINT_BASES.values())
-        nested_checkpoint_types = {"hf.qwen_image_checkpoint", "hf.qwen_image_edit_checkpoint"}
-        single_file_repo_types = {
-            "hf.flux",
-            "hf.flux_fp8",
-            "hf.stable_diffusion",
-            "hf.stable_diffusion_xl",
-            "hf.stable_diffusion_3",
-            "hf.stable_diffusion_xl_refiner",
-        }
+        """Apply type-specific structural rules then semantic matching."""
+        rules = HF_TYPE_STRUCTURAL_RULES.get(normalized_type, {})
+        file_only = rules.get("file_only", False)
+        checkpoint = rules.get("checkpoint", False) or normalized_type in set(_CHECKPOINT_BASES.values())
+        nested_checkpoint = rules.get("nested_checkpoint", False)
+        single_file_repo = rules.get("single_file_repo", False)
+
         seen: set[str] = set()
+        filtered: list[UnifiedModel] = []
+
         for model in models:
             if model.id in seen:
                 continue
+
             repo_lower = (model.repo_id or "").lower()
             path_value = getattr(model, "path", None)
-            if normalized_type in file_only_types and getattr(model, "path", None) is None:
+
+            if file_only and path_value is None:
                 continue
-            if normalized_type in single_file_repo_types:
-                # Skip repo-only entries for gguf-style repos; prefer per-file entries there.
+
+            if single_file_repo:
                 if path_value is None and "gguf" in repo_lower:
                     continue
                 if path_value:
-                    # Only keep single-file checkpoints/gguf weights to avoid auxiliary components.
                     path_lower = path_value.lower()
                     if not _is_single_file_diffusion_weight(path_value) and not path_lower.endswith(".gguf"):
                         continue
-            if normalized_type in checkpoint_types:
-                if not model.path:
+
+            if checkpoint:
+                if not path_value:
                     continue
-                if "/" in model.path and normalized_type not in nested_checkpoint_types:
+                if "/" in path_value and not nested_checkpoint:
                     continue
-            if _matches_model_type(model, normalized_type):
-                try:
-                    model.type = normalized_type  # type: ignore[assignment]
-                except Exception:
-                    model = model.copy(update={"type": normalized_type})
-                filtered.append(model)
-                seen.add(model.id)
+
+            if not _matches_model_type(model, normalized_type):
+                continue
+
+            try:
+                model.type = normalized_type  # type: ignore[assignment]
+            except Exception:
+                model = model.copy(update={"type": normalized_type})
+
+            filtered.append(model)
+            seen.add(model.id)
+
         return filtered
 
     # Offline-first search to avoid network dependency when cache is present.
     offline_models = await search_cached_hf_models(
         repo_patterns=config.get("repo_pattern"),
         filename_patterns=config.get("filename_pattern"),
-        pipeline_tags=config.get("pipeline_tag"),
-        tags=config.get("tag"),
-        authors=config.get("author"),
-        library_name=config.get("library_name"),
         pre_resolved_repos=pre_resolved_for_search,
     )
     offline_filtered = _filter_models(offline_models)
@@ -1451,132 +1484,6 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
         return offline_filtered
 
     return offline_filtered
-
-
-def _fallback_unified_model(repo_id: str, model_type: str) -> UnifiedModel:
-    """Build a minimal `UnifiedModel` placeholder when no metadata is available."""
-    pipeline_tag = _derive_pipeline_tag(model_type)
-    return UnifiedModel(
-        id=repo_id,
-        repo_id=repo_id,
-        path=None,
-        type=model_type,
-        name=repo_id,
-        cache_path=None,
-        allow_patterns=None,
-        ignore_patterns=None,
-        description=None,
-        readme=None,
-        size_on_disk=None,
-        downloaded=False,
-        pipeline_tag=pipeline_tag,
-        tags=None,
-        has_model_index=None,
-        downloads=None,
-        likes=None,
-        trending_score=None,
-    )
-
-
-def _build_offline_models_for_repos(
-    repo_ids: Sequence[str],
-    model_type: str,
-    filename_patterns: Sequence[str] | None,
-    pipeline_tags: Sequence[str] | None,
-) -> list[UnifiedModel]:
-    """
-    Build `UnifiedModel` entries directly from cached snapshots (offline fallback).
-
-    Used when hub metadata is unavailable; emits a repo-level model plus per-file
-    models that match the provided filename patterns.
-    """
-    results: list[UnifiedModel] = []
-    pipeline_tag = pipeline_tags[0] if pipeline_tags else _derive_pipeline_tag(model_type)
-    for repo_id in repo_ids:
-        snapshot_dir = _offline_snapshot_dir(repo_id)
-        if snapshot_dir is None:
-            continue
-        repo_model = UnifiedModel(
-            id=repo_id,
-            repo_id=repo_id,
-            path=None,
-            type=model_type,
-            name=repo_id,
-            cache_path=str(snapshot_dir.parent),
-            allow_patterns=None,
-            ignore_patterns=None,
-            description=None,
-            readme=None,
-            size_on_disk=None,
-            downloaded=True,
-            pipeline_tag=pipeline_tag,
-            tags=None,
-            has_model_index=None,
-            downloads=None,
-            likes=None,
-            trending_score=None,
-        )
-        results.append(repo_model)
-        if filename_patterns:
-            rel_files = _offline_snapshot_files(snapshot_dir)
-            for relpath in rel_files:
-                if not any(fnmatch(relpath, pat) for pat in filename_patterns):
-                    continue
-                file_id = f"{repo_id}:{relpath}"
-                results.append(
-                    UnifiedModel(
-                        id=file_id,
-                        repo_id=repo_id,
-                        path=relpath,
-                        type=model_type,
-                        name=f"{repo_id}/{relpath}",
-                        cache_path=str(snapshot_dir.parent),
-                        allow_patterns=None,
-                        ignore_patterns=None,
-                        description=None,
-                        readme=None,
-                        size_on_disk=None,
-                        downloaded=True,
-                        pipeline_tag=pipeline_tag,
-                        tags=None,
-                        has_model_index=None,
-                        downloads=None,
-                        likes=None,
-                        trending_score=None,
-                    )
-                )
-    return results
-
-
-def _offline_snapshot_dir(repo_id: str) -> Path | None:
-    """Return the newest snapshot directory for a repo if it exists locally."""
-    repo_bits = [bit for bit in repo_id.split("/") if bit]
-    if not repo_bits:
-        return None
-    repo_dir = HF_FAST_CACHE.cache_dir / ("models--" + "--".join(repo_bits))
-    snapshots_dir = repo_dir / "snapshots"
-    if not snapshots_dir.exists():
-        return None
-    newest = None
-    newest_mtime = None
-    for entry in snapshots_dir.iterdir():
-        if not entry.is_dir():
-            continue
-        mt = entry.stat().st_mtime
-        if newest_mtime is None or mt > newest_mtime:
-            newest = entry
-            newest_mtime = mt
-    return newest
-
-
-def _offline_snapshot_files(snapshot_dir: Path) -> list[str]:
-    """List snapshot-relative file paths for a cached repo snapshot."""
-    relpaths: list[str] = []
-    for root, _, files in os.walk(snapshot_dir):
-        for fname in files:
-            full = Path(root) / fname
-            relpaths.append(str(full.relative_to(snapshot_dir)))
-    return relpaths
 
 
 def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) -> list[str]:
@@ -1605,117 +1512,72 @@ def _matches_any_pattern_ci(value: str, patterns: list[str]) -> bool:
     return any(fnmatch(value_lower, pattern.lower()) for pattern in patterns)
 
 
-def _repo_tags_match_patterns(repo_tags: list[str], patterns: list[str]) -> bool:
-    """Ensure all requested tag patterns are present on the repo (logical AND)."""
-    if not patterns:
-        return True
-    if not repo_tags:
-        return False
-    for pattern in patterns:
-        if not any(fnmatch(tag, pattern) for tag in repo_tags):
-            return False
-    return True
+async def iter_cached_model_files(
+    pre_resolved_repos: Sequence[tuple[str, Path]] | None = None,
+) -> AsyncIterator[tuple[str, Path, Path, list[str]]]:
+    """
+    Yield (repo_id, repo_dir, snapshot_dir, file_list) for cached HF repos.
+
+    Traversal is offline-only and best-effort: repos without an active snapshot
+    or whose files cannot be listed are skipped.
+    """
+    try:
+        repo_list = list(pre_resolved_repos) if pre_resolved_repos is not None else await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:  # pragma: no cover - defensive guard
+        log.debug("iter_cached_model_files: discover failed: %s", exc)
+        return
+
+    for repo_id, repo_dir in repo_list:
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        if not snapshot_dir:
+            continue
+        try:
+            file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log.debug("iter_cached_model_files: list_files failed for %s: %s", repo_id, exc)
+            continue
+
+        yield repo_id, Path(repo_dir), Path(snapshot_dir), file_list
 
 
 async def search_cached_hf_models(
     repo_patterns: Sequence[str] | None = None,
     filename_patterns: Sequence[str] | None = None,
-    pipeline_tags: Sequence[str] | None = None,
-    tags: Sequence[str] | None = None,
-    authors: Sequence[str] | None = None,
-    library_name: str | None = None,
     *,
-    skip_model_info: bool = False,
     pre_resolved_repos: Sequence[tuple[str, Path]] | None = None,
 ) -> List[UnifiedModel]:
     """
-    Search the local HF cache for repos/files matching metadata and pattern filters.
+    Search the local HF cache for repos/files using offline data only.
 
     The function is hub-free: it discovers repos from disk, optionally pre-resolves
-    specific repos to avoid globbing, applies pipeline/tag/author/library filters
-    when metadata is available, and emits both repo-level and file-level `UnifiedModel`
-    entries when filename patterns are provided.
+    specific repos to avoid globbing, and emits both repo-level and file-level
+    `UnifiedModel` entries when filename patterns are provided.
     """
-    # Always skip hub metadata to avoid network calls.
-    skip_model_info = True
-    if pre_resolved_repos is not None:
-        repo_list = list(pre_resolved_repos)
-    else:
-        try:
-            repo_list = await HF_FAST_CACHE.discover_repos("model")
-        except Exception as exc:  # pragma: no cover - defensive guard
-            log.warning(f"Failed to discover cached HF repos: {exc}")
-            return []
-
-    if not repo_list:
-        return []
-
     repo_pattern_list = _normalize_patterns(repo_patterns)
     filename_pattern_list = _normalize_patterns(filename_patterns)
-    pipeline_tag_patterns = _normalize_patterns(pipeline_tags, lower=True)
-    tag_patterns = _normalize_patterns(tags, lower=True)
-    author_patterns = _normalize_patterns(authors, lower=True)
-    library_pattern = (
-        library_name.strip().lower() if library_name and library_name.strip() else None
-    )
 
     recommended_models = get_recommended_models()
     results: list[UnifiedModel] = []
-    requires_metadata = False
+    repo_count = 0
     log.debug(
-        "search_cached_hf_models: repos=%s files=%s pipeline_tags=%s tags=%s authors=%s library=%s skip_info=%s pre_resolved=%d",
+        "search_cached_hf_models: repos=%s files=%s pre_resolved=%s",
         repo_pattern_list,
         filename_pattern_list,
-        pipeline_tag_patterns,
-        tag_patterns,
-        author_patterns,
-        library_pattern,
-        skip_model_info,
-        len(repo_list),
+        "yes" if pre_resolved_repos is not None else "no",
     )
 
-    model_infos = [None for _ in repo_list]
-
-    for (repo_id, repo_dir), model_info in zip(repo_list, model_infos, strict=False):
-        info: ModelInfo | None
-        if isinstance(model_info, BaseException):
-            log.debug(f"Failed to fetch model info for {repo_id}: {model_info}")
-            info = None
-        else:
-            info = model_info
-
+    async for repo_id, repo_dir, snapshot_dir, file_list in iter_cached_model_files(pre_resolved_repos):
+        repo_count += 1
         if repo_pattern_list and not _matches_any_pattern_ci(repo_id, repo_pattern_list):
             continue
-
-        if requires_metadata and info is None:
-            continue
-
-        if info:
-            pipeline_value = (info.pipeline_tag or "").lower()
-            if pipeline_tag_patterns and not _matches_any_pattern(
-                pipeline_value, pipeline_tag_patterns
-            ):
-                continue
-
-            repo_tags = [tag.lower() for tag in (info.tags or [])]
-            if not _repo_tags_match_patterns(repo_tags, tag_patterns):
-                continue
-
-            author_value = (info.author or "").lower()
-            if author_patterns and not _matches_any_pattern(
-                author_value, author_patterns
-            ):
-                continue
-
-            library_value = (getattr(info, "library_name", "") or "").lower()
-            if library_pattern and not fnmatch(library_value, library_pattern):
-                continue
 
         repo_model, file_entries = await _build_cached_repo_entry(
             repo_id,
             repo_dir,
-            info,
+            None,
             recommended_models,
+            snapshot_dir=snapshot_dir,
+            file_list=file_list,
         )
         results.append(repo_model)
 
@@ -1753,20 +1615,9 @@ async def search_cached_hf_models(
     log.debug(
         "search_cached_hf_models: returning %d results (repos scanned=%d)",
         len(results),
-        len(repo_list),
+        repo_count,
     )
     return results
-
-
-async def _filter_repos_by_metadata(
-    pipeline_tag: str | None = None,
-    library_name: str | None = None,
-    tags: list[str] | None = None,
-    predicate: Callable[[ModelInfo], bool] | None = None,
-) -> list[tuple[str, Path, ModelInfo]]:
-    """Metadata filtering is disabled (hub-free mode); return empty list."""
-    log.debug("_filter_repos_by_metadata: metadata filtering disabled")
-    return []
 
 
 async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
@@ -1781,19 +1632,9 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    try:
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_llamacpp_language_models_from_hf_cache: discover failed: {exc}")
-        return []
-
     results: list[LanguageModel] = []
 
-    for repo_id, _repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
-        if not snapshot_dir:
-            continue
-        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+    async for repo_id, _repo_dir, _snapshot_dir, file_list in iter_cached_model_files():
         for fname in file_list:
             if not fname.lower().endswith(".gguf"):
                 continue
@@ -1815,21 +1656,13 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
 
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     """Return LanguageModel entries based on cached weight files (hub-free)."""
-    try:
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_vllm_language_models_from_hf_cache: discover failed: {exc}")
-        return []
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
 
     SUPPORTED_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth")
 
-    for repo_id, _repo_dir in repo_list:
-        if repo_id in seen_repos:
-            continue
-        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
-        if any(fname.lower().endswith(SUPPORTED_WEIGHT_EXTENSIONS) for fname in file_list):
+    async for repo_id, _repo_dir, _snapshot_dir, file_list in iter_cached_model_files():
+        if repo_id not in seen_repos and any(fname.lower().endswith(SUPPORTED_WEIGHT_EXTENSIONS) for fname in file_list):
             seen_repos.add(repo_id)
             repo_display = repo_id.split("/")[-1]
             results.append(
@@ -1879,18 +1712,12 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
     """
-    try:
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_text_to_image_models_from_hf_cache: discover failed: {exc}")
-        return []
-
     result: dict[str, ImageModel] = {}
-    for repo_id, _repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
-        if not snapshot_dir:
+    async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
+        if not file_list:
             continue
-        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        if not await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list):
+            continue
         added_single_file = False
         for fname in file_list:
             if not _is_single_file_diffusion_weight(fname):
@@ -1923,18 +1750,12 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
     """
-    try:
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_image_to_image_models_from_hf_cache: discover failed: {exc}")
-        return []
-
     result: dict[str, ImageModel] = {}
-    for repo_id, _repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
-        if not snapshot_dir:
+    async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
+        if not file_list:
             continue
-        file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
+        if not await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list):
+            continue
         added_single_file = False
         for fname in file_list:
             if not _is_single_file_diffusion_weight(fname):

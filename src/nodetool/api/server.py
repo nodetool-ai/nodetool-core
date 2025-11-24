@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn import run as uvicorn
 
+from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging, get_logger
 
@@ -327,7 +328,7 @@ def create_app(
         # Run database migrations before starting
         from nodetool.models.migrations import run_startup_migrations
 
-        if not Environment.is_test():
+        if not RUNNING_PYTEST:
             try:
                 await run_startup_migrations()
                 log.info("Database migrations completed successfully")
@@ -404,7 +405,7 @@ def create_app(
     )
     app.middleware("http")(auth_middleware)
 
-    if not Environment.is_test():
+    if not RUNNING_PYTEST:
         app.add_middleware(ResourceScopeMiddleware)
 
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"

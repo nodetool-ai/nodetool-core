@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 import yaml
 
 from nodetool.config.configuration import register_secret, register_setting
+from nodetool.config.env_guard import get_system_env_value
 
 # Constants
 SETTINGS_FILE = "settings.yaml"
@@ -323,7 +324,7 @@ def get_value(
 
     # Environment variables take priority
     if value is None or str(value) == "":
-        value = os.environ.get(key)
+        value = get_system_env_value(key)
 
     # Fall back to default environment values
     if value is None:

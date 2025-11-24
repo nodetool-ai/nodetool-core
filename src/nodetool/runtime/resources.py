@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
 import httpx
 
+from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.database_adapter import DatabaseAdapter
@@ -293,7 +294,7 @@ class ResourceScope:
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:
         """Get or create the asset storage adapter for this scope."""
         if self._asset_storage is None:
-            if Environment.is_test():
+            if RUNNING_PYTEST:
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 log.info("Using memory storage for asset storage")

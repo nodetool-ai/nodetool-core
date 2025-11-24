@@ -45,13 +45,22 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.torch_support import is_cuda_available
-from nodetool.workflows.types import NodeUpdate
+from nodetool.workflows.types import NodeUpdate, EdgeUpdate
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.inbox import NodeInbox
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.workflow_runner import WorkflowRunner
+
+
+def _device_move_plan(device: str | None) -> tuple[str | None, str | None]:
+    """Resolve how the actor should stage inputs/outputs for a target device."""
+    if device is None:
+        return None, None
+    if device.startswith("cuda"):
+        return device, "cpu"
+    return None, None
 
 
 class NodeActor:
@@ -178,16 +187,9 @@ class NodeActor:
             if inbox is not None:
                 inbox.mark_source_done(edge.targetHandle)
             # Notify listeners that this edge has been drained (EOS signaled)
-            try:
-                from .types import EdgeUpdate
-
-                self.context.post_message(
-                    EdgeUpdate(edge_id=edge.id or "", status="drained")
-                )
-            except Exception:
-                # Best-effort notification; never block EOS on update errors
-                pass
-
+            self.context.post_message(
+                EdgeUpdate(edge_id=edge.id or "", status="drained"),
+            )
     async def process_node_with_inputs(
         self,
         inputs: dict[str, Any],

@@ -319,14 +319,10 @@ async def get_huggingface_models(
 async def search_huggingface_models_endpoint(
     repo_pattern: list[str] | None = Query(None),
     filename_pattern: list[str] | None = Query(None),
-    pipeline_tag: list[str] | None = Query(None),
-    tag: list[str] | None = Query(None),
-    author: list[str] | None = Query(None),
-    library_name: str | None = None,
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     """
-    Search cached Hugging Face repos by metadata and optional filename patterns.
+    Search cached Hugging Face repos/files using offline cache data.
     """
     if Environment.is_production():
         log.warning("Cannot search Hugging Face models in production")
@@ -335,10 +331,6 @@ async def search_huggingface_models_endpoint(
     return await search_cached_hf_models(
         repo_patterns=repo_pattern,
         filename_patterns=filename_pattern,
-        pipeline_tags=pipeline_tag,
-        tags=tag,
-        authors=author,
-        library_name=library_name,
     )
 
 

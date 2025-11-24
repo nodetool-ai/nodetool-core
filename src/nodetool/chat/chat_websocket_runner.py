@@ -29,6 +29,7 @@ from fastapi.websockets import WebSocketState
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.config.environment import Environment
+from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
 
@@ -137,7 +138,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         log.info("WebSocket connection established for chat")
 
         # Start heartbeat to keep idle connections alive (skip in tests to avoid leaked tasks)
-        if not Environment.is_test():
+        if not RUNNING_PYTEST:
             if not self.heartbeat_task or self.heartbeat_task.done():
                 self.heartbeat_task = asyncio.create_task(self._heartbeat())
 
