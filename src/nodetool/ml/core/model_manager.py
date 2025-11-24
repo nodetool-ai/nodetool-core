@@ -248,7 +248,7 @@ class ModelManager:
             cls._node_last_used[node_id] = now
             return
 
-        for mapped_node_id, mapped_key in cls._models_by_node.items():
+        for mapped_node_id, mapped_key in list(cls._models_by_node.items()):
             if mapped_key == key:
                 cls._node_last_used[mapped_node_id] = now
 
@@ -342,7 +342,7 @@ class ModelManager:
         cleared_models = []
         cleared_locks = 0
 
-        for node_id in node_ids:
+        for node_id in list(node_ids):
             key = cls._models_by_node.pop(node_id, None)
             if key:
                 if key in cls._models:
@@ -397,7 +397,7 @@ class ModelManager:
         # Log which models are being cleared
         if model_count > 0:
             model_info = []
-            for key in cls._models:
+            for key in list(cls._models):
                 parts = key.split("_", 2)
                 model_id = parts[0] if len(parts) > 0 else "unknown"
                 task = parts[1] if len(parts) > 1 else "unknown"
@@ -682,8 +682,7 @@ class ModelManager:
         start_available = snapshot.available_gb
         candidates: list[tuple[float, str, Any]] = []
 
-        for key in list(cls._models.keys()):
-            model = cls._models.get(key)
+        for key, model in list(cls._models.items()):
             if model is None:
                 continue
 
@@ -769,7 +768,12 @@ class ModelManager:
 
         try:
             if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
-                return cls._capture_vram_snapshot_via_system_stats()
+                fallback = cls._capture_vram_snapshot_via_system_stats()
+                if fallback is None:
+                    logger.debug(
+                        "Torch available but CUDA unavailable and NVML fallback failed to provide stats."
+                    )
+                return fallback
 
             torch.cuda.synchronize()
 
