@@ -85,8 +85,9 @@ HF_DEFAULT_FILE_PATTERNS = [
 # Extra globs for torch weights common in control/adapters.
 HF_PTH_FILE_PATTERNS = ["*.pth", "*.pt"]
 
-# Explicit repo-id allowlists for ComfyUI-flavored model families.
-COMFY_REPO_PATTERNS = {
+# Known repo-id allowlists for supported model families.
+# These repos are recognized for offline type matching without hub metadata.
+KNOWN_REPO_PATTERNS = {
     "flux": [
         "Comfy-Org/flux1-dev",
         "Comfy-Org/flux1-schnell",
@@ -115,43 +116,43 @@ COMFY_REPO_PATTERNS = {
     "sd35": ["Comfy-Org/stable-diffusion-3.5-fp8"],
 }
 
-# Map hf.* comfy types to repo-id allowlists so type matching can succeed offline.
-COMFY_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
-    "hf.flux": [*COMFY_REPO_PATTERNS["flux"]],
-    "hf.flux_fp8": [*COMFY_REPO_PATTERNS["flux"]],
-    "hf.flux_kontext": [*COMFY_REPO_PATTERNS["flux_kontext"]],
-    "hf.flux_canny": [*COMFY_REPO_PATTERNS["flux_canny"]],
-    "hf.flux_depth": [*COMFY_REPO_PATTERNS["flux_depth"]],
-    "hf.stable_diffusion_3": [*COMFY_REPO_PATTERNS["sd35"]],
+# Map hf.* types to repo-id allowlists so type matching can succeed offline.
+KNOWN_TYPE_REPO_MATCHERS: dict[str, list[str]] = {
+    "hf.flux": [*KNOWN_REPO_PATTERNS["flux"]],
+    "hf.flux_fp8": [*KNOWN_REPO_PATTERNS["flux"]],
+    "hf.flux_kontext": [*KNOWN_REPO_PATTERNS["flux_kontext"]],
+    "hf.flux_canny": [*KNOWN_REPO_PATTERNS["flux_canny"]],
+    "hf.flux_depth": [*KNOWN_REPO_PATTERNS["flux_depth"]],
+    "hf.stable_diffusion_3": [*KNOWN_REPO_PATTERNS["sd35"]],
     "hf.qwen_image": [
-        *COMFY_REPO_PATTERNS["qwen_image"],
-        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        *KNOWN_REPO_PATTERNS["qwen_image"],
+        *KNOWN_REPO_PATTERNS["qwen_image_edit"],
     ],
-    "hf.qwen_image_edit": [*COMFY_REPO_PATTERNS["qwen_image_edit"]],
+    "hf.qwen_image_edit": [*KNOWN_REPO_PATTERNS["qwen_image_edit"]],
     "hf.qwen_vl": [
-        *COMFY_REPO_PATTERNS["qwen_image"],
-        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        *KNOWN_REPO_PATTERNS["qwen_image"],
+        *KNOWN_REPO_PATTERNS["qwen_image_edit"],
     ],
     "hf.unet": [
-        *COMFY_REPO_PATTERNS["flux"],
-        *COMFY_REPO_PATTERNS["flux_kontext"],
-        *COMFY_REPO_PATTERNS["flux_canny"],
-        *COMFY_REPO_PATTERNS["flux_depth"],
-        *COMFY_REPO_PATTERNS["qwen_image"],
-        *COMFY_REPO_PATTERNS["qwen_image_edit"],
-        *COMFY_REPO_PATTERNS["sd35"],
+        *KNOWN_REPO_PATTERNS["flux"],
+        *KNOWN_REPO_PATTERNS["flux_kontext"],
+        *KNOWN_REPO_PATTERNS["flux_canny"],
+        *KNOWN_REPO_PATTERNS["flux_depth"],
+        *KNOWN_REPO_PATTERNS["qwen_image"],
+        *KNOWN_REPO_PATTERNS["qwen_image_edit"],
+        *KNOWN_REPO_PATTERNS["sd35"],
     ],
     "hf.vae": [
-        *COMFY_REPO_PATTERNS["flux_vae"],
-        *COMFY_REPO_PATTERNS["qwen_image"],
-        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        *KNOWN_REPO_PATTERNS["flux_vae"],
+        *KNOWN_REPO_PATTERNS["qwen_image"],
+        *KNOWN_REPO_PATTERNS["qwen_image_edit"],
     ],
     "hf.clip": [
-        *COMFY_REPO_PATTERNS["sd35"],
-        *COMFY_REPO_PATTERNS["qwen_image"],
-        *COMFY_REPO_PATTERNS["qwen_image_edit"],
+        *KNOWN_REPO_PATTERNS["sd35"],
+        *KNOWN_REPO_PATTERNS["qwen_image"],
+        *KNOWN_REPO_PATTERNS["qwen_image_edit"],
     ],
-    "hf.t5": [*COMFY_REPO_PATTERNS["sd35"]],
+    "hf.t5": [*KNOWN_REPO_PATTERNS["sd35"]],
 }
 
 # Base → checkpoint variant mapping so heuristics propagate to single-file checkpoints.
@@ -193,6 +194,8 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.unet": ["unet"],
     "hf.clip": ["clip"],
     "hf.t5": ["t5"],
+    "hf.flux_redux": ["flux", "redux"],
+    "hf.real_esrgan": ["esrgan", "real-esrgan"],
 }
 # Copy keyword matchers to checkpoint variants.
 for _base, _ckpt in _CHECKPOINT_BASES.items():
@@ -236,6 +239,28 @@ HF_FILE_PATTERN_TYPES = {
     "hf.text_to_audio",
     "hf.text_generation",
     "hf.sentence_similarity",
+    "hf.text_classification",
+    "hf.zero_shot_classification",
+    "hf.token_classification",
+    "hf.object_detection",
+    "hf.zero_shot_object_detection",
+    "hf.image_classification",
+    "hf.zero_shot_image_classification",
+    "hf.audio_classification",
+    "hf.zero_shot_audio_classification",
+    "hf.image_segmentation",
+    "hf.depth_estimation",
+    "hf.feature_extraction",
+    "hf.fill_mask",
+    "hf.translation",
+    "hf.visual_question_answering",
+    "hf.question_answering",
+    "hf.table_question_answering",
+    "hf.text2text_generation",
+    "hf.image_text_to_text",
+    "hf.reranker",
+    "hf.real_esrgan",
+    "hf.flux_redux",
 }
 # Cache key/TTL used to memoize full cached-model listings to speed UI refreshes.
 CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
@@ -282,6 +307,33 @@ HF_FAST_CACHE = HfFastCache()
 # Map transformer `model_type` values to hf.* types when configs are parsed offline.
 _CONFIG_MODEL_TYPE_MAPPING = {
     "whisper": "hf.automatic_speech_recognition",
+    "automatic-speech-recognition": "hf.automatic_speech_recognition",
+    "audio-classification": "hf.audio_classification",
+    "zero-shot-audio-classification": "hf.zero_shot_audio_classification",
+    "image-classification": "hf.image_classification",
+    "zero-shot-image-classification": "hf.zero_shot_image_classification",
+    "image-segmentation": "hf.image_segmentation",
+    "depth-estimation": "hf.depth_estimation",
+    "object-detection": "hf.object_detection",
+    "zero-shot-object-detection": "hf.zero_shot_object_detection",
+    "visual-question-answering": "hf.visual_question_answering",
+    "question-answering": "hf.question_answering",
+    "table-question-answering": "hf.table_question_answering",
+    "text-classification": "hf.text_classification",
+    "zero-shot-classification": "hf.zero_shot_classification",
+    "token-classification": "hf.token_classification",
+    "feature-extraction": "hf.feature_extraction",
+    "fill-mask": "hf.fill_mask",
+    "text2text-generation": "hf.text2text_generation",
+    "translation": "hf.translation",
+    "image-text-to-text": "hf.image_text_to_text",
+    "sentence-similarity": "hf.sentence_similarity",
+    "reranker": "hf.reranker",
+    "real-esrgan": "hf.real_esrgan",
+    "flux-redux": "hf.flux_redux",
+    "text-generation": "hf.text_generation",
+    "text-to-audio": "hf.text_to_audio",
+    "text-to-speech": "hf.text_to_speech",
 }
 
 
@@ -798,6 +850,14 @@ def _infer_model_type_from_architectures(architectures: Sequence[str]) -> str | 
         lower = arch.lower()
         if "whisper" in lower:
             return "hf.automatic_speech_recognition"
+        # Text generation models (LLMs)
+        if any(keyword in lower for keyword in ["llama", "mistral", "qwen", "gpt", "phi", "gemma", "falcon"]):
+            return "hf.text_generation"
+        # Audio generation
+        if any(keyword in lower for keyword in ["bark", "audioldm", "musicgen"]):
+            return "hf.text_to_audio"
+        if any(keyword in lower for keyword in ["speecht5", "vits", "tacotron"]):
+            return "hf.text_to_speech"
     return None
 
 
@@ -1005,12 +1065,12 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.stable_diffusion_3": {
         "tag": ["*stable-diffusion-3*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": COMFY_REPO_PATTERNS["sd35"],
+        "repo_pattern": KNOWN_REPO_PATTERNS["sd35"],
     },
     "hf.flux": {
         "tag": ["*flux*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*COMFY_REPO_PATTERNS["flux"], "*flux*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.flux_fp8": {
         "tag": ["*flux*"],
@@ -1021,40 +1081,40 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*fp8*.pt",
             "*fp8*.pth",
         ],
-        "repo_pattern": [*COMFY_REPO_PATTERNS["flux"], "*flux*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.flux_kontext": {
         "tag": ["*flux*", "*kontext*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_kontext"], "*nunchaku*flux*", "*flux*kontext*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_kontext"], "*nunchaku*flux*", "*flux*kontext*"],
     },
     "hf.flux_canny": {
         "tag": ["*flux*", "*canny*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_canny"], "*nunchaku*flux*canny*", "*flux*canny*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_canny"], "*nunchaku*flux*canny*", "*flux*canny*"],
     },
     "hf.flux_depth": {
         "tag": ["*flux*", "*depth*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*COMFY_REPO_PATTERNS["flux_depth"], "*nunchaku*flux*depth*", "*flux*depth*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_depth"], "*nunchaku*flux*depth*", "*flux*depth*"],
     },
     "hf.qwen_image": {
         "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": COMFY_REPO_PATTERNS["qwen_image"],
+        "repo_pattern": KNOWN_REPO_PATTERNS["qwen_image"],
     },
     "hf.qwen_image_edit": {
         "pipeline_tag": ["image-to-image"],
         "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": COMFY_REPO_PATTERNS["qwen_image_edit"],
+        "repo_pattern": KNOWN_REPO_PATTERNS["qwen_image_edit"],
     },
     "hf.qwen_vl": {
         "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [
-            *COMFY_REPO_PATTERNS["qwen_image"],
-            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            *KNOWN_REPO_PATTERNS["qwen_image"],
+            *KNOWN_REPO_PATTERNS["qwen_image_edit"],
         ],
     },
     "hf.controlnet": {
@@ -1084,10 +1144,10 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.lora_qwen_image": {"repo_pattern": ["*lora*qwen*"], "pipeline_tag": []},
     "hf.unet": {
         "repo_pattern": [
-            *COMFY_REPO_PATTERNS["flux"],
-            *COMFY_REPO_PATTERNS["qwen_image"],
-            *COMFY_REPO_PATTERNS["qwen_image_edit"],
-            *COMFY_REPO_PATTERNS["sd35"],
+            *KNOWN_REPO_PATTERNS["flux"],
+            *KNOWN_REPO_PATTERNS["qwen_image"],
+            *KNOWN_REPO_PATTERNS["qwen_image_edit"],
+            *KNOWN_REPO_PATTERNS["sd35"],
             "*unet*",
             "*stable-diffusion*",
         ],
@@ -1103,9 +1163,9 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     },
     "hf.vae": {
         "repo_pattern": [
-            *COMFY_REPO_PATTERNS["flux_vae"],
-            *COMFY_REPO_PATTERNS["qwen_image"],
-            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            *KNOWN_REPO_PATTERNS["flux_vae"],
+            *KNOWN_REPO_PATTERNS["qwen_image"],
+            *KNOWN_REPO_PATTERNS["qwen_image_edit"],
             "*vae*",
             "*stable-diffusion*",
         ],
@@ -1114,9 +1174,9 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     },
     "hf.clip": {
         "repo_pattern": [
-            *COMFY_REPO_PATTERNS["sd35"],
-            *COMFY_REPO_PATTERNS["qwen_image"],
-            *COMFY_REPO_PATTERNS["qwen_image_edit"],
+            *KNOWN_REPO_PATTERNS["sd35"],
+            *KNOWN_REPO_PATTERNS["qwen_image"],
+            *KNOWN_REPO_PATTERNS["qwen_image_edit"],
             "*clip*",
             "*flux*",
         ],
@@ -1124,7 +1184,7 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "pipeline_tag": [],
     },
     "hf.t5": {
-        "repo_pattern": [*COMFY_REPO_PATTERNS["sd35"], "*t5*", "*flux*"],
+        "repo_pattern": [*KNOWN_REPO_PATTERNS["sd35"], "*t5*", "*flux*"],
         "filename_pattern": ["*t5*.safetensors", "*t5*.bin", "*t5*.gguf", "*t5*.ckpt"],
         "pipeline_tag": [],
     },
@@ -1133,6 +1193,118 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.image_to_text": {"pipeline_tag": ["image-to-text"], "tag": ["*caption*"]},
     "hf.inpainting": {"pipeline_tag": ["image-inpainting"], "tag": ["*inpaint*"]},
     "hf.outpainting": {"tag": ["*outpaint*"]},
+    "hf.flux_redux": {
+        "repo_pattern": ["*flux*redux*"],
+        "tag": ["*flux*", "*redux*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "pipeline_tag": ["text-to-image"],
+    },
+    "hf.real_esrgan": {
+        "repo_pattern": ["*esrgan*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+        "pipeline_tag": ["image-to-image"],
+    },
+    "hf.image_classification": {
+        "pipeline_tag": ["image-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.zero_shot_image_classification": {
+        "pipeline_tag": ["zero-shot-image-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.audio_classification": {
+        "pipeline_tag": ["audio-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.zero_shot_audio_classification": {
+        "pipeline_tag": ["zero-shot-audio-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.text_classification": {
+        "pipeline_tag": ["text-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.zero_shot_classification": {
+        "pipeline_tag": ["zero-shot-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.token_classification": {
+        "pipeline_tag": ["token-classification"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.object_detection": {
+        "pipeline_tag": ["object-detection"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.zero_shot_object_detection": {
+        "pipeline_tag": ["zero-shot-object-detection"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.image_segmentation": {
+        "pipeline_tag": ["image-segmentation"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.depth_estimation": {
+        "pipeline_tag": ["depth-estimation"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.feature_extraction": {
+        "pipeline_tag": ["feature-extraction"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.fill_mask": {
+        "pipeline_tag": ["fill-mask"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.translation": {
+        "pipeline_tag": ["translation"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.text2text_generation": {
+        "pipeline_tag": ["text2text-generation"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.image_text_to_text": {
+        "pipeline_tag": ["image-text-to-text"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.sentence_similarity": {
+        "pipeline_tag": ["sentence-similarity"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.reranker": {
+        "pipeline_tag": ["text-classification"],
+        "tag": ["*rerank*"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.visual_question_answering": {
+        "pipeline_tag": ["visual-question-answering"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.question_answering": {
+        "pipeline_tag": ["question-answering"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.table_question_answering": {
+        "pipeline_tag": ["table-question-answering"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.automatic_speech_recognition": {
+        "pipeline_tag": ["automatic-speech-recognition"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.text_generation": {
+        "pipeline_tag": ["text-generation"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.text_to_audio": {
+        "pipeline_tag": ["text-to-audio"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
+    "hf.text_to_speech": {
+        "pipeline_tag": ["text-to-speech"],
+        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+    },
 }
 
 # Derive checkpoint variants (single-file) from base configs.
@@ -1156,6 +1328,7 @@ HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.qwen_image_edit_checkpoint": {"checkpoint": True, "nested_checkpoint": True},
     "hf.flux": {"single_file_repo": True},
     "hf.flux_fp8": {"single_file_repo": True},
+    "hf.flux_redux": {"single_file_repo": True},
     "hf.stable_diffusion": {"single_file_repo": True},
     "hf.stable_diffusion_xl": {"single_file_repo": True},
     "hf.stable_diffusion_3": {"single_file_repo": True},
@@ -1170,7 +1343,7 @@ def get_supported_hf_types() -> list[tuple[str, bool]]:
     (works without a task override). Types without a configuration can still be
     used with get_models_by_hf_type when a task is provided.
     """
-    configured: set[str] = set(HF_SEARCH_TYPE_CONFIG.keys()) | set(COMFY_TYPE_REPO_MATCHERS.keys())
+    configured: set[str] = set(HF_SEARCH_TYPE_CONFIG.keys()) | set(KNOWN_TYPE_REPO_MATCHERS.keys())
     task_only = set(HF_FILE_PATTERN_TYPES) - configured
 
     supported: list[tuple[str, bool]] = []
@@ -1262,7 +1435,7 @@ def _build_search_config_for_type(
 
 def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
     """Check if a repo id matches any hard-coded comfy-type mappings for a model type."""
-    matchers = COMFY_TYPE_REPO_MATCHERS.get(normalized_type)
+    matchers = KNOWN_TYPE_REPO_MATCHERS.get(normalized_type)
     if not matchers:
         return False
     repo_lower = repo_id.lower()

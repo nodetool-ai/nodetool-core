@@ -2,8 +2,9 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, Mock
-from huggingface_hub.errors import GatedRepoError
+from huggingface_hub.errors import EntryNotFoundError, GatedRepoError
 from huggingface_hub.hf_api import RepoFile
+from huggingface_hub import _CACHED_NO_EXIST
 
 from nodetool.integrations.huggingface.hf_download import (
     DownloadManager,
@@ -215,6 +216,118 @@ class TestDownloadManager:
                     )
                 # Should raise the first exception
                 assert exc_info.value == error1
+
+    @pytest.mark.asyncio
+    async def test_download_huggingface_repo_handles_cached_no_exist(self, mock_websocket, mock_hf_api):
+        """Ensure _CACHED_NO_EXIST sentinel is treated as a cache miss without raising errors."""
+        manager = DownloadManager()
+        manager.api = mock_hf_api
+
+        from multiprocessing import Manager
+        manager_instance = Manager()
+        queue = manager_instance.Queue()
+
+        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.downloads["test/repo"] = state
+
+        with (
+            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=_CACHED_NO_EXIST),
+            patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
+            patch("asyncio.get_running_loop") as mock_loop,
+        ):
+            mock_filter.side_effect = lambda files, *_args, **_kwargs: files
+            mock_loop.return_value.run_in_executor = AsyncMock(
+                side_effect=[
+                    ("config.json", "/tmp/config.json"),
+                    ("model.safetensors", "/tmp/model.safetensors"),
+                ]
+            )
+
+            await manager.download_huggingface_repo(
+                repo_id="test/repo",
+                path=None,
+                queue=queue,
+            )
+
+        assert state.status == "completed"
+        assert state.downloaded_files == ["config.json", "model.safetensors"]
+
+    @pytest.mark.asyncio
+    async def test_download_huggingface_repo_skips_directories(self, mock_websocket):
+        """Ensure directory entries from repo tree are not queued for download."""
+        manager = DownloadManager()
+
+        # Build mock API response: one file and one directory-like entry.
+        file_entry = MagicMock(spec=RepoFile)
+        file_entry.path = "config.json"
+        file_entry.size = 1024
+
+        dir_entry = MagicMock()
+        dir_entry.path = "images"
+        dir_entry.type = "directory"
+
+        manager.api = MagicMock()
+        manager.api.list_repo_tree.return_value = [file_entry, dir_entry]
+
+        from multiprocessing import Manager
+        manager_instance = Manager()
+        queue = manager_instance.Queue()
+
+        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.downloads["test/repo"] = state
+
+        with (
+            patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
+            patch("asyncio.get_running_loop") as mock_loop,
+        ):
+            mock_filter.side_effect = lambda files, *_args, **_kwargs: files
+            mock_loop.return_value.run_in_executor = AsyncMock(
+                return_value=("config.json", "/tmp/config.json")
+            )
+
+            await manager.download_huggingface_repo(
+                repo_id="test/repo",
+                path=None,
+                queue=queue,
+            )
+
+        # Only the file should be downloaded, directory should be ignored.
+        mock_loop.return_value.run_in_executor.assert_awaited_once()
+        assert state.downloaded_files == ["config.json"]
+
+    @pytest.mark.asyncio
+    async def test_download_huggingface_repo_handles_entry_not_found(self, mock_websocket, mock_hf_api):
+        """EntryNotFoundError from a download should set error status and not raise."""
+        manager = DownloadManager()
+        manager.api = mock_hf_api
+
+        from multiprocessing import Manager
+        manager_instance = Manager()
+        queue = manager_instance.Queue()
+
+        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.downloads["test/repo"] = state
+
+        with (
+            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
+            patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
+        ):
+            mock_filter.side_effect = lambda files, *_args, **_kwargs: files
+
+            error = EntryNotFoundError("404 Client Error")
+
+            async def mock_gather(*args, **kwargs):
+                return [error]
+
+            with patch("asyncio.gather", side_effect=mock_gather):
+                await manager.download_huggingface_repo(
+                    repo_id="test/repo",
+                    path=None,
+                    queue=queue,
+                )
+
+        assert state.status == "error"
+        assert state.error_message == "404 Client Error"
     
     @pytest.mark.asyncio
     async def test_endpoint_sends_error_on_exception(self, mock_websocket):

@@ -63,6 +63,16 @@ def detect_model(
         result.details.update(_common_details(index, sample=10))
         return result
 
+    if component == "asr":
+        result = _classify_asr(index)
+        result.details.update(_common_details(index, sample=10))
+        return result
+
+    if component == "tts":
+        result = _classify_tts(index)
+        result.details.update(_common_details(index, sample=10))
+        return result
+
     if component in ("unet", "transformer_denoiser", "text_encoder", "vae"):
         result = _classify_diffusion(index, framework, max_shape_reads)
         result.details.update(_common_details(index, sample=12))
@@ -176,6 +186,16 @@ def _infer_component(index: _Index) -> str:
         r"(?:^|\.)(text_model|transformer\.text_model)\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$",
     ):
         return "text_encoder"
+
+    # Whisper ASR models
+    if _has_regex(all_keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and \
+       _has_regex(all_keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"):
+        return "asr"
+
+    # TTS/Audio generation models
+    if _has_any(all_keys, "text_encoder.") and _has_any(all_keys, "decoder."):
+        if _has_regex(all_keys, r"(duration_predictor|pitch_predictor|energy_predictor)"):
+            return "tts"
 
     if any(
         key.startswith(
@@ -450,6 +470,49 @@ def _classify_llm(index: _Index) -> DetectionResult:
         component="llm",
         confidence=0.40,
         evidence=["LLM component detected but no family specific signature matched"],
+    )
+
+
+def _classify_asr(index: _Index) -> DetectionResult:
+    """Classify automatic speech recognition models."""
+    keys = list(index.key_to_file.keys())
+
+    # Whisper models have both encoder and decoder layers
+    if _has_regex(keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and \
+       _has_regex(keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"):
+        return DetectionResult(
+            family="whisper",
+            component="asr",
+            confidence=0.95,
+            evidence=["Found Whisper-style encoder and decoder layers"],
+        )
+
+    return DetectionResult(
+        family="asr-unknown",
+        component="asr",
+        confidence=0.50,
+        evidence=["ASR component detected but no specific family matched"],
+    )
+
+
+def _classify_tts(index: _Index) -> DetectionResult:
+    """Classify text-to-speech models."""
+    keys = list(index.key_to_file.keys())
+
+    # TTS models typically have text encoders and duration/pitch predictors
+    if _has_regex(keys, r"(duration_predictor|pitch_predictor|energy_predictor)"):
+        return DetectionResult(
+            family="tts-generic",
+            component="tts",
+            confidence=0.85,
+            evidence=["Found duration/pitch/energy predictors typical of TTS models"],
+        )
+
+    return DetectionResult(
+        family="tts-unknown",
+        component="tts",
+        confidence=0.50,
+        evidence=["TTS component detected but no specific family matched"],
     )
 
 

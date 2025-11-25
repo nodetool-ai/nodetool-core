@@ -18,7 +18,13 @@ from typing import Literal
 
 import huggingface_hub.file_download
 from fastapi import WebSocket
-from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
+from huggingface_hub import (
+    HfApi,
+    _CACHED_NO_EXIST,
+    hf_hub_download,
+    try_to_load_from_cache,
+)
+from huggingface_hub.errors import EntryNotFoundError
 from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
@@ -299,7 +305,7 @@ class DownloadManager:
         files = [
             file
             for file in raw_files
-            if isinstance(file, RepoFile) or hasattr(file, "path")
+            if isinstance(file, RepoFile) or getattr(file, "type", None) == "file"
         ]
         files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
@@ -307,7 +313,21 @@ class DownloadManager:
         files_to_download = []
         for file in files:
             cache_path = try_to_load_from_cache(repo_id, file.path)
-            if cache_path is None or not os.path.exists(cache_path):
+
+            # _CACHED_NO_EXIST signals that the hub knows the file is missing for this revision
+            # and returns a sentinel object that is not path-like, so treat it as uncached.
+            if cache_path is None or cache_path is _CACHED_NO_EXIST:
+                files_to_download.append(file)
+                continue
+
+            if not isinstance(cache_path, (str, os.PathLike)):
+                self.logger.warning(
+                    "Unexpected cache entry type for %s: %s", file.path, type(cache_path)
+                )
+                files_to_download.append(file)
+                continue
+
+            if not os.path.exists(cache_path):
                 files_to_download.append(file)
             else:
                 state.downloaded_files.append(file.path)
@@ -346,13 +366,23 @@ class DownloadManager:
         # but still allow us to process successful downloads
         completed_tasks = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Check for exceptions and raise the first one found
-        # This ensures errors like GatedRepoError bubble up properly
+        # Handle exceptions from individual tasks.
+        errors: list[Exception] = []
         for result in completed_tasks:
+            if isinstance(result, EntryNotFoundError):
+                # Missing file in repo – report to client and stop gracefully.
+                state.status = "error"
+                state.error_message = str(result)
+                self.logger.error(f"Download task failed with 404: {result}")
+                await self.send_update(repo_id, path)
+                return
             if isinstance(result, Exception):
-                # Log the error for debugging
-                self.logger.error(f"Download task failed: {result}")
-                raise result
+                errors.append(result)
+
+        if errors:
+            # Log the first error for visibility and re-raise to caller.
+            self.logger.error(f"Download task failed: {errors[0]}")
+            raise errors[0]
 
         # Process successful downloads
         for result in completed_tasks:
