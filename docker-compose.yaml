@@ -59,7 +59,6 @@ services:
     ipc: host
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-      VLLM_CACHE_ROOT: /root/.cache/vllm
     volumes:
     - ${HF_HOME}:/root/.cache/huggingface
     - ${VLLM_CACHE_ROOT}:/root/.cache/vllm
