@@ -1,4 +1,3 @@
-[← Back to Docs Index](index.md)
 
 # Deployment Guide
 
@@ -7,27 +6,33 @@ NodeTool supports multiple deployment targets driven by a single `deployment.yam
 ## Deployment Workflow
 
 1. **Initialize configuration**  
+
    ```bash
    nodetool deploy init
    nodetool deploy add <name>
    ```  
+
    These commands scaffold `deployment.yaml` using the schema defined in `src/nodetool/config/deployment.py`. Each entry specifies a `type` (`self-hosted`, `runpod`, or `gcp`), container image details, environment variables, and target-specific options.
 
 2. **Review & plan**  
+
    ```bash
    nodetool deploy list
    nodetool deploy show <name>
    nodetool deploy plan <name>
    ```  
+
    Planning validates the configuration, renders the effective proxy files (for self-hosted targets), and shows pending actions without mutating remote resources.
 
 3. **Apply & monitor**  
+
    ```bash
    nodetool deploy apply <name>
    nodetool deploy status <name>
    nodetool deploy logs <name> [--follow]
    nodetool deploy destroy <name>
    ```  
+
    `apply` builds/pushes container images, provisions infrastructure, updates proxy configuration, and records deployment state in the local cache (`src/nodetool/deploy/state.py`). Status and logs surface the remote service health.
 
 ### Deployment Configuration

@@ -1,32 +1,10 @@
-[← Back to Docs Index](index.md)
-
-# Architecture & Lifecycle
-
-**Audience:** Architects and operators.  
-**What you will learn:** How NodeTool components fit together and how a job moves through the system.
-
-## Component Diagram
-
-```mermaid
-flowchart LR
-    Client[Clients / CLI / UI] -->|HTTP / WS / SSE| APIServer
-    APIServer --> ChatServer
-    APIServer --> WorkflowAPI
-    ChatServer --> Messaging
-    WorkflowAPI --> JobExecutionManager
-    JobExecutionManager --> ThreadedRunner[Threaded Execution]
-    JobExecutionManager --> SubprocessRunner[Subprocess Execution]
-    JobExecutionManager --> DockerRunner[Docker Execution]
-    JobExecutionManager --> Storage[(Storage / Assets)]
-    JobExecutionManager --> Providers
-    Providers -->|LLM / GenAI calls| ExternalServices[Providers (OpenAI, Anthropic, Gemini, Ollama, ComfyUI, etc.)]
-    APIServer --> Proxy[Proxy (optional)]
-    Proxy -->|TLS / Routing| APIServer
-```
+---
+title: "Architecture & Lifecycle"
+---
 
 ## Job Lifecycle (run, stream, reconnect, cancel)
 
-```mermaid
+{% mermaid %}
 sequenceDiagram
     participant Client
     participant API as API Server
@@ -46,7 +24,7 @@ sequenceDiagram
     Runner-->>JEM: teardown and cleanup
     JEM-->>Msg: end event
     Msg-->>Client: completion / cancelled status
-```
+{% endmermaid %}
 
 ## Notes
 

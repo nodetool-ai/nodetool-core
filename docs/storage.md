@@ -1,6 +1,6 @@
-[← Back to Docs Index](index.md)
-
-# Storage Guide
+---
+title: "Storage Guide"
+---
 
 NodeTool stores user assets, workflow artifacts, and temporary files through pluggable backends defined in `src/nodetool/storage`. The active backend is selected per execution by `ResourceScope.get_asset_storage()` / `get_temp_storage()` (`src/nodetool/runtime/resources.py`), accessed via `require_scope()`.
 

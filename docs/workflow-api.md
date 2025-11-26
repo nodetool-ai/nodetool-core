@@ -1,6 +1,6 @@
-[← Back to Docs Index](index.md)
-
-# Workflow API Guide
+---
+title: "Workflow API Guide"
+---
 
 **Audience:** API consumers and automation engineers.  
 **What you will learn:** How to list workflows, run them via HTTP, and stream results across the Editor and Worker APIs.

@@ -1,9 +1,6 @@
-[← Back to Docs Index](index.md)
-
-# Configuration Guide
-
-**Audience:** Operators and contributors.  
-**What you will learn:** How NodeTool reads configuration, where to store secrets, and which environment variables matter.
+---
+title: "Configuration"
+---
 
 NodeTool reads configuration from layered sources so local development, automated deployments, and production can share defaults with minimal duplication. The configuration helpers live in `src/nodetool/config/settings.py` and `src/nodetool/config/environment.py`.
 
@@ -49,17 +46,21 @@ For shared deployments you **must** pre-provision the master key (via `SECRETS_M
 ### Migrating Secrets to a Worker
 
 1. Export the master key once and set it on every worker instance:
+
    ```bash
    export SECRETS_MASTER_KEY="$(nodetool python -c 'from nodetool.security.master_key import MasterKeyManager; import asyncio; print(asyncio.run(MasterKeyManager.get_master_key()))')"
    ```
+
    (or copy the value from your deployment pipeline/secrets manager)
 2. The `nodetool deploy apply` command automatically synchronizes all secrets from your local database to the target worker right after a successful deploy. If you ever need to do it manually, POST the encrypted payload to the new admin endpoint:
+
    ```bash
    curl -H "Authorization: Bearer $WORKER_TOKEN" \
         -H "Content-Type: application/json" \
         -X POST https://your-worker.example.com/admin/secrets/import \
         --data-binary @secrets-export.json
    ```
+
    The worker stores the ciphertext verbatim, so both sides must share the same master key.
 
 ## Runtime Environment Detection

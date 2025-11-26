@@ -1,6 +1,6 @@
-[← Back to Docs Index](index.md)
-
-# Chat API
+---
+title: "Chat API"
+---
 
 **Audience:** API consumers and client implementers.  
 **What you will learn:** How to call NodeTool's OpenAI-compatible chat endpoints over HTTP, WebSocket, and SSE across the Editor and Worker APIs.

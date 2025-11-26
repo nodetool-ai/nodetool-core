@@ -6,32 +6,43 @@
 ## Quickstart
 
 1. **Install and set up**
+
    ```bash
    pip install -e .
    pip install -r requirements-dev.txt
    ```
+
 2. **Start the local API**
+
    ```bash
    nodetool serve --reload
    ```
+
 3. **List models (OpenAI-compatible)**
+
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/v1/models
    ```
+
 4. **Chat once**
+
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -X POST http://127.0.0.1:8000/v1/chat/completions \
      -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}],"stream":false}'
    ```
+
 5. **Run a workflow**
+
    ```bash
    curl -X POST "http://127.0.0.1:8000/api/workflows/<workflow_id>/run" \
      -H "Content-Type: application/json" \
      -d '{"params":{}}'
    ```
+
 6. **Try the CLI**
+
    ```bash
    nodetool chat
    ```
@@ -58,8 +69,7 @@ NodeTool Core provides a wide range of features:
 Documentation is organized into focused guides:
 
 - [**API Reference**](api-reference.md) - Canonical endpoint matrix (health, chat, workflows, WebSocket, SSE)
-- [**Quickstart**](#quickstart) - Fast path to a working local instance
-- [**Concepts**](concepts/index.md) - Core concepts and architecture
+- [**Key Concepts**](key-concepts.md) - Core concepts and architecture
 - [**Architecture & Lifecycle**](architecture.md) - Component diagram and job lifecycle
 - [**Execution Strategies**](execution-strategies.md) - Threaded, subprocess, and Docker runners
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
@@ -74,7 +84,6 @@ Documentation is organized into focused guides:
 - [**Terminal WebSocket**](terminal-websocket.md) - Interactive host shell WebSocket endpoint (dev-only)
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
-- [**Providers**](providers.md) - Provider comparison and per-provider guides
 - [**Messaging**](messaging.md) - Chat processors and streaming events
 - [**DSL & Nodes**](dsl.md) - Authoring nodes and using the DSL
 - [**Packages**](packages.md) - Creating and publishing node packages

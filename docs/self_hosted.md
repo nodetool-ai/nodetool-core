@@ -1,6 +1,6 @@
-[← Back to Docs Index](index.md)
-
-# Self-Hosted Deployment Guide
+---
+title: "Self-Hosted Deployment Guide"
+---
 
 This guide explains how to deploy NodeTool in self-hosted environments using the
 built-in FastAPI proxy. It covers the proxy architecture, configuration,
@@ -206,11 +206,12 @@ Key points:
   ```
 
   This will:
-   - Create workspace, cache, proxy, and acme directories.
-   - Ensure the Docker network exists.
-   - Stop/remove any existing proxy container.
-   - Start the new proxy container with the rendered config.
-   - Health-check `/healthz` and `/status`.
+
+- Create workspace, cache, proxy, and acme directories.
+- Ensure the Docker network exists.
+- Stop/remove any existing proxy container.
+- Start the new proxy container with the rendered config.
+- Health-check `/healthz` and `/status`.
 
 3. Verify status (using the rendered token):
 
@@ -222,7 +223,9 @@ Key points:
 4. Run workflows through the proxy:
 
    ```bash
+
   nodetool deploy workflows run localhost <workflow-id>
+
   ```
 
   The proxy logs show cold-start/start/stop messages; `/status` reports service

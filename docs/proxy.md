@@ -1,6 +1,8 @@
-[← Back to Docs Index](index.md)
 
-# Proxy Reference
+---
+
+title: "Proxy Reference"
+---
 
 The NodeTool proxy (`src/nodetool/proxy/server.py`) is an asynchronous reverse proxy that starts Docker services on demand, terminates TLS/ACME, and forwards HTTP traffic using longest-prefix routing. It is deployed as a standalone container (`docker/proxy/Dockerfile`) or run locally via the CLI.
 

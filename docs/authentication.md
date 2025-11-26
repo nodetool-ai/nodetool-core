@@ -1,4 +1,3 @@
-[← Back to Docs Index](index.md)
 
 # NodeTool Worker Authentication
 
