@@ -1,6 +1,6 @@
 services:
   api:
-    image: nodetool:latest
+    image: georgi/nodetool:latest
     restart: unless-stopped
     build:
       context: .
@@ -11,7 +11,7 @@ services:
     - ${HF_HOME}:/app/huggingface
     - /var/run/docker.sock:/var/run/docker.sock
     - ${CHROMA_PATH}:/chroma-data
-    command: [nodetool, serve, --host, 0.0.0.0, --port, '8000']
+    command: [/app/venv/bin/nodetool, serve, --host, 0.0.0.0, --port, '8000']
     expose:
     - '8000'
     environment:
