@@ -332,6 +332,26 @@ Output style:
 - Prefer structured, deterministic outputs following the schema.
 - Keep all responses concise and token-efficient.
 """
+
+DEFAULT_UNSTRUCTURED_SYSTEM_PROMPT: str = """
+# Role
+You are executing a task. Your job is to complete it end-to-end.
+
+# Objective
+{{ subtask_content }}
+
+# Operating Mode
+- Use tools as needed to achieve the objective.
+- When you have the final answer or have completed the task, simply provide the result as your final response.
+- Do not wrap the result in JSON.
+
+# Tool Usage Guidelines
+## Communication Pattern (Tool Preambles)
+Before making tool calls, provide clear progress updates:
+1. First assistant message: Restate the objective in one sentence, then list a short numbered plan (1-3 steps).
+2. Before each tool call: Emit a one-sentence message describing what you're doing and why.
+3. After tool results: Provide a brief update only if the result changes your plan.
+"""
 def _validate_and_sanitize_schema(
     schema: Any, default_description: str = "Result object"
 ) -> Dict[str, Any]:
@@ -409,7 +429,7 @@ def _validate_and_sanitize_schema(
             return cleaned
         if isinstance(obj, list):
             return [_clean_schema_recursive(item) for item in obj]
-        return obj
+    return obj
 
     result_schema = _clean_schema_recursive(result_schema)
 
@@ -521,6 +541,7 @@ class SubTaskContext:
         self._output_result = None
         self.json_parse_failures = 0
         self.display_manager = display_manager
+        self.display_manager = display_manager
         self.result_schema = self._load_result_schema()
 
         # Initialize token usage tracking
@@ -533,17 +554,23 @@ class SubTaskContext:
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
-        schema_json = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
-        if use_finish_task:
-            base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
-            prompt_context = {
-                "output_schema_json": schema_json,
-            }
-        else:  # Standard execution subtask
-            base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
+        if self.result_schema:
+            schema_json = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
+            if use_finish_task:
+                base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
+                prompt_context = {
+                    "output_schema_json": schema_json,
+                }
+            else:  # Standard execution subtask
+                base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
+                prompt_context = {
+                    "subtask_content": self.subtask.content,
+                    "output_schema_json": schema_json,
+                }
+        else:
+            base_system_prompt = system_prompt or DEFAULT_UNSTRUCTURED_SYSTEM_PROMPT
             prompt_context = {
                 "subtask_content": self.subtask.content,
-                "output_schema_json": schema_json,
             }
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
@@ -749,13 +776,16 @@ class SubTaskContext:
             "History trimmed at iteration %d. Token count reset.", self.iterations
         )
 
-    def _load_result_schema(self) -> Dict[str, Any]:
+    def _load_result_schema(self) -> Optional[Dict[str, Any]]:
         """Parse and sanitize the declared output schema for this subtask."""
+
+        if not self.subtask.output_schema:
+            return None
 
         default_description = (
             "The task result" if self.use_finish_task else "The subtask result"
         )
-        raw_schema: Any = self.subtask.output_schema or {"type": "string"}
+        raw_schema: Any = self.subtask.output_schema
 
         try:
             return _validate_and_sanitize_schema(raw_schema, default_description)
@@ -840,6 +870,11 @@ class SubTaskContext:
         """Attempt to parse and store a completion payload from the assistant message."""
 
         if not message:
+            return False, None
+
+        if self.result_schema is None:
+            if not message.tool_calls:
+                return True, message.content
             return False, None
 
         parsed = extract_json_from_message(message)
