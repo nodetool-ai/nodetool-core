@@ -25,7 +25,7 @@ from huggingface_hub.hf_api import RepoFile
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
-from nodetool.integrations.huggingface.async_downloader import async_hf_download
+from nodetool.integrations.huggingface import async_downloader
 from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
@@ -313,7 +313,7 @@ class DownloadManager:
                     state.status = "progress"
 
         async def run_single_download(file_path: str):
-            local_path = await async_hf_download(
+            local_path = await async_downloader.async_hf_download(
                 repo_id=repo_id,
                 filename=file_path,
                 token=self.token,

@@ -61,22 +61,41 @@ async def huggingface_download_endpoint(websocket: WebSocket):
             user_id = "1"
 
         log.info(f"huggingface_download_endpoint: Websocket connection with user_id={user_id}")
-
-        # Get singleton download manager
-        download_manager = await get_download_manager(user_id=user_id)
-        
         await websocket.accept()
-        
+
+        download_manager: DownloadManager | None = None
+        try:
+            download_manager = await get_download_manager(user_id=user_id)
+        except Exception as e:
+            log.error(f"Failed to initialize DownloadManager: {e}", exc_info=True)
+            try:
+                await websocket.send_json(
+                    {
+                        "status": "error",
+                        "repo_id": None,
+                        "path": None,
+                        "error": str(e),
+                    }
+                )
+            except Exception:
+                pass
+            await websocket.close()
+            return
+
         # Register websocket and sync state
         download_manager.add_websocket(websocket)
         await download_manager.sync_state(websocket)
-        
+        last_repo_id: str | None = None
+        last_path: str | None = None
+
         try:
             while True:
                 data = await websocket.receive_json()
                 command = data.get("command")
                 repo_id = data.get("repo_id")
                 path = data.get("path")
+                last_repo_id = repo_id
+                last_path = path
                 allow_patterns = data.get("allow_patterns")
                 ignore_patterns = data.get("ignore_patterns")
 
@@ -125,10 +144,21 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     )
         except Exception as e:
             log.error(f"WebSocket error: {e}", exc_info=True)
+            try:
+                await websocket.send_json(
+                    {
+                        "status": "error",
+                        "repo_id": last_repo_id,
+                        "path": last_path,
+                        "error": str(e),
+                    }
+                )
+            except Exception:
+                pass
         finally:
-            download_manager.remove_websocket(websocket)
+            if download_manager:
+                download_manager.remove_websocket(websocket)
             try:
                 await websocket.close()
             except Exception:
                 pass
-
