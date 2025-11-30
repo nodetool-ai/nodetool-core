@@ -295,13 +295,13 @@ NodeTool Core is a Python library for building and running AI workflows using a 
 
 | Variable           | Description                         | Default                 |
 | ------------------ | ----------------------------------- | ----------------------- |
-| `NODETOOL_API_URL` | NodeTool API base URL               | `http://localhost:8000` |
+| `NODETOOL_API_URL` | NodeTool API base URL               | `http://localhost:7777` |
 | `RUNPOD_API_KEY`   | RunPod API key for cloud deployment | -                       |
 | `SENTRY_DSN`       | Sentry error tracking DSN           | -                       |
 | `MEMCACHE_HOST`    | Memcache server host                | -                       |
 | `MEMCACHE_PORT`    | Memcache server port                | -                       |
 | `STATIC_FOLDER`    | Static files folder                 | `web/dist`              |
-| `PORT`             | Server port                         | `8000`                  |
+| `PORT`             | Server port                         | `7777`                  |
 
 ### Logging & Development
 
@@ -468,13 +468,13 @@ api_key = get_secret_sync("SYSTEM_API_KEY", default="default_value")
 
 **List all possible secrets:**
 ```bash
-curl http://localhost:8000/api/settings/secrets \
+curl http://localhost:7777/api/settings/secrets \
   -H "Authorization: Bearer <token>"
 ```
 
 **Set or update a secret:**
 ```bash
-curl -X PUT http://localhost:8000/api/settings/secrets/OPENAI_API_KEY \
+curl -X PUT http://localhost:7777/api/settings/secrets/OPENAI_API_KEY \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"value": "sk-...", "description": "My OpenAI API key"}'
@@ -482,13 +482,13 @@ curl -X PUT http://localhost:8000/api/settings/secrets/OPENAI_API_KEY \
 
 **Get a secret (decrypted):**
 ```bash
-curl "http://localhost:8000/api/settings/secrets/OPENAI_API_KEY?decrypt=true" \
+curl "http://localhost:7777/api/settings/secrets/OPENAI_API_KEY?decrypt=true" \
   -H "Authorization: Bearer <token>"
 ```
 
 **Delete a secret:**
 ```bash
-curl -X DELETE http://localhost:8000/api/settings/secrets/OPENAI_API_KEY \
+curl -X DELETE http://localhost:7777/api/settings/secrets/OPENAI_API_KEY \
   -H "Authorization: Bearer <token>"
 ```
 

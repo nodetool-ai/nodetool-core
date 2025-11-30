@@ -66,7 +66,7 @@ register_setting(
     package_name="nodetool",
     env_var="VLLM_BASE_URL",
     group="vLLM",
-    description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:8000)",
+    description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:7777)",
 )
 
 # Node-specific Supabase settings (kept separate from core SUPABASE_* credentials)

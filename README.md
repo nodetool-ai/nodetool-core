@@ -253,7 +253,7 @@ You can use the API locally now, `api.nodetool.ai` access is limited to Alpha us
 #### Loading Workflows
 
 ```javascript
-const response = await fetch("http://localhost:8000/api/workflows/");
+const response = await fetch("http://localhost:7777/api/workflows/");
 const workflows = await response.json();
 ```
 
@@ -262,7 +262,7 @@ const workflows = await response.json();
 ##### HTTP API
 
 ```bash
-curl -X POST "http://localhost:8000/api/workflows/<workflow_id>/run" \
+curl -X POST "http://localhost:7777/api/workflows/<workflow_id>/run" \
 -H "Content-Type: application/json" \
 -d '{
     "params": {
@@ -273,7 +273,7 @@ curl -X POST "http://localhost:8000/api/workflows/<workflow_id>/run" \
 
 ```javascript
 const response = await fetch(
-  "http://localhost:8000/api/workflows/<workflow_id>/run",
+  "http://localhost:7777/api/workflows/<workflow_id>/run",
   {
     method: "POST",
     headers: {
@@ -298,7 +298,7 @@ API, but it uses a more efficient binary encoding. It offers additional features
 See [run_workflow_websocket.js](examples/run_workflow_websocket.js) for an example.
 
 ```javascript
-const socket = new WebSocket("ws://localhost:8000/predict");
+const socket = new WebSocket("ws://localhost:7777/predict");
 
 const request = {
   type: "run_job_request",

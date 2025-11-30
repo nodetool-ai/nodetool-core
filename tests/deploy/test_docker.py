@@ -757,7 +757,7 @@ class TestRunDockerImage:
                 "myuser/myimage",
                 "v1.0",
                 host_port=8080,
-                container_port=8000,
+                container_port=7777,
                 container_name="my-app",
                 env={"ENV": "production", "DEBUG": "false"},
                 volumes=[("/data", "/app/data"), ("/logs", "/app/logs")],
@@ -772,7 +772,7 @@ class TestRunDockerImage:
             assert "--rm" in call_args
             assert "-d" in call_args
             assert "--name my-app" in call_args
-            assert "-p 8080:8000" in call_args
+            assert "-p 8080:7777" in call_args
             assert "-e ENV=" in call_args
             assert "-e DEBUG=" in call_args
             assert "-v /data:/app/data" in call_args

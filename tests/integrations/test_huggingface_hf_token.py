@@ -7,7 +7,8 @@ from nodetool.models.secret import Secret
 from nodetool.integrations.huggingface.hf_auth import get_hf_token
 from nodetool.integrations.huggingface.hf_download import (
     DownloadManager,
-    download_file,
+    DownloadManager,
+
 )
 from nodetool.integrations.huggingface.huggingface_models import (
     get_hf_token as get_hf_token_models,
@@ -121,36 +122,7 @@ class TestHFTokenFromDatabase:
             if "HF_TOKEN" in os.environ:
                 del os.environ["HF_TOKEN"]
 
-    async def test_download_file_uses_hf_token(self):
-        """Test that download_file function uses HF_TOKEN."""
-        test_token = "hf_test_token_for_file_download"
 
-        # Set environment variable
-        os.environ["HF_TOKEN"] = test_token
-
-        try:
-            from multiprocessing import Manager
-            from queue import Queue
-
-            manager_instance = Manager()
-            queue = manager_instance.Queue()
-
-            # Mock hf_hub_download to verify token is passed
-            with patch(
-                "nodetool.integrations.huggingface.hf_download.hf_hub_download"
-            ) as mock_download:
-                mock_download.return_value = "/path/to/file"
-
-                # Call download_file
-                download_file("test/repo", "test_file.bin", queue, token=test_token)
-
-                # Verify hf_hub_download was called with token
-                mock_download.assert_called_once()
-                call_kwargs = mock_download.call_args[1]
-                assert call_kwargs.get("token") == test_token
-        finally:
-            if "HF_TOKEN" in os.environ:
-                del os.environ["HF_TOKEN"]
 
     async def test_admin_download_manager_uses_hf_token(self):
         """Test that AdminDownloadManager uses HF_TOKEN when available."""
@@ -177,9 +149,10 @@ class TestHFTokenFromDatabase:
         os.environ["HF_TOKEN"] = test_token
 
         try:
-            # Patch hf_hub_download where it's imported (huggingface_hub module)
+            # Patch async_hf_download where it's imported in huggingface_models
             with patch(
-                "huggingface_hub.hf_hub_download"
+                "nodetool.integrations.huggingface.huggingface_models.async_hf_download",
+                new_callable=AsyncMock
             ) as mock_download:
                 mock_download.return_value = "/tmp/README.md"
 
@@ -196,7 +169,7 @@ class TestHFTokenFromDatabase:
                     ):
                         result = await fetch_model_readme("test/repo")
 
-                        # Verify hf_hub_download was called with token
+                        # Verify async_hf_download was called with token
                         mock_download.assert_called_once()
                         call_kwargs = mock_download.call_args[1]
                         assert call_kwargs.get("token") == test_token

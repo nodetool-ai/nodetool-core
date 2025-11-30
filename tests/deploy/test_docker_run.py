@@ -33,7 +33,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
     @pytest.fixture
@@ -79,7 +79,7 @@ class TestDockerRunGenerator:
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(
                 name="custom",
-                port=8000,
+                port=7777,
                 environment={"CUSTOM_VAR": "value", "DEBUG": "true"},
             ),
         )
@@ -101,7 +101,7 @@ class TestDockerRunGenerator:
         assert "-d" in command
         assert "--name nodetool-default" in command
         assert "--restart unless-stopped" in command
-        assert "-p 8000:8000" in command
+        assert "-p 8000:7777" in command
         assert "nodetool/nodetool:latest" in command
 
     def test_generate_command_volumes(self, basic_deployment):
@@ -120,7 +120,7 @@ class TestDockerRunGenerator:
 
         # Check environment variables
         assert "-e PORT=8000" in command
-        assert "-e NODETOOL_API_URL=http://localhost:8000" in command
+        assert "-e NODETOOL_API_URL=http://localhost:7777" in command
         assert "-e DB_PATH=/workspace/nodetool.db" in command
         assert "-e HF_HOME=/hf-cache" in command
 
@@ -131,7 +131,7 @@ class TestDockerRunGenerator:
 
         # Check health check
         assert "--health-cmd" in command
-        assert "curl -f http://localhost:8000/health" in command
+        assert "curl -f http://localhost:7777/health" in command
         assert "--health-interval=30s" in command
         assert "--health-timeout=10s" in command
         assert "--health-retries=3" in command
@@ -185,7 +185,7 @@ class TestDockerRunGenerator:
         command = generator.generate_command()
 
         # Port should map host port to container port 8000
-        assert "-p 9000:8000" in command
+        assert "-p 9000:7777" in command
         assert "-e NODETOOL_API_URL=http://localhost:9000" in command
 
     def test_generate_command_custom_paths(self):
@@ -194,7 +194,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
             paths=SelfHostedPaths(
                 workspace="/custom/workspace",
                 hf_cache="/custom/cache",
@@ -214,7 +214,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
             worker_auth_token="secret-token-123",
         )
 
@@ -263,14 +263,14 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         deployment2 = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="v2.0"),  # Different tag
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         hash1 = DockerRunGenerator(deployment1).generate_hash()
@@ -285,7 +285,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         deployment2 = SelfHostedDeployment(
@@ -306,14 +306,14 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         deployment2 = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000, gpu="0"),
+            container=ContainerConfig(name="default", port=7777, gpu="0"),
         )
 
         hash1 = DockerRunGenerator(deployment1).generate_hash()
@@ -327,7 +327,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         deployment2 = SelfHostedDeployment(
@@ -336,7 +336,7 @@ class TestDockerRunGenerator:
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(
                 name="default",
-                port=8000,
+                port=7777,
                 environment={"NEW_VAR": "value"},
             ),
         )
@@ -359,7 +359,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="my-workflow", port=8000),
+            container=ContainerConfig(name="my-workflow", port=7777),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -382,7 +382,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
             paths=SelfHostedPaths(
                 workspace="/mnt/workspace",
                 hf_cache="/mnt/cache",
@@ -402,7 +402,7 @@ class TestDockerRunGenerator:
 
         # Check for required variables
         assert "PORT=8000" in env
-        assert "NODETOOL_API_URL=http://localhost:8000" in env
+        assert "NODETOOL_API_URL=http://localhost:7777" in env
         assert "DB_PATH=/workspace/nodetool.db" in env
         assert "HF_HOME=/hf-cache" in env
 
@@ -440,7 +440,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
             worker_auth_token="token123",
         )
 
@@ -480,7 +480,7 @@ class TestDockerRunGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000, gpu=" 0,1 "),
+            container=ContainerConfig(name="default", port=7777, gpu=" 0,1 "),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -499,7 +499,7 @@ class TestDockerRunHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000),
+            container=ContainerConfig(name="test", port=7777),
         )
 
         command = generate_docker_run_command(deployment)
@@ -513,7 +513,7 @@ class TestDockerRunHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000),
+            container=ContainerConfig(name="test", port=7777),
         )
 
         hash_value = get_docker_run_hash(deployment)
@@ -527,7 +527,7 @@ class TestDockerRunHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="my-container", port=8000),
+            container=ContainerConfig(name="my-container", port=7777),
         )
 
         name = get_container_name(deployment)
@@ -544,7 +544,7 @@ class TestDockerRunEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000, environment={}),
+            container=ContainerConfig(name="test", port=7777, environment={}),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -559,7 +559,7 @@ class TestDockerRunEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000, workflows=[]),
+            container=ContainerConfig(name="test", port=7777, workflows=[]),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -574,7 +574,7 @@ class TestDockerRunEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000, workflows=["wf1"]),
+            container=ContainerConfig(name="test", port=7777, workflows=["wf1"]),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -588,7 +588,7 @@ class TestDockerRunEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="my_workflow-v2", port=8000),
+            container=ContainerConfig(name="my_workflow-v2", port=7777),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -606,7 +606,7 @@ class TestDockerRunEdgeCases:
                 name="ghcr.io/user/nodetool",
                 tag="latest",
             ),
-            container=ContainerConfig(name="test", port=8000),
+            container=ContainerConfig(name="test", port=7777),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -623,7 +623,7 @@ class TestDockerRunEdgeCases:
                 name="nodetool/nodetool",
                 tag="sha256:abc123def456",
             ),
-            container=ContainerConfig(name="test", port=8000),
+            container=ContainerConfig(name="test", port=7777),
         )
 
         generator = DockerRunGenerator(deployment)
@@ -639,7 +639,7 @@ class TestDockerRunEdgeCases:
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(
                 name="test",
-                port=8000,
+                port=7777,
                 environment={"VAR1": "value1", "VAR2": "value2"},
             ),
         )
@@ -660,7 +660,7 @@ class TestDockerRunEdgeCases:
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(
                 name="test",
-                port=8000,
+                port=7777,
                 environment={"A": "1", "B": "2", "C": "3"},
             ),
         )
@@ -671,7 +671,7 @@ class TestDockerRunEdgeCases:
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(
                 name="test",
-                port=8000,
+                port=7777,
                 environment={"C": "3", "A": "1", "B": "2"},  # Different order
             ),
         )

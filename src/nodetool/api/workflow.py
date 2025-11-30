@@ -572,7 +572,7 @@ async def run_workflow_by_id(
     """
     server_protocol = request.headers.get("x-forwarded-proto", "http")
     server_host_name = request.headers.get("host", "localhost")
-    server_port = request.headers.get("x-server-port", "8000")
+    server_port = request.headers.get("x-server-port", "7777")
 
     token = authentication.split(" ")[1] if authentication else "local_token"
 

@@ -34,7 +34,7 @@ Runs the FastAPI backend server for the NodeTool platform. This serves the REST 
 nodetool serve --reload --verbose
 
 # Production server with static assets
-nodetool serve --production --static-folder ./web/dist --host 0.0.0.0 --port 8000
+nodetool serve --production --static-folder ./web/dist --host 0.0.0.0 --port 7777
 
 # Development with remote auth
 nodetool serve --remote-auth --verbose
@@ -103,7 +103,7 @@ nodetool worker --default-model gpt-4 --provider openai --tools google_search,br
 nodetool worker --workflow workflow1.json --workflow workflow2.json --host 0.0.0.0 --port 8080
 
 # Deployable worker with auth
-nodetool worker --remote-auth --host 0.0.0.0 --port 8000
+nodetool worker --remote-auth --host 0.0.0.0 --port 7777
 ```
 
 ## Chat Client
@@ -732,7 +732,7 @@ Push a local workflow to a remote NodeTool server.
 **Options:**
 
 - `--id` (required) — workflow ID to sync.
-- `--server-url` (required) — remote server base URL (e.g., `http://localhost:8000`).
+- `--server-url` (required) — remote server base URL (e.g., `http://localhost:7777`).
 
 **Examples:**
 

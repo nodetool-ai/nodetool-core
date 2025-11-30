@@ -96,7 +96,7 @@ class TestSelfHostedDeployer:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
     @pytest.fixture
@@ -106,7 +106,7 @@ class TestSelfHostedDeployer:
             host="localhost",
             ssh=SSHConfig(user="user", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
     @pytest.fixture
@@ -375,7 +375,7 @@ class TestSelfHostedDeployer:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
             paths=SelfHostedPaths(
                 workspace="/custom/workspace",
                 hf_cache="/custom/cache",
@@ -659,7 +659,7 @@ class TestSelfHostedDeployer:
         mock_state_manager.read_state.return_value = {
             "status": "running",
             "last_deployed": "2024-01-15T10:30:00",
-            "url": "http://192.168.1.100:8000",
+            "url": "http://192.168.1.100:7777",
         }
 
         mock_ssh = Mock()
@@ -687,7 +687,7 @@ class TestSelfHostedDeployer:
             assert status["host"] == "192.168.1.100"
             assert status["status"] == "running"
             assert status["last_deployed"] == "2024-01-15T10:30:00"
-            assert status["url"] == "http://192.168.1.100:8000"
+            assert status["url"] == "http://192.168.1.100:7777"
             assert status["live_status"] == "Up 2 hours"
             assert status["container_id"] == "abc123"
 

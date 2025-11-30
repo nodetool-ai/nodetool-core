@@ -7,7 +7,7 @@ from nodetool.storage.file_storage import FileStorage
 
 @pytest.fixture(scope="module")
 def storage():
-    return FileStorage(base_path="/tmp", base_url="http://localhost:8000")
+    return FileStorage(base_path="/tmp", base_url="http://localhost:7777")
 
 
 data = b"0" * 1024 * 1024 * 10

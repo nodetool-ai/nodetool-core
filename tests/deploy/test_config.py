@@ -91,7 +91,7 @@ class TestSelfHostedDeployment:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
         assert deployment.type == DeploymentType.SELF_HOSTED
         assert deployment.enabled is True
@@ -130,7 +130,7 @@ class TestDeploymentConfig:
                     host="192.168.1.100",
                     ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                    container=ContainerConfig(name="default", port=8000),
+                    container=ContainerConfig(name="default", port=7777),
                 ),
             }
         )
@@ -163,7 +163,7 @@ class TestConfigSerialization:
                     host="localhost",
                     ssh=SSHConfig(user="test", key_path="/tmp/key"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                    container=ContainerConfig(name="default", port=8000),
+                    container=ContainerConfig(name="default", port=7777),
                 )
             }
         )
@@ -198,7 +198,7 @@ class TestConfigFileOperations:
                     host="192.168.1.100",
                     ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                    container=ContainerConfig(name="default", port=8000),
+                    container=ContainerConfig(name="default", port=7777),
                 )
             }
         )

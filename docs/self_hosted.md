@@ -94,7 +94,7 @@ follows the schema defined in `src/nodetool/proxy/config.py`.
 
 ### Services
 
-All service containers must listen on **port 8000 internally**. The proxy starts
+All service containers must listen on **port 7777 internally**. The proxy starts
 them on demand.
 
 | Field | Type | Description |

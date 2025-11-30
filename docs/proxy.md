@@ -50,7 +50,7 @@ services:
     mem_limit: 8g
     cpus: 4.0
     environment:
-      NODETOOL_API_URL: http://localhost:8000
+      NODETOOL_API_URL: http://localhost:7777
     volumes:
       /data/workspace:
         bind: /workspace

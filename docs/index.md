@@ -21,7 +21,7 @@
 3. **List models (OpenAI-compatible)**
 
    ```bash
-   curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/v1/models
+   curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:7777/v1/models
    ```
 
 4. **Chat once**
@@ -29,14 +29,14 @@
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
-     -X POST http://127.0.0.1:8000/v1/chat/completions \
+     -X POST http://127.0.0.1:7777/v1/chat/completions \
      -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}],"stream":false}'
    ```
 
 5. **Run a workflow**
 
    ```bash
-   curl -X POST "http://127.0.0.1:8000/api/workflows/<workflow_id>/run" \
+   curl -X POST "http://127.0.0.1:7777/api/workflows/<workflow_id>/run" \
      -H "Content-Type: application/json" \
      -d '{"params":{}}'
    ```

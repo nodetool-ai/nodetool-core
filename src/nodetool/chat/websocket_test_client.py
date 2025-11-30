@@ -14,14 +14,14 @@ Minimal WebSocket Chat Client for testing ChatWebSocketRunner
 ### Usage
 
 ```bash
-# Basic usage (connects to localhost:8000)
+# Basic usage (connects to localhost:7777)
 python websocket_test_client.py
 
 # With custom URL
 python websocket_test_client.py --url ws://localhost:8080/chat
 
 # With authentication
-python websocket_test_client.py --url ws://localhost:8000/chat --token your_jwt_token
+python websocket_test_client.py --url ws://localhost:7777/chat --token your_jwt_token
 
 # With binary message format
 python websocket_test_client.py --binary

@@ -106,7 +106,7 @@ RUN echo "Installing external nodetool packages from GitHub releases..." && \
 # RUN /app/venv/bin/playwright install
 
 # Expose port for the worker
-EXPOSE 8000
+EXPOSE 7777
 
 # Run the NodeTool worker
 CMD ["python", "-m", "nodetool.deploy.worker"]

@@ -31,7 +31,7 @@ title: "Deployment Journeys"
    ```
 
 4. **Add proxy (TLS + auth)**
-   - Terminate TLS at your proxy (nginx/traefik); forward to `127.0.0.1:8000`.
+   - Terminate TLS at your proxy (nginx/traefik); forward to `127.0.0.1:7777`.
    - Expose `/health` and `/ping` without auth; require Bearer tokens elsewhere.
 5. **Verify health**
 

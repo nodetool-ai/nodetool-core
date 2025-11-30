@@ -47,12 +47,12 @@ global:
 # Each service defines a Docker container to manage
 services:
   # Example 1: Simple web application
-  # All containers must listen on port 8000 internally
+  # All containers must listen on port 7777 internally
   - name: "web-app"
     # URL path prefix for routing to this service
     path: "/web"
     # Docker image name (with optional tag)
-    # Container must expose port 8000
+    # Container must expose port 7777
     image: "nginx:latest"
     # Host port for the container (optional)
     # If omitted, Docker will assign a random ephemeral port
@@ -98,9 +98,9 @@ services:
 # Notes:
 #
 # 1. Internal Port:
-#    - All containers must listen on port 8000 internally
+#    - All containers must listen on port 7777 internally
 #    - This is a fixed constraint; services cannot use other ports
-#    - Configure your Docker images to expose port 8000
+#    - Configure your Docker images to expose port 7777
 #
 # 2. Path Matching:
 #    - Routes use longest-prefix matching
@@ -120,7 +120,7 @@ services:
 # 5. Docker Images:
 #    - Use specific tags, not "latest" for production
 #    - Ensure images are available (pulled from registry or local)
-#    - Images must be configured to listen on port 8000
+#    - Images must be configured to listen on port 7777
 #
 # 6. Idle Timeout:
 #    - Global idle_timeout applies to all services

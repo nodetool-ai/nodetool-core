@@ -450,7 +450,7 @@ class Environment:
         """
         The nodetool api url is the url of the nodetool api server.
         """
-        return cls.get("NODETOOL_API_URL") or "http://localhost:8000"
+        return cls.get("NODETOOL_API_URL") or "http://localhost:7777"
 
     @classmethod
     def get_storage_api_url(cls):

@@ -20,7 +20,7 @@ is optional for development.
 
 ### Chat Completions: `POST /v1/chat/completions`
 
-**URL:** `http://localhost:8000/v1/chat/completions`
+**URL:** `http://localhost:7777/v1/chat/completions`
 
 **Headers:**
 
@@ -46,7 +46,7 @@ import openai
 
 client = openai.OpenAI(
     api_key="YOUR_TOKEN",
-    base_url="http://localhost:8000/v1"
+    base_url="http://localhost:7777/v1"
 )
 
 response = client.chat.completions.create(
@@ -64,12 +64,12 @@ for chunk in response:
 
 ### Models: `GET /v1/models`
 
-**URL:** `http://localhost:8000/v1/models`
+**URL:** `http://localhost:7777/v1/models`
 
 List all available models for the configured provider.
 
 ```bash
-curl http://localhost:8000/v1/models \
+curl http://localhost:7777/v1/models \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -84,7 +84,7 @@ The connection supports both binary (MessagePack) and text (JSON) messages. Auth
 ### WebSocket Example usage
 
 ```javascript
-const socket = new WebSocket("ws://localhost:8000/chat?api_key=YOUR_KEY");
+const socket = new WebSocket("ws://localhost:7777/chat?api_key=YOUR_KEY");
 
 // Send a chat message
 const message = {

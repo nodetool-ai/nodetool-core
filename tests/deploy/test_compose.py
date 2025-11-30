@@ -104,7 +104,7 @@ class TestComposeGenerator:
         service = parsed["services"]["wf1"]
         assert service["image"] == "nodetool/nodetool:latest"
         assert service["container_name"] == "nodetool-wf1"
-        assert "8001:8000" in service["ports"]
+        assert "8001:7777" in service["ports"]
         assert service["restart"] == "unless-stopped"
 
     def test_multi_container_services(self, multi_container_deployment):
@@ -118,7 +118,7 @@ class TestComposeGenerator:
         assert "wf1" in services
 
         # Check port is correctly mapped
-        assert "8001:8000" in services["wf1"]["ports"]
+        assert "8001:7777" in services["wf1"]["ports"]
 
     def test_volume_mounts(self, basic_deployment):
         """Test volume mount configuration."""
@@ -183,7 +183,7 @@ class TestComposeGenerator:
             "CMD",
             "curl",
             "-f",
-            "http://localhost:8000/health",
+            "http://localhost:7777/health",
         ]
         assert healthcheck["interval"] == "30s"
         assert healthcheck["timeout"] == "10s"
@@ -438,7 +438,7 @@ class TestComposeEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="default", port=8000),
+            container=ContainerConfig(name="default", port=7777),
         )
 
         generator = ComposeGenerator(deployment)

@@ -27,7 +27,7 @@ from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable, List, Sequence
-
+from nodetool.integrations.huggingface.async_downloader import async_hf_download
 from huggingface_hub import HfApi, ModelInfo
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.artifact_inspector import (
@@ -693,10 +693,6 @@ async def unified_model(
 async def fetch_model_readme(model_id: str) -> str | None:
     """
     Retrieve README text for a repo, preferring the local HF cache and falling back to the hub.
-
-    We avoid network calls when the README is already cached. If we must download,
-    we reuse the hub's own cache layer and optionally pass the user's HF token so
-    gated models can still be read when permitted.
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
@@ -704,52 +700,47 @@ async def fetch_model_readme(model_id: str) -> str | None:
         try_to_load_from_cache,
     )
 
-    # First, try to load from the HF hub cache
     cached_path = try_to_load_from_cache(repo_id=model_id, filename="README.md")
 
     if isinstance(cached_path, str):
-        # File exists in cache, read and return it
         try:
-            with open(cached_path, encoding="utf-8") as f:
-                return f.read()
+            with open(cached_path, encoding="utf-8") as handle:
+                return handle.read()
         except Exception as e:
-            log.debug(f"Failed to read cached README for {model_id}: {e}")
+            log.debug("Failed to read cached README for %s: %s", model_id, e)
     elif cached_path is _CACHED_NO_EXIST:
-        # Non-existence is cached, return None immediately
         return None
 
-    # File not in cache, try to download it
     try:
-        # Use HF_TOKEN from secrets if available for gated model downloads
-        # Note: user_id would need to be passed from caller context
         token = await get_hf_token()
         if token:
             log.debug(
-                f"fetch_model_readme: Downloading README for {model_id} with HF_TOKEN (token length: {len(token)} chars)"
+                "fetch_model_readme: Downloading README for %s with HF_TOKEN (token length: %d chars)",
+                model_id,
+                len(token),
             )
         else:
             log.debug(
-                f"fetch_model_readme: Downloading README for {model_id} without HF_TOKEN - gated models may not be accessible"
+                "fetch_model_readme: Downloading README for %s without HF_TOKEN - gated models may not be accessible",
+                model_id,
             )
-        readme_path = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: hf_hub_download(
-                repo_id=model_id, filename="README.md", repo_type="model", token=token
-            ),
+
+        readme_path = await async_hf_download(
+            repo_id=model_id,
+            filename="README.md",
+            repo_type="model",
+            token=token,
         )
-        with open(readme_path, encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        log.debug(f"Failed to download README for {model_id}: {e}")
+        with open(readme_path, encoding="utf-8") as handle:
+            return handle.read()
+    except Exception as exc:  # pragma: no cover
+        log.debug("Failed to download README for %s: %s", model_id, exc)
         return None
 
 
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
     Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
-
-    Results are memoized in our fast cache to keep repeated lookups cheap. Any
-    errors are treated as soft failures so the rest of discovery can proceed.
     """
     cache_key = f"model_info:{model_id}"
     cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
@@ -761,10 +752,12 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     api = HfApi(token=token) if token else HfApi()
 
     try:
-        model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: api.model_info(model_id, files_metadata=True)
+        model_info: ModelInfo = await asyncio.to_thread(
+            api.model_info,
+            model_id,
+            files_metadata=True,
         )
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         log.debug("fetch_model_info: failed to fetch %s: %s", model_id, exc)
         return None
 
@@ -925,18 +918,18 @@ async def _build_cached_repo_entry(
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
 
     The function gathers file sizes from the active snapshot, runs artifact inspection
-    for family/component hints, infers model type (recommended → hub metadata → local
-    configs), and derives a pipeline tag when none is provided. It returns both the
-    assembled `UnifiedModel` and a list of file entries so callers can emit file-level
-    models or perform additional heuristics.
+    for family/component hints, infers model type (recommended -> hub metadata -> local
+    configs), and derives a pipeline tag when none is provided.
     """
     repo_root = await HF_FAST_CACHE.repo_root(repo_id, repo_type="model")
     file_entries: list[tuple[str, int]] = []
     size_on_disk = 0
-    snapshot_path: Path | None = Path(snapshot_dir) if snapshot_dir else None
+    snapshot_path: Path | None = snapshot_dir
 
     if snapshot_path is None:
-        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(
+            repo_id, repo_type="model"
+        )
         snapshot_path = Path(resolved_snapshot) if resolved_snapshot else None
 
     if snapshot_path:
@@ -944,7 +937,7 @@ async def _build_cached_repo_entry(
             try:
                 file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
             except Exception as exc:  # pragma: no cover - defensive
-                log.debug(f"Failed to list files for {repo_id}: {exc}")
+                log.debug("Failed to list files for %s: %s", repo_id, exc)
                 file_list = []
 
         for file_name in file_list or []:
@@ -954,15 +947,12 @@ async def _build_cached_repo_entry(
             file_entries.append((file_name, file_size))
 
     artifact_detection: ArtifactDetection | None = None
-    if file_entries:
-        artifact_paths = [
-            str((snapshot_dir and Path(snapshot_dir) / name) or (repo_dir / name))
-            for name, _ in file_entries
-        ]
+    if file_entries and snapshot_path:
+        artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
         try:
-            artifact_detection = inspect_paths(artifact_paths)
-        except Exception as exc:  # pragma: no cover - best effort only
-            log.debug(f"Artifact detection failed for {repo_id}: {exc}")
+            artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
+        except Exception as exc:  # pragma: no cover
+            log.debug("Artifact detection failed for %s: %s", repo_id, exc)
 
     model_type = model_type_from_model_info(
         recommended_models,
@@ -972,7 +962,7 @@ async def _build_cached_repo_entry(
     if model_type is None:
         model_type = _infer_model_type_from_local_configs(
             file_entries,
-            snapshot_path if snapshot_dir else None,
+            snapshot_path,
         )
 
     pipeline_tag = model_info.pipeline_tag if model_info else None
@@ -1024,7 +1014,7 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
         # Discover repos by listing cache directory (lightweight)
         repo_list = await HF_FAST_CACHE.discover_repos("model")
     except Exception as exc:  # pragma: no cover - defensive guard
-        log.warning(f"Failed to discover cached HF repos: {exc}")
+        log.warning("Failed to discover cached HF repos: %s", exc)
         return []
 
     recommended_models = get_recommended_models()
@@ -1586,7 +1576,7 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
             try:
                 root = await HF_FAST_CACHE.repo_root(repo, repo_type="model")
             except Exception as exc:  # pragma: no cover - defensive guard
-                log.debug(f"repo_root failed for {repo}: {exc}")
+                log.debug("repo_root failed for %s: %s", repo, exc)
                 root = None
             if root:
                 pre_resolved_repos.append((repo, Path(root)))
@@ -1862,7 +1852,7 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     try:
         repo_list = await HF_FAST_CACHE.discover_repos("model")
     except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_mlx_language_models_from_hf_cache: discover failed: {exc}")
+        log.debug("get_mlx_language_models_from_hf_cache: discover failed: %s", exc)
         return []
 
     result: dict[str, LanguageModel] = {}
@@ -1880,10 +1870,9 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     return list(result.values())
 
 
-async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
+async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
     """
-    Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
-    including single-file checkpoints stored at the repo root (e.g. Stable Diffusion safetensors).
+    Shared helper to discover cached diffusion models for a specific task.
     """
     result: dict[str, ImageModel] = {}
     async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
@@ -1900,8 +1889,9 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
             result[model_id] = ImageModel(
                 id=model_id,
                 name=display,
+                path=fname,
                 provider=Provider.HuggingFace,
-                supported_tasks=["text_to_image"],
+                supported_tasks=[task],
             )
             added_single_file = True
         if added_single_file:
@@ -1911,11 +1901,19 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
                     id=repo_id,
                     name=repo_id.split("/")[-1],
                     provider=Provider.HuggingFace,
-                    supported_tasks=["text_to_image"],
+                    supported_tasks=[task],
                 ),
             )
 
     return list(result.values())
+
+
+async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
+    """
+    Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
+    including single-file checkpoints stored at the repo root.
+    """
+    return await _get_diffusion_models_from_hf_cache("text_to_image")
 
 
 async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
@@ -1923,37 +1921,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
     """
-    result: dict[str, ImageModel] = {}
-    async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
-        if not file_list:
-            continue
-        if not await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list):
-            continue
-        added_single_file = False
-        for fname in file_list:
-            if not _is_single_file_diffusion_weight(fname):
-                continue
-            model_id = f"{repo_id}:{fname}"
-            display = f"{repo_id.split('/')[-1]} • {fname}"
-            result[model_id] = ImageModel(
-                id=model_id,
-                name=display,
-                provider=Provider.HuggingFace,
-                supported_tasks=["image_to_image"],
-            )
-            added_single_file = True
-        if added_single_file:
-            result.setdefault(
-                repo_id,
-                ImageModel(
-                    id=repo_id,
-                    name=repo_id.split("/")[-1],
-                    provider=Provider.HuggingFace,
-                    supported_tasks=["image_to_image"],
-                ),
-            )
-
-    return list(result.values())
+    return await _get_diffusion_models_from_hf_cache("image_to_image")
 
 
 async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
@@ -1967,7 +1935,7 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     try:
         repo_list = await HF_FAST_CACHE.discover_repos("model")
     except Exception as exc:  # pragma: no cover - defensive
-        log.debug(f"get_mlx_image_models_from_hf_cache: discover failed: {exc}")
+        log.debug("get_mlx_image_models_from_hf_cache: discover failed: %s", exc)
         return []
 
     result: dict[str, ImageModel] = {}
@@ -2048,18 +2016,21 @@ async def get_gguf_language_models_from_authors(
 
     # Collect all unified_model tasks
     tasks: list[tuple[HuggingFaceModel, ModelInfo, int | None]] = []
-    seen_file: set[str] = set()
+    seen_file: set[tuple[str, str]] = set()
     for info in model_infos:
         if info is None:
             continue
         sibs = info.siblings or []
         for sib in sibs:
-            fname = getattr(sib, "rfilename", None)
             if not isinstance(fname, str) or not fname.lower().endswith(".gguf"):
                 continue
-            if fname in seen_file:
+            
+            # Use (repo_id, filename) as unique key to allow same filename in different repos
+            unique_key = (info.id, fname)
+            if unique_key in seen_file:
                 continue
-            seen_file.add(fname)
+            seen_file.add(unique_key)
+            
             tasks.append(
                 (
                     HuggingFaceModel(type="llama_cpp", repo_id=info.id, path=fname),

@@ -141,7 +141,7 @@ def mcp():
 
 @cli.command("serve")
 @click.option("--host", default="127.0.0.1", help="Host address to bind to (use 0.0.0.0 for all interfaces).")
-@click.option("--port", default=8000, help="Port to listen on.", type=int)
+@click.option("--port", default=7777, help="Port to listen on.", type=int)
 @click.option(
     "--static-folder",
     default=None,
@@ -459,7 +459,7 @@ def chat():
 
 @cli.command("worker")
 @click.option("--host", default="0.0.0.0", help="Host address to bind to (listen on all interfaces for deployments).")
-@click.option("--port", default=8000, help="Port to listen on.", type=int)
+@click.option("--port", default=7777, help="Port to listen on.", type=int)
 @click.option(
     "--auth-provider",
     type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
@@ -1642,7 +1642,7 @@ def admin():
 @click.option(
     "--server-url",
     required=True,
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
+    help="HTTP API server URL to execute on (e.g., http://localhost:7777)",
 )
 def download_hf(
     repo_id: str,
@@ -1662,13 +1662,13 @@ def download_hf(
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small
 
         # Download via HTTP API server
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:7777
 
         # Download specific file via HTTP API
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --file-path config.json --server-url http://localhost:8000
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --file-path config.json --server-url http://localhost:7777
 
         # Download with pattern filtering via HTTP API
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --allow-patterns "*.json" --allow-patterns "*.txt" --ignore-patterns "*.bin" --server-url http://localhost:8000
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --allow-patterns "*.json" --allow-patterns "*.txt" --ignore-patterns "*.bin" --server-url http://localhost:7777
     """
     import asyncio
 
@@ -1721,7 +1721,7 @@ def download_hf(
 @click.option(
     "--server-url",
     required=True,
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
+    help="HTTP API server URL to execute on (e.g., http://localhost:7777)",
 )
 def download_ollama(
     model_name: str,
@@ -1737,7 +1737,7 @@ def download_ollama(
         nodetool admin download-ollama --model-name llama3.2:latest
 
         # Download via HTTP API server
-        nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:8000
+        nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:7777
     """
     import asyncio
 
@@ -1774,7 +1774,7 @@ def download_ollama(
 @click.option(
     "--server-url",
     required=True,
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
+    help="HTTP API server URL to execute on (e.g., http://localhost:7777)",
 )
 def scan_cache(server_url: str):
     """Scan HuggingFace cache and display information.
@@ -1784,7 +1784,7 @@ def scan_cache(server_url: str):
         nodetool admin scan-cache
 
         # Scan cache via HTTP API server
-        nodetool admin scan-cache --server-url http://localhost:8000
+        nodetool admin scan-cache --server-url http://localhost:7777
     """
     import asyncio
 
@@ -1864,7 +1864,7 @@ def scan_cache(server_url: str):
 @click.option(
     "--server-url",
     required=True,
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
+    help="HTTP API server URL to execute on (e.g., http://localhost:7777)",
 )
 def delete_hf(repo_id: str, server_url: str):
     """Delete HuggingFace model from cache.
@@ -1874,7 +1874,7 @@ def delete_hf(repo_id: str, server_url: str):
         nodetool admin delete-hf --repo-id microsoft/DialoGPT-small
 
         # Delete model via HTTP API server
-        nodetool admin delete-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
+        nodetool admin delete-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:7777
     """
     import asyncio
 
@@ -1921,7 +1921,7 @@ def delete_hf(repo_id: str, server_url: str):
 @click.option(
     "--server-url",
     required=True,
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
+    help="HTTP API server URL to execute on (e.g., http://localhost:7777)",
 )
 def cache_size(cache_dir: str, server_url: str, api_key: str | None):
     """Calculate total cache size.
@@ -1934,7 +1934,7 @@ def cache_size(cache_dir: str, server_url: str, api_key: str | None):
         nodetool admin cache-size --cache-dir /custom/cache/path
 
         # Calculate cache size via HTTP API server
-        nodetool admin cache-size --server-url http://localhost:8000
+        nodetool admin cache-size --server-url http://localhost:7777
     """
     import asyncio
 
@@ -3855,7 +3855,7 @@ def sync():
 @click.option(
     "--server-url",
     required=True,
-    help="Remote server base URL (e.g., http://localhost:8000).",
+    help="Remote server base URL (e.g., http://localhost:7777).",
 )
 def sync_workflow(workflow_id: str, server_url: str):
     """Push a local workflow to a remote NodeTool server."""
