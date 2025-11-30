@@ -51,12 +51,11 @@ def mock_hf_api():
 
 class TestDownloadState:
     """Test DownloadState dataclass."""
-    
+
     def test_download_state_initialization(self, mock_websocket):
         """Test that DownloadState initializes correctly."""
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         assert state.repo_id == "test/repo"
-        assert state.websocket == mock_websocket
         assert state.status == "idle"
         assert state.downloaded_bytes == 0
         assert state.total_bytes == 0
@@ -71,13 +70,14 @@ class TestDownloadManager:
     async def test_send_update_includes_error_message(self, mock_websocket):
         """Test that send_update includes error message when present."""
         manager = DownloadManager()
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.add_websocket(mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         state.status = "error"
         state.error_message = "Test error message"
         manager.downloads["test/repo"] = state
-        
+
         await manager.send_update("test/repo")
-        
+
         mock_websocket.send_json.assert_called_once()
         call_args = mock_websocket.send_json.call_args[0][0]
         assert call_args["status"] == "error"
@@ -87,12 +87,13 @@ class TestDownloadManager:
     async def test_send_update_without_error_message(self, mock_websocket):
         """Test that send_update doesn't include error field when no error."""
         manager = DownloadManager()
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.add_websocket(mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         state.status = "progress"
         manager.downloads["test/repo"] = state
-        
+
         await manager.send_update("test/repo")
-        
+
         mock_websocket.send_json.assert_called_once()
         call_args = mock_websocket.send_json.call_args[0][0]
         assert call_args["status"] == "progress"
@@ -103,25 +104,21 @@ class TestDownloadManager:
         """Test that start_download sets error_message and sends it via WebSocket."""
         manager = DownloadManager()
         manager.api = mock_hf_api
-        
+        manager.add_websocket(mock_websocket)
+
         # Mock download_huggingface_repo to raise an error
         test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
-        
-        with (
-            patch.object(manager, "download_huggingface_repo", side_effect=test_error),
-            patch.object(manager, "run_progress_updates") as mock_progress,
-            patch("threading.Thread") as mock_thread,
-        ):
-            mock_thread.return_value.start = Mock()
-            mock_thread.return_value.join = Mock()
-            
-            with pytest.raises(GatedRepoError):
-                await manager.start_download(
-                    repo_id="test/repo",
-                    path=None,
-                    websocket=mock_websocket,
-                )
-            
+
+        with patch.object(manager, "download_huggingface_repo", side_effect=test_error):
+            await manager.start_download(
+                repo_id="test/repo",
+                path=None,
+            )
+
+            # Wait for the background task to complete
+            import asyncio
+            await asyncio.sleep(0.1)
+
             # Verify error message was sent via WebSocket
             assert mock_websocket.send_json.called
             # Check that error status was sent
@@ -137,40 +134,34 @@ class TestDownloadManager:
         """Test that download_huggingface_repo properly propagates exceptions from download tasks."""
         manager = DownloadManager()
         manager.api = mock_hf_api
-        
-        # Create a mock queue
-        from multiprocessing import Manager
-        manager_instance = Manager()
-        queue = manager_instance.Queue()
-        
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.add_websocket(mock_websocket)
+
+        state = DownloadState(repo_id="test/repo")
         manager.downloads["test/repo"] = state
-        
+
         # Mock try_to_load_from_cache to return None (files not cached)
         with (
             patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
-            patch("asyncio.get_running_loop") as mock_loop,
         ):
             # Mock filter to return files
             mock_file = MagicMock(spec=RepoFile)
             mock_file.path = "test.safetensors"
             mock_file.size = 1024
             mock_filter.return_value = [mock_file]
-            
+
             # Mock asyncio.gather to return an exception
             test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
             import asyncio
-            
+
             async def mock_gather(*args, **kwargs):
                 return [test_error]
-            
+
             with patch("asyncio.gather", side_effect=mock_gather):
                 with pytest.raises(GatedRepoError) as exc_info:
                     await manager.download_huggingface_repo(
                         repo_id="test/repo",
                         path=None,
-                        queue=queue,
                     )
                 # Should raise the exception
                 assert exc_info.value == test_error
@@ -180,14 +171,11 @@ class TestDownloadManager:
         """Test that download_huggingface_repo raises the first exception found."""
         manager = DownloadManager()
         manager.api = mock_hf_api
-        
-        from multiprocessing import Manager
-        manager_instance = Manager()
-        queue = manager_instance.Queue()
-        
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        manager.add_websocket(mock_websocket)
+
+        state = DownloadState(repo_id="test/repo")
         manager.downloads["test/repo"] = state
-        
+
         with (
             patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
@@ -196,23 +184,22 @@ class TestDownloadManager:
             mock_file.path = "test.safetensors"
             mock_file.size = 1024
             mock_filter.return_value = [mock_file]
-            
+
             # Create multiple exceptions
             error1 = GatedRepoError("First error")
             error2 = ValueError("Second error")
-            
+
             # Mock asyncio.gather to return exceptions
             import asyncio
-            
+
             async def mock_gather(*args, **kwargs):
                 return [error1, error2]
-            
+
             with patch("asyncio.gather", side_effect=mock_gather):
                 with pytest.raises(GatedRepoError) as exc_info:
                     await manager.download_huggingface_repo(
                         repo_id="test/repo",
                         path=None,
-                        queue=queue,
                     )
                 # Should raise the first exception
                 assert exc_info.value == error1
@@ -222,31 +209,28 @@ class TestDownloadManager:
         """Ensure _CACHED_NO_EXIST sentinel is treated as a cache miss without raising errors."""
         manager = DownloadManager()
         manager.api = mock_hf_api
+        manager.add_websocket(mock_websocket)
 
-        from multiprocessing import Manager
-        manager_instance = Manager()
-        queue = manager_instance.Queue()
-
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         manager.downloads["test/repo"] = state
 
         with (
             patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=_CACHED_NO_EXIST),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
-            patch("asyncio.get_running_loop") as mock_loop,
+            patch("nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock) as mock_download,
         ):
             mock_filter.side_effect = lambda files, *_args, **_kwargs: files
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=[
-                    ("config.json", "/tmp/config.json"),
-                    ("model.safetensors", "/tmp/model.safetensors"),
-                ]
-            )
+            # async_hf_download returns just the path, run_single_download wraps it in tuple
+            async def mock_download_func(*args, **kwargs):
+                filename = kwargs.get('filename', args[1] if len(args) > 1 else None)
+                if filename == "config.json":
+                    return "/tmp/config.json"
+                return "/tmp/model.safetensors"
+            mock_download.side_effect = mock_download_func
 
             await manager.download_huggingface_repo(
                 repo_id="test/repo",
                 path=None,
-                queue=queue,
             )
 
         assert state.status == "completed"
@@ -256,6 +240,7 @@ class TestDownloadManager:
     async def test_download_huggingface_repo_skips_directories(self, mock_websocket):
         """Ensure directory entries from repo tree are not queued for download."""
         manager = DownloadManager()
+        manager.add_websocket(mock_websocket)
 
         # Build mock API response: one file and one directory-like entry.
         file_entry = MagicMock(spec=RepoFile)
@@ -269,30 +254,24 @@ class TestDownloadManager:
         manager.api = MagicMock()
         manager.api.list_repo_tree.return_value = [file_entry, dir_entry]
 
-        from multiprocessing import Manager
-        manager_instance = Manager()
-        queue = manager_instance.Queue()
-
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         manager.downloads["test/repo"] = state
 
         with (
+            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
-            patch("asyncio.get_running_loop") as mock_loop,
+            patch("nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock) as mock_download,
         ):
             mock_filter.side_effect = lambda files, *_args, **_kwargs: files
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                return_value=("config.json", "/tmp/config.json")
-            )
+            mock_download.return_value = "/tmp/config.json"
 
             await manager.download_huggingface_repo(
                 repo_id="test/repo",
                 path=None,
-                queue=queue,
             )
 
         # Only the file should be downloaded, directory should be ignored.
-        mock_loop.return_value.run_in_executor.assert_awaited_once()
+        mock_download.assert_awaited_once()
         assert state.downloaded_files == ["config.json"]
 
     @pytest.mark.asyncio
@@ -300,12 +279,9 @@ class TestDownloadManager:
         """EntryNotFoundError from a download should set error status and not raise."""
         manager = DownloadManager()
         manager.api = mock_hf_api
+        manager.add_websocket(mock_websocket)
 
-        from multiprocessing import Manager
-        manager_instance = Manager()
-        queue = manager_instance.Queue()
-
-        state = DownloadState(repo_id="test/repo", websocket=mock_websocket)
+        state = DownloadState(repo_id="test/repo")
         manager.downloads["test/repo"] = state
 
         with (
@@ -323,7 +299,6 @@ class TestDownloadManager:
                 await manager.download_huggingface_repo(
                     repo_id="test/repo",
                     path=None,
-                    queue=queue,
                 )
 
         assert state.status == "error"
