@@ -329,6 +329,16 @@ class ModelManager:
 
         return "unknown", None
 
+    @staticmethod
+    def _move_model_to_cpu(model: Any) -> None:
+        """Move a model to CPU if it exposes a relevant helper."""
+        with suppress(Exception):
+            if hasattr(model, "to"):
+                model.to("cpu")  # type: ignore[attr-defined]
+                return
+            if hasattr(model, "cpu"):
+                model.cpu()  # type: ignore[attr-defined]
+
     @classmethod
     def clear_unused(cls, node_ids: list[str]):
         """Removes models that are no longer associated with active nodes.
@@ -346,13 +356,14 @@ class ModelManager:
             key = cls._models_by_node.pop(node_id, None)
             if key:
                 if key in cls._models:
+                    model = cls._models.pop(key, None)
+                    if model is not None:
+                        cls._move_model_to_cpu(model)
                     # Extract model info for logging
                     parts = key.split("_", 2)
                     model_id = parts[0] if len(parts) > 0 else "unknown"
                     task = parts[1] if len(parts) > 1 else "unknown"
                     path = parts[2] if len(parts) > 2 else None
-
-                    del cls._models[key]
                     cleared_count += 1
                     cleared_models.append(f"{model_id} (task: {task}, path: {path})")
                     logger.debug(
@@ -382,6 +393,33 @@ class ModelManager:
             )
         else:
             logger.debug("Cache cleanup: No unused models to remove")
+        if cleared_count > 0:
+            gc.collect()
+            cls._try_empty_cuda_cache()
+
+    @classmethod
+    def unload_model(cls, model_id: str, task: str, path: str | None = None) -> bool:
+        """Explicitly remove a cached model and free associated VRAM."""
+        key = f"{model_id}_{task}_{path}"
+        model = cls._models.pop(key, None)
+        if model is None:
+            return False
+
+        cls._move_model_to_cpu(model)
+        cls._locks.pop(key, None)
+        cls._model_last_used.pop(key, None)
+        cls._model_device.pop(key, None)
+        cls._model_size_bytes.pop(key, None)
+
+        for node_id, mapped_key in list(cls._models_by_node.items()):
+            if mapped_key == key:
+                cls._models_by_node.pop(node_id, None)
+                cls._node_last_used.pop(node_id, None)
+
+        gc.collect()
+        cls._try_empty_cuda_cache()
+        logger.info("Unloaded cached model: %s (task: %s, path: %s)", model_id, task, path)
+        return True
 
     @classmethod
     def clear(cls):
@@ -411,6 +449,9 @@ class ModelManager:
         else:
             logger.debug("Cache clear: No models to remove")
 
+        for model in list(cls._models.values()):
+            cls._move_model_to_cpu(model)
+
         cls._models.clear()
         cls._models_by_node.clear()
         cls._locks.clear()
@@ -433,6 +474,8 @@ class ModelManager:
                 device_count,
                 size_count,
             )
+        gc.collect()
+        cls._try_empty_cuda_cache()
 
     # ------------------------------------------------------------------
     # Memory management helpers
@@ -902,5 +945,7 @@ class ModelManager:
             return
 
         with suppress(Exception):
+            torch.cuda.synchronize()
+            gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
