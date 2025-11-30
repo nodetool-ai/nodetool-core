@@ -134,7 +134,7 @@ class ThreadedEventLoop:
                 asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0
             )
             log.debug("All cancellable tasks finished after cancellation signal.")
-        except TimeoutError:
+        except asyncio.TimeoutError:
             log.warning(
                 "Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
             )
@@ -173,42 +173,41 @@ class ThreadedEventLoop:
 
     def stop(self) -> None:
         """Stop the event loop and wait for the thread to finish."""
-        if not self._running or not self._thread or self._stop_initiated:
-            if self._stop_initiated and self._thread and not self._thread.is_alive():
-                # If stop was initiated and thread is dead, we might be in a re-entrant call after cleanup
-                log.debug(
-                    "Stop called but shutdown already completed or thread is dead."
-                )
-                return
-            if not self._running and not self._thread:
-                log.debug(
-                    "Stop called but loop was not running or thread doesn't exist."
-                )
-                return
-            # If only _stop_initiated is true, but thread is alive, let join handle it.
-            # log.debug(f"Stop called, _running={self._running}, _thread_exists={bool(self._thread)}, _stop_initiated={self._stop_initiated}")
+        if not self._thread:
+            log.debug("Stop called but no thread was started.")
+            return
+
+        if self._stop_initiated:
+            log.debug("Stop already initiated.")
+            return
+
+        if not self._running:
+            log.debug("Stop called but loop was not running. Continuing with cleanup.")
 
         log.debug(
-            f"Initiating stop. Current thread: {threading.get_ident()}, Loop thread: {self._thread.ident if self._thread else 'N/A'}"
+            "Initiating stop. Current thread: %s, Loop thread: %s",
+            threading.get_ident(),
+            self._thread.ident if self._thread else "N/A",
         )
-        self._running = False  # Signal that no new work should be accepted / loop should stop running tasks
 
-        if self._loop and self._loop.is_running():
+        self._running = False
+
+        loop_running = bool(self._loop and self._loop.is_running())
+        if loop_running:
             log.debug("Scheduling _shutdown_loop via call_soon_threadsafe.")
+            assert self._loop is not None
             self._loop.call_soon_threadsafe(self._shutdown_loop)
         else:
-            # If loop is not running, but thread exists, it implies _run_event_loop might have exited prematurely
-            # or was never properly started. Forcing a stop on a non-running loop is mostly a no-op for stop itself.
             log.warning(
                 "Stop called, but internal loop was not reported as running. Cleanup will proceed."
             )
+            self._stop_initiated = True
 
         current_thread_id = threading.get_ident()
         target_thread_id = self._thread.ident if self._thread else None
 
         if self._thread and current_thread_id != target_thread_id:
             log.debug(f"Waiting for event loop thread {target_thread_id} to join.")
-            # Use shorter timeout on Windows to prevent hanging
             import platform
 
             timeout = 3.0 if platform.system() == "Windows" else 10.0
@@ -222,28 +221,18 @@ class ThreadedEventLoop:
                 "Stop called from within the event loop thread. Join will be skipped. Loop should stop via _shutdown_loop."
             )
 
-        # After attempting to join, decide whether it's safe to close the loop here.
         thread_still_alive = bool(self._thread and self._thread.is_alive())
-        self._stop_initiated = True
-
         if thread_still_alive:
-            # If the loop thread is still alive, do NOT close the loop from this thread.
-            # The loop will stop via _shutdown_loop and will be closed in the loop thread's
-            # own finally block inside _run_event_loop. Closing here would raise
-            # "Cannot close a running event loop".
             log.warning(
                 "Event loop thread still alive after join attempt; skipping loop.close() here."
             )
             return
 
-        # If we reach here, the thread has terminated (or never existed). It's safe to clear it.
         self._thread = None
 
-        # Close the loop only if it exists, is not running, and not already closed.
         if self._loop is not None:
             try:
                 if self._loop.is_running():
-                    # Extra guard; should not happen if thread is dead, but be safe.
                     log.warning(
                         "Internal loop reports running but thread is not alive; skipping close()."
                     )
@@ -252,6 +241,8 @@ class ThreadedEventLoop:
                     self._loop.close()
             finally:
                 self._loop = None
+
+        self._stop_initiated = True
         log.debug("Stop method finished.")
 
     def _run_event_loop(self) -> None:

@@ -9,9 +9,11 @@ import hashlib
 import json
 from typing import List
 
-from nodetool.config.deployment import (
-    SelfHostedDeployment,
-)
+from nodetool.config.deployment import SelfHostedDeployment
+
+
+INTERNAL_API_PORT = 7777
+APP_ENV_PORT = 8000
 
 
 class DockerRunGenerator:
@@ -52,7 +54,8 @@ class DockerRunGenerator:
         parts.append("--restart unless-stopped")
 
         # Port mapping
-        parts.append(f"-p {self.container.port}:8000")
+        host_port = self._resolve_host_port()
+        parts.append(f"-p {host_port}:{INTERNAL_API_PORT}")
 
         # Volume mounts
         for volume in self._build_volumes():
@@ -69,7 +72,7 @@ class DockerRunGenerator:
 
         # Health check
         healthcheck = (
-            '--health-cmd="curl -f http://localhost:8000/health || exit 1" '
+            f'--health-cmd="curl -f http://localhost:{INTERNAL_API_PORT}/health || exit 1" '
             "--health-interval=30s "
             "--health-timeout=10s "
             "--health-retries=3 "
@@ -95,7 +98,7 @@ class DockerRunGenerator:
         config_dict = {
             "image": self.deployment.image.full_name,
             "container_name": self.container.name,
-            "port": self.container.port,
+            "port": self._resolve_host_port(),
             "volumes": self._build_volumes(),
             "environment": sorted(self._build_environment()),
             "gpu": self.container.gpu,
@@ -141,7 +144,7 @@ class DockerRunGenerator:
         env = dict(self.container.environment) if self.container.environment else {}
 
         # Add container-specific settings
-        env["PORT"] = "8000"
+        env["PORT"] = str(APP_ENV_PORT)
         env["NODETOOL_API_URL"] = f"http://localhost:{self.container.port}"
 
         # Set database path to workspace (mounted volume)
@@ -160,6 +163,13 @@ class DockerRunGenerator:
 
         # Convert to KEY=value format
         return [f"{key}={value}" for key, value in env.items()]
+
+    def _resolve_host_port(self) -> int:
+        """Return the host port to expose for this container."""
+        host_port = self.container.port or APP_ENV_PORT
+        if host_port == INTERNAL_API_PORT:
+            return APP_ENV_PORT
+        return host_port
 
     def _build_gpu_args(self) -> List[str]:
         """

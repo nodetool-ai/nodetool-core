@@ -3,7 +3,7 @@ import gc
 import json
 from datetime import datetime
 from enum import Enum
-from typing import AsyncGenerator, ClassVar, Dict, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import msgpack
 from fastapi import WebSocket, WebSocketDisconnect
@@ -27,7 +27,6 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.types import Chunk, Error
-from nodetool.workflows.workflow_runner import WorkflowRunner
 
 log = get_logger(__name__)
 
@@ -74,19 +73,21 @@ class WebSocketMode(str, Enum):
     TEXT = "text"
 
 
-async def process_message(context: ProcessingContext, explicit_types: bool = False):
+async def process_message(
+    context: ProcessingContext, explicit_types: bool = False
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     Helper method to process and send individual messages.
     Yields the message to the caller.
 
     Args:
         context (ProcessingContext): The processing context
-        req (RunJobRequest): The request object for the job.
+        explicit_types (bool): Whether primitive results should be wrapped
     """
     msg = await context.pop_message_async()
     if isinstance(msg, Error):
-        raise Exception(msg.error)
-    msg_dict = msg if isinstance(msg, dict) else msg.model_dump()
+        raise RuntimeError(msg.error)
+    msg_dict: dict[str, Any] = msg if isinstance(msg, dict) else msg.model_dump()
 
     if explicit_types and "result" in msg_dict:
         msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
@@ -98,14 +99,12 @@ async def process_workflow_messages(
     job_execution: JobExecution,
     sleep_interval: float = 0.01,
     explicit_types: bool = False,
-) -> AsyncGenerator[dict, None]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     Process messages from a running workflow.
 
     Args:
-        context (ProcessingContext): The processing context
-        runner (WorkflowRunner): The workflow runner
-        message_handler: Async function to handle messages
+        job_execution (JobExecution): Active job execution to stream from
         sleep_interval (float): Time to sleep between message checks
         explicit_types (bool): Whether to wrap primitive types in explicit types
     """
@@ -129,34 +128,6 @@ async def process_workflow_messages(
         raise
 
 
-async def execute_workflow(
-    context: ProcessingContext, runner: WorkflowRunner, req: RunJobRequest
-):
-    """
-    Execute a workflow with the given context and request.
-
-    Args:
-        context (ProcessingContext): The processing context
-        runner (WorkflowRunner): The workflow runner
-        req (RunJobRequest): The job request
-    """
-    try:
-        if req.graph is None:
-            log.info(f"Loading workflow graph for {req.workflow_id}")
-            workflow = await context.get_workflow(req.workflow_id)
-            if workflow is None:
-                raise ValueError(f"Workflow {req.workflow_id} not found")
-            req.graph = workflow.get_api_graph()
-        assert runner, "Runner is not set"
-        await runner.run(req, context)
-    except Exception as e:
-        log.exception(e)
-        context.post_message(
-            JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
-        )
-        raise
-
-
 class JobStreamContext:
     """Context for streaming a specific job's messages"""
 
@@ -164,7 +135,7 @@ class JobStreamContext:
         self.job_id = job_id
         self.workflow_id = workflow_id
         self.job_execution = job_execution
-        self.streaming_task: asyncio.Task | None = None
+        self.streaming_task: asyncio.Task[None] | None = None
 
 
 class WebSocketRunner:
@@ -177,16 +148,15 @@ class WebSocketRunner:
         active_jobs (Dict[str, JobStreamContext]): Active job streaming contexts by job_id
     """
 
-    websocket: WebSocket | None = None
-    mode: WebSocketMode = WebSocketMode.BINARY
-    active_jobs: ClassVar[Dict[str, JobStreamContext]] = {}
-
     def __init__(self, auth_token: str | None = None, user_id: str | None = None):
         """
         Initializes a new instance of the WebSocketRunner class.
         """
+        self.websocket: WebSocket | None = None
         self.mode = WebSocketMode.BINARY
-        self.active_jobs = {}
+        self.active_jobs: dict[str, JobStreamContext] = {}
+        self._run_job_task: asyncio.Task[None] | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
         self.auth_token = auth_token or ""
         self.user_id = user_id or ""
 
@@ -710,8 +680,15 @@ class WebSocketRunner:
             req = RunJobRequest(**command.data)
             strategy = Environment.get_default_execution_strategy()
             try:
-                req.execution_strategy = ExecutionStrategy(str(strategy))
-            except Exception:
+                if isinstance(strategy, ExecutionStrategy):
+                    req.execution_strategy = strategy
+                else:
+                    req.execution_strategy = ExecutionStrategy(strategy)
+            except ValueError:
+                log.error(
+                    "Invalid execution strategy from environment: %r. Falling back to THREADED",
+                    strategy,
+                )
                 req.execution_strategy = ExecutionStrategy.THREADED
             log.info(
                 f"Starting workflow: {req.workflow_id} with strategy: {req.execution_strategy}"
@@ -827,14 +804,21 @@ class WebSocketRunner:
                     if message["type"] == "websocket.disconnect":
                         log.info("Received websocket disconnect message")
                         break
-                    if "bytes" in message:
-                        data = msgpack.unpackb(message["bytes"])  # type: ignore
-                        log.debug("Received binary message")
-                    elif "text" in message:
-                        data = json.loads(message["text"])
-                        log.debug("Received text message")
-                    else:
-                        log.warning("Received message with unknown format")
+                    try:
+                        if "bytes" in message:
+                            data = msgpack.unpackb(message["bytes"])  # type: ignore
+                            log.debug("Received binary message")
+                        elif "text" in message:
+                            data = json.loads(message["text"])
+                            log.debug("Received text message")
+                        else:
+                            log.warning("Received message with unknown format")
+                            continue
+                    except Exception as decode_error:
+                        log.warning(
+                            "Failed to decode client message: %s", decode_error
+                        )
+                        await self.send_message({"error": "invalid_message"})
                         continue
 
                     command = WebSocketCommand(**data)

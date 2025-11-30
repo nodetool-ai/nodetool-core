@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field, field_validator
 class ServiceConfig(BaseModel):
     """Configuration for a single proxied service."""
 
-    # All containers listen on port 7777 internally
-    INTERNAL_PORT: ClassVar[int] = 7777
+    # Proxy-managed containers listen on port 8000 internally
+    INTERNAL_PORT: ClassVar[int] = 8000
 
     name: str = Field(..., description="Unique service name")
     path: str = Field(..., description="Path prefix for routing (e.g., /app1)")

@@ -222,7 +222,7 @@ class Graph(BaseModel):
 
     def outputs(self) -> List[OutputNode]:
         """
-        Returns a list of nodes that have no outgoing edges.
+        Returns a list of nodes that are designated as OutputNode instances.
         """
         return [node for node in self.nodes if isinstance(node, OutputNode)]
 
@@ -312,7 +312,7 @@ class Graph(BaseModel):
                 sorted_nodes.append(level_nodes)
 
         if any(indegree[node_id] != 0 for node_id in indegree):
-            print("Graph contains at least one cycle")
+            log.warning("Graph contains at least one cycle")
 
         return sorted_nodes
 
@@ -396,17 +396,20 @@ class Graph(BaseModel):
         """
         visited: set[str] = set()
         queue = deque([node_id])
+        reverse_adj: dict[str, list[str]] = {}
+        for edge in self.edges:
+            reverse_adj.setdefault(edge.target, []).append(edge.source)
+
         while queue:
             current = queue.popleft()
-            for e in self.edges:
-                if e.target != current:
+            for source_id in reverse_adj.get(current, []):
+                if source_id in visited:
                     continue
-                src = self.find_node(e.source)
+                src = self.find_node(source_id)
                 if src is None:
                     continue
                 if src.is_streaming_output():
                     return True
-                if src._id not in visited:
-                    visited.add(src._id)
-                    queue.append(src._id)
+                visited.add(source_id)
+                queue.append(source_id)
         return False

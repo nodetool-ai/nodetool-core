@@ -17,6 +17,11 @@ from nodetool.config.deployment import (
 )
 
 
+# Self-hosted runtime listens on this internal port by default.
+INTERNAL_API_PORT = 7777
+APP_ENV_PORT = 8000
+
+
 class ComposeGenerator:
     """
     Generates docker-compose.yml configuration from deployment settings.
@@ -110,12 +115,17 @@ class ComposeGenerator:
         service: Dict[str, Any] = {
             "image": self.deployment.image.full_name,
             "container_name": f"nodetool-{container.name}",
-            "ports": [f"{container.port}:8000"],
+            "ports": [f"{container.port}:{INTERNAL_API_PORT}"],
             "volumes": self._build_volumes(container),
             "environment": self._build_environment(container),
             "restart": "unless-stopped",
             "healthcheck": {
-                "test": ["CMD", "curl", "-f", "http://localhost:8000/health"],
+                "test": [
+                    "CMD",
+                    "curl",
+                    "-f",
+                    f"http://localhost:{INTERNAL_API_PORT}/health",
+                ],
                 "interval": "30s",
                 "timeout": "10s",
                 "retries": 3,
@@ -163,7 +173,7 @@ class ComposeGenerator:
         env = dict(container.environment) if container.environment else {}
 
         # Add container-specific settings
-        env["PORT"] = "8000"
+        env["PORT"] = str(APP_ENV_PORT)
         env["NODETOOL_API_URL"] = f"http://localhost:{container.port}"
 
         # Add workflow IDs if specified

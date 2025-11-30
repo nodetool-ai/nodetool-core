@@ -135,7 +135,6 @@ class WorkflowRunner:
         device: Selected device ("cpu", "cuda", "mps").
         active_processing_node_ids: Node IDs currently running in async tasks.
         node_inboxes: Per-node inboxes for input delivery and EOS tracking.
-        node_inboxes: Per-node inboxes for input delivery and EOS tracking.
     """
 
     def __init__(
@@ -687,6 +686,8 @@ class WorkflowRunner:
                                 await inbox.close_all()
                 log.debug("Nodes finalized in finally block.")
 
+                # Ensure downstream consumers mark all edges as drained as part of teardown
+                self.drain_active_edges(context, graph)
                 self._torch_support.empty_cuda_cache()
                 log.debug("CUDA cache emptied if available.")
 
@@ -908,7 +909,7 @@ class WorkflowRunner:
                         EdgeUpdate(edge_id=edge.id, status="drained")
                     )
             except Exception:
-            # Best effort - ignore errors during draining
+                # Best effort - ignore errors during draining
                 pass
 
     async def process_graph(

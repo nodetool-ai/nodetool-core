@@ -48,6 +48,12 @@ class ThreadedJobExecution(JobExecution):
         self.event_loop = event_loop
         self.future: Future | None = None
 
+    def _set_status(self, status: str) -> None:
+        """Update both the internal and runner status consistently."""
+        self._status = status
+        if self.runner:
+            self.runner.status = status
+
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
         assert self.runner, "Runner is not set"
@@ -70,9 +76,7 @@ class ThreadedJobExecution(JobExecution):
         if not self.is_completed():
             if self.future:
                 self.future.cancel()
-            if self.runner:
-                self.runner.status = "cancelled"
-            self._status = "cancelled"
+            self._set_status("cancelled")
             return True
         return False
 
@@ -109,25 +113,23 @@ class ThreadedJobExecution(JobExecution):
                         )
                     self.request.graph = workflow.get_api_graph()
 
-                self._status = "running"
+                self._set_status("running")
                 await self.runner.run(self.request, self.context)
 
                 # Update job status on completion
-                self._status = "completed"
+                self._set_status("completed")
                 await self.job_model.update(
                     status="completed", finished_at=datetime.now()
                 )
                 log.info(f"Background job {self.job_id} completed successfully")
 
         except asyncio.CancelledError:
-            self.runner.status = "cancelled"
-            self._status = "cancelled"
+            self._set_status("cancelled")
             await self.job_model.update(status="cancelled", finished_at=datetime.now())
             log.info(f"Background job {self.job_id} cancelled")
             raise
         except Exception as e:
-            self.runner.status = "error"
-            self._status = "error"
+            self._set_status("error")
             import traceback
             error_text = str(e).strip()
             error_msg = (
@@ -149,6 +151,8 @@ class ThreadedJobExecution(JobExecution):
                 )
             )
             raise
+        finally:
+            await self.finalize_state()
 
     @classmethod
     async def create_and_start(
@@ -208,6 +212,6 @@ class ThreadedJobExecution(JobExecution):
 
         # Schedule execution on the persistent loop
         job_instance.future = event_loop.run_coroutine(job_instance.execute())
-        job_instance._status = "running"
+        job_instance._set_status("running")
 
         return job_instance

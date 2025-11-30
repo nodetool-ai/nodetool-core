@@ -1,9 +1,9 @@
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from nodetool.metadata.types import BaseType, Chunk, SubTask, Task
+from nodetool.metadata.types import Chunk, SubTask, Task
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
@@ -89,7 +89,7 @@ class SaveUpdate(BaseModel):
     name: str
     value: Any
     output_type: str
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolResultUpdate(BaseModel):
@@ -233,7 +233,7 @@ class OutputUpdate(BaseModel):
     output_name: str
     value: Any
     output_type: str
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 ProcessingMessage = (

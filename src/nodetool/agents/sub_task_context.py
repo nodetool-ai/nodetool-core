@@ -429,7 +429,7 @@ def _validate_and_sanitize_schema(
             return cleaned
         if isinstance(obj, list):
             return [_clean_schema_recursive(item) for item in obj]
-    return obj
+        return obj
 
     result_schema = _clean_schema_recursive(result_schema)
 
