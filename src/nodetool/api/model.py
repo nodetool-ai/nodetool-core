@@ -83,6 +83,23 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     return deduped_models
 
 
+
+async def _mark_downloaded_status(models: list[UnifiedModel]) -> list[UnifiedModel]:
+    """
+    Check local cache for each model and update its 'downloaded' status.
+    Uses asyncio.gather for parallel checking.
+    """
+    async def check_model(model: UnifiedModel):
+        if model.repo_id:
+            # Run blocking file check in thread pool
+            is_downloaded = await asyncio.to_thread(has_cached_files, model.repo_id)
+            if is_downloaded:
+                model.downloaded = True
+
+    await asyncio.gather(*(check_model(m) for m in models))
+    return models
+
+
 # Exported functions for direct use (e.g., by MCP server)
 async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
@@ -98,6 +115,22 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models
+    
+    # Ensure recommended models also get their status checked (in case they are downloaded but not in hf_models for some reason,
+    # or if we want to be double sure)
+    # However, hf_models comes from read_cached_hf_models which scans the cache.
+    # dedupe_models keeps the first occurrence.
+    # If a model is in hf_models, it is downloaded.
+    # If it is ONLY in reco_models, it might be downloaded or not.
+    # Let's check status for the final list to be safe, or at least for the reco part.
+    # But dedupe_models logic:
+    # 1. hf_models (downloaded=True)
+    # 2. ollama (downloaded=True)
+    # 3. reco (downloaded=False usually)
+    # If a model is in 1 and 3, 1 wins -> downloaded=True.
+    # If a model is only in 3, it means it's NOT in 1, so it's NOT downloaded.
+    # So get_all_models logic seems correct without extra check, assuming read_cached_hf_models is accurate.
+    
     return dedupe_models(all_models)
 
 
@@ -108,7 +141,8 @@ async def recommended_models(_user: str) -> list[UnifiedModel]:
         for model_list in get_recommended_models().values()
         for model in model_list
     ]
-    return [model for model in models if model is not None]
+    models = [model for model in models if model is not None]
+    return await _mark_downloaded_status(models)
 
 
 async def get_language_models(user: str = "1") -> list[LanguageModel]:
@@ -235,70 +269,80 @@ async def recommended_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     # Determine platform on the server; do not accept client override
-    return get_recommended_image_models()
+    models = get_recommended_image_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/image/text-to-image")
 async def recommended_text_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_text_to_image_models()
+    models = get_recommended_text_to_image_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/image/image-to-image")
 async def recommended_image_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_image_to_image_models()
+    models = get_recommended_image_to_image_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/language")
 async def recommended_language_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_language_models()
+    models = get_recommended_language_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/language/text-generation")
 async def recommended_language_text_generation_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_language_text_generation_models()
+    models = get_recommended_language_text_generation_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/language/embedding")
 async def recommended_language_embedding_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_language_embedding_models()
+    models = get_recommended_language_embedding_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/asr")
 async def recommended_asr_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_asr_models()
+    models = get_recommended_asr_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/tts")
 async def recommended_tts_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_tts_models()
+    models = get_recommended_tts_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/video/text-to-video")
 async def recommended_text_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_text_to_video_models()
+    models = get_recommended_text_to_video_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/recommended/video/image-to-video")
 async def recommended_image_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return get_recommended_image_to_video_models()
+    models = get_recommended_image_to_video_models()
+    return await _mark_downloaded_status(models)
 
 
 @router.get("/all")

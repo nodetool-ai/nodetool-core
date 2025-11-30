@@ -26,18 +26,18 @@ def _make_client(monkeypatch, env: str = "development", enable_flag: str | None 
 
 def test_terminal_ws_rejects_when_disabled(monkeypatch):
     with _make_client(monkeypatch) as client:
-        with pytest.raises(WebSocketDisconnect) as excinfo:
-            with client.websocket_connect("/terminal"):
-                pass
-        assert excinfo.value.code == 1008
+        with client.websocket_connect("/terminal") as ws:
+            msg = ws.receive()
+            assert msg["type"] == "websocket.close"
+            assert msg["code"] == 1008
 
 
 def test_terminal_ws_rejects_in_production(monkeypatch):
     with _make_client(monkeypatch, env="production", enable_flag="1") as client:
-        with pytest.raises(WebSocketDisconnect) as excinfo:
-            with client.websocket_connect("/terminal"):
-                pass
-        assert excinfo.value.code == 1008
+        with client.websocket_connect("/terminal") as ws:
+            msg = ws.receive()
+            assert msg["type"] == "websocket.close"
+            assert msg["code"] == 1008
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="PTY echo test assumes POSIX shell")

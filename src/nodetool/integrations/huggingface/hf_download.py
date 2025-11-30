@@ -35,7 +35,7 @@ log = get_logger(__name__)
 class DownloadState:
     """Tracks the state of an individual download."""
     repo_id: str
-    websocket: WebSocket
+    task: asyncio.Task | None = None
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     downloaded_bytes: int = 0
     total_bytes: int = 0
@@ -49,26 +49,12 @@ class DownloadState:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-
-
-
 class DownloadManager:
     """Manages concurrent downloads from Hugging Face repositories with WebSocket progress tracking."""
 
-    websocket: WebSocket
-    cancel: asyncio.Event
-    downloaded_bytes: int = 0
-    total_bytes: int = 0
-    repo_id: str = ""
-    status: (
-        Literal["idle"]
-        | Literal["progress"]
-        | Literal["start"]
-        | Literal["error"]
-        | Literal["completed"]
-        | Literal["cancelled"]
-    ) = "idle"
-
+    active_websockets: set[WebSocket]
+    downloads: dict[str, DownloadState]
+    
     def __init__(self, token: str | None = None):
         """Initialize DownloadManager.
 
@@ -83,7 +69,8 @@ class DownloadManager:
             log.debug("DownloadManager initialized without HF_TOKEN - will fetch async when needed")
             self.api = HfApi()
         self.logger = get_logger(__name__)
-        self.downloads: dict[str, DownloadState] = {}
+        self.downloads = {}
+        self.active_websockets = set()
         self.model_cache = ModelCache("model_info")
         self._token_initialized = token is not None
 
@@ -99,32 +86,67 @@ class DownloadManager:
         log.debug(f"DownloadManager.create: Retrieved token for user_id={user_id}, token_present={token is not None}")
         return cls(token=token)
 
+    def add_websocket(self, websocket: WebSocket):
+        """Add a WebSocket connection to receive updates."""
+        self.active_websockets.add(websocket)
+        self.logger.debug(f"WebSocket added. Active connections: {len(self.active_websockets)}")
+
+    def remove_websocket(self, websocket: WebSocket):
+        """Remove a WebSocket connection."""
+        if websocket in self.active_websockets:
+            self.active_websockets.remove(websocket)
+            self.logger.debug(f"WebSocket removed. Active connections: {len(self.active_websockets)}")
+
+    async def sync_state(self, websocket: WebSocket):
+        """Send current state of all downloads to a specific WebSocket."""
+        for repo_id, state in self.downloads.items():
+            await self.send_update(state.repo_id, None, specific_websocket=websocket)
+
     async def start_download(
         self,
         repo_id: str,
         path: str | None,
-        websocket: WebSocket,
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
         user_id: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
 
-        self.logger.info(f"start_download: Starting download for {id} with user_id={user_id}")
+        self.logger.info(f"start_download: Request for {id} with user_id={user_id}")
 
         if id in self.downloads:
-            self.logger.warning(f"Download already in progress for: {id}")
-            await websocket.send_json(
-                {"status": "error", "message": "Download already in progress"}
-            )
-            return
+            state = self.downloads[id]
+            if state.status not in ["completed", "error", "cancelled"]:
+                self.logger.warning(f"Download already in progress for: {id}")
+                # Broadcast that it's already running
+                await self.send_update(repo_id, path)
+                return
 
-        self.logger.info(f"Starting download for: {id}")
-        download_state = DownloadState(repo_id=repo_id, websocket=websocket)
+        self.logger.info(f"Starting download task for: {id}")
+        download_state = DownloadState(repo_id=repo_id)
         self.downloads[id] = download_state
 
+        # Create background task for the download
+        task = asyncio.create_task(
+            self._download_task(
+                repo_id, path, allow_patterns, ignore_patterns, user_id
+            )
+        )
+        download_state.task = task
+
         # Start monitoring task
-        monitor_task = asyncio.create_task(self.monitor_progress(repo_id, path))
+        asyncio.create_task(self.monitor_progress(repo_id, path))
+
+    async def _download_task(
+        self,
+        repo_id: str,
+        path: str | None,
+        allow_patterns: list[str] | None = None,
+        ignore_patterns: list[str] | None = None,
+        user_id: str | None = None,
+    ):
+        id = repo_id if path is None else f"{repo_id}/{path}"
+        download_state = self.downloads[id]
 
         try:
             await self.download_huggingface_repo(
@@ -141,31 +163,26 @@ class DownloadManager:
             download_state.error_message = str(e)
             # Ensure final update is sent
             await self.send_update(repo_id, path)
-            raise  # Re-raise to bubble up to the endpoint
         finally:
             self.logger.info(f"Download process finished: {id}")
-            # Stop monitoring
-            if not monitor_task.done():
-                monitor_task.cancel()
-                try:
-                    await monitor_task
-                except asyncio.CancelledError:
-                    pass
-            
             # Ensure one last update if completed
             if download_state.status == "completed":
                 await self.send_update(repo_id, path)
-                
-            del self.downloads[id]
+            
+            # We don't delete from self.downloads immediately so user can see completion status
+            # It will be cleaned up on next start_download or manually if we implement cleanup
 
     async def cancel_download(self, id: str):
         """Cancel an ongoing download."""
         if id not in self.downloads:
+            self.logger.warning(f"Cancel requested for non-existent download: {id}")
             return
 
         self.logger.info(f"Cancelling download for: {id}")
         self.downloads[id].cancel.set()
+        self.logger.debug(f"Set cancel event for {id}")
         self.downloads[id].status = "cancelled"
+        await self.send_update(self.downloads[id].repo_id, None) # Force update
 
     async def monitor_progress(self, repo_id: str, path: str | None):
         """Monitor progress and send updates periodically."""
@@ -184,8 +201,8 @@ class DownloadManager:
             await self.send_update(repo_id, path)
             await asyncio.sleep(0.1)
 
-    async def send_update(self, repo_id: str, path: str | None = None):
-        """Send an update to the WebSocket client."""
+    async def send_update(self, repo_id: str, path: str | None = None, specific_websocket: WebSocket | None = None):
+        """Send an update to WebSocket clients."""
         id = repo_id if path is None else f"{repo_id}/{path}"
         if id not in self.downloads:
             return
@@ -205,10 +222,14 @@ class DownloadManager:
         if state.error_message:
             update["error"] = state.error_message
             
-        try:
-            await state.websocket.send_json(update)
-        except Exception as e:
-             self.logger.warning(f"Failed to send websocket update: {e}")
+        targets = [specific_websocket] if specific_websocket else self.active_websockets
+        
+        for ws in targets:
+            try:
+                await ws.send_json(update)
+            except Exception as e:
+                self.logger.warning(f"Failed to send websocket update: {e}")
+                # We might want to remove dead sockets here, but let the endpoint handle disconnects
 
     async def download_huggingface_repo(
         self,
@@ -303,7 +324,7 @@ class DownloadManager:
 
         for file in files_to_download:
             if state.cancel.is_set():
-                self.logger.info("Download cancelled")
+                self.logger.info("Download cancelled before queuing task")
                 break
             state.current_files.append(file.path)
             self.logger.debug(f"download_huggingface_repo: Queuing download of {file.path} for {repo_id} (user_id={user_id})")
@@ -343,3 +364,16 @@ class DownloadManager:
                 "Purging HuggingFace model caches after successful download"
             )
             self.model_cache.delete_pattern("cached_hf_*")
+
+
+# Singleton management
+_download_managers: dict[str, DownloadManager] = {}
+_manager_lock = asyncio.Lock()
+
+async def get_download_manager(user_id: str) -> DownloadManager:
+    """Get or create a singleton DownloadManager for a specific user."""
+    async with _manager_lock:
+        if user_id not in _download_managers:
+            log.info(f"Creating new DownloadManager for user_id={user_id}")
+            _download_managers[user_id] = await DownloadManager.create(user_id)
+        return _download_managers[user_id]

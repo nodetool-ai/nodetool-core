@@ -7,6 +7,9 @@ import asyncio
 from urllib.parse import urlparse
 
 import httpx
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 HF_ENDPOINT = "https://huggingface.co"
@@ -243,10 +246,16 @@ async def hf_head_metadata(
     if etag.startswith('"') and etag.endswith('"'):
         etag = etag[1:-1]
 
-    size_header = resp.headers.get(HF_HEADER_X_LINKED_SIZE) or resp.headers.get("Content-Length")
+    size_header = resp.headers.get(HF_HEADER_X_LINKED_SIZE)
+    if size_header is None and 200 <= resp.status_code < 300:
+        size_header = resp.headers.get("Content-Length")
     size = int(size_header) if size_header is not None else None
 
     location = resp.headers.get("Location") or str(resp.url)
+    if location and not location.startswith(("http://", "https://")):
+        from urllib.parse import urljoin
+        location = urljoin(str(resp.url), location)
+
     commit = resp.headers.get(HF_HEADER_X_REPO_COMMIT)
     accept_ranges = resp.headers.get("Accept-Ranges", "").lower() == "bytes"
 
@@ -304,9 +313,14 @@ async def _download_with_resume(
         attempt += 1
         resume_from = tmp.stat().st_size if tmp.exists() else 0
 
-        if expected_size is not None and resume_from == expected_size:
-            tmp.replace(dest)
-            return
+        if expected_size is not None:
+            if resume_from == expected_size:
+                tmp.replace(dest)
+                return
+            if resume_from > expected_size:
+                log.warning(f"Local file larger than expected ({resume_from} > {expected_size}). Restarting download.")
+                tmp.unlink()
+                resume_from = 0
 
         headers = {"Accept-Encoding": "identity"}
         if token:
@@ -327,6 +341,13 @@ async def _download_with_resume(
                     if tmp.exists():
                         tmp.unlink()
                     resume_from = 0
+                
+                # Handle 416 Range Not Satisfiable
+                if resp.status_code == 416:
+                    log.warning(f"Range not satisfiable (resume_from={resume_from}). Restarting download.")
+                    if tmp.exists():
+                        tmp.unlink()
+                    continue
 
                 resp.raise_for_status()
 
@@ -334,6 +355,7 @@ async def _download_with_resume(
                 with tmp.open(mode) as f:
                     async for chunk in resp.aiter_bytes(chunk_size):
                         if cancel_event and cancel_event.is_set():
+                            log.debug(f"Download cancelled for {url}")
                             raise asyncio.CancelledError("Download cancelled")
                         if not chunk:
                             continue
@@ -355,6 +377,14 @@ async def _download_with_resume(
             if attempt >= max_retries:
                 raise RuntimeError(f"Download failed after {attempt} attempts") from exc
             # loop again, resuming from whatever is on disk
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 416:
+                 # Should be handled above, but just in case raise_for_status catches it first
+                log.warning(f"Range not satisfiable (caught via exception). Restarting download.")
+                if tmp.exists():
+                    tmp.unlink()
+                continue
+            raise
 
 
 async def async_hf_download(

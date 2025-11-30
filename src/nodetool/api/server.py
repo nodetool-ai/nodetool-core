@@ -508,10 +508,7 @@ def create_app(
             # Must accept before closing to raise WebSocketDisconnect in tests
             await websocket.accept()
             await websocket.close(code=1008, reason="Terminal access disabled")
-            # Raise WebSocketDisconnect so TestClient raises it immediately
-            from starlette.websockets import WebSocketDisconnect
-
-            raise WebSocketDisconnect(code=1008)
+            return
 
         # Skip authentication in dev mode for convenience
         if not enforce_auth:

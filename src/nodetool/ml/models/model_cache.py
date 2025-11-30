@@ -135,6 +135,8 @@ class ModelCache:
                     log.debug(f"Deleted cache entry for key: {stored_key}")
             except Exception as e:
                 log.warning(f"Error processing cache file {cache_file}: {e}")
+                # Remove corrupted cache file
+                cache_file.unlink(missing_ok=True)
 
         if deleted_count > 0:
             log.info(

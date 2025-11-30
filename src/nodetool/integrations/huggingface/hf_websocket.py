@@ -8,7 +8,7 @@ with authentication and real-time progress tracking.
 from fastapi import WebSocket
 
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.hf_download import DownloadManager
+from nodetool.integrations.huggingface.hf_download import DownloadManager, get_download_manager
 
 log = get_logger(__name__)
 
@@ -62,9 +62,15 @@ async def huggingface_download_endpoint(websocket: WebSocket):
 
         log.info(f"huggingface_download_endpoint: Websocket connection with user_id={user_id}")
 
-        # Create download manager with user_id for database secret lookup
-        download_manager = await DownloadManager.create(user_id=user_id)
+        # Get singleton download manager
+        download_manager = await get_download_manager(user_id=user_id)
+        
         await websocket.accept()
+        
+        # Register websocket and sync state
+        download_manager.add_websocket(websocket)
+        await download_manager.sync_state(websocket)
+        
         try:
             while True:
                 data = await websocket.receive_json()
@@ -78,10 +84,10 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
                     print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
                     try:
+                        # This is now non-blocking
                         await download_manager.start_download(
                             repo_id=repo_id,
                             path=path,
-                            websocket=websocket,
                             allow_patterns=allow_patterns,
                             ignore_patterns=ignore_patterns,
                             user_id=user_id,
@@ -97,9 +103,22 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                                 "path": path,
                             }
                         )
-                        raise  # Re-raise to be caught by outer handler
+                        # Don't re-raise here as we want to keep the socket open for other commands
+                        log.error(f"Error starting download: {e}")
+                        
                 elif command == "cancel_download":
-                    await download_manager.cancel_download(data.get("id"))
+                    download_id = data.get("id")
+                    if not download_id:
+                        repo_id = data.get("repo_id")
+                        path = data.get("path")
+                        if repo_id:
+                            download_id = repo_id if path is None else f"{repo_id}/{path}"
+                    
+                    log.info(f"Processing cancel_download for id={download_id}")
+                    if download_id:
+                        await download_manager.cancel_download(download_id)
+                    else:
+                        log.warning("Received cancel_download without id or repo_id")
                 else:
                     await websocket.send_json(
                         {"status": "error", "message": "Unknown command"}
@@ -107,5 +126,9 @@ async def huggingface_download_endpoint(websocket: WebSocket):
         except Exception as e:
             log.error(f"WebSocket error: {e}", exc_info=True)
         finally:
-            await websocket.close()
+            download_manager.remove_websocket(websocket)
+            try:
+                await websocket.close()
+            except Exception:
+                pass
 
