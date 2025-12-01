@@ -33,15 +33,16 @@ def validate_key(key: str) -> str:
     Returns the normalized key (POSIX-style separators). Raises HTTPException if validation fails.
     """
     normalized = key.replace("\\", "/")
-    if normalized.startswith("/"):
-        raise HTTPException(
-            status_code=400, detail="Invalid key: absolute paths are not allowed"
-        )
 
     parts = [part for part in normalized.split("/") if part not in ("", ".")]
     if not parts:
         raise HTTPException(
             status_code=400, detail="Invalid key: key must not be empty"
+        )
+
+    if normalized.startswith("/"):
+        raise HTTPException(
+            status_code=400, detail="Invalid key: absolute paths are not allowed"
         )
 
     if any(part == ".." for part in parts):

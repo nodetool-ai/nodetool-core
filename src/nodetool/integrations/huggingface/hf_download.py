@@ -25,7 +25,7 @@ from huggingface_hub.hf_api import RepoFile
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
-from nodetool.integrations.huggingface import async_downloader
+from nodetool.integrations.huggingface.async_downloader import async_hf_download
 from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
@@ -156,6 +156,10 @@ class DownloadManager:
                 ignore_patterns=ignore_patterns,
                 user_id=user_id,
             )
+        except asyncio.CancelledError:
+            self.logger.info(f"Download task cancelled: {id}")
+            download_state.status = "cancelled"
+            await self.send_update(repo_id, path)
         except Exception as e:
             self.logger.error(f"Error in download {id}: {e}")
             self.logger.error(traceback.format_exc())
@@ -313,7 +317,7 @@ class DownloadManager:
                     state.status = "progress"
 
         async def run_single_download(file_path: str):
-            local_path = await async_downloader.async_hf_download(
+            local_path = await async_hf_download(
                 repo_id=repo_id,
                 filename=file_path,
                 token=self.token,
@@ -341,8 +345,17 @@ class DownloadManager:
                 state.error_message = str(result)
                 self.logger.error(f"Download task failed with 404: {result}")
                 return
+            if isinstance(result, asyncio.CancelledError):
+                self.logger.info(f"Download task for {id} received cancellation")
+                continue
             if isinstance(result, Exception):
                 errors.append(result)
+
+        if any(isinstance(result, asyncio.CancelledError) for result in completed_tasks):
+            state.status = "cancelled"
+            self.logger.info(f"Download cancelled for repo: {repo_id}")
+            await self.send_update(repo_id, path)
+            return
 
         if errors:
             self.logger.error(f"Download task failed: {errors[0]}")
