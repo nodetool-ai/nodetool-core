@@ -72,13 +72,11 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
             # Create and use ResourceScope for the request
             # ResourceScope auto-detects database type and uses shared pools
             async with ResourceScope():
-                response = await call_next(request)
-                return response
-
+                return await call_next(request)
         except Exception as e:
             log.error(
                 f"Error in ResourceScope middleware for {request.url.path}: {e}",
                 exc_info=True,
             )
-            # Fall through to normal request processing
-            return await call_next(request)
+            # Let the exception propagate so normal handlers run and avoid double execution
+            raise

@@ -94,3 +94,21 @@ async def test_resourcescope_middleware_concurrent_requests(app_with_scope):
     assert response.json()["has_scope"] is True
 
 
+@pytest.mark.asyncio
+async def test_resourcescope_middleware_does_not_rerun_handler_on_error():
+    """Handlers should not be executed twice if they raise."""
+    app = FastAPI()
+    call_count = {"count": 0}
+
+    @app.get("/boom")
+    async def boom():
+        call_count["count"] += 1
+        raise RuntimeError("boom")
+
+    app.add_middleware(ResourceScopeMiddleware)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get("/boom")
+    assert response.status_code == 500
+    assert call_count["count"] == 1
+
