@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Any, Callable, ClassVar, Dict, Generator, Iterable, Optional
+from typing import Any, Callable, ClassVar, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -48,11 +48,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.providers import get_provider, import_providers
-from nodetool.providers.base import (
-    _PROVIDER_REGISTRY,
-    ProviderCapability,
-    get_registered_provider,
-)
+from nodetool.providers.base import _PROVIDER_REGISTRY, get_registered_provider
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
 from nodetool.workflows.recommended_models import (
     get_recommended_asr_models,
@@ -110,8 +106,9 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
     ]
     # gguf_models = await load_gguf_models_from_file()
     # mlx_models = await load_mlx_models_from_file()
-    hf_models = await read_cached_hf_models()
-    ollama_models_unified = await get_ollama_models_unified()
+    hf_models, ollama_models_unified = await asyncio.gather(
+        read_cached_hf_models(), get_ollama_models_unified()
+    )
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models
