@@ -85,15 +85,20 @@ async def list_collections(
                 return workflow.name
         return None
 
+    counts = await asyncio.gather(*(col.count() for col in collections))
+    workflows = await asyncio.gather(
+        *(get_workflow_name(col.metadata or {}) for col in collections)
+    )
+
     return CollectionList(
         collections=[
             CollectionResponse(
                 name=col.name,
                 metadata=col.metadata or {},
-                workflow_name=await get_workflow_name(col.metadata or {}),
-                count=col.count(),
+                workflow_name=wf,
+                count=count,
             )
-            for col in collections
+            for col, wf, count in zip(collections, workflows, counts, strict=False)
         ],
         count=len(collections),
     )
@@ -117,7 +122,7 @@ async def update_collection(name: str, req: CollectionModify):
     """Update a collection"""
     client = await get_async_chroma_client()
     collection = await client.get_collection(name=name)
-    metadata = collection.metadata.copy()
+    metadata = dict(collection.metadata or {})
     metadata.update(req.metadata or {})
 
     if workflow_id := metadata.get("workflow"):
@@ -138,7 +143,8 @@ async def update_collection(name: str, req: CollectionModify):
                 detail="Workflow must have a FileInput or DocumentFileInput node",
             )
 
-    await collection.modify(name=req.name, metadata=metadata)
+    new_name = req.name if req.name is not None else collection.name
+    await collection.modify(name=new_name, metadata=metadata)
     return CollectionResponse(
         name=collection.name,
         metadata=collection.metadata,
