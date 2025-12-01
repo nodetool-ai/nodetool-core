@@ -6,72 +6,41 @@ from nodetool.api.storage import validate_key
 
 
 class TestStorageKeyValidation:
-    """Test the validate_key function for path separator prevention."""
+    """Test the validate_key function for safe normalization."""
 
     def test_valid_keys(self):
-        """Test that valid keys (without path separators) pass validation."""
-        valid_keys = [
-            "file.txt",
-            "file-with-dashes.txt",
-            "file_with_underscores.txt",
-            "file.with.dots.txt",
-            "123456789.jpg",
-            ".hidden_file",
-            "file..txt",
-        ]
+        """Test that valid keys are normalized and accepted."""
+        valid_keys = {
+            "file.txt": "file.txt",
+            "file-with-dashes.txt": "file-with-dashes.txt",
+            "folder/file.txt": "folder/file.txt",
+            "folder/subfolder/file.txt": "folder/subfolder/file.txt",
+            "folder\\windows\\file.txt": "folder/windows/file.txt",
+            "nested/./file.txt": "nested/file.txt",
+            "trailing/slash/": "trailing/slash",
+        }
 
-        for key in valid_keys:
+        for key, expected in valid_keys.items():
             try:
-                validate_key(key)
-            except HTTPException:
-                pytest.fail(f"Valid key '{key}' was rejected")
+                assert validate_key(key) == expected
+            except HTTPException as exc:
+                pytest.fail(f"Valid key '{key}' was rejected: {exc.detail}")
 
-    def test_path_separators_rejected(self):
-        """Test that keys with path separators are rejected."""
-        invalid_keys = [
-            "folder/file.txt",
-            "folder\\file.txt",
-            "../file.txt",
-            "..\\file.txt",
-            "/etc/passwd",
-            "C:/Windows/System32/file.txt",
-            "folder/subfolder/file.txt",
-            "folder\\subfolder\\file.txt",
-            "./file.txt",
-            ".\\file.txt",
-        ]
+    def test_traversal_or_absolute_paths_rejected(self):
+        """Test that traversal and absolute paths are rejected."""
+        invalid_keys = {
+            "../file.txt": "path traversal",
+            "..\\file.txt": "path traversal",
+            "/etc/passwd": "absolute paths",
+            "\\windows\\system32": "absolute paths",
+            "folder/../../secret.txt": "path traversal",
+            "": "must not be empty",
+            "////": "must not be empty",
+            ".": "must not be empty",
+        }
 
-        for key in invalid_keys:
+        for key, expected_detail in invalid_keys.items():
             with pytest.raises(HTTPException) as exc_info:
                 validate_key(key)
             assert exc_info.value.status_code == 400
-            assert "path separators not allowed" in exc_info.value.detail
-
-    def test_edge_cases(self):
-        """Test edge cases for validation."""
-        # Keys with dots that are valid
-        valid_edge_cases = [
-            "file..txt",  # double dots in filename
-            ".hidden_file",  # hidden file
-            "...",  # just dots
-            "file...name",
-        ]
-
-        for key in valid_edge_cases:
-            try:
-                validate_key(key)
-            except HTTPException:
-                pytest.fail(f"Valid edge case key '{key}' was rejected")
-
-        # Keys that should be rejected due to path separators
-        invalid_edge_cases = [
-            "./",
-            "../",
-            "folder/.hidden_file",
-            "folder.with.dots/file.txt",
-        ]
-
-        for key in invalid_edge_cases:
-            with pytest.raises(HTTPException) as exc_info:
-                validate_key(key)
-            assert exc_info.value.status_code == 400
+            assert expected_detail in exc_info.value.detail
