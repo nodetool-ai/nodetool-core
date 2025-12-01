@@ -253,7 +253,7 @@ async def get_workspace_info_from_path(
 ) -> WorkspaceInfo:
     """Helper function to get workspace information"""
     try:
-        stat = await aiofiles.os.stat(workspace_path)
+        stat = await asyncio.to_thread(os.stat, workspace_path)
 
         # Extract workflow_id from workspace_id (format: workflow_{workflow_id})
         workflow_id = None
@@ -261,21 +261,21 @@ async def get_workspace_info_from_path(
             workflow_id = workspace_id[9:]  # Remove "workflow_" prefix
 
         # Count files recursively in a thread to avoid blocking the event loop
-        def count_files(path: str) -> tuple[int, int]:
-            file_count = 0
+        def walk(path: str) -> tuple[int, int]:
             total_size = 0
+            file_count = 0
             for root, _dirs, files in os.walk(path):
                 for name in files:
                     try:
                         entry_path = os.path.join(root, name)
                         entry_stat = os.stat(entry_path)
-                        file_count += 1
                         total_size += entry_stat.st_size
-                    except Exception:
+                        file_count += 1
+                    except OSError:
                         continue
-            return file_count, total_size
+            return total_size, file_count
 
-        file_count, total_size = await asyncio.to_thread(count_files, workspace_path)
+        total_size, file_count = await asyncio.to_thread(walk, workspace_path)
 
         return WorkspaceInfo(
             workspace_id=workspace_id,
@@ -368,7 +368,7 @@ async def list_workspace_files(
     workspace_id: str, path: str = ".", __user: str = Depends(current_user)
 ) -> List[FileInfo]:
     """
-    List files and directories in a workspace
+    List files and directories in a workspace, including hidden entries.
     """
     try:
         workspace_root = get_workspace_root()

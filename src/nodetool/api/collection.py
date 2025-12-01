@@ -30,11 +30,6 @@ class Document(BaseModel):
     metadata: dict[str, str] = {}
 
 
-class CollectionCreate(BaseModel):
-    name: str
-    embedding_model: str
-
-
 class CollectionResponse(BaseModel):
     name: str
     count: int
@@ -50,6 +45,11 @@ class CollectionList(BaseModel):
 class CollectionModify(BaseModel):
     name: str | None = None
     metadata: dict[str, str] | None = None
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
 
 
 @router.post("/", response_model=CollectionResponse)
@@ -178,7 +178,14 @@ async def index(
     file: UploadFile = File(...),
     _authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
-    await get_async_collection(name)
+    try:
+        await get_async_collection(name)
+    except chromadb.errors.NotFoundError as e:  # type: ignore[attr-defined]
+        raise HTTPException(status_code=404, detail="Collection not found") from e
+    except Exception as e:
+        # Surface other failures as server errors
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     token = "local_token"
 
     # Save uploaded file temporarily

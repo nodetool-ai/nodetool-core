@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,7 +39,12 @@ class BackgroundJobResponse(BaseModel):
     is_completed: bool
 
 
-@router.get("/", response_model=List[JobResponse])
+class JobListResponse(BaseModel):
+    jobs: List[JobResponse]
+    next_start_key: Optional[str] = None
+
+
+@router.get("/", response_model=JobListResponse)
 async def list_jobs(
     user_id: str = Depends(current_user),
     workflow_id: Optional[str] = None,
@@ -56,9 +63,12 @@ async def list_jobs(
     Returns:
         List of jobs
     """
-    jobs, _ = await Job.paginate(
+    jobs, next_start_key = await Job.paginate(
         user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key
     )
+
+    # Reconcile DB status with the background manager for this page of jobs
+    await reconcile_jobs_for_user(user_id, jobs)
 
     log.info(
         "Jobs API list_jobs",
@@ -72,20 +82,23 @@ async def list_jobs(
         },
     )
 
-    return [
-        JobResponse(
-            id=job.id,
-            user_id=job.user_id,
-            job_type=job.job_type,
-            status=job.status,
-            workflow_id=job.workflow_id,
-            started_at=job.started_at.isoformat() if job.started_at else "",
-            finished_at=job.finished_at.isoformat() if job.finished_at else None,
-            error=job.error,
-            cost=job.cost,
-        )
-        for job in jobs
-    ]
+    return JobListResponse(
+        jobs=[
+            JobResponse(
+                id=job.id,
+                user_id=job.user_id,
+                job_type=job.job_type,
+                status=job.status,
+                workflow_id=job.workflow_id,
+                started_at=job.started_at.isoformat() if job.started_at else "",
+                finished_at=job.finished_at.isoformat() if job.finished_at else None,
+                error=job.error,
+                cost=job.cost,
+            )
+            for job in jobs
+        ],
+        next_start_key=next_start_key,
+    )
 
 
 @router.get("/{job_id}", response_model=JobResponse)
@@ -146,7 +159,7 @@ async def list_running_jobs(user_id: str = Depends(current_user)):
 
 
 @router.post("/{job_id}/cancel")
-async def cancel_job(job_id: str, user_id: str = Depends(current_user)):
+async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> BackgroundJobResponse:
     """
     Cancel a running job.
 
@@ -166,10 +179,47 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)):
     job_manager = JobExecutionManager.get_instance()
     cancelled = await job_manager.cancel_job(job_id)
 
-    if cancelled:
-        return {"message": "Job cancelled successfully", "job_id": job_id}
-    else:
-        return {
-            "message": "Job not found in background manager or already completed",
-            "job_id": job_id,
-        }
+    status = (
+        "cancelled" if cancelled else "not_found_or_completed"
+    )
+    return BackgroundJobResponse(
+        job_id=job_id,
+        status=status,
+        workflow_id=job.workflow_id,
+        created_at=job.started_at.isoformat() if job.started_at else "",
+        is_running=False,
+        is_completed=not cancelled,
+    )
+async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
+    """
+    Ensure job status reflects the background execution manager.
+    Syncs completed/failed states from the background manager; marks missing handles as failed.
+    """
+    job_manager = JobExecutionManager.get_instance()
+    bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}
+
+    updates = []
+    for job in jobs:
+        bg_job = bg_jobs.get(job.id)
+        if bg_job is None and job.status in {"running", "starting", "queued"}:
+            job.status = "failed"
+            job.error = job.error or "Reconciled: execution handle missing"
+            job.finished_at = job.finished_at or datetime.now(timezone.utc)
+            updates.append(job.save())
+        elif bg_job is not None and bg_job.is_completed():
+            new_status = getattr(bg_job, "status", "completed")
+            if job.status != new_status or job.finished_at is None:
+                job.status = new_status
+                job.error = job.error or bg_job.error
+                job.finished_at = job.finished_at or datetime.now(timezone.utc)
+                updates.append(job.save())
+        elif bg_job is not None and not bg_job.is_running():
+            # Not running but not completed: mark as failed
+            if job.status in {"running", "starting", "queued"}:
+                job.status = "failed"
+                job.error = job.error or "Reconciled: execution handle stopped unexpectedly"
+                job.finished_at = job.finished_at or datetime.now(timezone.utc)
+                updates.append(job.save())
+
+    if updates:
+        await asyncio.gather(*updates)

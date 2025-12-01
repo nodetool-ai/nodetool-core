@@ -96,11 +96,11 @@ class ThreadedJobExecution(JobExecution):
         resource isolation (database adapters, settings, secrets).
         """
         assert self.runner, "Runner is not set"
-        try:
-            # Wrap execution in ResourceScope for per-execution isolation
-            # ResourceScope auto-detects database type and acquires from shared pools
-            # In test mode, inherit db_path from current scope if available
-            async with ResourceScope():
+        # Wrap execution in ResourceScope for per-execution isolation
+        # ResourceScope auto-detects database type and acquires from shared pools
+        # In test mode, inherit db_path from current scope if available
+        async with ResourceScope():
+            try:
                 # Load workflow graph if not already loaded
                 if self.request.graph is None:
                     log.info(f"Loading workflow graph for {self.request.workflow_id}")
@@ -123,36 +123,40 @@ class ThreadedJobExecution(JobExecution):
                 )
                 log.info(f"Background job {self.job_id} completed successfully")
 
-        except asyncio.CancelledError:
-            self._set_status("cancelled")
-            await self.job_model.update(status="cancelled", finished_at=datetime.now())
-            log.info(f"Background job {self.job_id} cancelled")
-            raise
-        except Exception as e:
-            self._set_status("error")
-            import traceback
-            error_text = str(e).strip()
-            error_msg = (
-                f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
-            )
-            tb_text = traceback.format_exc()
-            # Track error locally for fallback reporters
-            self._error = error_msg
-            await self.job_model.update(
-                status="failed", error=error_msg, finished_at=datetime.now()
-            )
-            log.exception("Background job %s failed: %s", self.job_id, error_msg)
-            self.context.post_message(
-                JobUpdate(
-                    job_id=self.job_id,
-                    status="failed",
-                    error=error_msg,
-                    traceback=tb_text,
+            except asyncio.CancelledError:
+                self._set_status("cancelled")
+                await self.job_model.update(
+                    status="cancelled", finished_at=datetime.now()
                 )
-            )
-            raise
-        finally:
-            await self.finalize_state()
+                log.info(f"Background job {self.job_id} cancelled")
+                raise
+            except Exception as e:
+                self._set_status("error")
+                import traceback
+
+                error_text = str(e).strip()
+                error_msg = (
+                    f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
+                )
+                tb_text = traceback.format_exc()
+                # Track error locally for fallback reporters
+                self._error = error_msg
+                await self.job_model.update(
+                    status="failed", error=error_msg, finished_at=datetime.now()
+                )
+                log.exception("Background job %s failed: %s", self.job_id, error_msg)
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="failed",
+                        error=error_msg,
+                        traceback=tb_text,
+                    )
+                )
+                raise
+            finally:
+                # Ensure finalize_state runs while ResourceScope is active
+                await self.finalize_state()
 
     @classmethod
     async def create_and_start(
