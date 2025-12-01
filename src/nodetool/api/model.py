@@ -688,8 +688,10 @@ async def check_huggingface_cache(
     token = await get_hf_token(user)
     api = HfApi(token=token) if token else HfApi()
 
-    # List repo files and filter
-    items = api.list_repo_tree(body.repo_id, recursive=True)
+    # List repo files in a worker thread to avoid blocking the event loop
+    items = await asyncio.to_thread(
+        api.list_repo_tree, body.repo_id, recursive=True
+    )
     files = [f for f in items if isinstance(f, RepoFile)]
     filtered_files = filter_repo_paths(files, body.allow_pattern, body.ignore_pattern)
 
