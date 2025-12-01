@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -55,6 +56,22 @@ async def get_file_info(path: str) -> FileInfo:
         raise HTTPException(
             status_code=404, detail=f"File not found: {path}"
         ) from e
+
+
+def ensure_within_root(root: str, path: str, error_message: str) -> str:
+    """
+    Ensure the given path is contained within root, normalizing for case-insensitive filesystems.
+    """
+    normalized_root = os.path.normcase(os.path.abspath(root))
+    normalized_path = os.path.normcase(os.path.abspath(path))
+    root_prefix = (
+        normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
+    )
+    if normalized_path != normalized_root and not normalized_path.startswith(
+        root_prefix
+    ):
+        raise HTTPException(status_code=403, detail=error_message)
+    return normalized_path
 
 
 @router.get("/list")
@@ -228,7 +245,7 @@ async def upload_file(
 
 def get_workspace_root() -> str:
     """Get the root directory for all workspaces"""
-    return os.path.expanduser("~/.nodetool-workspaces")
+    return os.path.abspath(os.path.expanduser("~/.nodetool-workspaces"))
 
 
 async def get_workspace_info_from_path(
@@ -243,30 +260,22 @@ async def get_workspace_info_from_path(
         if workspace_id.startswith("workflow_"):
             workflow_id = workspace_id[9:]  # Remove "workflow_" prefix
 
-        # Count files recursively
-        file_count = 0
-        total_size = 0
-
-        async def count_files(path: str):
-            nonlocal file_count, total_size
-            try:
-                entries = await aiofiles.os.listdir(path)
-                for entry in entries:
-                    entry_path = os.path.join(path, entry)
+        # Count files recursively in a thread to avoid blocking the event loop
+        def count_files(path: str) -> tuple[int, int]:
+            file_count = 0
+            total_size = 0
+            for root, _dirs, files in os.walk(path):
+                for name in files:
                     try:
-                        entry_stat = await aiofiles.os.stat(entry_path)
-                        is_dir = await asyncio.to_thread(os.path.isdir, entry_path)
-                        if is_dir:
-                            await count_files(entry_path)
-                        else:
-                            file_count += 1
-                            total_size += entry_stat.st_size
+                        entry_path = os.path.join(root, name)
+                        entry_stat = os.stat(entry_path)
+                        file_count += 1
+                        total_size += entry_stat.st_size
                     except Exception:
-                        pass
-            except Exception:
-                pass
+                        continue
+            return file_count, total_size
 
-        await count_files(workspace_path)
+        file_count, total_size = await asyncio.to_thread(count_files, workspace_path)
 
         return WorkspaceInfo(
             workspace_id=workspace_id,
@@ -338,7 +347,7 @@ async def get_workspace_info(
     """
     try:
         workspace_root = get_workspace_root()
-        workspace_path = os.path.join(workspace_root, workspace_id)
+        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
 
         exists = await asyncio.to_thread(os.path.exists, workspace_path)
         if not exists:
@@ -363,24 +372,18 @@ async def list_workspace_files(
     """
     try:
         workspace_root = get_workspace_root()
-        workspace_path = os.path.join(workspace_root, workspace_id)
+        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
 
         # Construct full path within workspace
         full_path = workspace_path if path == "." else os.path.join(
             workspace_path, path
         )
 
-        resolved_path = os.path.realpath(full_path)
-
-        log.info(f"Resolved path: {resolved_path}")
-
-        # Ensure path is within workspace (security check)
-        if not resolved_path.startswith(workspace_path):
-            raise HTTPException(
-                status_code=403, detail="Access denied: path outside workspace"
-            )
-
-        log.info(f"Listing workspace files at {resolved_path}")
+        resolved_path = ensure_within_root(
+            workspace_path,
+            full_path,
+            "Access denied: path outside workspace",
+        )
 
         files = []
 
@@ -413,7 +416,7 @@ async def download_workspace_file(
     """
     try:
         workspace_root = get_workspace_root()
-        workspace_path = os.path.join(workspace_root, workspace_id)
+        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
 
         exists = await asyncio.to_thread(os.path.exists, workspace_path)
         if not exists:
@@ -422,14 +425,11 @@ async def download_workspace_file(
             )
 
         # Construct full file path
-        full_path = os.path.join(workspace_path, file_path)
-
-        # Ensure path is within workspace (security check)
-        full_path = os.path.abspath(full_path)
-        if not full_path.startswith(workspace_path):
-            raise HTTPException(
-                status_code=403, detail="Access denied: path outside workspace"
-            )
+        full_path = ensure_within_root(
+            workspace_path,
+            os.path.join(workspace_path, file_path),
+            "Access denied: path outside workspace",
+        )
 
         exists = await asyncio.to_thread(os.path.exists, full_path)
         is_dir = await asyncio.to_thread(os.path.isdir, full_path)
@@ -468,20 +468,17 @@ async def upload_workspace_file(
     """
     try:
         workspace_root = get_workspace_root()
-        workspace_path = os.path.join(workspace_root, workspace_id)
+        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
 
         # Create workspace if it doesn't exist
         await asyncio.to_thread(os.makedirs, workspace_path, exist_ok=True)
 
         # Construct full file path
-        full_path = os.path.join(workspace_path, file_path)
-
-        # Ensure path is within workspace (security check)
-        full_path = os.path.abspath(full_path)
-        if not full_path.startswith(workspace_path):
-            raise HTTPException(
-                status_code=403, detail="Access denied: path outside workspace"
-            )
+        full_path = ensure_within_root(
+            workspace_path,
+            os.path.join(workspace_path, file_path),
+            "Access denied: path outside workspace",
+        )
 
         # Create parent directories if needed
         await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
