@@ -13,6 +13,7 @@ import re
 from datetime import UTC, timezone
 from email.utils import parsedate_to_datetime
 from io import BytesIO
+from tempfile import SpooledTemporaryFile
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -25,26 +26,41 @@ from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 log = get_logger(__name__)
 
 
-def validate_key(key: str) -> None:
+def validate_key(key: str) -> str:
     """
-    Validates that the key contains no path separators, ensuring files are only in the base folder.
-    Raises HTTPException if validation fails.
+    Validate and normalize a storage key, preventing traversal while allowing nested prefixes.
+
+    Returns the normalized key (POSIX-style separators). Raises HTTPException if validation fails.
     """
-    if "/" in key or "\\" in key:
+    normalized = key.replace("\\", "/")
+    if normalized.startswith("/"):
         raise HTTPException(
-            status_code=400, detail="Invalid key: path separators not allowed"
+            status_code=400, detail="Invalid key: absolute paths are not allowed"
         )
+
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    if not parts:
+        raise HTTPException(
+            status_code=400, detail="Invalid key: key must not be empty"
+        )
+
+    if any(part == ".." for part in parts):
+        raise HTTPException(
+            status_code=400, detail="Invalid key: path traversal is not allowed"
+        )
+
+    return "/".join(parts)
 
 
 async def _head_file(storage, key: str):
     """
     Common logic for returning file metadata.
     """
-    validate_key(key)
-    if not await storage.file_exists(key):
+    safe_key = validate_key(key)
+    if not await storage.file_exists(safe_key):
         raise HTTPException(status_code=404)
 
-    last_modified = await storage.get_mtime(key)
+    last_modified = await storage.get_mtime(safe_key)
     if not last_modified:
         raise HTTPException(status_code=404)
 
@@ -60,11 +76,11 @@ async def _get_file(storage, key: str, request: Request):
     """
     Common logic for returning file as a stream with range support.
     """
-    validate_key(key)
-    if not await storage.file_exists(key):
+    safe_key = validate_key(key)
+    if not await storage.file_exists(safe_key):
         raise HTTPException(status_code=404)
 
-    last_modified = await storage.get_mtime(key)
+    last_modified = await storage.get_mtime(safe_key)
     if not last_modified:
         raise HTTPException(status_code=404)
 
@@ -74,7 +90,7 @@ async def _get_file(storage, key: str, request: Request):
         if if_modified_since >= last_modified:
             raise HTTPException(status_code=304)
 
-    ext = os.path.splitext(key)[-1][1:]
+    ext = os.path.splitext(safe_key)[-1][1:]
     media_type = EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
     headers = {
         "Last-Modified": last_modified.strftime("%a, %d %b %Y %H:%M:%S GMT"),
@@ -97,7 +113,7 @@ async def _get_file(storage, key: str, request: Request):
                 raise ValueError("Invalid range format")
 
             stream = BytesIO()
-            await storage.download(key, stream)
+            await storage.download(safe_key, stream)
             data = stream.getvalue()
 
             if end is None:
@@ -115,11 +131,11 @@ async def _get_file(storage, key: str, request: Request):
             # If range is invalid, ignore it and return full content
             pass
 
-    size = await storage.get_size(key)
+    size = await storage.get_size(safe_key)
     headers["Content-Length"] = str(size)
 
     return StreamingResponse(
-        content=storage.download_stream(key),
+        content=storage.download_stream(safe_key),
         headers=headers,
     )
 
@@ -128,9 +144,15 @@ async def _put_file(storage, key: str, request: Request):
     """
     Common logic for uploading/updating files.
     """
-    validate_key(key)
-    body = await request.body()
-    await storage.upload(key, BytesIO(body))
+    safe_key = validate_key(key)
+    buffer = SpooledTemporaryFile(max_size=10 * 1024 * 1024)  # spools to disk if large
+    try:
+        async for chunk in request.stream():
+            buffer.write(chunk)
+        buffer.seek(0)
+        await storage.upload(safe_key, buffer)
+    finally:
+        buffer.close()
 
     # return the same xml response as aws s3 upload_fileobj
     return Response(status_code=200, content=b"")
@@ -140,10 +162,10 @@ async def _delete_file(storage, key: str):
     """
     Common logic for deleting files.
     """
-    validate_key(key)
-    if not await storage.file_exists(key):
+    safe_key = validate_key(key)
+    if not await storage.file_exists(safe_key):
         return Response(status_code=404)
-    await storage.delete(key)
+    await storage.delete(safe_key)
     return Response(status_code=204)
 
 
