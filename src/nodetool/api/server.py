@@ -377,10 +377,6 @@ def create_app(
         max_age=3600,
     )
 
-    from nodetool.runtime.resources import (
-        get_static_auth_provider,
-        get_user_auth_provider,
-    )
     from nodetool.api.middleware import ResourceScopeMiddleware
     from nodetool.api.openai import create_openai_compatible_router
     from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
@@ -393,6 +389,10 @@ def create_app(
     from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
     from nodetool.integrations.websocket.websocket_updates import websocket_updates
     from nodetool.metadata.types import Provider
+    from nodetool.runtime.resources import (
+        get_static_auth_provider,
+        get_user_auth_provider,
+    )
     from nodetool.security.http_auth import create_http_auth_middleware
 
     static_provider = get_static_auth_provider()
@@ -554,7 +554,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.dirname(current_dir)
     editable_dirs = get_nodetool_package_source_folders()
-    reload_dirs = [parent_dir] + editable_dirs if reload else []
+    reload_dirs = [parent_dir, *editable_dirs] if reload else []
 
     use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 

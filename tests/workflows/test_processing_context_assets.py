@@ -3,31 +3,32 @@ Tests for ProcessingContext asset conversion and manipulation methods.
 Covers all the asset creation, conversion, and utility methods.
 """
 
-import pytest
-from io import BytesIO
-from unittest.mock import Mock, patch, AsyncMock
 import base64
-import numpy as np
-import PIL.Image
-import pandas as pd
-from pydub import AudioSegment
 import importlib.util
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
 
+import numpy as np
+import pandas as pd
+import PIL.Image
+import pytest
+from pydub import AudioSegment
+
+from nodetool.config.environment import Environment
+from nodetool.metadata.types import (
+    AssetRef,
+    AudioRef,
+    DataframeRef,
+    ImageRef,
+    ModelRef,
+    TextRef,
+    VideoRef,
+)
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.metadata.types import (
-    AssetRef,
-    ImageRef,
-    AudioRef,
-    VideoRef,
-    TextRef,
-    DataframeRef,
-    ModelRef,
-)
-from nodetool.config.environment import Environment
 
 
 def _sklearn_available() -> bool:
@@ -698,20 +699,20 @@ class TestUtilityMethods:
 
     def test_get_system_font_path(self, context: ProcessingContext):
         """Test getting system font path."""
-        with patch("platform.system", return_value="Darwin"):  # macOS
-            with patch("os.path.exists", return_value=True):
-                with patch("os.walk") as mock_walk:
-                    mock_walk.return_value = [("/Library/Fonts", [], ["Arial.ttf"])]
+        with patch("platform.system", return_value="Darwin"), patch(
+            "os.path.exists", return_value=True
+        ), patch("os.walk") as mock_walk:
+            mock_walk.return_value = [("/Library/Fonts", [], ["Arial.ttf"])]
 
-                    result = context.get_system_font_path("Arial.ttf")
-                    assert result == "/Library/Fonts/Arial.ttf"
+            result = context.get_system_font_path("Arial.ttf")
+            assert result == "/Library/Fonts/Arial.ttf"
 
     def test_get_system_font_path_not_found(self, context: ProcessingContext):
         """Test getting system font path when font not found."""
-        with patch("platform.system", return_value="Linux"):
-            with patch("os.path.exists", return_value=False):
-                with pytest.raises(FileNotFoundError):
-                    context.get_system_font_path("NonExistentFont.ttf")
+        with patch("platform.system", return_value="Linux"), patch(
+            "os.path.exists", return_value=False
+        ), pytest.raises(FileNotFoundError):
+            context.get_system_font_path("NonExistentFont.ttf")
 
     def test_resolve_workspace_path(self, context: ProcessingContext):
         """Test resolving workspace paths."""
@@ -737,22 +738,21 @@ class TestBrowserMethods:
     @pytest.mark.asyncio
     async def test_get_browser_local(self, context: ProcessingContext):
         """Test getting local browser instance."""
-        with patch.object(Environment, "get", return_value=None):  # No BROWSER_URL
-            with patch(
-                "nodetool.workflows.processing_context.async_playwright"
-            ) as mock_playwright:
-                mock_playwright_instance = Mock()
-                mock_playwright_instance.start = AsyncMock(
-                    return_value=mock_playwright_instance
-                )
-                mock_playwright_instance.chromium.launch = AsyncMock(
-                    return_value="mock_browser"
-                )
-                mock_playwright.return_value = mock_playwright_instance
+        with patch.object(Environment, "get", return_value=None), patch(
+            "nodetool.workflows.processing_context.async_playwright"
+        ) as mock_playwright:
+            mock_playwright_instance = Mock()
+            mock_playwright_instance.start = AsyncMock(
+                return_value=mock_playwright_instance
+            )
+            mock_playwright_instance.chromium.launch = AsyncMock(
+                return_value="mock_browser"
+            )
+            mock_playwright.return_value = mock_playwright_instance
 
-                browser = await context.get_browser()
-                assert browser == "mock_browser"
-                assert hasattr(context, "_browser")
+            browser = await context.get_browser()
+            assert browser == "mock_browser"
+            assert hasattr(context, "_browser")
 
     @pytest.mark.asyncio
     async def test_get_browser_context(self, context: ProcessingContext):

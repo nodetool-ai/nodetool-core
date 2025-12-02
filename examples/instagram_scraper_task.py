@@ -18,15 +18,16 @@ Usage:
 """
 
 import asyncio
+import json
+
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
-from nodetool.runtime.resources import ResourceScope
-import json
 
 
 async def test_instagram_scraper_task(

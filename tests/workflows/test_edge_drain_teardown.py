@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import queue
 import asyncio
+import queue
 
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.inbox import NodeInbox
-from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Edge
+from nodetool.workflows.graph import Graph
+from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import EdgeUpdate
+from nodetool.workflows.workflow_runner import WorkflowRunner
 
 
 def _collect_messages(ctx: ProcessingContext) -> list:

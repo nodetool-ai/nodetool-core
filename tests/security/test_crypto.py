@@ -3,6 +3,7 @@ Tests for cryptographic utilities.
 """
 
 import pytest
+
 from nodetool.security.crypto import SecretCrypto
 
 
@@ -54,7 +55,7 @@ class TestSecretCrypto:
         encrypted = SecretCrypto.encrypt(plaintext, master_key1, user_id)
 
         # Should fail with wrong key
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             SecretCrypto.decrypt(encrypted, master_key2, user_id)
 
     def test_decrypt_with_wrong_user_id_fails(self):
@@ -67,7 +68,7 @@ class TestSecretCrypto:
         encrypted = SecretCrypto.encrypt(plaintext, master_key, user_id1)
 
         # Should fail with wrong user_id (used as salt)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             SecretCrypto.decrypt(encrypted, master_key, user_id2)
 
     def test_user_isolation(self):

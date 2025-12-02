@@ -1,7 +1,9 @@
 #!/usr/bin/env python
-import os
-import pytest
 import io
+import os
+
+import pytest
+
 from nodetool.storage.file_storage import FileStorage
 
 

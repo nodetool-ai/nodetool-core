@@ -5,12 +5,12 @@ Tests for graph utilities.
 import unittest
 from unittest.mock import MagicMock, patch
 
+from nodetool.types.graph import Edge
 from nodetool.workflows.graph_utils import (
     find_node,
-    get_node_input_types,
     get_downstream_subgraph,
+    get_node_input_types,
 )
-from nodetool.types.graph import Edge
 
 
 class TestGraphUtils(unittest.TestCase):
@@ -126,7 +126,7 @@ class TestGraphUtils(unittest.TestCase):
         mock_subgraph.nodes = [self.node1, self.node2, node3]
         mock_graph_class.return_value = mock_subgraph
 
-        initial_edges, subgraph = get_downstream_subgraph(
+        _initial_edges, subgraph = get_downstream_subgraph(
             complex_graph, "node1", "output1"
         )
 
@@ -157,7 +157,7 @@ class TestGraphUtils(unittest.TestCase):
             "node2": None,  # Simulate missing node
         }.get(node_id)
 
-        initial_edges, subgraph = get_downstream_subgraph(
+        _initial_edges, subgraph = get_downstream_subgraph(
             self.graph, "node1", "output1"
         )
 

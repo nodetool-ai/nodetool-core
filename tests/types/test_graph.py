@@ -1,10 +1,10 @@
 from nodetool.types.graph import (
-    Node,
     Edge,
     Graph,
-    remove_connected_slots,
+    Node,
     get_input_schema,
     get_output_schema,
+    remove_connected_slots,
 )
 
 

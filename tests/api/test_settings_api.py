@@ -4,8 +4,9 @@ Tests for Settings API endpoints, particularly the secrets CRUD operations.
 
 import pytest
 from fastapi.testclient import TestClient
-from nodetool.models.secret import Secret
+
 from nodetool.api.settings import SecretCreateRequest, SecretUpdateRequest
+from nodetool.models.secret import Secret
 
 
 @pytest.mark.asyncio
@@ -210,7 +211,7 @@ class TestSecretsAPI:
         }
         response = client.put(f"/api/settings/secrets/{secret_key}", json=create_data, headers=headers)
         assert response.status_code == 200
-        original_secret = response.json()
+        response.json()
 
         # Update the secret
         update_data = {

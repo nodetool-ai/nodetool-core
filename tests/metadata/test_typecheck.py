@@ -1,21 +1,22 @@
-import pytest
 from enum import Enum
+
+import pytest
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import (
-    typecheck,
-    is_assignable,
     TYPE_ENUM_TO_ASSET_TYPE,
+    is_assignable,
+    typecheck,
 )
 from nodetool.metadata.types import (
-    ImageRef,
-    VideoRef,
     AudioRef,
+    DataframeRef,
     FolderRef,
-    TextRef,
+    ImageRef,
     ModelRef,
     NPArray,
-    DataframeRef,
+    TextRef,
+    VideoRef,
 )
 
 

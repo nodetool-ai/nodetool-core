@@ -9,14 +9,13 @@ import asyncio
 import os
 import threading
 import traceback
-
 from dataclasses import dataclass, field
-from typing import Literal, Callable
+from typing import Callable, Literal
 
 from fastapi import WebSocket
 from huggingface_hub import (
-    HfApi,
     _CACHED_NO_EXIST,
+    HfApi,
     try_to_load_from_cache,
 )
 from huggingface_hub.errors import EntryNotFoundError
@@ -24,8 +23,8 @@ from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
-from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
 from nodetool.integrations.huggingface.async_downloader import async_hf_download
+from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
 from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
@@ -36,6 +35,7 @@ class DownloadState:
     """Tracks the state of an individual download."""
     repo_id: str
     task: asyncio.Task | None = None
+    monitor_task: asyncio.Task | None = None
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     downloaded_bytes: int = 0
     total_bytes: int = 0
@@ -54,7 +54,7 @@ class DownloadManager:
 
     active_websockets: set[WebSocket]
     downloads: dict[str, DownloadState]
-    
+
     def __init__(self, token: str | None = None):
         """Initialize DownloadManager.
 
@@ -99,7 +99,7 @@ class DownloadManager:
 
     async def sync_state(self, websocket: WebSocket):
         """Send current state of all downloads to a specific WebSocket."""
-        for repo_id, state in self.downloads.items():
+        for _repo_id, state in self.downloads.items():
             await self.send_update(state.repo_id, None, specific_websocket=websocket)
 
     async def start_download(
@@ -135,7 +135,9 @@ class DownloadManager:
         download_state.task = task
 
         # Start monitoring task
-        asyncio.create_task(self.monitor_progress(repo_id, path))
+        download_state.monitor_task = asyncio.create_task(
+            self.monitor_progress(repo_id, path)
+        )
 
     async def _download_task(
         self,
@@ -172,7 +174,7 @@ class DownloadManager:
             # Ensure one last update if completed
             if download_state.status == "completed":
                 await self.send_update(repo_id, path)
-            
+
             # We don't delete from self.downloads immediately so user can see completion status
             # It will be cleaned up on next start_download or manually if we implement cleanup
 
@@ -197,11 +199,11 @@ class DownloadManager:
             state = self.downloads[id]
             if state.status in ["completed", "error", "cancelled"]:
                 break
-            
+
             # If we have bytes, we are in progress
             if state.downloaded_bytes > 0 and state.status == "idle":
                  state.status = "progress"
-            
+
             await self.send_update(repo_id, path)
             await asyncio.sleep(0.1)
 
@@ -211,7 +213,7 @@ class DownloadManager:
         if id not in self.downloads:
             return
         state = self.downloads[id]
-        
+
         # Create update dict
         update = {
             "status": state.status,
@@ -225,9 +227,9 @@ class DownloadManager:
         }
         if state.error_message:
             update["error"] = state.error_message
-            
+
         targets = [specific_websocket] if specific_websocket else self.active_websockets
-        
+
         for ws in targets:
             try:
                 await ws.send_json(update)
@@ -302,11 +304,11 @@ class DownloadManager:
         self.logger.info(
             f"Total files to download: {state.total_files}, Total size: {state.total_bytes} bytes"
         )
-        
+
         # Initial update
         await self.send_update(repo_id, path)
 
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         tasks = []
         self.logger.debug(f"download_huggingface_repo: Starting download of {len(files_to_download)} files for {repo_id} (user_id={user_id})")
 

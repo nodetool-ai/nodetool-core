@@ -1,13 +1,14 @@
 import json
 import uuid
+
 from rich.text import Text
 
 from nodetool.agents.task_planner import (
     TaskPlanner,
 )
 from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import Message, SubTask, ToolCall
 from nodetool.providers.base import MockProvider
-from nodetool.metadata.types import Message, ToolCall, SubTask
 from nodetool.utils.message_parsing import (
     extract_json_from_message,
     remove_think_tags,
@@ -32,7 +33,7 @@ def make_planner(tmp_path, **overrides):
 
 
 def test_remove_think_tags(tmp_path):
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
     text = "Hello <think>secret</think> world"
     assert remove_think_tags(text) == "Hello  world"
     assert remove_think_tags(None) is None
@@ -93,7 +94,7 @@ def test_task_id_uniqueness(tmp_path):
 
 def test_extract_json_from_message_with_code_fence(tmp_path):
     """Test JSON extraction from code fence"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
 
     # Test with JSON code fence
     msg = Message(
@@ -108,7 +109,7 @@ def test_extract_json_from_message_with_code_fence(tmp_path):
 
 def test_extract_json_from_message_with_plain_fence(tmp_path):
     """Test JSON extraction from plain code fence"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
 
     # Test with plain code fence
     msg = Message(
@@ -122,7 +123,7 @@ def test_extract_json_from_message_with_plain_fence(tmp_path):
 
 def test_extract_json_from_message_with_raw_json(tmp_path):
     """Test JSON extraction from raw JSON in content"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
 
     # Test with raw JSON
     msg = Message(
@@ -136,7 +137,7 @@ def test_extract_json_from_message_with_raw_json(tmp_path):
 
 def test_extract_json_from_message_with_think_tags(tmp_path):
     """Test JSON extraction works with think tags"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
 
     # Test that think tags are removed before extraction
     msg = Message(
@@ -150,7 +151,7 @@ def test_extract_json_from_message_with_think_tags(tmp_path):
 
 def test_extract_json_from_message_none(tmp_path):
     """Test JSON extraction returns None for invalid input"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
 
     # Test with None message
     result = extract_json_from_message(None)

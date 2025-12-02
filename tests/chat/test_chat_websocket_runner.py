@@ -2,16 +2,17 @@
 Tests for ChatWebSocketRunner functionality
 """
 
-import pytest
-import json
-import msgpack
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+import json
+from unittest.mock import AsyncMock, Mock, patch
+
+import msgpack
+import pytest
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
+
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode
 from nodetool.config.environment import Environment
-
 
 DEFAULT_TEST_TIMEOUT = 5
 
@@ -290,21 +291,20 @@ class TestChatWebSocketRunner:
         # Simulate receiving stop command then disconnect
         messages = [{"type": "stop"}, None]  # Disconnect
 
-        with patch.object(self.runner, "receive_message", side_effect=messages):
-            with patch.object(
-                self.runner, "send_message", new_callable=AsyncMock
-            ) as mock_send:
-                await wait_for(self.runner._receive_messages())
+        with patch.object(self.runner, "receive_message", side_effect=messages), patch.object(
+            self.runner, "send_message", new_callable=AsyncMock
+        ) as mock_send:
+            await wait_for(self.runner._receive_messages())
 
-                # Verify task was cancelled
-                mock_task.cancel.assert_called_once()
-                # Verify stop message was sent
-                mock_send.assert_called_once_with(
-                    {
-                        "type": "generation_stopped",
-                        "message": "Generation stopped by user",
-                    }
-                )
+            # Verify task was cancelled
+            mock_task.cancel.assert_called_once()
+            # Verify stop message was sent
+            mock_send.assert_called_once_with(
+                {
+                    "type": "generation_stopped",
+                    "message": "Generation stopped by user",
+                }
+            )
 
     async def test_receive_messages_normal_message(self):
         """Test handling normal message in receive loop"""
@@ -315,14 +315,13 @@ class TestChatWebSocketRunner:
         # Simulate receiving one message then disconnect
         messages = [test_message, None]
 
-        with patch.object(self.runner, "receive_message", side_effect=messages):
-            with patch.object(
-                self.runner, "handle_message", new_callable=AsyncMock
-            ) as mock_handle:
-                await wait_for(self.runner._receive_messages())
+        with patch.object(self.runner, "receive_message", side_effect=messages), patch.object(
+            self.runner, "handle_message", new_callable=AsyncMock
+        ) as mock_handle:
+            await wait_for(self.runner._receive_messages())
 
-                # Verify message was handled
-                mock_handle.assert_called_once_with(test_message)
+            # Verify message was handled
+            mock_handle.assert_called_once_with(test_message)
 
     async def test_receive_messages_error_handling(self):
         """Test error handling in receive loop"""
@@ -331,17 +330,16 @@ class TestChatWebSocketRunner:
         # Create a side effect that raises an exception on first call, then returns None
         side_effects = [Exception("Test error"), None]
 
-        with patch.object(self.runner, "receive_message", side_effect=side_effects):
-            with patch.object(
-                self.runner, "send_message", new_callable=AsyncMock
-            ) as mock_send:
-                await wait_for(self.runner._receive_messages())
+        with patch.object(self.runner, "receive_message", side_effect=side_effects), patch.object(
+            self.runner, "send_message", new_callable=AsyncMock
+        ) as mock_send:
+            await wait_for(self.runner._receive_messages())
 
-                # Verify error message was sent
-                mock_send.assert_called_once()
-                error_msg = mock_send.call_args[0][0]
-                assert error_msg["type"] == "error"
-                assert "Test error" in error_msg["message"]
+            # Verify error message was sent
+            mock_send.assert_called_once()
+            error_msg = mock_send.call_args[0][0]
+            assert error_msg["type"] == "error"
+            assert "Test error" in error_msg["message"]
 
     async def test_concurrent_message_handling(self):
         """Test that new messages cancel ongoing processing"""
@@ -358,12 +356,13 @@ class TestChatWebSocketRunner:
         # Simulate receiving new message then disconnect
         messages = [new_message, None]
 
-        with patch.object(self.runner, "receive_message", side_effect=messages):
-            with patch.object(self.runner, "handle_message", new_callable=AsyncMock):
-                await self.runner._receive_messages()
+        with patch.object(
+            self.runner, "receive_message", side_effect=messages
+        ), patch.object(self.runner, "handle_message", new_callable=AsyncMock):
+            await self.runner._receive_messages()
 
-                # Verify old task was cancelled
-                old_task.cancel.assert_called_once()
+        # Verify old task was cancelled
+        old_task.cancel.assert_called_once()
 
     # Context Passing Tests
     async def test_user_id_passed_to_processing_context(self):

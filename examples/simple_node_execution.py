@@ -2,13 +2,14 @@
 
 import asyncio
 import tempfile
-from nodetool.workflows.processing_context import ProcessingContext
+
 from nodetool.nodes.lib.math import Add, Multiply
 from nodetool.nodes.nodetool.text import Concat, FormatText
-from nodetool.runtime.resources import ResourceScope
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
 
 logger = get_logger(__name__)
 

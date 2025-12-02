@@ -1,17 +1,18 @@
-import pytest
-import pytest_asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+
+import pytest
+import pytest_asyncio
+
+from nodetool.models.base_model import DBField, DBModel
 from nodetool.models.condition_builder import Field
 from nodetool.models.sqlite_adapter import (
     SQLiteAdapter,
-    convert_to_sqlite_format,
     convert_from_sqlite_format,
+    convert_to_sqlite_format,
     translate_condition_to_sql,
 )
-from nodetool.models.base_model import DBModel, DBField
-
 
 # Skip global setup/teardown for these tests
 pytestmark = pytest.mark.no_setup
@@ -56,11 +57,11 @@ async def db_adapter():
         fields=TestModel.db_fields(),
         table_schema=TestModel.get_table_schema(),
         indexes=[
-            dict(
-                name="age_index",
-                columns=["age"],
-                unique=False,
-            )
+            {
+                "name": "age_index",
+                "columns": ["age"],
+                "unique": False,
+            }
         ],
     )
 

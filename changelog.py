@@ -1,6 +1,7 @@
-import subprocess
 import os
+import subprocess
 from datetime import datetime, timedelta
+
 import anthropic
 import dotenv
 
@@ -19,7 +20,7 @@ def get_git_log(since_date):
 # Function to read existing CHANGELOG.md
 def read_changelog():
     if os.path.exists("CHANGELOG.md"):
-        with open("CHANGELOG.md", "r") as f:
+        with open("CHANGELOG.md") as f:
             return f.read()
     return ""
 

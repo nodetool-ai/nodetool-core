@@ -1,9 +1,9 @@
 import pytest
+
 from nodetool.types.graph import Node
 from nodetool.workflows.base_node import BaseNode, GroupNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.read_graph import read_graph, GraphParsingError
-
+from nodetool.workflows.read_graph import GraphParsingError, read_graph
 
 if False:
     # Test does not run on CI due to
@@ -85,7 +85,7 @@ if False:
         result_edges, result_nodes = read_graph(workflow_json)
 
         assert len(result_nodes) == len(expected_nodes)
-        for result_node, expected_node in zip(result_nodes, expected_nodes):
+        for result_node, expected_node in zip(result_nodes, expected_nodes, strict=False):
             assert result_node.id == expected_node.id
             assert result_node.type == expected_node.type
 
@@ -145,7 +145,7 @@ def test_read_graph_custom_format():
     result_edges, result_nodes = read_graph(custom_json)
 
     assert len(result_nodes) == len(expected_nodes)
-    for result_node, expected_node in zip(result_nodes, expected_nodes):
+    for result_node, expected_node in zip(result_nodes, expected_nodes, strict=False):
         assert result_node.id == expected_node.id
         assert result_node.type == expected_node.type
         assert result_node.data == expected_node.data
@@ -164,7 +164,7 @@ def test_read_graph_invalid_node_type():
             "type": "InvalidNodeType",
         }
     }
-    with pytest.raises(Exception):
+    with pytest.raises(GraphParsingError):
         read_graph(invalid_json)
 
 

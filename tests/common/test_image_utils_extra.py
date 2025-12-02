@@ -4,7 +4,7 @@ Additional tests for image utilities, specifically for image_ref_to_base64_jpeg.
 
 import base64
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 from nodetool.media.image.image_utils import image_ref_to_base64_jpeg
 

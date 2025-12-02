@@ -3,13 +3,15 @@ Tests for ThreadedJobExecution class.
 """
 
 import asyncio
+
 import pytest
-from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.processing_context import ProcessingContext
+
 from nodetool.models.job import Job
-from nodetool.types.graph import Graph
 from nodetool.models.workflow import Workflow
+from nodetool.types.graph import Graph
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 
 # Add timeout to all tests in this file to prevent hanging
 # Run these tests in the same xdist group to avoid parallel execution issues

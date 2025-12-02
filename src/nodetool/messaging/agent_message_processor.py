@@ -241,10 +241,7 @@ class AgentMessageProcessor(MessageProcessor):
                 content = agent.results
             elif isinstance(agent.results, dict):
                 markdown_value = agent.results.get("markdown")
-                if isinstance(markdown_value, str):
-                    content = markdown_value
-                else:
-                    content = str(agent.results)
+                content = markdown_value if isinstance(markdown_value, str) else str(agent.results)
             else:
                 content = str(agent.results)
 

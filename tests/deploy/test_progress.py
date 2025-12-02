@@ -2,12 +2,12 @@
 Unit tests for progress management module.
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 from rich.console import Console
 
 from nodetool.deploy.progress import ProgressManager
-
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()

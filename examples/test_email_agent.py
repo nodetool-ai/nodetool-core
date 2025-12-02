@@ -8,13 +8,14 @@ It demonstrates how to set up an agent for email processing and summarization.
 """
 
 import asyncio
+
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
+from nodetool.agents.tools.email_tools import SearchEmailTool
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.email_tools import SearchEmailTool
-from nodetool.runtime.resources import ResourceScope
 
 
 async def run_email_agent():
@@ -39,7 +40,7 @@ async def run_email_agent():
         enable_data_contracts_phase=False,
     )
 
-    async for item in retrieval_agent.execute(context):
+    async for _item in retrieval_agent.execute(context):
         pass
 
     print(f"\nResults: {retrieval_agent.results}")

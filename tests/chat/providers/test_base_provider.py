@@ -17,16 +17,19 @@ API Documentation References (2024):
 """
 
 import json
-import pytest
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Type
+from typing import Any, ClassVar, Dict, List, Type
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
+
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.base import BaseProvider, get_registered_provider, _PROVIDER_REGISTRY
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall, Provider as ProviderEnum
-from nodetool.workflows.types import Chunk
+from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import Provider as ProviderEnum
+from nodetool.providers.base import _PROVIDER_REGISTRY, BaseProvider, get_registered_provider
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 class MockTool(Tool):
@@ -170,7 +173,7 @@ class BaseProviderTest(ABC):
     """
 
     # Test secret values for common providers
-    _DEFAULT_TEST_SECRETS = {
+    _DEFAULT_TEST_SECRETS: ClassVar[dict[str, str]] = {
         "OPENAI_API_KEY": "test-openai-key",
         "ANTHROPIC_API_KEY": "test-anthropic-key",
         "GEMINI_API_KEY": "test-gemini-key",
@@ -256,7 +259,7 @@ class BaseProviderTest(ABC):
         import_providers()
 
         # Find the provider in the registry by comparing classes
-        for provider_enum, (cls, kwargs) in _PROVIDER_REGISTRY.items():
+        for _provider_enum, (cls, kwargs) in _PROVIDER_REGISTRY.items():
             if cls is self.provider_class:
                 return dict(kwargs)  # Return a copy to avoid mutations
 
@@ -460,7 +463,7 @@ class BaseProviderTest(ABC):
         messages = self.create_simple_messages(long_content)
 
         with self.mock_error_response("context_length"):
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 await provider.generate_message(messages, "test-model")
 
             # Provider should recognize this as a context length error
@@ -472,9 +475,10 @@ class BaseProviderTest(ABC):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        with self.mock_error_response("rate_limit"):
-            with pytest.raises(Exception):
-                await provider.generate_message(messages, "test-model")
+        with self.mock_error_response("rate_limit"), pytest.raises(
+            httpx.HTTPStatusError
+        ):
+            await provider.generate_message(messages, "test-model")
 
     @pytest.mark.asyncio
     async def test_authentication_error_handling(self):
@@ -482,9 +486,10 @@ class BaseProviderTest(ABC):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        with self.mock_error_response("invalid_api_key"):
-            with pytest.raises(Exception):
-                await provider.generate_message(messages, "test-model")
+        with self.mock_error_response("invalid_api_key"), pytest.raises(
+            httpx.HTTPStatusError
+        ):
+            await provider.generate_message(messages, "test-model")
 
     @pytest.mark.asyncio
     async def test_model_parameter_passing(self):

@@ -4,20 +4,19 @@ Unit tests for Docker run command generation.
 
 import pytest
 
+from nodetool.config.deployment import (
+    ContainerConfig,
+    ImageConfig,
+    SelfHostedDeployment,
+    SelfHostedPaths,
+    SSHConfig,
+)
 from nodetool.deploy.docker_run import (
     DockerRunGenerator,
     generate_docker_run_command,
-    get_docker_run_hash,
     get_container_name,
+    get_docker_run_hash,
 )
-from nodetool.config.deployment import (
-    SelfHostedDeployment,
-    SSHConfig,
-    ImageConfig,
-    ContainerConfig,
-    SelfHostedPaths,
-)
-
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()

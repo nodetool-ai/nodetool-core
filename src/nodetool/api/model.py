@@ -112,7 +112,7 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models
-    
+
     # Ensure recommended models also get their status checked (in case they are downloaded but not in hf_models for some reason,
     # or if we want to be double sure)
     # However, hf_models comes from read_cached_hf_models which scans the cache.
@@ -127,7 +127,7 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
     # If a model is in 1 and 3, 1 wins -> downloaded=True.
     # If a model is only in 3, it means it's NOT in 1, so it's NOT downloaded.
     # So get_all_models logic seems correct without extra check, assuming read_cached_hf_models is accurate.
-    
+
     return dedupe_models(all_models)
 
 
@@ -390,7 +390,7 @@ async def get_huggingface_models_by_type_endpoint(
     models = await get_models_by_hf_type(model_type, task)
 
     # Ensure the returned entries carry the requested hf.* type so the UI
-    # doesn’t need to re-derive it client-side.
+    # doesn't need to re-derive it client-side.
     normalized_type = model_type.lower()
     if not normalized_type.startswith("hf."):
         normalized_type = f"hf.{normalized_type}"

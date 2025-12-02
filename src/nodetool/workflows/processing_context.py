@@ -7,8 +7,8 @@ import inspect
 import io
 import json
 import os
-import queue
 import platform
+import queue
 import urllib.parse
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -26,12 +26,13 @@ if TYPE_CHECKING:
     import pandas as pd
     import PIL.Image
     import PIL.ImageOps
-    from pydub import AudioSegment
     from chromadb.api import ClientAPI
+    from pydub import AudioSegment
     from sklearn.base import BaseEstimator
 
     from nodetool.types.chat import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
+    from nodetool.workflows.property import Property
     from nodetool.workflows.types import ProcessingMessage
 
 
@@ -49,6 +50,9 @@ from typing import IO, Any, AsyncGenerator, Callable
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
@@ -63,6 +67,7 @@ from nodetool.metadata.types import (
     Provider,
     TextRef,
     VideoRef,
+    asset_types,
 )
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
@@ -117,7 +122,7 @@ def _ensure_joblib():
     return joblib
 
 
-def _numpy_to_pil_image_util(arr: "np.ndarray"):
+def _numpy_to_pil_image_util(arr: np.ndarray):
     from nodetool.media.image.image_utils import numpy_to_pil_image
 
     return numpy_to_pil_image(arr)
@@ -240,7 +245,7 @@ class ProcessingContext:
         device: str | None = None,
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
-        asset_output_mode: "AssetOutputMode | None" = None,
+        asset_output_mode: AssetOutputMode | None = None,
         chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
@@ -1879,7 +1884,7 @@ class ProcessingContext:
         b64: str,
         name: str | None = None,
         parent_id: str | None = None,
-    ) -> "ImageRef":
+    ) -> ImageRef:
         """
         Creates an ImageRef from a base64-encoded string.
 
@@ -1900,7 +1905,7 @@ class ProcessingContext:
         image: PIL.Image.Image,
         name: str | None = None,
         parent_id: str | None = None,
-    ) -> "ImageRef":
+    ) -> ImageRef:
         """
         Creates an ImageRef from a PIL Image object.
 
@@ -1927,7 +1932,7 @@ class ProcessingContext:
 
     async def image_from_numpy(
         self, image: np.ndarray, name: str | None = None, parent_id: str | None = None
-    ) -> "ImageRef":
+    ) -> ImageRef:
         """
         Creates an ImageRef from a numpy array.
 
@@ -2010,7 +2015,7 @@ class ProcessingContext:
         name: str | None = None,
         content_type: str = "text/plain",
         parent_id: str | None = None,
-    ) -> "TextRef":
+    ) -> TextRef:
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
@@ -2147,7 +2152,7 @@ class ProcessingContext:
         return joblib.load(file)
 
     async def from_estimator(
-        self, est: "BaseEstimator", name: str | None = None, **kwargs
+        self, est: BaseEstimator, name: str | None = None, **kwargs
     ):  # type: ignore
         """
         Create a model asset from an estimator.

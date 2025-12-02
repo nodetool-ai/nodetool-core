@@ -2,15 +2,16 @@
 Test fixtures and utilities for chat runner tests
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock
-from typing import List, Dict, Any, Optional
 import asyncio
+from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, Mock
 
-from nodetool.models.message import Message as DBMessage
-from nodetool.metadata.types import Message as ApiMessage
-from nodetool.models.thread import Thread
+import pytest
+
 from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import Message as ApiMessage
+from nodetool.models.message import Message as DBMessage
+from nodetool.models.thread import Thread
 
 
 class MockTool(Tool):
@@ -42,7 +43,7 @@ class MockMessageProcessor:
     async def get_message(self):
         try:
             return await asyncio.wait_for(self._message_queue.get(), timeout=0.1)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     async def process(self, chat_history, processing_context, tools, **kwargs):

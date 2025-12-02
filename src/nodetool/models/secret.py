@@ -6,7 +6,7 @@ per-user encryption isolation.
 """
 
 from datetime import UTC, datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid

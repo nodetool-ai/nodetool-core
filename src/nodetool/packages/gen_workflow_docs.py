@@ -221,7 +221,7 @@ def create_jekyll_page(
         json.JSONDecodeError: If workflow file is not valid JSON
         IOError: If file cannot be read or written
     """
-    with open(workflow_file, "r") as f:
+    with open(workflow_file) as f:
         workflow = json.load(f)
 
     # Filter by package name if specified

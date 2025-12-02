@@ -11,14 +11,14 @@ import asyncio
 import os
 
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.workspace_tools import WriteFileTool
-from nodetool.providers import get_provider
 from nodetool.agents.tools.openai_tools import OpenAIImageGenerationTool
-from nodetool.providers.base import BaseProvider
+from nodetool.agents.tools.workspace_tools import WriteFileTool
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.runtime.resources import ResourceScope
 
 
 async def test_openai_image_generation_agent(
@@ -68,7 +68,7 @@ async def test_openai_image_generation_agent(
     print(f"Starting agent: {image_agent.name}")
     print(f"Task: Generate an image for prompt: '{image_prompt}'")
 
-    async for item in image_agent.execute(context):
+    async for _item in image_agent.execute(context):
         pass
 
     print("\n\n--- Agent execution finished ---")

@@ -1,14 +1,16 @@
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from nodetool.integrations.websocket.websocket_runner import (
-    WebSocketRunner,
     JobStreamContext,
+    WebSocketRunner,
 )
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.job_execution_manager import JobExecutionManager
-from nodetool.types.graph import Graph
 from nodetool.models.workflow import Workflow
+from nodetool.types.graph import Graph
+from nodetool.workflows.job_execution_manager import JobExecutionManager
+from nodetool.workflows.run_job_request import RunJobRequest
 
 
 @pytest.fixture
@@ -178,7 +180,7 @@ async def test_websocket_runner_get_status_with_job_id(
 
     # Get job_id from active jobs
     if websocket_runner.active_jobs:
-        job_id = list(websocket_runner.active_jobs.keys())[0]
+        job_id = next(iter(websocket_runner.active_jobs.keys()))
         status = websocket_runner.get_status(job_id)
 
         assert "job_id" in status

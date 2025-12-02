@@ -2,11 +2,13 @@
 Tests for AWS Secrets Manager utility.
 """
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from botocore.exceptions import ClientError
+
 from nodetool.security.aws_secrets_util import AWSSecretsUtil
 from nodetool.security.crypto import SecretCrypto
-from botocore.exceptions import ClientError
 
 
 class TestAWSSecretsUtil:
@@ -241,40 +243,43 @@ class TestAWSSecretsUtil:
         Test generating and storing a new master key.
         Verifies that generate_master_key and store_master_key are called.
         """
-        with patch("nodetool.security.crypto.SecretCrypto.generate_master_key") as mock_generate:
-            with patch.object(AWSSecretsUtil, "store_master_key") as mock_store:
-                mock_key = "test_generated_key"
-                mock_generate.return_value = mock_key
-                mock_store.return_value = True
+        with patch(
+            "nodetool.security.crypto.SecretCrypto.generate_master_key"
+        ) as mock_generate, patch.object(
+            AWSSecretsUtil, "store_master_key"
+        ) as mock_store:
+            mock_key = "test_generated_key"
+            mock_generate.return_value = mock_key
+            mock_store.return_value = True
 
-                result = AWSSecretsUtil.generate_and_store(
-                    secret_name="test-master-key",
-                    region="us-east-1"
-                )
+            result = AWSSecretsUtil.generate_and_store(
+                secret_name="test-master-key", region="us-east-1"
+            )
 
-                assert result == mock_key
-                mock_generate.assert_called_once()
-                # Just verify store_master_key was called with the key
-                assert mock_store.called
-                call_args = mock_store.call_args
-                assert "test_generated_key" in str(call_args)
+            assert result == mock_key
+            mock_generate.assert_called_once()
+            # Just verify store_master_key was called with the key
+            assert mock_store.called
+            call_args = mock_store.call_args
+            assert "test_generated_key" in str(call_args)
 
     def test_generate_and_store_failure(self):
         """
         Test failure when storing generated key.
         Verifies that None is returned if storage fails.
         """
-        with patch("nodetool.security.crypto.SecretCrypto.generate_master_key") as mock_generate:
-            with patch.object(AWSSecretsUtil, "store_master_key") as mock_store:
-                mock_key = "test_generated_key"
-                mock_generate.return_value = mock_key
-                mock_store.return_value = False  # Storage fails
+        with patch(
+            "nodetool.security.crypto.SecretCrypto.generate_master_key"
+        ) as mock_generate, patch.object(
+            AWSSecretsUtil, "store_master_key"
+        ) as mock_store:
+            mock_key = "test_generated_key"
+            mock_generate.return_value = mock_key
+            mock_store.return_value = False  # Storage fails
 
-                result = AWSSecretsUtil.generate_and_store(
-                    secret_name="test-master-key"
-                )
+            result = AWSSecretsUtil.generate_and_store(secret_name="test-master-key")
 
-                assert result is None
+            assert result is None
 
 
 class TestAWSSecretsUtilIntegration:

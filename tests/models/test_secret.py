@@ -3,6 +3,7 @@ Tests for Secret database model.
 """
 
 import pytest
+
 from nodetool.models.secret import Secret
 from nodetool.security.crypto import SecretCrypto
 from nodetool.security.master_key import MasterKeyManager
@@ -199,8 +200,8 @@ class TestSecretModel:
         value2 = "user2_secret"
 
         # Create secrets with same key for different users
-        secret1 = await Secret.create(user_id=user1, key=key, value=value1)
-        secret2 = await Secret.create(user_id=user2, key=key, value=value2)
+        await Secret.create(user_id=user1, key=key, value=value1)
+        await Secret.create(user_id=user2, key=key, value=value2)
 
         # Each user should find their own secret
         found1 = await Secret.find(user1, key)
@@ -274,7 +275,7 @@ class TestSecretModel:
         assert next_key is not None
 
         # Get second page
-        secrets_page2, next_key2 = await Secret.list_for_user(
+        secrets_page2, _next_key2 = await Secret.list_for_user(
             user_id, limit=2, start_key=next_key
         )
 

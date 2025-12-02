@@ -92,11 +92,12 @@ Error Handling:
 - Connection errors: Server not running
 """
 
-import pytest
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import ollama
+import pytest
 
 from nodetool.providers.ollama_provider import OllamaProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
@@ -259,11 +260,12 @@ class TestOllamaProvider(BaseProviderTest):
         """Test automatic model pulling when model is not found."""
         provider = self.create_provider()
 
-        with self.mock_error_response("model_not_found"):
-            with pytest.raises(Exception):
-                await provider.generate_message(
-                    self.create_simple_messages(), "unknown-model"
-                )
+        with self.mock_error_response("model_not_found"), pytest.raises(
+            httpx.HTTPStatusError
+        ):
+            await provider.generate_message(
+                self.create_simple_messages(), "unknown-model"
+            )
 
     @pytest.mark.asyncio
     async def test_keep_alive_parameter(self):

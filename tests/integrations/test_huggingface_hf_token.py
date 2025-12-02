@@ -1,24 +1,28 @@
 """Tests for HF_TOKEN retrieval from database in HuggingFace downloads."""
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-from nodetool.models.secret import Secret
-from nodetool.integrations.huggingface.hf_auth import get_hf_token
-from nodetool.integrations.huggingface.hf_download import (
-    DownloadManager,
-    DownloadManager,
+from unittest.mock import AsyncMock, MagicMock, patch
 
-)
-from nodetool.integrations.huggingface.huggingface_models import (
-    get_hf_token as get_hf_token_models,
-    fetch_model_readme,
-    fetch_model_info,
+import pytest
+
+from nodetool.deploy.admin_operations import (
+    AdminDownloadManager,
 )
 from nodetool.deploy.admin_operations import (
     get_hf_token as get_hf_token_admin,
-    AdminDownloadManager,
 )
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
+from nodetool.integrations.huggingface.hf_download import (
+    DownloadManager,
+)
+from nodetool.integrations.huggingface.huggingface_models import (
+    fetch_model_info,
+    fetch_model_readme,
+)
+from nodetool.integrations.huggingface.huggingface_models import (
+    get_hf_token as get_hf_token_models,
+)
+from nodetool.models.secret import Secret
 from nodetool.runtime.resources import ResourceScope
 
 
@@ -167,7 +171,7 @@ class TestHFTokenFromDatabase:
                         "huggingface_hub.try_to_load_from_cache",
                         return_value=None,
                     ):
-                        result = await fetch_model_readme("test/repo")
+                        await fetch_model_readme("test/repo")
 
                         # Verify async_hf_download was called with token
                         mock_download.assert_called_once()

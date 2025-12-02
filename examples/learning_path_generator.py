@@ -5,18 +5,18 @@ Simple Learning Path Generator using Nodetool Agent system.
 
 import asyncio
 from typing import List
-from pydantic import BaseModel
-
-from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
-from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider
-from nodetool.ui.console import AgentConsole
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.runtime.resources import ResourceScope
 
 import dotenv
+from pydantic import BaseModel
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
+from nodetool.workflows.processing_context import ProcessingContext
 
 dotenv.load_dotenv()
 
@@ -50,7 +50,7 @@ async def generate_learning_path(provider: BaseProvider, model: str, topic: str)
 
     print(f"Generating learning path for: {topic}")
 
-    async for item in agent.execute(context):
+    async for _item in agent.execute(context):
         pass
 
     print("\n" + "=" * 40)

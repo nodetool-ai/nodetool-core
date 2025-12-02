@@ -18,6 +18,7 @@ from nodetool.storage.abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
     from supabase import AsyncClient
+
     from nodetool.storage.memcache_node_cache import AbstractNodeCache
     from nodetool.storage.memory_uri_cache import MemoryUriCache
 

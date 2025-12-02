@@ -8,26 +8,28 @@ based on the research objective, allowing for comprehensive research on the pdf.
 
 """
 
-import os
 import asyncio
+import os
+
+import pymupdf
+import pymupdf4llm
+
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
-from nodetool.providers.base import BaseProvider
-from nodetool.workflows.types import Chunk
-from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.runtime.resources import ResourceScope
-from nodetool.agents.tools.pdf_tools import ConvertPDFToMarkdownTool
 from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaIndexTool,
     ChromaMarkdownSplitAndIndexTool,
 )
+from nodetool.agents.tools.pdf_tools import ConvertPDFToMarkdownTool
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
-import pymupdf
-import pymupdf4llm
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def test_chromadb_research_agent(provider: BaseProvider, model: str):
@@ -70,8 +72,8 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
     research_agent = Agent(
         name="Research Agent",
         objective="""
-        Explain attention in LLMs. 
-        How does it work? 
+        Explain attention in LLMs.
+        How does it work?
         What are the different types of attention?
         """,
         provider=provider,

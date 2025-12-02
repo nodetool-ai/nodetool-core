@@ -107,15 +107,16 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, cast
 
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from nodetool.agents.tools.base import Tool
-    from nodetool.metadata.types import ToolCall
+    from nodetool.metadata.type_metadata import TypeMetadata
     from nodetool.providers import BaseProvider
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
@@ -123,9 +124,8 @@ if TYPE_CHECKING:
 
 from nodetool.agents.tools.help_tools import SearchNodesTool
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
-from nodetool.metadata.types import Message
+from nodetool.metadata.types import Message, ToolCall
 from nodetool.packages.registry import Registry
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.utils.message_parsing import extract_json_from_message

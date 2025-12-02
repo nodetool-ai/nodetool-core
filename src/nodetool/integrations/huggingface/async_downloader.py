@@ -1,12 +1,13 @@
+import asyncio
 import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union, Callable
-import asyncio
+from typing import Callable, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
+
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -74,10 +75,7 @@ def _get_hf_token_from_file() -> Optional[str]:
       - HF_HOME/token (HF_HOME default is ~/.cache/huggingface)
     """
     token_path = os.getenv("HF_TOKEN_PATH")
-    if token_path:
-        path = Path(token_path).expanduser()
-    else:
-        path = _hf_home_dir() / "token"
+    path = Path(token_path).expanduser() if token_path else _hf_home_dir() / "token"
 
     try:
         txt = path.read_text(encoding="utf-8")
@@ -98,7 +96,7 @@ def _get_cached_hf_token() -> Optional[str]:
     return token
 
 
-def _resolve_hf_token(token: Union[str, bool, None]) -> Optional[str]:
+def _resolve_hf_token(token: str | bool | None) -> Optional[str]:
     """
     Hugging Face style semantics:
 
@@ -120,7 +118,7 @@ def _resolve_hf_token(token: Union[str, bool, None]) -> Optional[str]:
 
     if token is True:
         if cached is None:
-            raise EnvironmentError(
+            raise OSError(
                 "Token is required (token=True), but no Hugging Face token "
                 "was found in env or token file. Run `hf auth login` or set HF_TOKEN."
             )
@@ -341,7 +339,7 @@ async def _download_with_resume(
                     if tmp.exists():
                         tmp.unlink()
                     resume_from = 0
-                
+
                 # Handle 416 Range Not Satisfiable
                 if resp.status_code == 416:
                     log.warning(f"Range not satisfiable (resume_from={resume_from}). Restarting download.")
@@ -380,7 +378,7 @@ async def _download_with_resume(
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 416:
                  # Should be handled above, but just in case raise_for_status catches it first
-                log.warning(f"Range not satisfiable (caught via exception). Restarting download.")
+                log.warning("Range not satisfiable (caught via exception). Restarting download.")
                 if tmp.exists():
                     tmp.unlink()
                 continue
@@ -393,7 +391,7 @@ async def async_hf_download(
     *,
     revision: str = "main",
     repo_type: str = "model",   # "model", "dataset", or "space"
-    token: Union[str, bool, None] = None,
+    token: str | bool | None = None,
     cache_dir: Optional[Path] = None,
     client: Optional[httpx.AsyncClient] = None,
     chunk_size: int = 1024 * 1024,
@@ -452,11 +450,11 @@ async def async_hf_download(
                 snapshot_path.symlink_to(rel)
             except OSError:
                 shutil.copy2(blob_path, snapshot_path)
-            
+
             # Report full progress if cached
             if progress_callback and meta.size:
                 progress_callback(meta.size, meta.size)
-                
+
             return snapshot_path
 
         blobs_dir.mkdir(parents=True, exist_ok=True)

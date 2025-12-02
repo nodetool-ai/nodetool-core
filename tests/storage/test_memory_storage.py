@@ -1,6 +1,8 @@
-import pytest
 import io
 from datetime import datetime
+
+import pytest
+
 from nodetool.storage.memory_storage import MemoryStorage
 
 

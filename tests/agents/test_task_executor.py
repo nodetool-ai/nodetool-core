@@ -4,7 +4,7 @@ import pytest
 
 from nodetool.agents import task_executor
 from nodetool.agents.task_executor import TaskExecutor
-from nodetool.metadata.types import Task, SubTask
+from nodetool.metadata.types import SubTask, Task
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 

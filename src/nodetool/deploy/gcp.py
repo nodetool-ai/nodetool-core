@@ -16,8 +16,8 @@ from nodetool.config.deployment import (
     GCPDeployment,
 )
 from nodetool.deploy.deploy_to_gcp import (
-    deploy_to_gcp,
     delete_gcp_service,
+    deploy_to_gcp,
     list_gcp_services,
 )
 from nodetool.deploy.state import StateManager

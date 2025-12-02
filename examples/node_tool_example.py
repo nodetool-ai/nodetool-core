@@ -7,15 +7,17 @@ individual workflow nodes available as tools for agents.
 """
 
 import asyncio
+
+from pydantic import Field
+
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.node_tool import NodeTool
-from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.types import Chunk
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
-from pydantic import Field
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 # Example 1: Simple text processing node

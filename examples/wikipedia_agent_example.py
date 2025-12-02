@@ -9,13 +9,14 @@ This script demonstrates how to create a single agent that:
 """
 
 import asyncio
+
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
-from nodetool.agents.tools import GoogleSearchTool, BrowserTool
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
-from nodetool.runtime.resources import ResourceScope
 
 
 async def run_wikipedia_agent():

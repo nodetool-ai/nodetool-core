@@ -1,9 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
-from nodetool.types.chat import MessageList
+
 from nodetool.metadata.types import Message as APIMessage
 from nodetool.models.message import Message
 from nodetool.models.thread import Thread
+from nodetool.types.chat import MessageList
 
 
 @pytest.mark.asyncio

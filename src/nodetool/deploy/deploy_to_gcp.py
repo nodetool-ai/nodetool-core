@@ -36,6 +36,7 @@ from typing import Any, Dict, Optional
 from rich.console import Console
 
 from nodetool.config.deployment import GCPDeployment
+
 from .google_cloud_run_api import (
     deploy_to_cloud_run,
     enable_required_apis,
@@ -122,7 +123,7 @@ def deploy_to_gcp(
     This is the main deployment function that orchestrates the entire deployment process.
     """
     env = env or {}
-    
+
     service_name = deployment.service_name
     project_id = deployment.project_id
     region = deployment.region
@@ -182,7 +183,7 @@ def deploy_to_gcp(
     # Use service name as image name if not provided
     if not image_name:
         image_name = service_name
-    
+
     local_image_name = f"{registry}/{project_id}/{image_name}"
 
     # Check if Docker is running

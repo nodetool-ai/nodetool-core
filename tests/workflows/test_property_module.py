@@ -1,7 +1,8 @@
 from pydantic import Field
-from nodetool.workflows.property import Property
+
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.metadata.types import ImageRef, AudioRef, HFLoraSD
+from nodetool.metadata.types import AudioRef, HFLoraSD, ImageRef
+from nodetool.workflows.property import Property
 
 
 def test_property_repr_and_schema():

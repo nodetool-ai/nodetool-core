@@ -15,9 +15,9 @@ import math
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
 from urllib.parse import unquote_to_bytes
 
+import numpy as np
 import openai
 from openai import Omit
-from openai._types import NotGiven
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
@@ -36,8 +36,8 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 
 if TYPE_CHECKING:
+    from openai._types import NotGiven
     from openai.types import Video
-    import numpy as np
 
     from nodetool.agents.tools.base import Tool
     from nodetool.metadata.types import MessageContent
@@ -1862,8 +1862,8 @@ class OpenAIProvider(BaseProvider):
             ValueError: If required parameters are missing or image dimensions cannot be extracted
             RuntimeError: If generation fails or the API returns an error
         """
-        import imghdr
         import asyncio
+        import imghdr
 
         if not image:
             raise ValueError("The input image cannot be empty.")

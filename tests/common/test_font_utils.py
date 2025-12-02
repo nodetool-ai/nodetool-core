@@ -21,7 +21,7 @@ class TestGetSystemFontPath:
         mock_exists.return_value = False
         mock_walk.return_value = []
 
-        with pytest.raises(FileNotFoundError, match="Could not find font 'Arial.ttf'"):
+        with pytest.raises(FileNotFoundError, match=r"Could not find font 'Arial.ttf'"):
             get_system_font_path("Arial.ttf")
 
     @patch("platform.system")
@@ -94,12 +94,12 @@ class TestGetSystemFontPath:
         """Test that different OSes have different allowed font extensions."""
         # This test would be more complex to mock properly, but we can at least
         # verify the function accepts different OS environments
-        with patch("platform.system", return_value="Darwin"):
-            with patch("os.path.exists", return_value=False):
-                with pytest.raises(FileNotFoundError):
-                    get_system_font_path("Arial.ttf")
+        with patch("platform.system", return_value="Darwin"), patch(
+            "os.path.exists", return_value=False
+        ), pytest.raises(FileNotFoundError):
+            get_system_font_path("Arial.ttf")
 
-        with patch("platform.system", return_value="Windows"):
-            with patch("os.path.exists", return_value=False):
-                with pytest.raises(FileNotFoundError):
-                    get_system_font_path("Arial.ttf")
+        with patch("platform.system", return_value="Windows"), patch(
+            "os.path.exists", return_value=False
+        ), pytest.raises(FileNotFoundError):
+            get_system_font_path("Arial.ttf")

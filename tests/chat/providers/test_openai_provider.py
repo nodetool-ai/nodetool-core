@@ -48,16 +48,18 @@ Error Handling:
 """
 
 import json
-import pytest
 from typing import Any, Dict, List
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import openai
 import openai.resources
+import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_chunk import (
     Choice as ChunkChoice,
+)
+from openai.types.chat.chat_completion_chunk import (
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -70,8 +72,8 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 from openai.types.completion_usage import CompletionUsage
 
-from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.metadata.types import ToolCall
+from nodetool.providers.openai_provider import OpenAIProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 

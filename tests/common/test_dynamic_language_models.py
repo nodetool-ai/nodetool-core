@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from nodetool.ml.models.language_models import get_all_language_models
+
 from nodetool.metadata.types import LanguageModel, Provider
+from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.providers.base import BaseProvider
 
 

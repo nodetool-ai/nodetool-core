@@ -5,14 +5,14 @@ Unit tests for deployment configuration models and functions.
 import yaml
 
 from nodetool.config.deployment import (
+    ContainerConfig,
+    DefaultsConfig,
     DeploymentConfig,
-    DeploymentType,
     DeploymentStatus,
+    DeploymentType,
+    ImageConfig,
     SelfHostedDeployment,
     SSHConfig,
-    ContainerConfig,
-    ImageConfig,
-    DefaultsConfig,
 )
 
 
@@ -209,7 +209,7 @@ class TestConfigFileOperations:
             yaml.dump(data, f, default_flow_style=False)
 
         # Load
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             loaded_data = yaml.safe_load(f)
 
         loaded_config = DeploymentConfig.model_validate(loaded_data)

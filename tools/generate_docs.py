@@ -1,9 +1,9 @@
 import os
 from typing import List
 
-from nodetool.packages.gen_docs import process_module
-import nodetool.workflows
 import nodetool.cli
+import nodetool.workflows
+from nodetool.packages.gen_docs import process_module
 
 
 def generate_cli_docs(output_path: str) -> None:

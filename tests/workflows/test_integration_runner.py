@@ -3,14 +3,15 @@ from __future__ import annotations
 import asyncio
 import queue
 
-from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 import pytest
 
+from nodetool.types.graph import Edge as APIEdge
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.graph import Node as APINode
+from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import JobUpdate
-from nodetool.types.graph import Edge as APIEdge, Node as APINode, Graph as APIGraph
-
+from nodetool.workflows.workflow_runner import WorkflowRunner
 
 ASYNC_TEST_TIMEOUT = 3.0
 
@@ -47,7 +48,7 @@ def _drain_msgs(ctx: ProcessingContext):
 @pytest.mark.asyncio
 async def test_workflow_runner_completes_and_produces_output():
     # Ensure test nodes are registered
-    from nodetool.workflows import test_nodes  # noqa: F401
+    from nodetool.workflows import test_nodes
 
     # Build a small graph: (5 * 3) -> output
     nodes = [
@@ -93,7 +94,7 @@ async def test_workflow_runner_completes_and_produces_output():
 
     try:
         await asyncio.wait_for(runner.run(req, ctx), timeout=ASYNC_TEST_TIMEOUT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pytest.fail(
             f"WorkflowRunner.run timed out after {ASYNC_TEST_TIMEOUT}s for job job-int-1"
         )

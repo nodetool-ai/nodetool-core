@@ -1,13 +1,12 @@
 import typing
+from typing import TypedDict, cast
 
 import pytest
 from pydantic import BaseModel, Field
-from typing import cast
 
 from nodetool.dsl.graph import GraphNode, SingleOutputGraphNode, create_graph
-from nodetool.dsl.handles import Connect, OutputHandle, OutputsProxy, DynamicOutputsProxy, connect_field
+from nodetool.dsl.handles import Connect, DynamicOutputsProxy, OutputHandle, OutputsProxy, connect_field
 from nodetool.workflows.base_node import BaseNode
-from typing import TypedDict
 
 
 class StaticProducerNode(BaseNode):
@@ -29,10 +28,10 @@ class StaticProducer(GraphNode[float]):
         return StaticProducerNode
 
     @property
-    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+    def out(self) -> OutputHandle[float] | OutputsProxy[float]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[float], OutputsProxy(self))
-        return typing.cast(OutputHandle[float], self._single_output_handle())
+            return typing.cast("OutputsProxy[float]", OutputsProxy(self))
+        return typing.cast("OutputHandle[float]", self._single_output_handle())
 
 def test_graph_node_sync_mode_default():
     producer = StaticProducer(a=1.0, b=2.0)
@@ -58,10 +57,10 @@ class ValueConsumer(GraphNode[float]):
         return ValueConsumerNode
 
     @property
-    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+    def out(self) -> OutputHandle[float] | OutputsProxy[float]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[float], OutputsProxy(self))
-        return typing.cast(OutputHandle[float], self._single_output_handle())
+            return typing.cast("OutputsProxy[float]", OutputsProxy(self))
+        return typing.cast("OutputHandle[float]", self._single_output_handle())
 
 
 class DynamicRouterNode(BaseNode):
@@ -142,10 +141,10 @@ class DynamicRouter(GraphNode[dict[str, str]]):
     @property
     def out(
         self,
-    ) -> typing.Union[OutputHandle[dict[str, str]], OutputsProxy[dict[str, str]]]:
+    ) -> OutputHandle[dict[str, str]] | OutputsProxy[dict[str, str]]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[dict[str, str]], DynamicOutputsProxy(self))
-        return typing.cast(OutputHandle[dict[str, str]], self._single_output_handle())
+            return typing.cast("OutputsProxy[dict[str, str]]", DynamicOutputsProxy(self))
+        return typing.cast("OutputHandle[dict[str, str]]", self._single_output_handle())
 
 
 class Add(GraphNode[float]):
@@ -157,10 +156,10 @@ class Add(GraphNode[float]):
         return AddNode
 
     @property
-    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+    def out(self) -> OutputHandle[float] | OutputsProxy[float]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[float], OutputsProxy(self))
-        return typing.cast(OutputHandle[float], self._single_output_handle())
+            return typing.cast("OutputsProxy[float]", OutputsProxy(self))
+        return typing.cast("OutputHandle[float]", self._single_output_handle())
 
 
 class Multiply(GraphNode[float]):
@@ -172,10 +171,10 @@ class Multiply(GraphNode[float]):
         return MultiplyNode
 
     @property
-    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+    def out(self) -> OutputHandle[float] | OutputsProxy[float]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[float], OutputsProxy(self))
-        return typing.cast(OutputHandle[float], self._single_output_handle())
+            return typing.cast("OutputsProxy[float]", OutputsProxy(self))
+        return typing.cast("OutputHandle[float]", self._single_output_handle())
 
 
 class DictProducer(GraphNode[DictOutput]):
@@ -191,11 +190,11 @@ class DictProducer(GraphNode[DictOutput]):
 class DictProducerOutputs(OutputsProxy[DictOutput]):
     @property
     def foo(self) -> OutputHandle[float]:
-        return typing.cast(OutputHandle[float], self["foo"])
+        return typing.cast("OutputHandle[float]", self["foo"])
 
     @property
     def bar(self) -> OutputHandle[str]:
-        return typing.cast(OutputHandle[str], self["bar"])
+        return typing.cast("OutputHandle[str]", self["bar"])
 
 
 class DynamicProperties(GraphNode[float]):
@@ -221,10 +220,10 @@ class DynamicProperties(GraphNode[float]):
         return DynamicPropertiesNode
 
     @property
-    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+    def out(self) -> OutputHandle[float] | OutputsProxy[float]:
         if self._node_supports_dynamic_outputs():
-            return typing.cast(OutputsProxy[float], OutputsProxy(self))
-        return typing.cast(OutputHandle[float], self._single_output_handle())
+            return typing.cast("OutputsProxy[float]", OutputsProxy(self))
+        return typing.cast("OutputHandle[float]", self._single_output_handle())
 
 
 class SingleOutputExampleNode(BaseNode):
@@ -335,9 +334,9 @@ def test_graphnode_without_single_output_mixin_has_no_output_property():
 
 def test_math_pipeline_edges():
     producer = StaticProducer(a=2.0, b=3.0)
-    producer_handle = cast(OutputHandle[float], producer.out)
+    producer_handle = cast("OutputHandle[float]", producer.out)
     adder = Add(lhs=producer_handle, rhs=1.0)
-    adder_handle = cast(OutputHandle[float], adder.out)
+    adder_handle = cast("OutputHandle[float]", adder.out)
     assert adder_handle.py_type is float
 
     multiplier = Multiply(lhs=adder_handle, rhs=producer_handle)
@@ -389,7 +388,7 @@ def test_dynamic_properties_via_kwargs():
 def test_dynamic_properties_with_connections():
     """Test that dynamic properties work alongside connected outputs."""
     producer = StaticProducer(a=2.0, b=3.0)
-    producer_handle = cast(OutputHandle[float], producer.out)
+    producer_handle = cast("OutputHandle[float]", producer.out)
 
     # Create dynamic node with both standard field and dynamic properties
     dynamic = DynamicProperties(value=producer_handle, extra_multiplier=2.0)

@@ -1,7 +1,9 @@
 import importlib
 import sys
 import types
+
 import pytest
+
 from nodetool.system import system_stats
 
 

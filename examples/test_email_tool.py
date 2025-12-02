@@ -1,8 +1,10 @@
 import asyncio
-from nodetool.chat.tools.email import SearchEmailTool
-from nodetool.workflows.processing_context import ProcessingContext
+
 import tiktoken
+from nodetool.chat.tools.email import SearchEmailTool
+
 from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 async def test_email_search():

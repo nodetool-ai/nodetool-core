@@ -2,16 +2,16 @@
 Integration test demonstrating OpenAI-compatible SSE usage with FastAPI
 """
 
-import pytest
 import asyncio
+from unittest.mock import patch
+
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.environment import Environment
-
 
 # Create a test FastAPI app with SSE endpoint
 app = FastAPI()
@@ -184,25 +184,27 @@ class OpenAISSEClient:
 
         In a real implementation, you would use aiohttp or httpx
         """
-        import aiohttp
         import json
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data, headers=headers) as response:
-                async for line in response.content:
-                    line = line.decode("utf-8").strip()
-                    if line.startswith("data:"):
-                        data_content = line[5:].strip()
-                        if data_content == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_content)
-                            if "choices" in chunk and chunk["choices"]:
-                                delta = chunk["choices"][0].get("delta", {})
-                                if "content" in delta:
-                                    yield delta["content"]
-                        except json.JSONDecodeError:
-                            pass
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session, session.post(
+            url, json=data, headers=headers
+        ) as response:
+            async for line in response.content:
+                line = line.decode("utf-8").strip()
+                if line.startswith("data:"):
+                    data_content = line[5:].strip()
+                    if data_content == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_content)
+                        if chunk.get("choices"):
+                            delta = chunk["choices"][0].get("delta", {})
+                            if "content" in delta:
+                                yield delta["content"]
+                    except json.JSONDecodeError:
+                        pass
 
 
 # Performance test for SSE streaming

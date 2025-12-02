@@ -3,13 +3,16 @@ Tests for SubprocessJobExecution class.
 """
 
 import asyncio
+
 import pytest
-from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
-from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
-from nodetool.workflows.processing_context import ProcessingContext
+
 from nodetool.models.job import Job
-from nodetool.types.graph import Graph, Node as GraphNode, Edge
 from nodetool.models.workflow import Workflow
+from nodetool.types.graph import Edge, Graph
+from nodetool.types.graph import Node as GraphNode
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
+from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
 
 # Add timeout to all tests in this file to prevent hanging
 pytestmark = pytest.mark.timeout(30)

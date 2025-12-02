@@ -8,9 +8,11 @@ This test file ensures that:
 4. API endpoints have correct response validation
 """
 
-import pytest
 from typing import List
-from nodetool.metadata.types import LanguageModel, ImageModel, Provider
+
+import pytest
+
+from nodetool.metadata.types import ImageModel, LanguageModel, Provider
 from nodetool.providers.base import BaseProvider
 
 

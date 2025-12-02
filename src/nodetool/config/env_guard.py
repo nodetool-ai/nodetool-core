@@ -5,10 +5,7 @@ from typing import Any, Dict
 
 def _is_running_under_pytest() -> bool:
     """Detect pytest presence from command-line arguments."""
-    for arg in sys.argv:
-        if arg and "pytest" in str(arg).lower():
-            return True
-    return False
+    return any(arg and "pytest" in str(arg).lower() for arg in sys.argv)
 
 
 RUNNING_PYTEST = _is_running_under_pytest()

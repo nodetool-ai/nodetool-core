@@ -89,8 +89,8 @@ metadata generation.
 
 import asyncio
 import functools
-import inspect
 import importlib
+import inspect
 import logging
 import re
 import traceback

@@ -9,12 +9,12 @@ from unittest.mock import patch
 
 import pytest
 
+from nodetool.types.graph import Edge, Graph, Node
 from nodetool.workflows.subprocess_job_execution import (
     _create_macos_sandbox_profile,
     _should_use_sandbox,
     _wrap_command_with_sandbox,
 )
-from nodetool.types.graph import Graph, Node, Edge
 
 
 class TestSandboxProfile:
@@ -170,11 +170,11 @@ class TestWrapCommandWithSandbox:
                 pytest.skip("sandbox-exec not available")
 
             cmd = ["nodetool", "run", "--stdin"]
-            wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
+            _wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
 
             # Profile should contain custom write paths
             if profile_path:
-                with open(profile_path, "r") as f:
+                with open(profile_path) as f:
                     profile_content = f.read()
 
                 # In the new model, only write paths need to be explicitly allowed
@@ -203,11 +203,11 @@ class TestWrapCommandWithSandbox:
                 pytest.skip("sandbox-exec not available")
 
             cmd = ["nodetool", "run", "--stdin"]
-            wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
+            _wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
 
             # Profile should deny network access
             if profile_path:
-                with open(profile_path, "r") as f:
+                with open(profile_path) as f:
                     profile_content = f.read()
 
                 assert "(deny network*)" in profile_content
@@ -311,11 +311,11 @@ class TestSandboxFileAccess:
                 clear=False,
             ):
                 cmd = ["nodetool", "run", "--stdin"]
-                wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
+                _wrapped_cmd, profile_path = _wrap_command_with_sandbox(cmd)
 
                 if profile_path:
                     # Read the profile file
-                    with open(profile_path, "r") as f:
+                    with open(profile_path) as f:
                         profile_content = f.read()
 
                     # Verify custom write path is included

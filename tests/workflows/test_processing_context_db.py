@@ -3,20 +3,22 @@ Comprehensive tests for ProcessingContext database model integration.
 Tests all the methods that were migrated from API client to direct database operations.
 """
 
-import pytest
-import pytest_asyncio
 import asyncio
 from io import BytesIO
-from unittest.mock import Mock, patch, AsyncMock
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.graph import Graph
-from nodetool.models.asset import Asset
-from nodetool.models.job import Job
-from nodetool.models.workflow import Workflow
-from nodetool.models.message import Message
-from nodetool.types.chat import MessageCreateRequest
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+import pytest_asyncio
+
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import AssetRef
+from nodetool.models.asset import Asset
+from nodetool.models.job import Job
+from nodetool.models.message import Message
+from nodetool.models.workflow import Workflow
+from nodetool.types.chat import MessageCreateRequest
+from nodetool.workflows.graph import Graph
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 @pytest.fixture
@@ -131,7 +133,7 @@ class TestAssetMethods:
         self, context: ProcessingContext, sample_asset: Asset
     ):
         """Test listing assets without recursion."""
-        assets, next_token = await context.list_assets(parent_id=context.user_id)
+        assets, _next_token = await context.list_assets(parent_id=context.user_id)
         assert isinstance(assets, list)
         assert any(asset.id == sample_asset.id for asset in assets)
 
@@ -149,7 +151,7 @@ class TestAssetMethods:
         self, context: ProcessingContext, sample_asset: Asset
     ):
         """Test listing assets with content type filter."""
-        assets, next_token = await context.list_assets(content_type="image/")
+        assets, _next_token = await context.list_assets(content_type="image/")
         assert isinstance(assets, list)
         # Should include our image asset
         asset_ids = [asset.id for asset in assets]
@@ -169,7 +171,7 @@ class TestAssetMethods:
     @pytest.mark.asyncio
     async def test_get_asset_url_not_found(self, context: ProcessingContext):
         """Test getting asset URL for non-existent asset."""
-        with pytest.raises(ValueError, match="Asset with ID .* not found"):
+        with pytest.raises(ValueError, match=r"Asset with ID .* not found"):
             await context.get_asset_url("nonexistent_id")
 
     @pytest.mark.asyncio
@@ -222,7 +224,7 @@ class TestAssetMethods:
     @pytest.mark.asyncio
     async def test_download_asset_not_found(self, context: ProcessingContext):
         """Test asset download when asset doesn't exist."""
-        with pytest.raises(ValueError, match="Asset .* not found"):
+        with pytest.raises(ValueError, match=r"Asset .* not found"):
             await context.download_asset("nonexistent_id")
 
     @pytest.mark.asyncio
@@ -406,8 +408,8 @@ class TestNodeCaching:
             value: int = 42
 
             def outputs(self):
-                from nodetool.workflows.property import Property
                 from nodetool.metadata.type_metadata import TypeMetadata
+                from nodetool.workflows.property import Property
 
                 return [Property(name="output", type=TypeMetadata(type="int"))]
 

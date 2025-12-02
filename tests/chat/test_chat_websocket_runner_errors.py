@@ -1,6 +1,7 @@
 """Test error handling in ChatWebSocketRunner, specifically for connection errors."""
 
 import json
+
 import msgpack
 
 

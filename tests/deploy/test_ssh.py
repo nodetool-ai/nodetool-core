@@ -2,11 +2,11 @@
 Unit tests for SSH connection utilities.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
-from nodetool.deploy.ssh import SSHConnection, SSHConnectionError, SSHCommandError
-
+from nodetool.deploy.ssh import SSHCommandError, SSHConnection, SSHConnectionError
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -18,15 +18,16 @@ class TestSSHConnection:
     @pytest.fixture
     def mock_paramiko(self):
         """Mock paramiko module."""
-        with patch("nodetool.deploy.ssh.paramiko") as mock:
-            with patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", True):
-                with patch("nodetool.deploy.ssh.SSHClient") as mock_client_cls:
-                    with patch("nodetool.deploy.ssh.AutoAddPolicy") as mock_policy:
-                        yield {
-                            "paramiko": mock,
-                            "SSHClient": mock_client_cls,
-                            "AutoAddPolicy": mock_policy,
-                        }
+        with patch("nodetool.deploy.ssh.paramiko") as mock, patch(
+            "nodetool.deploy.ssh.PARAMIKO_AVAILABLE", True
+        ), patch("nodetool.deploy.ssh.SSHClient") as mock_client_cls, patch(
+            "nodetool.deploy.ssh.AutoAddPolicy"
+        ) as mock_policy:
+            yield {
+                "paramiko": mock,
+                "SSHClient": mock_client_cls,
+                "AutoAddPolicy": mock_policy,
+            }
 
     def test_init_with_key_path(self):
         """Test initialization with SSH key path."""
@@ -71,13 +72,14 @@ class TestSSHConnection:
 
     def test_init_without_paramiko(self):
         """Test initialization without paramiko raises error."""
-        with patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", False):
-            with pytest.raises(ImportError, match="paramiko is required"):
-                SSHConnection(
-                    host="example.com",
-                    user="user",
-                    key_path="~/.ssh/id_rsa",
-                )
+        with patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", False), pytest.raises(
+            ImportError, match="paramiko is required"
+        ):
+            SSHConnection(
+                host="example.com",
+                user="user",
+                key_path="~/.ssh/id_rsa",
+            )
 
     def test_connect_with_key(self, mock_paramiko, tmp_path):
         """Test SSH connection using key authentication."""
@@ -277,7 +279,7 @@ class TestSSHConnection:
         )
 
         conn._client = mock_client
-        exit_code, stdout, stderr = conn.execute("false", check=False)
+        exit_code, _stdout, stderr = conn.execute("false", check=False)
 
         assert exit_code == 1
         assert stderr == "error message"
@@ -541,7 +543,7 @@ class TestSSHConnection:
 
         conn._client = mock_client
         script = "echo hello\necho world"
-        exit_code, stdout, stderr = conn.execute_script(script)
+        exit_code, _stdout, _stderr = conn.execute_script(script)
 
         assert exit_code == 0
         # Should have wrapped in bash -c

@@ -8,15 +8,16 @@ This module provides:
 - Mock management and cleanup
 """
 
-import pytest
 import asyncio
 import os
-from typing import Dict, Any, List
-from unittest.mock import patch, MagicMock
+from typing import Any, ClassVar, Dict, List
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.base import Tool
 
 
 # Pytest configuration
@@ -113,7 +114,7 @@ def mock_tool():
     class TestTool(Tool):
         name = "test_search"
         description = "Search for information"
-        input_schema = {
+        input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
@@ -145,7 +146,7 @@ def calculator_tool():
     class CalculatorTool(Tool):
         name = "calculator"
         description = "Perform mathematical calculations"
-        input_schema = {
+        input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "expression": {
@@ -241,8 +242,8 @@ def cleanup_environment():
 @pytest.fixture
 def temp_model_cache():
     """Fixture providing a temporary model cache directory."""
-    import tempfile
     import shutil
+    import tempfile
 
     temp_dir = tempfile.mkdtemp(prefix="test_model_cache_")
     yield temp_dir
@@ -313,8 +314,9 @@ def performance_metrics():
         "response_times": [],
     }
 
-    import psutil
     import time
+
+    import psutil
 
     def start_monitoring():
         metrics["start_time"] = time.time()

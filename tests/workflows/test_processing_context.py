@@ -1,6 +1,7 @@
 import os
+from typing import Iterator, List, Tuple
+
 import pytest
-from typing import Iterator, Tuple, List
 
 from nodetool.workflows.processing_context import ProcessingContext
 

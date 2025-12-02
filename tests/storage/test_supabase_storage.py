@@ -1,6 +1,7 @@
 import io
+from datetime import UTC, datetime, timezone
+
 import pytest
-from datetime import datetime, timezone
 
 from nodetool.storage.supabase_storage import SupabaseStorage
 
@@ -16,7 +17,7 @@ class _FakeBucket:
         with open(file_path, "rb") as f:
             content = f.read()
         # Format datetime to match Supabase format (with Z instead of +00:00)
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         self._store[path] = {
             "bytes": content,
             "updated_at": now,

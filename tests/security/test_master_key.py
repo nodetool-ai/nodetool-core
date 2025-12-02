@@ -3,10 +3,12 @@ Tests for master key management.
 """
 
 import os
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from nodetool.security.master_key import MasterKeyManager
+
 from nodetool.security.crypto import SecretCrypto
+from nodetool.security.master_key import MasterKeyManager
 
 
 class TestMasterKeyManager:

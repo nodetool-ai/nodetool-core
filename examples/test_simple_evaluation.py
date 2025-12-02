@@ -6,11 +6,13 @@ Tests the evaluation system with a simpler objective that's more likely to succe
 """
 
 import asyncio
-from nodetool.agents.graph_planner import GraphPlanner
+
 from nodetool.agents.graph_planner_evaluator import GraphPlannerEvaluator
-from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.api.types.workflow import GraphInput, GraphOutput
+
+from nodetool.agents.graph_planner import GraphPlanner
 from nodetool.metadata.types import TypeMetadata
+from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.runtime.resources import ResourceScope
 
 

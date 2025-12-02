@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 PARAM_CASES = [
     ("", "Hello, "),
     (json.dumps({"text": "World!"}), "Hello, World!"),

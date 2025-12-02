@@ -3,20 +3,21 @@ Tests for missing coverage areas in ProcessingContext.
 These tests target specific methods and code paths that weren't covered in the main tests.
 """
 
-import pytest
-from io import BytesIO
-from unittest.mock import Mock, patch, AsyncMock
-import PIL.Image
 import importlib.util
+from io import BytesIO
+from unittest.mock import AsyncMock, Mock, patch
 
-from nodetool.workflows.processing_context import ProcessingContext
+import PIL.Image
+import pytest
+
 from nodetool.metadata.types import (
     AssetRef,
     ImageRef,
     Provider,
-    VideoRef,
     TextRef,
+    VideoRef,
 )
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 def _torch_available() -> bool:
@@ -160,8 +161,8 @@ class TestDownloadFile:
     @pytest.mark.asyncio
     async def test_download_file_local_unix(self, context: ProcessingContext):
         """Test downloading local file on Unix."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file.write(b"local file content")
@@ -183,8 +184,8 @@ class TestDownloadFile:
     @pytest.mark.asyncio
     async def test_download_file_windows_path(self, context: ProcessingContext):
         """Test downloading file with Windows-style path handling."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file.write(b"windows file content")
@@ -292,9 +293,10 @@ class TestConversionMethods:
         test_image.save(buffer, format="PNG")
         image_ref = ImageRef(data=buffer.getvalue())
 
-        with patch("nodetool.workflows.processing_context.TORCH_AVAILABLE", False):
-            with pytest.raises(ImportError, match="torch is required"):
-                await context.image_to_tensor(image_ref)
+        with patch("nodetool.workflows.processing_context.TORCH_AVAILABLE", False), pytest.raises(
+            ImportError, match="torch is required"
+        ):
+            await context.image_to_tensor(image_ref)
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(not _torch_available(), reason="torch not installed")
@@ -345,8 +347,8 @@ class TestConversionMethods:
         self, context: ProcessingContext
     ):
         """Test converting AssetRef for prediction."""
-        from nodetool.workflows.property import Property
         from nodetool.metadata.type_metadata import TypeMetadata
+        from nodetool.workflows.property import Property
 
         property = Property(name="test", type=TypeMetadata(type="image"))
         asset_ref = ImageRef(data=b"fake image data")
@@ -360,8 +362,8 @@ class TestConversionMethods:
         self, context: ProcessingContext
     ):
         """Test converting TextRef for prediction."""
-        from nodetool.workflows.property import Property
         from nodetool.metadata.type_metadata import TypeMetadata
+        from nodetool.workflows.property import Property
 
         property = Property(name="test", type=TypeMetadata(type="text"))
         text_ref = TextRef(data=b"test text content")
@@ -374,8 +376,8 @@ class TestConversionMethods:
         self, context: ProcessingContext
     ):
         """Test converting empty AssetRef for prediction."""
-        from nodetool.workflows.property import Property
         from nodetool.metadata.type_metadata import TypeMetadata
+        from nodetool.workflows.property import Property
 
         property = Property(name="test", type=TypeMetadata(type="image"))
         empty_asset = AssetRef()
@@ -386,9 +388,10 @@ class TestConversionMethods:
     @pytest.mark.asyncio
     async def test_convert_value_for_prediction_enum(self, context: ProcessingContext):
         """Test converting enum for prediction."""
-        from nodetool.workflows.property import Property
-        from nodetool.metadata.type_metadata import TypeMetadata
         from enum import Enum
+
+        from nodetool.metadata.type_metadata import TypeMetadata
+        from nodetool.workflows.property import Property
 
         class TestEnum(Enum):
             VALUE1 = "value1"
@@ -440,10 +443,9 @@ class TestVideoMethods:
 
             with patch(
                 "nodetool.media.video.video_utils.export_to_video"
-            ) as mock_export:
-                with patch("builtins.open", create=True) as mock_open:
-                    mock_open.return_value = BytesIO(b"fake video data")
+            ) as mock_export, patch("builtins.open", create=True) as mock_open:
+                mock_open.return_value = BytesIO(b"fake video data")
 
-                    result = await context.video_from_frames(frames, fps=24)
-                    assert isinstance(result, VideoRef)
-                    mock_export.assert_called_once_with(frames, mock_file.name, fps=24)
+                result = await context.video_from_frames(frames, fps=24)
+                assert isinstance(result, VideoRef)
+                mock_export.assert_called_once_with(frames, mock_file.name, fps=24)

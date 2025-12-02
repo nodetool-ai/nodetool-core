@@ -5,9 +5,9 @@ This module provides functionality to discover nodes from the registry and
 generate markdown documentation pages organized by namespace structure.
 """
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import re
 
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.packages.registry import Registry
@@ -156,7 +156,7 @@ namespace: "{namespace}"
         content += "**⚠️ Deprecated:** This node is deprecated and may be removed in future versions.\n\n"
 
     # Add related nodes or namespace info
-    content += f"## Related Nodes\n\n"
+    content += "## Related Nodes\n\n"
     content += f"Browse other nodes in the [{namespace}](../) namespace.\n\n"
 
     return content

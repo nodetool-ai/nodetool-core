@@ -1,8 +1,8 @@
-import pytest
 import pandas as pd
+import pytest
 
+from nodetool.metadata.types import ColumnDef, DataframeRef
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import DataframeRef, ColumnDef
 
 
 @pytest.mark.asyncio

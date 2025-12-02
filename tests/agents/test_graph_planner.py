@@ -1,20 +1,21 @@
 """Unit tests for GraphPlanner"""
 
-import pytest
 import tempfile
-from pydantic import Field
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock
 
-from nodetool.workflows.processing_context import ProcessingContext
+import pytest
+from pydantic import Field
+
 from nodetool.agents.graph_planner import (
-    GraphPlanner,
     GraphInput,
     GraphOutput,
-    get_node_type_for_metadata,
+    GraphPlanner,
     _is_type_compatible,
+    get_node_type_for_metadata,
 )
 from nodetool.metadata.types import TypeMetadata
 from nodetool.workflows.base_node import InputNode, OutputNode
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
@@ -271,7 +272,7 @@ class TestGraphPlanner:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            async for update in planner.create_graph(processing_context):
+            async for _update in planner.create_graph(processing_context):
                 pass
 
         assert "Failed to produce valid workflow design" in str(exc_info.value)

@@ -14,14 +14,16 @@ Tests cover all major tool categories:
 """
 # ruff: noqa: F821
 
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
 from nodetool.api import mcp_server
-from nodetool.models.workflow import Workflow
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
-from nodetool.models.thread import Thread
 from nodetool.models.message import Message
+from nodetool.models.thread import Thread
+from nodetool.models.workflow import Workflow
 
 # Extract the underlying functions from FastMCP FunctionTool wrappers
 # The @mcp.tool() decorator wraps functions in FunctionTool objects
@@ -85,7 +87,7 @@ class TestWorkflowOperations:
     @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_workflow_not_found(self):
         """Test getting non-existent workflow."""
-        with pytest.raises(ValueError, match="Workflow .* not found"):
+        with pytest.raises(ValueError, match=r"Workflow .* not found"):
             await get_workflow("nonexistent-id")
 
     @pytest.mark.skip(reason="Destructive tool removed from MCP server")
@@ -315,7 +317,7 @@ class TestNodeOperations:
     @pytest.mark.asyncio
     async def test_get_node_info_not_found(self):
         """Test getting info for non-existent node."""
-        with pytest.raises(ValueError, match="Node type .* not found"):
+        with pytest.raises(ValueError, match=r"Node type .* not found"):
             await get_node_info("nonexistent.NodeType")
 
 

@@ -15,9 +15,9 @@ the process subtask template for each discovered item.
 import asyncio
 
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Chunk, Provider
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 

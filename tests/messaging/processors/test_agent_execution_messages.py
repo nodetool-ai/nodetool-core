@@ -7,23 +7,24 @@ when loading chat history for LLM processing.
 """
 
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from nodetool.models.message import Message as DBMessage
-from nodetool.metadata.types import Message as ApiMessage, Provider
+import pytest
+
+from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.metadata.types import Message as ApiMessage
+from nodetool.metadata.types import Provider, SubTask, Task
+from nodetool.models.message import Message as DBMessage
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
-    TaskUpdate,
+    Chunk,
     PlanningUpdate,
     SubTaskResult,
-    Chunk,
+    TaskUpdate,
     TaskUpdateEvent,
 )
-from nodetool.metadata.types import Task, SubTask
-from nodetool.chat.base_chat_runner import BaseChatRunner
 
 
 # Concrete implementation of BaseChatRunner for testing

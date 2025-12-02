@@ -897,9 +897,7 @@ class ModelManager:
         max_percent, min_available = cls._get_vram_thresholds()
         if snapshot.percent >= max_percent or snapshot.available_gb <= min_available:
             return True
-        if required_free_gb is not None and snapshot.available_gb < required_free_gb:
-            return True
-        return False
+        return bool(required_free_gb is not None and snapshot.available_gb < required_free_gb)
 
     @classmethod
     def _target_vram_available_gb(

@@ -2,17 +2,18 @@
 Unit tests for deployment state management.
 """
 
-import pytest
-import time
 import threading
+import time
 from datetime import datetime
 
+import pytest
+
 from nodetool.config.deployment import (
+    ContainerConfig,
     DeploymentConfig,
+    ImageConfig,
     SelfHostedDeployment,
     SSHConfig,
-    ImageConfig,
-    ContainerConfig,
 )
 from nodetool.deploy.state import (
     StateManager,
@@ -73,7 +74,7 @@ class TestStateManager:
 
     def test_read_state(self, sample_config):
         """Test reading deployment state."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         state = manager.read_state("test-server")
@@ -84,7 +85,7 @@ class TestStateManager:
 
     def test_read_state_nonexistent(self, sample_config):
         """Test reading state for nonexistent deployment."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         state = manager.read_state("nonexistent")
@@ -93,7 +94,7 @@ class TestStateManager:
 
     def test_write_state(self, sample_config):
         """Test writing deployment state."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Update state
@@ -111,7 +112,7 @@ class TestStateManager:
 
     def test_write_state_with_timestamp(self, sample_config):
         """Test writing state with automatic timestamp."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         before = datetime.utcnow()
@@ -135,7 +136,7 @@ class TestStateManager:
 
     def test_write_state_nonexistent_deployment(self, sample_config):
         """Test writing state for nonexistent deployment raises error."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         with pytest.raises(KeyError, match="Deployment 'nonexistent' not found"):
@@ -143,7 +144,7 @@ class TestStateManager:
 
     def test_update_deployment_status(self, sample_config):
         """Test updating deployment status."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         manager.update_deployment_status("test-server", "running")
@@ -153,7 +154,7 @@ class TestStateManager:
 
     def test_get_all_states(self, sample_config):
         """Test getting all deployment states."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Update some states
@@ -174,7 +175,7 @@ class TestStateManager:
 
     def test_clear_state(self, sample_config):
         """Test clearing deployment state."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Set some state
@@ -190,7 +191,7 @@ class TestStateManager:
 
     def test_get_last_deployed(self, sample_config):
         """Test getting last deployed timestamp."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Initially None
@@ -207,7 +208,7 @@ class TestStateManager:
 
     def test_has_been_deployed(self, sample_config):
         """Test checking if deployment has been deployed."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Initially false
@@ -225,7 +226,7 @@ class TestStateLocking:
 
     def test_lock_basic(self, sample_config):
         """Test basic lock acquisition and release."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         with manager.lock():
@@ -239,20 +240,18 @@ class TestStateLocking:
 
     def test_lock_timeout(self, sample_config):
         """Test lock timeout when lock is held by another process."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager1 = StateManager(config_path=config_path)
         manager2 = StateManager(config_path=config_path)
 
-        with manager1.lock():
-            # manager1 holds the lock
-            # manager2 should timeout
-            with pytest.raises(TimeoutError, match="Could not acquire lock"):
-                with manager2.lock(timeout=1):
-                    pass
+        with manager1.lock(), pytest.raises(
+            TimeoutError, match="Could not acquire lock"
+        ), manager2.lock(timeout=1):
+            pass
 
     def test_concurrent_read_safety(self, sample_config):
         """Test that concurrent reads are safe with locking."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Write initial state
@@ -286,7 +285,7 @@ class TestStateLocking:
 
     def test_concurrent_write_safety(self, sample_config):
         """Test that concurrent writes are safe with locking."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         errors = []
@@ -327,7 +326,7 @@ class TestStateSnapshot:
 
     def test_create_snapshot(self, sample_config):
         """Test creating a state snapshot."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Update some states
@@ -346,10 +345,11 @@ class TestStateSnapshot:
         original_load = state_module.load_deployment_config
 
         def mock_load():
-            from nodetool.config.deployment import DeploymentConfig
             import yaml
 
-            with open(config_path, "r") as f:
+            from nodetool.config.deployment import DeploymentConfig
+
+            with open(config_path) as f:
                 data = yaml.safe_load(f)
             return DeploymentConfig.model_validate(data)
 
@@ -374,7 +374,7 @@ class TestStateSnapshot:
 
     def test_restore_snapshot(self, sample_config):
         """Test restoring state from a snapshot."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Set initial state
@@ -390,10 +390,11 @@ class TestStateSnapshot:
         original_save = state_module.save_deployment_config
 
         def mock_load():
-            from nodetool.config.deployment import DeploymentConfig
             import yaml
 
-            with open(config_path, "r") as f:
+            from nodetool.config.deployment import DeploymentConfig
+
+            with open(config_path) as f:
                 data = yaml.safe_load(f)
             return DeploymentConfig.model_validate(data)
 
@@ -433,7 +434,7 @@ class TestStateSnapshot:
 
     def test_restore_specific_deployment(self, sample_config):
         """Test restoring a specific deployment from snapshot."""
-        config, config_path = sample_config
+        _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
         # Set states
@@ -450,10 +451,11 @@ class TestStateSnapshot:
         original_save = state_module.save_deployment_config
 
         def mock_load():
-            from nodetool.config.deployment import DeploymentConfig
             import yaml
 
-            with open(config_path, "r") as f:
+            from nodetool.config.deployment import DeploymentConfig
+
+            with open(config_path) as f:
                 data = yaml.safe_load(f)
             return DeploymentConfig.model_validate(data)
 

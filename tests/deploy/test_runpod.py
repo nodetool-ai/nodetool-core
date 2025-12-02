@@ -1,20 +1,21 @@
 """
 Unit tests for RunPodDeployer.
 """
+# ruff: noqa: SIM117
 
-import pytest
 from unittest.mock import Mock, patch
 
-from nodetool.deploy.runpod import RunPodDeployer
-from nodetool.config.deployment import (
-    RunPodDeployment,
-    RunPodImageConfig,
-    RunPodDockerConfig,
-    RunPodTemplateConfig,
-    RunPodEndpointConfig,
-    DeploymentStatus,
-)
+import pytest
 
+from nodetool.config.deployment import (
+    DeploymentStatus,
+    RunPodDeployment,
+    RunPodDockerConfig,
+    RunPodEndpointConfig,
+    RunPodImageConfig,
+    RunPodTemplateConfig,
+)
+from nodetool.deploy.runpod import RunPodDeployer
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -445,23 +446,24 @@ class TestRunPodDeployerEdgeCases:
 
     def test_minimal_deployment_config(self, minimal_deployment):
         """Test deployment with minimal configuration."""
-        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy:
-            with patch("nodetool.deploy.runpod.StateManager") as mock_state_cls:
-                mock_state_manager = Mock()
-                mock_state_manager.read_state = Mock(return_value=None)
-                mock_state_manager.write_state = Mock()
-                mock_state_manager.update_deployment_status = Mock()
-                mock_state_cls.return_value = mock_state_manager
+        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy, patch(
+            "nodetool.deploy.runpod.StateManager"
+        ) as mock_state_cls:
+            mock_state_manager = Mock()
+            mock_state_manager.read_state = Mock(return_value=None)
+            mock_state_manager.write_state = Mock()
+            mock_state_manager.update_deployment_status = Mock()
+            mock_state_cls.return_value = mock_state_manager
 
-                deployer = RunPodDeployer(
-                    deployment_name="minimal",
-                    deployment=minimal_deployment,
-                )
+            deployer = RunPodDeployer(
+                deployment_name="minimal",
+                deployment=minimal_deployment,
+            )
 
-                result = deployer.apply(dry_run=False)
+            result = deployer.apply(dry_run=False)
 
-                assert result["status"] == "success"
-                mock_deploy.assert_called_once()
+            assert result["status"] == "success"
+            mock_deploy.assert_called_once()
 
     def test_empty_gpu_types_list(self):
         """Test deployment with empty GPU types list."""
@@ -471,18 +473,19 @@ class TestRunPodDeployerEdgeCases:
             gpu_types=[],
         )
 
-        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy:
-            with patch("nodetool.deploy.runpod.StateManager"):
-                deployer = RunPodDeployer(
-                    deployment_name="test",
-                    deployment=deployment,
-                )
+        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy, patch(
+            "nodetool.deploy.runpod.StateManager"
+        ):
+            deployer = RunPodDeployer(
+                deployment_name="test",
+                deployment=deployment,
+            )
 
-                deployer.apply(dry_run=False)
+            deployer.apply(dry_run=False)
 
-                call_kwargs = mock_deploy.call_args[1]
-                deployment = call_kwargs["deployment"]
-                assert deployment.gpu_types == []
+            call_kwargs = mock_deploy.call_args[1]
+            deployment = call_kwargs["deployment"]
+            assert deployment.gpu_types == []
 
     def test_none_gpu_types(self):
         """Test deployment with default GPU types (not specified)."""
@@ -701,3 +704,5 @@ class TestRunPodDeployerEdgeCases:
                 call_kwargs = mock_deploy.call_args[1]
                 deployment = call_kwargs["deployment"]
                 assert deployment.data_centers == ["US-CA-1", "US-TX-1", "EU-NL-1"]
+#!/usr/bin/env python3
+# ruff: noqa: SIM117

@@ -1,16 +1,17 @@
 import json
+
 import pytest
 
 from nodetool.agents.agent import Agent
-from nodetool.providers.base import MockProvider
 from nodetool.metadata.types import SubTask, Task, TaskPlan
+from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,
+    SubTaskResult,
     TaskUpdate,
     TaskUpdateEvent,
-    SubTaskResult,
 )
 
 

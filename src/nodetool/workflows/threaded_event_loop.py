@@ -134,7 +134,7 @@ class ThreadedEventLoop:
                 asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0
             )
             log.debug("All cancellable tasks finished after cancellation signal.")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning(
                 "Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
             )

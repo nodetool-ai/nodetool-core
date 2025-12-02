@@ -89,16 +89,17 @@ Local Advantages:
 """
 
 import json
-import pytest
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import openai
 import openai.resources
+import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
-from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice, ChoiceDelta
+from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
 )
@@ -107,9 +108,9 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 from openai.types.completion_usage import CompletionUsage
 
+from nodetool.metadata.types import Message, MessageTextContent
 from nodetool.providers.llama_provider import LlamaProvider
 from nodetool.providers.llama_server_manager import LlamaServerManager
-from nodetool.metadata.types import Message, MessageTextContent
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -291,13 +292,12 @@ class TestLlamaProvider(BaseProviderTest):
         """Test integration with LlamaServerManager."""
         provider = self.create_provider(ttl_seconds=60)
 
-        with self.mock_server_manager("http://localhost:9999"):
-            with self.mock_api_call(
-                ResponseFixtures.simple_text_response("Server running")
-            ):
-                response = await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+        with self.mock_server_manager("http://localhost:9999"), self.mock_api_call(
+            ResponseFixtures.simple_text_response("Server running")
+        ):
+            response = await provider.generate_message(
+                self.create_simple_messages(), "test-model"
+            )
 
         assert response.role == "assistant"
 
@@ -321,11 +321,10 @@ class TestLlamaProvider(BaseProviderTest):
             ),
         ]
 
-        with self.mock_server_manager():
-            with self.mock_api_call(
-                ResponseFixtures.simple_text_response("Processed")
-            ) as mock_call:
-                await provider.generate_message(messages, "test-model")
+        with self.mock_server_manager(), self.mock_api_call(
+            ResponseFixtures.simple_text_response("Processed")
+        ) as mock_call:
+            await provider.generate_message(messages, "test-model")
 
         # Verify normalization occurred
         mock_call.assert_called_once()
@@ -347,11 +346,10 @@ class TestLlamaProvider(BaseProviderTest):
             ]
         }
 
-        with self.mock_server_manager():
-            with self.mock_api_call(tool_response):
-                response = await provider.generate_message(
-                    messages, "test-model", tools=tools
-                )
+        with self.mock_server_manager(), self.mock_api_call(tool_response):
+            response = await provider.generate_message(
+                messages, "test-model", tools=tools
+            )
 
         assert hasattr(response, "tool_calls")
         assert response.tool_calls is not None
@@ -364,10 +362,10 @@ class TestLlamaProvider(BaseProviderTest):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        with self.mock_server_manager():
-            with self.mock_error_response("server_not_available"):
-                with pytest.raises(Exception):
-                    await provider.generate_message(messages, "test-model")
+        with self.mock_server_manager(), self.mock_error_response(
+            "server_not_available"
+        ), pytest.raises(httpx.HTTPStatusError):
+            await provider.generate_message(messages, "test-model")
 
     def create_mock_tool(self):
         """Create a mock tool for testing."""

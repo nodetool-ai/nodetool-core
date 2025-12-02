@@ -1,18 +1,20 @@
-import pytest
-import pytest_asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
+import pytest_asyncio
 from psycopg.types.json import Jsonb
+
+from nodetool.models.base_model import DBField, DBModel
 from nodetool.models.condition_builder import Field
 from nodetool.models.postgres_adapter import (
     PostgresAdapter,
-    convert_to_postgres_format,
     convert_from_postgres_format,
+    convert_to_postgres_format,
     translate_condition_to_sql,
 )
-from nodetool.models.base_model import DBModel, DBField
 
 
 # Mock Pydantic model for testing
@@ -40,21 +42,21 @@ class TestModel(DBModel):
     @classmethod
     def adapter(cls):
         return PostgresAdapter(
-            db_params=dict(
-                database="test_db",
-                user="test_user",
-                password="test_password",
-                host="localhost",
-                port="5432",
-            ),
+            db_params={
+                "database": "test_db",
+                "user": "test_user",
+                "password": "test_password",
+                "host": "localhost",
+                "port": "5432",
+            },
             fields=TestModel.db_fields(),
             table_schema=TestModel.get_table_schema(),
             indexes=[
-                dict(
-                    name="age_index",
-                    columns=["age"],
-                    unique=False,
-                )
+                {
+                    "name": "age_index",
+                    "columns": ["age"],
+                    "unique": False,
+                }
             ],
         )
 

@@ -47,8 +47,8 @@ Usage:
 """
 
 import asyncio
-import importlib.metadata
 import importlib
+import importlib.metadata
 import json
 import os
 import re
@@ -79,8 +79,8 @@ from nodetool.integrations.huggingface.huggingface_models import (
 )
 from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
 from nodetool.packages.types import AssetInfo, PackageInfo
-from nodetool.types.model import UnifiedModel
 from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.model import UnifiedModel
 from nodetool.types.workflow import Workflow
 
 # Constants

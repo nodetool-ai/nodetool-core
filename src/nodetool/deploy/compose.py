@@ -16,7 +16,6 @@ from nodetool.config.deployment import (
     SelfHostedDeployment,
 )
 
-
 # Self-hosted runtime listens on this internal port by default.
 INTERNAL_API_PORT = 7777
 APP_ENV_PORT = 8000

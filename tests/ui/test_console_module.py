@@ -1,7 +1,7 @@
 from rich.table import Table
 
+from nodetool.metadata.types import SubTask, Task, ToolCall
 from nodetool.ui.console import AgentConsole
-from nodetool.metadata.types import Task, SubTask, ToolCall
 
 
 class FakeLive:

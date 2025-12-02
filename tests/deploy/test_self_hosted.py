@@ -2,25 +2,25 @@
 Unit tests for SelfHostedDeployer.
 """
 
-import pytest
 from unittest.mock import Mock, patch
 
-from nodetool.deploy.self_hosted import (
-    SelfHostedDeployer,
-    LocalExecutor,
-    is_localhost,
+import pytest
+
+from nodetool.config.deployment import (
+    ContainerConfig,
+    DeploymentStatus,
+    ImageConfig,
+    SelfHostedDeployment,
+    SelfHostedPaths,
+    SSHConfig,
 )
 from nodetool.deploy.proxy_run import ProxyRunGenerator
-from nodetool.config.deployment import (
-    SelfHostedDeployment,
-    SSHConfig,
-    ImageConfig,
-    ContainerConfig,
-    SelfHostedPaths,
-    DeploymentStatus,
+from nodetool.deploy.self_hosted import (
+    LocalExecutor,
+    SelfHostedDeployer,
+    is_localhost,
 )
 from nodetool.deploy.ssh import SSHCommandError
-
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -74,7 +74,7 @@ class TestLocalExecutor:
     def test_execute_failure_without_check(self):
         """Test command failure with check=False."""
         executor = LocalExecutor()
-        exit_code, stdout, stderr = executor.execute("exit 1", check=False)
+        exit_code, _stdout, _stderr = executor.execute("exit 1", check=False)
 
         assert exit_code == 1
 
@@ -258,66 +258,68 @@ class TestSelfHostedDeployer:
         mock_ssh.mkdir = Mock()
         mock_ssh.execute = Mock(return_value=(0, "container_id_123", ""))
 
-        with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
-            with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
-                mock_ssh_cls.return_value = mock_ssh
+        with patch(
+            "nodetool.deploy.self_hosted.SSHConnection"
+        ) as mock_ssh_cls, patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
+            mock_ssh_cls.return_value = mock_ssh
 
-                mock_gen = Mock()
-                mock_gen.generate_command.return_value = "docker run ..."
-                mock_gen.generate_hash.return_value = "hash123"
-                mock_gen.get_container_name.return_value = "nodetool-proxy-default"
-                mock_gen_cls.return_value = mock_gen
+            mock_gen = Mock()
+            mock_gen.generate_command.return_value = "docker run ..."
+            mock_gen.generate_hash.return_value = "hash123"
+            mock_gen.get_container_name.return_value = "nodetool-proxy-default"
+            mock_gen_cls.return_value = mock_gen
 
-                deployer = SelfHostedDeployer(
-                    deployment_name="test",
-                    deployment=basic_deployment,
-                    state_manager=mock_state_manager,
-                )
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-                result = deployer.apply(dry_run=False)
+            result = deployer.apply(dry_run=False)
 
-                assert result["status"] == "success"
-                assert len(result["errors"]) == 0
+            assert result["status"] == "success"
+            assert len(result["errors"]) == 0
 
-                # Should update status to deploying
-                mock_state_manager.update_deployment_status.assert_called_once_with(
-                    "test", DeploymentStatus.DEPLOYING.value
-                )
+            # Should update status to deploying
+            mock_state_manager.update_deployment_status.assert_called_once_with(
+                "test", DeploymentStatus.DEPLOYING.value
+            )
 
-                # Should write final state
-                mock_state_manager.write_state.assert_called_once()
-                state_args = mock_state_manager.write_state.call_args[0]
-                assert state_args[0] == "test"
-                assert state_args[1]["status"] == DeploymentStatus.RUNNING.value
+            # Should write final state
+            mock_state_manager.write_state.assert_called_once()
+            state_args = mock_state_manager.write_state.call_args[0]
+            assert state_args[0] == "test"
+            assert state_args[1]["status"] == DeploymentStatus.RUNNING.value
 
     def test_apply_localhost(self, localhost_deployment, mock_state_manager):
         """Test deployment to localhost."""
-        with patch("nodetool.deploy.self_hosted.LocalExecutor") as mock_exec_cls:
-            with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
-                mock_exec = Mock()
-                mock_exec.__enter__ = Mock(return_value=mock_exec)
-                mock_exec.__exit__ = Mock(return_value=False)
-                mock_exec.mkdir = Mock()
-                mock_exec.execute = Mock(return_value=(0, "container_id_123", ""))
+        with patch("nodetool.deploy.self_hosted.LocalExecutor") as mock_exec_cls, patch(
+            "nodetool.deploy.self_hosted.ProxyRunGenerator"
+        ) as mock_gen_cls:
+            mock_exec = Mock()
+            mock_exec.__enter__ = Mock(return_value=mock_exec)
+            mock_exec.__exit__ = Mock(return_value=False)
+            mock_exec.mkdir = Mock()
+            mock_exec.execute = Mock(return_value=(0, "container_id_123", ""))
 
-                mock_exec_cls.return_value = mock_exec
+            mock_exec_cls.return_value = mock_exec
 
-                mock_gen = Mock()
-                mock_gen.generate_command.return_value = "docker run ..."
-                mock_gen.generate_hash.return_value = "hash123"
-                mock_gen.get_container_name.return_value = "nodetool-proxy-default"
-                mock_gen_cls.return_value = mock_gen
+            mock_gen = Mock()
+            mock_gen.generate_command.return_value = "docker run ..."
+            mock_gen.generate_hash.return_value = "hash123"
+            mock_gen.get_container_name.return_value = "nodetool-proxy-default"
+            mock_gen_cls.return_value = mock_gen
 
-                deployer = SelfHostedDeployer(
-                    deployment_name="test",
-                    deployment=localhost_deployment,
-                    state_manager=mock_state_manager,
-                )
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=localhost_deployment,
+                state_manager=mock_state_manager,
+            )
 
-                result = deployer.apply(dry_run=False)
+            result = deployer.apply(dry_run=False)
 
-                assert result["status"] == "success"
-                assert any("localhost" in str(step) for step in result["steps"])
+            assert result["status"] == "success"
+            assert any("localhost" in str(step) for step in result["steps"])
 
     def test_apply_failure(self, basic_deployment, mock_state_manager):
         """Test deployment failure."""

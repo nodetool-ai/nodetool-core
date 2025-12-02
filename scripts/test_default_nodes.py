@@ -1,9 +1,9 @@
-import sys
+import argparse
 import json
 import logging
-import argparse
+import sys
 import uuid
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -69,7 +69,7 @@ TEST_NODES = [
         "name": "Qwen Image Edit",
         "inputs": {
             "prompt": "Make it snowy",
-            # Note: This node typically requires an input image. 
+            # Note: This node typically requires an input image.
             # In a real test, we would need to inject an image node or load an asset.
             # For this script, we assume the node handles missing inputs gracefully or we'd need a LoadImage node.
         },
@@ -158,15 +158,15 @@ def run_workflow(workflow: Dict[str, Any]):
     Executes the workflow using the NodeTool engine.
     """
     logger.info(f"Executing workflow {workflow['id']} with {len(workflow['nodes'])} nodes...")
-    
+
     # TODO: Replace with actual execution call
     # engine = ExecutionEngine()
     # result = engine.run(workflow)
-    
+
     # Mock execution for script verification
-    print(f"  [Mock] Workflow JSON constructed successfully.")
+    print("  [Mock] Workflow JSON constructed successfully.")
     print(f"  [Mock] Nodes: {[n['type'] for n in workflow['nodes']]}")
-    print(f"  [Mock] execution.run() called.")
+    print("  [Mock] execution.run() called.")
 
 def main():
     parser = argparse.ArgumentParser(description="Test default node configurations.")

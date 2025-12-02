@@ -9,11 +9,11 @@ import asyncio
 import json
 import logging
 import os
+import sysconfig
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-import sysconfig
 
 from docker.types import DeviceRequest
 

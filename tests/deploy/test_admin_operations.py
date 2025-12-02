@@ -1,21 +1,22 @@
 """Tests for the admin operations module."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from nodetool.deploy.admin_operations import (
     AdminDownloadManager,
+    calculate_cache_size,
+    convert_cache_info,
+    convert_file_info,
+    convert_repo_info,
+    convert_revision_info,
+    delete_hf_model,
     download_hf_model,
     download_ollama_model,
     scan_hf_cache,
-    calculate_cache_size,
-    delete_hf_model,
-    stream_ollama_model_pull,
     stream_hf_model_download,
-    convert_file_info,
-    convert_revision_info,
-    convert_repo_info,
-    convert_cache_info,
+    stream_ollama_model_pull,
 )
 
 

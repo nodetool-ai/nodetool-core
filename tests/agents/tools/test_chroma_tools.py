@@ -5,9 +5,11 @@ Tests cover:
 - ChromaMarkdownSplitAndIndexTool: Markdown splitting and indexing functionality
 """
 
-import pytest
 import os
 from pathlib import Path
+
+import pytest
+
 from nodetool.agents.tools.chroma_tools import ChromaMarkdownSplitAndIndexTool
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,
@@ -23,7 +25,7 @@ async def chroma_client(tmp_path, monkeypatch):
     # Ensure local, on-disk Chroma
     monkeypatch.delenv("CHROMA_URL", raising=False)
     monkeypatch.setenv("CHROMA_PATH", str(tmp_path))
-    
+
     client: AsyncChromaClient = await get_async_chroma_client()
     try:
         yield client
@@ -35,13 +37,13 @@ async def chroma_client(tmp_path, monkeypatch):
 async def test_collection(chroma_client):
     """Create a test collection and clean it up after the test."""
     collection_name = "test_markdown_collection"
-    
+
     # Clean up any existing collection
     try:
         await chroma_client.delete_collection(name=collection_name)
     except Exception:
         pass  # Collection doesn't exist, which is fine
-    
+
     collection = await chroma_client.create_collection(name=collection_name)
     try:
         yield collection
@@ -97,30 +99,30 @@ async def test_chroma_markdown_split_and_index_basic(
 ):
     """Test basic markdown splitting and indexing functionality."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {
         "text": test_markdown,
     }
-    
+
     # Run the tool
     result = await tool.process(context=processing_context, params=params)
-    
+
     # Verify result structure
     assert result["status"] == "success"
     assert "indexed_ids" in result
     assert len(result["indexed_ids"]) > 0
     assert "message" in result
-    
+
     # Verify documents were actually indexed
     indexed_count = len(result["indexed_ids"])
     retrieved_docs = await test_collection.get(include=["metadatas", "documents"])
-    
+
     assert retrieved_docs["ids"] is not None
     assert len(retrieved_docs["ids"]) == indexed_count
-    
+
     # Verify document content
     assert retrieved_docs["documents"] is not None
-    for i, doc_id in enumerate(retrieved_docs["ids"]):
+    for i, _doc_id in enumerate(retrieved_docs["ids"]):
         assert retrieved_docs["documents"][i] is not None
         assert len(retrieved_docs["documents"][i]) > 0
 
@@ -131,22 +133,22 @@ async def test_chroma_markdown_split_and_index_custom_chunk_size(
 ):
     """Test markdown splitting with custom chunk size."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {
         "text": test_markdown,
         "chunk_size": 200,
         "chunk_overlap": 50,
     }
-    
+
     result = await tool.process(context=processing_context, params=params)
-    
+
     assert result["status"] == "success"
     assert len(result["indexed_ids"]) > 0
-    
+
     # With smaller chunk size, we should get more chunks
     retrieved_docs = await test_collection.get(include=["documents"])
     assert len(retrieved_docs["ids"]) > 0
-    
+
     # Verify chunks are within size limits (allowing some flexibility)
     for doc in retrieved_docs["documents"]:
         assert doc is not None
@@ -164,19 +166,19 @@ async def test_chroma_markdown_split_and_index_from_file(
     workspace_dir = Path(processing_context.workspace_dir)
     markdown_file = workspace_dir / "test.md"
     markdown_file.write_text(test_markdown)
-    
+
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     # Use relative path from workspace root
     params = {
         "file_path": "test.md",
     }
-    
+
     result = await tool.process(context=processing_context, params=params)
-    
+
     assert result["status"] == "success"
     assert len(result["indexed_ids"]) > 0
-    
+
     # Verify documents were indexed
     retrieved_docs = await test_collection.get(include=["documents"])
     assert len(retrieved_docs["ids"]) > 0
@@ -188,9 +190,9 @@ async def test_chroma_markdown_split_and_index_no_text_or_file(
 ):
     """Test that the tool raises an error when neither text nor file_path is provided."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {}
-    
+
     with pytest.raises(ValueError, match="Neither file_path nor text is provided"):
         await tool.process(context=processing_context, params=params)
 
@@ -213,18 +215,18 @@ Content under second header.
 
 Content under third header.
 """
-    
+
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {
         "text": markdown_with_multiple_h1,
     }
-    
+
     result = await tool.process(context=processing_context, params=params)
-    
+
     assert result["status"] == "success"
     assert len(result["indexed_ids"]) > 0
-    
+
     # Verify all chunks were indexed
     retrieved_docs = await test_collection.get(include=["documents"])
     assert len(retrieved_docs["ids"]) == len(result["indexed_ids"])
@@ -252,22 +254,22 @@ Subsection content.
 
 Section B content.
 """
-    
+
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {
         "text": markdown_with_nested,
     }
-    
+
     result = await tool.process(context=processing_context, params=params)
-    
+
     assert result["status"] == "success"
     assert len(result["indexed_ids"]) > 0
-    
+
     # Verify chunks contain expected content
     retrieved_docs = await test_collection.get(include=["documents"])
     documents = retrieved_docs["documents"]
-    
+
     # Check that we have chunks from different sections
     all_content = " ".join(documents)
     assert "Main Title" in all_content or "Introduction" in all_content
@@ -280,13 +282,13 @@ async def test_chroma_markdown_split_and_index_user_message(
 ):
     """Test the user_message method."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {"source_id": "test_source.md"}
     message = tool.user_message(params)
-    
+
     assert "Splitting and indexing Markdown" in message
     assert "test_source.md" in message
-    
+
     # Test with long source_id (should be truncated)
     params_long = {"source_id": "a" * 100}
     message_long = tool.user_message(params_long)
@@ -300,13 +302,13 @@ async def test_chroma_markdown_split_and_index_empty_markdown(
 ):
     """Test handling of empty markdown content."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
-    
+
     params = {
         "text": "",
     }
-    
+
     result = await tool.process(context=processing_context, params=params)
-    
+
     # Empty content should still succeed but may produce no chunks
     assert result["status"] == "success"
     # The result may have 0 chunks or 1 chunk depending on implementation

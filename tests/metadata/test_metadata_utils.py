@@ -1,7 +1,6 @@
 from collections.abc import AsyncGenerator, AsyncIterator
 
-
-from nodetool.metadata.utils import get_return_annotation, async_generator_item_type
+from nodetool.metadata.utils import async_generator_item_type, get_return_annotation
 
 
 async def _async_generator_example() -> AsyncGenerator[int, None]:

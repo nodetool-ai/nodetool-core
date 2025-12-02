@@ -4,8 +4,8 @@ import io
 import PIL.Image
 import pytest
 
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.media.image.image_utils import image_ref_to_base64_jpeg
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 @pytest.mark.asyncio

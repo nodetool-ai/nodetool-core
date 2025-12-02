@@ -1,21 +1,21 @@
 """Test script for the GraphPlanner"""
 
 import asyncio
-import tempfile
-import os
-from pathlib import Path
 import json
+import os
+import tempfile
+from pathlib import Path
 
-from nodetool.agents.graph_planner import GraphPlanner, GraphInput, GraphOutput
-from nodetool.providers.openai_provider import OpenAIProvider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import PlanningUpdate
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.metadata.types import TypeMetadata
-from nodetool.runtime.resources import ResourceScope
+from nodetool.agents.graph_planner import GraphInput, GraphOutput, GraphPlanner
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import TypeMetadata
+from nodetool.providers.openai_provider import OpenAIProvider
+from nodetool.runtime.resources import ResourceScope
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import PlanningUpdate
 
 logger = get_logger(__name__)
 

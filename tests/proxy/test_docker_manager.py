@@ -8,9 +8,9 @@ import asyncio
 import time
 
 import pytest
-import docker
 from docker.errors import DockerException
 
+import docker
 from nodetool.proxy.config import ServiceConfig
 from nodetool.proxy.docker_manager import DockerManager, ServiceRuntime
 
@@ -237,7 +237,7 @@ class TestDockerManager:
         # Verify CPU limit was set
         client = docker.from_env()
         container = client.containers.get("limited-app")
-        host_config = container.attrs.get("HostConfig", {})
+        container.attrs.get("HostConfig", {})
         # Note: NanoCpus might not be in attrs depending on Docker version
         # Just verify container started successfully
         assert container.status == "running"

@@ -1,16 +1,17 @@
 import os
+import sys
 import zipfile
 from io import BytesIO
-from fastapi.testclient import TestClient
+
 import pytest
+from fastapi.testclient import TestClient
+
 from nodetool.models.asset import Asset
-from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
 from nodetool.runtime.resources import require_scope
-import sys
+from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from conftest import make_image, make_text
-
 
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
 
@@ -100,16 +101,17 @@ async def test_create(client: TestClient, headers: dict[str, str], user_id: str)
     Test the POST /api/assets endpoint.
     Verifies that a new asset can be created with file upload and metadata.
     """
-    response = client.post(
-        "/api/assets",
-        files={"file": ("test.jpg", open(test_jpg, "rb"), "image/jpeg")},
-        data={
-            "json": AssetCreateRequest(
-                parent_id=user_id, name="bild.jpeg", content_type="image/jpeg"
-            ).model_dump_json()
-        },
-        headers=headers,
-    )
+    with open(test_jpg, "rb") as file_handle:
+        response = client.post(
+            "/api/assets",
+            files={"file": ("test.jpg", file_handle, "image/jpeg")},
+            data={
+                "json": AssetCreateRequest(
+                    parent_id=user_id, name="bild.jpeg", content_type="image/jpeg"
+                ).model_dump_json()
+            },
+            headers=headers,
+        )
     assert response.status_code == 200
     image_reloaded = await Asset.find(user_id, response.json()["id"])
     assert image_reloaded is not None

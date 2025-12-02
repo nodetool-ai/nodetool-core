@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import atexit
 import os
@@ -14,13 +16,15 @@ from rich.text import Text
 # Create console instance
 console = Console()
 
-_progress_manager: Optional["ProgressManager"] = None
+_progress_manager: Optional[ProgressManager] = None
 
 if TYPE_CHECKING:
+    from nodetool.deploy.progress import ProgressManager
+    from nodetool.types.graph import Graph as ApiGraph
     from nodetool.types.model import UnifiedModel
 
 
-def _get_progress_manager() -> "ProgressManager":
+def _get_progress_manager() -> ProgressManager:
     """Lazily create and return the shared ProgressManager."""
     global _progress_manager
     if _progress_manager is None:
@@ -40,14 +44,14 @@ def cleanup_progress():
 atexit.register(cleanup_progress)
 
 
-def _load_api_graph_for_export(workflow_id: str, user_id: str) -> "ApiGraph":
+def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     """
     Retrieve a workflow graph for export, searching the database first and
     falling back to bundled examples.
     """
-    from nodetool.types.graph import Graph as ApiGraph
     from nodetool.models.workflow import Workflow as WorkflowModel
     from nodetool.packages.registry import Registry
+    from nodetool.types.graph import Graph as ApiGraph
 
     async def _load() -> ApiGraph:
         workflow = await WorkflowModel.find(user_id, workflow_id)
@@ -99,7 +103,7 @@ def _format_size(num_bytes: int | None) -> str:
     return f"{size:.1f} TB"
 
 
-def _print_model_table(models: list["UnifiedModel"], title: str) -> None:
+def _print_model_table(models: list[UnifiedModel], title: str) -> None:
     """Render a simple table for UnifiedModel entries."""
     table = Table(title=title)
     table.add_column("Repo", style="magenta")
@@ -837,8 +841,8 @@ def chat_client(
 
     import dotenv
 
-    from nodetool.config.environment import Environment
     from nodetool.chat.chat_client import run_chat_client
+    from nodetool.config.environment import Environment
 
     dotenv.load_dotenv()
 
@@ -1048,7 +1052,7 @@ def list_hf_models(model_type: str, task: str | None, limit: int | None, as_json
         get_models_by_hf_type,
     )
 
-    models: list["UnifiedModel"] = asyncio.run(get_models_by_hf_type(model_type, task))
+    models: list[UnifiedModel] = asyncio.run(get_models_by_hf_type(model_type, task))
 
     if limit is not None:
         models = models[:limit]
@@ -1097,7 +1101,7 @@ def list_all_hf_models(limit: int | None, as_json: bool, repo_only: bool):
 
     if include_files:
         patterns = [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS]
-        models: list["UnifiedModel"] = asyncio.run(
+        models: list[UnifiedModel] = asyncio.run(
             search_cached_hf_models(filename_patterns=patterns)
         )
     else:
@@ -1181,7 +1185,7 @@ def list_cached_hf_models(downloaded_only: bool, limit: int | None, as_json: boo
         read_cached_hf_models,
     )
 
-    models: list["UnifiedModel"] = asyncio.run(read_cached_hf_models())
+    models: list[UnifiedModel] = asyncio.run(read_cached_hf_models())
     if downloaded_only:
         models = [model for model in models if model.downloaded]
     if limit is not None:
@@ -1517,7 +1521,7 @@ def node_docs(output_dir: str, package_name: str | None, verbose: bool):
     from nodetool.packages.gen_node_docs import generate_node_docs
 
     try:
-        click.echo(f"Generating node documentation...")
+        click.echo("Generating node documentation...")
 
         total_nodes, created_files = generate_node_docs(
             output_dir=output_dir,
@@ -1587,7 +1591,7 @@ def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, 
     try:
         click.echo(f"Processing workflow examples from {examples_dir}...")
 
-        total_files, created_count = generate_workflow_docs(
+        _total_files, created_count = generate_workflow_docs(
             examples_dir=examples_dir,
             output_dir=output_dir,
             package_filter=package_name,
@@ -2082,8 +2086,8 @@ def _handle_docker_config_check(
     from nodetool.deploy.docker import (
         check_docker_auth,
         format_image_name,
-        get_docker_username_from_config,
         generate_image_tag,
+        get_docker_username_from_config,
     )
 
     console.print("🔍 Checking Docker configuration...")
@@ -2511,9 +2515,9 @@ def deploy_add(name: str, deployment_type: str):
             # Container configuration
             console.print()
             console.print("[cyan]Container configuration:[/]")
-            
+
             container_name = click.prompt(
-                f"  Container name", type=str
+                "  Container name", type=str
             )
             container_port = click.prompt("  Port", type=int)
 

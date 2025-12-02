@@ -7,7 +7,7 @@ Tests that the ResourceScope middleware properly:
 """
 
 import pytest
-from fastapi import FastAPI, Depends, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from nodetool.api.middleware import ResourceScopeMiddleware

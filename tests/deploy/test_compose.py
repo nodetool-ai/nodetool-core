@@ -5,19 +5,18 @@ Unit tests for Docker Compose generator.
 import pytest
 import yaml
 
+from nodetool.config.deployment import (
+    ContainerConfig,
+    ImageConfig,
+    SelfHostedDeployment,
+    SelfHostedPaths,
+    SSHConfig,
+)
 from nodetool.deploy.compose import (
     ComposeGenerator,
     generate_compose_file,
     get_compose_hash,
 )
-from nodetool.config.deployment import (
-    SelfHostedDeployment,
-    SSHConfig,
-    ImageConfig,
-    ContainerConfig,
-    SelfHostedPaths,
-)
-
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -133,11 +132,11 @@ class TestComposeGenerator:
         assert len(volumes) == 2
 
         # Check workspace volume (read-write)
-        workspace_vol = [v for v in volumes if "/workspace" in v][0]
+        workspace_vol = next(v for v in volumes if "/workspace" in v)
         assert "/data/workspace:/workspace" in workspace_vol
 
         # Check HF cache volume (read-only)
-        hf_vol = [v for v in volumes if "/hf-cache:ro" in v][0]
+        hf_vol = next(v for v in volumes if "/hf-cache:ro" in v)
         assert "/data/hf-cache:/hf-cache:ro" in hf_vol
 
     def test_environment_variables(self, basic_deployment):
@@ -292,10 +291,10 @@ class TestComposeGenerator:
         volumes = parsed["services"]["wf1"]["volumes"]
 
         # Check custom paths are used
-        workspace_vol = [v for v in volumes if "/workspace" in v][0]
+        workspace_vol = next(v for v in volumes if "/workspace" in v)
         assert "/custom/workspace:/workspace" in workspace_vol
 
-        hf_vol = [v for v in volumes if "/hf-cache:ro" in v][0]
+        hf_vol = next(v for v in volumes if "/hf-cache:ro" in v)
         assert "/custom/hf-cache:/hf-cache:ro" in hf_vol
 
 
@@ -333,13 +332,13 @@ class TestComposeHelperFunctions:
         assert output_path.exists()
 
         # Content should match
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             file_content = f.read()
 
         assert file_content == content
 
         # Should be valid YAML
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             parsed = yaml.safe_load(f)
 
         assert parsed["version"] == "3.8"

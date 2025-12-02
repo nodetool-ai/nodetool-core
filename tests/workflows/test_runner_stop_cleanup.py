@@ -18,7 +18,7 @@ class _Container:
     def __init__(self) -> None:
         self.removed = False
 
-    def remove(self, force: bool = False) -> None:  # noqa: ARG002
+    def remove(self, force: bool = False) -> None:
         self.removed = True
 
 
@@ -26,7 +26,7 @@ class _Containers:
     def __init__(self, container: _Container) -> None:
         self._container = container
 
-    def get(self, cid: str) -> _Container:  # noqa: ARG002
+    def get(self, cid: str) -> _Container:
         return self._container
 
 

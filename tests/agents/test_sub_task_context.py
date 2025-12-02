@@ -1,11 +1,11 @@
 import pytest
+import tiktoken
 
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Task, SubTask, Message
+from nodetool.metadata.types import Message, SubTask, Task
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
-import tiktoken
 
 
 class DummyEncoding:

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -204,21 +204,21 @@ async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
         if bg_job is None and job.status in {"running", "starting", "queued"}:
             job.status = "failed"
             job.error = job.error or "Reconciled: execution handle missing"
-            job.finished_at = job.finished_at or datetime.now(timezone.utc)
+            job.finished_at = job.finished_at or datetime.now(UTC)
             updates.append(job.save())
         elif bg_job is not None and bg_job.is_completed():
             new_status = getattr(bg_job, "status", "completed")
             if job.status != new_status or job.finished_at is None:
                 job.status = new_status
                 job.error = job.error or bg_job.error
-                job.finished_at = job.finished_at or datetime.now(timezone.utc)
+                job.finished_at = job.finished_at or datetime.now(UTC)
                 updates.append(job.save())
         elif bg_job is not None and not bg_job.is_running():
             # Not running but not completed: mark as failed
             if job.status in {"running", "starting", "queued"}:
                 job.status = "failed"
                 job.error = job.error or "Reconciled: execution handle stopped unexpectedly"
-                job.finished_at = job.finished_at or datetime.now(timezone.utc)
+                job.finished_at = job.finished_at or datetime.now(UTC)
                 updates.append(job.save())
 
     if updates:

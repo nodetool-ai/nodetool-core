@@ -28,8 +28,8 @@ from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.config.environment import Environment
 from nodetool.config.env_guard import RUNNING_PYTEST
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
 

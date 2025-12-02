@@ -20,6 +20,8 @@ except Exception:  # pragma: no cover - optional dependency
 
 from nodetool.integrations.huggingface.safetensors_inspector import (
     DetectionResult as STFDetectionResult,
+)
+from nodetool.integrations.huggingface.safetensors_inspector import (
     detect_model as detect_safetensors_model,
 )
 
@@ -125,7 +127,7 @@ def _read_gguf_header(path: Path) -> dict[str, str]:
         magic = f.read(4)
         if magic not in (b"GGUF",):
             raise ValueError("Not a GGUF file")
-        version = struct.unpack("<I", f.read(4))[0]
+        struct.unpack("<I", f.read(4))[0]
         # Skip tensor_count (uint64) and kv_count (uint64)
         f.read(8)  # tensor_count
         kv_count = struct.unpack("<Q", f.read(8))[0]
@@ -145,9 +147,7 @@ def _read_gguf_header(path: Path) -> dict[str, str]:
 
 
 def _skip_gguf_value(f, value_type: int) -> None:
-    if value_type == 0:  # uint8
-        f.read(1)
-    elif value_type == 1:  # int8
+    if value_type == 0 or value_type == 1:  # uint8
         f.read(1)
     elif value_type in (3, 4):  # array of bytes/ints: skip length + payload
         length = struct.unpack("<Q", f.read(8))[0]
@@ -279,7 +279,9 @@ def detect_from_json(
 
 def _family_from_model_type(model_type: str, archs: Sequence[str]) -> ArtifactDetection | None:
     mt = model_type
-    has = lambda s: s in mt or any(s in a for a in archs)
+    def has(target: str) -> bool:
+        return target in mt or any(target in arch for arch in archs)
+
     if has("bert"):
         return ArtifactDetection("bert", "llm", 0.9, ["model_type/arch includes bert"])
     if has("roberta"):

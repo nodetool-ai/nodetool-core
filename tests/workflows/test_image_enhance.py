@@ -1,12 +1,13 @@
 import json
 import os
-import pytest
 from pathlib import Path
 
+import pytest
+
+from nodetool.types.graph import Graph as ApiGraph
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.types.graph import Graph as ApiGraph
 from nodetool.workflows.types import OutputUpdate
 
 """

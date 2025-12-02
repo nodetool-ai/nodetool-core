@@ -1,14 +1,15 @@
 import asyncio
+import json
 import os
+
+from nodetool.agents.sub_task_context import SubTaskContext
+from nodetool.metadata.types import Provider, SubTask, Task
 from nodetool.providers import get_provider
 
 # Assuming ReasoningTool is available alongside other standard tools
 from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider, Task, SubTask
-from nodetool.agents.sub_task_context import SubTaskContext
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.runtime.resources import ResourceScope
-import json
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 async def test_logical_puzzle_task(
@@ -88,7 +89,7 @@ async def test_logical_puzzle_task(
 
     # 6. Execute the subtask
     print(f"\n--- Starting Logical Puzzle Task using {model} ---")
-    async for event in subtask_context.execute():
+    async for _event in subtask_context.execute():
         pass
 
     print("--------------------------------")

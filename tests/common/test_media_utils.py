@@ -1,5 +1,6 @@
-from io import BytesIO
 import os
+from io import BytesIO
+
 import cv2
 import numpy as np
 import pytest
@@ -7,8 +8,8 @@ import pytest
 from nodetool.media.common.media_utils import (
     create_image_thumbnail,
     create_video_thumbnail,
-    get_video_duration,
     get_audio_duration,
+    get_video_duration,
 )
 
 test_mp4 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp4")

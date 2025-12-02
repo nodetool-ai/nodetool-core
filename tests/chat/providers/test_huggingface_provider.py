@@ -132,14 +132,16 @@ Model Management:
 """
 
 import json
-import pytest
 from typing import Any, Dict, List
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import httpx
+import pytest
 from huggingface_hub import AsyncInferenceClient
 
-from nodetool.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.metadata.types import Message, MessageTextContent
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
+
 from .test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -234,13 +236,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 request=MagicMock(),
                 response=MagicMock(status_code=404, text="Model not found"),
             )
-        elif error_type == "context_length":
-            return httpx.HTTPStatusError(
-                message="Request too large",
-                request=MagicMock(),
-                response=MagicMock(status_code=413, text="Context length exceeded"),
-            )
-        elif error_type == "token_limit":
+        elif error_type == "context_length" or error_type == "token_limit":
             return httpx.HTTPStatusError(
                 message="Request too large",
                 request=MagicMock(),
@@ -360,19 +356,22 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
             with patch.object(
                 AsyncInferenceClient, "chat_completion", side_effect=error
-            ):
-                with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
-                    with pytest.raises(Exception) as exc_info:
-                        await provider.generate_message(
-                            self.create_simple_messages(), "test-model"
-                        )
+            ), patch(
+                "nodetool.providers.huggingface_provider.asyncio.sleep"
+            ) as mock_sleep, pytest.raises(
+                Exception
+            ) as exc_info:
+                await provider.generate_message(
+                    self.create_simple_messages(), "test-model"
+                )
 
-                    # Verify the error was raised
-                    assert f"{status_code}" in str(exc_info.value)
+            # Verify the error was raised
+            assert f"{status_code}" in str(exc_info.value)
 
-                    # Verify asyncio.sleep was NOT called (no retries)
-                    assert mock_sleep.call_count == 0, \
-                        f"4xx error {status_code} should not be retried, but sleep was called {mock_sleep.call_count} times"
+            # Verify asyncio.sleep was NOT called (no retries)
+            assert (
+                mock_sleep.call_count == 0
+            ), f"4xx error {status_code} should not be retried, but sleep was called {mock_sleep.call_count} times"
 
     @pytest.mark.asyncio
     async def test_5xx_errors_retried_with_exponential_backoff(self):
@@ -388,24 +387,23 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
         with patch.object(
             AsyncInferenceClient, "chat_completion", side_effect=error
-        ):
-            with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
-                with pytest.raises(Exception) as exc_info:
-                    await provider.generate_message(
-                        self.create_simple_messages(), "test-model"
-                    )
+        ), patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+            with pytest.raises(Exception) as exc_info:
+                await provider.generate_message(
+                    self.create_simple_messages(), "test-model"
+                )
 
-                # Verify the error was raised after all retries
-                assert "500" in str(exc_info.value)
+            # Verify the error was raised after all retries
+            assert "500" in str(exc_info.value)
 
-                # Verify exponential backoff: 3 retries with delays of 1s, 2s, 4s
-                assert mock_sleep.call_count == 3, \
+            # Verify exponential backoff: 3 retries with delays of 1s, 2s, 4s
+            assert mock_sleep.call_count == 3, \
                     f"Expected 3 sleep calls (retries), got {mock_sleep.call_count}"
 
-                # Verify the delays match exponential backoff
-                expected_delays = [1.0, 2.0, 4.0]
-                actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
-                assert actual_delays == expected_delays, \
+            # Verify the delays match exponential backoff
+            expected_delays = [1.0, 2.0, 4.0]
+            actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
+            assert actual_delays == expected_delays, \
                     f"Expected delays {expected_delays}, got {actual_delays}"
 
     @pytest.mark.asyncio
@@ -454,19 +452,18 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
         with patch.object(
             AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion_with_retry
-        ):
-            with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
-                response = await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+        ), patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+            response = await provider.generate_message(
+                self.create_simple_messages(), "test-model"
+            )
 
-                # Verify we got a successful response
-                assert response.role == "assistant"
-                assert response.content == "Success after retry"
+            # Verify we got a successful response
+            assert response.role == "assistant"
+            assert response.content == "Success after retry"
 
-                # Verify sleep was called once (for the first retry)
-                assert mock_sleep.call_count == 1
-                assert mock_sleep.call_args_list[0][0][0] == 1.0
+            # Verify sleep was called once (for the first retry)
+            assert mock_sleep.call_count == 1
+            assert mock_sleep.call_args_list[0][0][0] == 1.0
 
     @pytest.mark.asyncio
     async def test_tgi_server_integration(self):
@@ -555,11 +552,12 @@ class TestHuggingFaceProvider(BaseProviderTest):
         provider = self.create_provider()
 
         # Test model not found
-        with self.mock_error_response("model_not_found"):
-            with pytest.raises(Exception):
-                await provider.generate_message(
-                    self.create_simple_messages(), "nonexistent/model"
-                )
+        with self.mock_error_response("model_not_found"), pytest.raises(
+            httpx.HTTPStatusError
+        ):
+            await provider.generate_message(
+                self.create_simple_messages(), "nonexistent/model"
+            )
 
     @pytest.mark.asyncio
     async def test_custom_stopping_criteria(self):

@@ -1,7 +1,9 @@
-import pytest
 import io
+
 import boto3
+import pytest
 from moto import mock_aws
+
 from nodetool.storage.s3_storage import S3Storage
 
 file_name = "test_asset.jpg"

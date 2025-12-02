@@ -66,16 +66,16 @@ Error Handling:
 - 529: Service overloaded
 """
 
-import pytest
 from typing import Any, Dict, List
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import anthropic
+import pytest
 from anthropic.types import Message as AnthropicMessage
 from anthropic.types import TextBlock, ToolUseBlock, Usage
 
-from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.metadata.types import Message, MessageTextContent
+from nodetool.providers.anthropic_provider import AnthropicProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -91,7 +91,7 @@ class TestAnthropicProvider(BaseProviderTest):
         return "anthropic"
 
     def create_anthropic_message_response(
-        self, content: str = "Hello, world!", tool_uses: List[Dict] = None
+        self, content: str = "Hello, world!", tool_uses: List[Dict] | None = None
     ) -> AnthropicMessage:
         """Create a realistic Anthropic Message response."""
         content_blocks = []

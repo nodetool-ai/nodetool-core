@@ -1,5 +1,7 @@
 from datetime import datetime
+
 import pytest
+
 from nodetool.models.prediction import Prediction
 
 
@@ -26,7 +28,7 @@ async def test_prediction_find(user_id: str):
 
 @pytest.mark.asyncio
 async def test_paginate_predictions(user_id: str):
-    for i in range(5):
+    for _i in range(5):
         await Prediction.create(
             user_id=user_id,
             node_id="test_node",
@@ -34,16 +36,16 @@ async def test_paginate_predictions(user_id: str):
             model="test_model",
         )
 
-    predictions, last_key = await Prediction.paginate(user_id=user_id, limit=3)
+    predictions, _last_key = await Prediction.paginate(user_id=user_id, limit=3)
     assert len(predictions) > 0
 
-    predictions, last_key = await Prediction.paginate(user_id=user_id, limit=3)
+    predictions, _last_key = await Prediction.paginate(user_id=user_id, limit=3)
     assert len(predictions) > 0
 
 
 @pytest.mark.asyncio
 async def test_paginate_predictions_by_workflow(user_id: str):
-    for i in range(5):
+    for _i in range(5):
         await Prediction.create(
             user_id=user_id,
             workflow_id="test_workflow",

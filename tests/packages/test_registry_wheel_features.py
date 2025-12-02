@@ -2,12 +2,13 @@
 Tests for wheel-based package installation features in the Registry class.
 """
 
-import pytest
-from unittest.mock import patch, Mock
 import subprocess
+from unittest.mock import Mock, patch
+
+import pytest
 import requests
 
-from nodetool.packages.registry import Registry, PACKAGE_INDEX_URL
+from nodetool.packages.registry import PACKAGE_INDEX_URL, Registry
 
 
 @pytest.fixture

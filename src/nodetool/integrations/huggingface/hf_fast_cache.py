@@ -293,7 +293,7 @@ class HfFastCache:
         repo_id: str,
         repo_type: Optional[str],
         create_if_missing: bool = True,
-    ) -> Optional["_RepoState"]:
+    ) -> Optional[_RepoState]:
         """Load or refresh cached state for a repo.
 
         This method is responsible for creating and maintaining the in-memory
@@ -337,9 +337,9 @@ class HfFastCache:
                 self._repos[key] = state
                 return state
 
-            return None if not create_if_missing else None
+            return None
 
-    async def _maybe_refresh_state(self, state: "_RepoState") -> None:
+    async def _maybe_refresh_state(self, state: _RepoState) -> None:
         """Refresh a repo state if refs or snapshot mtimes changed."""
         refs_mtime_now, commit_now = await _read_current_ref_async(state.repo_dir)
         snapshot_dir_now = await _snapshot_dir_for_commit_async(state.repo_dir, commit_now)
@@ -371,7 +371,7 @@ class HfFastCache:
             state.file_index = None
             state.snapshot_file_count = None
 
-    async def _populate_initial_state(self, state: "_RepoState") -> None:
+    async def _populate_initial_state(self, state: _RepoState) -> None:
         """Populate repo state from refs and snapshots on first discovery."""
         refs_mtime, commit = await _read_current_ref_async(state.repo_dir)
         state.commit = commit
@@ -523,7 +523,7 @@ async def _pick_latest_snapshot_async(repo_dir: Path) -> Optional[Path]:
 async def _read_first_line_async(path: Path) -> Optional[str]:
     """Read and return the first line of a text file."""
     try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as handle:
+        async with aiofiles.open(path, encoding="utf-8") as handle:
             line = await handle.readline()
         stripped = line.strip()
         return stripped or None

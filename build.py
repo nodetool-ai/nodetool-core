@@ -75,7 +75,9 @@ def _read_pyproject_version(pyproject_path: Path = Path("pyproject.toml")) -> st
     try:
         return str(data["project"]["version"])  # raises if missing
     except Exception as e:
-        raise SystemExit(f"Failed to read project.version from pyproject.toml: {e}")
+        raise SystemExit(
+            f"Failed to read project.version from pyproject.toml: {e}"
+        ) from e
 
 
 def _generate_sidecar(wheel_path: Path) -> Path:
@@ -182,8 +184,8 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     server_url: str = args.server_url
     registry_repo: str = args.registry_repo
 
-    import urllib.request as _req
     import urllib.error as _err
+    import urllib.request as _req
 
     token = os.getenv("REGISTRY_UPDATE_TOKEN") or os.getenv("GITHUB_TOKEN")
     if not token:
@@ -205,7 +207,7 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     req.add_header("Authorization", f"token {token}")
     req.add_header("Accept", "application/vnd.github.v3+json")
     try:
-        with _req.urlopen(req) as resp:  # noqa: S310
+        with _req.urlopen(req) as resp:
             _echo(f"📨 Registry notified (status {resp.status})")
     except _err.HTTPError as e:
         _echo(f"⚠️ Failed to notify registry (non-fatal): {e}")

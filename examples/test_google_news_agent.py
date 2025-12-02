@@ -14,16 +14,17 @@ This example shows how to:
 
 import asyncio
 import json
-from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
-from nodetool.agents.tools import GoogleNewsTool
-from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
-from nodetool.runtime.resources import ResourceScope
 
 import dotenv
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import GoogleNewsTool
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 dotenv.load_dotenv()
 

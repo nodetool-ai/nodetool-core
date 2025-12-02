@@ -17,13 +17,13 @@ import json
 from pathlib import Path
 
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
-from nodetool.runtime.resources import ResourceScope
 
 # Objective designed to trigger batch processing
 objective = """
@@ -161,7 +161,7 @@ async def test_task_planner_batch_processing(
             print(f"   - {bf.name} ({size:,} bytes)")
 
             # Count entries in JSONL
-            with open(bf, "r") as f:
+            with open(bf) as f:
                 entries = sum(1 for _ in f)
             print(f"     Entries: {entries}")
 
@@ -178,7 +178,7 @@ async def test_task_planner_batch_processing(
                     print(f"   Trends found: {len(result_data['trends'])}")
                 if "articles" in result_data:
                     print(f"   Articles collected: {len(result_data['articles'])}")
-        except Exception:  # noqa: S110
+        except Exception:
             # If not JSON, show text preview
             print(f"   {final_results[:200]}...")
 

@@ -16,13 +16,15 @@ This example shows how to:
 """
 
 import asyncio
+
+from nodetool.agents.tools.git_tools import GitCheckoutTool, GitCommitTool
+
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.git_tools import GitCommitTool, GitCheckoutTool
 from nodetool.providers.base import BaseProvider
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.runtime.resources import ResourceScope
 
 
 async def test_git_agent(
@@ -55,7 +57,7 @@ async def test_git_agent(
     print("Objective: Analyze git status and propose a dry-run commit for all changes.")
     print("-" * 50)
 
-    async for item in agent.execute(context):
+    async for _item in agent.execute(context):
         pass
 
     print("\n" + "=" * 50)

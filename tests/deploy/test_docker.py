@@ -2,24 +2,24 @@
 Unit tests for Docker utilities.
 """
 
-import pytest
-import subprocess
-import json
 import base64
-from unittest.mock import patch, MagicMock, mock_open
+import json
+import subprocess
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
 
 from nodetool.deploy.docker import (
-    run_command,
+    build_docker_image,
     check_docker_auth,
     ensure_docker_auth,
     format_image_name,
     generate_image_tag,
-    build_docker_image,
-    push_to_registry,
     get_docker_username_from_config,
+    push_to_registry,
+    run_command,
     run_docker_image,
 )
-
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -57,26 +57,24 @@ class TestRunCommand:
 
     def test_run_command_failure_no_capture(self):
         """Test command failure without capture."""
-        with patch("subprocess.Popen") as mock_popen:
-            with patch("sys.exit") as mock_exit:
-                mock_process = MagicMock()
-                mock_process.stdout = iter([])
-                mock_process.wait.return_value = 1
-                mock_popen.return_value = mock_process
+        with patch("subprocess.Popen") as mock_popen, patch("sys.exit") as mock_exit:
+            mock_process = MagicMock()
+            mock_process.stdout = iter([])
+            mock_process.wait.return_value = 1
+            mock_popen.return_value = mock_process
 
-                run_command("false", capture_output=False)
+            run_command("false", capture_output=False)
 
-                mock_exit.assert_called_once_with(1)
+            mock_exit.assert_called_once_with(1)
 
     def test_run_command_failure_with_capture(self):
         """Test command failure with capture."""
-        with patch("subprocess.run") as mock_run:
-            with patch("sys.exit") as mock_exit:
-                mock_run.side_effect = subprocess.CalledProcessError(1, "false")
+        with patch("subprocess.run") as mock_run, patch("sys.exit") as mock_exit:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "false")
 
-                run_command("false", capture_output=True)
+            run_command("false", capture_output=True)
 
-                mock_exit.assert_called_once_with(1)
+            mock_exit.assert_called_once_with(1)
 
     def test_run_command_with_stderr(self):
         """Test command with stderr output."""
@@ -157,59 +155,58 @@ class TestEnsureDockerAuth:
 
     def test_ensure_docker_auth_user_agrees(self):
         """Test when user agrees to login."""
-        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check:
-            with patch("builtins.input") as mock_input:
-                with patch("subprocess.run") as mock_run:
-                    mock_check.return_value = False
-                    mock_input.return_value = "y"
-                    mock_run.return_value = MagicMock(returncode=0)
+        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check, patch(
+            "builtins.input"
+        ) as mock_input, patch("subprocess.run") as mock_run:
+            mock_check.return_value = False
+            mock_input.return_value = "y"
+            mock_run.return_value = MagicMock(returncode=0)
 
-                    ensure_docker_auth("docker.io")
+            ensure_docker_auth("docker.io")
 
-                    mock_run.assert_called_once_with(["docker", "login"], check=True)
+            mock_run.assert_called_once_with(["docker", "login"], check=True)
 
     def test_ensure_docker_auth_user_agrees_custom_registry(self):
         """Test login with custom registry."""
-        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check:
-            with patch("builtins.input") as mock_input:
-                with patch("subprocess.run") as mock_run:
-                    mock_check.return_value = False
-                    mock_input.return_value = "yes"
-                    mock_run.return_value = MagicMock(returncode=0)
+        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check, patch(
+            "builtins.input"
+        ) as mock_input, patch("subprocess.run") as mock_run:
+            mock_check.return_value = False
+            mock_input.return_value = "yes"
+            mock_run.return_value = MagicMock(returncode=0)
 
-                    ensure_docker_auth("ghcr.io")
+            ensure_docker_auth("ghcr.io")
 
-                    mock_run.assert_called_once_with(
-                        ["docker", "login", "ghcr.io"], check=True
-                    )
+            mock_run.assert_called_once_with(
+                ["docker", "login", "ghcr.io"], check=True
+            )
 
     def test_ensure_docker_auth_user_declines(self):
         """Test when user declines to login."""
-        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check:
-            with patch("builtins.input") as mock_input:
-                with patch("sys.exit") as mock_exit:
-                    mock_check.return_value = False
-                    mock_input.return_value = "n"
+        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check, patch(
+            "builtins.input"
+        ) as mock_input, patch("sys.exit") as mock_exit:
+            mock_check.return_value = False
+            mock_input.return_value = "n"
 
-                    ensure_docker_auth("docker.io")
+            ensure_docker_auth("docker.io")
 
-                    mock_exit.assert_called_once_with(1)
+            mock_exit.assert_called_once_with(1)
 
     def test_ensure_docker_auth_login_fails(self):
         """Test when login command fails."""
-        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check:
-            with patch("builtins.input") as mock_input:
-                with patch("subprocess.run") as mock_run:
-                    with patch("sys.exit") as mock_exit:
-                        mock_check.return_value = False
-                        mock_input.return_value = "y"
-                        mock_run.side_effect = subprocess.CalledProcessError(
-                            1, "docker login"
-                        )
+        with patch("nodetool.deploy.docker.check_docker_auth") as mock_check, patch(
+            "builtins.input"
+        ) as mock_input, patch("subprocess.run") as mock_run, patch(
+            "sys.exit"
+        ) as mock_exit:
+            mock_check.return_value = False
+            mock_input.return_value = "y"
+            mock_run.side_effect = subprocess.CalledProcessError(1, "docker login")
 
-                        ensure_docker_auth("docker.io")
+            ensure_docker_auth("docker.io")
 
-                        mock_exit.assert_called_once_with(1)
+            mock_exit.assert_called_once_with(1)
 
 
 class TestFormatImageName:
@@ -241,18 +238,17 @@ class TestGenerateImageTag:
 
     def test_generate_image_tag_format(self):
         """Test tag format."""
-        with patch("time.strftime") as mock_strftime:
-            with patch("hashlib.md5") as mock_md5:
-                mock_strftime.return_value = "20231215-143052"
-                mock_hash = MagicMock()
-                mock_hash.hexdigest.return_value = "a7b9c3def123"
-                mock_md5.return_value = mock_hash
+        with patch("time.strftime") as mock_strftime, patch("hashlib.md5") as mock_md5:
+            mock_strftime.return_value = "20231215-143052"
+            mock_hash = MagicMock()
+            mock_hash.hexdigest.return_value = "a7b9c3def123"
+            mock_md5.return_value = mock_hash
 
-                tag = generate_image_tag()
+            tag = generate_image_tag()
 
-                # Should have format: timestamp-hash
-                assert tag.startswith("20231215-143052-")
-                assert len(tag.split("-")) == 3
+            # Should have format: timestamp-hash
+            assert tag.startswith("20231215-143052-")
+            assert len(tag.split("-")) == 3
 
     def test_generate_image_tag_uniqueness(self):
         """Test that tags are unique."""
@@ -275,146 +271,168 @@ class TestBuildDockerImage:
     @pytest.fixture
     def mock_build_env(self):
         """Set up mock environment for build tests."""
-        with patch("os.path.dirname") as mock_dirname:
-            with patch("os.path.abspath") as mock_abspath:
-                with patch("os.path.join") as mock_join:
-                    with patch("tempfile.mkdtemp") as mock_mkdtemp:
-                        with patch("shutil.copy") as mock_copy:
-                            with patch("shutil.rmtree") as mock_rmtree:
-                                with patch("os.chdir"):
-                                    with patch("os.getcwd"):
-                                        mock_dirname.return_value = "/mock/deploy"
-                                        mock_abspath.return_value = (
-                                            "/mock/deploy/docker.py"
-                                        )
-                                        mock_join.side_effect = lambda *args: "/".join(
-                                            args
-                                        )
-                                        mock_mkdtemp.return_value = "/tmp/build_dir"
+        with (
+            patch("os.path.dirname") as mock_dirname,
+            patch("os.path.abspath") as mock_abspath,
+            patch("os.path.join") as mock_join,
+            patch("tempfile.mkdtemp") as mock_mkdtemp,
+            patch("shutil.copy") as mock_copy,
+            patch("shutil.rmtree") as mock_rmtree,
+            patch("os.chdir"),
+            patch("os.getcwd"),
+        ):
+            mock_dirname.return_value = "/mock/deploy"
+            mock_abspath.return_value = "/mock/deploy/docker.py"
+            mock_join.side_effect = lambda *args: "/".join(args)
+            mock_mkdtemp.return_value = "/tmp/build_dir"
 
-                                        yield {
-                                            "dirname": mock_dirname,
-                                            "abspath": mock_abspath,
-                                            "join": mock_join,
-                                            "mkdtemp": mock_mkdtemp,
-                                            "copy": mock_copy,
-                                            "rmtree": mock_rmtree,
-                                        }
+            yield {
+                "dirname": mock_dirname,
+                "abspath": mock_abspath,
+                "join": mock_join,
+                "mkdtemp": mock_mkdtemp,
+                "copy": mock_copy,
+                "rmtree": mock_rmtree,
+            }
 
     def test_build_docker_image_without_cache(self, mock_build_env):
         """Test building without cache optimization."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
 
-                result = build_docker_image(
-                    "myuser/myimage",
-                    "latest",
-                    use_cache=False,
-                    auto_push=False,
-                )
+            result = build_docker_image(
+                "myuser/myimage",
+                "latest",
+                use_cache=False,
+                auto_push=False,
+            )
 
-                # Should build without cache
-                assert result is False
-                # Should call docker build
-                assert any(
-                    "docker build" in str(call_args)
-                    for call_args in mock_run.call_args_list
-                )
+            # Should build without cache
+            assert result is False
+            # Should call docker build
+            assert any(
+                "docker build" in str(call_args) for call_args in mock_run.call_args_list
+            )
 
     def test_build_docker_image_with_cache_and_push(self, mock_build_env):
         """Test building with cache and auto-push."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
 
-                result = build_docker_image(
-                    "myuser/myimage",
-                    "latest",
-                    use_cache=True,
-                    auto_push=True,
-                )
+            result = build_docker_image(
+                "myuser/myimage",
+                "latest",
+                use_cache=True,
+                auto_push=True,
+            )
 
-                # Should push during build
-                assert result is True
-                # Should use buildx
-                assert any(
-                    "buildx" in str(call_args) for call_args in mock_run.call_args_list
-                )
+            # Should push during build
+            assert result is True
+            # Should use buildx
+            assert any(
+                "buildx" in str(call_args) for call_args in mock_run.call_args_list
+            )
 
     def test_build_docker_image_with_cache_fallback(self, mock_build_env):
         """Test cache build with fallback to non-cache."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
 
-                # First buildx call fails, second succeeds
-                mock_run.side_effect = [
-                    None,  # buildx create
-                    subprocess.CalledProcessError(1, "buildx"),  # cache build fails
-                    None,  # fallback build succeeds
-                ]
+            # First buildx call fails, second succeeds
+            mock_run.side_effect = [
+                None,  # buildx create
+                subprocess.CalledProcessError(1, "buildx"),  # cache build fails
+                None,  # fallback build succeeds
+            ]
 
-                result = build_docker_image(
-                    "myuser/myimage",
-                    "latest",
-                    use_cache=True,
-                    auto_push=True,
-                )
+            result = build_docker_image(
+                "myuser/myimage",
+                "latest",
+                use_cache=True,
+                auto_push=True,
+            )
 
-                # Should still succeed via fallback
-                assert result is True
-                assert mock_run.call_count == 3
+            # Should still succeed via fallback
+            assert result is True
+            assert mock_run.call_count == 3
 
     def test_build_docker_image_custom_platform(self, mock_build_env):
         """Test building with custom platform."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
 
-                build_docker_image(
-                    "myuser/myimage",
-                    "latest",
-                    platform="linux/arm64",
-                    use_cache=False,
-                    auto_push=False,
-                )
+            build_docker_image(
+                "myuser/myimage",
+                "latest",
+                platform="linux/arm64",
+                use_cache=False,
+                auto_push=False,
+            )
 
-                # Should include custom platform
-                assert any(
-                    "linux/arm64" in str(call_args)
-                    for call_args in mock_run.call_args_list
-                )
+            # Should include custom platform
+            assert any(
+                "linux/arm64" in str(call_args) for call_args in mock_run.call_args_list
+            )
 
     def test_build_docker_image_with_nodetool_packages(self, mock_build_env):
         """Test building with nodetool packages installed."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                with patch(
-                    "builtins.open", mock_open(read_data='FROM ubuntu\nCMD ["bash"]')
-                ):
-                    # Mock a nodetool package
-                    mock_dist = MagicMock()
-                    mock_dist.metadata.get.return_value = "nodetool-base"
-                    mock_dist.files = []
-                    mock_dists.return_value = [mock_dist]
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists, patch(
+            "builtins.open", mock_open(read_data='FROM ubuntu\nCMD ["bash"]')
+        ):
+            # Mock a nodetool package
+            mock_dist = MagicMock()
+            mock_dist.metadata.get.return_value = "nodetool-base"
+            mock_dist.files = []
+            mock_dists.return_value = [mock_dist]
 
-                    build_docker_image(
-                        "myuser/myimage",
-                        "latest",
-                        use_cache=False,
-                        auto_push=False,
-                    )
+            build_docker_image(
+                "myuser/myimage",
+                "latest",
+                use_cache=False,
+                auto_push=False,
+            )
 
-                    # Should inject package installation
-                    mock_run.assert_called()
+            # Should inject package installation
+            mock_run.assert_called()
 
     def test_build_docker_image_cleanup(self, mock_build_env):
         """Test that build directory is cleaned up."""
-        with patch("nodetool.deploy.docker.run_command"):
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
+        with patch("nodetool.deploy.docker.run_command"), patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
 
+            build_docker_image(
+                "myuser/myimage",
+                "latest",
+                use_cache=False,
+                auto_push=False,
+            )
+
+            # Should clean up temp directory
+            mock_build_env["rmtree"].assert_called_once_with(
+                "/tmp/build_dir", ignore_errors=True
+            )
+
+    def test_build_docker_image_cleanup_on_error(self, mock_build_env):
+        """Test that build directory is cleaned up even on error."""
+        with patch("nodetool.deploy.docker.run_command") as mock_run, patch(
+            "importlib.metadata.distributions"
+        ) as mock_dists:
+            mock_dists.return_value = []
+            mock_run.side_effect = Exception("Build failed")
+
+            with pytest.raises(Exception, match="Build failed"):
                 build_docker_image(
                     "myuser/myimage",
                     "latest",
@@ -422,30 +440,10 @@ class TestBuildDockerImage:
                     auto_push=False,
                 )
 
-                # Should clean up temp directory
-                mock_build_env["rmtree"].assert_called_once_with(
-                    "/tmp/build_dir", ignore_errors=True
-                )
-
-    def test_build_docker_image_cleanup_on_error(self, mock_build_env):
-        """Test that build directory is cleaned up even on error."""
-        with patch("nodetool.deploy.docker.run_command") as mock_run:
-            with patch("importlib.metadata.distributions") as mock_dists:
-                mock_dists.return_value = []
-                mock_run.side_effect = Exception("Build failed")
-
-                with pytest.raises(Exception, match="Build failed"):
-                    build_docker_image(
-                        "myuser/myimage",
-                        "latest",
-                        use_cache=False,
-                        auto_push=False,
-                    )
-
-                # Should still clean up temp directory
-                mock_build_env["rmtree"].assert_called_once_with(
-                    "/tmp/build_dir", ignore_errors=True
-                )
+            # Should still clean up temp directory
+            mock_build_env["rmtree"].assert_called_once_with(
+                "/tmp/build_dir", ignore_errors=True
+            )
 
 
 class TestPushToRegistry:
@@ -453,33 +451,33 @@ class TestPushToRegistry:
 
     def test_push_to_registry_success(self):
         """Test successful push."""
-        with patch("nodetool.deploy.docker.ensure_docker_auth") as mock_auth:
-            with patch("nodetool.deploy.docker.run_command") as mock_run:
-                push_to_registry("myuser/myimage", "latest")
+        with patch(
+            "nodetool.deploy.docker.ensure_docker_auth"
+        ) as mock_auth, patch("nodetool.deploy.docker.run_command") as mock_run:
+            push_to_registry("myuser/myimage", "latest")
 
-                mock_auth.assert_called_once_with("docker.io")
-                mock_run.assert_called_once_with("docker push myuser/myimage:latest")
+            mock_auth.assert_called_once_with("docker.io")
+            mock_run.assert_called_once_with("docker push myuser/myimage:latest")
 
     def test_push_to_registry_custom_registry(self):
         """Test push to custom registry."""
-        with patch("nodetool.deploy.docker.ensure_docker_auth") as mock_auth:
-            with patch("nodetool.deploy.docker.run_command"):
-                push_to_registry("ghcr.io/myuser/myimage", "v1.0", "ghcr.io")
+        with patch(
+            "nodetool.deploy.docker.ensure_docker_auth"
+        ) as mock_auth, patch("nodetool.deploy.docker.run_command"):
+            push_to_registry("ghcr.io/myuser/myimage", "v1.0", "ghcr.io")
 
-                mock_auth.assert_called_once_with("ghcr.io")
+            mock_auth.assert_called_once_with("ghcr.io")
 
     def test_push_to_registry_failure(self):
         """Test failed push."""
-        with patch("nodetool.deploy.docker.ensure_docker_auth"):
-            with patch("nodetool.deploy.docker.run_command") as mock_run:
-                with patch("sys.exit") as mock_exit:
-                    mock_run.side_effect = subprocess.CalledProcessError(
-                        1, "docker push"
-                    )
+        with patch("nodetool.deploy.docker.ensure_docker_auth"), patch(
+            "nodetool.deploy.docker.run_command"
+        ) as mock_run, patch("sys.exit") as mock_exit:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "docker push")
 
-                    push_to_registry("myuser/myimage", "latest")
+            push_to_registry("myuser/myimage", "latest")
 
-                    mock_exit.assert_called_once_with(1)
+            mock_exit.assert_called_once_with(1)
 
 
 class TestGetDockerUsernameFromConfig:

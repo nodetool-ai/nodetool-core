@@ -12,7 +12,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     from safetensors import safe_open  # type: ignore
@@ -21,7 +21,7 @@ except Exception as exc:  # pragma: no cover
         "safetensors is required. Install with `pip install safetensors`."
     ) from exc
 
-PathLike = Union[str, os.PathLike]
+PathLike = str | os.PathLike
 
 
 @dataclass
@@ -36,7 +36,7 @@ class DetectionResult:
 
 
 def detect_model(
-    src: Union[PathLike, Sequence[PathLike]],
+    src: PathLike | Sequence[PathLike],
     *,
     framework: str = "pt",
     max_shape_reads: int = 8,
@@ -94,11 +94,8 @@ class _Index:
     key_to_file: Dict[str, Path]
 
 
-def _normalize_inputs(src: Union[PathLike, Sequence[PathLike]]) -> List[Path]:
-    if isinstance(src, (str, os.PathLike)):
-        paths = [Path(src)]
-    else:
-        paths = [Path(p) for p in src]
+def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
+    paths = [Path(src)] if isinstance(src, (str, os.PathLike)) else [Path(p) for p in src]
 
     out: List[Path] = []
     for path in paths:
@@ -326,7 +323,7 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
             family="sd-or-sdxl-unknown",
             component=component,
             confidence=0.40,
-            evidence=evidence + ["UNet present but patterns were insufficient to decide"],
+            evidence=[*evidence, "UNet present but patterns were insufficient to decide"],
         )
 
     if component == "vae":
@@ -375,7 +372,6 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
 
 def _classify_llm(index: _Index) -> DetectionResult:
     keys = list(index.key_to_file.keys())
-    evidence: List[str] = []
 
     if _has_regex(keys, r"^gpt_neox\.layers\.\d+\.attention\.query_key_value\.weight$"):
         return DetectionResult(

@@ -7,15 +7,15 @@ from nodetool.agents.graph_planner import (
     GraphPlanner,
     print_visual_graph,
 )
+
+# Set up logging
+from nodetool.config.logging_config import get_logger
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
-from nodetool.runtime.resources import ResourceScope
-
-# Set up logging
-from nodetool.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 

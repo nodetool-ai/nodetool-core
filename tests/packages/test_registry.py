@@ -1,11 +1,14 @@
-import pytest
-from unittest.mock import MagicMock, patch
 import logging
+from unittest.mock import MagicMock, patch
 
-from nodetool.packages.registry import Registry
-from nodetool.types.workflow import Workflow
-from nodetool.types.graph import Graph as APIGraph, Node as APINode, Edge as APIEdge
+import pytest
+
 from nodetool.metadata.node_metadata import ExampleMetadata, PackageModel
+from nodetool.packages.registry import Registry
+from nodetool.types.graph import Edge as APIEdge
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.graph import Node as APINode
+from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode
 
 
@@ -564,7 +567,7 @@ class TestRegistryWheelIntegration:
         assert hasattr(registry, "clear_index_cache")
 
         # Check that methods are callable
-        assert callable(getattr(registry, "check_package_index_available"))
-        assert callable(getattr(registry, "get_install_command_for_package"))
-        assert callable(getattr(registry, "get_package_installation_info"))
-        assert callable(getattr(registry, "clear_index_cache"))
+        assert callable(registry.check_package_index_available)
+        assert callable(registry.get_install_command_for_package)
+        assert callable(registry.get_package_installation_info)
+        assert callable(registry.clear_index_cache)

@@ -16,15 +16,16 @@ This example shows how to:
 import asyncio
 import json
 from pathlib import Path
+
 from rich.console import Console
 
+from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
 from nodetool.metadata.types import SubTask, Task
+from nodetool.providers.openai_provider import OpenAIProvider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
-from nodetool.providers.openai_provider import OpenAIProvider
-from nodetool.agents.sub_task_context import SubTaskContext
-from nodetool.runtime.resources import ResourceScope
 
 # Create a console for rich output
 console = Console()
@@ -107,7 +108,7 @@ async def run_web_search_example():
     # Check if output file was created
     output_path = Path(workspace_dir) / subtask.output_file
     if output_path.exists():
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             result = json.load(f)
         console.print("\n[bold green]SubTask Execution Successful![/bold green]")
         console.print("\n[bold]Output File Content:[/bold]")

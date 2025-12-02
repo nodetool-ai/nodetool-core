@@ -3,18 +3,18 @@ Tests for Docker-based job execution.
 """
 
 import asyncio
-import docker
-import docker.errors
 import subprocess
 
+import docker.errors
 import pytest
 
+import docker
 from nodetool.models.job import Job
+from nodetool.types.graph import Edge, Graph, Node
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import PreviewUpdate
-from nodetool.types.graph import Graph, Node, Edge
 
 
 def check_docker_available() -> bool:

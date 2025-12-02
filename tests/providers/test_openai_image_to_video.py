@@ -6,13 +6,14 @@ for OpenAI's image-to-video generation.
 """
 
 import io
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from PIL import Image
 
+from nodetool.metadata.types import Provider, VideoModel
 from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.providers.types import ImageToVideoParams
-from nodetool.metadata.types import VideoModel, Provider
 
 
 class TestOpenAIImageToVideoDimensions:

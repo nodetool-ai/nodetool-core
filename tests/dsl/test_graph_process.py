@@ -1,6 +1,6 @@
 import pytest
 
-from nodetool.dsl.graph import run_graph, graph_result
+from nodetool.dsl.graph import graph_result, run_graph
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import AssetOutputMode
 from nodetool.workflows.types import OutputUpdate

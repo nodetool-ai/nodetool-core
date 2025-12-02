@@ -27,13 +27,15 @@ from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable, List, Sequence
-from nodetool.integrations.huggingface.async_downloader import async_hf_download
+
 from huggingface_hub import HfApi, ModelInfo
+
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.artifact_inspector import (
     ArtifactDetection,
     inspect_paths,
 )
+from nodetool.integrations.huggingface.async_downloader import async_hf_download
 from nodetool.integrations.huggingface.hf_fast_cache import (
     DEFAULT_MODEL_INFO_CACHE_TTL,
     HfFastCache,
@@ -481,9 +483,7 @@ def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
     if has_model_index(model_info):
         return True
     library_name = getattr(model_info, "library_name", None)
-    if library_name and str(library_name).lower() in ("diffusers", "transformers"):
-        return True
-    return False
+    return bool(library_name and str(library_name).lower() in ("diffusers", "transformers"))
 
 
 def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
@@ -1495,11 +1495,7 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
             model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
         )
         if model_type_lower in target_types or model_type_base == normalized_type:
-            if normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"} and (
-                _is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower)
-            ):
-                return False
-            return True
+            return not (normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"} and (_is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower)))
 
         if model_type_lower not in GENERIC_HF_TYPES:
             qwen_family_types = {"hf.qwen_image", "hf.qwen_image_checkpoint"}
@@ -1534,10 +1530,7 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
             return True
 
     derived_pipeline = _derive_pipeline_tag(normalized_type)
-    if derived_pipeline and model.pipeline_tag == derived_pipeline:
-        return True
-
-    return False
+    return bool(derived_pipeline and model.pipeline_tag == derived_pipeline)
 
 
 async def get_models_by_hf_type(model_type: str, task: str | None = None) -> list[UnifiedModel]:
@@ -2022,15 +2015,16 @@ async def get_gguf_language_models_from_authors(
             continue
         sibs = info.siblings or []
         for sib in sibs:
+            fname = getattr(sib, "rfilename", None)
             if not isinstance(fname, str) or not fname.lower().endswith(".gguf"):
                 continue
-            
+
             # Use (repo_id, filename) as unique key to allow same filename in different repos
             unique_key = (info.id, fname)
             if unique_key in seen_file:
                 continue
             seen_file.add(unique_key)
-            
+
             tasks.append(
                 (
                     HuggingFaceModel(type="llama_cpp", repo_id=info.id, path=fname),

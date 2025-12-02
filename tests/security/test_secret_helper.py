@@ -3,14 +3,16 @@ Tests for secret helper functions.
 """
 
 import os
+
 import pytest
+
+from nodetool.models.secret import Secret
 from nodetool.security.secret_helper import (
     get_secret,
     get_secret_required,
     get_secret_sync,
     has_secret,
 )
-from nodetool.models.secret import Secret
 
 
 @pytest.mark.asyncio
@@ -81,7 +83,7 @@ class TestSecretHelper:
 
     async def test_get_secret_required_not_found(self):
         """Test get_secret_required raises exception when not found."""
-        with pytest.raises(ValueError, match="Required secret.*not found"):
+        with pytest.raises(ValueError, match=r"Required secret.*not found"):
             await get_secret_required("NONEXISTENT_REQUIRED", "test_user")
 
     def test_get_secret_sync_from_env(self):

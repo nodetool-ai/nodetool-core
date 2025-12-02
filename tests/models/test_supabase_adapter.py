@@ -1,18 +1,18 @@
-import pytest
-from types import SimpleNamespace
 from datetime import datetime
 from enum import Enum
+from types import SimpleNamespace
 from typing import Dict, List, Optional
 from unittest.mock import patch
 
-from nodetool.models.base_model import DBModel, DBField
+import pytest
+
+from nodetool.models.base_model import DBField, DBModel
 from nodetool.models.condition_builder import Field
 from nodetool.models.supabase_adapter import (
     SupabaseAdapter,
-    convert_to_supabase_format,
     convert_from_supabase_format,
+    convert_to_supabase_format,
 )
-
 
 # Skip global DB setup/teardown from tests/conftest.py for this module
 pytestmark = pytest.mark.no_setup

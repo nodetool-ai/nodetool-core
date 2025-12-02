@@ -146,14 +146,13 @@ async def _put_file(storage, key: str, request: Request):
     Common logic for uploading/updating files.
     """
     safe_key = validate_key(key)
-    buffer = SpooledTemporaryFile(max_size=10 * 1024 * 1024)  # spools to disk if large
-    try:
+    with SpooledTemporaryFile(
+        max_size=10 * 1024 * 1024
+    ) as buffer:  # spools to disk if large
         async for chunk in request.stream():
             buffer.write(chunk)
         buffer.seek(0)
         await storage.upload(safe_key, buffer)
-    finally:
-        buffer.close()
 
     # return the same xml response as aws s3 upload_fileobj
     return Response(status_code=200, content=b"")

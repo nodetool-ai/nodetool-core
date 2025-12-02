@@ -1,11 +1,12 @@
-import unittest
-from unittest.mock import MagicMock, patch
-from pathlib import Path
-import tempfile
-import shutil
 import os
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from nodetool.integrations.huggingface import progress_download
+
 
 class TestProgressDownload(unittest.TestCase):
 
@@ -22,9 +23,9 @@ class TestProgressDownload(unittest.TestCase):
         headers = {}
         expected_size = 100
         filename = "file"
-        
+
         callback = MagicMock()
-        
+
         # Execute
         progress_download._download_to_tmp_and_move_with_progress(
             incomplete_path=incomplete_path,
@@ -39,18 +40,18 @@ class TestProgressDownload(unittest.TestCase):
             xet_file_data=None,
             progress_callback=callback
         )
-        
+
         # Verify http_get called with correct args including _tqdm_bar
         mock_http_get.assert_called_once()
         call_kwargs = mock_http_get.call_args[1]
         self.assertEqual(call_kwargs['url'], url)
         self.assertIn('_tqdm_bar', call_kwargs)
-        
+
         # Verify callback wrapper logic
         # _tqdm_bar is the class
         TqdmClass = call_kwargs['_tqdm_bar']
         self.assertEqual(TqdmClass, progress_download._CallbackTqdm)
-        
+
         # Instantiate and update
         # We need to simulate the thread local context
         progress_download._thread_local.progress_callback = callback
@@ -59,7 +60,7 @@ class TestProgressDownload(unittest.TestCase):
             tqdm_instance.update(10)
         finally:
             del progress_download._thread_local.progress_callback
-        
+
         callback.assert_called_with(10, expected_size)
 
     @patch('nodetool.integrations.huggingface.progress_download._fd.xet_get')
@@ -68,10 +69,10 @@ class TestProgressDownload(unittest.TestCase):
         # Setup
         incomplete_path = Path(self.test_dir) / "incomplete"
         destination_path = Path(self.test_dir) / "dest"
-        
+
         callback = MagicMock()
         xet_data = {'some': 'data'}
-        
+
         # Execute
         progress_download._download_to_tmp_and_move_with_progress(
             incomplete_path=incomplete_path,
@@ -86,7 +87,7 @@ class TestProgressDownload(unittest.TestCase):
             xet_file_data=xet_data,
             progress_callback=callback
         )
-        
+
         # Verify xet_get called
         mock_xet_get.assert_called_once()
         call_kwargs = mock_xet_get.call_args[1]
@@ -100,7 +101,7 @@ class TestProgressDownload(unittest.TestCase):
             filename="file",
             progress_callback=None
         )
-        
+
         # Verify original function called
         mock_orig_download.assert_called_once()
 
@@ -113,7 +114,7 @@ class TestProgressDownload(unittest.TestCase):
             filename="file",
             progress_callback=callback
         )
-        
+
         # Verify custom cache download called
         mock_download_cache.assert_called_once()
         self.assertEqual(mock_download_cache.call_args[1]['progress_callback'], callback)
@@ -128,22 +129,22 @@ class TestProgressDownload(unittest.TestCase):
             local_dir="/tmp/local",
             progress_callback=callback
         )
-        
+
         # Verify custom local download called
         mock_download_local.assert_called_once()
         self.assertEqual(mock_download_local.call_args[1]['progress_callback'], callback)
 
     def test_callback_tqdm_initial(self):
         # Test that initial bytes are reported
-        callback = MagicMock()
-        
+        MagicMock()
+
         # Simulate the inner class usage
-        # We need to access the class defined inside the function, but for unit testing 
+        # We need to access the class defined inside the function, but for unit testing
         # we can just replicate the logic or extract it if we wanted to be strict.
         # Since it's an inner class, we can't import it directly.
-        # However, we tested the logic in test_download_to_tmp_and_move_with_progress_http 
+        # However, we tested the logic in test_download_to_tmp_and_move_with_progress_http
         # by instantiating the class passed to http_get.
-        
+
         # Let's verify the specific initial logic via a mock injection test
         # Re-using the setup from test_download_to_tmp_and_move_with_progress_http
         pass

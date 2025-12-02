@@ -34,11 +34,10 @@ from pydantic import ValidationError
 from rich.align import Align
 from rich.columns import Columns  # Add Columns
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
-from nodetool.runtime.resources import ResourceScope
 
 from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
 from nodetool.agents.tools.email_tools import (
@@ -75,8 +74,8 @@ from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
 from nodetool.metadata.types import LanguageModel, Message, Provider
-
 from nodetool.providers import get_provider
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 
 # Helper --------------------------------------------------------------------

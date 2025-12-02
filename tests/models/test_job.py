@@ -1,6 +1,7 @@
 import pytest
-from tests.conftest import make_job
+
 from nodetool.models.job import Job
+from tests.conftest import make_job
 
 
 @pytest.mark.asyncio
@@ -34,7 +35,7 @@ async def test_create_job(user_id: str):
 
 @pytest.mark.asyncio
 async def test_paginate_jobs(user_id: str):
-    for i in range(12):
+    for _i in range(12):
         await Job.create(
             workflow_id="workflow_id",
             user_id=user_id,
@@ -51,19 +52,19 @@ async def test_paginate_jobs(user_id: str):
 
 @pytest.mark.asyncio
 async def test_paginate_jobs_by_workflow(user_id: str):
-    for i in range(10):
+    for _i in range(10):
         await Job.create(
             workflow_id="workflow_id",
             user_id=user_id,
         )
 
-    for i in range(10):
+    for _i in range(10):
         await Job.create(
             workflow_id="another",
             user_id=user_id,
         )
 
-    jobs, last_evaluated_key = await Job.paginate(
+    jobs, _last_evaluated_key = await Job.paginate(
         user_id=user_id, workflow_id="workflow_id"
     )
     assert len(jobs) == 10

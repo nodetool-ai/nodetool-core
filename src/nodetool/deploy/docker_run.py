@@ -11,7 +11,6 @@ from typing import List
 
 from nodetool.config.deployment import SelfHostedDeployment
 
-
 INTERNAL_API_PORT = 7777
 APP_ENV_PORT = 8000
 

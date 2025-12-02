@@ -2,15 +2,17 @@
 Test cases for NodeTool class
 """
 
-import pytest
 from typing import Any
+
+import numpy as np
+import PIL.Image
+import pytest
+from pydantic import Field
+
 from nodetool.agents.tools.node_tool import NodeTool
+from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, TextRef
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import ImageRef, AudioRef, TextRef, AssetRef
-from pydantic import Field
-import PIL.Image
-import numpy as np
 
 
 class TestNode(BaseNode):
@@ -416,8 +418,5 @@ def test_node_tool_asset_ref_helper():
 
     # This should fail
     bad_data = {"asset": ImageRef(uri="http://example.com/image.jpg")}
-    try:
+    with pytest.raises(AssertionError, match="should have memory URI"):
         check_asset_refs_recursive(bad_data)
-        assert False, "Should have raised AssertionError"
-    except AssertionError as e:
-        assert "should have memory URI" in str(e)

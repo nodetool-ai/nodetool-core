@@ -8,8 +8,8 @@ import pytest
 
 pytest.importorskip("huggingface_hub")
 
-from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.integrations.huggingface import huggingface_models
+from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.integrations.huggingface.huggingface_models import (
     _build_search_config_for_type,
     get_models_by_hf_type,
@@ -145,8 +145,8 @@ async def test_model_detection_with_safetensors_headers(tmp_path):
     This validates that we can detect model types from tensor key patterns.
     """
     pytest.importorskip("safetensors")
-    from safetensors.numpy import save_file
     import numpy as np
+    from safetensors.numpy import save_file
 
     # Test Whisper ASR model detection via safetensors headers
     whisper_repo = tmp_path / "models--user--whisper" / "snapshots" / "fake-sha"

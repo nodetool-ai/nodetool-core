@@ -1,31 +1,33 @@
-import threading
-from typing import Any
-from unittest.mock import Mock
-from nodetool.models.workflow import Workflow
-from pydantic import Field
-from fastapi.testclient import TestClient
-import httpx
-import pytest
-import os
-import pytest_asyncio
-from nodetool.api.server import create_app
-from nodetool.storage.memory_storage import MemoryStorage
-from nodetool.types.graph import Node, Edge
-from nodetool.config.environment import Environment
-from nodetool.models.message import Message
-from nodetool.models.thread import Thread
-from nodetool.models.job import Job
-from nodetool.models.asset import Asset
-from nodetool.workflows.base_node import BaseNode, InputNode
-from nodetool.workflows.processing_context import ProcessingContext
+import asyncio
 import gc
 import io
+import os
+import threading
 import uuid
+from typing import Any
+from unittest.mock import Mock
+
+import httpx
 import PIL.Image
-import asyncio
-from nodetool.deploy.auth import get_worker_auth_token
-from nodetool.runtime.resources import ResourceScope, require_scope
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from pydantic import Field
+
+from nodetool.api.server import create_app
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging
+from nodetool.deploy.auth import get_worker_auth_token
+from nodetool.models.asset import Asset
+from nodetool.models.job import Job
+from nodetool.models.message import Message
+from nodetool.models.thread import Thread
+from nodetool.models.workflow import Workflow
+from nodetool.runtime.resources import ResourceScope, require_scope
+from nodetool.storage.memory_storage import MemoryStorage
+from nodetool.types.graph import Edge, Node
+from nodetool.workflows.base_node import BaseNode, InputNode
+from nodetool.workflows.processing_context import ProcessingContext
 
 configure_logging("DEBUG")
 
@@ -61,19 +63,19 @@ async def test_db_pool():
     Yields:
         tuple: (pool, db_path) for use in tests
     """
-    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
-    from nodetool.models.migrations import run_startup_migrations
-    import tempfile
     import os
+    import tempfile
+
+    from nodetool.models.migrations import run_startup_migrations
+    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
     # Create a temporary database file for the entire test session
-    temp_db = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         suffix='.sqlite3',
         prefix='nodetool_test_session_',
         delete=False
-    )
-    db_path = temp_db.name
-    temp_db.close()
+    ) as temp_db:
+        db_path = temp_db.name
 
     pool = None
     try:
@@ -195,6 +197,7 @@ def mock_keyring(monkeypatch):
     """
 
     import keyring
+
     from nodetool.security.master_key import MasterKeyManager
 
     store: dict[tuple[str, str], str] = {}

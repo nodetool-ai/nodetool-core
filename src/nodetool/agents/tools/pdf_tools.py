@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any, ClassVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     import pymupdf

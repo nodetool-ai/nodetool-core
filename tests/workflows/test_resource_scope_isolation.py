@@ -9,13 +9,13 @@ Verifies that:
 
 import asyncio
 import tempfile
-import pytest
-import pytest_asyncio
 from typing import Any
 
-from nodetool.runtime.resources import ResourceScope, maybe_scope
-from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+import pytest
+import pytest_asyncio
 
+from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+from nodetool.runtime.resources import ResourceScope, maybe_scope
 
 # Skip global DB setup/teardown from tests/conftest.py for this module
 pytestmark = pytest.mark.no_setup
@@ -24,17 +24,16 @@ pytestmark = pytest.mark.no_setup
 @pytest_asyncio.fixture
 async def test_pool():
     """Create a temporary database pool for these tests."""
-    import tempfile
     import os
+    import tempfile
 
     # Create temporary database
-    temp_db = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         suffix='.sqlite3',
         prefix='test_resource_scope_',
         delete=False
-    )
-    db_path = temp_db.name
-    temp_db.close()
+    ) as temp_db:
+        db_path = temp_db.name
 
     # Create pool
     pool = await SQLiteConnectionPool.get_shared(db_path)
@@ -108,48 +107,47 @@ async def test_concurrent_scopes_isolation(test_pool):
     This test verifies that two concurrent jobs get separate scope bindings
     and don't interfere with each other's context.
     """
-    async with ResourceScope(pool=test_pool) as scope_1:
-        async with ResourceScope(pool=test_pool) as scope_2:
-            scope_ids = []
+    async with ResourceScope(pool=test_pool), ResourceScope(pool=test_pool) as scope_2:
+        scope_ids = []
 
-            async def job_1():
-                """First concurrent job."""
-                async with ResourceScope(pool=test_pool) as scope:
-                    # Verify scope is bound
-                    bound = maybe_scope()
-                    assert bound is scope
-                    scope_ids.append(id(scope))
+        async def job_1():
+            """First concurrent job."""
+            async with ResourceScope(pool=test_pool) as scope:
+                # Verify scope is bound
+                bound = maybe_scope()
+                assert bound is scope
+                scope_ids.append(id(scope))
 
-                    # Simulate some work
-                    await asyncio.sleep(0.01)
+                # Simulate some work
+                await asyncio.sleep(0.01)
 
-                    # Verify scope is still bound
-                    assert maybe_scope() is scope
+                # Verify scope is still bound
+                assert maybe_scope() is scope
 
-            async def job_2():
-                """Second concurrent job."""
-                async with ResourceScope(pool=test_pool) as scope:
-                    # Verify scope is bound
-                    bound = maybe_scope()
-                    assert bound is scope
-                    scope_ids.append(id(scope))
+        async def job_2():
+            """Second concurrent job."""
+            async with ResourceScope(pool=test_pool) as scope:
+                # Verify scope is bound
+                bound = maybe_scope()
+                assert bound is scope
+                scope_ids.append(id(scope))
 
-                    # Simulate some work
-                    await asyncio.sleep(0.02)
+                # Simulate some work
+                await asyncio.sleep(0.02)
 
-                    # Verify scope is still bound
-                    assert maybe_scope() is scope
+                # Verify scope is still bound
+                assert maybe_scope() is scope
 
-            # Run both jobs concurrently
-            await asyncio.gather(job_1(), job_2())
+        # Run both jobs concurrently
+        await asyncio.gather(job_1(), job_2())
 
-            # After both complete, the parent scope should still be bound (scope_2)
-            assert maybe_scope() is scope_2
+        # After both complete, the parent scope should still be bound (scope_2)
+        assert maybe_scope() is scope_2
 
-            # Both scopes should have completed
-            assert len(scope_ids) == 2
-            # Scopes should be different objects
-            assert scope_ids[0] != scope_ids[1]
+        # Both scopes should have completed
+        assert len(scope_ids) == 2
+        # Scopes should be different objects
+        assert scope_ids[0] != scope_ids[1]
 
 
 @pytest.mark.asyncio

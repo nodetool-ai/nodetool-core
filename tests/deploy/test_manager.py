@@ -2,26 +2,26 @@
 Unit tests for DeploymentManager orchestrator.
 """
 
-import pytest
-from unittest.mock import Mock, patch
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from nodetool.deploy.manager import DeploymentManager
+import pytest
+
 from nodetool.config.deployment import (
-    DeploymentConfig,
-    SelfHostedDeployment,
-    RunPodDeployment,
-    GCPDeployment,
-    SSHConfig,
-    ImageConfig,
     ContainerConfig,
+    DeploymentConfig,
+    DeploymentType,
+    GCPDeployment,
+    GCPImageConfig,
+    ImageConfig,
+    RunPodDeployment,
+    RunPodEndpointConfig,
     RunPodImageConfig,
     RunPodTemplateConfig,
-    RunPodEndpointConfig,
-    GCPImageConfig,
-    DeploymentType,
+    SelfHostedDeployment,
+    SSHConfig,
 )
-
+from nodetool.deploy.manager import DeploymentManager
 
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
@@ -80,43 +80,46 @@ class TestDeploymentManager:
     @pytest.fixture
     def manager(self, mock_config, mock_state_manager):
         """Create a DeploymentManager with mocked dependencies."""
-        with patch("nodetool.deploy.manager.load_deployment_config") as mock_load:
-            with patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
-                mock_load.return_value = mock_config
-                mock_state_cls.return_value = mock_state_manager
+        with patch(
+            "nodetool.deploy.manager.load_deployment_config"
+        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+            mock_load.return_value = mock_config
+            mock_state_cls.return_value = mock_state_manager
 
-                manager = DeploymentManager()
-                manager.config = mock_config
-                manager.state_manager = mock_state_manager
+            manager = DeploymentManager()
+            manager.config = mock_config
+            manager.state_manager = mock_state_manager
 
-                return manager
+            return manager
 
     def test_init(self, mock_config, mock_state_manager):
         """Test DeploymentManager initialization."""
-        with patch("nodetool.deploy.manager.load_deployment_config") as mock_load:
-            with patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
-                mock_load.return_value = mock_config
-                mock_state_cls.return_value = mock_state_manager
+        with patch(
+            "nodetool.deploy.manager.load_deployment_config"
+        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+            mock_load.return_value = mock_config
+            mock_state_cls.return_value = mock_state_manager
 
-                manager = DeploymentManager()
+            manager = DeploymentManager()
 
-                assert manager.config == mock_config
-                assert manager.state_manager == mock_state_manager
-                mock_load.assert_called_once()
-                mock_state_cls.assert_called_once()
+            assert manager.config == mock_config
+            assert manager.state_manager == mock_state_manager
+            mock_load.assert_called_once()
+            mock_state_cls.assert_called_once()
 
     def test_init_with_config_path(self, mock_config, mock_state_manager):
         """Test DeploymentManager initialization with custom config path."""
         config_path = Path("/custom/path/deployment.yaml")
 
-        with patch("nodetool.deploy.manager.load_deployment_config") as mock_load:
-            with patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
-                mock_load.return_value = mock_config
-                mock_state_cls.return_value = mock_state_manager
+        with patch(
+            "nodetool.deploy.manager.load_deployment_config"
+        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+            mock_load.return_value = mock_config
+            mock_state_cls.return_value = mock_state_manager
 
-                _ = DeploymentManager(config_path=config_path)
+            _ = DeploymentManager(config_path=config_path)
 
-                mock_state_cls.assert_called_once_with(config_path=config_path)
+            mock_state_cls.assert_called_once_with(config_path=config_path)
 
     def test_list_deployments_no_state(self, manager):
         """Test listing deployments without state."""
@@ -544,16 +547,17 @@ class TestDeploymentManagerEdgeCases:
         """Create a manager with empty config."""
         mock_state_manager = Mock()
 
-        with patch("nodetool.deploy.manager.load_deployment_config") as mock_load:
-            with patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
-                mock_load.return_value = empty_config
-                mock_state_cls.return_value = mock_state_manager
+        with patch(
+            "nodetool.deploy.manager.load_deployment_config"
+        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+            mock_load.return_value = empty_config
+            mock_state_cls.return_value = mock_state_manager
 
-                manager = DeploymentManager()
-                manager.config = empty_config
-                manager.state_manager = mock_state_manager
+            manager = DeploymentManager()
+            manager.config = empty_config
+            manager.state_manager = mock_state_manager
 
-                return manager
+            return manager
 
     def test_list_deployments_empty(self, manager_empty):
         """Test listing deployments when none are configured."""

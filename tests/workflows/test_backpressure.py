@@ -3,13 +3,16 @@ Test backpressure functionality in workflow runner.
 """
 
 import asyncio
+
 import pytest
 
-from nodetool.workflows.inbox import NodeInbox
-from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.types.graph import Graph as APIGraph, Node as APINode, Edge as APIEdge
+from nodetool.types.graph import Edge as APIEdge
+from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.graph import Node as APINode
 from nodetool.workflows.graph import Graph
+from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.workflow_runner import WorkflowRunner
 
 
 @pytest.mark.asyncio
@@ -143,7 +146,7 @@ async def test_workflow_runner_with_buffer_limit():
     runner._initialize_inboxes(context, graph)
 
     # Verify buffer limit was set
-    for node_id, inbox in runner.node_inboxes.items():
+    for _node_id, inbox in runner.node_inboxes.items():
         assert inbox._buffer_limit == 10
 
 
@@ -172,7 +175,7 @@ async def test_multiple_handles_backpressure():
     async def consumer():
         await asyncio.sleep(0.05)
         count = 0
-        async for handle, item in inbox.iter_any():
+        async for _handle, _item in inbox.iter_any():
             count += 1
             await asyncio.sleep(0.02)
             if count >= 6:  # 3 from each handle

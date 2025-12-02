@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
-
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)

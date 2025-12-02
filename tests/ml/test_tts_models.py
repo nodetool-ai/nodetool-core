@@ -8,8 +8,9 @@ This module tests the TTS model discovery functionality including:
 """
 
 import pytest
-from nodetool.ml.models.tts_models import get_all_tts_models
+
 from nodetool.metadata.types import TTSModel
+from nodetool.ml.models.tts_models import get_all_tts_models
 
 
 @pytest.mark.asyncio

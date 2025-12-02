@@ -1,9 +1,11 @@
 from datetime import datetime
-from nodetool.runtime.resources import require_scope
+
 import pytest
+
 from nodetool.models.asset import (
     Asset,
 )
+from nodetool.runtime.resources import require_scope
 from tests.conftest import make_image
 
 
@@ -25,19 +27,19 @@ async def test_asset_find(user_id: str):
 
 @pytest.mark.asyncio
 async def test_paginate_assets(user_id: str):
-    for i in range(5):
+    for _i in range(5):
         await Asset.create(
             user_id=user_id,
             name="test_image",
             content_type="image/jpeg",
         )
 
-    assets, last_key = await Asset.paginate(
+    assets, _last_key = await Asset.paginate(
         user_id=user_id, content_type="image", limit=3
     )
     assert len(assets) > 0
 
-    assets, last_key = await Asset.paginate(
+    assets, _last_key = await Asset.paginate(
         user_id=user_id, content_type="image", limit=3
     )
     assert len(assets) > 0
@@ -54,13 +56,13 @@ async def test_paginate_assets_by_parent(user_id: str):
         # Pass user_id to make_image
         await make_image(user_id, parent_id=parent_id_to_use if i == 0 else None)
 
-    assets, last_key = await Asset.paginate(
+    assets, _last_key = await Asset.paginate(
         user_id=user_id, parent_id=parent_id_to_use, limit=4
     )
     assert len(assets) > 0
 
     # This paginate call seems unrelated to the parent_id logic above, keeping as is with user_id
-    assets, last_key = await Asset.paginate(
+    assets, _last_key = await Asset.paginate(
         user_id=user_id, content_type="image", limit=3
     )
     assert len(assets) > 0
@@ -102,7 +104,7 @@ async def test_search_assets_global_basic(user_id: str):
     await Asset.create(user_id=user_id, name="document.txt", content_type="text/plain")
 
     # Test search
-    assets, next_cursor, folder_paths = await Asset.search_assets_global(
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
         user_id=user_id, query="photo"
     )
 
@@ -178,7 +180,7 @@ async def test_search_assets_global_sql_injection_protection(user_id: str):
 
     for query in malicious_queries:
         # Should not crash
-        assets, next_cursor, folder_paths = await Asset.search_assets_global(
+        assets, _next_cursor, folder_paths = await Asset.search_assets_global(
             user_id=user_id, query=query
         )
         # Should return well-formed results
@@ -191,7 +193,7 @@ async def test_search_assets_global_empty_results(user_id: str):
     """Test search with no matching results."""
     await Asset.create(user_id=user_id, name="sunset", content_type="image/jpeg")
 
-    assets, next_cursor, folder_paths = await Asset.search_assets_global(
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
         user_id=user_id, query="nonexistent"
     )
 
@@ -209,7 +211,7 @@ async def test_search_assets_global_pagination(user_id: str):
         )
 
     # Test limited results
-    assets, next_cursor, folder_paths = await Asset.search_assets_global(
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
         user_id=user_id, query="photo", limit=2
     )
 

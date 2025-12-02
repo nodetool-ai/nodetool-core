@@ -14,15 +14,14 @@ This script creates an agent that:
 import asyncio
 
 # import json # Retained if complex JSON manipulation were needed later
-
 from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.ui.console import AgentConsole
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 async def test_product_hunt_ai_extractor_agent(
@@ -101,7 +100,7 @@ async def test_product_hunt_ai_extractor_agent(
     print("Objective: To identify AI products and generate a Markdown report.\n")
 
     # Stream the output as it's generated
-    async for item in ai_product_extractor_agent.execute(context):
+    async for _item in ai_product_extractor_agent.execute(context):
         pass
 
     print(ai_product_extractor_agent.get_results())

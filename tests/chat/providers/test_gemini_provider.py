@@ -110,14 +110,14 @@ Performance Optimizations:
 """
 
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 pytest.importorskip("google.genai")
 
-from nodetool.providers.gemini_provider import GeminiProvider
 from nodetool.metadata.types import Message, MessageTextContent
+from nodetool.providers.gemini_provider import GeminiProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 

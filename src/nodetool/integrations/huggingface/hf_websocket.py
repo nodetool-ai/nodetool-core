@@ -124,7 +124,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         )
                         # Don't re-raise here as we want to keep the socket open for other commands
                         log.error(f"Error starting download: {e}")
-                        
+
                 elif command == "cancel_download":
                     download_id = data.get("id")
                     if not download_id:
@@ -132,7 +132,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         path = data.get("path")
                         if repo_id:
                             download_id = repo_id if path is None else f"{repo_id}/{path}"
-                    
+
                     log.info(f"Processing cancel_download for id={download_id}")
                     if download_id:
                         await download_manager.cancel_download(download_id)

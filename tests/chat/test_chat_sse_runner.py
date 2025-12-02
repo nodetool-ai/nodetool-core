@@ -2,12 +2,14 @@
 Tests for ChatSSERunner functionality
 """
 
-import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.environment import Environment
-from nodetool.metadata.types import MessageTextContent, MessageImageContent
+from nodetool.metadata.types import MessageImageContent, MessageTextContent
 
 
 @pytest.mark.asyncio
@@ -47,30 +49,30 @@ class TestChatSSERunner:
 
     async def test_connect_with_valid_auth(self):
         """Test connection with valid authentication"""
-        with patch.object(Environment, "enforce_auth", return_value=True):
-            with patch.object(
-                self.runner, "validate_token", return_value=True
-            ) as mock_validate:
-                await self.runner.connect()
+        with patch.object(Environment, "enforce_auth", return_value=True), patch.object(
+            self.runner, "validate_token", return_value=True
+        ) as mock_validate:
+            await self.runner.connect()
 
-                # Verify token was validated
-                mock_validate.assert_called_once_with("test_token")
-                assert self.runner.is_connected is True
+            # Verify token was validated
+            mock_validate.assert_called_once_with("test_token")
+            assert self.runner.is_connected is True
 
     async def test_connect_missing_auth(self):
         """Test connection with missing authentication"""
         runner = ChatSSERunner()  # No auth token
 
-        with patch.object(Environment, "enforce_auth", return_value=True):
-            with pytest.raises(ValueError, match="Missing authentication token"):
-                await runner.connect()
+        with patch.object(Environment, "enforce_auth", return_value=True), pytest.raises(
+            ValueError, match="Missing authentication token"
+        ):
+            await runner.connect()
 
     async def test_connect_invalid_auth(self):
         """Test connection with invalid authentication"""
-        with patch.object(Environment, "enforce_auth", return_value=True):
-            with patch.object(self.runner, "validate_token", return_value=False):
-                with pytest.raises(ValueError, match="Invalid authentication token"):
-                    await self.runner.connect()
+        with patch.object(Environment, "enforce_auth", return_value=True), patch.object(
+            self.runner, "validate_token", return_value=False
+        ), pytest.raises(ValueError, match="Invalid authentication token"):
+            await self.runner.connect()
 
     async def test_disconnect(self):
         """Test disconnect functionality"""
@@ -177,20 +179,19 @@ class TestChatSSERunner:
         self.runner.is_connected = True
         with patch.object(
             self.runner, "handle_message", side_effect=mock_handle_message
-        ):
-            with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                # Collect streamed events
-                events = []
-                async for event in self.runner.stream_response(request_data):
-                    events.append(event)
+        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            # Collect streamed events
+            events = []
+            async for event in self.runner.stream_response(request_data):
+                events.append(event)
 
-                # Verify OpenAI format events
-                assert len(events) == 3  # 2 content chunks + [DONE]
-                assert "chat.completion.chunk" in events[0]
-                assert "Response 1" in events[0]
-                assert "chat.completion.chunk" in events[1]
-                assert "Response 2" in events[1]
-                assert events[2] == "data: [DONE]\n\n"
+            # Verify OpenAI format events
+            assert len(events) == 3  # 2 content chunks + [DONE]
+            assert "chat.completion.chunk" in events[0]
+            assert "Response 1" in events[0]
+            assert "chat.completion.chunk" in events[1]
+            assert "Response 2" in events[1]
+            assert events[2] == "data: [DONE]\n\n"
 
     async def test_stream_response_error(self):
         """Test error handling in stream_response"""
@@ -205,18 +206,17 @@ class TestChatSSERunner:
 
         with patch.object(
             self.runner, "handle_message", side_effect=mock_handle_message
-        ):
-            with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                # Collect streamed events
-                events = []
-                async for event in self.runner.stream_response(request_data):
-                    events.append(event)
+        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            # Collect streamed events
+            events = []
+            async for event in self.runner.stream_response(request_data):
+                events.append(event)
 
-                # Verify error event was sent in OpenAI format
-                assert len(events) == 2  # Error chunk + [DONE]
-                assert "chat.completion.chunk" in events[0]
-                assert "Error: Processing error" in events[0]
-                assert events[1] == "data: [DONE]\n\n"
+            # Verify error event was sent in OpenAI format
+            assert len(events) == 2  # Error chunk + [DONE]
+            assert "chat.completion.chunk" in events[0]
+            assert "Error: Processing error" in events[0]
+            assert events[1] == "data: [DONE]\n\n"
 
     async def test_stream_response_cancellation(self):
         """Test cancellation handling in stream_response"""
@@ -231,24 +231,23 @@ class TestChatSSERunner:
 
         with patch.object(
             self.runner, "handle_message", side_effect=mock_handle_message
-        ):
-            with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                # Create a task that we'll cancel
-                async def run_stream():
-                    events = []
-                    async for event in self.runner.stream_response(request_data):
-                        events.append(event)
-                    return events
+        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            # Create a task that we'll cancel
+            async def run_stream():
+                events = []
+                async for event in self.runner.stream_response(request_data):
+                    events.append(event)
+                return events
 
-                task = asyncio.create_task(run_stream())
-                await asyncio.sleep(0.1)  # Let it start
-                task.cancel()
+            task = asyncio.create_task(run_stream())
+            await asyncio.sleep(0.1)  # Let it start
+            task.cancel()
 
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    # This is expected
-                    pass
+            try:
+                await task
+            except asyncio.CancelledError:
+                # This is expected
+                pass
 
     async def test_process_single_request_success(self):
         """Test processing a single OpenAI request with authentication"""
@@ -270,23 +269,22 @@ class TestChatSSERunner:
 
             with patch.object(
                 self.runner, "stream_response", return_value=mock_stream()
-            ):
-                with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                    # Process request
-                    events = []
-                    async for event in self.runner.process_single_request(request_data):
-                        events.append(event)
+            ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+                # Process request
+                events = []
+                async for event in self.runner.process_single_request(request_data):
+                    events.append(event)
 
-                    # Verify auth token was updated
-                    assert self.runner.auth_token == "request_token"
+                # Verify auth token was updated
+                assert self.runner.auth_token == "request_token"
 
-                    # Verify connect was called with user_id
-                    mock_connect.assert_called_once_with(user_id="user_123")
+                # Verify connect was called with user_id
+                mock_connect.assert_called_once_with(user_id="user_123")
 
-                    # Verify OpenAI format events were yielded
-                    assert len(events) == 2
-                    assert "chat.completion.chunk" in events[0]
-                    assert events[1] == "data: [DONE]\n\n"
+                # Verify OpenAI format events were yielded
+                assert len(events) == 2
+                assert "chat.completion.chunk" in events[0]
+                assert events[1] == "data: [DONE]\n\n"
 
     async def test_process_single_request_error(self):
         """Test error handling in process_single_request"""
@@ -298,16 +296,15 @@ class TestChatSSERunner:
         # Mock connect to raise error
         with patch.object(
             self.runner, "connect", side_effect=Exception("Connection failed")
-        ):
-            with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                # Process request
-                events = []
-                async for event in self.runner.process_single_request(request_data):
-                    events.append(event)
+        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            # Process request
+            events = []
+            async for event in self.runner.process_single_request(request_data):
+                events.append(event)
 
-                # Verify error event was sent (simple JSON format for connection errors)
-                assert len(events) == 1
-                assert "Connection failed" in events[0]
+            # Verify error event was sent (simple JSON format for connection errors)
+            assert len(events) == 1
+            assert "Connection failed" in events[0]
 
     async def test_message_queue_timeout_handling(self):
         """Test that stream_response handles queue timeouts properly"""
@@ -324,13 +321,12 @@ class TestChatSSERunner:
         self.runner.is_connected = True
         with patch.object(
             self.runner, "handle_message", side_effect=mock_handle_message
-        ):
-            with patch.object(self.runner, "disconnect", new_callable=AsyncMock):
-                # Collect streamed events
-                events = []
-                async for event in self.runner.stream_response(request_data):
-                    events.append(event)
+        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            # Collect streamed events
+            events = []
+            async for event in self.runner.stream_response(request_data):
+                events.append(event)
 
-                # Should complete with just [DONE] message
-                assert len(events) == 1
-                assert events[0] == "data: [DONE]\n\n"
+            # Should complete with just [DONE] message
+            assert len(events) == 1
+            assert events[0] == "data: [DONE]\n\n"

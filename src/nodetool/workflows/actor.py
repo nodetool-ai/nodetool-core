@@ -45,7 +45,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.torch_support import is_cuda_available
-from nodetool.workflows.types import NodeUpdate, EdgeUpdate
+from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode

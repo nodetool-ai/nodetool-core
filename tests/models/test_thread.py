@@ -1,4 +1,5 @@
 import pytest
+
 from nodetool.models.thread import Thread
 
 

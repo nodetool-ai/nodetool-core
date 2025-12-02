@@ -2,11 +2,13 @@
 Tests for BaseChatRunner functionality
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.models.message import Message as DBMessage
 from nodetool.metadata.types import Message as ApiMessage
+from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.types.graph import Graph
 
@@ -210,21 +212,21 @@ class TestBaseChatRunner:
         self.runner.user_id = "user_123"
 
         # Mock Thread.find to return None (thread doesn't exist)
-        with patch.object(Thread, "find", return_value=None):
-            # Mock Thread.create
-            with patch.object(Thread, "create") as mock_create:
-                mock_thread = Mock()
-                mock_thread.id = "client_thread_456"
-                mock_create.return_value = mock_thread
+        with patch.object(Thread, "find", return_value=None), patch.object(
+            Thread, "create"
+        ) as mock_create:
+            mock_thread = Mock()
+            mock_thread.id = "client_thread_456"
+            mock_create.return_value = mock_thread
 
-                # Ensure thread exists with client-provided ID
-                thread_id = await self.runner.ensure_thread_exists("client_thread_456")
+            # Ensure thread exists with client-provided ID
+            thread_id = await self.runner.ensure_thread_exists("client_thread_456")
 
-                # Verify new thread was created with the client-provided ID
-                assert thread_id == "client_thread_456"
-                mock_create.assert_called_once_with(
-                    user_id="user_123", id="client_thread_456"
-                )
+            # Verify new thread was created with the client-provided ID
+            assert thread_id == "client_thread_456"
+            mock_create.assert_called_once_with(
+                user_id="user_123", id="client_thread_456"
+            )
 
     async def test_validate_token_success(self):
         """Test successful token validation"""
@@ -262,45 +264,42 @@ class TestBaseChatRunner:
         # Mock dependencies
         with patch.object(
             self.runner, "ensure_thread_exists", return_value="thread_123"
-        ):
-            with patch.object(self.runner, "_save_message_to_db_async") as mock_save:
-                with patch.object(
-                    self.runner, "get_chat_history_from_db"
-                ) as mock_history:
-                    with patch.object(
-                        self.runner, "handle_message_impl"
-                    ) as mock_handle_impl:
-                        # Create properly configured mock DB message
-                        mock_db_message = Mock(spec=DBMessage)
-                        mock_db_message.id = "msg_123"
-                        mock_db_message.workflow_id = None
-                        mock_db_message.graph = None
-                        mock_db_message.thread_id = "thread_123"
-                        mock_db_message.tools = []
-                        mock_db_message.tool_call_id = None
-                        mock_db_message.role = "user"
-                        mock_db_message.name = None
-                        mock_db_message.content = "Test message"
-                        mock_db_message.tool_calls = []
-                        mock_db_message.collections = []
-                        mock_db_message.input_files = []
-                        mock_db_message.output_files = []
-                        mock_db_message.created_at = None
-                        mock_db_message.provider = "openai"
-                        mock_db_message.model = "gpt-4"
-                        mock_db_message.agent_mode = False
-                        mock_db_message.workflow_assistant = False
-                        mock_db_message.help_mode = False
+        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
+            self.runner, "get_chat_history_from_db"
+        ) as mock_history, patch.object(
+            self.runner, "handle_message_impl"
+        ) as mock_handle_impl:
+            # Create properly configured mock DB message
+            mock_db_message = Mock(spec=DBMessage)
+            mock_db_message.id = "msg_123"
+            mock_db_message.workflow_id = None
+            mock_db_message.graph = None
+            mock_db_message.thread_id = "thread_123"
+            mock_db_message.tools = []
+            mock_db_message.tool_call_id = None
+            mock_db_message.role = "user"
+            mock_db_message.name = None
+            mock_db_message.content = "Test message"
+            mock_db_message.tool_calls = []
+            mock_db_message.collections = []
+            mock_db_message.input_files = []
+            mock_db_message.output_files = []
+            mock_db_message.created_at = None
+            mock_db_message.provider = "openai"
+            mock_db_message.model = "gpt-4"
+            mock_db_message.agent_mode = False
+            mock_db_message.workflow_assistant = False
+            mock_db_message.help_mode = False
 
-                        mock_save.return_value = mock_db_message
-                        mock_history.return_value = []
+            mock_save.return_value = mock_db_message
+            mock_history.return_value = []
 
-                        # Handle message
-                        await self.runner.handle_message(message_data)
+            # Handle message
+            await self.runner.handle_message(message_data)
 
-                        # Verify processing
-                        mock_save.assert_called_once()
-                        mock_handle_impl.assert_called_once()
+            # Verify processing
+            mock_save.assert_called_once()
+            mock_handle_impl.assert_called_once()
 
     async def test_handle_message_agent_mode(self):
         """Test handling a message in agent mode"""
@@ -318,45 +317,42 @@ class TestBaseChatRunner:
         # Mock dependencies
         with patch.object(
             self.runner, "ensure_thread_exists", return_value="thread_123"
-        ):
-            with patch.object(self.runner, "_save_message_to_db_async") as mock_save:
-                with patch.object(
-                    self.runner, "get_chat_history_from_db"
-                ) as mock_history:
-                    with patch.object(
-                        self.runner, "handle_message_impl"
-                    ) as mock_handle_impl:
-                        # Create properly configured mock DB message
-                        mock_db_message = Mock(spec=DBMessage)
-                        mock_db_message.id = "msg_123"
-                        mock_db_message.workflow_id = None
-                        mock_db_message.graph = None
-                        mock_db_message.thread_id = "thread_123"
-                        mock_db_message.tools = []
-                        mock_db_message.tool_call_id = None
-                        mock_db_message.role = "user"
-                        mock_db_message.name = None
-                        mock_db_message.content = "Test message"
-                        mock_db_message.tool_calls = []
-                        mock_db_message.collections = []
-                        mock_db_message.input_files = []
-                        mock_db_message.output_files = []
-                        mock_db_message.created_at = None
-                        mock_db_message.provider = "openai"
-                        mock_db_message.model = "gpt-4"
-                        mock_db_message.agent_mode = True
-                        mock_db_message.workflow_assistant = False
-                        mock_db_message.help_mode = False
+        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
+            self.runner, "get_chat_history_from_db"
+        ) as mock_history, patch.object(
+            self.runner, "handle_message_impl"
+        ) as mock_handle_impl:
+            # Create properly configured mock DB message
+            mock_db_message = Mock(spec=DBMessage)
+            mock_db_message.id = "msg_123"
+            mock_db_message.workflow_id = None
+            mock_db_message.graph = None
+            mock_db_message.thread_id = "thread_123"
+            mock_db_message.tools = []
+            mock_db_message.tool_call_id = None
+            mock_db_message.role = "user"
+            mock_db_message.name = None
+            mock_db_message.content = "Test message"
+            mock_db_message.tool_calls = []
+            mock_db_message.collections = []
+            mock_db_message.input_files = []
+            mock_db_message.output_files = []
+            mock_db_message.created_at = None
+            mock_db_message.provider = "openai"
+            mock_db_message.model = "gpt-4"
+            mock_db_message.agent_mode = True
+            mock_db_message.workflow_assistant = False
+            mock_db_message.help_mode = False
 
-                        mock_save.return_value = mock_db_message
-                        mock_history.return_value = []
+            mock_save.return_value = mock_db_message
+            mock_history.return_value = []
 
-                        # Handle message
-                        await self.runner.handle_message(message_data)
+            # Handle message
+            await self.runner.handle_message(message_data)
 
-                        # Verify processing
-                        mock_save.assert_called_once()
-                        mock_handle_impl.assert_called_once()
+            # Verify processing
+            mock_save.assert_called_once()
+            mock_handle_impl.assert_called_once()
 
     async def test_handle_message_workflow(self):
         """Test handling a workflow message"""
@@ -372,42 +368,39 @@ class TestBaseChatRunner:
         # Mock dependencies
         with patch.object(
             self.runner, "ensure_thread_exists", return_value="thread_123"
-        ):
-            with patch.object(self.runner, "_save_message_to_db_async") as mock_save:
-                with patch.object(
-                    self.runner, "get_chat_history_from_db"
-                ) as mock_history:
-                    with patch.object(
-                        self.runner, "handle_message_impl"
-                    ) as mock_handle_impl:
-                        # Create properly configured mock DB message
-                        mock_db_message = Mock(spec=DBMessage)
-                        mock_db_message.id = "msg_123"
-                        mock_db_message.workflow_id = "workflow_123"
-                        mock_db_message.graph = None
-                        mock_db_message.thread_id = "thread_123"
-                        mock_db_message.tools = []
-                        mock_db_message.tool_call_id = None
-                        mock_db_message.role = "user"
-                        mock_db_message.name = None
-                        mock_db_message.content = "Test message"
-                        mock_db_message.tool_calls = []
-                        mock_db_message.collections = []
-                        mock_db_message.input_files = []
-                        mock_db_message.output_files = []
-                        mock_db_message.created_at = None
-                        mock_db_message.provider = "openai"
-                        mock_db_message.model = "gpt-4"
-                        mock_db_message.agent_mode = False
-                        mock_db_message.workflow_assistant = False
-                        mock_db_message.help_mode = False
+        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
+            self.runner, "get_chat_history_from_db"
+        ) as mock_history, patch.object(
+            self.runner, "handle_message_impl"
+        ) as mock_handle_impl:
+            # Create properly configured mock DB message
+            mock_db_message = Mock(spec=DBMessage)
+            mock_db_message.id = "msg_123"
+            mock_db_message.workflow_id = "workflow_123"
+            mock_db_message.graph = None
+            mock_db_message.thread_id = "thread_123"
+            mock_db_message.tools = []
+            mock_db_message.tool_call_id = None
+            mock_db_message.role = "user"
+            mock_db_message.name = None
+            mock_db_message.content = "Test message"
+            mock_db_message.tool_calls = []
+            mock_db_message.collections = []
+            mock_db_message.input_files = []
+            mock_db_message.output_files = []
+            mock_db_message.created_at = None
+            mock_db_message.provider = "openai"
+            mock_db_message.model = "gpt-4"
+            mock_db_message.agent_mode = False
+            mock_db_message.workflow_assistant = False
+            mock_db_message.help_mode = False
 
-                        mock_save.return_value = mock_db_message
-                        mock_history.return_value = []
+            mock_save.return_value = mock_db_message
+            mock_history.return_value = []
 
-                        # Handle message
-                        await self.runner.handle_message(message_data)
+            # Handle message
+            await self.runner.handle_message(message_data)
 
-                        # Verify processing
-                        mock_save.assert_called_once()
-                        mock_handle_impl.assert_called_once()
+            # Verify processing
+            mock_save.assert_called_once()
+            mock_handle_impl.assert_called_once()

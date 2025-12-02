@@ -1,4 +1,5 @@
 import asyncio
+
 import pytest
 
 from nodetool.agents.wrap_generators_parallel import wrap_generators_parallel
@@ -33,6 +34,6 @@ async def test_wrap_generators_parallel_exception():
         yield "start"
         raise RuntimeError("boom")
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError, match="boom"):
         async for _ in wrap_generators_parallel(good(), bad()):
             pass

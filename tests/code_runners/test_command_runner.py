@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from nodetool.workflows.base_node import BaseNode
+
 import pytest
 
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.command_runner import CommandDockerRunner
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 def _runner() -> CommandDockerRunner:

@@ -6,25 +6,25 @@ deployment lifecycle. They are skipped if Docker is not available.
 """
 
 import subprocess
-import time
 import tempfile
+import time
 from pathlib import Path
 
-import docker
 import docker.errors
 import pytest
 
-from nodetool.deploy.self_hosted import SelfHostedDeployer, LocalExecutor
+import docker
 from nodetool.config.deployment import (
-    SelfHostedDeployment,
-    SSHConfig,
-    ImageConfig,
     ContainerConfig,
-    SelfHostedPaths,
-    ProxySpec,
-    ServiceSpec,
     DeploymentStatus,
+    ImageConfig,
+    ProxySpec,
+    SelfHostedDeployment,
+    SelfHostedPaths,
+    ServiceSpec,
+    SSHConfig,
 )
+from nodetool.deploy.self_hosted import LocalExecutor, SelfHostedDeployer
 from nodetool.deploy.state import StateManager
 
 
@@ -165,7 +165,7 @@ class TestLocalExecutor:
     def test_execute_docker_ps(self):
         """Test executing docker ps command."""
         executor = LocalExecutor()
-        exit_code, stdout, stderr = executor.execute("docker ps", check=False)
+        exit_code, stdout, _stderr = executor.execute("docker ps", check=False)
 
         assert exit_code == 0
         # Should contain headers like CONTAINER ID, IMAGE, etc.
@@ -206,7 +206,7 @@ class TestSelfHostedDeployerIntegration:
 
     def test_create_directories_real(self, test_deployment, mock_state_manager):
         """Test creating real directories on the filesystem."""
-        deployer = SelfHostedDeployer(
+        SelfHostedDeployer(
             deployment_name="test",
             deployment=test_deployment,
             state_manager=mock_state_manager,
@@ -217,7 +217,6 @@ class TestSelfHostedDeployerIntegration:
         test_dir.mkdir(exist_ok=True)
 
         executor = LocalExecutor()
-        results = {"steps": []}
 
         # Test mkdir works
         executor.mkdir(str(test_dir / "subdir"), parents=True)
@@ -363,7 +362,7 @@ class TestDockerCommandExecution:
     def test_docker_ps_command(self):
         """Test running 'docker ps' command."""
         executor = LocalExecutor()
-        exit_code, stdout, stderr = executor.execute("docker ps -a", check=True)
+        exit_code, stdout, _stderr = executor.execute("docker ps -a", check=True)
 
         assert exit_code == 0
         assert "CONTAINER" in stdout or len(stdout) == 0  # Empty if no containers
@@ -371,7 +370,7 @@ class TestDockerCommandExecution:
     def test_docker_version_command(self):
         """Test running 'docker version' command."""
         executor = LocalExecutor()
-        exit_code, stdout, stderr = executor.execute("docker version", check=True)
+        exit_code, stdout, _stderr = executor.execute("docker version", check=True)
 
         assert exit_code == 0
         assert "Version" in stdout or "version" in stdout.lower()
@@ -381,7 +380,7 @@ class TestDockerCommandExecution:
         executor = LocalExecutor()
         container_name = "nodetool-nonexistent-12345"
 
-        exit_code, stdout, stderr = executor.execute(
+        exit_code, stdout, _stderr = executor.execute(
             f"docker ps -aq --filter name=^{container_name}$",
             check=False
         )
@@ -413,7 +412,7 @@ class TestHealthCheckWithDocker:
 
             # Use LocalExecutor to check status (simulates what deployer does)
             executor = LocalExecutor()
-            exit_code, stdout, stderr = executor.execute(
+            exit_code, stdout, _stderr = executor.execute(
                 f"docker ps --filter name={container_name} --format '{{{{.Status}}}}'",
                 check=True
             )

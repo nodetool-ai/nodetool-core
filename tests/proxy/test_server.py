@@ -11,8 +11,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from nodetool.proxy.config import ProxyConfig, ServiceConfig, GlobalConfig
-from nodetool.proxy.server import create_proxy_app, create_acme_only_app
+from nodetool.proxy.config import GlobalConfig, ProxyConfig, ServiceConfig
+from nodetool.proxy.server import create_acme_only_app, create_proxy_app
 
 
 @pytest.fixture
@@ -172,7 +172,7 @@ class TestPathMatching:
         """Test that longest path prefix is matched."""
         with patch(
             "nodetool.proxy.server.AsyncReverseProxy.match_service"
-        ) as mock_match:
+        ):
 
             async def route_test():
                 proxy = matching_app.state.state
@@ -185,7 +185,7 @@ class TestPathMatching:
             # Run the test
             from fastapi.testclient import TestClient
 
-            client = TestClient(matching_app)
+            TestClient(matching_app)
 
     def test_root_path_matches_anything(self):
         """Test that root path matches any unmatched path."""
@@ -217,11 +217,11 @@ class TestPathMatching:
             proxy = AsyncReverseProxy(config)
 
             # /app/test -> matches /app
-            service, stripped = proxy.match_service("/app/test")
+            service, _stripped = proxy.match_service("/app/test")
             assert service.path == "/app"
 
             # /unknown -> matches /
-            service, stripped = proxy.match_service("/unknown")
+            service, _stripped = proxy.match_service("/unknown")
             assert service.path == "/"
 
 

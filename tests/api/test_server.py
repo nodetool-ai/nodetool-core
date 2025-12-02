@@ -1,5 +1,5 @@
-from unittest.mock import patch
 import sys
+from unittest.mock import patch
 
 from nodetool.api.server import run_uvicorn_server
 

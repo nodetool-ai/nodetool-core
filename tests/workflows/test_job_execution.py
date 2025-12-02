@@ -1,16 +1,19 @@
 import asyncio
-import pytest
 from datetime import datetime
+
+import pytest
+
+from nodetool.models.job import Job
+from nodetool.models.workflow import Workflow
+from nodetool.types.graph import Edge, Graph
+from nodetool.types.graph import Node as GraphNode
 from nodetool.workflows.job_execution_manager import (
     JobExecutionManager,
-    ThreadedJobExecution,
     SubprocessJobExecution,
+    ThreadedJobExecution,
 )
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.models.job import Job
-from nodetool.types.graph import Graph, Node as GraphNode, Edge
-from nodetool.models.workflow import Workflow
+from nodetool.workflows.run_job_request import RunJobRequest
 
 # Add timeout to all tests in this file to prevent hanging
 # Run these tests in the same xdist group to avoid parallel execution issues
@@ -190,7 +193,7 @@ async def test_cancel_job(simple_workflow, cleanup_jobs):
 
     # Try to cancel the job
     # Note: Empty workflows complete very fast, so cancellation might fail
-    cancelled = await manager.cancel_job(job_id)
+    await manager.cancel_job(job_id)
 
     # Wait for job to finish updating and poll for final status
     max_retries = 10
@@ -218,7 +221,7 @@ async def test_list_jobs(simple_workflow, cleanup_jobs):
 
     # Start multiple jobs
     jobs = []
-    for i in range(3):
+    for _i in range(3):
         request = RunJobRequest(
             workflow_id=simple_workflow.id,
             user_id="test_user",

@@ -1,5 +1,6 @@
 import pytest
 
+from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.providers.fake_provider import (
     FakeProvider,
     create_fake_tool_call,
@@ -7,7 +8,6 @@ from nodetool.providers.fake_provider import (
     create_streaming_fake_provider,
     create_tool_calling_fake_provider,
 )
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.workflows.types import Chunk
 
 

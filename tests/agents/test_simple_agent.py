@@ -1,10 +1,10 @@
 import pytest
 
 from nodetool.agents.simple_agent import SimpleAgent
+from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import Message
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import Message
-from nodetool.agents.tools.base import Tool
 
 
 class DummyTool(Tool):

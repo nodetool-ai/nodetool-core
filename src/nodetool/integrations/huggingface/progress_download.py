@@ -1,10 +1,9 @@
 # progress_download.py
 
-from pathlib import Path
-from typing import Callable, Dict, Optional, Union
-
 import os
 import shutil
+from pathlib import Path
+from typing import Callable, Dict, Optional, Union
 
 import huggingface_hub.file_download as _fd
 from huggingface_hub import constants
@@ -13,8 +12,9 @@ from huggingface_hub.utils import build_hf_headers, validate_hf_hub_args
 logger = _fd.logger
 
 ProgressCallback = Callable[[int, Optional[int]], None]
-from tqdm.auto import tqdm
 import threading
+
+from tqdm.auto import tqdm
 
 _thread_local = threading.local()
 
@@ -23,10 +23,10 @@ class _CallbackTqdm(tqdm):
         # Force disable display so it doesn't print to stderr
         kwargs["disable"] = True
         super().__init__(*args, **kwargs)
-        
+
         # Get callback from thread local storage
         self._progress_callback = getattr(_thread_local, "progress_callback", None)
-        
+
         # Report initial progress if resuming
         if self.n > 0 and self._progress_callback is not None:
             self._progress_callback(self.n, self.total)
@@ -145,7 +145,7 @@ def _hf_hub_download_to_cache_dir_with_progress(
     etag_timeout: float,
     headers: Dict[str, str],
     proxies: Optional[Dict],
-    token: Optional[Union[bool, str]],
+    token: Optional[bool | str],
     local_files_only: bool,
     force_download: bool,
     progress_callback: Optional[ProgressCallback],
@@ -291,7 +291,7 @@ def _hf_hub_download_to_cache_dir_with_progress(
 
 def _hf_hub_download_to_local_dir_with_progress(
     *,
-    local_dir: Union[str, Path],
+    local_dir: str | Path,
     repo_id: str,
     repo_type: str,
     filename: str,
@@ -300,7 +300,7 @@ def _hf_hub_download_to_local_dir_with_progress(
     etag_timeout: float,
     headers: Dict[str, str],
     proxies: Optional[Dict],
-    token: Union[bool, str, None],
+    token: bool | str | None,
     cache_dir: str,
     force_download: bool,
     local_files_only: bool,
@@ -434,19 +434,19 @@ def hf_hub_download_with_progress(
     revision: Optional[str] = None,
     library_name: Optional[str] = None,
     library_version: Optional[str] = None,
-    cache_dir: Union[str, Path, None] = None,
-    local_dir: Union[str, Path, None] = None,
-    user_agent: Union[Dict, str, None] = None,
+    cache_dir: str | Path | None = None,
+    local_dir: str | Path | None = None,
+    user_agent: Dict | str | None = None,
     force_download: bool = False,
     proxies: Optional[Dict] = None,
     etag_timeout: float = constants.DEFAULT_ETAG_TIMEOUT,
-    token: Union[bool, str, None] = None,
+    token: bool | str | None = None,
     local_files_only: bool = False,
     headers: Optional[Dict[str, str]] = None,
     endpoint: Optional[str] = None,
     resume_download: Optional[bool] = None,
     force_filename: Optional[str] = None,
-    local_dir_use_symlinks: Union[bool, str] = "auto",
+    local_dir_use_symlinks: bool | str = "auto",
     progress_callback: Optional[ProgressCallback] = None,
 ) -> str:
     """
@@ -491,6 +491,7 @@ def hf_hub_download_with_progress(
             "The `force_filename` parameter is deprecated as a new caching system, "
             "which keeps the filenames as they are on the Hub, is now in place.",
             FutureWarning,
+            stacklevel=2,
         )
     if resume_download is not None:
         import warnings
@@ -500,6 +501,7 @@ def hf_hub_download_with_progress(
             "Downloads always resume when possible. "
             "If you want to force a new download, use `force_download=True`.",
             FutureWarning,
+            stacklevel=2,
         )
 
     if cache_dir is None:
@@ -536,7 +538,8 @@ def hf_hub_download_with_progress(
             warnings.warn(
                 "`local_dir_use_symlinks` parameter is deprecated and will be ignored. "
                 "The process to download files to a local folder has been updated and does "
-                "not rely on symlinks anymore."
+                "not rely on symlinks anymore.",
+                stacklevel=2,
             )
 
         return _hf_hub_download_to_local_dir_with_progress(

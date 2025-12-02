@@ -1,13 +1,13 @@
 import asyncio
 import enum
 import os
-from typing import AsyncGenerator, ClassVar, Optional, Union, TypedDict
-import pytest
-from nodetool.metadata.node_metadata import NodeMetadata
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.property import Property
-from nodetool.metadata.type_metadata import TypeMetadata
+from typing import AsyncGenerator, ClassVar, Optional, TypedDict, Union
 
+import pytest
+
+from nodetool.metadata.node_metadata import NodeMetadata
+from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.metadata.types import DataframeRef, ImageRef, OutputSlot
 from nodetool.workflows.base_node import (
     NODE_BY_TYPE,
     BaseNode,
@@ -15,9 +15,9 @@ from nodetool.workflows.base_node import (
     get_node_class,
     type_metadata,
 )
-from nodetool.metadata.types import OutputSlot, DataframeRef, ImageRef
 from nodetool.workflows.inbox import NodeInbox
-
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.property import Property
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 test_file = os.path.join(current_dir, "test.jpg")
@@ -94,7 +94,7 @@ class ConfigurableDynamicNode(BaseNode):
 
 
 class StreamingInputNode(BaseNode):
-    calls: list[str] = []
+    calls: ClassVar[list[str]] = []
 
     @classmethod
     def is_streaming_input(cls) -> bool:
@@ -106,7 +106,7 @@ class StreamingInputNode(BaseNode):
 
 
 class CustomRoutingNode(BaseNode):
-    suppressed_outputs: set[str] = {"meta"}
+    suppressed_outputs: ClassVar[set[str]] = {"meta"}
 
     def should_route_output(self, output_name: str) -> bool:
         return output_name not in self.suppressed_outputs
@@ -302,7 +302,7 @@ def test_type_metadata_enum():
 
 
 def test_type_metadata_nested():
-    assert type_metadata(list[dict[str, Union[int, str]]]) == TypeMetadata(
+    assert type_metadata(list[dict[str, int | str]]) == TypeMetadata(
         type="list",
         type_args=[
             TypeMetadata(
@@ -477,7 +477,7 @@ def test_node_assign_property_list_of_base_types():
     from nodetool.metadata.types import ImageRef
 
     class MultiImageNode(BaseNode):
-        images: list[ImageRef] = []
+        images: ClassVar[list[ImageRef]] = []
 
         async def process(self, context: ProcessingContext) -> list[ImageRef]:
             return self.images

@@ -1,13 +1,14 @@
 import asyncio
 import queue
+
 import pytest
 
+from nodetool.types.graph import Edge
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.types.graph import Edge
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 

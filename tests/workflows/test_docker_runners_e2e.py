@@ -3,18 +3,18 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from nodetool.workflows.processing_context import ProcessingContext
 import pytest
 
-from nodetool.code_runners.python_runner import PythonDockerRunner
-from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
 from nodetool.code_runners.bash_runner import BashDockerRunner
+from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
+from nodetool.code_runners.python_runner import PythonDockerRunner
 from nodetool.code_runners.ruby_runner import RubyDockerRunner
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 def _docker_available() -> bool:
     try:
-        import docker  # noqa: F401
+        import docker
 
         client = docker.from_env()  # type: ignore[attr-defined]
         client.ping()

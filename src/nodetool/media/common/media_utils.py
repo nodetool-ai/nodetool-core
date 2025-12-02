@@ -45,8 +45,8 @@ def create_empty_video(fps: int, width: int, height: int, duration: int, filenam
     Returns:
         None
     """
-    import numpy as np
     import cv2
+    import numpy as np
 
     # Calculate the number of frames needed
     num_frames = int(fps * duration)

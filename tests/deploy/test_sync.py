@@ -4,7 +4,6 @@ Unit tests for synchronization utilities.
 
 from nodetool.deploy.sync import extract_models
 
-
 # Mark all tests to not use any fixtures from conftest
 pytest_plugins = ()
 

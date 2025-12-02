@@ -13,16 +13,17 @@ This example shows how to:
 """
 
 import asyncio
-from nodetool.agents.agent import Agent
-from nodetool.providers import get_provider
-from nodetool.agents.tools import GoogleSearchTool, BrowserTool
-from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, PlanningUpdate
-from nodetool.runtime.resources import ResourceScope
 
 import dotenv
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk, PlanningUpdate
 
 dotenv.load_dotenv()
 
