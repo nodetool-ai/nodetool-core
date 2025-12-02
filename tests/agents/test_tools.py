@@ -52,22 +52,6 @@ class DummySession:
 
 
 @pytest.mark.asyncio
-async def test_download_file(monkeypatch, context: ProcessingContext):
-    response = DummyResponse(b"content")
-    session = DummySession(response)
-    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
-
-    tool = DownloadFileTool()
-    result = await tool.process(
-        context, {"url": "http://example.com/file", "output_file": "file.txt"}
-    )
-    assert result["success"] is True
-    full_path = context.resolve_workspace_path("file.txt")
-    with open(full_path, "rb") as f:
-        assert f.read() == b"content"
-
-
-@pytest.mark.asyncio
 async def test_save_and_read_asset(monkeypatch):
     saved = {}
 

@@ -112,6 +112,9 @@ from typing import TYPE_CHECKING, Any, cast
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Import TypeMetadata at runtime so Pydantic can resolve forward references
+from nodetool.metadata.type_metadata import TypeMetadata
+
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
