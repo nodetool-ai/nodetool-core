@@ -207,9 +207,9 @@ async def run_graph_async(graph: Graph, **kwargs):
         return res
 
 
-async def run_graph(graph: Graph, **kwargs):
+def run_graph(graph: Graph, **kwargs):
     """
-    Asynchronously run the workflow with the given graph.
+    Run the workflow with the given graph.
 
     Args:
         graph (Graph): The graph object representing the workflow.
@@ -218,7 +218,7 @@ async def run_graph(graph: Graph, **kwargs):
     Returns:
         Any: The result of the workflow execution.
     """
-    return await run_graph_async(graph, **kwargs)
+    return run_graph_sync(graph, **kwargs)
 
 
 def run_graph_sync(graph: Graph, **kwargs):

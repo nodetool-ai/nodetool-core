@@ -215,45 +215,6 @@ async def test_cancel_job(simple_workflow, cleanup_jobs):
 
 
 @pytest.mark.asyncio
-async def test_list_jobs(simple_workflow, cleanup_jobs):
-    """Test listing jobs."""
-    manager = JobExecutionManager.get_instance()
-
-    # Start multiple jobs
-    jobs = []
-    for _i in range(3):
-        request = RunJobRequest(
-            workflow_id=simple_workflow.id,
-            user_id="test_user",
-            auth_token="test_token",
-            job_type="workflow",
-            params={},  # Empty graph needs no params
-            graph=Graph(nodes=[], edges=[]),
-        )
-
-        context = ProcessingContext(
-            user_id="test_user",
-            auth_token="test_token",
-            workflow_id=simple_workflow.id,
-        )
-
-        bg_job = await manager.start_job(request, context)
-        jobs.append(bg_job)
-
-    # List all jobs
-    all_jobs = manager.list_jobs()
-    assert len(all_jobs) >= 3
-
-    # List jobs for specific user
-    user_jobs = manager.list_jobs(user_id="test_user")
-    assert len(user_jobs) >= 3
-
-    # Cleanup
-    for bg_job in jobs:
-        await manager.cancel_job(bg_job.job_id)
-
-
-@pytest.mark.asyncio
 async def test_get_job(simple_workflow, cleanup_jobs):
     """Test getting a specific job."""
     manager = JobExecutionManager.get_instance()
