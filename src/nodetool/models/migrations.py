@@ -69,11 +69,8 @@ async def run_startup_migrations(pool: SQLiteConnectionPool | None = None) -> No
                 table_name = model_cls.get_table_name()
 
                 try:
-                    log.info(f"Migrating table: {table_name}")
                     adapter = await scope.db.adapter_for_model(model_cls)
                     await adapter.auto_migrate()
-
-                    log.info(f"Successfully migrated table: {table_name}")
 
                 except Exception as e:
                     log.error(f"Failed to migrate table {table_name}: {e}", exc_info=True)

@@ -380,6 +380,7 @@ class SQLiteAdapter(DatabaseAdapter):
             suffix: Optional suffix to append to the table name (used for migrations).
         """
         table_name = self.table_name + suffix
+        log.info(f"Creating table {table_name}")
         fields = self.fields
         primary_key = self.get_primary_key()
         sql = f"CREATE TABLE IF NOT EXISTS {table_name} ("
@@ -395,11 +396,12 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             await retry_on_locked(_create)
         except aiosqlite.Error as e:
-            print(f"SQLite error during table creation: {e}")
+            log.error(f"SQLite error during table creation: {e}")
             raise e
 
     async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
+        log.warning(f"Dropping table {self.table_name}")
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
 
         async def _drop():
@@ -468,6 +470,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
                 field_type = get_sqlite_type(self.fields[field_name].annotation)
                 try:
+                    log.info(f"Adding column {field_name} to {self.table_name}")
                     await self.connection.execute(
                         f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}"
                     )
@@ -480,6 +483,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         if fields_to_remove:
             # Create new table with desired schema
+            log.warning(f"Recreating table {self.table_name} to remove fields: {fields_to_remove}")
             await self.create_table(suffix="_new")
 
             # Copy data
@@ -563,6 +567,7 @@ class SQLiteAdapter(DatabaseAdapter):
             primary_key: The primary key value of the item to delete.
         """
         pk_column = self.get_primary_key()
+        log.info(f"Deleting record {primary_key} from {self.table_name}")
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
 
         async def _delete():
@@ -700,21 +705,23 @@ class SQLiteAdapter(DatabaseAdapter):
         columns_str = ", ".join(columns)
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
 
+        log.info(f"Creating index {index_name} on {self.table_name}")
         try:
             await self.connection.execute(sql)
             await self.connection.commit()
         except aiosqlite.Error as e:
-            print(f"SQLite error during index creation: {e}")
+            log.error(f"SQLite error during index creation: {e}")
             raise e
 
     async def drop_index(self, index_name: str) -> None:
         sql = f"DROP INDEX IF EXISTS {index_name}"
 
+        log.info(f"Dropping index {index_name}")
         try:
             await self.connection.execute(sql)
             await self.connection.commit()
         except aiosqlite.Error as e:
-            print(f"SQLite error during index deletion: {e}")
+            log.error(f"SQLite error during index deletion: {e}")
             raise e
 
     async def list_indexes(self) -> List[Dict[str, Any]]:
@@ -747,5 +754,5 @@ class SQLiteAdapter(DatabaseAdapter):
                 )
             return indexes
         except aiosqlite.Error as e:
-            print(f"SQLite error during index listing: {e}")
+            log.error(f"SQLite error during index listing: {e}")
             raise e
