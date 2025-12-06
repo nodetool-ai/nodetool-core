@@ -22,9 +22,9 @@ log = get_logger(__name__)
 class SQLiteConnectionPool:
     """Simple async connection pool for SQLite."""
 
-    # Class-level pools per database path
-    _pools: ClassVar[Dict[str, "SQLiteConnectionPool"]] = {}
-    _pools_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    # Class-level pools per database path and event loop
+    _pools: ClassVar[Dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
+    _loop_locks: ClassVar[Dict[int, asyncio.Lock]] = {}
 
     def __init__(self, db_path: str, pool_size: int = 10):
         """Initialize the connection pool.
@@ -40,8 +40,18 @@ class SQLiteConnectionPool:
         self._lock = asyncio.Lock()
 
     @classmethod
+    def _get_loop_lock(cls, loop_id: int) -> asyncio.Lock:
+        """Return an asyncio.Lock bound to the current loop."""
+        if loop_id not in cls._loop_locks:
+            cls._loop_locks[loop_id] = asyncio.Lock()
+        return cls._loop_locks[loop_id]
+
+    @classmethod
     async def get_shared(cls, db_path: str, pool_size: int = 10) -> "SQLiteConnectionPool":
-        """Get or create a shared connection pool for a database path.
+        """Get or create a shared connection pool for a database path and loop.
+
+        Pools are keyed by (event_loop_id, db_path) to avoid sharing asyncio
+        primitives across event loops, which triggers RuntimeError on Windows.
 
         Args:
             db_path: Path to database (defaults to environment config)
@@ -50,19 +60,24 @@ class SQLiteConnectionPool:
         Returns:
             A SQLiteConnectionPool instance
         """
-        # Return existing pool if available
-        if db_path in cls._pools:
-            return cls._pools[db_path]
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+        pool_key = (loop_id, db_path)
+        loop_lock = cls._get_loop_lock(loop_id)
 
-        # Create new pool
-        async with cls._pools_lock:
+        # Return existing pool if available for this loop
+        if pool_key in cls._pools:
+            return cls._pools[pool_key]
+
+        # Create new pool scoped to the current loop
+        async with loop_lock:
             # Check again in case another coroutine just created it
-            if db_path not in cls._pools:
+            if pool_key not in cls._pools:
                 pool = cls(db_path, pool_size)
-                cls._pools[db_path] = pool
-                log.info(f"Created SQLite connection pool for {db_path} with size {pool_size}")
+                cls._pools[pool_key] = pool
+                log.info(f"Created SQLite connection pool for {db_path} with size {pool_size} (loop_id={loop_id})")
 
-            return cls._pools[db_path]
+            return cls._pools[pool_key]
 
     async def acquire(self) -> aiosqlite.Connection:
         """Acquire a connection from the pool.
@@ -239,16 +254,21 @@ class SQLiteConnectionPool:
 
 
 async def shutdown_all_sqlite_pools() -> None:
-    """Shutdown all SQLite connection pools globally.
+    """Shutdown SQLite connection pools for the current event loop.
 
-    This should be called during application shutdown to ensure
-    all connections are properly closed with WAL checkpointing.
+    This avoids awaiting locks created on different loops, which can
+    raise RuntimeError. Pools from other loops (if any) must be closed
+    from within their respective loops.
     """
-    async with SQLiteConnectionPool._pools_lock:
-        for db_path, pool in list(SQLiteConnectionPool._pools.items()):
-            log.info(f"Shutting down SQLite pool for {db_path}")
+    loop_id = id(asyncio.get_running_loop())
+    loop_lock = SQLiteConnectionPool._get_loop_lock(loop_id)
+    async with loop_lock:
+        for (pool_loop_id, db_path), pool in list(SQLiteConnectionPool._pools.items()):
+            if pool_loop_id != loop_id:
+                continue
+            log.info(f"Shutting down SQLite pool for {db_path} (loop_id={loop_id})")
             await pool.close_all()
-        SQLiteConnectionPool._pools.clear()
+            del SQLiteConnectionPool._pools[(pool_loop_id, db_path)]
 
 
 class SQLiteScopeResources(DBResources):
