@@ -156,6 +156,11 @@ class Secret(DBModel):
 
         master_key = await MasterKeyManager.get_master_key()
         self.encrypted_value = SecretCrypto.encrypt(new_value, master_key, self.user_id)
+        
+        # Invalidate cache
+        from nodetool.security.secret_helper import clear_secret_cache
+        clear_secret_cache(self.user_id, self.key)
+        
         await self.save()
 
     @classmethod
@@ -185,6 +190,11 @@ class Secret(DBModel):
             existing.updated_at = updated_at
             if description is not None:
                 existing.description = description
+            
+            # Invalidate cache
+            from nodetool.security.secret_helper import clear_secret_cache
+            clear_secret_cache(user_id, key)
+            
             await existing.save()
             return existing
 
@@ -231,6 +241,11 @@ class Secret(DBModel):
             if description is not None:
                 existing.description = description
                 await existing.save()
+            
+            # Invalidate cache
+            from nodetool.security.secret_helper import clear_secret_cache
+            clear_secret_cache(user_id, key)
+            
             return existing
         else:
             return await cls.create(
@@ -255,6 +270,11 @@ class Secret(DBModel):
         secret = await cls.find(user_id, key)
         if secret:
             await secret.delete()
+            
+            # Invalidate cache
+            from nodetool.security.secret_helper import clear_secret_cache
+            clear_secret_cache(user_id, key)
+            
             return True
         return False
 

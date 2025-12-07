@@ -15,6 +15,23 @@ from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
+# Cache for decrypted secrets: (user_id, key) -> decrypted_value
+_SECRET_CACHE: dict[tuple[str, str], str] = {}
+
+
+def clear_secret_cache(user_id: str, key: str) -> None:
+    """
+    Remove a secret from the local cache.
+
+    Args:
+        user_id: The user ID.
+        key: The secret key.
+    """
+    cache_key = (user_id, key)
+    if cache_key in _SECRET_CACHE:
+        log.debug(f"Clearing secret cache for {key} (user {user_id})")
+        del _SECRET_CACHE[cache_key]
+
 
 async def get_secret(key: str, user_id: str, default: Optional[str] = None) -> Optional[str]:
     """
@@ -36,13 +53,20 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None) -> O
         log.debug(f"Secret '{key}' found in environment variable")
         return os.environ.get(key)
 
-    # 2. Check database
+    # 2. Check cache
+    if (user_id, key) in _SECRET_CACHE:
+        log.debug(f"Secret '{key}' found in cache for user {user_id}")
+        return _SECRET_CACHE[(user_id, key)]
+
+    # 3. Check database
     secret = await Secret.find(user_id, key)
     if secret:
         log.debug(f"Secret '{key}' found in database for user {user_id}")
-        return await secret.get_decrypted_value()
+        value = await secret.get_decrypted_value()
+        _SECRET_CACHE[(user_id, key)] = value
+        return value
 
-    # 3. Return default
+    # 4. Return default
     if default is not None:
         log.debug(f"Secret '{key}' not found, using default value")
         return default
@@ -180,16 +204,32 @@ async def get_secrets_batch(
     if not keys_to_query:
         return result
 
+    # Check cache for remaining keys
+    keys_to_fetch_db = []
+    for key in keys_to_query:
+        if (user_id, key) in _SECRET_CACHE:
+            log.debug(f"Secret '{key}' found in cache for user {user_id}")
+            result[key] = _SECRET_CACHE[(user_id, key)]
+        else:
+            keys_to_fetch_db.append(key)
+
+    # If all found in cache, return
+    if not keys_to_fetch_db:
+        return result
+
     # Query database for remaining secrets
     from nodetool.models.condition_builder import Field
 
     condition = Field("user_id").equals(user_id)
-    secrets, _ = await Secret.query(condition, limit=len(keys_to_query) * 2)
+    secrets, _ = await Secret.query(condition, limit=len(keys_to_fetch_db) * 2)
 
     for secret in secrets:
-        if secret.key in keys_to_query:
+        if secret.key in keys_to_fetch_db:
             log.debug(f"Secret '{secret.key}' found in database for user {user_id}")
-            result[secret.key] = await secret.get_decrypted_value()
+            decrypted_value = await secret.get_decrypted_value()
+            result[secret.key] = decrypted_value
+            # Update cache
+            _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
 
     return result
 
@@ -209,9 +249,18 @@ async def has_secret(key: str, user_id: str) -> bool:
     if os.environ.get(key):
         return True
 
+    # Check cache
+    if (user_id, key) in _SECRET_CACHE:
+        return True
+
     # Check database
     try:
         secret = await Secret.find(user_id, key)
-        return secret is not None
+        if secret:
+            # We found it, might as well cache the value
+            value = await secret.get_decrypted_value()
+            _SECRET_CACHE[(user_id, key)] = value
+            return True
+        return False
     except Exception:
         return False
