@@ -234,8 +234,11 @@ async def hf_head_metadata(
         if e.response.status_code in (401, 403):
             raise PermissionError(
                 f"Unauthorized to access {url!r}. "
-                "Check your Hugging Face token and permissions."
+                f"Status: {e.response.status_code}. "
+                "Check your Hugging Face token and permissions. "
+                f"Token present: {bool(token)}"
             ) from e
+        log.error(f"HTTP error fetching metadata for {url}: {e}")
         raise
 
     etag = resp.headers.get(HF_HEADER_X_LINKED_ETAG) or resp.headers.get("ETag")
@@ -427,7 +430,9 @@ async def async_hf_download(
         )
 
         # 2) HEAD to get metadata (ETag, size, commit, redirect)
+        log.info(f"async_hf_download: Fetching metadata for {repo_id}/{filename}")
         meta = await hf_head_metadata(client, resolve_url, token=token_str)
+        log.info(f"async_hf_download: Metadata received. Size: {meta.size}, ETag: {meta.etag}")
 
         # 3) Compute cache paths (HF-style layout)
         if cache_dir is None:

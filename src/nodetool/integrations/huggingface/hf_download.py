@@ -261,13 +261,13 @@ class DownloadManager:
                 self._token_initialized = True
                 self.logger.debug(f"download_huggingface_repo: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
             else:
-                self.logger.debug(f"download_huggingface_repo: No token found for user_id={user_id}")
+                self.logger.warning(f"download_huggingface_repo: No token found for user_id={user_id} after initialization attempt. Gated models will fail.")
 
         # Log HF_TOKEN presence for debugging
         if self.token:
-            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
+            self.logger.info(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token provided, masked)")
         else:
-            self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
+            self.logger.info(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN (public models only)")
 
         self.logger.info(f"Fetching file list for repo: {repo_id} (user_id={user_id})")
         raw_files = self.api.list_repo_tree(repo_id, recursive=True)
@@ -302,7 +302,9 @@ class DownloadManager:
         state.total_files = len(files_to_download)
         state.total_bytes = sum(getattr(file, "size", 0) for file in files_to_download)
         self.logger.info(
-            f"Total files to download: {state.total_files}, Total size: {state.total_bytes} bytes"
+            f"download_huggingface_repo: Processing {len(files)} total files for {repo_id}. "
+            f"Already cached: {len(files) - len(files_to_download)}. "
+            f"To download: {state.total_files} files, {state.total_bytes} bytes."
         )
 
         # Initial update

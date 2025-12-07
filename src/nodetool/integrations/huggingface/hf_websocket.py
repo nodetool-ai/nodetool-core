@@ -60,7 +60,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
         if not user_id:
             user_id = "1"
 
-        log.info(f"huggingface_download_endpoint: Websocket connection with user_id={user_id}")
+        log.info(f"huggingface_download_endpoint: Authenticated connection verified for user_id={user_id}")
         await websocket.accept()
 
         download_manager: DownloadManager | None = None
@@ -111,6 +111,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                             ignore_patterns=ignore_patterns,
                             user_id=user_id,
                         )
+                        log.info(f"huggingface_download_endpoint: Download started successfully for {repo_id}/{path}")
                     except Exception as e:
                         # Error should already be sent by start_download, but send a final error message
                         # in case the WebSocket update failed
