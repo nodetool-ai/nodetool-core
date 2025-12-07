@@ -7,6 +7,7 @@ from contextlib import suppress
 from typing import ClassVar, Dict, Optional
 
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
@@ -118,7 +119,9 @@ class JobExecutionManager:
         """Ensure finished jobs have their status written to the database and cleanup resources."""
         job_id = job.job_id
         try:
-            await job.finalize_state()
+            # Wrap in ResourceScope to ensure database adapter access for Job update
+            async with ResourceScope():
+                await job.finalize_state()
         finally:
             # Remove job from registry and cleanup its resources
             stored_job = self._jobs.pop(job_id, None)
