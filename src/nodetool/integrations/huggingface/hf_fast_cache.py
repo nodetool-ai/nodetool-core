@@ -640,8 +640,7 @@ def _changed(now: Optional[float], old: Optional[float]) -> bool:
 if __name__ == "__main__":
     async def main():
         cache = HfFastCache()
-        files = await cache.list_files("h94/IP-Adapter")
-        for file in files:
-            print(file)
+        exists = await cache.exists("nunchaku-tech/nunchaku-flux.1-schnell", "svdq-int4_r32-flux.1-schnell.safetensors")
+        print(exists)
 
     asyncio.run(main())
