@@ -106,9 +106,26 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
     ]
     # gguf_models = await load_gguf_models_from_file()
     # mlx_models = await load_mlx_models_from_file()
-    hf_models, ollama_models_unified = await asyncio.gather(
-        read_cached_hf_models(), get_ollama_models_unified()
+    
+    # Run in parallel, catching exceptions to handle them specifically
+    results = await asyncio.gather(
+        read_cached_hf_models(), get_ollama_models_unified(), return_exceptions=True
     )
+    hf_models = results[0]
+    ollama_models_unified = results[1]
+
+    if isinstance(hf_models, Exception):
+        raise hf_models
+
+    if isinstance(ollama_models_unified, Exception):
+        e = ollama_models_unified
+        # Check if it looks like a connection error
+        if "connect" in str(e).lower() or "refused" in str(e).lower():
+             raise HTTPException(
+                status_code=503,
+                detail=f"ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download"
+             ) from e
+        raise e
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models
@@ -414,7 +431,15 @@ async def delete_huggingface_model(repo_id: str) -> bool:
 async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LlamaModel]:
-    return await get_ollama_models()
+    try:
+        return await get_ollama_models()
+    except Exception as e:
+        if "connect" in str(e).lower() or "refused" in str(e).lower():
+             raise HTTPException(
+                status_code=503,
+                detail=f"ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download"
+             ) from e
+        raise e
 
 
 @router.delete("/ollama")
