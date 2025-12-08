@@ -33,12 +33,16 @@ class TestSecretHelper:
 
         assert result == value
 
-    async def test_get_secret_from_env(self):
-        """Test that environment variables take priority."""
-        user_id = "test_user_env"
-        key = "TEST_ENV_SECRET"
+    async def test_get_secret_prioritizes_db(self):
+        """Test that database secrets take priority over environment variables."""
+        user_id = "test_user_db_priority"
+        key = "TEST_DB_PRIORITY_SECRET"
         env_value = "env_value_123"
         db_value = "db_value_456"
+
+        # Clear cache first to avoid interference
+        from nodetool.security.secret_helper import _SECRET_CACHE
+        _SECRET_CACHE.clear()
 
         # Create secret in database
         await Secret.create(user_id=user_id, key=key, value=db_value)
@@ -50,8 +54,8 @@ class TestSecretHelper:
             # Retrieve using helper
             result = await get_secret(key, user_id)
 
-            # Should return env value (higher priority)
-            assert result == env_value
+            # Should return DB value (higher priority now)
+            assert result == db_value
         finally:
             # Clean up
             del os.environ[key]
@@ -134,12 +138,16 @@ class TestSecretHelper:
                 os.environ[key] = env_value
 
     @pytest.mark.asyncio
-    async def test_get_secret_sync_env_overrides_database(self):
-        """Test that environment variables take priority over database in sync function."""
-        user_id = "test_user_sync_priority"
-        key = "TEST_SYNC_PRIORITY_SECRET"
+    async def test_get_secret_sync_db_overrides_env(self):
+        """Test that database takes priority over environment in sync function."""
+        user_id = "test_user_sync_db_priority"
+        key = "TEST_SYNC_DB_PRIORITY_SECRET"
         env_value = "env_value_sync"
         db_value = "db_value_sync"
+
+        # Clear cache first
+        from nodetool.security.secret_helper import _SECRET_CACHE
+        _SECRET_CACHE.clear()
 
         # Create secret in database
         await Secret.create(user_id=user_id, key=key, value=db_value)
@@ -148,10 +156,10 @@ class TestSecretHelper:
         os.environ[key] = env_value
 
         try:
-            # Should return env value (higher priority)
+            # Should return DB value (higher priority)
             result = get_secret_sync(key, user_id=user_id)
-            assert result == env_value
-            assert result != db_value
+            assert result == db_value
+            assert result != env_value
         finally:
             if key in os.environ:
                 del os.environ[key]
@@ -196,11 +204,15 @@ class TestSecretHelper:
         assert result is False
 
     async def test_priority_order(self):
-        """Test that priority order is: env > database."""
-        user_id = "test_user_priority"
-        key = "PRIORITY_SECRET"
+        """Test that priority order is: database > env."""
+        user_id = "test_user_priority_check"
+        key = "PRIORITY_SECRET_CHECK"
         env_value = "from_env"
         db_value = "from_db"
+
+        # Clear cache
+        from nodetool.security.secret_helper import _SECRET_CACHE
+        _SECRET_CACHE.clear()
 
         # Create in database
         await Secret.create(user_id=user_id, key=key, value=db_value)
@@ -209,17 +221,48 @@ class TestSecretHelper:
         result1 = await get_secret(key, user_id)
         assert result1 == db_value
 
-        # With env, should get from env
+        # With env, should still get from database (DB > Env)
         os.environ[key] = env_value
         try:
+            from nodetool.security.secret_helper import clear_secret_cache
+            # Clear cache to force re-check of priorities
+            clear_secret_cache(user_id, key)
+            
             result2 = await get_secret(key, user_id)
-            assert result2 == env_value
+            assert result2 == db_value
         finally:
             del os.environ[key]
 
         # After removing env, should get from database again
+        # Clear cache again just to be safe
+        clear_secret_cache(user_id, key)
         result3 = await get_secret(key, user_id)
         assert result3 == db_value
+
+    async def test_forced_env_priority_supabase(self):
+        """Test that infrastructure keys (SUPABASE_*) prioritize environment variables."""
+        user_id = "test_user_infra"
+        key = "SUPABASE_URL"
+        env_value = "https://env.supabase.co"
+        db_value = "https://db.supabase.co"
+
+        # Clear cache
+        from nodetool.security.secret_helper import _SECRET_CACHE
+        _SECRET_CACHE.clear()
+
+        # Create in database
+        await Secret.create(user_id=user_id, key=key, value=db_value)
+
+        # Set environment variable
+        os.environ[key] = env_value
+
+        try:
+            # Should get from ENV because it's in _FORCE_ENV_PRIORITY
+            result = await get_secret(key, user_id)
+            assert result == env_value
+            assert result != db_value
+        finally:
+            del os.environ[key]
 
     async def test_different_users_different_secrets(self):
         """Test that different users can have different values for same key."""

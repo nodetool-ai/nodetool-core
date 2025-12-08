@@ -1618,6 +1618,7 @@ def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, 
 
 # Add package group to the main CLI
 cli.add_command(package)
+cli.add_command(package, name="pack")
 
 # Add settings group to the main CLI
 cli.add_command(settings)

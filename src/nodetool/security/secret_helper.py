@@ -18,6 +18,14 @@ log = get_logger(__name__)
 # Cache for decrypted secrets: (user_id, key) -> decrypted_value
 _SECRET_CACHE: dict[tuple[str, str], str] = {}
 
+# Keys that should ALWAYS prioritize environment variables (System Critical Infrastructure)
+_FORCE_ENV_PRIORITY = {
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "WORKER_AUTH_TOKEN",
+}
+
 
 def clear_secret_cache(user_id: str, key: str) -> None:
     """
@@ -33,7 +41,7 @@ def clear_secret_cache(user_id: str, key: str) -> None:
         del _SECRET_CACHE[cache_key]
 
 
-async def get_secret(key: str, user_id: str, default: Optional[str] = None) -> Optional[str]:
+async def get_secret(key: str, user_id: str, default: Optional[str] = None, check_env: bool = True) -> Optional[str]:
     """
     Get a secret value for a user.
 
@@ -48,21 +56,28 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None) -> O
     Returns:
         The secret value, or None if not found.
     """
-    # 1. Check environment variable
-    if os.environ.get(key):
-        log.debug(f"Secret '{key}' found in environment variable")
+    # 0. Check for forced environment priority (Infrastructure Keys)
+    if key in _FORCE_ENV_PRIORITY and check_env and os.environ.get(key):
+        log.debug(f"Secret '{key}' found in environment (forced priority)")
         return os.environ.get(key)
 
-    # 2. Check cache
+    # 1. Check cache
     if (user_id, key) in _SECRET_CACHE:
         log.debug(f"Secret '{key}' found in cache for user {user_id}")
         return _SECRET_CACHE[(user_id, key)]
 
-    # 3. Check database
+    # 2. Check database
     secret = await Secret.find(user_id, key)
     if secret:
         log.debug(f"Secret '{key}' found in database for user {user_id}")
         value = await secret.get_decrypted_value()
+        _SECRET_CACHE[(user_id, key)] = value
+        return value
+
+    # 3. Check environment variable
+    if check_env and os.environ.get(key):
+        log.debug(f"Secret '{key}' found in environment variable")
+        value = os.environ.get(key)
         _SECRET_CACHE[(user_id, key)] = value
         return value
 
@@ -91,16 +106,16 @@ async def get_secret_required(key: str, user_id: str) -> str:
     Raises:
         ValueError: If the secret is not found.
     """
-    # 1. Check environment variable
-    if os.environ.get(key):
-        log.debug(f"Secret '{key}' found in environment variable")
-        return os.environ.get(key)
-
-    # 2. Check database
+    # 1. Check database
     secret = await Secret.find(user_id, key)
     if secret:
         log.debug(f"Secret '{key}' found in database for user {user_id}")
         return await secret.get_decrypted_value()
+
+    # 2. Check environment variable
+    if os.environ.get(key):
+        log.debug(f"Secret '{key}' found in environment variable")
+        return os.environ.get(key)
 
     log.debug(f"Secret '{key}' not found for user {user_id}")
     raise ValueError(
@@ -127,11 +142,9 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
     Returns:
         The secret value, or default/None if not found.
     """
-    # 1. Check environment variable first (highest priority)
-    env_value = os.environ.get(key)
-    if env_value:
-        log.debug(f"Secret '{key}' found in environment variable")
-        return env_value
+    # 1. Check for forced environment priority
+    if key in _FORCE_ENV_PRIORITY and os.environ.get(key):
+        return os.environ.get(key)
 
     # 2. Try to infer user_id from ResourceScope if not provided
     resolved_user_id = user_id
@@ -147,19 +160,26 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
                 import nest_asyncio
 
                 nest_asyncio.apply()
+                # Check env will be handled by get_secret based on its logic (DB > Env)
+                # We pass check_env=True (default) so it falls back to env if not in DB
                 return loop.run_until_complete(get_secret(key, resolved_user_id, default))
             except ImportError:
                 log.debug(
                     f"Running event loop detected but nest_asyncio not available. "
-                    f"Skipping database lookup for '{key}'. Install nest_asyncio to enable database "
-                    "lookup from sync context."
+                    f"Skipping database lookup for '{key}'."
                 )
         except RuntimeError:
             return asyncio.run(get_secret(key, resolved_user_id, default))
     else:
         log.debug(
-            f"No user_id available for secret '{key}'. Skipping database lookup and falling back to defaults."
+            f"No user_id available for secret '{key}'. Skipping database lookup."
         )
+
+    # 4. Fallback to Environment if not found in DB or no user_id available
+    # (This handles the case where DB lookup was skipped or failed to find it)
+    if os.environ.get(key):
+         log.debug(f"Secret '{key}' found in environment variable (fallback)")
+         return os.environ.get(key)
 
     # 4. Return default if provided
     if default is not None:
@@ -188,48 +208,46 @@ async def get_secrets_batch(
         Environment variables take precedence over database values.
     """
     result = {}
-
-    # First check environment variables
-    keys_to_query = []
-    for key in keys:
-        env_value = os.environ.get(key)
-        if env_value:
-            log.debug(f"Secret '{key}' found in environment variable")
-            result[key] = env_value
-        else:
-            keys_to_query.append(key)
-            result[key] = None  # Initialize to None
-
-    # If all secrets were in environment, return early
-    if not keys_to_query:
-        return result
-
-    # Check cache for remaining keys
-    keys_to_fetch_db = []
-    for key in keys_to_query:
+    keys_to_find = list(keys)
+    
+    # 1. Check cache
+    keys_not_in_cache = []
+    for key in keys_to_find:
         if (user_id, key) in _SECRET_CACHE:
             log.debug(f"Secret '{key}' found in cache for user {user_id}")
             result[key] = _SECRET_CACHE[(user_id, key)]
         else:
-            keys_to_fetch_db.append(key)
+            keys_not_in_cache.append(key)
+            result[key] = None # Initialize
 
-    # If all found in cache, return
-    if not keys_to_fetch_db:
+    if not keys_not_in_cache:
         return result
 
-    # Query database for remaining secrets
+    # 2. Query database for remaining secrets
     from nodetool.models.condition_builder import Field
 
     condition = Field("user_id").equals(user_id)
-    secrets, _ = await Secret.query(condition, limit=len(keys_to_fetch_db) * 2)
+    secrets, _ = await Secret.query(condition, limit=len(keys_not_in_cache) * 2)
 
+    found_in_db = set()
     for secret in secrets:
-        if secret.key in keys_to_fetch_db:
+        if secret.key in keys_not_in_cache:
             log.debug(f"Secret '{secret.key}' found in database for user {user_id}")
             decrypted_value = await secret.get_decrypted_value()
             result[secret.key] = decrypted_value
             # Update cache
             _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
+            found_in_db.add(secret.key)
+
+    # 3. Check environment for anything still missing
+    for key in keys_not_in_cache:
+        if key not in found_in_db:
+            env_value = os.environ.get(key)
+            if env_value:
+                log.debug(f"Secret '{key}' found in environment variable")
+                result[key] = env_value
+                # Update cache
+                _SECRET_CACHE[(user_id, key)] = env_value
 
     return result
 

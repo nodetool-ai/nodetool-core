@@ -26,32 +26,32 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     """
     log.debug(f"get_hf_token: Looking up HF_TOKEN for user_id={user_id}")
 
-    # 1. Check environment variable first (highest priority)
-    token = os.environ.get("HF_TOKEN")
-    if token:
-        log.debug(f"get_hf_token: HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
-        return token
-
-    # 2. Try to get from database if user_id is available
+    # 1. Try to get from database first (Prioritize Secrets)
     if user_id is None:
         log.debug("get_hf_token: No user_id provided, checking ResourceScope")
         # Try to get user_id from ResourceScope if available
         with suppress(Exception):
-            maybe_scope()
+            scope = maybe_scope()
+            if scope:
+                user_id = getattr(scope, "user_id", None)
 
     if user_id:
         log.debug(f"get_hf_token: Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
         try:
+            # check_env=True is default, but get_secret now prioritizes DB > Env
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                log.debug(f"get_hf_token: HF_TOKEN found in database secrets for user_id={user_id}")
+                log.debug(f"get_hf_token: HF_TOKEN found for user_id={user_id}")
                 return token
-            else:
-                log.debug(f"get_hf_token: HF_TOKEN not found in database for user_id={user_id}")
         except Exception as e:
-            log.debug(f"get_hf_token: Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
-    else:
-        log.debug("get_hf_token: No user_id available, skipping database lookup")
+            log.debug(f"get_hf_token: Error getting HF_TOKEN for user_id={user_id}: {e}")
+    
+    # Fallback to env var if no user_id (get_secret handles env var if user_id is provided, 
+    # but if user_id is None we need to check env manually because get_secret requires user_id)
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        log.debug("get_hf_token: HF_TOKEN found in environment variables (no user context)")
+        return token
 
-    log.debug(f"get_hf_token: HF_TOKEN not found in environment or database secrets (user_id={user_id})")
+    log.debug(f"get_hf_token: HF_TOKEN not found (user_id={user_id})")
     return None
