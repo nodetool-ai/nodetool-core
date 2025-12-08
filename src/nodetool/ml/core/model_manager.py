@@ -83,83 +83,66 @@ class ModelManager:
     _DEFAULT_VRAM_COOLDOWN_SECONDS: ClassVar[float] = 30.0
 
     @classmethod
-    def get_model(cls, model_id: str, task: str, path: str | None = None) -> Any:
+    def get_model(cls, cache_key: str) -> Any:
         """Retrieves a model instance based on the given parameters.
 
         Args:
-            model_id (str): Identifier for the model
-            task (str): Task associated with the model
-            path (str | None): Optional path parameter
+            cache_key (str): Cache key for the model
 
         Returns:
             Any: The stored model instance if found in non-production environment, None otherwise
         """
-        if not Environment.is_production():
-            key = f"{model_id}_{task}_{path}"
-            model = cls._models.get(key)
-            if model is not None:
-                cls._update_model_metadata(key, model)
-                logger.info(
-                    f"✓ Cache HIT: Retrieved cached model for {model_id} (task: {task}, path: {path})"
-                )
-            else:
-                logger.info(
-                    f"✗ Cache MISS: No cached model found for {model_id} (task: {task}, path: {path})"
-                )
-            logger.debug(
-                f"Model cache status - Total models: {len(cls._models)}, Key searched: {key}"
+        model = cls._models.get(cache_key)
+        if model is not None:
+            cls._update_model_metadata(cache_key, model)
+            logger.info(
+                f"✓ Cache HIT: Retrieved cached model for {cache_key}"
             )
-            return model
         else:
-            logger.debug(
-                f"Production environment: Model caching disabled for {model_id}"
+            logger.info(
+                f"✗ Cache MISS: No cached model found for {cache_key}"
             )
-        return None
+        logger.debug(
+            f"Model cache status - Total models: {len(cls._models)}, Key searched: {cache_key}"
+        )
+        return model
 
     @classmethod
     def set_model(
-        cls, node_id: str, model_id: str, task: str, model: Any, path: str | None = None
+        cls, node_id: str, cache_key: str, model: Any
     ):
         """Stores a model instance and associates it with a node.
 
         Args:
             node_id (str): ID of the node associated with the model
-            model_id (str): Identifier for the model
-            task (str): Task associated with the model
+            cache_key (str): Cache key for the model
             model (Any): The model instance to store
-            path (str | None): Optional path parameter
         """
-        if not Environment.is_production():
-            cls._ensure_memory_capacity(
-                reason=f"Preparing to cache model {model_id} (task: {task}, path: {path})"
-            )
+        cls._ensure_memory_capacity(
+            reason=f"Preparing to cache model {cache_key}"
+        )
 
-            key = f"{model_id}_{task}_{path}"
-            was_existing = key in cls._models
-            cls._models[key] = model
-            cls._models_by_node[node_id] = key
-            cls._update_model_metadata(key, model, node_id=node_id)
+        was_existing = cache_key in cls._models
+        cls._models[cache_key] = model
+        cls._models_by_node[node_id] = cache_key
+        cls._update_model_metadata(cache_key, model, node_id=node_id)
 
-            if was_existing:
-                logger.info(
-                    f"↻ Cache UPDATE: Replaced cached model for {model_id} (task: {task}, path: {path}) - Node: {node_id}"
-                )
-            else:
-                logger.info(
-                    f"+ Cache STORE: Cached new model for {model_id} (task: {task}, path: {path}) - Node: {node_id}"
-                )
-
-            logger.debug(
-                f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}"
+        if was_existing:
+            logger.info(
+                f"↻ Cache UPDATE: Replaced cached model for {cache_key} - Node: {node_id}"
             )
         else:
-            logger.debug(
-                f"Production environment: Model caching disabled, not storing {model_id} for node {node_id}"
+            logger.info(
+                f"+ Cache STORE: Cached new model for {cache_key} - Node: {node_id}"
             )
+
+        logger.debug(
+            f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}"
+        )
 
     @classmethod
     async def get_model_lock(
-        cls, model_id: str, task: str, path: str | None = None
+        cls, cache_key: str
     ) -> asyncio.Lock:
         """Gets or creates a lock for a specific model.
 
@@ -168,9 +151,7 @@ class ModelManager:
         to prevent race conditions.
 
         Args:
-            model_id (str): Identifier for the model
-            task (str): Task associated with the model
-            path (str | None): Optional path parameter
+            cache_key (str): Cache key for the model
 
         Returns:
             asyncio.Lock: The lock associated with this model
@@ -181,26 +162,24 @@ class ModelManager:
                 model = ModelManager.get_model("gpt-4", "text-generation")
                 # ... use model safely ...
         """
-        key = f"{model_id}_{task}_{path}"
-
         # Check if lock exists (fast path without acquiring lock)
-        if key in cls._locks:
-            return cls._locks[key]
+        if cache_key in cls._locks:
+            return cls._locks[cache_key]
 
         # Slow path: need to create the lock
         async with cls._lock_creation_lock:
             # Double-check after acquiring lock (another coroutine might have created it)
-            if key not in cls._locks:
-                cls._locks[key] = asyncio.Lock()
+            if cache_key not in cls._locks:
+                cls._locks[cache_key] = asyncio.Lock()
                 logger.debug(
-                    f"🔒 Created new lock for model: {model_id} (task: {task}, path: {path})"
+                    f"🔒 Created new lock for model: {cache_key}"
                 )
-            return cls._locks[key]
+            return cls._locks[cache_key]
 
     @classmethod
     @asynccontextmanager
     async def lock_model(
-        cls, model_id: str, task: str, path: str | None = None
+        cls, cache_key: str
     ) -> AsyncIterator[None]:
         """Context manager for acquiring exclusive access to a model.
 
@@ -208,9 +187,7 @@ class ModelManager:
         without manually managing lock acquisition and release.
 
         Args:
-            model_id (str): Identifier for the model
-            task (str): Task associated with the model
-            path (str | None): Optional path parameter
+            cache_key (str): Cache key for the model
 
         Yields:
             None
@@ -221,17 +198,16 @@ class ModelManager:
                 # ... use model exclusively ...
                 # Lock is automatically released when exiting the context
         """
-        lock = await cls.get_model_lock(model_id, task, path)
-        key = f"{model_id}_{task}_{path}"
+        lock = await cls.get_model_lock(cache_key)
         logger.debug(
-            f"🔐 Acquiring lock for model: {model_id} (task: {task}, path: {path})"
+            f"🔐 Acquiring lock for model: {cache_key}"
         )
         async with lock:
-            logger.debug(f"✓ Lock acquired for model: {key}")
+            logger.debug(f"✓ Lock acquired for model: {cache_key}")
             try:
                 yield
             finally:
-                logger.debug(f"🔓 Releasing lock for model: {key}")
+                logger.debug(f"🔓 Releasing lock for model: {cache_key}")
 
     # ------------------------------------------------------------------
     # Usage tracking helpers
@@ -271,11 +247,10 @@ class ModelManager:
                 cls._model_size_bytes[key] = size_bytes
 
     @classmethod
-    def get_model_last_used(cls, model_id: str, task: str, path: str | None = None) -> float | None:
+    def get_model_last_used(cls, cache_key: str) -> float | None:
         """Return the last-used timestamp for a cached model, if available."""
 
-        key = f"{model_id}_{task}_{path}"
-        return cls._model_last_used.get(key)
+        return cls._model_last_used.get(cache_key)
 
     @classmethod
     def get_least_recently_used_models(cls, limit: int | None = None) -> list[tuple[str, float]]:
