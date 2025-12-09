@@ -2119,6 +2119,25 @@ class ProcessingContext:
         """
         return await self.video_from_io(BytesIO(b), name=name, parent_id=parent_id)
 
+    async def video_to_frames(self, video: VideoRef, fps: int = 1) -> list[PIL.Image.Image]:
+        """
+        Convert a video asset to a list of PIL images at a specific FPS.
+        
+        Args:
+            video: The video asset to convert
+            fps: Frames per second to sample. Default is 1.
+            
+        Returns:
+            List[PIL.Image.Image]: List of PIL images
+        """
+        from nodetool.media.video.video_utils import extract_video_frames
+
+        if video.is_empty():
+            return []
+
+        video_bytes = await self.asset_to_bytes(video)
+        return await asyncio.to_thread(extract_video_frames, video_bytes, fps)
+
     async def to_estimator(self, model_ref: ModelRef):
         """
         Converts a model reference to an estimator object.

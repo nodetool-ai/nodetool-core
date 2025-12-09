@@ -844,10 +844,6 @@ class WorkflowRunner:
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
             for edge in outgoing_edges:
-                log.debug(
-                    f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
-                    f"to {edge.target} input '{edge.targetHandle}'. Value: {str(value_to_send)[:50]}"
-                )
                 # Deliver to inboxes for streaming-input consumers
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:

@@ -204,70 +204,6 @@ for _base, _ckpt in _CHECKPOINT_BASES.items():
     if _base in HF_TYPE_KEYWORD_MATCHERS and _ckpt not in HF_TYPE_KEYWORD_MATCHERS:
         HF_TYPE_KEYWORD_MATCHERS[_ckpt] = list(HF_TYPE_KEYWORD_MATCHERS[_base])
 
-# hf.* types that should trigger filename-based searches when building search configs.
-HF_FILE_PATTERN_TYPES = {
-    "hf.text_to_image",
-    "hf.image_to_image",
-    "hf.stable_diffusion",
-    "hf.stable_diffusion_xl",
-    "hf.stable_diffusion_xl_refiner",
-    "hf.stable_diffusion_3",
-    "hf.qwen_image",
-    "hf.qwen_image_edit",
-    "hf.qwen_vl",
-    "hf.controlnet",
-    "hf.controlnet_sdxl",
-    "hf.controlnet_flux",
-    "hf.ip_adapter",
-    "hf.lora_sd",
-    "hf.lora_sdxl",
-    "hf.lora_qwen_image",
-    "hf.inpainting",
-    "hf.outpainting",
-    "hf.stable_diffusion_checkpoint",
-    "hf.stable_diffusion_xl_checkpoint",
-    "hf.stable_diffusion_3_checkpoint",
-    "hf.stable_diffusion_xl_refiner_checkpoint",
-    "hf.flux_checkpoint",
-    "hf.vae",
-    "hf.unet",
-    "hf.clip",
-    "hf.t5",
-    "hf.image_to_video",
-    "hf.text_to_video",
-    "hf.text_to_speech",
-    "hf.text_to_text",
-    "hf.image_to_text",
-    "hf.text_to_audio",
-    "hf.text_generation",
-    "hf.sentence_similarity",
-    "hf.text_classification",
-    "hf.zero_shot_classification",
-    "hf.token_classification",
-    "hf.object_detection",
-    "hf.zero_shot_object_detection",
-    "hf.image_classification",
-    "hf.zero_shot_image_classification",
-    "hf.audio_classification",
-    "hf.zero_shot_audio_classification",
-    "hf.image_segmentation",
-    "hf.depth_estimation",
-    "hf.feature_extraction",
-    "hf.fill_mask",
-    "hf.translation",
-    "hf.visual_question_answering",
-    "hf.question_answering",
-    "hf.table_question_answering",
-    "hf.text2text_generation",
-    "hf.image_text_to_text",
-    "hf.reranker",
-    "hf.real_esrgan",
-    "hf.flux_redux",
-}
-# Cache key/TTL used to memoize full cached-model listings to speed UI refreshes.
-CACHED_HF_MODELS_CACHE_KEY = "cached_hf_models"
-CACHED_HF_MODELS_TTL = 3600  # 1 hour
-
 
 class RepoPackagingHint(str, Enum):
     """
@@ -281,6 +217,7 @@ class RepoPackagingHint(str, Enum):
     REPO_BUNDLE = "repo_bundle"  # Treat repo as a single unit (diffusers-style)
     PER_FILE = "per_file"  # Present independent model files (gguf, loras, adapters)
     UNKNOWN = "unknown"  # Not enough signal to decide
+
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """
@@ -336,7 +273,26 @@ _CONFIG_MODEL_TYPE_MAPPING = {
     "text-generation": "hf.text_generation",
     "text-to-audio": "hf.text_to_audio",
     "text-to-speech": "hf.text_to_speech",
+    "llama": "hf.text_generation",
+    "gemma3": "hf.text_generation",
+    "gemma3n": "hf.text_generation",
+    "qwen2": "hf.text_generation",
+    "qwen3": "hf.text_generation",
+    "qwen_2_5_vl": "hf.text_generation",
+    "qwen_3_vl": "hf.text_generation",
+    "mistral3": "hf.text_generation",
+    "gpt_oss": "hf.text_generation",
+    "llama": "hf.text_generation",
+    "phi3": "hf.text_generation",
+    "phi4": "hf.text_generation",
+    "gemma2": "hf.text_generation",
+    "qwen_vl": "hf.image_text_to_text",
+    "qwen_3_vl": "hf.image_text_to_text",
+    "qwen2_5_vl": "hf.image_text_to_text",
+    "glm4v": "hf.image_text_to_text",
 }
+
+_CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING = {}
 
 
 def size_on_disk(
@@ -444,9 +400,7 @@ def detect_repo_packaging(
     independent choices for the user.
     """
     weight_entries = [
-        (name, size)
-        for name, size in file_entries
-        if _is_weight_file(name)
+        (name, size) for name, size in file_entries if _is_weight_file(name)
     ]
     weight_files = [name for name, _ in weight_entries]
     lower_weight_files = [name.lower() for name in weight_files]
@@ -483,7 +437,9 @@ def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
     if has_model_index(model_info):
         return True
     library_name = getattr(model_info, "library_name", None)
-    return bool(library_name and str(library_name).lower() in ("diffusers", "transformers"))
+    return bool(
+        library_name and str(library_name).lower() in ("diffusers", "transformers")
+    )
 
 
 def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
@@ -546,6 +502,7 @@ def _all_same_family(weight_files: Sequence[str]) -> bool:
             stem = stem.replace(marker, "")
         normalized_stems.add(stem)
     return len(normalized_stems) == 1
+
 
 def _is_single_file_diffusion_weight(file_name: str) -> bool:
     """
@@ -810,8 +767,6 @@ def model_type_from_model_info(
     return None
 
 
-
-
 def _get_file_size(file_path: Path) -> int:
     """Get file size, handling symlinks."""
     try:
@@ -835,23 +790,6 @@ def _safe_load_json(file_path: Path) -> dict:
     except Exception as exc:
         log.debug("Failed to load JSON from %s: %s", file_path, exc)
         return {}
-
-
-def _infer_model_type_from_architectures(architectures: Sequence[str]) -> str | None:
-    """Map common architecture names to hf.* types when config.json exposes them."""
-    for arch in architectures:
-        lower = arch.lower()
-        if "whisper" in lower:
-            return "hf.automatic_speech_recognition"
-        # Text generation models (LLMs)
-        if any(keyword in lower for keyword in ["llama", "mistral", "qwen", "gpt", "phi", "gemma", "falcon"]):
-            return "hf.text_generation"
-        # Audio generation
-        if any(keyword in lower for keyword in ["bark", "audioldm", "musicgen"]):
-            return "hf.text_to_audio"
-        if any(keyword in lower for keyword in ["speecht5", "vits", "tacotron"]):
-            return "hf.text_to_speech"
-    return None
 
 
 def _infer_model_type_from_local_configs(
@@ -878,7 +816,9 @@ def _infer_model_type_from_local_configs(
     if not config_candidates:
         return None
 
-    for rel_path in sorted(config_candidates, key=lambda value: (value.count("/"), len(value))):
+    for rel_path in sorted(
+        config_candidates, key=lambda value: (value.count("/"), len(value))
+    ):
         config_path = snapshot_dir / rel_path
         data = _safe_load_json(config_path)
         if not data:
@@ -890,7 +830,9 @@ def _infer_model_type_from_local_configs(
             if mapped:
                 return mapped
 
-        model_type = str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
+        model_type = (
+            str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
+        )
         if model_type:
             mapped = _CONFIG_MODEL_TYPE_MAPPING.get(model_type)
             if mapped:
@@ -898,34 +840,30 @@ def _infer_model_type_from_local_configs(
 
         architectures = data.get("architectures")
         if isinstance(architectures, list):
-            mapped_arch = _infer_model_type_from_architectures([str(arch) for arch in architectures])
-            if mapped_arch:
-                return mapped_arch
-
+            for arch in architectures:
+                mapped = _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING.get(
+                    str(arch),
+                    None,
+                )
+                if mapped:
+                    return mapped
     return None
 
 
 async def _build_cached_repo_entry(
     repo_id: str,
     repo_dir: Path,
-    model_info: ModelInfo | None,
     recommended_models: dict[str, list[UnifiedModel]],
-    *,
     snapshot_dir: Path | None = None,
     file_list: list[str] | None = None,
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
     """
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
-
-    The function gathers file sizes from the active snapshot, runs artifact inspection
-    for family/component hints, infers model type (recommended -> hub metadata -> local
-    configs), and derives a pipeline tag when none is provided.
     """
     repo_root = await HF_FAST_CACHE.repo_root(repo_id, repo_type="model")
     file_entries: list[tuple[str, int]] = []
     size_on_disk = 0
     snapshot_path: Path | None = snapshot_dir
-
     if snapshot_path is None:
         resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(
             repo_id, repo_type="model"
@@ -934,11 +872,7 @@ async def _build_cached_repo_entry(
 
     if snapshot_path:
         if file_list is None:
-            try:
-                file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
-            except Exception as exc:  # pragma: no cover - defensive
-                log.debug("Failed to list files for %s: %s", repo_id, exc)
-                file_list = []
+            file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
 
         for file_name in file_list or []:
             file_path = snapshot_path / file_name
@@ -946,28 +880,19 @@ async def _build_cached_repo_entry(
             size_on_disk += file_size
             file_entries.append((file_name, file_size))
 
+    if repo_id in recommended_models:
+        model = recommended_models[repo_id][0]
+        return model, file_entries
+
     artifact_detection: ArtifactDetection | None = None
     if file_entries and snapshot_path:
         artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
-        try:
-            artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
-        except Exception as exc:  # pragma: no cover
-            log.debug("Artifact detection failed for %s: %s", repo_id, exc)
+        artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
 
-    model_type = model_type_from_model_info(
-        recommended_models,
-        repo_id,
-        model_info,
+    model_type = _infer_model_type_from_local_configs(
+        file_entries,
+        snapshot_path,
     )
-    if model_type is None:
-        model_type = _infer_model_type_from_local_configs(
-            file_entries,
-            snapshot_path,
-        )
-
-    pipeline_tag = model_info.pipeline_tag if model_info else None
-    if pipeline_tag is None and model_type:
-        pipeline_tag = _derive_pipeline_tag(model_type)
 
     repo_model = UnifiedModel(
         id=repo_id,
@@ -979,18 +904,14 @@ async def _build_cached_repo_entry(
         description=None,
         readme=None,
         downloaded=repo_root is not None or repo_dir.exists(),
-        pipeline_tag=pipeline_tag,
-        tags=model_info.tags if model_info else None,
-        has_model_index=has_model_index(model_info) if model_info else False,
         repo_id=repo_id,
         path=None,
         size_on_disk=size_on_disk,
-        downloads=model_info.downloads if model_info else None,
-        likes=model_info.likes if model_info else None,
-        trending_score=model_info.trending_score if model_info else None,
         artifact_family=artifact_detection.family if artifact_detection else None,
         artifact_component=artifact_detection.component if artifact_detection else None,
-        artifact_confidence=artifact_detection.confidence if artifact_detection else None,
+        artifact_confidence=(
+            artifact_detection.confidence if artifact_detection else None
+        ),
         artifact_evidence=artifact_detection.evidence if artifact_detection else None,
     )
 
@@ -1000,22 +921,10 @@ async def _build_cached_repo_entry(
 async def read_cached_hf_models() -> List[UnifiedModel]:
     """
     Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
-
-    The scan is offline-only: discover repos via `HfFastCache`, build entries using
-    `_build_cached_repo_entry`, and memoize the result for an hour to avoid repeated
-    filesystem traversal during UI interactions.
     """
 
-    cached_models = HF_FAST_CACHE.model_info_cache.get(CACHED_HF_MODELS_CACHE_KEY)
-    if cached_models is not None:
-        return cached_models
-
-    try:
-        # Discover repos by listing cache directory (lightweight)
-        repo_list = await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive guard
-        log.warning("Failed to discover cached HF repos: %s", exc)
-        return []
+    # Discover repos by listing cache directory (lightweight)
+    repo_list = await HF_FAST_CACHE.discover_repos("model")
 
     recommended_models = get_recommended_models()
     models: list[UnifiedModel] = []
@@ -1024,46 +933,24 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
         repo_model, _ = await _build_cached_repo_entry(
             repo_id,
             repo_dir,
-            None,
             recommended_models,
         )
         models.append(repo_model)
-
-    HF_FAST_CACHE.model_info_cache.set(
-        CACHED_HF_MODELS_CACHE_KEY,
-        models,
-        CACHED_HF_MODELS_TTL,
-    )
 
     return models
 
 
 # Static search hints per hf.* type used to build repo/file queries (offline/hub).
 HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
-    "hf.text_to_image": {"pipeline_tag": ["text-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
-    "hf.image_to_image": {"pipeline_tag": ["image-to-image"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
-    "hf.stable_diffusion": {
-        "pipeline_tag": ["text-to-image"],
-        "tag": ["*stable-diffusion*"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.stable_diffusion_xl": {
-        "tag": ["diffusers:StableDiffusionXLPipeline", "*stable-diffusion-xl*"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.stable_diffusion_xl_refiner": {"tag": ["*refiner*"], "filename_pattern": HF_DEFAULT_FILE_PATTERNS},
     "hf.stable_diffusion_3": {
-        "tag": ["*stable-diffusion-3*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": KNOWN_REPO_PATTERNS["sd35"],
     },
     "hf.flux": {
-        "tag": ["*flux*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [*KNOWN_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.flux_fp8": {
-        "tag": ["*flux*"],
         "filename_pattern": [
             "*fp8*.safetensors",
             "*fp8*.ckpt",
@@ -1074,33 +961,38 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "repo_pattern": [*KNOWN_REPO_PATTERNS["flux"], "*flux*"],
     },
     "hf.flux_kontext": {
-        "tag": ["*flux*", "*kontext*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_kontext"], "*nunchaku*flux*", "*flux*kontext*"],
+        "repo_pattern": [
+            *KNOWN_REPO_PATTERNS["flux_kontext"],
+            "*nunchaku*flux*",
+            "*flux*kontext*",
+        ],
     },
     "hf.flux_canny": {
-        "tag": ["*flux*", "*canny*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_canny"], "*nunchaku*flux*canny*", "*flux*canny*"],
+        "repo_pattern": [
+            *KNOWN_REPO_PATTERNS["flux_canny"],
+            "*nunchaku*flux*canny*",
+            "*flux*canny*",
+        ],
     },
     "hf.flux_depth": {
-        "tag": ["*flux*", "*depth*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "repo_pattern": [*KNOWN_REPO_PATTERNS["flux_depth"], "*nunchaku*flux*depth*", "*flux*depth*"],
+        "repo_pattern": [
+            *KNOWN_REPO_PATTERNS["flux_depth"],
+            "*nunchaku*flux*depth*",
+            "*flux*depth*",
+        ],
     },
     "hf.qwen_image": {
-        "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": KNOWN_REPO_PATTERNS["qwen_image"],
     },
     "hf.qwen_image_edit": {
-        "pipeline_tag": ["image-to-image"],
-        "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": KNOWN_REPO_PATTERNS["qwen_image_edit"],
     },
     "hf.qwen_vl": {
-        "tag": ["*qwen*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [
             *KNOWN_REPO_PATTERNS["qwen_image"],
@@ -1110,27 +1002,24 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.controlnet": {
         "repo_pattern": ["*control*"],
         "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
-        "pipeline_tag": [],
     },
     "hf.controlnet_sdxl": {
         "repo_pattern": ["*control*"],
         "tag": ["*sdxl*"],
         "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
-        "pipeline_tag": [],
     },
     "hf.controlnet_flux": {
         "repo_pattern": ["*control*"],
-        "tag": ["*flux*"],
         "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
-        "pipeline_tag": [],
     },
     "hf.ip_adapter": {
         "repo_pattern": ["*IP-Adapter*"],
         "filename_pattern": [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS],
-        "pipeline_tag": [],
     },
     "hf.lora_sd": {"repo_pattern": ["*lora*"], "pipeline_tag": []},
-    "hf.lora_sdxl": {"repo_pattern": ["*lora*sdxl*", "*sdxl*lora*"], "pipeline_tag": []},
+    "hf.lora_sdxl": {
+        "repo_pattern": ["*lora*sdxl*", "*sdxl*lora*"],
+    },
     "hf.lora_qwen_image": {"repo_pattern": ["*lora*qwen*"], "pipeline_tag": []},
     "hf.unet": {
         "repo_pattern": [
@@ -1149,7 +1038,6 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*flux*.bin",
             "*flux*.ckpt",
         ],
-        "pipeline_tag": [],
     },
     "hf.vae": {
         "repo_pattern": [
@@ -1159,8 +1047,12 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*vae*",
             "*stable-diffusion*",
         ],
-        "filename_pattern": ["*vae*.safetensors", "*vae*.bin", "*vae*.ckpt", "*vae*.pt"],
-        "pipeline_tag": [],
+        "filename_pattern": [
+            "*vae*.safetensors",
+            "*vae*.bin",
+            "*vae*.ckpt",
+            "*vae*.pt",
+        ],
     },
     "hf.clip": {
         "repo_pattern": [
@@ -1170,13 +1062,16 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
             "*clip*",
             "*flux*",
         ],
-        "filename_pattern": ["*clip*.safetensors", "*clip*.bin", "*clip*.gguf", "*clip*.ckpt"],
-        "pipeline_tag": [],
+        "filename_pattern": [
+            "*clip*.safetensors",
+            "*clip*.bin",
+            "*clip*.gguf",
+            "*clip*.ckpt",
+        ],
     },
     "hf.t5": {
         "repo_pattern": [*KNOWN_REPO_PATTERNS["sd35"], "*t5*", "*flux*"],
         "filename_pattern": ["*t5*.safetensors", "*t5*.bin", "*t5*.gguf", "*t5*.ckpt"],
-        "pipeline_tag": [],
     },
     "hf.image_to_video": {"pipeline_tag": ["image-to-video"]},
     "hf.text_to_video": {"pipeline_tag": ["text-to-video"]},
@@ -1185,114 +1080,10 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
     "hf.outpainting": {"tag": ["*outpaint*"]},
     "hf.flux_redux": {
         "repo_pattern": ["*flux*redux*"],
-        "tag": ["*flux*", "*redux*"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "pipeline_tag": ["text-to-image"],
     },
     "hf.real_esrgan": {
         "repo_pattern": ["*esrgan*"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-        "pipeline_tag": ["image-to-image"],
-    },
-    "hf.image_classification": {
-        "pipeline_tag": ["image-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.zero_shot_image_classification": {
-        "pipeline_tag": ["zero-shot-image-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.audio_classification": {
-        "pipeline_tag": ["audio-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.zero_shot_audio_classification": {
-        "pipeline_tag": ["zero-shot-audio-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.text_classification": {
-        "pipeline_tag": ["text-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.zero_shot_classification": {
-        "pipeline_tag": ["zero-shot-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.token_classification": {
-        "pipeline_tag": ["token-classification"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.object_detection": {
-        "pipeline_tag": ["object-detection"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.zero_shot_object_detection": {
-        "pipeline_tag": ["zero-shot-object-detection"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.image_segmentation": {
-        "pipeline_tag": ["image-segmentation"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.depth_estimation": {
-        "pipeline_tag": ["depth-estimation"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.feature_extraction": {
-        "pipeline_tag": ["feature-extraction"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.fill_mask": {
-        "pipeline_tag": ["fill-mask"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.translation": {
-        "pipeline_tag": ["translation"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.text2text_generation": {
-        "pipeline_tag": ["text2text-generation"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.image_text_to_text": {
-        "pipeline_tag": ["image-text-to-text"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.sentence_similarity": {
-        "pipeline_tag": ["sentence-similarity"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.reranker": {
-        "pipeline_tag": ["text-classification"],
-        "tag": ["*rerank*"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.visual_question_answering": {
-        "pipeline_tag": ["visual-question-answering"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.question_answering": {
-        "pipeline_tag": ["question-answering"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.table_question_answering": {
-        "pipeline_tag": ["table-question-answering"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.automatic_speech_recognition": {
-        "pipeline_tag": ["automatic-speech-recognition"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.text_generation": {
-        "pipeline_tag": ["text-generation"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.text_to_audio": {
-        "pipeline_tag": ["text-to-audio"],
-        "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
-    },
-    "hf.text_to_speech": {
-        "pipeline_tag": ["text-to-speech"],
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
     },
 }
@@ -1301,7 +1092,9 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
 for _base, _ckpt in _CHECKPOINT_BASES.items():
     if _base in HF_SEARCH_TYPE_CONFIG and _ckpt not in HF_SEARCH_TYPE_CONFIG:
         _base_cfg = HF_SEARCH_TYPE_CONFIG[_base]
-        HF_SEARCH_TYPE_CONFIG[_ckpt] = {k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()}
+        HF_SEARCH_TYPE_CONFIG[_ckpt] = {
+            k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()
+        }
 
 HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.unet": {"file_only": True},
@@ -1312,7 +1105,10 @@ HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.stable_diffusion_checkpoint": {"file_only": True, "checkpoint": True},
     "hf.stable_diffusion_xl_checkpoint": {"file_only": True, "checkpoint": True},
     "hf.stable_diffusion_3_checkpoint": {"file_only": True, "checkpoint": True},
-    "hf.stable_diffusion_xl_refiner_checkpoint": {"file_only": True, "checkpoint": True},
+    "hf.stable_diffusion_xl_refiner_checkpoint": {
+        "file_only": True,
+        "checkpoint": True,
+    },
     "hf.flux_checkpoint": {"file_only": True, "checkpoint": True},
     "hf.qwen_image_checkpoint": {"checkpoint": True, "nested_checkpoint": True},
     "hf.qwen_image_edit_checkpoint": {"checkpoint": True, "nested_checkpoint": True},
@@ -1325,23 +1121,6 @@ HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.stable_diffusion_xl_refiner": {"single_file_repo": True},
 }
 
-def get_supported_hf_types() -> list[tuple[str, bool]]:
-    """
-    Return supported hf.* model types and whether they have built-in search config.
-
-    The boolean indicates if the type has a predefined search configuration
-    (works without a task override). Types without a configuration can still be
-    used with get_models_by_hf_type when a task is provided.
-    """
-    configured: set[str] = set(HF_SEARCH_TYPE_CONFIG.keys()) | set(KNOWN_TYPE_REPO_MATCHERS.keys())
-    task_only = set(HF_FILE_PATTERN_TYPES) - configured
-
-    supported: list[tuple[str, bool]] = []
-    for model_type in sorted(configured):
-        supported.append((model_type, True))
-    for model_type in sorted(task_only):
-        supported.append((model_type, False))
-    return supported
 
 GENERIC_HF_TYPES = {
     "hf.text_to_image",
@@ -1391,39 +1170,9 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
     return slug.replace("_", "-")
 
 
-def _build_search_config_for_type(
-    model_type: str, task: str | None = None
-) -> dict[str, list[str] | str] | None:
-    """
-    Construct a repository search configuration for a given hf.* type.
-
-    Combines static search hints (repo patterns, filename patterns, pipeline tags)
-    with derived pipeline tags so we can reuse the same logic for both hub and
-    offline cache searches. Returns None when the type is unsupported.
-    """
-    normalized_type = model_type.lower()
-    base_config = HF_SEARCH_TYPE_CONFIG.get(normalized_type)
-    if not base_config and not task:
-        return None
-    config: dict[str, list[str] | str] = {}
-
-    for key in ("repo_pattern", "filename_pattern", "pipeline_tag", "tag", "author", "library_name"):
-        value = base_config.get(key) if base_config else None
-        if value:
-            config[key] = list(value) if isinstance(value, list) else value
-
-    if "pipeline_tag" not in config:
-        derived = _derive_pipeline_tag(normalized_type, task)
-        if derived:
-            config["pipeline_tag"] = [derived]
-
-    if "filename_pattern" not in config and normalized_type in HF_FILE_PATTERN_TYPES:
-        config["filename_pattern"] = list(HF_DEFAULT_FILE_PATTERNS)
-
-    return config if config else None
-
-
-def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
+def _matches_repo_for_type(
+    normalized_type: str, repo_id: str, repo_id_from_id: str
+) -> bool:
     """Check if a repo id matches any hard-coded comfy-type mappings for a model type."""
     matchers = KNOWN_TYPE_REPO_MATCHERS.get(normalized_type)
     if not matchers:
@@ -1431,7 +1180,8 @@ def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: 
     repo_lower = repo_id.lower()
     repo_from_id_lower = repo_id_from_id.lower()
     return any(
-        repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower() for candidate in matchers
+        repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower()
+        for candidate in matchers
     )
 
 
@@ -1448,10 +1198,18 @@ def _matches_artifact_detection(
     """
     fam = artifact_family or ""
     comp = artifact_component or ""
-    if normalized_type in {"hf.flux", "hf.flux_fp8", "hf.flux_kontext", "hf.flux_canny", "hf.flux_depth"}:
+    if normalized_type in {
+        "hf.flux",
+        "hf.flux_fp8",
+        "hf.flux_kontext",
+        "hf.flux_canny",
+        "hf.flux_depth",
+    }:
         return "flux" in fam
     if normalized_type == "hf.stable_diffusion":
-        return fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
+        return (
+            fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
+        )
     if normalized_type == "hf.stable_diffusion_xl":
         return "sdxl" in fam
     if normalized_type == "hf.stable_diffusion_xl_refiner":
@@ -1479,7 +1237,9 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     def _is_qwen_text_encoder(path: str | None) -> bool:
         if not path:
             return False
-        return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
+        return (
+            "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
+        )
 
     def _is_qwen_vae(path: str | None) -> bool:
         if not path:
@@ -1492,16 +1252,23 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
 
     if model_type_lower:
         model_type_base = (
-            model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
+            model_type_lower[: -len("_checkpoint")]
+            if model_type_lower.endswith("_checkpoint")
+            else model_type_lower
         )
         if model_type_lower in target_types or model_type_base == normalized_type:
-            return not (normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"} and (_is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower)))
+            return not (
+                normalized_type in {"hf.qwen_image", "hf.qwen_image_edit"}
+                and (_is_qwen_text_encoder(path_lower) or _is_qwen_vae(path_lower))
+            )
 
         if model_type_lower not in GENERIC_HF_TYPES:
             qwen_family_types = {"hf.qwen_image", "hf.qwen_image_checkpoint"}
-            allowed_family = normalized_type in {"hf.qwen_image_checkpoint", "hf.qwen_vl", "hf.vae"} and (
-                model_type_lower in qwen_family_types
-            )
+            allowed_family = normalized_type in {
+                "hf.qwen_image_checkpoint",
+                "hf.qwen_vl",
+                "hf.vae",
+            } and (model_type_lower in qwen_family_types)
             if not allowed_family:
                 return False
 
@@ -1518,13 +1285,18 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     artifact_family = (getattr(model, "artifact_family", None) or "").lower()
     artifact_component = (getattr(model, "artifact_component", None) or "").lower()
     if artifact_family or artifact_component:
-        if _matches_artifact_detection(normalized_type, artifact_family, artifact_component):
+        if _matches_artifact_detection(
+            normalized_type, artifact_family, artifact_component
+        ):
             return True
 
     tags = [(tag or "").lower() for tag in (model.tags or [])]
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
     if keywords:
-        if any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
+        if any(
+            keyword in repo_id or any(keyword in tag for tag in tags)
+            for keyword in keywords
+        ):
             return True
         if path_lower and any(keyword in path_lower for keyword in keywords):
             return True
@@ -1533,7 +1305,9 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     return bool(derived_pipeline and model.pipeline_tag == derived_pipeline)
 
 
-async def get_models_by_hf_type(model_type: str, task: str | None = None) -> list[UnifiedModel]:
+async def get_models_by_hf_type(
+    model_type: str,
+) -> list[UnifiedModel]:
     """
     Return cached Hugging Face models matching a requested hf.* type.
 
@@ -1542,45 +1316,15 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
     artifact hints) to label each result with the desired type.
     """
 
-    normalized_type = (model_type or "").lower()
-    config = _build_search_config_for_type(normalized_type, task)
-    if config is None:
-        return []
-    log.debug(
-        "get_models_by_hf_type: type=%s task=%s repo_pattern=%s filename_pattern=%s pipeline_tag=%s tags=%s authors=%s library_name=%s",
-        normalized_type,
-        task,
-        config.get("repo_pattern"),
-        config.get("filename_pattern"),
-        config.get("pipeline_tag"),
-        config.get("tag"),
-        config.get("author"),
-        config.get("library_name"),
-    )
-
-    repo_patterns = config.get("repo_pattern") or []
-    literal_repo_ids = [
-        repo for repo in repo_patterns if repo and not any(ch in repo for ch in ["*", "?", "["])
-    ]
-
-    pre_resolved_repos: list[tuple[str, Path]] = []
-    if literal_repo_ids:
-        for repo in literal_repo_ids:
-            try:
-                root = await HF_FAST_CACHE.repo_root(repo, repo_type="model")
-            except Exception as exc:  # pragma: no cover - defensive guard
-                log.debug("repo_root failed for %s: %s", repo, exc)
-                root = None
-            if root:
-                pre_resolved_repos.append((repo, Path(root)))
-    has_wildcards = any(any(ch in repo for ch in ["*", "?", "["]) for repo in repo_patterns)
-    pre_resolved_for_search = None if has_wildcards else (pre_resolved_repos or None)
+    config = HF_SEARCH_TYPE_CONFIG.get(model_type.lower(), {})
 
     def _filter_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
         """Apply type-specific structural rules then semantic matching."""
-        rules = HF_TYPE_STRUCTURAL_RULES.get(normalized_type, {})
+        rules = HF_TYPE_STRUCTURAL_RULES.get(model_type, {})
         file_only = rules.get("file_only", False)
-        checkpoint = rules.get("checkpoint", False) or normalized_type in set(_CHECKPOINT_BASES.values())
+        checkpoint = rules.get("checkpoint", False) or model_type in set(
+            _CHECKPOINT_BASES.values()
+        )
         nested_checkpoint = rules.get("nested_checkpoint", False)
         single_file_repo = rules.get("single_file_repo", False)
 
@@ -1602,7 +1346,9 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
                     continue
                 if path_value:
                     path_lower = path_value.lower()
-                    if not _is_single_file_diffusion_weight(path_value) and not path_lower.endswith(".gguf"):
+                    if not _is_single_file_diffusion_weight(
+                        path_value
+                    ) and not path_lower.endswith(".gguf"):
                         continue
 
             if checkpoint:
@@ -1611,13 +1357,8 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
                 if "/" in path_value and not nested_checkpoint:
                     continue
 
-            if not _matches_model_type(model, normalized_type):
+            if not _matches_model_type(model, model_type):
                 continue
-
-            try:
-                model.type = normalized_type  # type: ignore[assignment]
-            except Exception:
-                model = model.copy(update={"type": normalized_type})
 
             filtered.append(model)
             seen.add(model.id)
@@ -1628,31 +1369,17 @@ async def get_models_by_hf_type(model_type: str, task: str | None = None) -> lis
     offline_models = await search_cached_hf_models(
         repo_patterns=config.get("repo_pattern"),
         filename_patterns=config.get("filename_pattern"),
-        pre_resolved_repos=pre_resolved_for_search,
     )
     offline_filtered = _filter_models(offline_models)
     if offline_filtered:
         log.debug(
             "get_models_by_hf_type: returning %d models from offline cache (type=%s)",
             len(offline_filtered),
-            normalized_type,
+            model_type,
         )
         return offline_filtered
 
     return offline_filtered
-
-
-def _normalize_patterns(values: Sequence[str] | None, *, lower: bool = False) -> list[str]:
-    """Trim/normalize pattern inputs and optionally lowercase them for matching."""
-    normalized: list[str] = []
-    for value in values or []:
-        if value is None:
-            continue
-        trimmed = value.strip()
-        if not trimmed:
-            continue
-        normalized.append(trimmed.lower() if lower else trimmed)
-    return normalized
 
 
 def _matches_any_pattern(value: str, patterns: list[str]) -> bool:
@@ -1677,20 +1404,24 @@ async def iter_cached_model_files(
     Traversal is offline-only and best-effort: repos without an active snapshot
     or whose files cannot be listed are skipped.
     """
-    try:
-        repo_list = list(pre_resolved_repos) if pre_resolved_repos is not None else await HF_FAST_CACHE.discover_repos("model")
-    except Exception as exc:  # pragma: no cover - defensive guard
-        log.debug("iter_cached_model_files: discover failed: %s", exc)
-        return
+    repo_list = (
+        list(pre_resolved_repos)
+        if pre_resolved_repos is not None
+        else await HF_FAST_CACHE.discover_repos("model")
+    )
 
     for repo_id, repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(
+            repo_id, repo_type="model"
+        )
         if not snapshot_dir:
             continue
         try:
             file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
         except Exception as exc:  # pragma: no cover - defensive guard
-            log.debug("iter_cached_model_files: list_files failed for %s: %s", repo_id, exc)
+            log.debug(
+                "iter_cached_model_files: list_files failed for %s: %s", repo_id, exc
+            )
             continue
 
         yield repo_id, Path(repo_dir), Path(snapshot_dir), file_list
@@ -1699,8 +1430,6 @@ async def iter_cached_model_files(
 async def search_cached_hf_models(
     repo_patterns: Sequence[str] | None = None,
     filename_patterns: Sequence[str] | None = None,
-    *,
-    pre_resolved_repos: Sequence[tuple[str, Path]] | None = None,
 ) -> List[UnifiedModel]:
     """
     Search the local HF cache for repos/files using offline data only.
@@ -1709,37 +1438,28 @@ async def search_cached_hf_models(
     specific repos to avoid globbing, and emits both repo-level and file-level
     `UnifiedModel` entries when filename patterns are provided.
     """
-    repo_pattern_list = _normalize_patterns(repo_patterns)
-    filename_pattern_list = _normalize_patterns(filename_patterns)
 
     recommended_models = get_recommended_models()
     results: list[UnifiedModel] = []
     repo_count = 0
-    log.debug(
-        "search_cached_hf_models: repos=%s files=%s pre_resolved=%s",
-        repo_pattern_list,
-        filename_pattern_list,
-        "yes" if pre_resolved_repos is not None else "no",
-    )
 
-    async for repo_id, repo_dir, snapshot_dir, file_list in iter_cached_model_files(pre_resolved_repos):
+    async for repo_id, repo_dir, snapshot_dir, file_list in iter_cached_model_files():
         repo_count += 1
-        if repo_pattern_list and not _matches_any_pattern_ci(repo_id, repo_pattern_list):
+        if repo_patterns and not _matches_any_pattern_ci(repo_id, list(repo_patterns)):
             continue
 
         repo_model, file_entries = await _build_cached_repo_entry(
             repo_id,
             repo_dir,
-            None,
             recommended_models,
             snapshot_dir=snapshot_dir,
             file_list=file_list,
         )
         results.append(repo_model)
 
-        if filename_pattern_list and file_entries:
+        if filename_patterns and file_entries:
             for relative_name, file_size in file_entries:
-                if not _matches_any_pattern(relative_name, filename_pattern_list):
+                if not _matches_any_pattern(relative_name, list(filename_patterns)):
                     continue
 
                 file_model = UnifiedModel(
@@ -1773,6 +1493,46 @@ async def search_cached_hf_models(
         len(results),
         repo_count,
     )
+    return results
+
+
+SUPPORTED_MODEL_TYPES = [
+    "qwen2",
+    "qwen3",
+    "qwen_2_5_vl",
+    "qwen_3_vl",
+    "mistral3",
+    "gpt_oss",
+    "llama",
+    "gemma3",
+    "gemma3n",
+    "phi3",
+    "phi4",
+    "gemma2",
+]
+
+
+async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
+    """
+    Return LanguageModel entries for cached Hugging Face repos containing language models.
+    """
+    results: list[LanguageModel] = []
+    repo_list = await HF_FAST_CACHE.discover_repos("model")
+    for repo_id, _repo_dir in repo_list:
+        repo_display = repo_id.split("/")[-1]
+        config = await HF_FAST_CACHE.resolve(repo_id, "config.json")
+        if config:
+            config_data = json.load(open(config))
+            model_type = config_data.get("model_type")
+            if model_type in SUPPORTED_MODEL_TYPES:
+                results.append(
+                    LanguageModel(
+                        id=repo_id,
+                        name=model_type,
+                        provider=Provider.HuggingFace,
+                        supported_tasks=["text_generation"],
+                    )
+                )
     return results
 
 
@@ -1818,7 +1578,9 @@ async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     SUPPORTED_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth")
 
     async for repo_id, _repo_dir, _snapshot_dir, file_list in iter_cached_model_files():
-        if repo_id not in seen_repos and any(fname.lower().endswith(SUPPORTED_WEIGHT_EXTENSIONS) for fname in file_list):
+        if repo_id not in seen_repos and any(
+            fname.lower().endswith(SUPPORTED_WEIGHT_EXTENSIONS) for fname in file_list
+        ):
             seen_repos.add(repo_id)
             repo_display = repo_id.split("/")[-1]
             results.append(
@@ -2164,9 +1926,8 @@ if __name__ == "__main__":
 
     async def main():
         """Debug helper: list cached image-to-image models containing IP-Adapter."""
-        cached = await get_image_to_image_models_from_hf_cache()
+        cached = await get_models_by_hf_type("hf.qwen2_5_vl")
         for model in cached:
-            if "IP-Adapter" in model.id:
-                print(model.path)
+            print(model.type, model.id)
 
     asyncio.run(main())

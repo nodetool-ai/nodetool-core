@@ -714,6 +714,14 @@ class HFQwenImage(HuggingFaceModel):
     type: Literal["hf.qwen_image"] = "hf.qwen_image"
 
 
+class HFQwen2_5_VL(HuggingFaceModel):
+    type: Literal["hf.qwen2_5_vl"] = "hf.qwen2_5_vl"
+
+
+class HFQwen3_VL(HuggingFaceModel):
+    type: Literal["hf.qwen3_vl"] = "hf.qwen3_vl"
+
+
 class HFQwenImageCheckpoint(HuggingFaceModel):
     type: Literal["hf.qwen_image_checkpoint"] = "hf.qwen_image_checkpoint"
 

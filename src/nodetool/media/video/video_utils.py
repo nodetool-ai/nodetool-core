@@ -2,6 +2,7 @@
 Vendorized video export utilities from diffusers.
 """
 
+from typing import Any
 import tempfile
 from typing import List, Optional, Union
 
@@ -244,3 +245,127 @@ def _legacy_export_to_video_bytes(
     os.remove("/tmp/temp_video.mp4")
 
     return video_bytes
+
+
+def extract_video_frames(
+    input_video: str | bytes,
+    fps: int = 1,
+) -> List[PIL.Image.Image]:
+    """
+    Extract frames from a video at a specific fps.
+    
+    Args:
+        input_video: Path to video file or video bytes
+        fps: Frames per second to sample. Default is 1.
+        
+    Returns:
+        List[PIL.Image.Image]: List of PIL images
+    """
+    if not _is_imageio_available():
+        if not _is_opencv_available():
+             raise ImportError(
+                "imageio or OpenCV is required for video reading. Please install imageio: `pip install imageio imageio-ffmpeg`"
+            )
+        # TODO: Implement cv2 fallback for reading
+        import logging
+        logging.warning("imageio not found, cv2 fallback for reading not fully implemented except for files")
+        return _legacy_read_video_frames(input_video, fps)
+
+    import imageio
+    
+    # Check for ffmpeg availability for imageio
+    try:
+        imageio.plugins.ffmpeg.get_exe()
+    except (AttributeError, RuntimeError):
+         return _legacy_read_video_frames(input_video, fps)
+
+    frames = []
+    
+    # Handle bytes
+    if isinstance(input_video, bytes):
+        import io
+        input_video = io.BytesIO(input_video)
+
+    try:
+        reader = imageio.get_reader(input_video, format="ffmpeg")
+        meta = reader.get_meta_data()
+        video_fps = meta.get("fps", 30)
+        
+        # Calculate sampling interval
+        step = max(1, int(video_fps / fps))
+        
+        for i, frame in enumerate(reader):
+            if i % step == 0:
+                frames.append(PIL.Image.fromarray(frame))
+                
+        reader.close()
+    except Exception as e:
+        import logging
+        logging.error(f"Error reading video with imageio: {e}")
+        # Try fallback
+        return _legacy_read_video_frames(input_video, fps)
+        
+    return frames
+
+
+def _legacy_read_video_frames(
+    input_video: str | bytes | Any,
+    fps: int = 1,
+) -> List[PIL.Image.Image]:
+    """Legacy video reading using OpenCV."""
+    if not _is_opencv_available():
+        raise ImportError("OpenCV is required for video reading fallback.")
+        
+    import cv2
+    import tempfile
+    import os
+    
+    video_path = input_video
+    temp_file = None
+    
+    # If bytes or file-like, save to temp file because cv2 needs a path
+    if isinstance(input_video, (bytes, io.BytesIO)) or hasattr(input_video, "read"):
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            if isinstance(input_video, bytes):
+                tmp.write(input_video)
+            elif hasattr(input_video, "read"):
+                if hasattr(input_video, "getvalue"):
+                     tmp.write(input_video.getvalue())
+                else:
+                     tmp.write(input_video.read())
+            temp_file = tmp.name
+        video_path = temp_file
+
+    frames = []
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+             raise ValueError("Could not open video file")
+             
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if video_fps <= 0:
+             video_fps = 30 # Default if unknown
+
+        step = max(1, int(video_fps / fps))
+        
+        count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            if count % step == 0:
+                # CV2 is BGR, convert to RGB
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(PIL.Image.fromarray(rgb_frame))
+            count += 1
+            
+        cap.release()
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except:
+                pass
+                
+    return frames

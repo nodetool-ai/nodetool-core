@@ -1513,27 +1513,13 @@ class BaseNode(BaseModel):
                         "Streaming nodes must yield dictionaries mapping output names to values."
                     )
 
-                log.debug(
-                    f"run() streaming item {item_count}: node={self.get_title()} ({self.id}), "
-                    f"item_keys={list(item.keys())}"
-                )
                 for slot_name, value in item.items():
                     if not isinstance(slot_name, str):
                         raise TypeError(
                             "Streaming nodes must use string keys for output names."
                         )
                     if value is not None:
-                        log.debug(
-                            f"run() calling emit: node={self.get_title()} ({self.id}), "
-                            f"slot={slot_name}, value_type={type(value).__name__}, "
-                            f"value_len={len(str(value))}"
-                        )
                         await outputs.emit(slot_name, value)
-                    else:
-                        log.debug(
-                            f"run() skipping None value: node={self.get_title()} ({self.id}), "
-                            f"slot={slot_name}"
-                        )
             log.debug(
                 f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}"
             )

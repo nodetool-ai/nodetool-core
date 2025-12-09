@@ -137,7 +137,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
                 log.debug("Using ResourceScope HTTP client for vLLM")
             except RuntimeError:
                 # Fallback if no scope is bound (shouldn't happen in normal operation)
-                log.warning("No ResourceScope bound, creating fallback HTTP client for vLLM")
+                log.warning(
+                    "No ResourceScope bound, creating fallback HTTP client for vLLM"
+                )
                 http_client = httpx.AsyncClient(
                     follow_redirects=True,
                     timeout=self._timeout,
@@ -206,7 +208,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
         context_window: int = 128000,
         response_format: dict | None = None,
@@ -283,16 +285,16 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens
                 ):
-                    self._usage["cached_prompt_tokens"] += (
-                        chunk.usage.prompt_tokens_details.cached_tokens
-                    )
+                    self._usage[
+                        "cached_prompt_tokens"
+                    ] += chunk.usage.prompt_tokens_details.cached_tokens
                 if (
                     chunk.usage.completion_tokens_details
                     and chunk.usage.completion_tokens_details.reasoning_tokens
                 ):
-                    self._usage["reasoning_tokens"] += (
-                        chunk.usage.completion_tokens_details.reasoning_tokens
-                    )
+                    self._usage[
+                        "reasoning_tokens"
+                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
 
             if not chunk.choices:
                 continue
@@ -346,7 +348,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
         context_window: int = 128000,
         response_format: dict | None = None,
@@ -416,16 +418,16 @@ class VllmProvider(BaseProvider, OpenAICompat):
                 completion.usage.prompt_tokens_details
                 and completion.usage.prompt_tokens_details.cached_tokens
             ):
-                self._usage["cached_prompt_tokens"] += (
-                    completion.usage.prompt_tokens_details.cached_tokens
-                )
+                self._usage[
+                    "cached_prompt_tokens"
+                ] += completion.usage.prompt_tokens_details.cached_tokens
             if (
                 completion.usage.completion_tokens_details
                 and completion.usage.completion_tokens_details.reasoning_tokens
             ):
-                self._usage["reasoning_tokens"] += (
-                    completion.usage.completion_tokens_details.reasoning_tokens
-                )
+                self._usage[
+                    "reasoning_tokens"
+                ] += completion.usage.completion_tokens_details.reasoning_tokens
 
         choice = completion.choices[0]
         response_message = choice.message

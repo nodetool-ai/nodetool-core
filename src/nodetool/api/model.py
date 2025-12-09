@@ -395,28 +395,12 @@ async def search_huggingface_models_endpoint(
 @router.get("/huggingface/type/{model_type}")
 async def get_huggingface_models_by_type_endpoint(
     model_type: str,
-    task: str | None = Query(None),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     """
     Return cached Hugging Face models matching an hf.* type using server-side heuristics.
     """
-    if Environment.is_production():
-        log.warning("Cannot search Hugging Face models in production")
-        return []
-    models = await get_models_by_hf_type(model_type, task)
-
-    # Ensure the returned entries carry the requested hf.* type so the UI
-    # doesn't need to re-derive it client-side.
-    normalized_type = model_type.lower()
-    if not normalized_type.startswith("hf."):
-        normalized_type = f"hf.{normalized_type}"
-
-    for model in models:
-        if model.type is None or model.type in {"hf.model", "hf.model_generic"}:
-            model.type = normalized_type
-
-    return models
+    return await get_models_by_hf_type(model_type)
 
 
 @router.delete("/huggingface")
