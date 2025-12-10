@@ -898,12 +898,10 @@ class WorkflowRunner:
                 if inbox is None:
                     continue
                 if (
-                    (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle))
-                    and edge.id
-                ):
-                    context.post_message(
-                        EdgeUpdate(edge_id=edge.id, status="drained")
-                    )
+                    inbox.has_buffered(edge.targetHandle)
+                    or inbox.is_open(edge.targetHandle)
+                ) and edge.id:
+                    context.post_message(EdgeUpdate(edge_id=edge.id, status="drained"))
             except Exception:
                 # Best effort - ignore errors during draining
                 pass
