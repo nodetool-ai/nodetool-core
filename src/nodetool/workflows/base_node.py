@@ -165,8 +165,10 @@ def _get_property_cls():
     """Lazy import to avoid circular dependency when accessing Property."""
     return importlib.import_module("nodetool.workflows.property").Property
 
+
 if TYPE_CHECKING:
     from .io import NodeInputs, NodeOutputs
+
     Property = _get_property_cls()
 
 
@@ -782,9 +784,7 @@ class BaseNode(BaseModel):
             )
         except Exception as e:
             traceback.print_exc()
-            raise ValueError(
-                f"Error getting metadata for {cls.__name__}: {e}"
-            ) from e
+            raise ValueError(f"Error getting metadata for {cls.__name__}: {e}") from e
 
     @classmethod
     def get_json_schema(cls):
@@ -1180,7 +1180,7 @@ class BaseNode(BaseModel):
             or None if no return type is specified.
         """
         if hasattr(cls, "OutputType"):
-            return cls.OutputType
+            return getattr(cls, "OutputType")
 
         if cls.gen_process is not BaseNode.gen_process:
             gen_return = get_return_annotation(cls.gen_process)
@@ -1366,13 +1366,10 @@ class BaseNode(BaseModel):
         # Add or override with current class properties
         current_properties = {prop.name: prop for prop in cls.properties()}
 
-        result: dict[str, Property] = {**parent_properties, **current_properties}
-        return result
+        return {**parent_properties, **current_properties}
 
     def node_properties(self):
-        return {
-            name: self.read_property(name) for name in self.inherited_fields()
-        }
+        return {name: self.read_property(name) for name in self.inherited_fields()}
 
     async def convert_output(self, context: Any, output: Any) -> Any:
         if self._supports_dynamic_outputs:
@@ -1884,6 +1881,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         log.error(f"Module not found: {module_prefix}")
         log.error(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         return None
     if node_type in NODE_BY_TYPE:
