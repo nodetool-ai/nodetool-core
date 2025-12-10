@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.2-rc.6"
+version = "0.6.2-rc9"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -143,6 +143,7 @@ nodetool = "nodetool.cli:cli"
 packages = ["src/nodetool"]
 
 # Ruff configuration for linting and formatting
+artifacts = ["package_metadata/nodetool-core.json"]
 [tool.ruff]
 # Python version
 target-version = "py311"
