@@ -187,11 +187,21 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     import urllib.error as _err
     import urllib.request as _req
 
-    token = os.getenv("REGISTRY_UPDATE_TOKEN") or os.getenv("GITHUB_TOKEN")
+    token = os.getenv("REGISTRY_UPDATE_TOKEN")
+    source = "REGISTRY_UPDATE_TOKEN"
+    if not token:
+        token = os.getenv("GITHUB_TOKEN")
+        source = "GITHUB_TOKEN"
+    
     if not token:
         raise SystemExit("Missing REGISTRY_UPDATE_TOKEN or GITHUB_TOKEN")
+    
+    # Debug token (safe)
+    _echo(f"🔑 Using token from {source} (length: {len(token)})")
 
     url = f"https://api.github.com/repos/{registry_repo}/dispatches"
+    _echo(f"POST {url}")
+    
     payload = {
         "event_type": "package-released",
         "client_payload": {
@@ -204,13 +214,23 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     }
     data = json.dumps(payload).encode("utf-8")
     req = _req.Request(url, data=data, method="POST")
-    req.add_header("Authorization", f"token {token}")
+    # improved: Use Bearer for standard compliance (works with fine-grained PATs)
+    req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Accept", "application/vnd.github.v3+json")
+    # User-Agent is often required/good practice
+    req.add_header("User-Agent", "nodetool-build-script")
+    
     try:
         with _req.urlopen(req) as resp:
             _echo(f"📨 Registry notified (status {resp.status})")
     except _err.HTTPError as e:
         _echo(f"⚠️ Failed to notify registry (non-fatal): {e}")
+        # Print response body for debugging 403s
+        try:
+            body = e.read().decode("utf-8")
+            _echo(f"   Response: {body}")
+        except Exception:
+            pass
 
 
 def cmd_summary(args: argparse.Namespace) -> None:
