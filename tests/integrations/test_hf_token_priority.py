@@ -3,12 +3,13 @@ Tests for HF_TOKEN priority.
 """
 
 import os
-import pytest
 from unittest.mock import MagicMock, patch
 
-from nodetool.models.secret import Secret
+import pytest
+
 from nodetool.integrations.huggingface.hf_auth import get_hf_token
-from nodetool.security.secret_helper import clear_secret_cache, _SECRET_CACHE
+from nodetool.models.secret import Secret
+from nodetool.security.secret_helper import _SECRET_CACHE, clear_secret_cache
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,7 @@ class TestHFTokenPriority:
 
         # Create secret in database
         await Secret.create(user_id=user_id, key="HF_TOKEN", value=db_token)
-        
+
         # Set environment variable
         os.environ["HF_TOKEN"] = env_token
 
@@ -45,7 +46,7 @@ class TestHFTokenPriority:
 
         # Ensure no DB secret
         await Secret.delete_secret(user_id, "HF_TOKEN")
-        
+
         # Set environment variable
         os.environ["HF_TOKEN"] = env_token
 
@@ -60,7 +61,7 @@ class TestHFTokenPriority:
         """Test that without user_id, it uses env var."""
         env_token = "env_token_val_no_user"
         os.environ["HF_TOKEN"] = env_token
-        
+
         try:
             result = await get_hf_token(None)
             assert result == env_token

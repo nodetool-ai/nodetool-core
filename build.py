@@ -192,16 +192,16 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     if not token:
         token = os.getenv("GITHUB_TOKEN")
         source = "GITHUB_TOKEN"
-    
+
     if not token:
         raise SystemExit("Missing REGISTRY_UPDATE_TOKEN or GITHUB_TOKEN")
-    
+
     # Debug token (safe)
     _echo(f"🔑 Using token from {source} (length: {len(token)})")
 
     url = f"https://api.github.com/repos/{registry_repo}/dispatches"
     _echo(f"POST {url}")
-    
+
     payload = {
         "event_type": "package-released",
         "client_payload": {
@@ -219,7 +219,7 @@ def cmd_notify_registry(args: argparse.Namespace) -> None:
     req.add_header("Accept", "application/vnd.github.v3+json")
     # User-Agent is often required/good practice
     req.add_header("User-Agent", "nodetool-build-script")
-    
+
     try:
         with _req.urlopen(req) as resp:
             _echo(f"📨 Registry notified (status {resp.status})")

@@ -227,7 +227,7 @@ class TestSecretHelper:
             from nodetool.security.secret_helper import clear_secret_cache
             # Clear cache to force re-check of priorities
             clear_secret_cache(user_id, key)
-            
+
             result2 = await get_secret(key, user_id)
             assert result2 == db_value
         finally:

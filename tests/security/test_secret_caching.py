@@ -2,15 +2,16 @@
 Tests for secret caching.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from nodetool.models.secret import Secret
 from nodetool.security.secret_helper import (
+    _SECRET_CACHE,
+    clear_secret_cache,
     get_secret,
     get_secrets_batch,
-    clear_secret_cache,
-    _SECRET_CACHE,
 )
 
 
@@ -39,13 +40,13 @@ class TestSecretCaching:
         # Modify DB directly to prove we are reading from cache
         # (simulating a change that bypassed the cache invalidation for some reason,
         # or just to prove we are not hitting the DB)
-        secret = await Secret.find(user_id, key)
+        await Secret.find(user_id, key)
         # We manually change the encrypted value to something junk without updating timestamp
         # or just mock the find method to return None
-        
+
         with patch("nodetool.models.secret.Secret.find") as mock_find:
             mock_find.return_value = None
-            
+
             # Second retrieval should use cache
             result2 = await get_secret(key, user_id)
             assert result2 == value
@@ -65,7 +66,7 @@ class TestSecretCaching:
 
         # 2. Upsert new value
         await Secret.upsert(user_id, key, value2)
-        
+
         # Cache should be cleared
         assert (user_id, key) not in _SECRET_CACHE
 
@@ -83,17 +84,17 @@ class TestSecretCaching:
 
         # Create
         secret = await Secret.create(user_id=user_id, key=key, value=value1)
-        
+
         # Cache it
         await get_secret(key, user_id)
         assert (user_id, key) in _SECRET_CACHE
 
         # Update value
         await secret.update_value(value2)
-        
+
         # Cache should be cleared
         assert (user_id, key) not in _SECRET_CACHE
-        
+
         # Fetch again
         result = await get_secret(key, user_id)
         assert result == value2
@@ -106,13 +107,13 @@ class TestSecretCaching:
 
         await Secret.create(user_id=user_id, key=key, value=value)
         await get_secret(key, user_id)
-        
+
         assert (user_id, key) in _SECRET_CACHE
-        
+
         await Secret.delete_secret(user_id, key)
-        
+
         assert (user_id, key) not in _SECRET_CACHE
-        
+
         result = await get_secret(key, user_id)
         assert result is None
 
@@ -120,27 +121,27 @@ class TestSecretCaching:
         """Test that get_secrets_batch uses and populates cache."""
         user_id = "test_user_batch"
         keys = ["BATCH_1", "BATCH_2", "BATCH_3"]
-        
+
         # Create secrets
         for k in keys:
             await Secret.create(user_id=user_id, key=k, value=f"val_{k}")
 
         # Pre-populate one item in cache
         _SECRET_CACHE[(user_id, "BATCH_1")] = "val_BATCH_1"
-        
+
         # Mock Secret.query to ensure we only query for the missing ones
         original_query = Secret.query
-        
+
         with patch("nodetool.models.secret.Secret.query", side_effect=original_query) as mock_query:
             results = await get_secrets_batch(keys, user_id)
-            
+
             # Verify results
             for k in keys:
                 assert results[k] == f"val_{k}"
-            
+
             # Verify cache is fully populated
             assert len(_SECRET_CACHE) == 3
-            
+
             # Verify we queried DB but only for proper keys if our implementation is optimal
             # Note: Checking query args might be brittle, but we can check calls
             assert mock_query.call_count == 1
