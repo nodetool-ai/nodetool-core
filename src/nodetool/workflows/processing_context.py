@@ -2122,11 +2122,11 @@ class ProcessingContext:
     async def video_to_frames(self, video: VideoRef, fps: int = 1) -> list[PIL.Image.Image]:
         """
         Convert a video asset to a list of PIL images at a specific FPS.
-        
+
         Args:
             video: The video asset to convert
             fps: Frames per second to sample. Default is 1.
-            
+
         Returns:
             List[PIL.Image.Image]: List of PIL images
         """

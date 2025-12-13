@@ -209,7 +209,7 @@ async def get_secrets_batch(
     """
     result = {}
     keys_to_find = list(keys)
-    
+
     # 1. Check cache
     keys_not_in_cache = []
     for key in keys_to_find:

@@ -45,8 +45,8 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
                 return token
         except Exception as e:
             log.debug(f"get_hf_token: Error getting HF_TOKEN for user_id={user_id}: {e}")
-    
-    # Fallback to env var if no user_id (get_secret handles env var if user_id is provided, 
+
+    # Fallback to env var if no user_id (get_secret handles env var if user_id is provided,
     # but if user_id is None we need to check env manually because get_secret requires user_id)
     token = os.environ.get("HF_TOKEN")
     if token:

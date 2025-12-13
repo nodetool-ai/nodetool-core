@@ -1180,7 +1180,7 @@ class BaseNode(BaseModel):
             or None if no return type is specified.
         """
         if hasattr(cls, "OutputType"):
-            return getattr(cls, "OutputType")
+            return cls.OutputType
 
         if cls.gen_process is not BaseNode.gen_process:
             gen_return = get_return_annotation(cls.gen_process)
@@ -1355,7 +1355,7 @@ class BaseNode(BaseModel):
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        Property = _get_property_cls()
+        _get_property_cls()
 
         # Get properties from parent classes
         parent_properties = {}

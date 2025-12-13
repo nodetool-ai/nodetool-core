@@ -2,9 +2,10 @@
 Vendorized video export utilities from diffusers.
 """
 
-from typing import Any
+import io
+import os
 import tempfile
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import PIL.Image
@@ -253,11 +254,11 @@ def extract_video_frames(
 ) -> List[PIL.Image.Image]:
     """
     Extract frames from a video at a specific fps.
-    
+
     Args:
         input_video: Path to video file or video bytes
         fps: Frames per second to sample. Default is 1.
-        
+
     Returns:
         List[PIL.Image.Image]: List of PIL images
     """
@@ -272,7 +273,7 @@ def extract_video_frames(
         return _legacy_read_video_frames(input_video, fps)
 
     import imageio
-    
+
     # Check for ffmpeg availability for imageio
     try:
         imageio.plugins.ffmpeg.get_exe()
@@ -280,7 +281,7 @@ def extract_video_frames(
          return _legacy_read_video_frames(input_video, fps)
 
     frames = []
-    
+
     # Handle bytes
     if isinstance(input_video, bytes):
         import io
@@ -290,21 +291,21 @@ def extract_video_frames(
         reader = imageio.get_reader(input_video, format="ffmpeg")
         meta = reader.get_meta_data()
         video_fps = meta.get("fps", 30)
-        
+
         # Calculate sampling interval
         step = max(1, int(video_fps / fps))
-        
+
         for i, frame in enumerate(reader):
             if i % step == 0:
                 frames.append(PIL.Image.fromarray(frame))
-                
+
         reader.close()
     except Exception as e:
         import logging
         logging.error(f"Error reading video with imageio: {e}")
         # Try fallback
         return _legacy_read_video_frames(input_video, fps)
-        
+
     return frames
 
 
@@ -315,14 +316,15 @@ def _legacy_read_video_frames(
     """Legacy video reading using OpenCV."""
     if not _is_opencv_available():
         raise ImportError("OpenCV is required for video reading fallback.")
-        
-    import cv2
-    import tempfile
+
     import os
-    
+    import tempfile
+
+    import cv2
+
     video_path = input_video
     temp_file = None
-    
+
     # If bytes or file-like, save to temp file because cv2 needs a path
     if isinstance(input_video, (bytes, io.BytesIO)) or hasattr(input_video, "read"):
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -341,31 +343,31 @@ def _legacy_read_video_frames(
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
              raise ValueError("Could not open video file")
-             
+
         video_fps = cap.get(cv2.CAP_PROP_FPS)
         if video_fps <= 0:
              video_fps = 30 # Default if unknown
 
         step = max(1, int(video_fps / fps))
-        
+
         count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-                
+
             if count % step == 0:
                 # CV2 is BGR, convert to RGB
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frames.append(PIL.Image.fromarray(rgb_frame))
             count += 1
-            
+
         cap.release()
     finally:
         if temp_file and os.path.exists(temp_file):
             try:
                 os.remove(temp_file)
-            except:
+            except OSError:
                 pass
-                
+
     return frames

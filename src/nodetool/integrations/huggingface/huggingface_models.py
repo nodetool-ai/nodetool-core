@@ -279,10 +279,8 @@ _CONFIG_MODEL_TYPE_MAPPING = {
     "qwen2": "hf.text_generation",
     "qwen3": "hf.text_generation",
     "qwen_2_5_vl": "hf.text_generation",
-    "qwen_3_vl": "hf.text_generation",
     "mistral3": "hf.text_generation",
     "gpt_oss": "hf.text_generation",
-    "llama": "hf.text_generation",
     "phi3": "hf.text_generation",
     "phi4": "hf.text_generation",
     "gemma2": "hf.text_generation",
@@ -1519,10 +1517,11 @@ async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
     results: list[LanguageModel] = []
     repo_list = await HF_FAST_CACHE.discover_repos("model")
     for repo_id, _repo_dir in repo_list:
-        repo_display = repo_id.split("/")[-1]
+        repo_id.split("/")[-1]
         config = await HF_FAST_CACHE.resolve(repo_id, "config.json")
         if config:
-            config_data = json.load(open(config))
+            with open(config) as f:
+                config_data = json.load(f)
             model_type = config_data.get("model_type")
             if model_type in SUPPORTED_MODEL_TYPES:
                 results.append(
