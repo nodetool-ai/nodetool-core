@@ -61,6 +61,28 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def get_llama_cpp_cache_dir() -> str:
+    """Return the llama.cpp native cache directory.
+
+    This matches where `llama-server -hf` downloads models:
+    - Linux: ~/.cache/llama.cpp/
+    - macOS: ~/Library/Caches/llama.cpp/
+    - Windows: %LOCALAPPDATA%/llama.cpp/
+
+    Returns:
+        Path to the llama.cpp cache directory.
+    """
+    import sys
+
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Caches/llama.cpp")
+    elif sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        return os.path.join(local_app_data, "llama.cpp")
+    else:  # Linux and others
+        return os.path.expanduser("~/.cache/llama.cpp")
+
+
 def _is_windows_abs_path(path: str) -> bool:
     """Return True if the string looks like a Windows absolute or UNC path.
 

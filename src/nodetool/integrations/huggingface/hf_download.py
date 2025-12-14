@@ -12,6 +12,7 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Callable, Literal
 
+import httpx
 from fastapi import WebSocket
 from huggingface_hub import (
     _CACHED_NO_EXIST,
@@ -109,6 +110,7 @@ class DownloadManager:
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
         user_id: str | None = None,
+        cache_dir: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
 
@@ -129,7 +131,7 @@ class DownloadManager:
         # Create background task for the download
         task = asyncio.create_task(
             self._download_task(
-                repo_id, path, allow_patterns, ignore_patterns, user_id
+                repo_id, path, allow_patterns, ignore_patterns, user_id, cache_dir
             )
         )
         download_state.task = task
@@ -146,6 +148,7 @@ class DownloadManager:
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
         user_id: str | None = None,
+        cache_dir: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
         download_state = self.downloads[id]
@@ -157,6 +160,7 @@ class DownloadManager:
                 allow_patterns=allow_patterns,
                 ignore_patterns=ignore_patterns,
                 user_id=user_id,
+                cache_dir=cache_dir,
             )
         except asyncio.CancelledError:
             self.logger.info(f"Download task cancelled: {id}")
@@ -244,32 +248,33 @@ class DownloadManager:
         allow_patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
         user_id: str | None = None,
+        cache_dir: str | None = None,
     ):
-        """Download files from a Hugging Face repository."""
+        """Download files from a Hugging Face repository.
+        
+        Args:
+            repo_id: HuggingFace repository ID
+            path: Optional specific file path within the repo
+            allow_patterns: Optional file patterns to include
+            ignore_patterns: Optional file patterns to exclude
+            user_id: Optional user ID for authentication
+            cache_dir: Optional cache directory. If provided, downloads will go there
+                instead of the default HF cache. Use for llama_cpp_model types.
+        """
         id = repo_id if path is None else f"{repo_id}/{path}"
         state = self.downloads[id]
 
-        self.logger.debug(f"download_huggingface_repo: Starting download for {repo_id} with user_id={user_id}")
-
         # Ensure token is initialized
         if not self._token_initialized:
-            self.logger.debug(f"download_huggingface_repo: Token not initialized, fetching with user_id={user_id}")
             self.token = await hf_auth.get_hf_token(user_id)
             if self.token:
                 if isinstance(self.api, HfApi):
                     self.api = HfApi(token=self.token)
                 self._token_initialized = True
-                self.logger.debug(f"download_huggingface_repo: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
             else:
-                self.logger.warning(f"download_huggingface_repo: No token found for user_id={user_id} after initialization attempt. Gated models will fail.")
+                self.logger.warning(f"No token found for user_id={user_id} after initialization attempt. Gated models will fail.")
 
-        # Log HF_TOKEN presence for debugging
-        if self.token:
-            self.logger.info(f"download_huggingface_repo: Starting download for {repo_id} with HF_TOKEN (token provided, masked)")
-        else:
-            self.logger.info(f"download_huggingface_repo: Starting download for {repo_id} without HF_TOKEN (public models only)")
-
-        self.logger.info(f"Fetching file list for repo: {repo_id} (user_id={user_id})")
+        self.logger.info(f"Fetching file list for repo: {repo_id}")
         raw_files = self.api.list_repo_tree(repo_id, recursive=True)
         files = [
             file
@@ -321,13 +326,28 @@ class DownloadManager:
                     state.status = "progress"
 
         async def run_single_download(file_path: str):
-            local_path = await async_hf_download(
-                repo_id=repo_id,
-                filename=file_path,
-                token=self.token,
-                progress_callback=on_progress,
-                cancel_event=state.cancel,
-            )
+            # Use llama.cpp-specific download for llama_cpp_model type
+            if cache_dir is not None:
+                from nodetool.integrations.huggingface.llama_cpp_download import (
+                    download_llama_cpp_model,
+                )
+                log.info(f"Downloading {repo_id}/{file_path} to {cache_dir}")
+                local_path = await download_llama_cpp_model(
+                    repo_id=repo_id,
+                    filename=file_path,
+                    token=self.token,
+                    progress_callback=on_progress,
+                    cancel_event=state.cancel,
+                )
+            else:
+                log.info(f"Downloading {repo_id}/{file_path}")
+                local_path = await async_hf_download(
+                    repo_id=repo_id,
+                    filename=file_path,
+                    token=self.token,
+                    progress_callback=on_progress,
+                    cancel_event=state.cancel,
+                )
             return file_path, local_path
 
         for file in files_to_download:

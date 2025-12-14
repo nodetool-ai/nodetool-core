@@ -30,220 +30,97 @@ from nodetool.workflows.types import (
 )
 
 from .message_processor import MessageProcessor
+from .context_packer import create_compact_graph_context
 
 log = get_logger(__name__)
 
+# Safety limit to prevent runaway tool-call loops
+MAX_TOOL_ITERATIONS = 25
+
 SYSTEM_PROMPT = """
-You are a helpful assistant that provides help for Nodetool.
+You are a Nodetool workflow assistant.
 
-## Goal
-- Provide fast, accurate, actionable help for Nodetool.
-- If the user asks about a specific node type, provide a detailed explanation of the node type and how to use it.
-- If the user asks to create a workflow, perform tool calls to create the workflow in the UI.
-- Default to the shortest useful answer. No plans or repetition.
-
-## Style
-- Be direct and specific.
-- Ask at most one clarifying question, and only if blocked.
-- Do not reveal chain-of-thought; output only answers, tool results, and brief notes.
-- Keep examples minimal; include code/JSON only if essential.
-
-## Tool Preamble
-- One-line preamble before tool use: say what you're about to do.
+## Core Rules
+- Do NOT invent node types or property names. Always use search_nodes first.
+- When building or editing, use tools then validate with ui_auto_layout.
+- Answer in short bullets. No plans or chain-of-thought.
 
 ## Tools
-- search_nodes(query): find node types and schemas.
-- search_examples(query): find example workflows.
+- search_nodes(query): find node types and schemas
+- search_examples(query): find example workflows
 
 ## Data Types
-- str, int, float, bool, list, dict, tuple, union
-- asset types: {"type": "image|audio|video|document", "uri": "https://example.com/image.png"}
-
-## Important Node namespaces
-- nodetool.agents
-- nodetool.audio: audio processing
-- nodetool.constants: constant values
-- nodetool.image: image processing
-- nodetool.input: user input
-- nodetool.list: list processing
-- nodetool.output: output
-- nodetool.dictionary: dictionary processing
-- nodetool.generators: generative nodes
-- nodetool.data: dataframes, lists, dictionaries
-- nodetool.text: text processing
-- nodetool.code: code evaluation and execution
-- nodetool.control: control flow (Loop, If, Switch)
-- nodetool.video: video processing
+- Primitives: str, int, float, bool, list, dict
+- Assets: {"type": "image|audio|video|document", "uri": "..."}
 
 ## How Nodetool Works
-- Visual editor: build node graphs; connect outputs to inputs; run with the play button at the bottom.
-- Node Menu: press space or double click canvas to open the node menu.
-- Nodes: typed inputs/outputs; includes AI/model provider nodes and utilities (conversion, control flow like Loop).
-- Data flow: values travel across edges; lists/dataframes iterate via Loop; Preview renders outputs for inspection.
-- Assets: manage media in the Assets panel; drag/drop onto canvas to create asset nodes; use as inputs/outputs.
-- Models: run locally (GPU/MPS) or via providers (OpenAI, Anthropic, Replicate, Hugging Face, Ollama, ElevenLabs, Google).
+- Visual editor: build node graphs by connecting outputs to inputs
+- Node Menu: press space or double-click canvas to open
+- Data Flow: values travel across edges from source to target nodes
+- Assets: manage media in Assets panel; drag/drop to create asset nodes
+- Models: run locally (GPU/MPS) or via providers (OpenAI, Anthropic, Ollama, etc.)
 
-## Building workflows
-1. **Graph Structure:** Design workflows as Directed Acyclic Graphs (DAGs) with no cycles
-2. **Data Flow:** Connect nodes via edges that represent data flow from inputs through processing to outputs
-3. **Node Design:** Each node should have a clear, focused purpose
-4. **Valid Node Types:** All nodes **must** correspond to available node types. Always use `search_nodes` to discover and verify node types
-5. **Type Safety:** Ensure type compatibility throughout the workflow
-6. **User-Centric Design:** Create graphs that solve the user's actual problem, not just technical requirements
-7. **Reasoning Privacy:** Think step-by-step internally but do not reveal chain-of-thought. Only provide requested, structured outputs or tool calls.
-8. **Determinism & Efficiency:** Minimize tokens. Prefer canonical, compact JSON for node specifications. Avoid markdown in structured outputs.
+## Building Workflows
+1. Design as Directed Acyclic Graphs (DAGs) - no cycles allowed
+2. Connect nodes via edges representing data flow
+3. All nodes MUST be valid types - use search_nodes to verify
+4. Ensure type compatibility between connected handles
+5. Use Loop nodes to iterate over lists/dataframes
 
 ## Streaming
-- Streaming nodes: output a stream of items.
-- Output nodes automatically collect streamed items into lists.
+- Streaming nodes output a stream of items one at a time
+- Output nodes automatically collect streamed items into lists
 - Use streaming for iterations and loops
-- A producer node can generate a stream of items
-- Connected nodes will be executed once for each item and continue to stream
-
-## Agent Nodes (In Workflows)
-- Connect nodes as tools to an Agent node via dynamic outputs.
-- A tool chain should end with a nodetool.workflows.base_node.ToolResult node.
-- The dynamic output connecting to the tool node should have the correct type and properly named.
-- For example, connect search_google output to search.google.GoogleSearch node's "keyword" property.
-- Agent's chunk output streams tokens while the text output streams the final text.
-
-## Autonomous Agent Execution
-NodeTool provides autonomous agent execution capabilities for tasks that require dynamic planning and web/email access. Agents can use various tools to accomplish objectives like web search, browsing, email access, and more.
-
-### Available Agent Tools
-- **google_search**: Search the web using Google
-- **browser**: Browse and extract content from web pages
-- **email**: Search and read emails
-
-### Agent vs Workflows
-**Use Agents when:**
-- Task requires dynamic planning and adaptation
-- You don't know exact steps in advance
-- Need web search or external data access
-- Want autonomous task completion
-
-**Use Workflows when:**
-- You have a well-defined process
-- Steps are known and repeatable
-- Need precise control over execution
-- Building reusable pipelines
-
-### Tips for Writing Good Agent Objectives
-1. **Be specific**: Clearly state what you want the agent to accomplish
-2. **Break down steps**: For complex tasks, list the steps in the objective
-3. **Specify output format**: Describe how you want the results formatted
-4. **Include constraints**: Mention any limitations or preferences
-5. **Use output_schema**: For structured data, provide a JSON schema
-
-### Provider and Model Selection
-**OpenAI (default):**
-- gpt-4o: Most capable, good for complex reasoning
-- gpt-4-turbo: Fast and capable
-- gpt-3.5-turbo: Faster, lower cost, good for simpler tasks
-
-**Anthropic:**
-- claude-3-7-sonnet-20250219: Very capable, good reasoning
-- claude-3-5-sonnet-20241022: Balanced capability and speed
-- claude-3-haiku-20240307: Fast, efficient for simpler tasks
-
-**HuggingFace Cerebras (free, fast):**
-- openai/gpt-oss-120b: Good performance, free tier available
-
-**Ollama (local):**
-- qwen3:14b: Good local model
-- gemma3:12b: Efficient local model
-
-**Google Gemini:**
-- gemini-2.0-flash: Fast and capable
-- gemini-pro-vision: For vision tasks
-
-### Agent Workspace
-Agents save files to a workspace directory. Check the workspace_dir in response to find:
-- Downloaded files
-- Generated reports
-- Intermediate data
-- Any artifacts created during execution
+- A producer node generates a stream; connected nodes execute once per item
+- This enables efficient processing of large datasets
 
 ## Node Metadata Structure
-Each node type has specific metadata that defines:
-- **properties**: Input fields/parameters the node accepts (these become targetHandles for edges)
-- **outputs**: Output slots the node produces (these become sourceHandles for edges)
-- **is_dynamic**: Boolean flag indicating if the node supports dynamic properties
-- **supports_dynamic_outputs**: Boolean flag indicating if the node supports dynamic outputs
+- **properties**: Input fields the node accepts (become targetHandles for edges)
+- **outputs**: Output slots the node produces (become sourceHandles for edges)
+- **is_dynamic**: Node supports dynamic properties
 
-## Input and Output Node Mappings
-Input nodes: string→StringInput, int→IntegerInput, float→FloatInput, bool→BooleanInput, list[any]→ListInput, image→ImageInput, video→VideoInput, document→DocumentInput, dataframe→DataFrameInput
+## I/O Mappings
+| Type   | Input Node                   | Output Node                   |
+|--------|------------------------------|-------------------------------|
+| string | nodetool.input.StringInput   | nodetool.output.StringOutput  |
+| int    | nodetool.input.IntegerInput  | nodetool.output.IntegerOutput |
+| float  | nodetool.input.FloatInput    | nodetool.output.FloatOutput   |
+| bool   | nodetool.input.BooleanInput  | nodetool.output.BooleanOutput |
+| image  | nodetool.input.ImageInput    | nodetool.output.ImageOutput   |
+| video  | nodetool.input.VideoInput    | nodetool.output.VideoOutput   |
+| audio  | nodetool.input.AudioInput    | nodetool.output.AudioOutput   |
 
-Output nodes: string→StringOutput, int→IntegerOutput, float→FloatOutput, bool→BooleanOutput, list[any]→ListOutput, image→ImageOutput, video→VideoOutput, document→DocumentOutput, dataframe→DataFrameOutput
-## Using `search_nodes` Efficiently
+## Key Namespaces
+- nodetool.input, nodetool.output: workflow I/O
+- nodetool.text, nodetool.image, nodetool.audio, nodetool.video: media processing
+- nodetool.data: dataframes, lists, dictionaries
+- nodetool.agents: AI agent nodes with tool connections
+- nodetool.control: Loop, If, Switch for control flow
+- nodetool.code: code evaluation
 
-## Node Selection and Efficient Use of `search_nodes`
+## Connection Conventions
+- Input nodes: provide data through "output" handle
+- Output nodes: receive data through "value" property
+- Most nodes have a single output named "output"
+- Edge format: {"source": "node_id", "sourceHandle": "output_name", "target": "...", "targetHandle": "..."}
 
-To build workflows efficiently, follow these consolidated guidelines for node selection and searching:
+## Agent Nodes (In Workflows)
+- Connect nodes as tools to an Agent node via dynamic outputs
+- Tool chains should end with a ToolResult node
+- Agent's chunk output streams tokens; text output gives final result
 
-- **Create all Input and Output nodes directly:**
-  For every item in the Input Schema, create a corresponding Input node using the exact node type from the system prompt mappings (do NOT search for these). Set the node's `name` to match the schema's `name`. Do the same for each Output Schema item, using the correct Output node type and `name`.
+## Using search_nodes Efficiently
+- Create Input/Output nodes directly using the mappings above (don't search)
+- Search for processing nodes with specific keywords
+- Use input_type/output_type filters to narrow results
+- Batch related searches: "dataframe group aggregate" instead of separate queries
+- Check returned metadata for property names and types
 
-- **Strategically search for intermediate processing nodes using `search_nodes`:**
-  - **Plan searches ahead:** Identify all processing steps needed (e.g., data transformation, aggregation, visualization, text generation) before searching.
-  - **Batch related needs:** Combine similar requirements into broader queries to find multiple relevant nodes at once (e.g., "dataframe group aggregate sum" instead of separate searches).
-  - **Use specific, descriptive queries:** Prefer targeted keywords that precisely describe the desired functionality, rather than generic terms.
-  - **Leverage type filters:** Use `input_type` and `output_type` parameters to narrow results and reduce irrelevant nodes. Supported types include: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any".
-  - **Use broad searches only when necessary:** If unsure about available node types, omit type parameters for a wider search.
-  - **Prefer powerful nodes:** Choose nodes that can handle multiple related tasks over chaining many trivial nodes, when possible.
-  - **For specific operations:**
-    - Dataframe operations: Search with keywords like "GroupBy", "Aggregate", "Filter", "Transform", "dataframe" (often in `nodetool.data`).
-    - List operations: Use `input_type="list"` or `output_type="list"` with relevant keywords.
-    - Text operations: Use `input_type="str"` or `output_type="str"` (e.g., "concatenate", "regex", "template").
-    - Agents: Search "agent" and verify input/output types in metadata.
-    - Type conversions:
-      - dataframe → array: Search "dataframe to array" or "to_numpy"
-      - dataframe → string: Search "dataframe to string" or "to_csv"
-      - array → dataframe: Search "array to dataframe" or "from_array"
-      - list → item: Use iterator node
-      - item → list: Use collector node
-
-Namespaces:
-- nodetool.agents
-- nodetool.audio
-- nodetool.constants
-- nodetool.image
-- nodetool.input
-- nodetool.list
-- nodetool.output
-- nodetool.dictionary
-- nodetool.generators
-- nodetool.data
-- nodetool.text
-- nodetool.code
-- nodetool.control
-- nodetool.video
-- lib.*
-
-- **Check node metadata:**
-  For nodes found via `search_nodes`, always inspect their metadata for required fields and property names. Create appropriate property entries as needed.
-
-- **Edge connections:**
-  Use the convention: `{"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}`.
-
-- **Handle conventions:**
-  - Most nodes have a single output, usually named "output". Always verify with `search_nodes` if unsure.
-  - Input nodes provide data through the `"output"` handle.
-  - Output nodes receive data through their `"value"` property.
-
-By following these steps, you can efficiently construct workflows with the correct nodes and minimal, targeted searches.
-
-## Configuration Guidelines
-- **For nodes found via `search_nodes`**: Check their metadata for required fields and create appropriate property entries.
-- **Edge connections**: `{"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}`
-
-## Important Handle Conventions
-- **Most nodes have a single output**: The default output handle is often named "output". Always verify with `search_nodes` if unsure.
-- **Input nodes**: Provide data through the `"output"` handle.
-- **Output nodes**: Receive data through their `"value"` property.
-- **Always check metadata from `search_nodes` results** for exceptions and exact input property names (targetHandles).
-
-USE the ui_auto_layout: ClassVar[str] tool to automatically layout the graph.
+## Official Nodetool Resources
+- Website: https://nodetool.ai
+- Documentation: https://docs.nodetool.ai
+- Community Forum: https://forum.nodetool.ai
+- Do NOT invent or hallucinate other domains
 """
 
 
@@ -257,7 +134,7 @@ class UIToolProxy(Tool):
         # Providers expect JSON schema under input_schema
         self.input_schema = tool_manifest.get("parameters", {})
 
-    async def process(self, context: ProcessingContext, args: dict) -> dict:
+    async def process(self, context: ProcessingContext, params: dict) -> dict:
         """Forward tool call to frontend and wait for result."""
         if not context.tool_bridge:
             raise ValueError("Tool bridge not available")
@@ -272,7 +149,7 @@ class UIToolProxy(Tool):
             "type": "tool_call",
             "tool_call_id": tool_call_id,
             "name": self.name,
-            "args": args,
+            "args": params,
             "thread_id": getattr(context, "thread_id", ""),
         }
 
@@ -295,7 +172,7 @@ class UIToolProxy(Tool):
                 f"Frontend tool {self.name} timed out after 60 seconds"
             ) from e
 
-    def user_message(self, args: dict) -> str:
+    def user_message(self, params: dict) -> str:
         """Generate user-friendly message for tool execution."""
         return f"Executing frontend tool: {self.name}"
 
@@ -366,17 +243,19 @@ class HelpMessageProcessor(MessageProcessor):
             try:
                 if getattr(last_message, "graph", None):
                     assert last_message.graph
-                    graph_dict = (
-                        last_message.graph.model_dump()
-                        if hasattr(last_message.graph, "model_dump")
-                        else last_message.graph
-                    )
-                    # Keep this as a separate system message to avoid mutating user content
+                    # Use compact graph representation to minimize tokens
+                    compact_graph = create_compact_graph_context(last_message.graph)
+                    # Add workflow context IDs so model doesn't hallucinate them
+                    context_info = {
+                        "workflow_id": last_message.workflow_id,
+                        "thread_id": last_message.thread_id,
+                        "graph": compact_graph,
+                    }
                     graph_context = Message(
                         role="system",
                         content=(
-                            "Current workflow graph (JSON). Use this to answer questions "
-                            "and suggest precise changes.\n" + json.dumps(graph_dict)
+                            "Current workflow context. Use these exact IDs, do NOT invent workflow or thread IDs.\n"
+                            + json.dumps(context_info)
                         ),
                     )
                     effective_messages.append(graph_context)
@@ -389,9 +268,17 @@ class HelpMessageProcessor(MessageProcessor):
 
             accumulated_content = ""
             unprocessed_messages = []
+            iteration_count = 0
 
             # Process messages with tool execution
             while True:
+                iteration_count += 1
+                if iteration_count > MAX_TOOL_ITERATIONS:
+                    log.warning(f"Hit MAX_TOOL_ITERATIONS limit ({MAX_TOOL_ITERATIONS})")
+                    await self.send_message(
+                        {"type": "chunk", "content": "\n\n[Reached tool iteration limit]", "done": False}
+                    )
+                    break
                 # Persist unprocessed messages so the provider sees the full history
                 effective_messages.extend(unprocessed_messages)
                 messages_to_send = effective_messages
@@ -402,6 +289,7 @@ class HelpMessageProcessor(MessageProcessor):
                     messages=messages_to_send,
                     model=last_message.model,
                     tools=help_tools + tools + ui_tools,
+                    context_window=8192,
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         accumulated_content += chunk.content
@@ -467,20 +355,46 @@ class HelpMessageProcessor(MessageProcessor):
                                         message=tool_impl.user_message(chunk.args),
                                     ).model_dump()
                                 )
-                                result = await tool_impl.process(
-                                    processing_context, chunk.args
-                                )
-                                tool_result = ToolCall(
-                                    id=chunk.id,
-                                    name=chunk.name,
-                                    args=chunk.args,
-                                    result=result,
-                                )
+                                try:
+                                    result = await tool_impl.process(
+                                        processing_context, chunk.args
+                                    )
+                                    tool_result = ToolCall(
+                                        id=chunk.id,
+                                        name=chunk.name,
+                                        args=chunk.args,
+                                        result=result,
+                                    )
+                                except (ValueError, TypeError, KeyError) as e:
+                                    # Tool execution failed due to invalid parameters
+                                    # Return error to model so it can retry with corrected args
+                                    log.warning(f"Help tool {chunk.name} failed: {e}. Returning error to model.")
+                                    tool_result = ToolCall(
+                                        id=chunk.id,
+                                        name=chunk.name,
+                                        args=chunk.args,
+                                        result={
+                                            "error": f"Tool execution failed: {str(e)}"
+                                        },
+                                    )
                             else:
-                                # Process regular server tool call
-                                tool_result = await self._run_tool(
-                                    processing_context, chunk
-                                )
+                                # Try to process as regular server tool, with graceful error handling
+                                try:
+                                    tool_result = await self._run_tool(
+                                        processing_context, chunk
+                                    )
+                                except ValueError as e:
+                                    # Tool not found - return error to model instead of crashing
+                                    # This helps smaller models that may hallucinate tool names
+                                    log.warning(f"Tool not found: {chunk.name}. Returning error to model.")
+                                    tool_result = ToolCall(
+                                        id=chunk.id,
+                                        name=chunk.name,
+                                        args=chunk.args,
+                                        result={
+                                            "error": f"Tool '{chunk.name}' not found. Available tools: search_nodes, search_examples, and UI tools. Use search_nodes to find valid node types."
+                                        },
+                                    )
 
                         log.debug(
                             f"Help tool {chunk.name} execution complete, id={tool_result.id}"

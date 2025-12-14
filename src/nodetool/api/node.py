@@ -10,6 +10,7 @@ from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
+    CalendarEvent,
     DataframeRef,
     DocumentRef,
     Email,
@@ -123,6 +124,7 @@ UnionType = (
     | NodeRef
     | Prediction
     | JobUpdate
+    | CalendarEvent
     | LanguageModel
     | HuggingFaceModel
     | HFImageTextToText

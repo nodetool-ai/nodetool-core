@@ -1569,6 +1569,78 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
+async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
+    """
+    Enumerate GGUF models in the llama.cpp native cache directory.
+
+    llama.cpp uses a flat file structure:
+    - {org}_{repo}_{filename}.gguf
+    - {org}_{repo}_{filename}.gguf.etag
+    - manifest={org}={repo}={tag}.json
+
+    Cache locations:
+    - Linux: ~/.cache/llama.cpp/
+    - macOS: ~/Library/Caches/llama.cpp/
+    - Windows: %LOCALAPPDATA%/llama.cpp/
+
+    Returns:
+        List[UnifiedModel]: Models with type='llama_cpp_model' found in the cache.
+    """
+    from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+
+    cache_dir = get_llama_cpp_cache_dir()
+    if not os.path.isdir(cache_dir):
+        return []
+
+    models: list[UnifiedModel] = []
+
+    # llama.cpp uses flat naming: {org}_{repo}_{filename}.gguf
+    for entry in os.listdir(cache_dir):
+        if not entry.lower().endswith(".gguf"):
+            continue
+        # Skip etag files and other metadata
+        if entry.endswith(".etag"):
+            continue
+
+        file_path = os.path.join(cache_dir, entry)
+        if not os.path.isfile(file_path):
+            continue
+
+        # Parse repo info from flat filename: org_repo_filename.gguf
+        # Example: ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf
+        parts = entry.rsplit("_", 2)  # Split from right: [org, repo, filename]
+        if len(parts) >= 3:
+            org = parts[0]
+            repo = parts[1]
+            filename = parts[2]
+            repo_id = f"{org}/{repo}"
+        else:
+            # Fallback for unexpected format
+            repo_id = ""
+            filename = entry
+
+        try:
+            size = os.path.getsize(file_path)
+        except OSError:
+            size = 0
+
+        models.append(UnifiedModel(
+            id=f"{repo_id}:{filename}" if repo_id else filename,
+            type="llama_cpp_model",
+            name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
+            repo_id=repo_id,
+            path=filename,
+            cache_path=file_path,
+            size_on_disk=size,
+            downloaded=True,
+        ))
+
+    # Sort for stability
+    models.sort(key=lambda m: (m.repo_id or "", m.path or ""))
+    log.debug(f"Found {len(models)} models in llama.cpp cache at {cache_dir}")
+    return models
+
+
 async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     """Return LanguageModel entries based on cached weight files (hub-free)."""
     seen_repos: set[str] = set()

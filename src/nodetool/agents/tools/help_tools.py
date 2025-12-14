@@ -113,15 +113,14 @@ class SearchNodesTool(Tool):
                 "node_type": node_type.node_type,
                 "title": node_type.title,
                 "description": node_type.description,
-                "properties": {
-                    prop.name: prop.type.get_json_schema()
+                # Compact property format: just name and type string
+                "properties": [
+                    {"name": prop.name, "type": prop.type.type}
                     for prop in node_type.properties
-                },
-                "outputs": {
-                    out.name: out.type.get_json_schema() for out in node_type.outputs
-                },
+                ],
+                # Compact output format: just output names
+                "outputs": [out.name for out in node_type.outputs],
                 "is_dynamic": node_type.is_dynamic,
-                "is_streaming_output": node_type.is_streaming_output,
             }
             for node_type in results
         ]

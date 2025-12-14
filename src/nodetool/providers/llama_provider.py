@@ -1,9 +1,9 @@
 """
 Llama.cpp OpenAI-compatible provider.
 
-Uses openai.AsyncClient against a llama-server base_url. Automatically starts a
-background llama-server (per model) via LlamaServerManager and keeps it alive
-with a TTL.
+Uses openai.AsyncClient against a llama-server base_url. Requires an externally
+managed llama-server (e.g., started by Electron on application startup) via the
+LLAMA_CPP_URL environment variable.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.huggingface_models import (
     get_llamacpp_language_models_from_hf_cache,
 )
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
 from nodetool.security.secret_helper import get_secret_sync
@@ -34,37 +34,44 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
+# Only register the provider if LLAMA_CPP_URL is explicitly set
+_llama_cpp_url = Environment.get("LLAMA_CPP_URL")
 
-@register_provider(Provider.LlamaCpp)
+
 class LlamaProvider(BaseProvider, OpenAICompat):
-    """OpenAI-compatible chat provider backed by a local llama.cpp server.
+    """OpenAI-compatible chat provider backed by an external llama.cpp server.
 
-    This provider automatically manages a background ``llama-server`` process per
-    model via ``LlamaServerManager`` and exposes a familiar OpenAI client
-    interface. It normalizes messages to conform to llama.cpp's chat template
-    alternation rules (user/assistant), and supports tool calls.
+    This provider connects to an externally managed llama-server specified via
+    the ``LLAMA_CPP_URL`` environment variable. It exposes a familiar OpenAI
+    client interface, normalizes messages to conform to llama.cpp's chat template
+    alternation rules (user/assistant), and supports tool call emulation.
+
+    The llama-server is expected to be started by Electron on application startup.
+    If ``LLAMA_CPP_URL`` is not set, this provider is not available.
 
     Attributes:
         provider: Provider identifier used by the application.
+        _base_url: The llama-server URL from LLAMA_CPP_URL environment variable.
     """
 
     provider_name: str = "llama_cpp"
-
-    @classmethod
-    def get_llama_server_manager(cls) -> LlamaServerManager:
-        if not hasattr(cls, "_manager"):
-            cls._manager = LlamaServerManager()
-        return cls._manager
+    _base_url: str = ""
 
     def __init__(self, secrets: dict[str, str], ttl_seconds: int = 300):
-        """Initialize the provider and its server manager.
+        """Initialize the provider.
 
         Args:
             secrets: Dictionary of secrets for the provider.
-            ttl_seconds: Inactivity time-to-live for each managed llama-server.
+            ttl_seconds: Unused, kept for API compatibility.
+        
+        Environment:
+            LLAMA_CPP_URL: Required. URL of the external llama-server
+                (e.g., http://127.0.0.1:8080).
         """
         super().__init__()
-        self._manager = self.get_llama_server_manager()
+        self._base_url = Environment.get("LLAMA_CPP_URL", "")
+        assert self._base_url, "LLAMA_CPP_URL not set"
+        log.info(f"Using llama-server at: {self._base_url}")
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -352,39 +359,49 @@ class LlamaProvider(BaseProvider, OpenAICompat):
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
-        The server manager queries model capabilities after server startup
-        and caches them. This method simply checks if "tools" is in the
-        cached capabilities list.
+        Since we're using an external llama-server, we cannot query model
+        capabilities ahead of time. Tool call emulation is used instead.
 
         Args:
             model: Model identifier passed to llama.cpp.
 
         Returns:
-            True if the model has "tools" in its capabilities, False otherwise.
-            Returns False if capabilities have not been queried yet (server not started).
+            False always - tool emulation is used for external servers.
         """
-        log.debug(f"Checking tool support for model: {model}")
-
-        capabilities = self._manager.get_model_capabilities(model)
-        has_tools = "tools" in capabilities
-
-        log.debug(
-            f"Model {model} capabilities: {capabilities}, tools support: {has_tools}"
-        )
-        return has_tools
+        log.debug(f"has_tool_support called for {model}, returning False (using emulation)")
+        return False
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
         Get available Llama.cpp models.
 
-        Returns GGUF models available in the local HuggingFace cache.
-        Always returns models (doesn't check if llama.cpp is available).
+        Queries the llama.cpp server's OpenAI-compatible /v1/models endpoint
+        to get the list of available models.
 
         Returns:
             List of LanguageModel instances for Llama.cpp
         """
-        models = await get_llamacpp_language_models_from_hf_cache()
-        log.debug(f"Found {len(models)} Llama.cpp (GGUF) models in HF cache")
+        import httpx
+
+        models: List[LanguageModel] = []
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self._base_url}/v1/models")
+                response.raise_for_status()
+                data = response.json()
+
+                for model_data in data.get("data", []):
+                    model_id = model_data.get("id", "")
+                    models.append(LanguageModel(
+                        id=model_id,
+                        name=model_id,
+                        provider=Provider.LlamaCpp,
+                    ))
+                log.debug(f"Found {len(models)} models from llama.cpp server")
+        except Exception as e:
+            log.warning(f"Error querying llama.cpp server: {e}")
+
         return models
 
     async def generate_messages(
@@ -417,7 +434,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        base_url = await self._manager.ensure_server(model)
+        # Use the external llama-server URL
+        base_url = self._base_url
         _kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -556,7 +574,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        base_url = await self._manager.ensure_server(model)
+        # Use the external llama-server URL
+        base_url = self._base_url
         _kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
             "stream": False,
@@ -847,3 +866,10 @@ if __name__ == "__main__":
         print(f"{'='*60}\n")
 
     asyncio.run(_run_all())
+
+
+# Conditionally register the provider only if LLAMA_CPP_URL is set
+if _llama_cpp_url:
+    register_provider(Provider.LlamaCpp)(LlamaProvider)
+else:
+    log.debug("LlamaCpp provider not registered: LLAMA_CPP_URL not set")

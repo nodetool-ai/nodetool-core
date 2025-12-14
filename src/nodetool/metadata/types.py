@@ -548,6 +548,25 @@ class LlamaModel(BaseType):
         return self.repo_id != ""
 
 
+class LlamaCppModel(BaseType):
+    """Model type for llama.cpp GGUF models.
+
+    These models are stored in the llama.cpp native cache directories:
+    - Linux: ~/.cache/llama.cpp/hf/
+    - macOS: ~/Library/Caches/llama.cpp/hf/
+    - Windows: %LOCALAPPDATA%/llama.cpp/hf/
+    """
+
+    type: Literal["llama_cpp_model"] = "llama_cpp_model"
+    name: str = ""
+    repo_id: str = ""
+    filename: str = ""
+    size: int = 0
+
+    def is_set(self) -> bool:
+        return self.repo_id != ""
+
+
 class OpenAIModel(BaseType):
     type: Literal["openai_model"] = "openai_model"
     id: str = ""

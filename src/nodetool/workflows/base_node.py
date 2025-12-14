@@ -956,18 +956,34 @@ class BaseNode(BaseModel):
     def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
         """
         Prepares the node result for inclusion in a NodeUpdate message.
+        Only allows primitive types (str, int, float, bool, None) and containers (dict, list).
+        Converts Pydantic models to dicts and scrubs them.
+        Everything else is replaced with a string placeholder.
 
         Args:
             result (Dict[str, Any]): The raw result from node processing.
 
         Returns:
             Dict[str, Any]: A modified version of the result suitable for status updates.
-
-        Note:
-            - Converts Pydantic models to dictionaries.
-            - Serializes binary data to base64.
         """
-        return {}
+
+        def _scrub(obj):
+            if isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            if isinstance(obj, dict):
+                return {k: _scrub(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_scrub(v) for v in obj]
+            if isinstance(obj, BaseModel):
+                return _scrub(obj.model_dump())
+            
+            # Placeholders
+            if isinstance(obj, (bytes, bytearray)):
+                return f"<{len(obj)} bytes>"
+            
+            return f"<{type(obj).__name__}>"
+
+        return _scrub(result)
 
     def result_for_all_outputs(self, result: dict[str, Any]) -> dict[str, Any]:
         """
