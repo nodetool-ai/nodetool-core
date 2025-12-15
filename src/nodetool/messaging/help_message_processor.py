@@ -29,8 +29,8 @@ from nodetool.workflows.types import (
     ToolCallUpdate,
 )
 
-from .message_processor import MessageProcessor
 from .context_packer import create_compact_graph_context
+from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
 
@@ -383,7 +383,7 @@ class HelpMessageProcessor(MessageProcessor):
                                     tool_result = await self._run_tool(
                                         processing_context, chunk
                                     )
-                                except ValueError as e:
+                                except ValueError:
                                     # Tool not found - return error to model instead of crashing
                                     # This helps smaller models that may hallucinate tool names
                                     log.warning(f"Tool not found: {chunk.name}. Returning error to model.")

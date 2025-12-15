@@ -19,11 +19,11 @@ import tiktoken
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
+from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.huggingface_models import (
     get_llamacpp_language_models_from_hf_cache,
 )
-from nodetool.config.environment import Environment
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
@@ -63,7 +63,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Args:
             secrets: Dictionary of secrets for the provider.
             ttl_seconds: Unused, kept for API compatibility.
-        
+
         Environment:
             LLAMA_CPP_URL: Required. URL of the external llama-server
                 (e.g., http://127.0.0.1:8080).

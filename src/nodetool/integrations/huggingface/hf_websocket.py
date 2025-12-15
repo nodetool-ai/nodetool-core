@@ -102,7 +102,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                 if command == "start_download":
                     log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
                     print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
-                    
+
                     # Determine cache_dir based on model_type
                     model_type = data.get("model_type")
                     cache_dir = None
@@ -110,7 +110,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
                         cache_dir = get_llama_cpp_cache_dir()
                         log.info(f"Using llama.cpp cache for model_type={model_type}: {cache_dir}")
-                    
+
                     try:
                         # This is now non-blocking
                         await download_manager.start_download(

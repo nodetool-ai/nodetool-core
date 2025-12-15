@@ -251,7 +251,7 @@ class DownloadManager:
         cache_dir: str | None = None,
     ):
         """Download files from a Hugging Face repository.
-        
+
         Args:
             repo_id: HuggingFace repository ID
             path: Optional specific file path within the repo
