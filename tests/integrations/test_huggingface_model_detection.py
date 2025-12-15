@@ -11,7 +11,7 @@ pytest.importorskip("huggingface_hub")
 from nodetool.integrations.huggingface import huggingface_models
 from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.integrations.huggingface.huggingface_models import (
-    _build_search_config_for_type,
+    HF_SEARCH_TYPE_CONFIG,
     get_models_by_hf_type,
 )
 
@@ -83,7 +83,7 @@ def test_all_node_types_have_search_config():
     missing = {
         node_type
         for node_type in node_types
-        if _build_search_config_for_type(node_type) is None
+        if node_type.lower() not in HF_SEARCH_TYPE_CONFIG
     }
     assert not missing, f"Missing search config for: {sorted(missing)}"
 

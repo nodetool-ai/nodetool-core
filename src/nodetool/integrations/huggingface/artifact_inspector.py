@@ -51,24 +51,40 @@ def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     model_index_files = [p for p in paths if str(p).lower().endswith("model_index.json")]
 
     if safetensors:
-        res = _wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6))
-        if res:
-            return res
+        try:
+            res = _wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6))
+            if res:
+                return res
+        except Exception:
+            # Ignore errors from corrupted or incomplete safetensors files
+            pass
 
     if ggufs:
-        res = detect_gguf(ggufs)
-        if res:
-            return res
+        try:
+            res = detect_gguf(ggufs)
+            if res:
+                return res
+        except Exception:
+            # Ignore errors from corrupted or incomplete GGUF files
+            pass
 
     if torch_bins:
-        res = detect_torch_bin(torch_bins)
-        if res:
-            return res
+        try:
+            res = detect_torch_bin(torch_bins)
+            if res:
+                return res
+        except Exception:
+            # Ignore errors from corrupted or incomplete torch files
+            pass
 
     if config_files or model_index_files:
-        res = detect_from_json(config_files, model_index_files)
-        if res:
-            return res
+        try:
+            res = detect_from_json(config_files, model_index_files)
+            if res:
+                return res
+        except Exception:
+            # Ignore errors from corrupted or incomplete config files
+            pass
 
     return None
 
