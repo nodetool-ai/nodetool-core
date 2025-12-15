@@ -14,10 +14,10 @@ _SERVER_CACHE_TTL = 30.0
 
 def _check_server_health(url: str) -> bool:
     """Check if a server is reachable via its health endpoint.
-    
+
     Args:
         url: Base URL of the server (e.g., http://127.0.0.1:11434)
-        
+
     Returns:
         True if server responds with 200, False otherwise.
     """
@@ -39,23 +39,23 @@ def _check_server_health(url: str) -> bool:
 
 def _is_ollama_available() -> bool:
     """Check if Ollama server is running and reachable.
-    
+
     Uses cached status with 30-second TTL to avoid repeated checks.
     """
     from nodetool.config.environment import Environment
-    
+
     url = Environment.get("OLLAMA_API_URL") or os.environ.get("OLLAMA_API_URL")
     if not url:
         return False
-    
+
     cache_key = f"ollama:{url}"
     now = time.time()
-    
+
     if cache_key in _server_status_cache:
         is_available, cached_at = _server_status_cache[cache_key]
         if now - cached_at < _SERVER_CACHE_TTL:
             return is_available
-    
+
     is_available = _check_server_health(url)
     _server_status_cache[cache_key] = (is_available, now)
     return is_available
@@ -63,23 +63,23 @@ def _is_ollama_available() -> bool:
 
 def _is_llama_server_available() -> bool:
     """Check if llama-server is running and reachable.
-    
+
     Uses cached status with 30-second TTL to avoid repeated checks.
     """
     from nodetool.config.environment import Environment
-    
+
     url = Environment.get("LLAMA_CPP_URL") or os.environ.get("LLAMA_CPP_URL")
     if not url:
         return False
-    
+
     cache_key = f"llama:{url}"
     now = time.time()
-    
+
     if cache_key in _server_status_cache:
         is_available, cached_at = _server_status_cache[cache_key]
         if now - cached_at < _SERVER_CACHE_TTL:
             return is_available
-    
+
     is_available = _check_server_health(url)
     _server_status_cache[cache_key] = (is_available, now)
     return is_available
@@ -87,7 +87,7 @@ def _is_llama_server_available() -> bool:
 
 def get_server_availability() -> dict[str, bool]:
     """Get availability status for all external model servers.
-    
+
     Returns:
         Dict with 'ollama' and 'llama_server' keys indicating availability.
     """
@@ -99,28 +99,28 @@ def get_server_availability() -> dict[str, bool]:
 
 def _server_allows_model(m: UnifiedModel, servers: dict[str, bool] | None = None) -> bool:
     """Check if a model's required server is available.
-    
+
     Args:
         m: The model to check.
         servers: Optional pre-fetched server availability dict.
-        
+
     Returns:
         True if the model can run (server available or no server needed).
     """
     if servers is None:
         servers = get_server_availability()
-    
+
     model_type = (m.type or "").lower()
-    
+
     # llama_cpp models require llama-server
     if model_type in {"llama_cpp", "llama_cpp_model"}:
         return servers.get("llama_server", False)
-    
+
     # Ollama-based models (llama_model is the download type,
     # but we also check for common Ollama indicators)
     if model_type == "llama_model":
         return servers.get("ollama", False)
-    
+
     # All other types (mlx, hf.*, etc.) don't need external servers
     return True
 
@@ -323,7 +323,7 @@ def _filter_models(
     check_servers: bool = True,
 ) -> list[UnifiedModel]:
     """Filter, platform-gate, server-gate, and de-dupe models preserving order.
-    
+
     Args:
         models: Iterable of models to filter.
         predicate: Function to test each model.
@@ -332,10 +332,10 @@ def _filter_models(
     """
     out: list[UnifiedModel] = []
     seen: set[str] = set()
-    
+
     # Pre-fetch server availability once for efficiency
     servers = get_server_availability() if check_servers else None
-    
+
     for m in models:
         if m.id in seen:
             continue

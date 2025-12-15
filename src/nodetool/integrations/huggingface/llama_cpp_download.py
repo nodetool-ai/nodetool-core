@@ -79,7 +79,7 @@ async def download_llama_cpp_model(
     repo_id: str,
     filename: str,
     token: str | None = None,
-    progress_callback: "Callable[[int, int | None], None] | None" = None,
+    progress_callback: Callable[[int, int | None], None] | None = None,
     cancel_event: Optional[asyncio.Event] = None,
     tag: str = "latest",
 ) -> Path:
@@ -87,7 +87,7 @@ async def download_llama_cpp_model(
 
     Downloads directly to the llama.cpp native cache using their flat
     filename convention: {org}_{repo}_{filename}.gguf
-    
+
     Also creates:
     - {flat_filename}.etag for cache validation
     - manifest={org}={repo}={tag}.json for llama.cpp compatibility
@@ -109,7 +109,7 @@ async def download_llama_cpp_model(
     flat_filename = get_llama_cpp_model_filename(repo_id, filename)
     output_path = Path(cache_dir) / flat_filename
     etag_path = Path(cache_dir) / f"{flat_filename}.etag"
-    
+
     # Manifest path: manifest={org}={repo}={tag}.json
     org, repo = repo_id.split("/", 1) if "/" in repo_id else ("", repo_id)
     manifest_path = Path(cache_dir) / f"manifest={org}={repo}={tag}.json"

@@ -976,11 +976,11 @@ class BaseNode(BaseModel):
                 return [_scrub(v) for v in obj]
             if isinstance(obj, BaseModel):
                 return _scrub(obj.model_dump())
-            
+
             # Placeholders
             if isinstance(obj, (bytes, bytearray)):
                 return f"<{len(obj)} bytes>"
-            
+
             return f"<{type(obj).__name__}>"
 
         return _scrub(result)
