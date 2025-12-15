@@ -22,7 +22,7 @@ def test_py_typed_marker_exists():
 
 
 def test_py_typed_marker_content():
-    """Test that py.typed marker file has correct content (should be empty or contain partial\\n)."""
+    """Test that py.typed marker file has correct content (should be empty or contain partial\n)."""
     nodetool_package = Path(__file__).parent.parent / "src" / "nodetool"
     py_typed_file = nodetool_package / "py.typed"
 
@@ -33,5 +33,5 @@ def test_py_typed_marker_content():
     # or contain "partial\n" (indicating partial typing)
     # For this package, we use an empty file indicating full type support
     assert content in ("", "partial\n"), (
-        f"py.typed should be empty or contain 'partial\\n', got: {repr(content)}"
+        f"py.typed should be empty or contain 'partial\n', got: {repr(content)}"
     )
