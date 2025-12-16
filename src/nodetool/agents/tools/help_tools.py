@@ -44,9 +44,10 @@ class SearchNodesTool(Tool):
     name: str = "search_nodes"
     description: str = """
         Performs keyword search on nodetool nodes.
-        Use for finding specific node types or features by exact word matches.
+        Use for finding node types by exact word matches.
         Supply a list of words to search for as array, including synonyms and related words.
-        Returns a list of node metadata that match the search query.
+        By default returns only matching node_type strings (token-saving).
+        Set include_description/include_properties to fetch more detail only when needed.
         """
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -56,6 +57,16 @@ class SearchNodesTool(Tool):
                 "items": {
                     "type": "string",
                 },
+            },
+            "include_description": {
+                "type": "boolean",
+                "description": "Include title/description fields in results (more tokens).",
+                "default": False,
+            },
+            "include_properties": {
+                "type": "boolean",
+                "description": "Include property schemas in results (more tokens).",
+                "default": False,
             },
             "n_results": {
                 "type": "integer",
@@ -88,6 +99,8 @@ class SearchNodesTool(Tool):
     async def process(self, context: ProcessingContext, params: dict[str, Any]):
         assert "query" in params, "query is required"
         query = params["query"]
+        include_description = bool(params.get("include_description", False))
+        include_properties = bool(params.get("include_properties", False))
         input_type = params.get("input_type")
         output_type = params.get("output_type")
         n_results = params.get("n_results", 10)
@@ -108,22 +121,35 @@ class SearchNodesTool(Tool):
             exclude_namespaces=exclude_namespaces,
         )
 
-        return [
-            {
-                "node_type": node_type.node_type,
-                "title": node_type.title,
-                "description": node_type.description,
-                # Compact property format: just name and type string
-                "properties": [
-                    {"name": prop.name, "type": prop.type.type}
+        # Default: return only node_type strings (saves tokens).
+        if not include_description and not include_properties:
+            return [node_type.node_type for node_type in results]
+
+        enriched: list[dict[str, Any]] = []
+        for node_type in results:
+            item: dict[str, Any] = {"node_type": node_type.node_type}
+            if include_description:
+                item["title"] = node_type.title
+                item["description"] = node_type.description
+            if include_properties:
+                item["properties"] = [
+                    {
+                        "name": prop.name,
+                        "type": prop.type.type,
+                        "description": getattr(prop, "description", None),
+                        "default": getattr(prop, "default", None),
+                        "required": bool(getattr(prop, "required", False)),
+                    }
                     for prop in node_type.properties
-                ],
-                # Compact output format: just output names
-                "outputs": [out.name for out in node_type.outputs],
-                "is_dynamic": node_type.is_dynamic,
-            }
-            for node_type in results
-        ]
+                ]
+                item["outputs"] = [
+                    {"name": out.name, "type": out.type.type if out.type else "any"}
+                    for out in node_type.outputs
+                ]
+                item["is_dynamic"] = node_type.is_dynamic
+            enriched.append(item)
+
+        return enriched
 
 
 class SearchExamplesTool(Tool):
