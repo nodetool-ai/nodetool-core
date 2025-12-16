@@ -211,6 +211,10 @@ class AgentMessageProcessor(MessageProcessor):
                                     "agent_execution_id": agent_execution_id,
                                     "content": content_dict,
                                     "thread_id": last_message.thread_id,
+                                    "workflow_id": last_message.workflow_id,
+                                    "provider": last_message.provider,
+                                    "model": last_message.model,
+                                    "agent_mode": True,
                                 }
                             )
                             log.info("Sent task_update message")
@@ -244,6 +248,10 @@ class AgentMessageProcessor(MessageProcessor):
                                     "agent_execution_id": agent_execution_id,
                                     "content": content_dict,
                                     "thread_id": last_message.thread_id,
+                                    "workflow_id": last_message.workflow_id,
+                                    "provider": last_message.provider,
+                                    "model": last_message.model,
+                                    "agent_mode": True,
                                 }
                             )
                             log.info("Sent planning_update message")
@@ -273,6 +281,10 @@ class AgentMessageProcessor(MessageProcessor):
                                 "agent_execution_id": agent_execution_id,
                                 "content": content_dict,
                                 "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
+                                "provider": last_message.provider,
+                                "model": last_message.model,
+                                "agent_mode": True,
                             }
                         )
                         log.info("Sent subtask_result message")
@@ -292,12 +304,15 @@ class AgentMessageProcessor(MessageProcessor):
                 content = str(agent.results)
 
             await self.send_message(
-                {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": content,
-                    "thread_id": last_message.thread_id,
-                }
+                Message(
+                    role="assistant",
+                    content=content,
+                    thread_id=last_message.thread_id,
+                    workflow_id=last_message.workflow_id,
+                    provider=last_message.provider,
+                    model=last_message.model,
+                    agent_mode=True,
+                ).model_dump()
             )
 
             # Signal completion

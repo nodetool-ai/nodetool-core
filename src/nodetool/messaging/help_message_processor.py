@@ -271,6 +271,53 @@ ui_update_node_data(node_id="n1", data={"properties": {"prompt": "new prompt"}})
 Primitives: str, int, float, bool, list, dict
 Assets: `{"type": "image|audio|video|document", "uri": "..."}`
 
+## Special Nodes (no search required)
+These built-in nodes are always available—do NOT call `search_nodes` for them:
+
+### Input Nodes (`nodetool.input.*`)
+| Node Type | Purpose | Key Properties |
+|-----------|---------|----------------|
+| `nodetool.input.StringInput` | Text input parameter | `value` (str), `name` (str) |
+| `nodetool.input.IntegerInput` | Whole number input | `value` (int), `min`, `max`, `name` |
+| `nodetool.input.FloatInput` | Decimal number input | `value` (float), `min`, `max`, `name` |
+| `nodetool.input.BooleanInput` | True/false toggle | `value` (bool), `name` |
+| `nodetool.input.ImageInput` | Image file input | `value` (ImageRef), `name` |
+| `nodetool.input.AudioInput` | Audio file input | `value` (AudioRef), `name` |
+| `nodetool.input.VideoInput` | Video file input | `value` (VideoRef), `name` |
+| `nodetool.input.DocumentInput` | Document file input | `value` (DocumentRef), `name` |
+| `nodetool.input.GroupInput` | Receives items inside a Group | `name`; automatically iterates list items |
+
+### Output Nodes (`nodetool.output.*`)
+| Node Type | Purpose | Key Properties |
+|-----------|---------|----------------|
+| `nodetool.output.StringOutput` | Return text result | `value` (str), `name` |
+| `nodetool.output.IntegerOutput` | Return integer result | `value` (int), `name` |
+| `nodetool.output.FloatOutput` | Return float result | `value` (float), `name` |
+| `nodetool.output.BooleanOutput` | Return boolean result | `value` (bool), `name` |
+| `nodetool.output.ImageOutput` | Return image result | `value` (ImageRef), `name` |
+| `nodetool.output.AudioOutput` | Return audio result | `value` (AudioRef), `name` |
+| `nodetool.output.VideoOutput` | Return video result | `value` (VideoRef), `name` |
+| `nodetool.output.DocumentOutput` | Return document result | `value` (DocumentRef), `name` |
+| `nodetool.output.DataframeOutput` | Return tabular data | `value` (DataframeRef), `name` |
+| `nodetool.output.DictionaryOutput` | Return key-value data | `value` (dict), `name` |
+| `nodetool.output.ListOutput` | Return list of values | `value` (list), `name` |
+| `nodetool.output.GroupOutput` | Collects results from Group | `name`; accumulates iteration outputs |
+
+### Utility Nodes
+| Node Type | Purpose | Properties |
+|-----------|---------|------------|
+| `nodetool.workflows.base_node.Preview` | Display intermediate results | `value` (any), `name` (str) |
+| `nodetool.workflows.base_node.Comment` | Add annotations/documentation | `headline` (str), `comment` (any), `comment_color` (str) |
+| `nodetool.workflows.base_node.GroupNode` | Container for subgraph iteration | — |
+
+**Usage notes**:
+- **Input nodes**: Define workflow parameters; `name` becomes the parameter key when running workflows
+- **Output nodes**: Define workflow results; `name` becomes the output key in results
+- **GroupInput/GroupOutput**: Used inside `GroupNode` for list iteration; `GroupInput` receives each item, `GroupOutput` collects all results
+- `Preview`: Streams input values and posts `PreviewUpdate` messages; use to inspect data mid-workflow
+- `Comment`: Visual-only node for documentation; does not process data
+- `GroupNode`: Child nodes set `parent_id` to the group's ID; enables workflow organization
+
 ## Models & Inference
 Generic nodes (TextToImage, Agent, etc.) work across providers—switching providers doesn't require workflow changes.
 
@@ -693,6 +740,11 @@ class HelpMessageProcessor(MessageProcessor):
                             role="tool",
                             tool_call_id=tool_result.id,
                             content=tool_result_json,
+                            thread_id=last_message.thread_id,
+                            workflow_id=last_message.workflow_id,
+                            provider=last_message.provider,
+                            model=last_message.model,
+                            help_mode=True,
                         )
                         unprocessed_messages.append(tool_msg)
                         await self.send_message(tool_msg.model_dump())

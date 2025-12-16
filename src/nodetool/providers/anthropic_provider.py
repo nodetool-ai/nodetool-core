@@ -462,8 +462,9 @@ class AnthropicProvider(BaseProvider):
                     thinking = getattr(delta, "thinking", None)
                     if isinstance(text, str):
                         yield Chunk(content=text, done=False)
-                    elif isinstance(partial_json, str):
-                        yield Chunk(content=partial_json, done=False)
+                    # Note: partial_json contains tool call input fragments and should NOT
+                    # be yielded as message content. The complete tool call is emitted
+                    # at content_block_stop event.
                     elif isinstance(thinking, str):
                         yield Chunk(content=thinking, done=False)
                 elif etype == "message_start":

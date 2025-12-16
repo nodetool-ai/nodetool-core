@@ -22,16 +22,47 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.providers.base import BaseProvider
+from datetime import date, datetime
+import mimetypes
+import hashlib
+import tempfile
+from pathlib import Path
+from io import BytesIO
+
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
 )
+from nodetool.runtime.resources import require_scope
 
 from .message_processor import MessageProcessor
+from nodetool.metadata.types import (
+    Message,
+    MessageTextContent,
+    ToolCall,
+    AssetRef,
+    ImageRef,
+    AudioRef,
+    VideoRef,
+)
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
+
+def detect_mime_type(data: bytes) -> str:
+    """Detect mime type from bytes magic numbers."""
+    if data.startswith(b'\x89PNG\r\n\x1a\n'): return 'image/png'
+    if data.startswith(b'\xff\xd8'): return 'image/jpeg'
+    if data.startswith(b'GIF8'): return 'image/gif'
+    if data.startswith(b'RIFF') and data[8:12] == b'WEBP': return 'image/webp'
+    # Audio
+    if data.startswith(b'ID3') or data.startswith(b'\xff\xfb') or data.startswith(b'\xff\xf3') or data.startswith(b'\xff\xf2'): return 'audio/mpeg'
+    if data.startswith(b'RIFF') and data[8:12] == b'WAVE': return 'audio/wav'
+    if data.startswith(b'OggS'): return 'audio/ogg'
+    # Video
+    if len(data) > 12 and (data[4:12] == b'ftypisom' or data[4:12] == b'ftypmp42'): return 'video/mp4'
+    return 'application/octet-stream'
 
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
@@ -198,17 +229,11 @@ class RegularChatProcessor(MessageProcessor):
                         content += chunk.content
                         await self.send_message(chunk.model_dump())
                     elif isinstance(chunk, ToolCall):
-                        log.debug(f"Processing tool call: {chunk.name}")
+                        # Resolve tool and prepare message
+                        tool = await resolve_tool_by_name(chunk.name, processing_context.user_id)
+                        message_text = tool.user_message(chunk.args)
 
-                        # Process the tool call
-                        tool_result, message = await self._run_tool(
-                            processing_context, chunk, graph
-                        )
-                        log.debug(
-                            f"Tool {chunk.name} execution complete, id={tool_result.id}"
-                        )
-
-                        # Add tool messages to unprocessed messages
+                        # Create assistant message with tool call
                         assistant_msg = Message(
                             role="assistant",
                             tool_calls=[
@@ -217,7 +242,7 @@ class RegularChatProcessor(MessageProcessor):
                                     name=chunk.name,
                                     args=chunk.args,
                                     result=None,
-                                    message=message,
+                                    message=message_text,
                                 )
                             ],
                             thread_id=last_message.thread_id,
@@ -227,11 +252,29 @@ class RegularChatProcessor(MessageProcessor):
                             agent_mode=last_message.agent_mode or False,
                         )
                         unprocessed_messages.append(assistant_msg)
+
                         # Stream assistant tool-call message to client so UI can render it immediately
                         await self.send_message(assistant_msg.model_dump())
 
+                        log.debug(f"Processing tool call: {chunk.name}")
+
+                        # Process the tool call
+                        # We resolve the tool again inside _run_tool or just execute directly?
+                        # Since we already resolved 'tool', we can just run it.
+                        # But _run_tool is convenient.
+                        # However, _run_tool does logging and message creation which we partly did.
+                        # To minimal change, let's keep _run_tool but ignore its returned message or change how we use it.
+                        # Actually, keeping _run_tool is fine, it just resolves again (cached?) or cheap.
+                        
+                        tool_result, _ = await self._run_tool(
+                            processing_context, chunk, graph
+                        )
+                        log.debug(
+                            f"Tool {chunk.name} execution complete, id={tool_result.id}"
+                        )
+
                         # Convert result to JSON
-                        converted_result = self._recursively_model_dump(
+                        converted_result = await self._process_tool_result(
                             tool_result.result
                         )
                         tool_result_json = json.dumps(converted_result)
@@ -410,14 +453,102 @@ class RegularChatProcessor(MessageProcessor):
             result=result,
         ), tool.user_message(tool_call.args)
 
-    def _recursively_model_dump(self, obj):
-        """Recursively convert BaseModel instances to dictionaries."""
-        if isinstance(obj, BaseModel):
-            return obj.model_dump()
+    async def _save_asset_ref(self, asset: AssetRef) -> dict:
+        """Save data from an AssetRef and return the updated dict."""
+        if not asset.data:
+            return asset.model_dump()
+            
+        data = asset.data
+        # If data is a list (e.g. from some conversions), take first element or handle appropriately
+        # For now assume data is bytes
+        if isinstance(data, list):
+             # This case appears in some internal representations
+             data = data[0]
+
+        if not isinstance(data, (bytes, bytearray)):
+            # If data is not bytes, we can't save it as file easily without more info
+            return asset.model_dump()
+
+        # Determine extension based on AssetRef type or sniff if needed
+        ext = None
+        if isinstance(asset, ImageRef):
+             # Try to detect image format
+             mime = detect_mime_type(data)
+             if mime != 'application/octet-stream':
+                 ext = mimetypes.guess_extension(mime)
+             if not ext:
+                 ext = ".png" # Default for images
+        elif isinstance(asset, AudioRef):
+             mime = detect_mime_type(data)
+             if mime != 'application/octet-stream':
+                 ext = mimetypes.guess_extension(mime)
+             if not ext:
+                 ext = ".wav" # Default for audio
+        elif isinstance(asset, VideoRef):
+             if hasattr(asset, 'format') and asset.format:
+                 ext = f".{asset.format}"
+             else:
+                 mime = detect_mime_type(data)
+                 if mime != 'application/octet-stream':
+                     ext = mimetypes.guess_extension(mime)
+             if not ext:
+                 ext = ".mp4" # Default for video
+        else:
+             # Generic AssetRef
+             mime = detect_mime_type(data)
+             ext = mimetypes.guess_extension(mime) or ".bin"
+
+        # Create hash for filename
+        sha = hashlib.sha256(data).hexdigest()
+        filename = f"{sha}{ext}"
+
+        # Upload to asset storage
+        asset_storage = require_scope().get_asset_storage()
+        uri = await asset_storage.upload(filename, BytesIO(data))
+
+        # Update the asset with URI and clear data
+        asset.uri = uri
+        asset.data = None # Clear data to avoid serialization
+        return asset.model_dump()
+
+    async def _save_asset(self, data: bytes) -> dict:
+        """Save bytes as an asset and return an AssetRef dict."""
+        mime_type = detect_mime_type(data)
+        ext = mimetypes.guess_extension(mime_type) or ".bin"
+
+        # Create hash for filename
+        sha = hashlib.sha256(data).hexdigest()
+        filename = f"{sha}{ext}"
+
+        # Upload to asset storage
+        asset_storage = require_scope().get_asset_storage()
+        uri = await asset_storage.upload(filename, BytesIO(data))
+
+        if mime_type.startswith("image/"):
+            return ImageRef(uri=uri).model_dump()
+        elif mime_type.startswith("audio/"):
+            return AudioRef(uri=uri).model_dump()
+        elif mime_type.startswith("video/"):
+            return VideoRef(uri=uri).model_dump()
+        else:
+            return AssetRef(uri=uri).model_dump()
+
+    async def _process_tool_result(self, obj):
+        """Recursively convert BaseModel instances to dictionaries and handle bytes."""
+        if isinstance(obj, AssetRef):
+            # Special handling for AssetRef and subclasses
+            return await self._save_asset_ref(obj)
+        elif isinstance(obj, BaseModel):
+            # Convert to dict, then recurse
+            return await self._process_tool_result(obj.model_dump())
         elif isinstance(obj, dict):
-            return {k: self._recursively_model_dump(v) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple)):
-            return [self._recursively_model_dump(item) for item in obj]
+            return {k: await self._process_tool_result(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple, set)):
+            return [await self._process_tool_result(item) for item in obj]
+        elif isinstance(obj, (bytes, bytearray)):
+            return await self._save_asset(obj)
+        elif isinstance(obj, (date, datetime)):
+            return obj.isoformat()
         else:
             return obj
 

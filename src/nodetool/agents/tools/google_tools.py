@@ -72,7 +72,7 @@ class GoogleGroundedSearchTool(Tool):
         # Generate content with search grounding
         provider = await context.get_provider(Provider.Gemini)
         assert isinstance(provider, GeminiProvider)
-        client = await provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
+        client = provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
         response = await client.models.generate_content(
             model="gemini-2.0-flash",
             contents=query,
@@ -210,7 +210,7 @@ class GoogleImageGenerationTool(Tool):
 
         provider = await context.get_provider(Provider.Gemini)
         assert isinstance(provider, GeminiProvider)
-        client = await provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
+        client = provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
         response = await client.models.generate_images(
             model="imagen-3.0-generate-002",
             prompt=prompt,

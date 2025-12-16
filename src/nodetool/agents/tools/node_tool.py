@@ -121,10 +121,22 @@ class NodeTool(Tool):
                     await node.move_to_device(context.device)
 
             # Execute the node
-            result = await node.process(context)
-
-            # Convert output according to node's output format
-            converted_result = await node.convert_output(context, result)
+            # Check if this is a streaming output node (implements gen_process)
+            if node.is_streaming_output():
+                # Collect all results from the generator
+                results = []
+                async for item in node.gen_process(context):
+                    # Each item is a dict with output slot names as keys
+                    if isinstance(item, dict):
+                        converted_item = await node.convert_output(context, item)
+                        results.append(converted_item)
+                    else:
+                        results.append(item)
+                converted_result = results
+            else:
+                result = await node.process(context)
+                # Convert output according to node's output format
+                converted_result = await node.convert_output(context, result)
 
             return {
                 "node_type": self.node_type,
