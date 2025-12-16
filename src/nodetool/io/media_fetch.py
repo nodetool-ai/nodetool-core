@@ -96,6 +96,7 @@ def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
 
 
 async def _fetch_http_uri_async(uri: str) -> Tuple[str, bytes]:
+    """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller."""
     async with aiohttp.ClientSession() as session, session.get(uri) as response:
         response.raise_for_status()
         data = await response.read()
@@ -112,7 +113,95 @@ async def _fetch_http_uri_async(uri: str) -> Tuple[str, bytes]:
         return mime_type, data
 
 
+def _is_local_storage_url(uri: str) -> bool:
+    """Check if this is a local storage URL that should be read directly from storage."""
+    import re
+    # Match localhost or 127.0.0.1 with any port, accessing /api/storage/
+    pattern = r'^https?://(localhost|127\.0\.0\.1)(:\d+)?/api/storage/'
+    return bool(re.match(pattern, uri))
+
+
+def _extract_storage_key_from_url(uri: str) -> str:
+    """Extract the storage key from a local storage URL."""
+    import re
+    # Extract the key from URLs like: http://localhost:7777/api/storage/828ae5ded94411f0884a000022ae8b15.png
+    match = re.search(r'/api/storage/(.+)$', uri)
+    if match:
+        return match.group(1)
+    raise ValueError(f"Could not extract storage key from URL: {uri}")
+
+
+def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
+    """Read directly from local storage instead of making HTTP request.
+    
+    This function works correctly whether called from a sync or async context
+    by running the async storage operations in a separate thread.
+    """
+    import asyncio
+    import concurrent.futures
+    import mimetypes
+    
+    key = _extract_storage_key_from_url(uri)
+    
+    # Get storage from the current scope
+    scope = require_scope()
+    storage = scope.get_asset_storage()
+    
+    async def _do_fetch() -> bytes:
+        """Helper to run async storage operations."""
+        exists = await storage.file_exists(key)
+        if not exists:
+            raise ValueError(f"Storage file not found: {key}")
+        
+        stream = BytesIO()
+        await storage.download(key, stream)
+        return stream.getvalue()
+    
+    # Run the async code in a separate thread to avoid event loop conflicts
+    # when this sync function is called from an async context
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, _do_fetch())
+        data = future.result()
+    
+    # Guess mime type from the key
+    mime_type, _ = mimetypes.guess_type(key)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+    
+    return mime_type, data
+
+
+async def _fetch_local_storage_async(uri: str) -> Tuple[str, bytes]:
+    """Read directly from local storage instead of making HTTP request (async version)."""
+    import mimetypes
+    key = _extract_storage_key_from_url(uri)
+    
+    # Get storage from the current scope
+    scope = require_scope()
+    storage = scope.get_asset_storage()
+    
+    exists = await storage.file_exists(key)
+    if not exists:
+        raise ValueError(f"Storage file not found: {key}")
+    
+    # Download the file
+    stream = BytesIO()
+    await storage.download(key, stream)
+    data = stream.getvalue()
+    
+    # Guess mime type from the key
+    mime_type, _ = mimetypes.guess_type(key)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+    
+    return mime_type, data
+
+
 def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:
+    # Check for local storage URLs first - read directly instead of HTTP call
+    if _is_local_storage_url(uri):
+        return _fetch_local_storage_sync(uri)
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "*/*",
@@ -169,6 +258,9 @@ async def fetch_uri_bytes_and_mime_async(uri: str) -> Tuple[str, bytes]:
     if uri.startswith("file://"):
         return _fetch_file_uri(uri)
     if uri.startswith("http://") or uri.startswith("https://"):
+        # Check for local storage URLs first - read directly instead of HTTP call
+        if _is_local_storage_url(uri):
+            return await _fetch_local_storage_async(uri)
         return await _fetch_http_uri_async(uri)
     # Explicitly reject unsupported schemes (e.g., ftp)
     raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")

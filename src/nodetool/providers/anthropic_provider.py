@@ -15,7 +15,6 @@ from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.message_param import MessageParam
 from anthropic.types.tool_param import ToolParam
-from anthropic.types.url_image_source_param import URLImageSourceParam
 from pydantic import BaseModel
 
 from nodetool.agents.tools.base import Tool
@@ -256,17 +255,18 @@ class AnthropicProvider(BaseProvider):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
                         log.debug("Converting image content")
-                        # Handle image content via shared helper for non-HTTP URIs
+                        # Always convert images to base64 for Anthropic
+                        # (Anthropic only supports HTTPS URLs, so base64 is more reliable)
                         uri = part.image.uri or ""
-                        if uri.startswith("http"):
-                            log.debug(f"Handling image URL: {uri[:50]}...")
-                            image_source = URLImageSourceParam(
-                                type="url",
-                                url=uri,
-                            )
-                        elif uri.startswith(("data:", "file://", "memory://")):
+                        if part.image.data:
+                            # Use raw image data if available
+                            log.debug("Handling raw image data")
+                            data = base64.b64encode(part.image.data).decode("utf-8")
+                            media_type = "image/png"
+                        elif uri:
+                            # Fetch image from URI and convert to base64
                             log.debug(
-                                f"Fetching non-HTTP image via helper: {uri[:50]}..."
+                                f"Fetching image and converting to base64: {uri[:50]}..."
                             )
                             try:
                                 mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(
@@ -277,25 +277,16 @@ class AnthropicProvider(BaseProvider):
                             except Exception as e:
                                 log.error(f"Failed to fetch image from {uri}: {e}")
                                 raise
-                            image_source = Base64ImageSourceParam(
-                                type="base64",
-                                media_type=media_type,  # type: ignore
-                                data=data,
-                            )
-                        elif part.image.data:
-                            log.debug("Handling raw image data")
-                            data = base64.b64encode(part.image.data).decode("utf-8")
-                            media_type = "image/png"
-                            image_source = Base64ImageSourceParam(
-                                type="base64",
-                                media_type=media_type,  # type: ignore
-                                data=data,
-                            )
                         else:
                             log.error("Invalid image reference with no uri or data")
                             raise ValueError(
                                 "Invalid image reference with no uri or data"
                             )
+                        image_source = Base64ImageSourceParam(
+                            type="base64",
+                            media_type=media_type,  # type: ignore
+                            data=data,
+                        )
 
                         content.append(
                             ImageBlockParam(

@@ -673,37 +673,10 @@ class HuggingFaceProvider(BaseProvider):
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
-                        # Normalize image inputs to data URI using shared helpers
-                        if part.image.uri:
-                            uri = part.image.uri
-                            if uri.startswith("http"):
-                                # Keep remote URLs as-is for HF compatibility
-                                log.debug(
-                                    f"Adding image content with URL: {uri[:50]}..."
-                                )
-                                content.append(
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": uri},
-                                    }
-                                )
-                            else:
-                                # Convert non-http URIs to data URI
-                                log.debug(
-                                    f"Converting non-HTTP image via helper: {uri[:50]}..."
-                                )
-                                mime, data = fetch_uri_bytes_and_mime_sync(uri)
-                                b64 = base64.b64encode(data).decode("utf-8")
-                                content.append(
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:{mime};base64,{b64}"
-                                        },
-                                    }
-                                )
-                        elif part.image.data:
-                            # Convert raw bytes to JPEG base64 data URI
+                        # Always convert images to base64 data URI for consistency
+                        # (handles local storage URLs and avoids timeout issues)
+                        if part.image.data:
+                            # Use raw bytes directly if available
                             log.debug("Converting raw image data to JPEG base64")
                             b64 = image_data_to_base64_jpeg(part.image.data)
                             content.append(
@@ -711,6 +684,22 @@ class HuggingFaceProvider(BaseProvider):
                                     "type": "image_url",
                                     "image_url": {
                                         "url": f"data:image/jpeg;base64,{b64}"
+                                    },
+                                }
+                            )
+                        elif part.image.uri:
+                            # Fetch image and convert to data URI
+                            uri = part.image.uri
+                            log.debug(
+                                f"Fetching image and converting to base64: {uri[:50]}..."
+                            )
+                            mime, data = fetch_uri_bytes_and_mime_sync(uri)
+                            b64 = base64.b64encode(data).decode("utf-8")
+                            content.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime};base64,{b64}"
                                     },
                                 }
                             )
