@@ -161,15 +161,10 @@ COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 log = get_logger(__name__)
 
 
-def _get_property_cls():
-    """Lazy import to avoid circular dependency when accessing Property."""
-    return importlib.import_module("nodetool.workflows.property").Property
-
-
 if TYPE_CHECKING:
     from .io import NodeInputs, NodeOutputs
+    from .property import Property
 
-    Property = _get_property_cls()
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -708,6 +703,20 @@ class BaseNode(BaseModel):
         return []
 
     @classmethod
+    def get_model_packs(cls) -> list["ModelPack"]:
+        """Return model packs for this node.
+        
+        Model packs group related models (e.g., Flux checkpoint + CLIP + T5 + VAE)
+        into a single downloadable unit with a clear title and description.
+        Subclasses should override this to provide curated model bundles.
+        
+        Returns:
+            list[ModelPack]: List of model packs for this node.
+        """
+        from nodetool.types.model import ModelPack
+        return []
+
+    @classmethod
     def unified_recommended_models(
         cls, include_model_info: bool = False
     ) -> list[UnifiedModel]:
@@ -781,6 +790,7 @@ class BaseNode(BaseModel):
                 is_streaming_output=cls.is_streaming_output(),
                 expose_as_tool=cls.expose_as_tool(),
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),
+                model_packs=cls.get_model_packs(),
             )
         except Exception as e:
             traceback.print_exc()
@@ -1085,8 +1095,7 @@ class BaseNode(BaseModel):
         return not cls.is_dynamic() and not cls.is_streaming_output()
 
     def get_dynamic_properties(self):
-        Property = _get_property_cls()
-
+        from .property import Property
         return {
             name: Property(
                 name=name,
@@ -1120,7 +1129,7 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If no property with the given name exists.
         """
-        Property = _get_property_cls()
+        from .property import Property
 
         class_properties = self.properties_dict()
 
@@ -1358,20 +1367,23 @@ class BaseNode(BaseModel):
         Returns the input slots of the node.
         """
         # avoid circular import
-        Property = _get_property_cls()
+        from .property import Property
 
         types = cls.field_types()
         fields = cls.inherited_fields()
-        return [
-            Property.from_field(name, type_metadata(types[name]), field)
-            for name, field in fields.items()
-        ]
+        try:
+            return [
+                Property.from_field(name, type_metadata(types[name]), field)
+                for name, field in fields.items()
+            ]
+        except Exception as e:
+            raise ValueError(f"Failed to create properties for node {cls.__name__}: {e}") from e
 
     @memoized_class_method
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        _get_property_cls()
+        from .property import Property
 
         # Get properties from parent classes
         parent_properties = {}
@@ -1750,7 +1762,7 @@ class Preview(BaseNode):
         value (Any): The value to be previewed.
     """
 
-    value: Any = Field(None, description="The value to preview.")
+    value: Any = Field(object(), description="The value to preview.")
     name: str = Field("", description="The name of the preview node.")
     _visible: bool = False
 

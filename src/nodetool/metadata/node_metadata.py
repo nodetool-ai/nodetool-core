@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import OutputSlot
 from nodetool.packages.types import AssetInfo
-from nodetool.types.model import UnifiedModel
+from nodetool.types.model import ModelPack, UnifiedModel
 from nodetool.workflows.base_node import (
     BaseNode,
 )
@@ -72,6 +72,9 @@ class NodeMetadata(BaseModel):
         default=False,
         description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
     )
+    model_packs: list["ModelPack"] = Field(
+        default_factory=list, description="Model packs associated with this node"
+    )
 
 
 class ExampleMetadata(BaseModel):
@@ -110,6 +113,7 @@ class PackageModel(BaseModel):
     examples: List[ExampleMetadata] | None = Field(
         default_factory=list, description="List of examples provided by this package"
     )
+
     source_folder: str | None = Field(
         default=None, description="Source folder of the package"
     )
