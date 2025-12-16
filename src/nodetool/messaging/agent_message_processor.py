@@ -5,9 +5,11 @@ This module provides the processor for agent mode messages.
 """
 
 import asyncio
-from typing import TYPE_CHECKING, List
+import logging
+from typing import TYPE_CHECKING, List, Optional
 from uuid import uuid4
 
+from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -31,6 +33,48 @@ if TYPE_CHECKING:
     from nodetool.agents.tools.base import Tool
 
 log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
+
+
+def _get_encoding_for_model(model: Optional[str]):
+    try:
+        import tiktoken  # type: ignore
+
+        if model:
+            try:
+                return tiktoken.encoding_for_model(model)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return get_default_encoding()
+
+
+def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> None:
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+
+    encoding = _get_encoding_for_model(model)
+    per_tool: list[tuple[int, str]] = []
+    for tool in tools:
+        try:
+            per_tool.append(
+                (count_json_tokens(tool.tool_param(), encoding=encoding), tool.name)
+            )
+        except Exception:
+            per_tool.append((0, getattr(tool, "name", "unknown")))
+
+    total = sum(tokens for tokens, _ in per_tool)
+    per_tool.sort(reverse=True)
+    log.debug(
+        "Tool definition tokens (model=%s): total=%d tools=%d",
+        model,
+        total,
+        len(per_tool),
+    )
+    for tokens, name in per_tool[:50]:
+        log.debug("  tool=%s tokens=%d", name, tokens)
 
 
 class AgentMessageProcessor(MessageProcessor):
@@ -101,6 +145,8 @@ class AgentMessageProcessor(MessageProcessor):
                     log.debug(f"Added {len(ui_tools)} UI tool proxies to agent tools")
         except Exception as e:
             log.warning(f"Error while adding UI tool proxies: {e}")
+
+        _log_tool_definition_token_breakdown(selected_tools, last_message.model)
 
         try:
             from nodetool.agents.agent import Agent

@@ -94,6 +94,27 @@ def _count_tool_calls_tokens(tool_calls: Any, *, encoding=None) -> int:
     return token_count
 
 
+def count_json_tokens(obj: Any, *, encoding=None) -> int:
+    """Count tokens for a JSON-serializable object.
+
+    Uses a compact JSON representation to better approximate how tool definitions
+    are sent over the wire.
+    """
+    if obj is None:
+        return 0
+    try:
+        text = json.dumps(
+            obj,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        )
+    except Exception:
+        text = str(obj)
+    return count_text_tokens(text, encoding=encoding)
+
+
 def count_message_tokens(message: Any, *, encoding=None) -> int:
     """Count tokens for a single Message-like object.
 

@@ -28,6 +28,7 @@ from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
+from nodetool.chat.token_counter import count_json_tokens
 from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -359,7 +360,18 @@ class ChatWebSocketRunner(BaseChatRunner):
                 ):
                     tools = data.get("tools", [])
                     self.client_tools_manifest = {tool["name"]: tool for tool in tools}
-                    log.debug(f"Received client tools manifest with {len(tools)} tools")
+                    try:
+                        manifest_tokens = count_json_tokens(tools)
+                        log.debug(
+                            "Received client tools manifest with %d tools (tokens=%d)",
+                            len(tools),
+                            manifest_tokens,
+                        )
+                    except Exception:
+                        log.debug(
+                            "Received client tools manifest with %d tools",
+                            len(tools),
+                        )
                     continue
 
                 # Handle tool result from frontend

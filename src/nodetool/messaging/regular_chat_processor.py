@@ -7,11 +7,13 @@ or special modes.
 
 import asyncio
 import json
+import logging
 from typing import List, Optional
 
 import httpx
 from pydantic import BaseModel
 
+from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -29,6 +31,7 @@ from nodetool.workflows.types import (
 from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
 
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
@@ -64,6 +67,47 @@ Date and time are objects with following structure:
 - minute: int (optional)
 - second: int (optional)
 """
+
+
+def _get_encoding_for_model(model: Optional[str]):
+    try:
+        import tiktoken  # type: ignore
+
+        if model:
+            try:
+                return tiktoken.encoding_for_model(model)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return get_default_encoding()
+
+
+def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> None:
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+
+    encoding = _get_encoding_for_model(model)
+    per_tool: list[tuple[int, str]] = []
+    for tool in tools:
+        try:
+            per_tool.append(
+                (count_json_tokens(tool.tool_param(), encoding=encoding), tool.name)
+            )
+        except Exception:
+            per_tool.append((0, getattr(tool, "name", "unknown")))
+
+    total = sum(tokens for tokens, _ in per_tool)
+    per_tool.sort(reverse=True)
+    log.debug(
+        "Tool definition tokens (model=%s): total=%d tools=%d",
+        model,
+        total,
+        len(per_tool),
+    )
+    for tokens, name in per_tool[:50]:
+        log.debug("  tool=%s tokens=%d", name, tokens)
 
 
 class RegularChatProcessor(MessageProcessor):
@@ -140,6 +184,7 @@ class RegularChatProcessor(MessageProcessor):
 
                 unprocessed_messages = []
 
+                _log_tool_definition_token_breakdown(tools, last_message.model)
                 log.debug(
                     f"Calling provider.generate_messages with {len(messages_to_send)} messages"
                 )
