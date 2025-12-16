@@ -15,6 +15,7 @@ Usage:
     The trigger will emit EmailEvent objects for each new email received.
 """
 
+from datetime import datetime
 from typing import Any, Literal, TypedDict
 
 from pydantic import Field
@@ -111,8 +112,6 @@ class EmailTrigger(TriggerNode):
         The input fields are expected to be populated by the workflow runner
         when a new email matching the criteria is received.
         """
-        from datetime import datetime
-        
         email = Email(
             id=self.message_id,
             sender=self.sender,

@@ -15,6 +15,7 @@ Usage:
     endpoint that can receive webhook calls from external services.
 """
 
+from datetime import datetime
 from typing import Any, Literal, TypedDict
 
 from pydantic import Field
@@ -92,9 +93,6 @@ class WebhookTrigger(TriggerNode):
         The input fields (method, path, headers, etc.) are expected to be
         populated by the workflow runner when a webhook request is received.
         """
-        from nodetool.metadata.types import Datetime
-        from datetime import datetime
-        
         event = WebhookEvent(
             timestamp=Datetime.from_datetime(datetime.now()),
             method=self.method,

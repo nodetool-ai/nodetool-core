@@ -15,6 +15,7 @@ Usage:
     the trigger will emit TelegramEvent objects containing the message data.
 """
 
+from datetime import datetime
 from typing import Any, Literal, TypedDict
 
 from pydantic import Field
@@ -154,8 +155,6 @@ class TelegramTrigger(TriggerNode):
         The input fields are expected to be populated by the workflow runner
         when a message is received from Telegram.
         """
-        from datetime import datetime
-        
         user = TelegramUser(
             user_id=self.user_id,
             username=self.username,

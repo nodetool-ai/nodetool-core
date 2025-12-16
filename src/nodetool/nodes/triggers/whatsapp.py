@@ -16,6 +16,7 @@ Usage:
     message data.
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, TypedDict
 
@@ -159,8 +160,6 @@ class WhatsAppTrigger(TriggerNode):
         The input fields are expected to be populated by the workflow runner
         when a message is received from WhatsApp.
         """
-        from datetime import datetime
-        
         sender = WhatsAppContact(
             wa_id=self.sender_wa_id,
             name=self.sender_name,

@@ -1,1 +1,1 @@
-"""Tests for trigger nodes."""
+"""Tests for nodes."""

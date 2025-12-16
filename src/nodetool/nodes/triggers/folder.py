@@ -16,6 +16,7 @@ Usage:
     each detected change.
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Literal, TypedDict
 
@@ -127,8 +128,6 @@ class FolderWatchTrigger(TriggerNode):
         The input fields are expected to be populated by the workflow runner
         when a file system change is detected.
         """
-        from datetime import datetime
-        
         event = FileEvent(
             timestamp=Datetime.from_datetime(datetime.now()),
             file_path=self.file_path,
