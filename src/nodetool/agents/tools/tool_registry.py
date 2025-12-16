@@ -69,6 +69,10 @@ def _ensure_builtin_tools_registered() -> None:
             ),
         ),
         (
+            "nodetool.agents.tools.model_tools",
+            ("QueryModelsTool",),
+        ),
+        (
             "nodetool.agents.tools.asset_tools",
             ("ListAssetsDirectoryTool", "ReadAssetTool", "SaveAssetTool"),
         ),
