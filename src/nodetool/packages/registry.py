@@ -1416,6 +1416,8 @@ def scan_for_package_nodes(
                         if node_class.is_visible()
                     )
 
+
+
         if fetch_model_info and package.nodes:
             try:
                 asyncio.run(

@@ -157,9 +157,10 @@ class ModelManager:
             asyncio.Lock: The lock associated with this model
 
         Example:
-            lock = await ModelManager.get_model_lock("gpt-4", "text-generation")
+            cache_key = "gpt-4_text-generation"
+            lock = await ModelManager.get_model_lock(cache_key)
             async with lock:
-                model = ModelManager.get_model("gpt-4", "text-generation")
+                model = ModelManager.get_model(cache_key)
                 # ... use model safely ...
         """
         # Check if lock exists (fast path without acquiring lock)
@@ -193,8 +194,9 @@ class ModelManager:
             None
 
         Example:
-            async with ModelManager.lock_model("gpt-4", "text-generation"):
-                model = ModelManager.get_model("gpt-4", "text-generation")
+            cache_key = "gpt-4_text-generation"
+            async with ModelManager.lock_model(cache_key):
+                model = ModelManager.get_model(cache_key)
                 # ... use model exclusively ...
                 # Lock is automatically released when exiting the context
         """

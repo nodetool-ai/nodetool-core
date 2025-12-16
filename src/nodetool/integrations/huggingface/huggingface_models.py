@@ -1128,6 +1128,19 @@ GENERIC_HF_TYPES = {
 }
 
 
+def _build_search_config_for_type(model_type: str) -> dict[str, list[str] | str] | None:
+    """
+    Get search configuration for a given hf.* type, or None if not found.
+
+    Args:
+        model_type: The model type (e.g., "hf.flux", "hf.stable_diffusion")
+
+    Returns:
+        Search configuration dict with patterns, or None if type is not configured
+    """
+    return HF_SEARCH_TYPE_CONFIG.get(model_type.lower())
+
+
 def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str | None:
     """
     Infer a sensible HF pipeline tag from an hf.* type or explicit task override.

@@ -140,6 +140,9 @@ class Property(BaseModel):
             if field.title is None
             else field.title
         )
+        if field.default is None:
+            raise ValueError(f"Field {name} has no default value")
+
         return Property(
             name=name,
             type=type_,
