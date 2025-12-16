@@ -660,7 +660,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from response")
-                        emulated_calls = self._parse_function_calls(
+                        emulated_calls, _ = self._parse_function_calls(
                             accumulated_content, tools
                         )
                         for tool_call in emulated_calls:
@@ -738,9 +738,10 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             # Handle emulated tool calls
             elif use_tool_emulation and content:
                 log.debug("Parsing emulated tool calls from response")
-                emulated_calls = self._parse_function_calls(content, tools)
+                emulated_calls, cleaned_content = self._parse_function_calls(content, tools)
                 if emulated_calls:
                     tool_calls = emulated_calls
+                    content = cleaned_content
                     log.debug(
                         f"Response contains {len(tool_calls)} emulated tool calls"
                     )

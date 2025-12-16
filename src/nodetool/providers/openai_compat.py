@@ -305,40 +305,44 @@ class OpenAICompat:
 
     def _parse_function_calls(
         self, text: str, tools: Sequence[Tool] | None = None
-    ) -> list[ToolCall]:
+    ) -> tuple[list[ToolCall], str]:
         """Parse Python function calls from text using AST parsing.
+        
+        Removes the function call lines from the text.
 
         Args:
             text: Text potentially containing function calls.
             tools: Optional tools for parameter name mapping.
 
         Returns:
-            List of extracted ToolCall objects.
+            Tuple of (List of extracted ToolCall objects, cleaned text).
         """
         import re
 
         log.debug(f"Parsing function calls from text: {text[:200]}...")
         tool_calls = []
+        cleaned_lines = []
 
-        # Extract code blocks that might contain function calls
+        # Process text line by line
         lines = text.split("\n")
-        code_candidates = []
 
         for line in lines:
-            line = line.strip()
+            stripped = line.strip()
             # Skip empty lines, markdown formatting, and common text patterns
-            if not line or line.startswith("#") or line.startswith("```"):
+            if not stripped or stripped.startswith("#") or stripped.startswith("```"):
+                cleaned_lines.append(line)
                 continue
+            
             # Look for patterns that might be function calls
-            if re.match(r"^\w+\(", line):
-                code_candidates.append(line)
+            if not re.match(r"^\w+\(", stripped):
+                cleaned_lines.append(line)
+                continue
 
-        log.debug(f"Found {len(code_candidates)} potential function call lines")
-
-        for code_line in code_candidates:
+            # Try to parse as function call
             try:
                 # Try to parse as Python expression
-                tree = ast.parse(code_line, mode="eval")
+                tree = ast.parse(stripped, mode="eval")
+                found_call_in_line = False
 
                 # Walk the AST to find function calls
                 for node in ast.walk(tree):
@@ -418,16 +422,23 @@ class OpenAICompat:
                         )
                         tool_calls.append(tool_call)
                         log.debug(f"Parsed tool call: {tool_call}")
+                        found_call_in_line = True
+                
+                # If we didn't find a valid tool call in this line, keep it
+                if not found_call_in_line:
+                    cleaned_lines.append(line)
 
             except SyntaxError as e:
-                log.debug(f"Not valid Python expression: {code_line[:50]}... ({e})")
+                log.debug(f"Not valid Python expression: {stripped[:50]}... ({e})")
+                cleaned_lines.append(line)
                 continue
             except Exception as e:
                 log.warning(f"Error parsing potential function call: {e}")
+                cleaned_lines.append(line)
                 continue
 
         log.debug(f"Parsed {len(tool_calls)} tool calls")
-        return tool_calls
+        return tool_calls, "\n".join(cleaned_lines)
 
     def _ast_to_value(self, node: Any) -> Any:
         """Convert an AST node to a Python value.

@@ -496,7 +496,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from streaming response")
-                        emulated_calls = self._parse_function_calls(
+                        emulated_calls, _ = self._parse_function_calls(
                             accumulated_content, tools
                         )
                         for tool_call in emulated_calls:
@@ -619,6 +619,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 return {}
 
         tool_calls = None
+        final_content = response_message.content
+
         # Check for native tool calls
         if response_message.tool_calls:
             tool_calls = [
@@ -632,9 +634,10 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         # Parse emulated tool calls if needed
         elif use_tool_emulation and response_message.content:
             log.debug("Parsing emulated tool calls from response")
-            emulated_calls = self._parse_function_calls(response_message.content, tools)
+            emulated_calls, cleaned_content = self._parse_function_calls(response_message.content, tools)
             if emulated_calls:
                 tool_calls = emulated_calls
+                final_content = cleaned_content
                 log.debug(f"Parsed {len(emulated_calls)} emulated tool calls")
 
         # Count completion tokens
@@ -659,7 +662,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
 
         message = Message(
-            role="assistant", content=response_message.content, tool_calls=tool_calls
+            role="assistant", content=final_content, tool_calls=tool_calls
         )
         self._log_api_response("chat", message)
         return message
