@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Optional
 from .chroma_client import get_chroma_client
 
 if TYPE_CHECKING:
-    import chromadb
     from chromadb.api import ClientAPI
 
 
@@ -184,8 +183,12 @@ class AsyncChromaClient:
     # Client operations
     async def list_collections(
         self,
-    ) -> list[chromadb.Collection]:
-        return await self._executor.run(self._client.list_collections)
+    ) -> list[AsyncChromaCollection]:
+        collections = await self._executor.run(self._client.list_collections)
+        return [
+            AsyncChromaCollection(collection, self._executor)
+            for collection in collections
+        ]
 
     async def count_collections(self) -> int:
         collections = await self.list_collections()

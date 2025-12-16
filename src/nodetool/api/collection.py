@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import traceback
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import aiofiles
 import chromadb
@@ -78,7 +78,7 @@ async def list_collections(
     client = await get_async_chroma_client()
     collections = await client.list_collections()
 
-    async def get_workflow_name(metadata: dict[str, str]) -> str | None:
+    async def get_workflow_name(metadata: dict[str, Any]) -> str | None:
         if workflow_id := metadata.get("workflow"):
             workflow = await Workflow.get(workflow_id)
             if workflow:

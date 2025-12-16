@@ -313,7 +313,7 @@ def create_admin_router() -> APIRouter:
             client = await get_async_chroma_client()
             collections = await client.list_collections()
 
-            async def get_workflow_name(metadata: dict[str, str]) -> str | None:
+            async def get_workflow_name(metadata: dict[str, Any]) -> str | None:
                 if workflow_id := metadata.get("workflow"):
                     workflow = await Workflow.get(workflow_id)
                     if workflow:

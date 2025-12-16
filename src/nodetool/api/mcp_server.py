@@ -1717,7 +1717,7 @@ async def list_collections(
     client = await get_async_chroma_client()
     collections = await client.list_collections()
 
-    async def get_workflow_name(metadata: dict[str, str]) -> str | None:
+    async def get_workflow_name(metadata: dict[str, Any]) -> str | None:
         if workflow_id := metadata.get("workflow"):
             workflow = await WorkflowModel.get(workflow_id)
             if workflow:
@@ -1727,15 +1727,20 @@ async def list_collections(
     # Apply limit
     collections = collections[:limit]
 
+    counts = await asyncio.gather(*(col.count() for col in collections))
+    workflows = await asyncio.gather(
+        *(get_workflow_name(col.metadata) for col in collections)
+    )
+
     return {
         "collections": [
             {
                 "name": col.name,
-                "metadata": col.metadata or {},
-                "workflow_name": await get_workflow_name(col.metadata or {}),
-                "count": col.count(),
+                "metadata": col.metadata,
+                "workflow_name": wf,
+                "count": count,
             }
-            for col in collections
+            for col, wf, count in zip(collections, workflows, counts, strict=False)
         ],
         "count": len(collections),
     }

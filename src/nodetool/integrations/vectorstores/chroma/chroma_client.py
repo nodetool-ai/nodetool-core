@@ -43,6 +43,26 @@ from nodetool.metadata.types import TextChunk
 log = get_logger(__name__)
 
 
+def _ensure_tenant_and_database(
+    *,
+    settings: Settings,
+    tenant: str,
+    database: str,
+) -> None:
+    admin = chromadb.AdminClient(settings=settings)
+    try:
+        admin.get_tenant(tenant)
+    except Exception:
+        log.info(f"Creating tenant {tenant}")
+        admin.create_tenant(tenant)
+
+    try:
+        admin.get_database(database, tenant)
+    except Exception:
+        log.info(f"Creating database {database} for tenant {tenant}")
+        admin.create_database(database, tenant)
+
+
 def get_chroma_client(
     user_id: str | None = None,
 ):
@@ -62,9 +82,9 @@ def get_chroma_client(
     if url is not None:
         parsed_url = urlparse(url)
 
-        # Only create tenant if user_id is provided
-        if user_id:
-            admin = chromadb.AdminClient(
+        tenant = f"tenant_{user_id}" if user_id else DEFAULT_TENANT
+        try:
+            _ensure_tenant_and_database(
                 settings=Settings(
                     chroma_api_impl="chromadb.api.fastapi.FastAPI",
                     chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
@@ -73,15 +93,13 @@ def get_chroma_client(
                     chroma_server_http_port=parsed_url.port,
                     anonymized_telemetry=False,
                 ),
+                tenant=tenant,
+                database=DEFAULT_DATABASE,
             )
-            tenant = f"tenant_{user_id}"
-            try:
-                admin.get_tenant(tenant)
-            except Exception:
-                log.info(f"Creating tenant {tenant}")
-                admin.create_tenant(tenant)
-                log.info(f"Creating database {DEFAULT_DATABASE}")
-                admin.create_database(DEFAULT_DATABASE, tenant)
+        except Exception as e:
+            # Remote instances may not allow tenant/database creation (permissions, auth).
+            # In that case, the subsequent client calls will surface a clearer error.
+            log.warning(f"Failed to ensure tenant/database exists in Chroma: {e}")
 
         return chromadb.HttpClient(
             host=parsed_url.hostname,
@@ -91,16 +109,13 @@ def get_chroma_client(
                 chroma_client_auth_credentials=token,
                 anonymized_telemetry=False,
             ),
-            tenant=f"tenant_{user_id}" if user_id else DEFAULT_TENANT,
+            tenant=tenant,
             database=DEFAULT_DATABASE,
         )
     else:
-        return chromadb.PersistentClient(
-            path=Environment.get_chroma_path(),
-            tenant=DEFAULT_TENANT,
-            database=DEFAULT_DATABASE,
-            settings=Settings(anonymized_telemetry=False),
-        )
+        persist_directory = Environment.get_chroma_path()
+        settings = Settings(anonymized_telemetry=False)
+        return chromadb.PersistentClient(persist_directory, settings)
 
 
 def get_collection(name: str) -> chromadb.Collection:
