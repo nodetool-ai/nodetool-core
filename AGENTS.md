@@ -11,7 +11,28 @@
 
 ## Build, Test, and Development Commands
 
-- `conda activate nodetool` (or use your preferred Python environment)
+### ⚠️ Python Environment (IMPORTANT)
+
+**Local Development:** Use the conda `nodetool` environment. Do not use system Python.
+
+```bash
+# Option 1: Activate the environment first
+conda activate nodetool
+python -m pytest tests/...
+
+# Option 2: Use conda run (preferred for scripts/agents)
+conda run -n nodetool python -m pytest tests/...
+```
+
+**GitHub CI / Copilot Agent:** Uses standard Python 3.11 with pip. Dependencies are pre-installed via `.github/workflows/copilot-setup-steps.yml`. Run commands directly:
+
+```bash
+pytest -v
+pip install -e .
+```
+
+### Commands
+
 - Install dependencies: `pip install . && pip install -r requirements-dev.txt`
 - Run tests: `pytest -q` (quick) or `pytest -v` (verbose)
 - Run specific tests: `pytest tests/path/to/test_file.py`
