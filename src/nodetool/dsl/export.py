@@ -103,6 +103,16 @@ def _literal(value: object) -> str:
     return repr(value)
 
 
+def _map_api_key_to_dsl_arg(key: str) -> str:
+    """
+    Map API graph property/handle names to DSL constructor argument names.
+
+    The API graph schema historically used "content" for some node inputs where
+    the Python DSL uses the canonical "instructions" field name.
+    """
+    return "instructions" if key == "content" else key
+
+
 def _dynamic_outputs_literal(dynamic_outputs: DynamicOutputsMapping) -> str:
     """
     Represent dynamic outputs as a compact Python literal.
@@ -209,14 +219,18 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
         for key, value in data.items():
             if key in used_keys:
                 continue
-            kwargs.append(f"{_sanitize_ident(key)}={_literal(value)}")
+            kwargs.append(
+                f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}"
+            )
 
         dyn_props_attr = node.dynamic_properties or {}
         dyn_props = dyn_props_attr if isinstance(dyn_props_attr, Mapping) else {}
         for key, value in dyn_props.items():
             if key in used_keys:
                 continue
-            kwargs.append(f"{_sanitize_ident(key)}={_literal(value)}")
+            kwargs.append(
+                f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}"
+            )
 
         for handle, edge in sorted(incoming_edges.items()):
             src_var = var_names.get(edge.source)
@@ -226,7 +240,9 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
                 src_expr = f"{src_var}.output"
             else:
                 src_expr = f"{src_var}.out[{_literal(edge.sourceHandle)}]"
-            kwargs.append(f"{_sanitize_ident(handle)}={src_expr}")
+            kwargs.append(
+                f"{_sanitize_ident(_map_api_key_to_dsl_arg(handle))}={src_expr}"
+            )
 
         joined = ", ".join(kwargs)
         module = f"nodetool.dsl.{namespace}" if namespace else "nodetool.dsl"

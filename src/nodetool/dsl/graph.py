@@ -218,7 +218,11 @@ def run_graph(graph: Graph, **kwargs):
     Returns:
         Any: The result of the workflow execution.
     """
-    return run_graph_sync(graph, **kwargs)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return run_graph_sync(graph, **kwargs)
+    return run_graph_async(graph, **kwargs)
 
 
 def run_graph_sync(graph: Graph, **kwargs):
