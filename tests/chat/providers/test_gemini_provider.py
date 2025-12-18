@@ -231,13 +231,13 @@ class TestGeminiProvider(BaseProviderTest):
         if "tool_calls" in response_data:
             # Function calling response
             self.create_gemini_response(
-                instructions=str(response_data.get("text")),
+                content=str(response_data.get("text")),
                 function_calls=response_data["tool_calls"],
             )
         else:
             # Regular text response
             self.create_gemini_response(
-                instructions=response_data.get("text", "Hello, world!")
+                content=response_data.get("text", "Hello, world!")
             )
 
         # Mock the Google GenerativeAI client
@@ -245,7 +245,7 @@ class TestGeminiProvider(BaseProviderTest):
         mock_response.text = response_data.get("text", "Hello, world!")
         mock_response.candidates = [
             MagicMock(
-                instructions=MagicMock(
+                content=MagicMock(
                     parts=[MagicMock(text=response_data.get("text", "Hello, world!"))]
                 )
             )

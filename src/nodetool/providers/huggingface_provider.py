@@ -13,6 +13,7 @@ import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
 
 import aiohttp
+import httpx
 import numpy as np
 import requests
 from huggingface_hub import AsyncInferenceClient
@@ -837,20 +838,17 @@ class HuggingFaceProvider(BaseProvider):
                 )
                 log.debug("API call successful")
                 break
-            except Exception as e:
+            except httpx.HTTPStatusError as e:
                 log.warning(f"API call attempt {attempt + 1} failed: {str(e)}")
-                # Do not retry on client-side errors (4xx), including 429, 413, 404.
                 status = getattr(getattr(e, "response", None), "status_code", None)
                 body_text = getattr(getattr(e, "response", None), "text", None)
+
+                # Do not retry on client-side errors (4xx), including 429, 413, 404.
                 if isinstance(status, int) and 400 <= status < 500:
                     log.error(f"Non-retryable client error {status}; aborting retries")
 
-                    # Provide better error messages for 422 status codes
                     if status == 422:
-                        # Check if the messages contain media that the model cannot process
-                        has_media = any(
-                            _message_contains_media(msg)[0] for msg in messages
-                        )
+                        has_media = any(_message_contains_media(msg)[0] for msg in messages)
                         if has_media:
                             media_types = [
                                 _message_contains_media(msg)[1]
@@ -858,31 +856,58 @@ class HuggingFaceProvider(BaseProvider):
                                 if _message_contains_media(msg)[0]
                             ]
                             media_str = ", ".join(set(media_types))
-                            raise Exception(
-                                f"422 Model '{model}' cannot process {media_str} content. "
-                                f"The model may not support multimodal input or the {media_str} format is not supported. "
-                                f"Original error: {body_text or str(e)}"
+                            raise httpx.HTTPStatusError(
+                                (
+                                    f"422 Model '{model}' cannot process {media_str} content. "
+                                    f"The model may not support multimodal input or the {media_str} format is not supported. "
+                                    f"Original error: {body_text or str(e)}"
+                                ),
+                                request=e.request,
+                                response=e.response,
                             ) from e
-                        else:
-                            raise Exception(
+
+                        raise httpx.HTTPStatusError(
+                            (
                                 f"422 Model '{model}' received unprocessable input. "
                                 f"The model may not support the provided parameters or content format. "
                                 f"Original error: {body_text or str(e)}"
-                            ) from e
-                    else:
-                        raise Exception(f"{status} {body_text or str(e)}") from e
+                            ),
+                            request=e.request,
+                            response=e.response,
+                        ) from e
+
+                    raise httpx.HTTPStatusError(
+                        f"{status} {body_text or str(e)}",
+                        request=e.request,
+                        response=e.response,
+                    ) from e
+
                 if attempt < max_retries:
                     delay = base_delay * (2**attempt)  # Exponential backoff
                     log.debug(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                     continue
-                else:
-                    log.error(f"All {max_retries + 1} attempts failed")
-                    traceback.print_exc()
-                    # Include status code/body text when available for clearer errors/tests
-                    if status is not None:
-                        raise Exception(f"{status} {body_text or str(e)}") from e
-                    raise Exception(str(e)) from e
+
+                log.error(f"All {max_retries + 1} attempts failed")
+                traceback.print_exc()
+                if isinstance(status, int):
+                    raise httpx.HTTPStatusError(
+                        f"{status} {body_text or str(e)}",
+                        request=e.request,
+                        response=e.response,
+                    ) from e
+                raise
+            except Exception as e:
+                log.warning(f"API call attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries:
+                    delay = base_delay * (2**attempt)  # Exponential backoff
+                    log.debug(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                    continue
+
+                log.error(f"All {max_retries + 1} attempts failed")
+                traceback.print_exc()
+                raise
 
         if completion is None:
             raise RuntimeError("HuggingFace chat completion did not return a response")

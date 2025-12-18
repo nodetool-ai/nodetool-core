@@ -27,6 +27,7 @@ from nodetool.integrations.huggingface.huggingface_models import (
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
+from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.runtime.resources import require_scope
 from nodetool.security.secret_helper import get_secret_sync
 from nodetool.workflows.processing_context import ProcessingContext
@@ -70,8 +71,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         super().__init__()
         self._base_url = Environment.get("LLAMA_CPP_URL", "")
-        assert self._base_url, "LLAMA_CPP_URL not set"
-        log.info(f"Using llama-server at: {self._base_url}")
+        self._server_manager = LlamaServerManager(ttl_seconds=ttl_seconds)
+        if self._base_url:
+            log.info(f"Using llama-server at: {self._base_url}")
+        else:
+            log.debug("LLAMA_CPP_URL not set; llama-server will be started on demand")
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -344,6 +348,17 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             http_client=http_client,
         )
 
+    def _as_service_unavailable(
+        self, error: Exception, base_url: str
+    ) -> httpx.HTTPStatusError:
+        request = httpx.Request("POST", f"{base_url}/v1/chat/completions")
+        response = httpx.Response(status_code=503, request=request, text=str(error))
+        return httpx.HTTPStatusError(
+            message="503 Service Unavailable",
+            request=request,
+            response=response,
+        )
+
     def get_context_length(self, model: str) -> int:
         """Return an approximate context window for the provided model.
 
@@ -434,8 +449,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        # Use the external llama-server URL
-        base_url = self._base_url
+        base_url = self._base_url or await self._server_manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -460,9 +474,12 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         self._log_api_request("chat_stream", messages_normalized, **_kwargs)
 
         client = self.get_client(base_url)
-        completion = await client.chat.completions.create(
-            messages=openai_messages, **_kwargs
-        )
+        try:
+            completion = await client.chat.completions.create(
+                messages=openai_messages, **_kwargs
+            )
+        except httpx.ConnectError as e:
+            raise self._as_service_unavailable(e, base_url) from e
 
         delta_tool_calls: dict[int, dict[str, Any]] = {}
         current_chunk = ""
@@ -574,8 +591,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        # Use the external llama-server URL
-        base_url = self._base_url
+        base_url = self._base_url or await self._server_manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
             "stream": False,
@@ -605,9 +621,12 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         self._log_api_request("chat", messages_normalized, model=model, **_kwargs)
 
         client = self.get_client(base_url)
-        completion = await client.chat.completions.create(
-            model=model, messages=openai_messages, **_kwargs
-        )
+        try:
+            completion = await client.chat.completions.create(
+                model=model, messages=openai_messages, **_kwargs
+            )
+        except httpx.ConnectError as e:
+            raise self._as_service_unavailable(e, base_url) from e
 
         choice = completion.choices[0]
         response_message = choice.message

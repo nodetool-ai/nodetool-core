@@ -1370,16 +1370,19 @@ class OpenAIProvider(BaseProvider):
         log.debug("Making non-streaming API call to OpenAI")
 
         # Make non-streaming call to OpenAI
-        create_result = self.get_client().chat.completions.create(
-            model=model,
-            messages=openai_messages,
-            stream=False,
-            **request_kwargs,
-        )
-        if inspect.isawaitable(create_result):
-            completion = await create_result
-        else:
-            completion = create_result
+        try:
+            create_result = self.get_client().chat.completions.create(
+                model=model,
+                messages=openai_messages,
+                stream=False,
+                **request_kwargs,
+            )
+            if inspect.isawaitable(create_result):
+                completion = await create_result
+            else:
+                completion = create_result
+        except openai.OpenAIError as exc:
+            raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from OpenAI API")
         
         # Debug log the raw response for structured output debugging
@@ -1445,6 +1448,32 @@ class OpenAIProvider(BaseProvider):
         log.debug("Returning generated message")
 
         return message
+
+    @staticmethod
+    def _as_httpx_status_error(exc: openai.OpenAIError) -> "httpx.HTTPStatusError":
+        """Normalize OpenAI SDK exceptions to `httpx.HTTPStatusError`.
+
+        Provider tests and shared error handling expect HTTPStatusError semantics.
+        """
+        import httpx
+
+        maybe_response = getattr(exc, "response", None)
+        status_code = getattr(maybe_response, "status_code", None) or getattr(
+            exc, "status_code", 500
+        )
+
+        request = getattr(maybe_response, "request", None)
+        if not isinstance(request, httpx.Request):
+            request = httpx.Request(
+                "POST",
+                "https://api.openai.com/v1/chat/completions",
+            )
+
+        response = maybe_response if isinstance(maybe_response, httpx.Response) else None
+        if response is None:
+            response = httpx.Response(status_code=int(status_code), request=request)
+
+        return httpx.HTTPStatusError(str(exc), request=request, response=response)
 
     async def text_to_image(
         self,

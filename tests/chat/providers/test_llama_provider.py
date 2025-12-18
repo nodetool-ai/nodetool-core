@@ -190,8 +190,8 @@ class TestLlamaProvider(BaseProviderTest):
                 ChatCompletionChunk(
                     id="chatcmpl-123",
                     choices=[
-                        ChunkChoice(
-                            delta=ChoiceDelta(instructions=chunk_text),
+                            ChunkChoice(
+                            delta=ChoiceDelta(content=chunk_text),
                             finish_reason="stop" if is_last else None,
                             index=0,
                             logprobs=None,
@@ -241,13 +241,13 @@ class TestLlamaProvider(BaseProviderTest):
         if "tool_calls" in response_data:
             # Tool calling response
             llama_response = self.create_llama_completion_response(
-                instructions=response_data.get("text", "Hello, world!"),
+                content=response_data.get("text", "Hello, world!"),
                 tool_calls=response_data["tool_calls"],
             )
         else:
             # Regular text response
             llama_response = self.create_llama_completion_response(
-                instructions=response_data.get("text", "Hello, world!")
+                content=response_data.get("text", "Hello, world!")
             )
 
         async def mock_create(*args, **kwargs):

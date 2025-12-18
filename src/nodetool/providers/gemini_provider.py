@@ -504,7 +504,7 @@ class GeminiProvider(BaseProvider):
             )
         except Exception as error:
             log.error(f"Gemini generate_content failed: {error}")
-            raise
+            raise self._as_httpx_status_error(error) from error
         log.debug("Received response from Gemini API")
 
         # Replace the existing content extraction with a call to the helper function
@@ -536,6 +536,29 @@ class GeminiProvider(BaseProvider):
             tool_calls=tool_calls,
             output_files=output_files if output_files else None,
         )
+
+    @staticmethod
+    def _as_httpx_status_error(error: Exception) -> "httpx.HTTPStatusError":
+        """Normalize Gemini client exceptions to `httpx.HTTPStatusError`."""
+        import httpx
+
+        message = str(error)
+        message_lower = message.lower()
+
+        status_code = 500
+        if "quota" in message_lower or "rate limit" in message_lower or "exhausted" in message_lower:
+            status_code = 429
+        elif "api key" in message_lower or "authentication" in message_lower:
+            status_code = 401
+        elif "context" in message_lower or "too long" in message_lower or "invalid request" in message_lower:
+            status_code = 400
+
+        request = httpx.Request(
+            "POST",
+            "https://generativelanguage.googleapis.com/v1beta/models:generateContent",
+        )
+        response = httpx.Response(status_code=status_code, request=request)
+        return httpx.HTTPStatusError(message, request=request, response=response)
 
     async def generate_messages(
         self,

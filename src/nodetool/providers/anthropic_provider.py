@@ -649,14 +649,14 @@ class AnthropicProvider(BaseProvider):
             betas.append("structured-outputs-2025-11-13")
 
         if betas:
-            client_interface = self.client.beta.messages
             create_kwargs["betas"] = betas
-        else:
-            client_interface = self.client.messages
 
-        response: anthropic.types.message.Message = await client_interface.create(
-            **create_kwargs
-        )
+        try:
+            response: anthropic.types.message.Message = await self.client.messages.create(
+                **create_kwargs
+            )
+        except anthropic.AnthropicError as exc:
+            raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from Anthropic API")
 
         # Update usage statistics
@@ -712,6 +712,29 @@ class AnthropicProvider(BaseProvider):
         log.debug("Returning generated message")
 
         return message
+
+    @staticmethod
+    def _as_httpx_status_error(exc: anthropic.AnthropicError) -> "httpx.HTTPStatusError":
+        """Normalize Anthropic SDK exceptions to `httpx.HTTPStatusError`."""
+        import httpx
+
+        maybe_response = getattr(exc, "response", None)
+        status_code = getattr(maybe_response, "status_code", None) or getattr(
+            exc, "status_code", 500
+        )
+
+        request = getattr(maybe_response, "request", None)
+        if not isinstance(request, httpx.Request):
+            request = httpx.Request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+            )
+
+        response = maybe_response if isinstance(maybe_response, httpx.Response) else None
+        if response is None:
+            response = httpx.Response(status_code=int(status_code), request=request)
+
+        return httpx.HTTPStatusError(str(exc), request=request, response=response)
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics."""
