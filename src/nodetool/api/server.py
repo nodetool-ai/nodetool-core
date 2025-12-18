@@ -522,6 +522,11 @@ def create_app(
         runner = TerminalWebSocketRunner(auth_token=token or "", user_id=user_id)
         await runner.run(websocket)
 
+    # Backwards-compatible terminal websocket route (older clients/tests)
+    @app.websocket("/terminal")
+    async def terminal_websocket_endpoint_legacy(websocket: WebSocket):
+        await terminal_websocket_endpoint(websocket)
+
     # WebSocket endpoint for periodic system updates (e.g., system stats)
     @app.websocket("/ws/updates")
     async def updates_websocket_endpoint(websocket: WebSocket):

@@ -365,6 +365,42 @@ async def run_graph(
 
 
 @mcp.tool()
+async def list_nodes(
+    namespace: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    List available nodes from installed packages.
+
+    Args:
+        namespace: Optional namespace prefix filter (e.g. "nodetool.text").
+        limit: Maximum number of nodes to return.
+
+    Returns:
+        List of nodes with basic info (type/title/description/namespace).
+    """
+    registry = Registry.get_instance()
+    nodes = registry.get_all_installed_nodes()
+
+    if namespace:
+        namespace_prefix = namespace.lower()
+        nodes = [
+            node for node in nodes if node.node_type.lower().startswith(namespace_prefix)
+        ]
+
+    nodes = nodes[: max(0, limit)]
+    return [
+        {
+            "type": node.node_type,
+            "title": node.title,
+            "description": node.description,
+            "namespace": node.namespace,
+        }
+        for node in nodes
+    ]
+
+
+@mcp.tool()
 async def search_nodes(
     query: list[str],
     n_results: int = 10,
@@ -383,7 +419,7 @@ async def search_nodes(
         output_type: Optional filter by output type
         exclude_namespaces: Optional list of namespaces to exclude
         include_metadata: If True, return full node metadata including properties, inputs, outputs.
-                         If False (default), return only node type, title, description, and namespace.
+                         If False (default), return basic info (type/title/description/namespace).
 
     Returns:
         List of matching nodes with basic info or full metadata based on include_metadata parameter
@@ -426,14 +462,43 @@ async def search_nodes(
                         }
                     )
         else:
-            # Return only basic info (default)
+            # Return basic info (default)
             result.append(
                 {
                     "type": node.node_type,
+                    "title": node.title,
+                    "description": node.description,
+                    "namespace": node.namespace,
                 }
             )
 
     return result
+
+
+@mcp.tool()
+async def get_node_info(node_type: str) -> dict[str, Any]:
+    """
+    Get detailed metadata for a node type.
+
+    Args:
+        node_type: Fully-qualified node type (e.g. "nodetool.text.Concat").
+
+    Returns:
+        Node metadata, including properties and outputs.
+    """
+    registry = Registry.get_instance()
+    node_metadata = registry.find_node_by_type(node_type)
+    if node_metadata is not None:
+        return node_metadata
+
+    from nodetool.workflows.base_node import get_node_class
+
+    node_class = get_node_class(node_type)
+    if node_class is None:
+        raise ValueError(f"Node type {node_type} not found")
+
+    metadata = node_class.get_metadata()
+    return metadata.model_dump()
 
 
 @mcp.tool()
@@ -1215,15 +1280,133 @@ async def get_asset(asset_id: str) -> dict[str, Any]:
 
     return _asset_to_dict(asset)
 
+@mcp.tool()
+async def list_jobs(
+    workflow_id: str | None = None,
+    limit: int = 100,
+    start_key: str | None = None,
+) -> dict[str, Any]:
+    """
+    List jobs for the default MCP user, optionally filtered by workflow.
+
+    Args:
+        workflow_id: Optional workflow ID to filter by.
+        limit: Maximum number of jobs to return.
+        start_key: Pagination start key.
+
+    Returns:
+        Dictionary containing jobs and pagination cursor.
+    """
+    from nodetool.models.job import Job as JobModel
+
+    user_id = "1"
+    jobs, next_start_key = await JobModel.paginate(
+        user_id=user_id,
+        workflow_id=workflow_id,
+        limit=limit,
+        start_key=start_key,
+    )
+
+    return {
+        "jobs": [
+            {
+                "id": job.id,
+                "user_id": job.user_id,
+                "job_type": job.job_type,
+                "status": job.status,
+                "workflow_id": job.workflow_id,
+                "started_at": job.started_at.isoformat() if job.started_at else "",
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "error": job.error,
+                "cost": job.cost,
+            }
+            for job in jobs
+        ],
+        "next_start_key": next_start_key,
+    }
 
 
+@mcp.tool()
+async def get_job(job_id: str) -> dict[str, Any]:
+    """
+    Get a job by ID for the default MCP user.
+    """
+    from nodetool.models.job import Job as JobModel
+
+    user_id = "1"
+    job = await JobModel.find(user_id=user_id, job_id=job_id)
+    if not job:
+        raise ValueError(f"Job {job_id} not found")
+
+    return {
+        "id": job.id,
+        "user_id": job.user_id,
+        "job_type": job.job_type,
+        "status": job.status,
+        "workflow_id": job.workflow_id,
+        "started_at": job.started_at.isoformat() if job.started_at else "",
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "error": job.error,
+        "cost": job.cost,
+    }
 
 
+@mcp.tool()
+async def get_job_logs(job_id: str, limit: int = 200) -> dict[str, Any]:
+    """
+    Get logs for a job, preferring live logs for running jobs.
+    """
+    from nodetool.models.job import Job as JobModel
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+    user_id = "1"
+    job = await JobModel.find(user_id=user_id, job_id=job_id)
+    if not job:
+        raise ValueError(f"Job {job_id} not found")
+
+    manager = JobExecutionManager.get_instance()
+    live = manager.get_job(job_id)
+    if live is not None:
+        logs = live.get_live_logs(limit=limit)
+    else:
+        logs = (job.logs or [])[: max(0, limit)]
+
+    return {"job_id": job_id, "logs": logs}
 
 
+@mcp.tool()
+async def start_background_job(
+    workflow_id: str,
+    params: dict[str, Any] | None = None,
+    execution_strategy: str = "threaded",
+) -> dict[str, Any]:
+    """
+    Start running a workflow in the background.
+    """
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+    from nodetool.workflows.run_job_request import ExecutionStrategy
 
+    workflow = await WorkflowModel.find("1", workflow_id)
+    if not workflow:
+        raise ValueError(f"Workflow {workflow_id} not found")
 
+    try:
+        strategy = ExecutionStrategy(execution_strategy)
+    except ValueError as exc:
+        raise ValueError(f"Invalid execution_strategy: {execution_strategy}") from exc
 
+    request = RunJobRequest(
+        user_id="1",
+        workflow_id=workflow_id,
+        params=params or {},
+        graph=workflow.get_api_graph(),
+        execution_strategy=strategy,
+    )
+    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+
+    manager = JobExecutionManager.get_instance()
+    job = await manager.start_job(request, context)
+    return {"job_id": job.job_id, "status": job.status, "workflow_id": workflow_id}
 
 
 @mcp.tool()
