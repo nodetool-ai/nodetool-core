@@ -109,23 +109,36 @@ class ModelManager:
 
     @classmethod
     def set_model(
-        cls, node_id: str, cache_key: str, model: Any
+        cls,
+        node_id: str,
+        model_id_or_cache_key: str,
+        task_or_model: Any,
+        model: Any | None = None,
     ):
         """Stores a model instance and associates it with a node.
 
         Args:
             node_id (str): ID of the node associated with the model
-            cache_key (str): Cache key for the model
-            model (Any): The model instance to store
+            model_id_or_cache_key (str): Cache key, or model id (back-compat)
+            task_or_model (Any): Model instance, or task name (back-compat)
+            model (Any | None): Model instance when using the legacy signature
         """
+        if model is None:
+            cache_key = model_id_or_cache_key
+            model_instance = task_or_model
+        else:
+            task = str(task_or_model)
+            cache_key = f"{model_id_or_cache_key}_{task}" if task else model_id_or_cache_key
+            model_instance = model
+
         cls._ensure_memory_capacity(
             reason=f"Preparing to cache model {cache_key}"
         )
 
         was_existing = cache_key in cls._models
-        cls._models[cache_key] = model
+        cls._models[cache_key] = model_instance
         cls._models_by_node[node_id] = cache_key
-        cls._update_model_metadata(cache_key, model, node_id=node_id)
+        cls._update_model_metadata(cache_key, model_instance, node_id=node_id)
 
         if was_existing:
             logger.info(
