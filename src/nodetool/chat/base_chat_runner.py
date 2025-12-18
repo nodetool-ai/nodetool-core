@@ -135,6 +135,10 @@ class BaseChatRunner(ABC):
                 log.warning(f"Failed to convert graph to Graph object: {e}")
                 graph_obj = None
 
+        content = getattr(db_message, "content", None)
+        if content is None:
+            content = getattr(db_message, "instructions", None)
+
         return ApiMessage(
             id=db_message.id,
             workflow_id=db_message.workflow_id,
@@ -144,7 +148,7 @@ class BaseChatRunner(ABC):
             tool_call_id=db_message.tool_call_id,
             role=db_message.role or "",
             name=db_message.name,
-            content=db_message.content,
+            content=content,
             tool_calls=db_message.tool_calls,
             collections=db_message.collections,
             input_files=db_message.input_files,
