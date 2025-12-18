@@ -1,7 +1,7 @@
 import base64
 from typing import Any, List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from nodetool.metadata.types import Provider
 
@@ -56,6 +56,17 @@ class PredictionResult(BaseModel):
     prediction: Prediction
     encoding: Literal["json"] | Literal["base64"]
     content: Any
+    instructions: Any | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _backcompat_instructions(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if "content" not in values and "instructions" in values:
+                values["content"] = values["instructions"]
+            if "instructions" not in values and "content" in values:
+                values["instructions"] = values["content"]
+        return values
 
     def decode_content(self) -> Any:
         if self.encoding == "base64":

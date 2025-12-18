@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
@@ -1268,6 +1268,14 @@ class Step(BaseType):
     depends_on: list[str] = Field(
         default=[], description="The IDs of steps this step depends on"
     )
+    tools: list[str] | None = Field(
+        default=None,
+        description="Optional list of allowed tool names for this step (None = no restriction).",
+    )
+    tool_name: str | None = Field(
+        default=None,
+        description="Optional deterministic tool name for tool-only steps.",
+    )
     output_schema: str = Field(
         default="",
         description="The JSON schema of the output of the step",
@@ -1679,6 +1687,8 @@ class Message(BaseType):
     Independent of the underlying chat system, such as OpenAI or Anthropic.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     type: Literal["message"] = "message"
     id: str | None = None
     """
@@ -1723,6 +1733,13 @@ class Message(BaseType):
     content: str | list[MessageContent] | None = None
     """
     Text content or a list of message content objects, which can be text, images, or other types of content.
+    """
+
+    instructions: str | list[MessageContent] | None = None
+    """
+    Deprecated alias for `content` used by older call sites/tests.
+
+    When provided and `content` is not set, this value is copied into `content`.
     """
 
     error_type: str | None = None
@@ -1780,6 +1797,27 @@ class Message(BaseType):
     """
     Whether to use help mode for processing this message.
     """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_instructions_to_content(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        content = data.get("content")
+        instructions = data.get("instructions")
+
+        if content is None and instructions is not None:
+            data = dict(data)
+            data["content"] = instructions
+            return data
+
+        if instructions is None and content is not None:
+            data = dict(data)
+            data["instructions"] = content
+            return data
+
+        return data
 
     @staticmethod
     def from_model(message: Any):
