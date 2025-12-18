@@ -104,6 +104,7 @@ separate nodes and edges arrays for execution by the WorkflowRunner.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -118,11 +119,6 @@ from nodetool.metadata.type_metadata import TypeMetadata
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from nodetool.agents.tools.base import Tool
-    from nodetool.metadata.type_metadata import TypeMetadata
-    from nodetool.providers import BaseProvider
-    from nodetool.workflows.base_node import BaseNode
-    from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.types import Chunk
 
 from nodetool.agents.tools.help_tools import SearchNodesTool
@@ -140,6 +136,9 @@ from nodetool.workflows.base_node import (
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import Chunk, PlanningUpdate
+
+from nodetool.agents.tools.base import Tool
+from nodetool.workflows.processing_context import ProcessingContext
 
 # Set up logger for this module
 logger = get_logger(__name__)
@@ -222,6 +221,18 @@ class WorkflowDesignResult(BaseModel):
 
 # Generate JSON schema from Pydantic model
 WORKFLOW_DESIGN_SCHEMA = WorkflowDesignResult.model_json_schema()
+
+
+class SubmitWorkflowDesignTool(Tool):
+    """Tool for submitting the final workflow design."""
+
+    name: str = "submit_workflow_design"
+    description: str = "Submit the final workflow design including all nodes and their connections. Use this once you have found all necessary nodes and are ready to create the graph."
+    input_schema: ClassVar[dict[str, Any]] = WORKFLOW_DESIGN_SCHEMA
+
+    async def process(self, context: ProcessingContext, params: dict[str, Any]):
+        """This tool doesn't need a process method as the agent handles the output."""
+        return None
 
 
 def get_node_type_for_metadata(
@@ -416,49 +427,51 @@ DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT = """
 # GraphArchitect AI System Core Directives
 
 ## Mission
-As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs.
+As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. 
 Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure.
 
 ## Core Principles
-1. **Graph Structure:** Design workflows as Directed Acyclic Graphs (DAGs) with no cycles
-2. **Data Flow:** Connect nodes via edges that represent data flow from inputs through processing to outputs
-3. **Node Design:** Each node should have a clear, focused purpose
-4. **Valid Node Types:** All nodes **must** correspond to available node types. Always use `search_nodes` to discover and verify node types
-5. **Type Safety:** Ensure type compatibility throughout the workflow
-6. **User-Centric Design:** Create graphs that solve the user's actual problem, not just technical requirements
-7. **Reasoning Privacy:** Think step-by-step internally but do not reveal chain-of-thought. Only provide requested, structured outputs or tool calls.
-8. **Determinism & Efficiency:** Minimize tokens. Prefer canonical, compact JSON for node specifications. Avoid markdown in structured outputs.
+1. **Graph Structure:** Design workflows as Directed Acyclic Graphs (DAGs) with no cycles.
+2. **Data Flow:** Connect nodes via edges that represent data flow from inputs through processing to outputs.
+3. **Node Design:** Each node should have a clear, focused purpose.
+4. **Valid Node Types:** All nodes **must** correspond to available node types. Always use `search_nodes` to discover and verify node types.
+5. **Type Safety:** Ensure type compatibility throughout the workflow.
+6. **User-Centric Design:** Create graphs that solve the user's actual problem, not just technical requirements.
+7. **Visibility & Debuggability:** Use `Preview` nodes (`nodetool.output.Preview`) for intermediate results in multi-stage workflows to provide feedback and aid debugging.
+8. **Reasoning Privacy:** Think step-by-step internally but do not reveal chain-of-thought. Only provide requested, structured outputs or tool calls.
+9. **Determinism & Efficiency:** Minimize tokens. Prefer canonical, compact JSON for node specifications. Avoid markdown in structured outputs.
 
-## Node Metadata Structure
-Each node type has specific metadata that defines:
-- **properties**: Input fields/parameters the node accepts (these become targetHandles for edges)
-- **outputs**: Output slots the node produces (these become sourceHandles for edges)
-- **is_dynamic**: Boolean flag indicating if the node supports dynamic properties
+## Workflow Patterns (Cookbook)
+Follow these established patterns for common tasks:
+- **Simple Pipeline**: Input → Process → Output (e.g., Image → Resize → Save)
+- **Agent-Driven**: Input → Agent → Processor (e.g., Image → AgentNode for caption → Save)
+- **RAG (Retrieval-Augmented Generation)**: ChatInput → HybridSearch → FormatText → Agent → StringOutput
+- **Multi-Modal**: Audio → Whisper → Agent → StableDiffusion → ImageOutput
+- **Data Pipeline**: GetRequest → ImportCSV → Filter → ChartGenerator → Preview
 
-## Input and Output Node Mappings
-**CRITICAL**: Always use fully-qualified node types from the `nodetool.input` and `nodetool.output` namespaces.
+## Node Mappings & Handle Conventions
+**CRITICAL**: Use fully-qualified node types from `nodetool.input` and `nodetool.output`.
 
-Available Input Nodes (use exact `node_type` values):
-- `nodetool.input.StringInput` - For string inputs
-- `nodetool.input.IntegerInput` - For integer inputs
-- `nodetool.input.FloatInput` - For float inputs
-- `nodetool.input.BooleanInput` - For boolean inputs
-- `nodetool.input.ImageInput` - For image inputs
-- `nodetool.input.VideoInput` - For video inputs
-- `nodetool.input.AudioInput` - For audio inputs
-- `nodetool.input.DocumentInput` - For document inputs
-- `nodetool.input.DataframeInput` - For dataframe inputs
+### Handle Standards:
+- **Input Nodes**: Provide data through the `"output"` handle.
+- **Output Nodes**: Receive data through the `"value"` property.
+- **Processing Nodes**: Output handle is usually `"output"`. Verify exact input handle names (e.g., `"dataframe"`, `"text"`) via `search_nodes`.
 
-Available Output Nodes (use exact `node_type` values):
-- `nodetool.output.StringOutput` - For string outputs
-- `nodetool.output.IntegerOutput` - For integer outputs
-- `nodetool.output.FloatOutput` - For float outputs
-- `nodetool.output.BooleanOutput` - For boolean outputs
-- `nodetool.output.ImageOutput` - For image outputs
-- `nodetool.output.VideoOutput` - For video outputs
-- `nodetool.output.AudioOutput` - For audio outputs
-- `nodetool.output.DocumentOutput` - For document outputs
-- `nodetool.output.DataframeOutput` - For dataframe outputs
+### Available Input Nodes:
+- `nodetool.input.StringInput`, `nodetool.input.IntegerInput`, `nodetool.input.FloatInput`, `nodetool.input.BooleanInput`
+- `nodetool.input.ImageInput`, `nodetool.input.VideoInput`, `nodetool.input.AudioInput`
+- `nodetool.input.DocumentInput` (for CSVs/Docs)
+- `nodetool.input.DataframeInput` (for internal tables)
+- `nodetool.input.StringListInput`
+
+**Naming Convention**: You MUST set the `name` property of an Input/Output node to match the schema's variable name.
+Example: `{"node_id": "in_1", "node_type": "nodetool.input.StringInput", "properties": "{\"name\": \"user_query\"}"}`
+
+### Available Output Nodes:
+- `nodetool.output.StringOutput`, `nodetool.output.IntegerOutput`, `nodetool.output.FloatOutput`, `nodetool.output.BooleanOutput`
+- `nodetool.output.ImageOutput`, `nodetool.output.VideoOutput`, `nodetool.output.AudioOutput`
+- `nodetool.output.DocumentOutput`, `nodetool.output.DataframeOutput`
+- `nodetool.workflows.base_node.Preview` (for intermediate visibility)
 """
 
 WORKFLOW_DESIGN_PROMPT = """
@@ -475,7 +488,7 @@ Design a COMPLETE workflow by selecting appropriate nodes and defining ALL data 
 
 Conciseness & Output Discipline:
 - Keep any explanatory text minimal (<100 tokens) and only when strictly necessary.
-- Do not output raw JSON directly. Submit results via the tool call only, with no extra commentary.
+- Do not output raw JSON directly. Submit results via the `submit_workflow_design` tool call only, with no extra commentary.
 
 {% if existing_graph_spec -%}
 This is an **EDIT** request. The user's objective is an instruction to modify the existing graph.
@@ -490,27 +503,46 @@ When returning the final `node_specifications`, you may reuse `node_id`s from th
 Analyze the user's request and the existing graph to determine which nodes to add, remove, or re-wire.
 {%- endif %}
 
+## Strategic Design & Cookbook Patterns
+**Follow these patterns for high-quality workflows:**
+
+1. **Use Preview Nodes (`nodetool.workflows.base_node.Preview`)**:
+   - **Mandatory for complex flows**: If your workflow has > 2 steps, insert a `Preview` node after key processing steps.
+   - **Visibility**: This allows the user to see intermediate results (text, images, dataframes) without waiting for the final output.
+   - **Pattern**: `Input` -> `Process` -> `Preview` -> `Next Step` ...
+
+2. **RAG Architecture**:
+   - `search_nodes(query="search")` -> `search_nodes(query="format")` -> `search_nodes(query="agent")`
+   - Common chain: `HybridSearch` (returns docs) -> `FormatText` (docs to string) -> `Agent` (consumes string)
+
+3. **Data Transformation**:
+   - CSVs: `DocumentInput` -> `ImportCSV` -> `DataFrameOperation` (filter/group) -> `DataframeOutput`
+   - Always check `input_type` for dataframe nodes (some take raw dataframes, others take lists).
+
+4. **Chaining**:
+   - Connect outputs of one node to inputs of the next.
+   - Ensure type compatibility (e.g., `StringOutput` connects to `StringInput`).
+
 ## Using `search_nodes` Efficiently
 **EFFICIENCY PRIORITY:** Minimize the number of search iterations by being strategic and comprehensive:
 
-- **Plan your searches:** Before starting, identify all the different types of processing you need (e.g., data transformation, aggregation, visualization, text generation)
-- **Batch similar searches:** If you need multiple data processing nodes, search for them together with broader queries
-- **Use specific, descriptive queries:** Instead of generic terms, use specific keywords that target exactly what you need
-- **Target the right namespaces:** Most functionality is in `nodetool.data` (dataframes), `nodetool.text` (text processing), `nodetool.code` (custom code), `lib.*` (visualization/specialized tools)
+- **Plan your searches:** Identify required processing (e.g., transformation, aggregation, text gen).
+- **Batch searches:** You can perform multiple queries in a single `search_nodes` call to explore different options simultaneously.
+- **Noun Stripping (CRITICAL):** Do NOT include domain-specific nouns from the user objective in your search queries (e.g., if analyzing "sales data", search for "aggregate" or "groupby", NOT "sales aggregate"). Nodes are generic; they don't know about "sales".
+- **Target the right namespaces:** Most functionality is in `nodetool.data` (dataframes), `nodetool.text` (text processing), `nodetool.code` (custom script), `lib.*` (specialized tools).
+- **Type Filtering (CRITICAL):** Use `input_type` and `output_type` filters to find nodes that fit your data flow gaps.
 
 When using the `search_nodes` tool:
-- Provide a `query` with keywords describing the node's function (e.g., "convert", "summarize", "filter data").
-- **Start with targeted searches using `input_type` and `output_type` when you know the data types** - this reduces irrelevant results and speeds up the process
-- **Only use broad searches without type parameters if you're unsure about available node types**
-- The available types for `input_type` and `output_type` are: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any"
-- **Search for multiple related functionalities in a single query** when possible (e.g., "dataframe group aggregate sum" instead of separate searches)
- - Prefer fewer, more capable nodes over long chains of trivial nodes when functionality overlaps.
+- Provide a `query` with generic keywords describing the node's function.
+- **Use `input_type` and `output_type` filters** to significantly narrow down results.
+- Prefer fewer, more capable nodes over chains of trivial ones.
 
 ## Instructions - Node Selection
 1. **Create ALL nodes including Input and Output nodes.** For Input and Output nodes, use the exact node types from the system prompt mappings (do NOT search for them). Only search for intermediate processing nodes.
    - For each item in the Input Schema, create a corresponding Input node with a `name` matching the schema's `name`.
-     - **REMINDER**: For `dataframe` type inputs, use `nodetool.input.DataframeInput` so the schema can be satisfied
+      - **REMINDER**: Search for specialized inputs if needed, e.g., `nodetool.input.DocumentInput` for CSVs which can then be imported via `nodetool.data.ImportCSV`.
    - For each item in the Output Schema, create a corresponding Output node with a `name` matching the schema's `name`.
+   - **REMINDER**: Only search for intermediate processing nodes. Input and Output nodes are provided in the system prompt and should not be searched for.
 
 2. **Search for intermediate processing nodes using `search_nodes`**. Be strategic with searches - use specific, targeted queries to find the most appropriate nodes. Prefer fewer, more powerful nodes over many simple ones to improve efficiency.
    - **CRITICAL**: When you receive search results, use the EXACT `node_type` value from the results in your node specifications. For example, if the search returns `{"node_type": "lib.browser.WebFetch", ...}`, you MUST use "lib.browser.WebFetch" as the `node_type` in your node specification.
@@ -548,7 +580,7 @@ When using the `search_nodes` tool:
 
 - **Encode properties as a JSON string**
 - Example for constant value: `{"property_name": "property_value"}`
-- Example for edge connection: `{"property_name": {"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}}`
+- Example for edge connection: `{"property_name": {"type": "edge", "source": "source_node_id", "sourceHandle": "output"}}`
 - Do not include explanatory prose alongside JSON specifications.
 
 ## Important Handle Conventions
@@ -622,7 +654,7 @@ Before submitting your node specifications, verify:
 8. **Determinism:** No extraneous text; output only the structured node specifications via the tool
 9. **Schema Mapping:** There is a one-to-one mapping between schema items and created Input/Output nodes with matching `name` properties
 10. **Unique IDs:** All `node_id` values are unique and consistently referenced by edges
-11. **Non-Dynamic Props:** Non-dynamic nodes only use properties present in their metadata
+11. **Strategic Visibility:** Use `nodetool.workflows.base_node.Preview` nodes after complex steps to help the user understand the flow.
 
 **REMEMBER:** The evaluation showed that many workflows fail due to missing edge connections. Your graph must have COMPLETE data flow connectivity to pass validation.
 
@@ -638,26 +670,14 @@ Before submitting your node specifications, verify:
 
 ## Final Output Format
 
-After you have completed your node searches and design work, output your workflow design as a JSON object in a ```json code fence with this exact structure:
-
-```json
-{
-  "node_specifications": [
-    {
-      "node_id": "unique_identifier",
-      "node_type": "exact.node.type.from.search",
-      "purpose": "Brief description",
-      "properties": "{\"property_name\": \"value or edge definition\"}"
-    }
-  ]
-}
-```
+After you have completed your node searches and design work, submit your workflow design using the `submit_workflow_design` tool.
 
 **CRITICAL**:
-- Output ONLY the JSON object in a code fence, no additional commentary
+- Use the `submit_workflow_design` tool to provide your final answer
+- No additional commentary outside of the tool call
 - Use the exact `node_type` values from your search_nodes results
 - Ensure all edge connections are properly defined in the properties JSON
-- The properties field must be a JSON string (use escaped quotes)
+- The properties field must be a JSON string (use escaped quotes if needed, though most providers handle this automatically for tool calls)
 """
 
 
@@ -720,6 +740,10 @@ class GraphPlanner:
             len(output_schema) if output_schema is not None else 0,
         )
 
+        if asyncio.iscoroutine(provider):
+            raise ValueError(
+                "provider must be a provider instance, not a coroutine. Did you forget to 'await get_provider(...)'?"
+            )
         self.provider = provider
         self.model = model
         self.objective = objective
@@ -1079,7 +1103,7 @@ class GraphPlanner:
 
         result = None
         max_validation_attempts = 5
-        max_tool_iterations = 8
+        max_tool_iterations = 30  # Increased from 8 to allow for more complex designs
 
         # Validation retry loop
         for validation_attempt in range(max_validation_attempts):
@@ -1102,7 +1126,7 @@ class GraphPlanner:
                 async for chunk in self.provider.generate_messages(  # type: ignore
                     messages=history,
                     model=self.model,
-                    tools=[search_tool],
+                    tools=[search_tool, SubmitWorkflowDesignTool()],
                     max_tokens=self.max_tokens,
                     context_window=8192,
                 ):
@@ -1122,120 +1146,91 @@ class GraphPlanner:
                 )
                 history.append(response)
 
-                # If no tool calls, check if we got JSON output
+                # If no tool calls, prompt for tool usage
                 if not tool_calls:
-                    logger.debug("No tool calls, attempting to extract JSON from response")
-                    json_data = extract_json_from_message(response)
-
-                    if json_data:
-                        # Try to validate the JSON as WorkflowDesignResult
-                        logger.debug("JSON extracted, validating as WorkflowDesignResult")
-                        try:
-                            result = WorkflowDesignResult.model_validate(json_data)
-                            logger.debug("Successfully created WorkflowDesignResult from JSON")
-
-                            # Validate the workflow design
-                            error_message = self._validate_workflow_design(result)
-                            if error_message:
-                                logger.warning(
-                                    f"Workflow design validation failed: {error_message}"
-                                )
-                                if validation_attempt < max_validation_attempts - 1:
-                                    # Add error feedback for retry
-                                    history.append(
-                                        Message(
-                                            role="user",
-                                            content=f"Validation failed: {error_message}. Please fix the issues and output the corrected workflow design as JSON.",
-                                        )
-                                    )
-                                    result = None
-                                    break  # Break tool loop to retry validation
-                                else:
-                                    # Last attempt, fail
-                                    yield (
-                                        history,
-                                        result,
-                                        PlanningUpdate(
-                                            phase="Workflow Design",
-                                            status="Failed",
-                                            content=f"Validation failed: {error_message}",
-                                        ),
-                                    )
-                                    return
-                            else:
-                                # Validation passed!
-                                logger.debug("Workflow design validation passed")
-                                yield (
-                                    history,
-                                    result,
-                                    PlanningUpdate(
-                                        phase="Workflow Design",
-                                        status="Success",
-                                        content="Workflow design complete",
-                                    ),
-                                )
-                                return
-                        except Exception as e:
-                            logger.error(f"Error creating WorkflowDesignResult: {e}")
-                            if validation_attempt < max_validation_attempts - 1:
-                                history.append(
-                                    Message(
-                                        role="user",
-                                        content=f"Error parsing workflow design: {e}. Please output valid JSON matching the WorkflowDesignResult schema.",
-                                    )
-                                )
-                                break  # Break tool loop to retry
-                            else:
-                                yield (
-                                    history,
-                                    None,  # type: ignore
-                                    PlanningUpdate(
-                                        phase="Workflow Design",
-                                        status="Failed",
-                                        content=f"Failed to parse JSON: {e}",
-                                    ),
-                                )
-                                return
-                    else:
-                        # No JSON found, prompt for it
-                        logger.debug("No JSON found in response, prompting for JSON output")
-                        history.append(
-                            Message(
-                                role="user",
-                                content="Please output your workflow design as a JSON object in a ```json code fence with the structure: {\"node_specifications\": [...]}",
-                            )
+                    logger.debug("No tool calls, prompting for tool usage")
+                    history.append(
+                        Message(
+                            role="user",
+                            content="Please use the `submit_workflow_design` tool to submit your final workflow design.",
                         )
-                        continue
+                    )
+                    continue
 
-                # Handle tool calls
+                # Handle tool calls in parallel
                 else:
-                    logger.debug(f"Processing {len(tool_calls)} tool calls")
-                    for tool_call in tool_calls:
+                    logger.debug(f"Processing {len(tool_calls)} tool calls in parallel")
+
+                    async def execute_tool(tc: ToolCall) -> tuple[str, WorkflowDesignResult | None, bool]:
+                        """Execute a single tool call and return its output and possible result."""
                         tool_output_str = ""
-                        if tool_call.name == search_tool.name:
+                        design_result = None
+                        success = False
+
+                        # Handle submit_workflow_design
+                        if tc.name == "submit_workflow_design":
+                            logger.debug("Handling submit_workflow_design tool call")
                             try:
-                                params = tool_call.args if isinstance(tool_call.args, dict) else {}
+                                params = tc.args if isinstance(tc.args, dict) else {}
+                                design_result = WorkflowDesignResult.model_validate(params)
+                                logger.debug("Successfully created WorkflowDesignResult from tool call")
+
+                                # Validate the workflow design
+                                error_message = self._validate_workflow_design(design_result)
+                                if error_message:
+                                    logger.warning(f"Workflow design validation failed: {error_message}")
+                                    tool_output_str = f"Validation failed: {error_message}. Please fix the issues and submit the corrected workflow design."
+                                else:
+                                    # Validation passed!
+                                    logger.debug("Workflow design validation passed")
+                                    tool_output_str = "Validation passed and design accepted."
+                                    success = True
+                            except Exception as e:
+                                logger.error(f"Error processing workflow design: {e}")
+                                tool_output_str = f"Error parsing workflow design: {e}. Please ensure your input matches the required schema."
+                        
+                        # Handle search_nodes
+                        elif tc.name == search_tool.name:
+                            try:
+                                params = tc.args if isinstance(tc.args, dict) else {}
                                 logger.debug(f"Executing search_nodes with params: {params}")
                                 tool_output = await search_tool.process(context, params)
-                                tool_output_str = (
-                                    json.dumps(tool_output)
-                                    if tool_output is not None
-                                    else "No results found"
-                                )
+                                tool_output_str = json.dumps(tool_output) if tool_output is not None else "No results found"
                             except Exception as e:
                                 logger.error(f"Error executing search_nodes: {e}")
                                 tool_output_str = str(e)
                         else:
-                            tool_output_str = f"Unknown tool: {tool_call.name}"
+                            tool_output_str = f"Unknown tool: {tc.name}"
+                        
+                        return tool_output_str, design_result, success
 
+                    # Execute all tool calls concurrently
+                    tasks = [execute_tool(tc) for tc in tool_calls]
+                    executions = await asyncio.gather(*tasks)
+
+                    # Add all tool responses to history
+                    for tc, (output, design_result, success) in zip(tool_calls, executions):
                         history.append(
                             Message(
                                 role="tool",
-                                tool_call_id=tool_call.id,
-                                name=tool_call.name,
-                                content=tool_output_str,
+                                tool_call_id=tc.id,
+                                name=tc.name,
+                                content=output,
                             )
                         )
+                        
+                        # If a submission succeeded, we're done with the phase
+                        if success and design_result:
+                            yield (
+                                history,
+                                design_result,
+                                PlanningUpdate(
+                                    phase="Workflow Design",
+                                    status="Success",
+                                    content="Workflow design complete",
+                                ),
+                            )
+                            return
 
             # If we got here without a result, the tool loop exhausted
             if result is None:

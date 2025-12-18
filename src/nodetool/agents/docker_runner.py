@@ -30,13 +30,10 @@ async def _run(cfg: dict) -> None:
         description=cfg.get("description", ""),
         inputs=cfg.get("inputs", {}),
         system_prompt=cfg.get("system_prompt"),
-        max_subtasks=cfg.get("max_subtasks", 10),
-        max_steps=cfg.get("max_steps", 50),
-        max_subtask_iterations=cfg.get("max_subtask_iterations", 5),
+        max_steps=cfg.get("max_steps", 10),
+        max_step_iterations=cfg.get("max_step_iterations", 5),
         max_token_limit=cfg.get("max_token_limit"),
         output_schema=cfg.get("output_schema"),
-        enable_analysis_phase=cfg.get("enable_analysis_phase", True),
-        enable_data_contracts_phase=cfg.get("enable_data_contracts_phase", True),
         verbose=cfg.get("verbose", True),
     )
 

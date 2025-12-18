@@ -33,7 +33,6 @@ from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
-from nodetool.config.settings import get_log_path
 from nodetool.metadata.types import (
     Task,
     ToolCall,
@@ -43,7 +42,8 @@ from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
-    SubTaskResult,
+    LogUpdate,
+    StepResult,
     TaskUpdate,
     TaskUpdateEvent,
 )
@@ -496,8 +496,8 @@ class Agent(BaseAgent):
     or running code), and carry them out autonomously to achieve the objective.
 
     Key Capabilities:
-    - **Planning:** Decomposes complex objectives into manageable subtasks.
-    - **Execution:** Runs the subtasks in the correct order, handling dependencies.
+    - **Planning:** Decomposes complex objectives into manageable steps.
+    - **Execution:** Runs the steps in the correct order, handling dependencies.
     - **Tool Integration:** Leverages specialized tools to interact with external
       systems or perform specific actions (e.g., file operations, web browsing,
       code execution).
@@ -521,13 +521,10 @@ class Agent(BaseAgent):
         description: str = "",
         inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
-        max_subtasks: int = 10,
-        max_steps: int = 50,
-        max_subtask_iterations: int = 5,
+        max_steps: int = 10,
+        max_step_iterations: int = 5,
         max_token_limit: int | None = None,
         output_schema: dict | None = None,
-        enable_analysis_phase: bool = True,
-        enable_data_contracts_phase: bool = True,
         task: Task | None = None,  # Add optional task parameter
         verbose: bool = True,  # Add verbose flag
         docker_image: str | None = None,
@@ -550,12 +547,9 @@ class Agent(BaseAgent):
             inputs (dict[str, Any], optional): Inputs to use for the agent
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum reasoning steps
-            max_subtask_iterations (int, optional): Maximum iterations per subtask
+            max_step_iterations (int, optional): Maximum iterations per step
             max_token_limit (int, optional): Maximum token limit before summarization
-            max_subtasks (int, optional): Maximum number of subtasks to be created
             output_schema (dict, optional): JSON schema for the final task output
-            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
-            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
             task (Task, optional): Pre-defined task to execute, skipping planning
             verbose (bool, optional): Enable/disable console output (default: True)
             docker_image (str, optional): If set, execute the agent inside this Docker image.
@@ -576,11 +570,8 @@ class Agent(BaseAgent):
         self.planning_model = planning_model or model
         self.reasoning_model = reasoning_model or model
         self.max_steps = max_steps
-        self.max_subtask_iterations = max_subtask_iterations
-        self.max_subtasks = max_subtasks
+        self.max_step_iterations = max_step_iterations
         self.output_schema = output_schema
-        self.enable_analysis_phase = enable_analysis_phase
-        self.enable_data_contracts_phase = enable_data_contracts_phase
         self.initial_task = task
         if self.initial_task:
             self.task = self.initial_task
@@ -627,14 +618,13 @@ class Agent(BaseAgent):
                     self.name,
                     self.objective,
                 )
-            self.provider.log_file = str(
-                get_log_path(
-                    sanitize_file_path(
-                        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}__{self.name}__planner.jsonl"
-                    )
-                )
-            )
 
+            yield LogUpdate(
+                node_id="agent_planner",
+                node_name=self.name,
+                content=f"Planning steps for objective: {self.objective[:100]}...",
+                severity="info",
+            )
             task_planner_instance = TaskPlanner(
                 provider=self.provider,
                 model=self.planning_model,
@@ -644,8 +634,6 @@ class Agent(BaseAgent):
                 execution_tools=tools,
                 inputs=self.inputs,
                 output_schema=self.output_schema,
-                enable_analysis_phase=self.enable_analysis_phase,
-                enable_data_contracts_phase=self.enable_data_contracts_phase,
                 verbose=self.verbose,
                 display_manager=self.display_manager,
             )
@@ -670,8 +658,8 @@ class Agent(BaseAgent):
                 event=TaskUpdateEvent.TASK_CREATED,
             )
 
-        if self.output_schema and len(self.task.subtasks) > 0:
-            self.task.subtasks[-1].output_schema = json.dumps(self.output_schema)
+        if self.output_schema and len(self.task.steps) > 0:
+            self.task.steps[-1].output_schema = json.dumps(self.output_schema)
 
         tool_calls: list[ToolCall] = []
 
@@ -693,12 +681,19 @@ class Agent(BaseAgent):
                 system_prompt=self.system_prompt,
                 inputs=self.inputs,
                 max_steps=self.max_steps,
-                max_subtask_iterations=self.max_subtask_iterations,
-                max_token_limit=self.max_token_limit,
+                max_step_iterations=self.max_step_iterations,
+                max_token_limit=self.max_token_limit or 100000,
                 parallel_execution=True,
             )
 
-            # Execute all subtasks within this task and yield results
+            yield LogUpdate(
+                node_id="agent_executor",
+                node_name=self.name,
+                content=f"Starting execution of {len(self.task.steps)} steps...",
+                severity="info",
+            )
+
+            # Execute all steps within this task and yield results
             async for item in executor.execute_tasks(context):
                 # Update tool_calls list if item is a ToolCall
                 if isinstance(item, ToolCall):
@@ -716,8 +711,10 @@ class Agent(BaseAgent):
                 # Yield the item
                 if isinstance(item, ToolCall):
                     yield item
-                elif isinstance(item, SubTaskResult):
+                elif isinstance(item, StepResult):
+                    log.debug(f"Agent: Received StepResult for step {item.step.id}. is_task_result={item.is_task_result}")
                     if item.is_task_result:
+                        log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
                         self.results = item.result
                         yield TaskUpdate(
                             task=self.task,
@@ -726,23 +723,9 @@ class Agent(BaseAgent):
                     yield item
                 elif isinstance(item, TaskUpdate):
                     yield item
-                    # Update provider log file when a subtask starts/completes
-                    if item.event in [
-                        TaskUpdateEvent.SUBTASK_STARTED,
-                        TaskUpdateEvent.SUBTASK_COMPLETED,
-                    ]:
-                        timestamp = datetime.datetime.now().strftime(
-                            "%Y-%m-%d_%H-%M-%S"
-                        )
-                        assert item.subtask is not None
-                        self.provider.log_file = str(
-                            get_log_path(
-                                sanitize_file_path(
-                                    f"{timestamp}__{self.name}__{item.subtask.id}.jsonl"
-                                )
-                            )
-                        )
                 elif isinstance(item, Chunk):  # Yield streaming chunks
+                    yield item
+                elif isinstance(item, LogUpdate):
                     yield item
                 else:
                     yield item
@@ -758,11 +741,11 @@ class Agent(BaseAgent):
     def get_results(self) -> Any:
         """
         Get the results produced by this agent.
-        If a final result exists from the concluding subtask, return that.
+        If a final result exists from the concluding step, return that.
         Otherwise, return all collected results.
 
         Returns:
-            list[Any]: Results with priority given to the final subtask output
+            list[Any]: Results with priority given to the final step output
         """
         return self.results
 
@@ -803,13 +786,10 @@ class Agent(BaseAgent):
             "description": self.description,
             "inputs": self.inputs,
             "system_prompt": self.system_prompt,
-            "max_subtasks": self.max_subtasks,
             "max_steps": self.max_steps,
-            "max_subtask_iterations": self.max_subtask_iterations,
+            "max_step_iterations": self.max_step_iterations,
             "max_token_limit": self.max_token_limit,
             "output_schema": self.output_schema,
-            "enable_analysis_phase": self.enable_analysis_phase,
-            "enable_data_contracts_phase": self.enable_data_contracts_phase,
             "verbose": self.verbose,
             "workspace_dir": workspace_path,
             "result_path": result_path,
@@ -889,8 +869,6 @@ async def test_docker_feature():
         objective="Write python code to calculate fibonacci numbers",
         provider=provider,
         model="gpt-4o-mini",
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         docker_image="nodetool",
         tools=[ExecutePythonTool()],
     )
@@ -922,8 +900,6 @@ async def test_sandbox_feature():
         objective="Write python code to calculate prime numbers up to 100",
         provider=provider,
         model="gpt-4o-mini",
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         use_sandbox=True,
         tools=[ExecutePythonTool()],
     )

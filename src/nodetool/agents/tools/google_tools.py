@@ -139,10 +139,30 @@ class GoogleGroundedSearchTool(Tool):
                     grounding_supports.append(support_info)
 
         # Format the results
+        formatted_sources = []
+        
+        # Resolve redirect URLs
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                for source in sources:
+                    url = source.get("url")
+                    if url and "grounding-api-redirect" in url:
+                        try:
+                            async with session.head(url, allow_redirects=True, timeout=5) as resp:
+                                source["url"] = str(resp.url)
+                        except Exception:
+                            # If resolution fails, keep original URL
+                            pass
+                    formatted_sources.append(source)
+        except Exception:
+             # If session creation fails, keep original sources
+            formatted_sources = sources
+
         formatted_results = {
             "query": query,
             "results": results,
-            "sources": sources,
+            "sources": formatted_sources,
             "grounding_supports": grounding_supports,
             "status": "success",
         }

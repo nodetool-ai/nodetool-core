@@ -10,16 +10,16 @@ from jinja2 import BaseLoader
 from jinja2 import Environment as JinjaEnvironment
 
 from nodetool.agents.base_agent import BaseAgent
-from nodetool.agents.sub_task_context import SubTaskContext
+from nodetool.agents.step_executor import StepExecutor
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
-    SubTask,
+    Step,
     Task,
     ToolCall,
 )
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import SubTaskResult
+from nodetool.workflows.types import StepResult
 
 
 class SimpleAgent(BaseAgent):
@@ -28,8 +28,8 @@ class SimpleAgent(BaseAgent):
 
     This agent takes a high-level objective and an output schema. It performs
     a lightweight planning step to define the necessary instructions, output type,
-    and schema for a *single* subtask required to meet the objective. It then
-    executes this subtask using a SubTaskContext.
+    and schema for a *single* step required to meet the objective. It then
+    executes this step using a StepExecutor.
     """
 
     def __init__(
@@ -53,12 +53,12 @@ class SimpleAgent(BaseAgent):
             objective (str): The high-level goal for the agent to achieve.
             provider (ChatProvider): An LLM provider instance.
             model (str): The model to use with the provider.
-            tools (Sequence[Tool]): List of tools potentially usable by the subtask executor.
+            tools (Sequence[Tool]): List of tools potentially usable by the step executor.
             inputs (dict[str, Any], optional): Dictionary of initial input files available.
-            system_prompt (str, optional): Custom system prompt for the subtask execution phase.
+            system_prompt (str, optional): Custom system prompt for the step execution phase.
             output_schema (dict): The schema of the output file.
-            max_iterations (int, optional): Maximum iterations for the subtask execution.
-            max_token_limit (int, optional): Maximum token limit for the subtask context.
+            max_iterations (int, optional): Maximum iterations for the step execution.
+            max_token_limit (int, optional): Maximum token limit for the step context.
         """
         super().__init__(
             name=name,
@@ -74,9 +74,9 @@ class SimpleAgent(BaseAgent):
         self.max_iterations = max_iterations
         self.output_schema = output_schema
 
-        self.subtask: SubTask | None = None
+        self.step: Step | None = None
         self.jinja_env = JinjaEnvironment(loader=BaseLoader())  # For prompt rendering
-        self.subtask_context: SubTaskContext | None = None
+        self.step_executor: StepExecutor | None = None
 
     def _get_execution_tools_info(self) -> str:
         """Helper to format execution tool info for prompts."""
@@ -93,20 +93,20 @@ class SimpleAgent(BaseAgent):
         context: ProcessingContext,
     ) -> AsyncGenerator[Any, None]:
         """
-        Plans (if needed) and executes the single subtask for the agent's objective.
+        Plans (if needed) and executes the single step for the agent's objective.
 
         Yields:
-            Union[TaskUpdate, Chunk, ToolCall, SubTaskResult]: Execution progress from the SubTaskContext.
+            Union[TaskUpdate, Chunk, ToolCall, StepResult]: Execution progress from the StepExecutor.
         """
-        self.subtask = SubTask(
-            content=self.objective,
+        self.step = Step(
+            instructions=self.objective,
             output_schema=json.dumps(self.output_schema),
         )
-        self.task = Task(title=self.objective, subtasks=[self.subtask])
+        self.task = Task(title=self.objective, steps=[self.step])
 
-        self.subtask_context = SubTaskContext(
+        self.step_executor = StepExecutor(
             task=self.task,
-            subtask=self.subtask,
+            step=self.step,
             processing_context=context,
             system_prompt=self.execution_system_prompt or self.system_prompt,
             tools=self.tools,
@@ -116,9 +116,9 @@ class SimpleAgent(BaseAgent):
             max_iterations=self.max_iterations,
         )
 
-        # Execute the subtask and yield all its updates
-        async for item in self.subtask_context.execute():
-            if isinstance(item, SubTaskResult):
+        # Execute the step and yield all its updates
+        async for item in self.step_executor.execute():
+            if isinstance(item, StepResult):
                 self.results = item.result
             yield item
 

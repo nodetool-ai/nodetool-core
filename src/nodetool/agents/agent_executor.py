@@ -1,7 +1,7 @@
 """
-🧠 Simple SubTask Context: Value-based Task Execution
+🧠 Simple Step Context: Value-based Task Execution
 
-A simplified version of SubTaskContext that operates on Python values instead of files.
+A simplified version of StepContext that operates on Python values instead of files.
 This version maintains output type handling while removing file operations and workspace management.
 
 Key simplifications:
@@ -313,7 +313,7 @@ Safety and privacy:
             return str(value)
 
     def get_result(self) -> Any:
-        """Get the final result of the subtask."""
+        """Get the final result of the step."""
         return self.result
 
     def get_metadata(self) -> dict[str, Any] | None:
