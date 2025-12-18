@@ -886,8 +886,9 @@ class ProcessingContext:
         self,
         name: str,
         content_type: str,
-        content: IO,
+        content: IO | None = None,
         parent_id: str | None = None,
+        instructions: IO | None = None,
     ) -> Asset:
         """
         Creates an asset with the given name, content type, content, and optional parent ID.
@@ -902,6 +903,10 @@ class ProcessingContext:
             Asset: The created asset.
 
         """
+        content = content or instructions
+        if content is None:
+            raise ValueError("Asset content is required")
+
         content.seek(0)
         content_bytes = content.read()
         content.seek(0)

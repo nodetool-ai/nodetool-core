@@ -34,6 +34,7 @@ class Property(BaseModel):
     min: Optional[float] = None
     max: Optional[float] = None
     json_schema_extra: Optional[dict[str, Any]] = None
+    required: bool = False
 
     @field_serializer("default")
     def serialize_default(self, value: Any) -> Any:
@@ -93,6 +94,8 @@ class Property(BaseModel):
             attrs.append(f"max={repr(self.max)}")
         if self.json_schema_extra:
             attrs.append(f"json_schema_extra={repr(self.json_schema_extra)}")
+        if self.required:
+            attrs.append("required=True")
 
         return f"Property({', '.join(attrs)})"
 
@@ -141,16 +144,16 @@ class Property(BaseModel):
             if field.title is None
             else field.title
         )
-        if field.default is PydanticUndefined:
-            raise ValueError(f"Field {name} has no default value")
+        is_required = field.default is PydanticUndefined
 
         return Property(
             name=name,
             type=type_,
-            default=field.default,
+            default=None if is_required else field.default,
             title=title,
             description=field.description,
             min=ge.ge if ge is not None else None,
             max=le.le if le is not None else None,
             json_schema_extra=field.json_schema_extra,  # type: ignore
+            required=is_required,
         )

@@ -107,6 +107,8 @@ from typing import (
     TypedDict,
     TypeVar,
     get_type_hints,
+    get_args,
+    get_origin,
 )
 from weakref import WeakKeyDictionary
 
@@ -331,7 +333,10 @@ def type_metadata(
         )
     elif is_enum_type(python_type):
         assert not isinstance(python_type, UnionType)
-        type_name = f"{python_type.__module__}.{python_type.__qualname__}"
+        module = python_type.__module__
+        if module.startswith("tests."):
+            module = module.split(".")[-1]
+        type_name = f"{module}.{python_type.__qualname__}"
         return TypeMetadata(
             type="enum",
             type_name=type_name,
@@ -836,6 +841,65 @@ class BaseNode(BaseModel):
 
         prop = self.find_property(name)
         if prop is None:
+            if hasattr(self, name):
+                try:
+                    hinted_type = self.__class__.field_types().get(name)
+                except Exception:
+                    hinted_type = None
+
+                if hinted_type is not None:
+                    origin = get_origin(hinted_type)
+                    if origin is ClassVar:
+                        args = get_args(hinted_type)
+                        hinted_type = args[0] if args else Any
+
+                    try:
+                        if hinted_type is Any:
+                            object.__setattr__(self, name, value)
+                            return None
+
+                        tm = type_metadata(hinted_type)
+                        python_type = tm.get_python_type()
+                        type_args = tm.type_args
+
+                        if is_empty(value):
+                            return None
+
+                        if tm.is_enum_type():
+                            converted = python_type(value)
+                        elif tm.is_list_type() and len(type_args) == 1:
+                            subtype = type_args[0].get_python_type()
+                            if hasattr(subtype, "from_dict") and all(
+                                isinstance(x, dict) and "type" in x for x in value
+                            ):
+                                converted = [subtype.from_dict(x) for x in value]
+                            elif hasattr(subtype, "model_validate"):
+                                converted = [subtype.model_validate(x) for x in value]
+                            else:
+                                converted = value
+                        elif (
+                            isinstance(value, dict)
+                            and "type" in value
+                            and hasattr(python_type, "from_dict")
+                        ):
+                            converted = python_type.from_dict(value)
+                        elif isinstance(value, dict) and hasattr(
+                            python_type, "model_validate"
+                        ):
+                            converted = python_type.model_validate(value)
+                        elif hasattr(python_type, "model_validate"):
+                            converted = python_type.model_validate(value)
+                        else:
+                            converted = value
+
+                        object.__setattr__(self, name, converted)
+                        return None
+                    except Exception as e:
+                        return (
+                            f"[{self.__class__.__name__}] Error converting value for "
+                            f"property `{name}`: {e}"
+                        )
+
             if self._is_dynamic:
                 self._dynamic_properties[name] = value
                 return None
