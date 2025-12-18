@@ -228,6 +228,13 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
+    def structured_output(self) -> bool:
+        """Check if provider supports structured JSON output natively.
+
+        OpenAI supports structured output via response_format={"type": "json_schema", ...}.
+        """
+        return True
+
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
         Get available OpenAI models.
@@ -1068,7 +1075,7 @@ class OpenAIProvider(BaseProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
         context_window: int = 128000,
-        response_format: dict | None = None,
+        json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Stream assistant deltas and tool calls from OpenAI.
@@ -1079,7 +1086,7 @@ class OpenAIProvider(BaseProvider):
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
             context_window: Maximum tokens considered for context.
-            response_format: Optional response schema.
+            json_schema: Optional response schema.
             **kwargs: Additional OpenAI parameters such as temperature.
 
         Yields:
@@ -1101,8 +1108,14 @@ class OpenAIProvider(BaseProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if response_format is not None:
-            _kwargs["response_format"] = response_format
+        if json_schema is not None:
+            if "response_format" in _kwargs:
+                raise ValueError("response_format and json_schema are mutually exclusive")
+            _kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
+
         # Common sampling params if provided
         for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty"):
             if key in kwargs and kwargs[key] is not None:
@@ -1277,7 +1290,7 @@ class OpenAIProvider(BaseProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
         context_window: int = 128000,
-        response_format: dict | None = None,
+        json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         presence_penalty: float | None = None,
@@ -1309,8 +1322,11 @@ class OpenAIProvider(BaseProvider):
         request_kwargs: dict[str, Any] = {
             "max_completion_tokens": max_tokens,
         }
-        if response_format is not None:
-            request_kwargs["response_format"] = response_format
+        if json_schema is not None:
+            request_kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
         # Common sampling params (pass-through if provided via caller)
         if temperature is not None:
             request_kwargs["temperature"] = temperature
@@ -1365,6 +1381,18 @@ class OpenAIProvider(BaseProvider):
         else:
             completion = create_result
         log.debug("Received response from OpenAI API")
+        
+        # Debug log the raw response for structured output debugging
+        if completion.choices:
+            choice = completion.choices[0]
+            log.info("Response finish_reason: %s", choice.finish_reason)
+            log.info("Response message content length: %d", len(choice.message.content or ""))
+            if choice.message.content:
+                log.debug("Response message content (first 500 chars): %s", choice.message.content[:500])
+            else:
+                log.warning("Response message content is None!")
+            if choice.message.refusal:
+                log.warning("Response message refusal: %s", choice.message.refusal)
 
         # Update usage stats
         if completion.usage:

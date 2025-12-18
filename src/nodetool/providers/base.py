@@ -61,6 +61,7 @@ class ProviderCapability(str, Enum):
     )
     TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
+    STRUCTURED_OUTPUT = "structured_output"  # Structured JSON output support
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = {}
@@ -124,6 +125,7 @@ class BaseProvider:
     - AUTOMATIC_SPEECH_RECOGNITION: Audio-to-text transcription
     - TEXT_TO_VIDEO: Text-to-video generation
     - IMAGE_TO_VIDEO: Image-to-video generation
+    - STRUCTURED_OUTPUT: Structured JSON output support
 
     Subclasses should implement:
     - The capability methods (generate_message, text_to_image, text_to_video, image_to_video, etc.) they support
@@ -139,6 +141,7 @@ class BaseProvider:
         ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
         ProviderCapability.TEXT_TO_VIDEO: "text_to_video",
         ProviderCapability.IMAGE_TO_VIDEO: "image_to_video",
+        ProviderCapability.STRUCTURED_OUTPUT: "structured_output",
     }
 
     log_file: str | None = None
@@ -721,6 +724,17 @@ class BaseProvider:
             f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability"
         )
 
+    def structured_output(self) -> bool:
+        """Check if provider supports structured JSON output natively.
+
+        Providers that support structured output (like OpenAI with json_schema
+        response_format) should override this to return True.
+
+        Returns:
+            bool: True if provider supports structured output, False otherwise.
+        """
+        return False
+
 
 class MockProvider(BaseProvider):
     """
@@ -792,7 +806,7 @@ class MockProvider(BaseProvider):
         if hasattr(response, "output_files") and response.output_files:
             # This provider doesn't interact with the filesystem,
             # it just returns the message as defined.
-            # The SubTaskContext will handle the file saving based on this message.
+            # The StepContext will handle the file saving based on this message.
             pass
 
         return response
@@ -842,5 +856,5 @@ class MockProvider(BaseProvider):
         # Simulate output file generation if present in the mock response
         if hasattr(response, "output_files") and response.output_files:
             # Similar to generate_message, just pass the info along.
-            # SubTaskContext testing should verify file creation.
+            # StepContext testing should verify file creation.
             pass

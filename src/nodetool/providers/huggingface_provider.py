@@ -1034,7 +1034,9 @@ class HuggingFaceProvider(BaseProvider):
                     f"Processing delta with finish_reason: {choice.finish_reason}"
                 )
 
-                if delta and getattr(delta, "content", None):
+                # Only yield content if we are not currently accumulating tool calls
+                # This prevents "noise" (garbage tokens) that some providers emit during tool calling
+                if delta and getattr(delta, "content", None) and not accumulated_tool_calls:
                     yield Chunk(
                         content=delta.content,
                         done=choice.finish_reason == "stop",

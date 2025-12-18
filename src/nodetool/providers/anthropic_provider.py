@@ -37,35 +37,7 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
-"""Tool definition for forcing JSON output via Anthropic's tool mechanism."""
 
-
-class JsonOutputTool(Tool):
-    """
-    A special tool used to instruct Anthropic models to output JSON
-    matching a specific schema. This tool is typically intercepted by the
-    provider rather than being executed normally.
-    """
-
-    name = "json_output"
-    description = "Use this tool to output JSON according to the specified schema."
-    # input_schema is provided during instantiation
-
-    def __init__(self, input_schema: dict[str, Any]):
-        # This tool doesn't interact with the workspace, so workspace_dir is nominal.
-        # Pass the required schema during initialization.
-        super().__init__()
-        self.input_schema = input_schema
-
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
-        """
-        This tool is typically intercepted by the LLM provider.
-        If somehow processed, it just returns the parameters it received.
-        """
-        return params
-
-
-# Note: This tool will be automatically registered due to __init_subclass__ in the base Tool class.
 
 
 @register_provider(Provider.Anthropic)
@@ -113,6 +85,56 @@ class AnthropicProvider(BaseProvider):
     def required_secrets(cls) -> list[str]:
         return ["ANTHROPIC_API_KEY"]
 
+    def _prepare_json_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
+        """Prepare a schema for Anthropic structured output."""
+        if not isinstance(schema, dict):
+            return schema
+
+        # Copy to avoid mutating original
+        new_schema = schema.copy()
+
+        # Add additionalProperties: false to object types
+        if new_schema.get("type") == "object":
+            new_schema["additionalProperties"] = False
+
+        # Recursively process properties
+        if "properties" in new_schema and isinstance(new_schema["properties"], dict):
+            new_schema["properties"] = {
+                k: self._prepare_json_schema(v)
+                for k, v in new_schema["properties"].items()
+            }
+
+        # Recursively process array items
+        if "items" in new_schema and isinstance(new_schema["items"], dict):
+            new_schema["items"] = self._prepare_json_schema(new_schema["items"])
+
+        # Process definitions/$defs if present
+        for key in ["definitions", "$defs"]:
+            if key in new_schema and isinstance(new_schema[key], dict):
+                new_schema[key] = {
+                    k: self._prepare_json_schema(v) for k, v in new_schema[key].items()
+                }
+
+        # Remove unsupported keys
+        # "Not supported: ... Numerical constraints (minimum, maximum...), String constraints (minLength...)"
+        unsupported_keys = [
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "minLength",
+            "maxLength",
+            "minProperties",
+            "maxProperties",
+        ]
+
+        for k in unsupported_keys:
+            if k in new_schema:
+                del new_schema[k]
+
+        return new_schema
+
     def __init__(self, secrets: dict[str, str]):
         """Initialize the Anthropic provider with client credentials."""
         assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
@@ -154,6 +176,11 @@ class AnthropicProvider(BaseProvider):
         """
         log.debug(f"Checking tool support for model: {model}")
         log.debug(f"Model {model} supports tool calling (all Claude models do)")
+        return True
+
+    def structured_output(self) -> bool:
+        """Check if provider supports structured JSON output natively.
+        """
         return True
 
     async def get_available_language_models(self) -> List[LanguageModel]:
@@ -342,19 +369,20 @@ class AnthropicProvider(BaseProvider):
             raise ValueError(f"Unknown message role {message.role}")
 
     def format_tools(self, tools: Sequence[Any]) -> list[ToolParam]:
-        """Convert tools to Anthropic's format."""
+        """Convert tools to Anthropic's format with strict mode enabled."""
         log.debug(f"Formatting {len(tools)} tools for Anthropic API")
-        formatted_tools = cast(
-            "list[ToolParam]",
-            [
+        formatted_tools = []
+        for tool in tools:
+            # Prepare schema for strict mode to ensure validation
+            input_schema = self._prepare_json_schema(tool.input_schema)
+            formatted_tools.append(
                 {
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.input_schema,
+                    "input_schema": input_schema,
+                    "strict": True,
                 }
-                for tool in tools
-            ],
-        )
+            )
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 
@@ -365,7 +393,7 @@ class AnthropicProvider(BaseProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
         context_window: int = 4096,
-        response_format: dict | None = None,
+        json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Generate streaming completions from Anthropic."""
@@ -374,9 +402,8 @@ class AnthropicProvider(BaseProvider):
 
         # Handle response_format parameter
         local_tools = list(tools)  # Make a mutable copy
-        log.debug(
-            f"Using {len(local_tools)} tools (after potential JSON tool addition)"
-        )
+        output_format = None
+        betas = []
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -398,20 +425,22 @@ class AnthropicProvider(BaseProvider):
             system_message = "You are a helpful assistant."
         log.debug(f"System message: {system_message[:50]}...")
 
-        if isinstance(response_format, dict) and "json_schema" in response_format:
+        if json_schema:
             log.debug("Processing JSON schema response format")
-            if "schema" not in response_format["json_schema"]:
+            if "schema" not in json_schema:
                 log.error("schema is required in json_schema response format")
                 raise ValueError("schema is required in json_schema response format")
-            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
-            local_tools.append(json_tool)
-            system_message = f"{system_message}\nYou must use the '{json_tool.name}' tool to provide a JSON response conforming to the provided schema."
-            log.debug(f"Added JSON output tool: {json_tool.name}")
 
-        # if "thinking" in kwargs:
-        #     kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
-        #     if "haiku" in model:
-        #         kwargs.pop("thinking")
+            schema = json_schema["schema"]
+            # Clean/prepare schema for Anthropic
+            cleaned_schema = self._prepare_json_schema(schema)
+
+            output_format = {
+                "type": "json_schema",
+                "schema": cleaned_schema,
+            }
+            betas.append("structured-outputs-2025-11-13")
+            log.debug("Configured structured output format")
 
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
@@ -434,15 +463,33 @@ class AnthropicProvider(BaseProvider):
             "model": model,
             "messages": anthropic_messages,
             "system": system_message,
-            "tools": anthropic_tools,
             "max_tokens": max_tokens,
         }
+        if anthropic_tools:
+            request_kwargs["tools"] = anthropic_tools
+
         for key in ("temperature", "top_p", "top_k"):
             if kwargs.get(key) is not None:
                 request_kwargs[key] = kwargs[key]
 
+        if output_format:
+            request_kwargs["output_format"] = output_format
+            if "structured-outputs-2025-11-13" not in betas:
+                betas.append("structured-outputs-2025-11-13")
+
+        # Strict tools also require the structured-outputs beta
+        if anthropic_tools and "structured-outputs-2025-11-13" not in betas:
+            betas.append("structured-outputs-2025-11-13")
+
+        if betas:
+            # Use beta client if betas are present
+            client_interface = self.client.beta.messages
+            request_kwargs["betas"] = betas
+        else:
+            client_interface = self.client.messages
+
         log.debug("Streaming response initialized")
-        async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
+        async with client_interface.stream(**request_kwargs) as ctx_stream:  # type: ignore
             async for event in ctx_stream:  # type: ignore
                 etype = getattr(event, "type", "")
                 if etype == "content_block_delta":
@@ -489,10 +536,7 @@ class AnthropicProvider(BaseProvider):
                             name=getattr(content_block, "name", ""),
                             args=getattr(content_block, "input", {}) or {},  # type: ignore
                         )
-                        if tool_call.name == "json_output":
-                            yield Chunk(content=json.dumps(tool_call.args), done=False)
-                        else:
-                            yield tool_call
+                        yield tool_call
                 elif etype == "message_stop":
                     yield Chunk(content="", done=True)
 
@@ -503,7 +547,7 @@ class AnthropicProvider(BaseProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
         context_window: int = 4096,
-        response_format: dict | None = None,
+        json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -526,9 +570,8 @@ class AnthropicProvider(BaseProvider):
 
         # Handle response_format parameter
         local_tools = list(tools)  # Make a mutable copy
-        log.debug(
-            f"Using {len(local_tools)} tools (after potential JSON tool addition)"
-        )
+        output_format = None
+        betas = []
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -549,6 +592,22 @@ class AnthropicProvider(BaseProvider):
             system_message = "You are a helpful assistant."
         log.debug(f"System message: {system_message[:50]}...")
 
+        if isinstance(json_schema, dict):
+            log.debug("Processing JSON schema response format")
+            if "schema" not in json_schema:
+                log.error("schema is required in json_schema response format")
+                raise ValueError("schema is required in json_schema response format")
+            
+            schema = json_schema["schema"]
+            cleaned_schema = self._prepare_json_schema(schema)
+            
+            output_format = {
+                "type": "json_schema",
+                "schema": cleaned_schema,
+            }
+            betas.append("structured-outputs-2025-11-13")
+            log.debug("Configured structured output format")
+
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
         anthropic_messages = [
@@ -560,27 +619,6 @@ class AnthropicProvider(BaseProvider):
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
-        if isinstance(response_format, dict) and "json_schema" in response_format:
-            log.debug("Processing JSON schema response format")
-            if "schema" not in response_format["json_schema"]:
-                log.error("schema is required in json_schema response format")
-                raise ValueError("schema is required in json_schema response format")
-            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
-            local_tools.append(json_tool)
-            system_message = system_message
-            last_message = messages[-1]
-            if last_message.role == "user":
-                log.debug("Adding JSON schema instruction to user message")
-                if isinstance(last_message.content, str):
-                    last_message.content += f"\nYou must call the '{json_tool.name}' tool to output JSON according to the specified schema."
-                elif isinstance(last_message.content, list):
-                    last_message.content.append(
-                        MessageTextContent(
-                            text=f"You must call the '{json_tool.name}' tool to output JSON according to the specified schema."
-                        )
-                    )
-            log.debug(f"Added JSON output tool: {json_tool.name}")
-
         # Use the potentially modified local_tools list
         anthropic_tools = self.format_tools(local_tools)
 
@@ -589,17 +627,34 @@ class AnthropicProvider(BaseProvider):
             "model": model,
             "messages": anthropic_messages,
             "system": system_message,
-            "tools": anthropic_tools,
             "max_tokens": max_tokens,
         }
+        if anthropic_tools:
+            create_kwargs["tools"] = anthropic_tools
+            
         if temperature is not None:
             create_kwargs["temperature"] = temperature
         if top_p is not None:
             create_kwargs["top_p"] = top_p
         if top_k is not None:
             create_kwargs["top_k"] = top_k
+            
+        if output_format:
+            create_kwargs["output_format"] = output_format
+            if "structured-outputs-2025-11-13" not in betas:
+                betas.append("structured-outputs-2025-11-13")
+        
+        # Strict tools also require the structured-outputs beta
+        if anthropic_tools and "structured-outputs-2025-11-13" not in betas:
+            betas.append("structured-outputs-2025-11-13")
 
-        response: anthropic.types.message.Message = await self.client.messages.create(
+        if betas:
+            client_interface = self.client.beta.messages
+            create_kwargs["betas"] = betas
+        else:
+            client_interface = self.client.messages
+
+        response: anthropic.types.message.Message = await client_interface.create(
             **create_kwargs
         )
         log.debug("Received response from Anthropic API")
@@ -643,19 +698,6 @@ class AnthropicProvider(BaseProvider):
                 )
             elif block.type == "text":
                 content.append(block.text)
-
-        # Check if the json_output tool was used and return its content directly
-        for tool_call in tool_calls:
-            if tool_call.name == "json_output":
-                log.debug("Converting json_output tool result to direct response")
-                message = Message(
-                    role="assistant",
-                    content=json.dumps(tool_call.args),
-                    tool_calls=[],
-                )
-                self._log_api_response("chat", message)
-                log.debug("Returning JSON tool result")
-                return message
 
         log.debug(
             f"Response has {len(content)} text parts and {len(tool_calls)} tool calls"
