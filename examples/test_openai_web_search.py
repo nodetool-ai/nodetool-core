@@ -15,106 +15,72 @@ This example shows how to:
 
 import asyncio
 import json
-from pathlib import Path
 
-from rich.console import Console
-
-from nodetool.agents.sub_task_context import SubTaskContext
+from nodetool.agents.agent import Agent
 from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
-from nodetool.metadata.types import SubTask, Task
-from nodetool.providers.openai_provider import OpenAIProvider
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate
-
-# Create a console for rich output
-console = Console()
+from nodetool.workflows.types import Chunk
 
 
 async def run_web_search_example():
     # Configure test parameters
     context = ProcessingContext()
-    workspace_dir = context.workspace_dir
 
     # Initialize chat provider
-    provider = OpenAIProvider()
-    model = "gpt-4o"
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
 
     # Create test tools
     tools = [
         OpenAIWebSearchTool(),
     ]
 
-    # Create a processing context
-    processing_context = ProcessingContext(workspace_dir=workspace_dir)
-
-    # Create a sample task
-    task = Task(
-        title="Research AI Code Tools",
-        description="Research and summarize the competitive landscape of AI code tools in 2025",
-        subtasks=[],
-    )
-
-    # Create a sample subtask
-    subtask = SubTask(
-        content="Use web search to identify AI code assistant tools and summarize findings",
-        output_file="ai_code_tools_summary.json",
-        input_files=[],
-        output_type="json",
-        output_schema=json.dumps(
-            {
-                "type": "object",
-                "properties": {
-                    "tools": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "description": {"type": "string"},
-                                "features": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                },
+    agent = Agent(
+        name="Research Agent",
+        objective="Research and summarize the competitive landscape of AI code tools in 2025. Use web search to identify AI code assistant tools and summarize findings",
+        provider=provider,
+        model=model,
+        tools=tools,
+        display_manager=AgentConsole(),
+        output_schema={
+            "type": "object",
+            "properties": {
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "features": {
+                                "type": "array",
+                                "items": {"type": "string"},
                             },
                         },
                     },
                 },
             },
-        ),
+        },
     )
 
-    # Add the subtask to the task
-    task.subtasks = [subtask]
+    # Execute the agent
+    async for item in agent.execute(context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
 
-    # Create the SubTaskContext
-    subtask_context = SubTaskContext(
-        task=task,
-        subtask=subtask,
-        processing_context=processing_context,
-        tools=tools,
-        model=model,
-        provider=provider,
-        max_iterations=10,
-    )
-
-    # Execute the subtask
-    async for event in subtask_context.execute():
-        if isinstance(event, Chunk):
-            print(event.content, end="")
-        elif isinstance(event, TaskUpdate):
-            console.print(f"[green]Task Update:[/green] {event.event}")
-
-    # Check if output file was created
-    output_path = Path(workspace_dir) / subtask.output_file
-    if output_path.exists():
-        with open(output_path) as f:
-            result = json.load(f)
-        console.print("\n[bold green]SubTask Execution Successful![/bold green]")
-        console.print("\n[bold]Output File Content:[/bold]")
-        console.print(json.dumps(result, indent=2))
+    print(f"\nWorkspace: {context.workspace_dir}")
+    
+    # Check if results are available
+    if agent.results:
+        print("\n[bold green]Agent Execution Successful![/bold green]")
+        print("\n[bold]Output Results:[/bold]")
+        print(json.dumps(agent.results, indent=2))
     else:
-        console.print("\n[bold red]Output file was not created![/bold red]")
+        print("\n[bold red]No results returned![/bold red]")
 
 
 async def main():

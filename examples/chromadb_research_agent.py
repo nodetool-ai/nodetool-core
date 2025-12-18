@@ -62,8 +62,6 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
         objective=objective,
         provider=provider,
         model=model,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         tools=[
             ChromaIndexTool(collection=collection),
         ],
@@ -78,8 +76,6 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
         """,
         provider=provider,
         model=model,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         tools=[
             ChromaHybridSearchTool(collection=collection),
         ],

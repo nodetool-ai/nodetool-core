@@ -22,6 +22,7 @@ from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.ui.console import AgentConsole
 
 SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI industry intelligence. Your role is to:
 """
@@ -30,15 +31,8 @@ SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI i
 async def run_google_grounded_agent():
     context = ProcessingContext()
 
-    provider = await get_provider(Provider.OpenAI)
-    model = "gpt-4o-mini"
-
-    # provider = await get_provider(Provider.Gemini)
-    # model = "gemini-2.5-pro-exp-03-25"
-    # model = "gemini-2.0-flash"
-
-    # provider = await get_provider(Provider.Ollama)
-    # model = "gemma3:12b"
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
 
     retrieval_tools = [
         GoogleGroundedSearchTool(),
@@ -47,8 +41,6 @@ async def run_google_grounded_agent():
 
     agent = Agent(
         name="Research Agent",
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
         objective="""
         1. Use google to identify a list of recipes for chicken wings
         2. Browse to the recipe websites and extract the ingredients and instructions for each recipe
@@ -57,6 +49,7 @@ async def run_google_grounded_agent():
         provider=provider,
         model=model,
         tools=retrieval_tools,
+        display_manager=AgentConsole(),
         output_schema={
             "type": "object",
             "properties": {

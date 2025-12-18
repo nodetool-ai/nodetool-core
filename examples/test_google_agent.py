@@ -18,6 +18,7 @@ import dotenv
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.ui.console import AgentConsole
 from nodetool.metadata.types import Provider
 from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
@@ -33,17 +34,16 @@ async def test_google_agent(provider: BaseProvider, model: str):
 
     agent = Agent(
         name="Research Agent",
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         objective="""
         1. Identify a list of chicken wing recipe websites during planning phase
-        2. Crawl one website per subtask
+        2. Create one step per website to crawl
         3. Extract the ingredients and instructions for each recipe
         4. Return the results in the format specified by the output_schema
         Do not use remote browser.
         """,
         provider=provider,
         model=model,
+        display_manager=AgentConsole(),
         tools=[BrowserTool(), GoogleSearchTool()],
         output_schema={
             "type": "object",

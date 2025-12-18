@@ -18,11 +18,11 @@ import json
 import dotenv
 
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools import GoogleNewsTool
+from nodetool.agents.tools.serp_tools import GoogleNewsTool
 from nodetool.metadata.types import Provider
-from nodetool.providers import get_provider
-from nodetool.providers.base import BaseProvider
+from nodetool.providers import get_provider, BaseProvider
 from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
@@ -50,14 +50,13 @@ async def test_google_news_agent(provider: BaseProvider, model: str):
 
     agent = Agent(
         name="Google News Agent",
-        enable_analysis_phase=False,  # Can disable analysis if objective is direct
-        enable_data_contracts_phase=True,  # Keep data contracts for structured output
         objective=f"""
         Search Google News for the keywords '{search_keyword}'.
         Group common news items together.
         Return a list of news items with exciting titles and summaries.
         """,
         provider=provider,
+        display_manager=AgentConsole(),
         model=model,
         tools=[news_tool],  # Pass the tool instance
         # Define an output schema based on expected GoogleNewsTool results
@@ -111,19 +110,9 @@ async def test_google_news_agent(provider: BaseProvider, model: str):
 async def main():
     async with ResourceScope():
         await test_google_news_agent(
-            provider=await get_provider(Provider.OpenAI),
-            model="gpt-4o-mini",
+            provider=await get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
         )
-
-        # await test_google_news_agent(provider=await get_provider(Provider.Ollama), model="qwen3:14b")
-        # await test_google_news_agent(
-        #     provider=await get_provider(Provider.Gemini),
-        #     model="gemini-2.0-flash",
-        # )
-        # await test_google_news_agent(
-        #     provider=await get_provider(Provider.Anthropic),
-        #     model="claude-3-5-sonnet-20241022",
-        # )
 
 
 if __name__ == "__main__":

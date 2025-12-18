@@ -60,8 +60,6 @@ async def run_workspace_test_agent(
     agent = Agent(
         name="Workspace Test Agent",
         objective=workspace_objective,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
         provider=provider,
         model=model,
         tools=code_tools,

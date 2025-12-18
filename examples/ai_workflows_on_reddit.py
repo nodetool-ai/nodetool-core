@@ -51,8 +51,6 @@ async def main():
             objective=objective,
             provider=provider,
             model=model,
-            enable_analysis_phase=True,
-            enable_data_contracts_phase=True,
             tools=[BrowserTool(), GoogleSearchTool()],
             output_schema={"type": "string"},
         )

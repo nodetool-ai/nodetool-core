@@ -72,15 +72,10 @@ async def test_task_planner_batch_processing(
         provider=provider,
         model=model,
         planning_model=planning_model,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
         ],
-        output_type="json",
-        max_subtasks=30,  # Allow more subtasks for batch processing
-        max_subtask_iterations=15,  # More iterations for batch work
     )
 
     print(f"🚀 Starting agent: {batch_agent.name}")
@@ -201,9 +196,9 @@ async def run_comparison_test():
     print("This test analyzes 20 websites to trigger batch processing logic\n")
 
     # Test configuration
-    provider = await get_provider(Provider.OpenAI)
-    model = "gpt-4o-mini"
-    planning_model = "gpt-4o-mini"
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
+    planning_model = "openai/gpt-oss-120b"
 
     # Run the test
     results = await test_task_planner_batch_processing(

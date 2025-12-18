@@ -88,8 +88,6 @@ async def run_coding_agent(
     agent = Agent(
         name="Coding Agent",
         objective=analysis_objective,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
         provider=provider,
         model=model,
         tools=code_tools,
@@ -158,8 +156,8 @@ async def main():
     async with ResourceScope():
         try:
             await run_coding_agent(
-                provider=await get_provider(Provider.HuggingFaceCerebras),
-                model="openai/gpt-oss-120b",
+                provider=await get_provider(Provider.Anthropic),
+                model="claude-opus-4-5-20251101",
             )
         except Exception as e:
             print(f"❌ Error during analysis: {e}")

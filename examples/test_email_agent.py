@@ -37,7 +37,6 @@ async def run_email_agent():
         model=model,
         tools=email_tools,
         display_manager=AgentConsole(),
-        enable_data_contracts_phase=False,
     )
 
     async for _item in retrieval_agent.execute(context):

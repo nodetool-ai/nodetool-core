@@ -119,7 +119,6 @@ async def run_node_tool_example():
         provider=provider,
         model=model,
         tools=tools,
-        enable_analysis_phase=True,
     )
 
     print("\n3. Agent Execution:")

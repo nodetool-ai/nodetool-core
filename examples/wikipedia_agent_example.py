@@ -44,7 +44,6 @@ async def run_wikipedia_agent():
         provider=provider,
         model=model,
         tools=retrieval_tools,
-        enable_analysis_phase=True,
     )
 
     async for item in agent.execute(context):

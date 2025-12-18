@@ -53,8 +53,6 @@ async def test_instagram_scraper_task(
         Create a summary of the trends, hashtags, and viral content.
         Return all trends you can find.
         """,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
         provider=provider,
         model=model,
         tools=tools,

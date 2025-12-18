@@ -10,17 +10,18 @@ from nodetool.agents.graph_planner import (
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
-from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.metadata.types import Provider
 
 logger = get_logger(__name__)
 
-provider = HuggingFaceProvider("cerebras")
-model = "openai/gpt-oss-120b"
+# provider = get_provider(Provider.HuggingFaceCerebras)
+# model = "openai/gpt-oss-120b"
 
 
 async def create_and_execute_workflow(
@@ -30,6 +31,9 @@ async def create_and_execute_workflow(
     """Create and execute a workflow graph for the given objective"""
 
     # Create GraphPlanner
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
+    
     graph_planner = GraphPlanner(
         provider=provider,
         model=model,

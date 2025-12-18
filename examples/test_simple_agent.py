@@ -64,10 +64,8 @@ async def run_simple_agent_test(provider: BaseProvider, model: str):
 async def main():
     async with ResourceScope():
         await run_simple_agent_test(
-            provider=await get_provider(Provider.OpenAI),
-            model="gpt-4o-mini",
-            # provider=await get_provider(Provider.Ollama), model="mistral"
-            # provider=await get_provider(Provider.Groq), model="mixtral-8x7b-32768"
+            provider=await get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
         )
 
 

@@ -99,8 +99,6 @@ async def analyze_reddit_subreddit(
         """,
         provider=provider,
         model=model,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),

@@ -86,8 +86,6 @@ async def test_product_hunt_ai_extractor_agent(
         """,
         provider=provider,
         model=model,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,  # Crucial for structured output
         display_manager=AgentConsole(),
         tools=[
             GoogleSearchTool(),
