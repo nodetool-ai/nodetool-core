@@ -18,7 +18,7 @@ from rich.tree import Tree
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
-    from nodetool.metadata.types import LogEntry, SubTask, Task, ToolCall
+    from nodetool.metadata.types import LogEntry, Step, Task, ToolCall
 
 
 class AgentConsole:
@@ -39,8 +39,8 @@ class AgentConsole:
         self.current_table: Optional[Table] = None
         self.current_tree: Optional[Tree] = None
         self.phase_nodes: Dict[str, Any] = {}
-        self.subtask_nodes: Dict[str, Any] = {}
-        self.current_subtask: Optional[SubTask] = None
+        self.step_nodes: Dict[str, Any] = {}
+        self.current_step: Optional[Step] = None
         self.task: Optional[Task] = None
 
         # Phase-specific logging storage
@@ -80,7 +80,7 @@ class AgentConsole:
         self.current_table = None
         self.current_tree = None
         self.phase_nodes = {}
-        self.subtask_nodes = {}
+        self.step_nodes = {}
         self.current_phase = None
         self.task = None
 
@@ -172,59 +172,59 @@ class AgentConsole:
     def create_execution_tree(
         self, title: str, task: "Task", tool_calls: List["ToolCall"]
     ) -> Tree:
-        """Create a rich tree for displaying subtasks and their tool calls."""
+        """Create a rich tree for displaying steps and their tool calls."""
         tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
-        self.subtask_nodes = {}
+        self.step_nodes = {}
         self.task = task
 
-        # Guard against task or subtasks being None
-        if not task or not task.subtasks:
+        # Guard against task or steps being None
+        if not task or not task.steps:
             return tree
 
-        for subtask in task.subtasks:
+        for step in task.steps:
             status_symbol = (
-                "✅" if subtask.completed else "🔄" if subtask.is_running() else "⏳"
+                "✅" if step.completed else "🔄" if step.is_running() else "⏳"
             )
             (
                 "green"
-                if subtask.completed
+                if step.completed
                 else "yellow"
-                if subtask.is_running()
+                if step.is_running()
                 else "white"
             )
 
-            # Create subtask node with status and content
-            node_label = f"{status_symbol} [green]{subtask.content}[/]"
-            subtask_node = tree.add(node_label)
-            self.subtask_nodes[subtask.id] = subtask_node
+            # Create step node with status and content
+            node_label = f"{status_symbol} [green]{step.instructions}[/]"
+            step_node = tree.add(node_label)
+            self.step_nodes[step.id] = step_node
 
             # Add files information as child nodes
-            if subtask.input_tasks:
-                input_str = ", ".join(subtask.input_tasks)
-                subtask_node.add(f"[blue]📁 Inputs:[/] {input_str}")
+            if step.depends_on:
+                input_str = ", ".join(step.depends_on)
+                step_node.add(f"[blue]📁 Inputs:[/] {input_str}")
 
-            # Show logs for all subtasks
-            if subtask.logs:
+            # Show logs for all steps
+            if step.logs:
                 log_limit = 3
-                for log in reversed(subtask.logs[-log_limit:]):
+                for log in reversed(step.logs[-log_limit:]):
                     formatted_log = self._format_log_entry(log)
-                    subtask_node.add(formatted_log)
-                if len(subtask.logs) > log_limit:
-                    subtask_node.add(
-                        f"[dim]+ {len(subtask.logs) - log_limit} more logs[/]"
+                    step_node.add(formatted_log)
+                if len(step.logs) > log_limit:
+                    step_node.add(
+                        f"[dim]+ {len(step.logs) - log_limit} more logs[/]"
                     )
 
-            # Add tool calls as child nodes if there are any relevant ones (for non-current subtasks)
-            if subtask.completed:
+            # Add tool calls as child nodes if there are any relevant ones (for non-current steps)
+            if step.completed:
                 # Ensure tool_calls is not None before filtering
-                subtask_tool_calls = [
-                    call for call in (tool_calls or []) if call.subtask_id == subtask.id
+                step_tool_calls = [
+                    call for call in (tool_calls or []) if call.step_id == step.id
                 ]
 
-                if subtask_tool_calls:
-                    tool_node = subtask_node.add("[cyan]🔧 Tools[/]")
+                if step_tool_calls:
+                    tool_node = step_node.add("[cyan]🔧 Tools[/]")
                     for _i, call in enumerate(
-                        subtask_tool_calls[-3:]
+                        step_tool_calls[-3:]
                     ):  # Show last 3 tool calls
                         tool_name = call.name
                         message = str(call.message)
@@ -232,9 +232,9 @@ class AgentConsole:
                             message = message[:67] + "..."
                         tool_node.add(f"[dim]{tool_name}: {message}[/]")
 
-                    if len(subtask_tool_calls) > 3:
+                    if len(step_tool_calls) > 3:
                         tool_node.add(
-                            f"[dim]+ {len(subtask_tool_calls) - 3} more tool calls[/]"
+                            f"[dim]+ {len(step_tool_calls) - 3} more tool calls[/]"
                         )
 
         return tree
@@ -323,27 +323,27 @@ class AgentConsole:
         else:
             self.phase_logs.pop(phase_name, None)
 
-    def set_current_subtask(self, subtask: "SubTask") -> None:
+    def set_current_step(self, step: "Step") -> None:
         """
-        Set the current subtask that is being executed.
+        Set the current step that is being executed.
 
         Args:
-            subtask (SubTask): The subtask currently being executed.
+            step (Step): The step currently being executed.
         """
-        self.current_subtask = subtask
-        # Refresh the tree display to show the new current subtask's logs
+        self.current_step = step
+        # Refresh the tree display to show the new current step's logs
         if self.live and self.current_tree and self.live.is_started:
             self.update_execution_display()
 
-    def log_to_subtask(self, level: str, message: str) -> None:
+    def log_to_step(self, level: str, message: str) -> None:
         """
-        Add a log entry to the current subtask.
+        Add a log entry to the current step.
 
         Args:
             level (str): The log level (debug, info, warning, error).
             message (str): The log message.
         """
-        if self.current_subtask is not None:
+        if self.current_step is not None:
             from nodetool.metadata.types import LogEntry
 
             log_entry = LogEntry(
@@ -351,68 +351,68 @@ class AgentConsole:
                 level=level,
                 timestamp=int(time.time()),  # type: ignore
             )
-            self.current_subtask.logs.append(log_entry)
+            self.current_step.logs.append(log_entry)
             self.update_execution_display()
 
-    def debug_subtask_only(self, message: object) -> None:
+    def debug_step_only(self, message: object) -> None:
         """
-        Add a debug log entry ONLY to the current subtask (not phase).
+        Add a debug log entry ONLY to the current step (not phase).
 
         Args:
             message (object): The debug message.
         """
         msg_str = str(message)
-        self.log_to_subtask("debug", msg_str)
+        self.log_to_step("debug", msg_str)
 
-    def info_subtask_only(self, message: object) -> None:
+    def info_step_only(self, message: object) -> None:
         """
-        Add an info log entry ONLY to the current subtask (not phase).
+        Add an info log entry ONLY to the current step (not phase).
 
         Args:
             message (object): The info message.
         """
         msg_str = str(message)
-        self.log_to_subtask("info", msg_str)
+        self.log_to_step("info", msg_str)
 
-    def warning_subtask_only(self, message: object) -> None:
+    def warning_step_only(self, message: object) -> None:
         """
-        Add a warning log entry ONLY to the current subtask (not phase).
+        Add a warning log entry ONLY to the current step (not phase).
 
         Args:
             message (object): The warning message.
         """
         msg_str = str(message)
-        self.log_to_subtask("warning", msg_str)
+        self.log_to_step("warning", msg_str)
 
-    def error_subtask_only(self, message: object) -> None:
+    def error_step_only(self, message: object) -> None:
         """
-        Add an error log entry ONLY to the current subtask (not phase).
+        Add an error log entry ONLY to the current step (not phase).
 
         Args:
             message (object): The error message.
         """
         msg_str = str(message)
-        self.log_to_subtask("error", msg_str)
+        self.log_to_step("error", msg_str)
 
     def update_execution_display(self) -> None:
         """
-        Refresh the execution tree with logs for all subtasks.
+        Refresh the execution tree with logs for all steps.
         """
         if (
             self.live
             and self.current_tree
             and self.live.is_started
             and self.task
-            and self.task.subtasks
+            and self.task.steps
         ):
-            # Iterate through all subtasks and update their logs
-            for subtask in self.task.subtasks:
-                if subtask.id in self.subtask_nodes:
-                    subtask_node = self.subtask_nodes[subtask.id]
+            # Iterate through all steps and update their logs
+            for step in self.task.steps:
+                if step.id in self.step_nodes:
+                    step_node = self.step_nodes[step.id]
 
                     # Remove existing log children (keep other children like inputs and tools)
                     children_to_keep = []
-                    for child in subtask_node.children:
+                    for child in step_node.children:
                         # Keep non-log children (inputs and tools sections)
                         child_label = str(child.label)
                         if child_label.startswith(
@@ -420,17 +420,17 @@ class AgentConsole:
                         ) or child_label.startswith("[cyan]🔧 Tools[/]"):
                             children_to_keep.append(child)
 
-                    subtask_node.children = children_to_keep
+                    step_node.children = children_to_keep
 
                     # Add current logs
-                    if subtask.logs:
+                    if step.logs:
                         log_limit = 3
-                        for log in reversed(subtask.logs[-log_limit:]):
+                        for log in reversed(step.logs[-log_limit:]):
                             formatted_log = self._format_log_entry(log)
-                            subtask_node.add(formatted_log)
-                        if len(subtask.logs) > log_limit:
-                            subtask_node.add(
-                                f"[dim]+ {len(subtask.logs) - log_limit} more logs[/]"
+                            step_node.add(formatted_log)
+                        if len(step.logs) > log_limit:
+                            step_node.add(
+                                f"[dim]+ {len(step.logs) - log_limit} more logs[/]"
                             )
 
             self.live.update(self.current_tree)
@@ -463,45 +463,45 @@ class AgentConsole:
 
     def debug(self, message: object, style: Optional[str] = None) -> None:
         """
-        Add a debug log entry to the current subtask and current phase.
+        Add a debug log entry to the current step and current phase.
 
         Args:
             message (object): The debug message.
             style (Optional[str]): Rich style to apply (ignored, kept for compatibility).
         """
         msg_str = str(message)
-        self.log_to_subtask("debug", msg_str)
+        self.log_to_step("debug", msg_str)
         self.log_to_phase("debug", msg_str)
 
     def info(self, message: object, style: Optional[str] = None) -> None:
         """
-        Add an info log entry to the current subtask and current phase.
+        Add an info log entry to the current step and current phase.
 
         Args:
             message (object): The info message.
             style (Optional[str]): Rich style to apply (ignored, kept for compatibility).
         """
         msg_str = str(message)
-        self.log_to_subtask("info", msg_str)
+        self.log_to_step("info", msg_str)
         self.log_to_phase("info", msg_str)
 
     def warning(self, message: object, style: Optional[str] = None) -> None:
         """
-        Add a warning log entry to the current subtask and current phase.
+        Add a warning log entry to the current step and current phase.
 
         Args:
             message (object): The warning message.
             style (Optional[str]): Rich style to apply (ignored, kept for compatibility).
         """
         msg_str = str(message)
-        self.log_to_subtask("warning", msg_str)
+        self.log_to_step("warning", msg_str)
         self.log_to_phase("warning", msg_str)
 
     def error(
         self, message: object, style: Optional[str] = None, exc_info: bool = False
     ) -> None:
         """
-        Add an error log entry to the current subtask and current phase.
+        Add an error log entry to the current step and current phase.
 
         Args:
             message (object): The error message.
@@ -509,24 +509,24 @@ class AgentConsole:
             exc_info (bool): Whether to print exception information.
         """
         msg_str = str(message)
-        self.log_to_subtask("error", msg_str)
+        self.log_to_step("error", msg_str)
         self.log_to_phase("error", msg_str)
         if exc_info and self.console:
             self.print_exception()
 
-    def display_subtask_start(self, subtask: "SubTask") -> None:
+    def display_step_start(self, step: "Step") -> None:
         """
-        Display the beginning of a subtask with beautiful formatting.
+        Display the beginning of a step with beautiful formatting.
 
         Args:
-            subtask (SubTask): The subtask being started.
+            step (Step): The step being started.
         """
         if self.console:
             panel = Panel(
-                f"[bold cyan]Content:[/] {subtask.content}\n"
-                f"[bold cyan]ID:[/] {subtask.id}\n"
-                f"[bold cyan]Input Tasks:[/] {', '.join(subtask.input_tasks) if subtask.input_tasks else 'None'}",
-                title="[bold green]🚀 Starting SubTask[/]",
+                f"[bold cyan]Content:[/] {step.instructions}\n"
+                f"[bold cyan]ID:[/] {step.id}\n"
+                f"[bold cyan]Input Tasks:[/] {', '.join(step.depends_on) if step.depends_on else 'None'}",
+                title="[bold green]🚀 Starting Step[/]",
                 border_style="green",
                 expand=False,
             )
@@ -632,15 +632,15 @@ class AgentConsole:
             self.console.print(panel)
 
     def display_completion_event(
-        self, subtask: "SubTask", success: bool, result: Any = None
+        self, step: "Step", success: bool, result: Any = None
     ) -> None:
         """
-        Display subtask completion with nice formatting.
+        Display step completion with nice formatting.
 
         Args:
-            subtask (SubTask): The completed subtask.
-            success (bool): Whether the subtask completed successfully.
-            result (Any): The final result of the subtask.
+            step (Step): The completed step.
+            success (bool): Whether the step completed successfully.
+            result (Any): The final result of the step.
         """
         if self.console:
             status = (
@@ -649,9 +649,9 @@ class AgentConsole:
             border_style = "green" if success else "red"
 
             content = [
-                f"[bold cyan]SubTask:[/] {subtask.content}",
+                f"[bold cyan]Step:[/] {step.instructions}",
                 f"[bold cyan]Status:[/] {status}",
-                f"[bold cyan]Duration:[/] {subtask.end_time - subtask.start_time if subtask.end_time and subtask.start_time else 'N/A'} seconds",
+                f"[bold cyan]Duration:[/] {step.end_time - step.start_time if step.end_time and step.start_time else 'N/A'} seconds",
             ]
 
             if result:
@@ -666,7 +666,7 @@ class AgentConsole:
 
             panel = Panel(
                 "\n".join(content),
-                title="[bold]🏁 SubTask Completed[/]",
+                title="[bold]🏁 Step Completed[/]",
                 border_style=border_style,
                 expand=False,
             )
@@ -697,7 +697,7 @@ class AgentConsole:
             )
             panel = Panel(
                 "[yellow]The conversation history is approaching the token limit.\n"
-                "The agent will now synthesize all gathered information and finalize the subtask.\n"
+                "The agent will now synthesize all gathered information and finalize the step.\n"
                 "Only the finish tool is available in this stage.[/]",
                 title="[bold yellow]⚡ Conclusion Stage[/]",
                 border_style="yellow",

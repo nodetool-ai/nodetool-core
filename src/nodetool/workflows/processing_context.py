@@ -535,7 +535,7 @@ class ProcessingContext:
         self.variables[key] = value
         self._persist_variable_if_needed(key, value)
 
-    def store_subtask_result(self, key: str, value: Any) -> str:
+    def store_step_result(self, key: str, value: Any) -> str:
         """Persist a subtask result to the workspace root and memoize a reference."""
 
         path = self._workspace_path(f"{key}.json")
@@ -546,7 +546,7 @@ class ProcessingContext:
         self.variables[key] = {"__workspace_result__": rel_name}
         return str(path)
 
-    def load_subtask_result(self, key: str, default: Any = None) -> Any:
+    def load_step_result(self, key: str, default: Any = None) -> Any:
         marker = self.variables.get(key)
         if isinstance(marker, dict) and "__workspace_result__" in marker:
             path = self._workspace_path(marker["__workspace_result__"])

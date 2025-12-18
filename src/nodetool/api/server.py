@@ -440,7 +440,7 @@ def create_app(
         return RedirectResponse(url="/")
 
     if not Environment.is_production():
-        app.add_websocket_route("/hf/download", huggingface_download_endpoint)
+        app.add_websocket_route("/ws/download", huggingface_download_endpoint)
 
     async def _authenticate_websocket(websocket: WebSocket):
         if not enforce_auth:
@@ -484,7 +484,7 @@ def create_app(
         log.warning("WebSocket connection rejected: Invalid token")
         return None, None
 
-    @app.websocket("/predict")
+    @app.websocket("/ws/predict")
     async def websocket_endpoint(websocket: WebSocket):
         token, user_id = await _authenticate_websocket(websocket)
         if user_id is None:
@@ -492,7 +492,7 @@ def create_app(
         runner = WebSocketRunner(auth_token=token or "", user_id=user_id)
         await runner.run(websocket)
 
-    @app.websocket("/chat")
+    @app.websocket("/ws/chat")
     async def chat_websocket_endpoint(websocket: WebSocket):
         token, user_id = await _authenticate_websocket(websocket)
         if user_id is None:
@@ -501,7 +501,7 @@ def create_app(
         chat_runner.user_id = user_id
         await chat_runner.run(websocket)
 
-    @app.websocket("/terminal")
+    @app.websocket("/ws/terminal")
     async def terminal_websocket_endpoint(websocket: WebSocket):
         # Only allow terminal access when explicitly enabled and never in production
         if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
@@ -523,7 +523,7 @@ def create_app(
         await runner.run(websocket)
 
     # WebSocket endpoint for periodic system updates (e.g., system stats)
-    @app.websocket("/updates")
+    @app.websocket("/ws/updates")
     async def updates_websocket_endpoint(websocket: WebSocket):
         await websocket_updates.handle_client(websocket)
 

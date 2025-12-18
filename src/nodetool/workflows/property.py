@@ -3,6 +3,7 @@ from typing import Any, Optional
 import annotated_types
 from pydantic import BaseModel, field_serializer
 from pydantic.fields import FieldInfo
+from pydantic_core import PydanticUndefined
 
 from nodetool.metadata.type_metadata import TypeMetadata
 
@@ -140,7 +141,7 @@ class Property(BaseModel):
             if field.title is None
             else field.title
         )
-        if field.default is None:
+        if field.default is PydanticUndefined:
             raise ValueError(f"Field {name} has no default value")
 
         return Property(

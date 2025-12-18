@@ -49,17 +49,14 @@ from nodetool.ml.models.image_models import (
 )
 from nodetool.ml.models.tts_models import get_all_tts_models as get_all_tts_models_func
 from nodetool.models.asset import Asset as AssetModel
-from nodetool.models.job import Job as JobModel
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.packages.registry import Registry
 from nodetool.providers import get_provider
-from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.runtime.resources import ResourceScope, maybe_scope, require_scope
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema
-from nodetool.types.job import JobUpdate
-from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
@@ -73,8 +70,10 @@ from nodetool.workflows.types import (
     NodeProgress,
     NodeUpdate,
     OutputUpdate,
+    PlanningUpdate,
     PreviewUpdate,
     SaveUpdate,
+    TaskUpdate,
 )
 
 log = get_logger(__name__)
@@ -236,10 +235,13 @@ async def run_workflow_tool(
         raise ValueError(f"Workflow {workflow_id} not found")
 
     params = params or {}
+
     # Create run request
     request = RunJobRequest(
+        user_id="1",
         workflow_id=workflow_id,
         params=params,
+        graph=workflow.get_api_graph(),
     )
 
     # Run workflow
@@ -264,9 +266,7 @@ async def run_workflow_tool(
             if hasattr(value, "model_dump"):
                 value = value.model_dump()
             result[msg.node_name] = value
-        elif isinstance(msg, JobUpdate):
-            if msg.status == "error":
-                raise Exception(msg.error)
+
         elif isinstance(msg, NodeUpdate):
             await ctx.info(f"{msg.node_name} {msg.status}")
         elif isinstance(msg, NodeProgress):
@@ -340,7 +340,7 @@ async def run_graph(
     # Create temporary run request without workflow_id
     request = RunJobRequest(
         user_id="1",
-        params=params,
+        params=params or {},
         graph=cleaned_graph,
     )
 
@@ -354,9 +354,7 @@ async def run_graph(
             if hasattr(value, "model_dump"):
                 value = value.model_dump()
             result[msg.node_name] = value
-        elif isinstance(msg, JobUpdate):
-            if msg.status == "error":
-                raise Exception(msg.error)
+
         elif isinstance(msg, Error):
             raise Exception(msg.error)
 
@@ -367,59 +365,28 @@ async def run_graph(
 
 
 @mcp.tool()
-async def list_nodes(
-    namespace: Optional[str] = None, limit: int = 100
-) -> list[dict[str, Any]]:
-    """
-    List available nodes in NodeTool registry.
-
-    Args:
-        namespace: Optional namespace to filter nodes (e.g., 'nodetool.text', 'nodetool.image')
-        limit: Maximum number of nodes to return (default: 100)
-
-    Returns:
-        List of node metadata including type, description, and properties
-    """
-    registry = Registry.get_instance()
-    all_nodes = registry.get_all_installed_nodes()
-
-    result = []
-    count = 0
-
-    for node in all_nodes:
-        if namespace and not node.namespace.startswith(namespace):
-            continue
-
-        if count >= limit:
-            break
-
-        result.append(
-            {
-                "type": node.node_type,
-            }
-        )
-        count += 1
-
-    return result
-
-
-@mcp.tool()
 async def search_nodes(
     query: list[str],
     n_results: int = 10,
     input_type: Optional[str] = None,
     output_type: Optional[str] = None,
     exclude_namespaces: Optional[list[str]] = None,
+    include_metadata: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Search for nodes by name, description, or tags.
 
     Args:
         query: Search query strings
-        namespace: Optional namespace to filter nodes
+        n_results: Maximum number of results to return (default: 10)
+        input_type: Optional filter by input type
+        output_type: Optional filter by output type
+        exclude_namespaces: Optional list of namespaces to exclude
+        include_metadata: If True, return full node metadata including properties, inputs, outputs.
+                         If False (default), return only node type, title, description, and namespace.
 
     Returns:
-        List of matching nodes
+        List of matching nodes with basic info or full metadata based on include_metadata parameter
     """
     nodes = search_nodes_tool(
         query=query,
@@ -430,47 +397,43 @@ async def search_nodes(
     )
 
     result = []
+    registry = Registry.get_instance()
+    
     for node in nodes:
-        result.append(
-            {
-                "type": node.node_type,
-                "title": node.title,
-                "description": node.description,
-                "namespace": node.namespace,
-            }
-        )
+        if include_metadata:
+            # Return full metadata
+            node_metadata = registry.find_node_by_type(node.node_type)
+            
+            if node_metadata:
+                result.append(node_metadata)
+            else:
+                # If not found in registry, try to dynamically resolve the node class
+                # This handles core nodes like Preview, Comment, etc. that aren't in packages
+                from nodetool.workflows.base_node import get_node_class
+
+                node_class = get_node_class(node.node_type)
+                if node_class:
+                    metadata = node_class.get_metadata()
+                    result.append(metadata.model_dump())
+                else:
+                    # Fallback to basic info if metadata not available
+                    result.append(
+                        {
+                            "type": node.node_type,
+                            "title": node.title,
+                            "description": node.description,
+                            "namespace": node.namespace,
+                        }
+                    )
+        else:
+            # Return only basic info (default)
+            result.append(
+                {
+                    "type": node.node_type,
+                }
+            )
 
     return result
-
-
-@mcp.tool()
-async def get_node_info(node_type: str) -> dict[str, Any]:
-    """
-    Get detailed information about a specific node type.
-
-    Args:
-        node_type: The fully qualified node type (e.g., 'nodetool.text.Split')
-
-    Returns:
-        Detailed node metadata including properties, inputs, outputs
-    """
-    registry = Registry.get_instance()
-    node = registry.find_node_by_type(node_type)
-
-    if node:
-        return node
-
-    # If not found in registry, try to dynamically resolve the node class
-    # This handles core nodes like Preview, Comment, etc. that aren't in packages
-    from nodetool.workflows.base_node import get_node_class
-
-    node_class = get_node_class(node_type)
-    if not node_class:
-        raise ValueError(f"Node type {node_type} not found")
-
-    # Generate metadata from the node class
-    metadata = node_class.get_metadata()
-    return metadata.model_dump()
 
 
 @mcp.tool()
@@ -1253,259 +1216,14 @@ async def get_asset(asset_id: str) -> dict[str, Any]:
     return _asset_to_dict(asset)
 
 
-@mcp.tool()
-async def list_jobs(
-    workflow_id: str | None = None,
-    status: str | None = None,
-    running_only: bool = False,
-    limit: int = 100,
-    start_key: str | None = None,
-) -> dict[str, Any]:
-    """
-    List jobs with flexible filtering options.
-
-    Args:
-        workflow_id: Filter by workflow ID
-        status: Filter by status: "running", "completed", "failed", "cancelled"
-        running_only: Only show currently running background jobs (default: False)
-        limit: Maximum number of jobs to return (default: 100)
-        start_key: Pagination key for next page (only for non-running queries)
-
-    Returns:
-        Dictionary with jobs list and pagination info
-
-    Examples:
-        - list_jobs() # List all jobs
-        - list_jobs(workflow_id="wf123") # Jobs for specific workflow
-        - list_jobs(status="failed") # All failed jobs
-        - list_jobs(running_only=True) # Currently executing jobs
-    """
-    user_id = "1"
-
-    # Handle running jobs from job manager
-    if running_only:
-        job_manager = JobExecutionManager.get_instance()
-        bg_jobs = job_manager.list_jobs(user_id=user_id)
-
-        # Filter by workflow_id if specified
-        if workflow_id:
-            bg_jobs = [j for j in bg_jobs if j.request.workflow_id == workflow_id]
-
-        # Apply limit
-        bg_jobs = bg_jobs[:limit]
-
-        return {
-            "jobs": [
-                {
-                    "id": job.job_id,
-                    "status": job.status,
-                    "workflow_id": job.request.workflow_id,
-                    "created_at": job.created_at.isoformat(),
-                    "is_running": job.is_running(),
-                    "is_completed": job.is_completed(),
-                    "source": "job_manager",
-                }
-                for job in bg_jobs
-            ],
-            "next": None,
-            "total": len(bg_jobs),
-        }
-
-    # Handle persisted jobs from database
-    jobs, next_cursor = await JobModel.paginate(
-        user_id=user_id,
-        workflow_id=workflow_id,
-        limit=limit,
-        start_key=start_key,
-    )
-
-    # Filter by status if specified
-    if status:
-        jobs = [j for j in jobs if j.status == status]
-
-    return {
-        "jobs": [
-            {
-                "id": job.id,
-                "user_id": job.user_id,
-                "job_type": job.job_type,
-                "status": job.status,
-                "workflow_id": job.workflow_id,
-                "started_at": job.started_at.isoformat() if job.started_at else "",
-                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
-                "error": job.error,
-                "cost": job.cost,
-                "source": "database",
-            }
-            for job in jobs
-        ],
-        "next": next_cursor,
-        "total": len(jobs),
-    }
 
 
-@mcp.tool()
-async def get_job(job_id: str, include_logs: bool = False) -> dict[str, Any]:
-    """
-    Get detailed information about a specific job.
-
-    Args:
-        job_id: The ID of the job
-        include_logs: Whether to include log count information (default: False)
-
-    Returns:
-        Job details including status, timing, and error information
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    job = await JobModel.find(user_id=user_id, job_id=job_id)
-    if not job:
-        raise ValueError(f"Job {job_id} not found")
-
-    result = {
-        "id": job.id,
-        "user_id": job.user_id,
-        "job_type": job.job_type,
-        "status": job.status,
-        "workflow_id": job.workflow_id,
-        "started_at": job.started_at.isoformat() if job.started_at else "",
-        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
-        "error": job.error,
-        "cost": job.cost,
-    }
-
-    if include_logs:
-        result["log_count"] = len(job.logs) if job.logs else 0
-        result["has_logs"] = bool(job.logs)
-
-    return result
 
 
-@mcp.tool()
-async def get_job_logs(
-    job_id: str,
-    limit: int | None = None,
-    include_live: bool = True,
-) -> dict[str, Any]:
-    """
-    Get logs from a job execution.
-
-    For completed jobs, retrieves persisted logs from the database.
-    For running jobs, optionally retrieves live logs from the active log handler.
-
-    Args:
-        job_id: The ID of the job
-        limit: Optional limit on number of logs to return (most recent)
-        include_live: Whether to include live logs for running jobs (default: True)
-
-    Returns:
-        Dictionary with logs and job status information
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    # Get job from database
-    job = await JobModel.find(user_id=user_id, job_id=job_id)
-    if not job:
-        raise ValueError(f"Job {job_id} not found")
-
-    logs = []
-    is_running = False
-
-    # Check if job is still running and get live logs
-    if include_live:
-        job_manager = JobExecutionManager.get_instance()
-        job_execution = job_manager.get_job(job_id)
-
-        if job_execution and job_execution.is_running():
-            is_running = True
-            logs = job_execution.get_live_logs(limit=limit)
-        else:
-            # Job is completed, get persisted logs
-            logs = job.logs or []
-            if limit and len(logs) > limit:
-                logs = logs[-limit:]
-    else:
-        # Only get persisted logs
-        logs = job.logs or []
-        if limit and len(logs) > limit:
-            logs = logs[-limit:]
-
-    return {
-        "job_id": job_id,
-        "status": job.status,
-        "is_running": is_running,
-        "logs": logs,
-        "total_logs": len(logs),
-    }
 
 
-@mcp.tool()
-async def start_background_job(
-    workflow_id: str,
-    params: dict[str, Any] | None = None,
-    auth_token: str | None = None,
-) -> dict[str, Any]:
-    """
-    Start a workflow job that runs in the background without streaming results.
 
-    This tool starts a workflow execution that continues running independently.
-    Use list_jobs, get_job, or list_running_jobs to check the status later.
-    The job will continue even if the MCP connection is closed.
 
-    Args:
-        workflow_id: The ID of the workflow to run
-        params: Dictionary of input parameters for the workflow
-        auth_token: Optional authentication token for external API calls
-
-    Returns:
-        Dictionary with job_id and initial status
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    # Verify workflow exists
-    workflow = await WorkflowModel.find(user_id, workflow_id)
-    if not workflow:
-        raise ValueError(f"Workflow {workflow_id} not found")
-
-    # Create run request
-    request = RunJobRequest(
-        user_id=user_id,
-        workflow_id=workflow_id,
-        params=params,
-        graph=workflow.get_api_graph(),
-    )
-
-    # Create processing context
-    context = ProcessingContext(
-        user_id=user_id,
-        auth_token=auth_token,
-        workflow_id=workflow_id,
-        asset_output_mode=AssetOutputMode.TEMP_URL,
-    )
-
-    # Start job in background via JobExecutionManager
-    job_manager = JobExecutionManager.get_instance()
-    job_execution = await job_manager.start_job(request, context)
-
-    log.info(
-        f"Started background job {job_execution.job_id} for workflow {workflow_id}",
-        extra={
-            "job_id": job_execution.job_id,
-            "workflow_id": workflow_id,
-            "user_id": user_id,
-        },
-    )
-
-    return {
-        "job_id": job_execution.job_id,
-        "workflow_id": workflow_id,
-        "status": job_execution.status,
-        "message": "Background job started successfully. Use get_job or list_running_jobs to check status.",
-        "created_at": job_execution.created_at.isoformat(),
-    }
 
 
 @mcp.tool()
@@ -2302,15 +2020,109 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
 # ============================================================================
 
 
-@mcp.tool()
-async def run_agent(
+async def _run_agent_impl(
     objective: str,
     provider: Provider,
     model: str = "gpt-4o",
     tools: list[str] | None = None,
     output_schema: dict[str, Any] | None = None,
-    enable_analysis_phase: bool = False,
-    enable_data_contracts_phase: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Internal implementation of run_agent."""
+    tools = tools or []
+    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+
+    # Use ResourceScope to ensure HTTP client and other resources are bound to the current context
+    # This is required for providers (get_client) and tools that need access to resources
+    async with ResourceScope():
+        try:
+
+            # Map tool names to tool instances
+            tool_instances = []
+            tool_map = {
+                "google_search": GoogleSearchTool,
+                "browser": BrowserTool,
+                "email": SearchEmailTool,
+            }
+
+            for tool_name in tools:
+                if tool_name in tool_map:
+                    tool_instances.append(tool_map[tool_name]())
+                else:
+                    log.warning(f"Unknown tool: {tool_name}, skipping")
+
+            provider_enum = provider if isinstance(provider, Provider) else Provider(provider)
+            provider_instance = await get_provider(provider_enum)
+
+            # Create and execute agent
+            agent = Agent(
+                name=f"Agent: {objective[:50]}...",
+                objective=objective,
+                provider=provider_instance,
+                model=model,
+                tools=tool_instances,
+                output_schema=output_schema,
+            )
+
+            # Execute agent and collect output
+            output_chunks = []
+            events = []
+            async for event in agent.execute(context):
+                if isinstance(event, Chunk):
+                    output_chunks.append(event.content)
+                    # We could optionally stream chunks if FastMCP supports it for tools,
+                    # but typically tools return a final value.
+                    # ctx.info(event.content) might be too noisy.
+                
+                elif isinstance(event, PlanningUpdate):
+                    if ctx:
+                        await ctx.info(f"Plan: {event.phase} - {event.content}")
+                    events.append(event.model_dump())
+                
+                elif isinstance(event, TaskUpdate):
+                    if ctx:
+                        task_title = event.task.title if event.task else "Task"
+                        await ctx.info(f"Task: {event.event} - {task_title}")
+                    events.append(event.model_dump())
+
+                elif isinstance(event, LogUpdate):
+                     if ctx:
+                        await ctx.info(f"Log: {event.content}")
+                     events.append(event.model_dump())
+                     
+                else:
+                    if hasattr(event, "model_dump"):
+                        events.append(event.model_dump())
+                    else:
+                         # Fallback for unexpected types
+                         pass
+
+            # Get final results
+            results = agent.get_results()
+
+            return {
+                "status": "success",
+                "results": results,
+                "events": events,
+                "workspace_dir": str(context.workspace_dir),
+            }
+
+        except Exception as e:
+            log.error(f"Agent execution failed: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+
+
+@mcp.tool()
+async def run_agent(
+    objective: str,
+    provider: Provider,
+    ctx: Context,
+    model: str = "gpt-4o",
+    tools: list[str] | None = None,
+    output_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Execute a NodeTool agent to perform autonomous task execution.
@@ -2330,8 +2142,6 @@ async def run_agent(
                - "email": Search and read emails
                - [] (empty): Agent runs without external tools
         output_schema: Optional JSON schema to structure the agent's output
-        enable_analysis_phase: Enable analysis phase for complex reasoning (default: False)
-        enable_data_contracts_phase: Enable data contract validation (default: False)
 
     Returns:
         Dictionary with:
@@ -2372,70 +2182,20 @@ async def run_agent(
         )
         ```
     """
-    tools = tools or []
-    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
-
-    try:
-
-        # Map tool names to tool instances
-        tool_instances = []
-        tool_map = {
-            "google_search": GoogleSearchTool,
-            "browser": BrowserTool,
-            "email": SearchEmailTool,
-        }
-
-        for tool_name in tools:
-            if tool_name in tool_map:
-                tool_instances.append(tool_map[tool_name]())
-            else:
-                log.warning(f"Unknown tool: {tool_name}, skipping")
-
-        provider_enum = provider if isinstance(provider, Provider) else Provider(provider)
-        provider_instance = await get_provider(provider_enum)
-
-        # Create and execute agent
-        agent = Agent(
-            name=f"Agent: {objective[:50]}...",
-            objective=objective,
-            provider=provider_instance,
-            model=model,
-            tools=tool_instances,
-            output_schema=output_schema,
-            enable_analysis_phase=enable_analysis_phase,
-            enable_data_contracts_phase=enable_data_contracts_phase,
-        )
-
-        # Execute agent and collect output
-        output_chunks = []
-        events = []
-        async for event in agent.execute(context):
-            if isinstance(event, Chunk):
-                output_chunks.append(event.content)
-            else:
-                events.append(event.model_dump())
-
-        # Get final results
-        results = agent.get_results()
-
-        return {
-            "status": "success",
-            "results": results,
-            "events": events,
-            "workspace_dir": str(context.workspace_dir),
-        }
-
-    except Exception as e:
-        log.error(f"Agent execution failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "error": str(e),
-        }
+    return await _run_agent_impl(
+        objective=objective,
+        provider=provider,
+        model=model,
+        tools=tools,
+        output_schema=output_schema,
+        ctx=ctx,
+    )
 
 
 @mcp.tool()
 async def run_web_research_agent(
     query: str,
+    ctx: Context,
     provider: str = "openai",
     model: str = "gpt-4o",
     num_sources: int = 3,
@@ -2476,17 +2236,19 @@ async def run_web_research_agent(
     Provide a comprehensive summary with citations.
     """
 
-    return await run_agent(
+    return await _run_agent_impl(
         objective=objective,
-        provider=provider,
+        provider=Provider(provider),
         model=model,
         tools=["google_search", "browser"],
+        ctx=ctx,
     )
 
 
 @mcp.tool()
 async def run_email_agent(
     task: str,
+    ctx: Context,
     provider: str = "openai",
     model: str = "gpt-4o",
 ) -> dict[str, Any]:
@@ -2510,11 +2272,12 @@ async def run_email_agent(
         )
         ```
     """
-    return await run_agent(
+    return await _run_agent_impl(
         objective=task,
-        provider=provider,
+        provider=Provider(provider),
         model=model,
         tools=["email"],
+        ctx=ctx,
     )
 
 
@@ -2528,8 +2291,83 @@ async def build_workflow_guide() -> str:
     """
     return """# How to Build NodeTool Workflows
 
-## Overview
-NodeTool workflows are visual, node-based programs that connect operations together. Each workflow is a **Directed Acyclic Graph (DAG)** where nodes process data and pass results through typed connections.
+## Rules
+- Never invent node types, property names, or IDs.
+- Always call `search_nodes` before adding nodes; use `include_properties=true` for exact field names.
+- Use `search_examples(query)` to find reference workflows.
+- Reply in short bullets; no verbose explanations.
+
+## Core Principles
+1. **Data Flows Through Edges**: Nodes connect via typed edges (image→image, text→text, etc.)
+2. **Asynchronous Execution**: Nodes execute when dependencies are satisfied
+3. **Streaming by Default**: Many nodes support real-time streaming output
+4. **Type Safety**: Connections enforce type compatibility
+5. **Node Type Resolution**: Nodes are referenced by type string (e.g., `nodetool.image.Resize`); the system auto-resolves classes from the registry
+
+## Node Categories
+| Category | Purpose | Key Nodes |
+|----------|---------|-----------|
+| Input | Accept parameters | `StringInput`, `ImageInput`, `AudioInput`, `ChatInput` |
+| Output | Return results | `ImageOutput`, `StringOutput`, `Preview` |
+| Agents | LLM-powered | `Agent`, `Summarizer`, `ListGenerator`, `DataGenerator` |
+| Control | Flow control | `Collect`, `FormatText`, `If` |
+| Storage | Persistence | `CreateTable`, `Insert`, `Query`, `Collection`, `IndexTextChunks`, `HybridSearch` |
+| Processing | Transform data | `Resize`, `Filter`, `ExtractText`, `Canny` |
+| Realtime | Streaming I/O | `RealtimeAudioInput`, `RealtimeAgent`, `RealtimeWhisper` |
+
+## Special Nodes (Built-in)
+These nodes are always available and do NOT require `search_nodes`.
+
+### Input Nodes (`nodetool.input.*`)
+| Node Type | Purpose | Key Properties |
+|-----------|---------|----------------|
+| `nodetool.input.StringInput` | Text input parameter | `value` (str), `name` (str) |
+| `nodetool.input.IntegerInput` | Whole number input | `value` (int), `min`, `max`, `name` |
+| `nodetool.input.FloatInput` | Decimal number input | `value` (float), `min`, `max`, `name` |
+| `nodetool.input.BooleanInput` | True/false toggle | `value` (bool), `name` |
+| `nodetool.input.ImageInput` | Image file input | `value` (ImageRef), `name` |
+| `nodetool.input.AudioInput` | Audio file input | `value` (AudioRef), `name` |
+| `nodetool.input.VideoInput` | Video file input | `value` (VideoRef), `name` |
+| `nodetool.input.DocumentInput` | Document file input | `value` (DocumentRef), `name` |
+| `nodetool.input.GroupInput` | Receives items inside a Group | `name`; automatically iterates list items |
+
+### Output Nodes (`nodetool.output.*`)
+| Node Type | Purpose | Key Properties |
+|-----------|---------|----------------|
+| `nodetool.output.StringOutput` | Return text result | `value` (str), `name` |
+| `nodetool.output.IntegerOutput` | Return integer result | `value` (int), `name` |
+| `nodetool.output.FloatOutput` | Return float result | `value` (float), `name` |
+| `nodetool.output.BooleanOutput` | Return boolean result | `value` (bool), `name` |
+| `nodetool.output.ImageOutput` | Return image result | `value` (ImageRef), `name` |
+| `nodetool.output.AudioOutput` | Return audio result | `value` (AudioRef), `name` |
+| `nodetool.output.VideoOutput` | Return video result | `value` (VideoRef), `name` |
+| `nodetool.output.DocumentOutput` | Return document result | `value` (DocumentRef), `name` |
+| `nodetool.output.DataframeOutput` | Return tabular data | `value` (DataframeRef), `name` |
+| `nodetool.output.DictionaryOutput` | Return key-value data | `value` (dict), `name` |
+| `nodetool.output.ListOutput` | Return list of values | `value` (list), `name` |
+| `nodetool.output.GroupOutput` | Collects results from Group | `name`; accumulates iteration outputs |
+
+### Utility Nodes
+| Node Type | Purpose | Properties |
+|-----------|---------|------------|
+| `nodetool.workflows.base_node.Preview` | Display intermediate results | `value` (any), `name` (str) |
+| `nodetool.workflows.base_node.Comment` | Add annotations/documentation | `headline` (str), `comment` (any), `comment_color` (str) |
+| `nodetool.workflows.base_node.GroupNode` | Container for subgraph iteration | — |
+
+## Data Flow Patterns
+
+**Sequential Pipeline**: Input → Process → Transform → Output
+- Each node waits for previous to complete
+
+**Parallel Branches**: Input splits to ProcessA→OutputA and ProcessB→OutputB
+- Multiple branches execute simultaneously
+
+**Streaming Pipeline**: Input → StreamingAgent → Collect → Output
+- Data flows in chunks for real-time updates
+- Use `Collect` to gather stream into list
+
+**Fan-In Pattern**: SourceA + SourceB → Combine → Process → Output
+- Multiple inputs combine before processing
 
 ## Running Workflows
 
@@ -2586,25 +2424,6 @@ NodeTool provides three ways to execute workflows:
   # Returns: {"status": "completed", "result": {...}}
   ```
 
-### 3. Background Execution with `start_background_job`
-- **Use when**: Running long workflows that you want to monitor asynchronously
-- **Behavior**: Returns immediately with a job_id, workflow continues in background
-- **Returns**: Job ID for status tracking
-- **Requires**: Workflow must be saved first with `save_workflow`
-- **Monitor with**: `get_job()`, `list_running_jobs()`, `get_job_logs()`
-- **Example**:
-  ```python
-  job = await start_background_job(
-      workflow_id="abc123",
-      params={"input_text": "Hello world"}
-  )
-  # Returns: {"job_id": "xyz789", "status": "running"}
-
-  # Check status later
-  status = await get_job(job_id="xyz789")
-  logs = await get_job_logs(job_id="xyz789", limit=50)
-  ```
-
 ### Choosing the Right Execution Method
 
 **Use `run_workflow_tool` for:**
@@ -2619,11 +2438,6 @@ NodeTool provides three ways to execute workflows:
 - Rapid prototyping and experimentation
 - When you don't want to clutter the workflow database
 
-**Use `start_background_job` for:**
-- Long-running workflows (minutes to hours)
-- Workflows that process large datasets
-- Jobs you want to monitor with logs
-- When you need to start multiple workflows in parallel
 
 ## Working with Assets
 
@@ -2717,16 +2531,12 @@ Assets are referenced in workflows using typed references:
    - Use `get_asset()` to get asset details and URLs
    - Pass asset reference to image/audio/video input nodes
 
+
 2. **Process and save results:**
    - Workflow outputs create new assets automatically
-   - Assets are saved to the workspace and associated with the job
+   - Assets are saved to the workspace
 
-3. **Batch processing:**
-   - Use `list_assets(content_type="image")` to get all images
-   - Create workflow that processes each image
-   - Run multiple jobs with `start_background_job()`
-
-**Example: Processing all images in a folder:**
+**Example: Processing images:**
 ```python
 # Get all images from a folder
 assets = await list_assets(
@@ -2734,19 +2544,13 @@ assets = await list_assets(
     content_type="image"
 )
 
-# Start a job for each image
-job_ids = []
+# Process each image with run_workflow_tool
 for asset in assets["assets"]:
-    job = await start_background_job(
-        workflow_id="image_processor_workflow",
-        params={"image_url": asset["get_url"]}
+    result = await run_workflow_tool(
+        workflow_id="image_processor",
+        params={"image_id": asset["id"]}
     )
-    job_ids.append(job["job_id"])
 
-# Monitor all jobs
-for job_id in job_ids:
-    status = await get_job(job_id)
-    print(f"Job {job_id}: {status['status']}")
 ```
 
 ## Graph Structure
@@ -3344,33 +3148,74 @@ Some nodes accept custom properties (check `is_dynamic` in metadata):
 }
 ```
 
-## Common Workflow Patterns
+## Workflow Patterns
 
-### Sequential Processing
-```
-Input → Process A → Process B → Output
-```
-Use when: Each step depends on the previous result
+**Pattern 1: Simple Pipeline** — Input → Process → Transform → Output
+- Use for: single input/output transformations
+- Example: `ImageInput` → `Sharpen` → `AutoContrast` → `ImageOutput`
 
-### Parallel Processing
-```
-       → Process A →
-Input →              → Combine → Output
-       → Process B →
-```
-Use when: Multiple independent operations on the same input
+**Pattern 2: Agent-Driven Generation** — Input → Agent → Generator → Output
+- Use for: creative generation, multimodal transforms (image→text→audio)
+- Example: `ImageInput` → `Agent` → `TextToSpeech` → `Preview`
+- Key: `Agent` streams LLM responses; `ListGenerator` streams list items
 
-### List Processing with Streams
-```
-Data Source → Streaming Node → Collect Results
-```
-Use when: Applying operations to each item in a list
+**Pattern 3: RAG (Retrieval-Augmented Generation)**
+- **Indexing (with Group per-file)**:
+  - `ListFiles` → `Group` (contains: `GroupInput` → `LoadDocumentFile` → `ExtractText` → `SentenceSplitter` → `IndexTextChunks`)
+  - `Collection` connects to `IndexTextChunks` inside Group
+  - Key nodes: `lib.os.ListFiles`, `lib.pymupdf.ExtractText`, `lib.langchain.SentenceSplitter`, `chroma.index.IndexTextChunks`, `chroma.collections.Collection`
+- **Query**: `ChatInput` → `HybridSearch` → `FormatText` → `Agent` → `StringOutput`
+- Use for: Q&A over documents, semantic search, reducing hallucinations
 
-### Multi-Agent Pipelines
-```
-Input → Agent 1 (Strategy) → Agent 2 (Transform) → Generator (Variations) → Output
-```
-Use when: Complex AI tasks requiring multiple reasoning steps
+**Pattern 4: Database Persistence**
+- Flow: Input → `DataGenerator` → `Insert` ← `CreateTable` → `Query` → `Preview`
+- Nodes: `CreateTable` (schema), `Insert` (add), `Query` (retrieve), `Update`, `Delete`
+- Use for: persistent storage, agent memory, flashcards
+
+**Pattern 5: Realtime Processing**
+- Flow: `RealtimeAudioInput` → `RealtimeAgent` → `Preview`
+- Use for: voice interfaces, live transcription
+- Key nodes: `RealtimeWhisper`, `RealtimeTranscription`
+
+**Pattern 6: Multi-Modal Conversion**
+- Audio→Text→Image: `AudioInput` → `Whisper` → `StableDiffusion` → `ImageOutput`
+- Image→Text→Audio: `ImageInput` → `ImageToText` → `TextToSpeech` → `AudioOutput`
+
+**Pattern 7: Data Visualization**
+- Flow: `GetRequest` → `ImportCSV` → `Filter` → `ChartGenerator` → `Preview`
+- Use for: fetching, transforming, visualizing external data
+
+**Pattern 8: Structured Data Generation**
+- Flow: `DataGenerator` → `Preview`
+- DataGenerator uses LLM with schema to generate structured data (e.g., tables of veggies with name/color columns)
+- Configure with: `prompt` (describe data), `columns` (schema with name, data_type, description)
+- Use for: synthetic data, test data, structured outputs
+
+**Pattern 9: Email Classification**
+- Simple: `GmailSearch` → `Template` → `Classifier` → `AddLabel`
+- With Group: `GmailSearch` → `Group` (contains: `GroupInput` → `GetValue` → `HtmlToText` → `Agent` → `MakeDictionary` → `GroupOutput`) → `Preview`
+- Use for: automated email organization, per-email processing
+- Key nodes: `lib.mail.GmailSearch`, `nodetool.agents.Classifier`, `nodetool.text.Template`
+
+**Pattern 10: Group/ForEach Iteration**
+- List source → `Group` node containing subgraph → collected output
+- Inside Group: `GroupInput` receives each item, subgraph processes it, `GroupOutput` collects results
+- Use for: processing each item in a list with complex multi-node logic
+- Key: Group node has `parent_id` for child nodes; children use `GroupInput`/`GroupOutput`
+
+**Pattern 11: Paper2Podcast (Document to Audio)**
+- Flow: `GetRequestDocument` → `ExtractText` → `Summarizer` → `TextToSpeech` → `Preview`
+- Example: Fetch arxiv PDF → extract first N pages → summarize for TTS → generate speech audio
+- Key nodes: `lib.http.GetRequestDocument`, `lib.pymupdf.ExtractText` (with `start_page`/`end_page`), `nodetool.agents.Summarizer`, `elevenlabs.text_to_speech.TextToSpeech`
+- Configure Summarizer with TTS-friendly prompt (neutral tone, no intro/conclusion, concise)
+- Use for: converting academic papers, reports, or documents into podcast-style audio
+
+**Pattern 12: Pokemon Maker (Creative Batch Generation)**
+- Flow: `StringInput` → `FormatText` → `ListGenerator` → `StableDiffusion` → `ImageOutput`
+- Example: Enter animal inspirations → format creative prompt → LLM generates multiple character descriptions → each description becomes an image
+- Key nodes: `nodetool.input.StringInput`, `nodetool.text.FormatText` (with `{{placeholder}}` syntax), `nodetool.generators.ListGenerator`, `huggingface.text_to_image.StableDiffusion`
+- ListGenerator streams items one-by-one; downstream image generation processes each as it arrives
+- Use for: batch creative generation (characters, items, concepts) with text + image output
 
 ## Validation Checklist
 
@@ -3412,7 +3257,7 @@ Before running a workflow, verify:
 ## Tools for Building
 
 - **`search_nodes`**: Find nodes by functionality, filter by types
-- **`get_node_info`**: Get detailed specifications for a specific node
+- **`search_nodes`**: Find nodes by functionality, get detailed specs with `include_metadata=True`
 - **`list_workflows`**: Browse existing workflow examples
 - **`get_workflow`**: Examine a specific workflow's structure
 - **`run_workflow_tool`**: Execute and test your workflow
@@ -3429,306 +3274,9 @@ Before running a workflow, verify:
 """
 
 
-@mcp.prompt()
-async def job_monitoring_guide() -> str:
-    """
-    Guide for monitoring and debugging workflow jobs.
 
-    Returns:
-        Instructions for tracking job execution and accessing logs
-    """
-    return """# Job Monitoring and Debugging Guide
 
-## Overview
 
-NodeTool provides comprehensive job tracking and logging capabilities for monitoring workflow executions, especially useful for long-running background jobs.
-
-## Job Lifecycle
-
-1. **Starting** - Job is being initialized
-2. **Running** - Job is actively executing
-3. **Completed** - Job finished successfully
-4. **Error** - Job failed with an error
-5. **Cancelled** - Job was cancelled by user
-
-## Monitoring Tools
-
-### 1. Get Job Status - `get_job(job_id)`
-
-Get detailed information about a specific job:
-
-```python
-job = await get_job(
-    job_id="job_123",
-    include_logs=True  # Optional: includes log count
-)
-
-# Returns:
-{
-    "id": "job_123",
-    "status": "running",
-    "workflow_id": "workflow_abc",
-    "started_at": "2024-01-15T10:30:00",
-    "finished_at": None,  # null if still running
-    "error": None,
-    "cost": 0.05,
-    "log_count": 42,  # if include_logs=True
-    "has_logs": True
-}
-```
-
-### 2. List All Jobs - `list_jobs(workflow_id, limit, start_key)`
-
-List jobs with optional filtering:
-
-```python
-# List all jobs for user
-jobs = await list_jobs(limit=50)
-
-# List jobs for specific workflow
-jobs = await list_jobs(workflow_id="workflow_abc")
-
-# Pagination
-jobs = await list_jobs(start_key="last_job_id", limit=20)
-```
-
-### 3. List Running Jobs - `list_running_jobs()`
-
-Get all currently active background jobs:
-
-```python
-running = await list_running_jobs()
-
-# Returns list of active jobs with status
-[
-    {
-        "job_id": "job_123",
-        "status": "running",
-        "workflow_id": "workflow_abc",
-        "created_at": "2024-01-15T10:30:00",
-        "is_running": True,
-        "is_completed": False
-    }
-]
-```
-
-### 4. Get Job Logs - `get_job_logs(job_id, limit, include_live)`
-
-Retrieve execution logs from a job:
-
-```python
-# Get all logs from a job
-logs = await get_job_logs(job_id="job_123")
-
-# Get most recent 50 logs
-logs = await get_job_logs(job_id="job_123", limit=50)
-
-# Only get persisted logs (not live)
-logs = await get_job_logs(
-    job_id="job_123",
-    include_live=False
-)
-
-# Returns:
-{
-    "job_id": "job_123",
-    "status": "running",
-    "is_running": True,
-    "logs": [
-        {
-            "timestamp": "2024-01-15T10:30:01.123",
-            "level": "INFO",
-            "logger": "nodetool.workflows",
-            "message": "Starting workflow execution",
-            "module": "workflow_runner",
-            "function": "run",
-            "line": 42
-        },
-        {
-            "timestamp": "2024-01-15T10:30:02.456",
-            "level": "INFO",
-            "logger": "nodetool.nodes",
-            "message": "Processing node: text_processor",
-            "module": "base_node",
-            "function": "process",
-            "line": 156
-        }
-    ],
-    "total_logs": 42
-}
-```
-
-### 5. Cancel Job - `cancel_job(job_id)`
-
-Stop a running job:
-
-```python
-result = await cancel_job(job_id="job_123")
-
-# Returns:
-{
-    "success": True,
-    "message": "Job cancelled successfully",
-    "job_id": "job_123"
-}
-```
-
-## Common Monitoring Patterns
-
-### Pattern 1: Poll Job Until Complete
-
-```python
-import asyncio
-
-job = await start_background_job(
-    workflow_id="long_workflow",
-    params={"input": "data"}
-)
-
-# Poll every 5 seconds
-while True:
-    status = await get_job(job["job_id"])
-
-    if status["status"] == "completed":
-        print("Job completed successfully!")
-        break
-    elif status["status"] == "error":
-        print(f"Job failed: {status['error']}")
-        break
-
-    print(f"Job status: {status['status']}")
-    await asyncio.sleep(5)
-```
-
-### Pattern 2: Monitor Logs in Real-Time
-
-```python
-import asyncio
-
-job = await start_background_job(workflow_id="workflow_abc")
-last_log_count = 0
-
-while True:
-    logs = await get_job_logs(job["job_id"], include_live=True)
-
-    # Print new logs
-    if logs["total_logs"] > last_log_count:
-        new_logs = logs["logs"][last_log_count:]
-        for log in new_logs:
-            print(f"[{log['level']}] {log['message']}")
-        last_log_count = logs["total_logs"]
-
-    # Check if done
-    if not logs["is_running"]:
-        break
-
-    await asyncio.sleep(2)
-```
-
-### Pattern 3: Batch Processing with Progress Tracking
-
-```python
-# Start multiple jobs
-workflow_id = "image_processor"
-assets = await list_assets(content_type="image")
-
-jobs = []
-for asset in assets["assets"]:
-    job = await start_background_job(
-        workflow_id=workflow_id,
-        params={"image_id": asset["id"]}
-    )
-    jobs.append(job["job_id"])
-
-print(f"Started {len(jobs)} jobs")
-
-# Monitor all jobs
-while True:
-    statuses = []
-    for job_id in jobs:
-        status = await get_job(job_id)
-        statuses.append(status["status"])
-
-    completed = statuses.count("completed")
-    running = statuses.count("running")
-    errors = statuses.count("error")
-
-    print(f"Progress: {completed}/{len(jobs)} complete, {running} running, {errors} errors")
-
-    if completed + errors == len(jobs):
-        break
-
-    await asyncio.sleep(10)
-```
-
-### Pattern 4: Error Investigation
-
-```python
-# Find failed jobs
-jobs = await list_jobs(workflow_id="workflow_abc", limit=100)
-failed_jobs = [j for j in jobs["jobs"] if j["status"] == "error"]
-
-for job in failed_jobs:
-    print(f"\nJob {job['id']} failed:")
-    print(f"Error: {job['error']}")
-
-    # Get logs to investigate
-    logs = await get_job_logs(job["id"])
-
-    # Find error-level logs
-    error_logs = [log for log in logs["logs"] if log["level"] in ("ERROR", "CRITICAL")]
-
-    for log in error_logs:
-        print(f"  [{log['timestamp']}] {log['message']}")
-        if "exc_info" in log:
-            print(f"    Exception: {log['exc_info']}")
-```
-
-## Log Levels and Filtering
-
-Logs are captured at different levels:
-- **DEBUG**: Detailed information for debugging
-- **INFO**: General informational messages
-- **WARNING**: Warning messages about potential issues
-- **ERROR**: Error messages about failures
-- **CRITICAL**: Critical failures
-
-When analyzing logs, focus on:
-- **ERROR/CRITICAL**: For troubleshooting failures
-- **WARNING**: For potential issues
-- **INFO**: For understanding execution flow
-
-## Best Practices
-
-1. **Use background jobs for long operations**: Don't block on `run_workflow_tool` for workflows that take minutes
-2. **Poll with appropriate intervals**: 2-5 seconds for active monitoring, 30-60 seconds for passive monitoring
-3. **Set log limits**: Use `limit` parameter when you only need recent logs
-4. **Check logs on failure**: Always inspect logs when a job errors
-5. **Clean up completed jobs**: Periodically review and delete old job records
-6. **Monitor costs**: Track the `cost` field for AI-powered workflows
-
-## Debugging Tips
-
-**If job is stuck in "starting":**
-- Check logs for initialization errors
-- Verify workflow ID is correct
-- Check if required nodes are available
-
-**If job fails immediately:**
-- Check logs for validation errors
-- Verify all required parameters are provided
-- Check node type compatibility
-
-**If job runs but produces no output:**
-- Verify workflow has Output nodes
-- Check logs for processing errors
-- Ensure edges are properly connected
-
-**If logs are missing:**
-- Ensure job was started with `start_background_job` (not `run_workflow_tool`)
-- Check if job completed (logs are persisted on completion)
-- Verify log handler installed correctly
-"""
 
 
 @mcp.prompt()
@@ -4174,7 +3722,7 @@ Chain text operations for clean inputs:
 3. **Test incrementally**: Run after each major addition
 4. **Use search_nodes**: Find the right node types with filters
 5. **Follow patterns**: Adapt examples above to your needs
-6. **Check logs**: Use `get_job_logs()` to debug issues
+6. **Validate workflows**: Use `validate_workflow()` before running
 """
 
 
@@ -4195,7 +3743,7 @@ async def troubleshoot_workflow() -> str:
 **Problem**: "Cannot connect output X to input Y - type mismatch"
 
 **Solutions**:
-- Use `get_node_info` to check exact input/output types
+- Use `search_nodes(..., include_metadata=True)` to check exact input/output types
 - Insert conversion nodes between incompatible types
 - Check for list vs single item mismatches (str vs list[str])
 
@@ -4214,7 +3762,7 @@ TextNode → MakeList → ListNode
 
 **Solutions**:
 - Check node's `data` field has all required params
-- Use `get_node_info` to see required vs optional fields
+- Use `search_nodes(..., include_metadata=True)` to see required vs optional fields
 - Connect an input edge or set a default value
 
 ### 3. Circular Dependencies
@@ -4292,7 +3840,7 @@ Before running a workflow, verify:
 ## Getting Help
 
 1. **Search for nodes**: Use `search_nodes` with detailed queries
-2. **Inspect nodes**: Use `get_node_info` for full specifications
+2. **Inspect nodes**: Use `search_nodes(..., include_metadata=True)` for full specifications
 3. **Review examples**: Use `get_workflow` on existing workflows
 4. **Test incrementally**: Use `run_workflow_tool` frequently
 
@@ -4455,8 +4003,6 @@ The main agent execution tool with full customization options.
   - `"email"`: Search and read emails
   - `[]` (empty): Agent runs without external tools (reasoning only)
 - `output_schema`: Optional JSON schema for structured output
-- `enable_analysis_phase`: Enable analysis phase (default: false)
-- `enable_data_contracts_phase`: Enable data contract validation (default: false)
 
 **Example - Simple Research:**
 ```python

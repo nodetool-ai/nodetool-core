@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from nodetool.metadata.types import Message
@@ -20,6 +21,42 @@ def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
         return None
 
     return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
+
+
+
+def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
+    """Try to parse JSON, falling back to Python literal eval for single quotes."""
+    text = text.strip()
+    if not text:
+        return None
+
+    # 1. Try standard JSON
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Try Python literal eval (handles single quotes, but needs True/False/None fix)
+    try:
+        # Replace JSON constants with Python constants
+        # Use word boundaries to avoid replacing inside strings (mostly)
+        # Note: This is heuristic and perfectly valid strings like "dict contain true" will get mapped.
+        # But this is a fallback for broken JSON.
+        py_text = text
+        py_text = re.sub(r'\btrue\b', 'True', py_text)
+        py_text = re.sub(r'\bfalse\b', 'False', py_text)
+        py_text = re.sub(r'\bnull\b', 'None', py_text)
+
+        parsed = ast.literal_eval(py_text)
+        if isinstance(parsed, dict):
+            log.debug("Parsed JSON using ast.literal_eval fallback")
+            return parsed
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        pass
+
+    return None
 
 
 def extract_json_from_message(message: Optional[Message]) -> Optional[dict]:
@@ -48,39 +85,39 @@ def extract_json_from_message(message: Optional[Message]) -> Optional[dict]:
         log.debug("Content empty after removing think tags")
         return None
 
-    json_str: Optional[str] = None
+    # Strategy 1: Look for code fences
+    # Match ```json or just ``` blocks. Non-greedy content match.
+    json_fence_pattern = r"```(?:json)?\s*\n(.*?)\n```"
+    matches = re.findall(json_fence_pattern, cleaned_content, re.DOTALL)
+    for match in matches:
+        parsed = lenient_json_parse(match)
+        if parsed:
+            return parsed
 
-    json_fence_pattern = r"```json\s*\n(.*?)\n```"
-    match = re.search(json_fence_pattern, cleaned_content, re.DOTALL)
-    if match:
-        json_str = match.group(1).strip()
-    else:
-        code_fence_pattern = r"```\s*\n(.*?)\n```"
-        match = re.search(code_fence_pattern, cleaned_content, re.DOTALL)
-        if match:
-            json_str = match.group(1).strip()
-        else:
-            json_obj_pattern = r"\{[\s\S]*\}"
-            match = re.search(json_obj_pattern, cleaned_content)
-            if match:
-                json_str = match.group(0).strip()
+    # Strategy 2: Look for raw JSON object (unfenced)
+    # Use raw_decode to handle trailing garbage robustly
+    start_wrapper = cleaned_content.find("{")
+    if start_wrapper != -1:
+        # Try raw_decode from the first brace
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(cleaned_content, start_wrapper)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
 
-    if not json_str:
-        log.debug("No JSON pattern detected in assistant message")
-        return None
+        # Strategy 3: If raw_decode failed (e.g. single quotes),
+        # try to extract a block and use lenient parse.
+        # We try to grab everything from the first { to the last }
+        last_brace = cleaned_content.rfind("}")
+        if last_brace != -1 and last_brace > start_wrapper:
+            candidate = cleaned_content[start_wrapper : last_brace + 1]
+            parsed = lenient_json_parse(candidate)
+            if parsed:
+                return parsed
 
-    try:
-        parsed_json = json.loads(json_str)
-        if isinstance(parsed_json, dict):
-            return parsed_json
-        log.debug(
-            "Extracted JSON is not an object (type=%s). Ignoring.",
-            type(parsed_json),
-        )
-        return None
-    except json.JSONDecodeError as exc:
-        log.error("Failed to parse JSON from assistant message: %s", exc)
-        return None
+    log.debug("No valid JSON found in message")
+    return None
 
 
-__all__ = ["extract_json_from_message", "remove_think_tags"]
+__all__ = ["extract_json_from_message", "remove_think_tags", "lenient_json_parse"]

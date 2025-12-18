@@ -35,6 +35,7 @@ from rich.align import Align
 from rich.columns import Columns  # Add Columns
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -538,16 +539,61 @@ class ChatCLI:
 
                     if message_type == "chunk":
                         content = message.get("content") or ""
-                        done = message.get("done", False)
                         if content:
+                            self.console.print(content, end="")
                             stream_buffer.append(content)
-                        if done and stream_buffer:
-                            full = "".join(stream_buffer)
-                            self.console.print(Markdown(full))
+                        if message.get("done"):
+                            self.console.print()  # Final newline
                             stream_buffer.clear()
+
+                    elif message_type == "tool_call_update":
+                        name = message.get("name")
+                        msg = message.get("message")
+                        if self.debug_mode:
+                            args = message.get("args")
+                            self.console.print(f"\n[bold cyan]Tool Call ({escape(str(name))}):[/bold cyan] {escape(str(args))}")
+                        else:
+                            self.console.print(f"\n[italic cyan]{escape(str(msg))}[/italic cyan]")
 
                     elif message_type == "message":
                         try:
+                            # Check if this is an special agent execution event
+                            if message.get("role") == "agent_execution":
+                                event_type = message.get("execution_event_type")
+                                content = message.get("content") or {}
+                                
+                                if event_type == "planning_update":
+                                    phase = content.get("phase")
+                                    status = content.get("status")
+                                    inner_content = content.get("content")
+                                    self.console.print(f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}")
+                                    if inner_content and self.debug_mode:
+                                        self.console.print(f"  {escape(str(inner_content))}")
+                                        
+                                elif event_type == "task_update":
+                                    event = content.get("event")
+                                    step = content.get("step")
+                                    if event == "SUBTASK_STARTED" and step:
+                                        instructions = step.get('instructions')
+                                        self.console.print(f"\n[bold green]➜ {escape(str(instructions))}[/bold green]")
+                                    elif event == "ENTERED_CONCLUSION_STAGE":
+                                        self.console.print("[bold yellow]Entering conclusion stage...[/bold yellow]")
+                                    elif self.debug_mode:
+                                        self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
+                                        
+                                elif event_type == "log_update":
+                                    log_content = content.get("content")
+                                    severity = content.get("severity", "info")
+                                    color = "red" if severity == "error" else "yellow" if severity == "warning" else "white"
+                                    self.console.print(f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}")
+                                    
+                                elif event_type == "step_result":
+                                    result = content.get("result")
+                                    if self.debug_mode:
+                                        self.console.print(f"[bold green]Step Result:[/bold green] {escape(str(result))}")
+                                
+                                continue # Already handled this special message
+
                             parsed = Message.model_validate(message)
                         except ValidationError as validation_error:
                             if self.debug_mode:
@@ -566,14 +612,14 @@ class ChatCLI:
                                 if len(args_preview) > 120:
                                     args_preview = args_preview[:120] + "..."
                                 self.console.print(
-                                    f"\n[bold cyan][{tool_call.name}]:[/bold cyan] {args_preview}"
+                                    f"\n[bold cyan][{escape(str(tool_call.name))}]:[/bold cyan] {escape(str(args_preview))}"
                                 )
                         elif self.debug_mode and parsed.role == "tool":
                             preview = parsed.content
                             if isinstance(preview, str) and len(preview) > 200:
                                 preview = preview[:200] + "..."
                             self.console.print(
-                                f"\n[bold magenta][Tool Result: {parsed.name}][/bold magenta] {preview}"
+                                f"\n[bold magenta][Tool Result: {escape(str(parsed.name))}][/bold magenta] {escape(str(preview))}"
                             )
 
                         has_streaming_output = bool(stream_buffer)

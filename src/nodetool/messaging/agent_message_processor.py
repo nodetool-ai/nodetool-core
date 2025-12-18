@@ -21,8 +21,9 @@ from nodetool.providers.base import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
+    LogUpdate,
     PlanningUpdate,
-    SubTaskResult,
+    StepResult,
     TaskUpdate,
     TaskUpdateEvent,
 )
@@ -82,7 +83,7 @@ class AgentMessageProcessor(MessageProcessor):
     Processor for agent mode messages.
 
     This processor uses the Agent system to handle complex tasks by breaking
-    them down into subtasks and executing them step by step.
+    them down into steps and executing them step by step.
     """
 
     def __init__(self, provider: BaseProvider):
@@ -157,8 +158,6 @@ class AgentMessageProcessor(MessageProcessor):
                 provider=self.provider,
                 model=last_message.model,
                 tools=selected_tools,
-                enable_analysis_phase=True,
-                enable_data_contracts_phase=True,
                 output_schema={
                     "type": "object",
                     "properties": {
@@ -184,92 +183,33 @@ class AgentMessageProcessor(MessageProcessor):
                         }
                     )
                 elif isinstance(item, ToolCall):
-                    # No need to send tool call update
-                    pass
+                    # Send tool call update to frontend for display
+                    try:
+                        await self.send_message(
+                            {
+                                "type": "tool_call_update",
+                                "tool_call_id": item.id,
+                                "name": item.name,
+                                "message": f"Calling {item.name}...",
+                                "args": item.args,
+                            }
+                        )
+                        log.debug(f"Sent tool_call_update for {item.name}")
+                    except Exception as e:
+                        log.error(f"Failed to send tool_call_update: {e}")
                 elif isinstance(item, TaskUpdate):
                     # Send task update as agent_execution message (will be saved by base_chat_runner)
                     try:
-                        if item.event == TaskUpdateEvent.SUBTASK_COMPLETED:
-                            log.info(f"Processing TaskUpdate: event={item.event}")
-
-                            # Prepare content as dict
-                            content_dict = {
-                                "type": "task_update",
-                                "event": item.event,
-                                "task": item.task.model_dump() if item.task else None,
-                                "subtask": item.subtask.model_dump()
-                                if item.subtask
-                                else None,
-                            }
-
-                            # Send as message via WebSocket (base_chat_runner will save to DB)
-                            await self.send_message(
-                                {
-                                    "type": "message",
-                                    "role": "agent_execution",
-                                    "execution_event_type": "task_update",
-                                    "agent_execution_id": agent_execution_id,
-                                    "content": content_dict,
-                                    "thread_id": last_message.thread_id,
-                                    "workflow_id": last_message.workflow_id,
-                                    "provider": last_message.provider,
-                                    "model": last_message.model,
-                                    "agent_mode": True,
-                                }
-                            )
-                            log.info("Sent task_update message")
-                    except Exception as e:
-                        log.error(
-                            f"Failed to send task_update message: {e}", exc_info=True
-                        )
-                elif isinstance(item, PlanningUpdate):
-                    # Send planning update as agent_execution message (will be saved by base_chat_runner)
-                    try:
-                        if item.status == "Success":
-                            log.info(
-                                f"Processing PlanningUpdate: phase={item.phase}, status={item.status}"
-                            )
-
-                            # Prepare content as dict
-                            content_dict = {
-                                "type": "planning_update",
-                                "phase": item.phase,
-                                "status": item.status,
-                                "content": item.content,
-                                "node_id": item.node_id,
-                            }
-
-                            # Send as message via WebSocket (base_chat_runner will save to DB)
-                            await self.send_message(
-                                {
-                                    "type": "message",
-                                    "role": "agent_execution",
-                                    "execution_event_type": "planning_update",
-                                    "agent_execution_id": agent_execution_id,
-                                    "content": content_dict,
-                                    "thread_id": last_message.thread_id,
-                                    "workflow_id": last_message.workflow_id,
-                                    "provider": last_message.provider,
-                                    "model": last_message.model,
-                                    "agent_mode": True,
-                                }
-                            )
-                            log.info("Sent planning_update message")
-                    except Exception as e:
-                        log.error(
-                            f"Failed to send planning_update message: {e}",
-                            exc_info=True,
-                        )
-                elif isinstance(item, SubTaskResult) and not item.is_task_result:
-                    # Send subtask result as agent_execution message (will be saved by base_chat_runner)
-                    try:
-                        log.info("Processing SubTaskResult")
+                        log.info(f"Processing TaskUpdate: event={item.event}")
 
                         # Prepare content as dict
                         content_dict = {
-                            "type": "subtask_result",
-                            "result": str(item.result),
-                            "subtask_id": getattr(item, "subtask_id", None),
+                            "type": "task_update",
+                            "event": item.event,
+                            "task": item.task.model_dump() if item.task else None,
+                            "step": item.step.model_dump()
+                            if item.step
+                            else None,
                         }
 
                         # Send as message via WebSocket (base_chat_runner will save to DB)
@@ -277,7 +217,7 @@ class AgentMessageProcessor(MessageProcessor):
                             {
                                 "type": "message",
                                 "role": "agent_execution",
-                                "execution_event_type": "subtask_result",
+                                "execution_event_type": "task_update",
                                 "agent_execution_id": agent_execution_id,
                                 "content": content_dict,
                                 "thread_id": last_message.thread_id,
@@ -287,10 +227,134 @@ class AgentMessageProcessor(MessageProcessor):
                                 "agent_mode": True,
                             }
                         )
-                        log.info("Sent subtask_result message")
+                        log.info("Sent task_update message")
                     except Exception as e:
                         log.error(
-                            f"Failed to send subtask_result message: {e}", exc_info=True
+                            f"Failed to send task_update message: {e}", exc_info=True
+                        )
+                elif isinstance(item, PlanningUpdate):
+                    # Send planning update as agent_execution message (will be saved by base_chat_runner)
+                    try:
+                        content_preview = str(item.content)[:500] + "..." if item.content and len(str(item.content)) > 500 else str(item.content)
+                        log.info(
+                            f"Processing PlanningUpdate: phase={item.phase}, status={item.status}, content={content_preview}"
+                        )
+
+                        # Prepare content as dict
+                        content_dict = {
+                            "type": "planning_update",
+                            "phase": item.phase,
+                            "status": item.status,
+                            "content": item.content,
+                            "node_id": item.node_id,
+                        }
+
+                        # Send as message via WebSocket (base_chat_runner will save to DB)
+                        await self.send_message(
+                            {
+                                "type": "message",
+                                "role": "agent_execution",
+                                "execution_event_type": "planning_update",
+                                "agent_execution_id": agent_execution_id,
+                                "content": content_dict,
+                                "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
+                                "provider": last_message.provider,
+                                "model": last_message.model,
+                                "agent_mode": True,
+                            }
+                        )
+                        log.info("Sent planning_update message")
+
+                        # Also send a persistent LogUpdate for completed phases to ensure they show in chat history
+                        if item.status in ["Success", "Failed"]:
+                            log_content = {
+                                "type": "log_update",
+                                "node_id": item.node_id or "agent",
+                                "node_name": "Agent",
+                                "content": f"{item.phase}: {item.content}",
+                                "severity": "error" if item.status == "Failed" else "info",
+                            }
+                            
+                            await self.send_message(
+                                {
+                                    "type": "message",
+                                    "role": "agent_execution",
+                                    "execution_event_type": "log_update",
+                                    "agent_execution_id": agent_execution_id,
+                                    "content": log_content,
+                                    "thread_id": last_message.thread_id,
+                                    "workflow_id": last_message.workflow_id,
+                                    "provider": last_message.provider,
+                                    "model": last_message.model,
+                                    "agent_mode": True,
+                                }
+                            )
+                            log.info(f"Sent persistent log_update for phase {item.phase}")
+
+                    except Exception as e:
+                        log.error(
+                            f"Failed to send planning_update message: {e}",
+                            exc_info=True,
+                        )
+                elif isinstance(item, LogUpdate):
+                     # Handle explicit LogUpdate items from agent
+                    try:
+                        log_content = {
+                            "type": "log_update",
+                            "node_id": item.node_id,
+                            "node_name": item.node_name,
+                            "content": item.content,
+                            "severity": item.severity,
+                        }
+                        
+                        await self.send_message(
+                            {
+                                "type": "message",
+                                "role": "agent_execution",
+                                "execution_event_type": "log_update",
+                                "agent_execution_id": agent_execution_id,
+                                "content": log_content,
+                                "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
+                                "provider": last_message.provider,
+                                "model": last_message.model,
+                                "agent_mode": True,
+                            }
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to send log_update message: {e}", exc_info=True)
+                elif isinstance(item, StepResult) and not item.is_task_result:
+                    # Send step result as agent_execution message (will be saved by base_chat_runner)
+                    try:
+                        log.info("Processing StepResult")
+
+                        # Prepare content as dict
+                        content_dict = {
+                            "type": "step_result",
+                            "result": str(item.result),
+                            "step_id": getattr(item, "step_id", None),
+                        }
+
+                        # Send as message via WebSocket (base_chat_runner will save to DB)
+                        await self.send_message(
+                            {
+                                "type": "message",
+                                "role": "agent_execution",
+                                "execution_event_type": "step_result",
+                                "agent_execution_id": agent_execution_id,
+                                "content": content_dict,
+                                "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
+                                "provider": last_message.provider,
+                                "model": last_message.model,
+                                "agent_mode": True,
+                            }
+                        )
+                        log.info("Sent step_result message")
+                    except Exception as e:
+                        log.error(
+                            f"Failed to send step_result message: {e}", exc_info=True
                         )
 
             # Normalize final agent output to a markdown-friendly string

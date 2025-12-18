@@ -67,12 +67,16 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         return _SECRET_CACHE[(user_id, key)]
 
     # 2. Check database
-    secret = await Secret.find(user_id, key)
-    if secret:
-        log.debug(f"Secret '{key}' found in database for user {user_id}")
-        value = await secret.get_decrypted_value()
-        _SECRET_CACHE[(user_id, key)] = value
-        return value
+    try:
+        secret = await Secret.find(user_id, key)
+        if secret:
+            log.debug(f"Secret '{key}' found in database for user {user_id}")
+            value = await secret.get_decrypted_value()
+            _SECRET_CACHE[(user_id, key)] = value
+            return value
+    except Exception as e:
+        # If database lookup fails (e.g. no ResourceScope), fall back to environment
+        log.debug(f"Database lookup failed for secret '{key}': {e}. Falling back to environment.")
 
     # 3. Check environment variable
     if check_env and os.environ.get(key):
