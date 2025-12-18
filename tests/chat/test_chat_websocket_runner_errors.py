@@ -108,7 +108,7 @@ class MockWebSocket:
 #             response = await runner._process_help_messages(
 #                 Message(
 #                     role="user",
-#                     content="Help me",
+#                     instructions="Help me",
 #                     help_mode=True,
 #                     model="gpt-4",
 #                     provider=Provider.OpenAI,

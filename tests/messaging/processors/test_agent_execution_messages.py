@@ -1,7 +1,7 @@
 """
 Tests for agent execution message storage in the database.
 
-This module tests that agent execution events (planning_update, task_update, subtask_result)
+This module tests that agent execution events (planning_update, task_update, step_result)
 are properly stored as messages with role="agent_execution" and that they are filtered out
 when loading chat history for LLM processing.
 """
@@ -15,13 +15,13 @@ import pytest
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.metadata.types import Message as ApiMessage
-from nodetool.metadata.types import Provider, SubTask, Task
+from nodetool.metadata.types import Provider, Step, Task
 from nodetool.models.message import Message as DBMessage
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,
-    SubTaskResult,
+    StepResult,
     TaskUpdate,
     TaskUpdateEvent,
 )
@@ -78,7 +78,7 @@ async def test_message(test_thread_id):
     return ApiMessage(
         thread_id=test_thread_id,
         role="user",
-        content="Test objective for agent",
+        instructions="Test objective for agent",
         provider=Provider.OpenAI,
         model="gpt-4o",
         agent_mode=True,
@@ -102,9 +102,9 @@ class TestAgentExecutionMessageStorage:
 
         # Create a mock agent that yields a TaskUpdate event
         task = Task(id="task1", title="Test Task", description="Test Description")
-        subtask = SubTask(id="subtask1", content="Test Subtask")
+        step = Step(id="step1", instructions="Test Subtask")
         task_update = TaskUpdate(
-            event=TaskUpdateEvent.SUBTASK_COMPLETED, task=task, subtask=subtask
+            event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step
         )
 
         # Mock the agent execution to yield the task update
@@ -156,9 +156,9 @@ class TestAgentExecutionMessageStorage:
 
             content = message["content"]
             assert content["type"] == "task_update"
-            assert content["event"] == TaskUpdateEvent.SUBTASK_COMPLETED
+            assert content["event"] == TaskUpdateEvent.STEP_COMPLETED
             assert content["task"] is not None
-            assert content["subtask"] is not None
+            assert content["step"] is not None
 
     @pytest.mark.asyncio
     async def test_planning_update_saved_as_message(
@@ -176,7 +176,7 @@ class TestAgentExecutionMessageStorage:
         planning_update = PlanningUpdate(
             phase="planning",
             status="Success",
-            content="Creating task plan",
+            instructions="Creating task plan",
             node_id="node1",
         )
 
@@ -228,7 +228,7 @@ class TestAgentExecutionMessageStorage:
             assert content["status"] == "Success"
 
     @pytest.mark.asyncio
-    async def test_subtask_result_saved_as_message(
+    async def test_step_result_saved_as_message(
         self,
         agent_processor,
         test_message,
@@ -236,13 +236,13 @@ class TestAgentExecutionMessageStorage:
         test_thread_id,
         test_user_id,
     ):
-        """Test that SubTaskResult events are saved as agent_execution messages."""
+        """Test that StepResult events are saved as agent_execution messages."""
         chat_history = [test_message]
 
-        # Create a mock subtask result
-        subtask = SubTask(id="subtask1", content="Test Subtask")
-        subtask_result = SubTaskResult(
-            subtask=subtask,
+        # Create a mock step result
+        step = Step(id="step1", instructions="Test Subtask")
+        step_result = StepResult(
+            step=step,
             result="Subtask completed successfully",
             is_task_result=False,
         )
@@ -252,7 +252,7 @@ class TestAgentExecutionMessageStorage:
             mock_agent_instance.results = "Test result"
 
             async def mock_execute(context):
-                yield subtask_result
+                yield step_result
                 yield Chunk(content="", done=True)
 
             mock_agent_instance.execute = mock_execute
@@ -273,22 +273,22 @@ class TestAgentExecutionMessageStorage:
                 processing_context=processing_context,
             )
 
-            subtask_messages = [
+            step_messages = [
                 msg
                 for msg in sent_messages
                 if msg.get("type") == "message"
-                and msg.get("execution_event_type") == "subtask_result"
+                and msg.get("execution_event_type") == "step_result"
             ]
 
-            assert len(subtask_messages) > 0, "SubTaskResult should be saved as message"
+            assert len(step_messages) > 0, "StepResult should be saved as message"
 
-            message = subtask_messages[0]
+            message = step_messages[0]
             assert message["thread_id"] == test_thread_id
             assert message["role"] == "agent_execution"
-            assert message["execution_event_type"] == "subtask_result"
+            assert message["execution_event_type"] == "step_result"
 
             content = message["content"]
-            assert content["type"] == "subtask_result"
+            assert content["type"] == "step_result"
             assert content["result"] == "Subtask completed successfully"
 
     @pytest.mark.asyncio
@@ -300,12 +300,12 @@ class TestAgentExecutionMessageStorage:
 
         # Create multiple events - use statuses that trigger message sending
         task = Task(id="task1", title="Test Task")
-        subtask = SubTask(id="subtask1", content="Test Subtask")
+        step = Step(id="step1", instructions="Test Subtask")
         task_update = TaskUpdate(
-            event=TaskUpdateEvent.SUBTASK_COMPLETED, task=task, subtask=subtask
+            event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step
         )
         planning_update = PlanningUpdate(
-            phase="planning", status="Success", content="Planning", node_id="node1"
+            phase="planning", status="Success", instructions="Planning", node_id="node1"
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -504,9 +504,9 @@ class TestAgentExecutionMessageFiltering:
         chat_history = [test_message]
 
         task_update = TaskUpdate(
-            event=TaskUpdateEvent.SUBTASK_STARTED,
+            event=TaskUpdateEvent.STEP_STARTED,
             task=Task(id="task1", title="Test Task"),
-            subtask=SubTask(id="subtask1", content="Test Subtask"),
+            step=Step(id="step1", instructions="Test Subtask"),
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:

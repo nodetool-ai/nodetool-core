@@ -307,7 +307,7 @@ class BaseProviderTest(ABC):
             ),
             Message(
                 role="assistant",
-                content=[
+                instructions=[
                     MessageTextContent(
                         text="I don't have access to current weather data."
                     )
@@ -324,7 +324,7 @@ class BaseProviderTest(ABC):
         return [
             Message(
                 role="user",
-                content=[
+                instructions=[
                     MessageTextContent(
                         text="Search for information about Python testing"
                     )

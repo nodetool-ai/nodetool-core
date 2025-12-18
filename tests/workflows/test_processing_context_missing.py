@@ -210,7 +210,7 @@ class TestPredictionAndGeneration:
 
         async def mock_prediction_function(prediction, env):
             yield PredictionResult(
-                prediction=prediction, encoding="json", content="test result"
+                prediction=prediction, encoding="json", instructions="test result"
             )
 
         with patch("nodetool.models.prediction.Prediction.create"):
@@ -245,10 +245,10 @@ class TestPredictionAndGeneration:
 
         async def mock_prediction_function(prediction, env):
             yield PredictionResult(
-                prediction=prediction, encoding="json", content="chunk1"
+                prediction=prediction, encoding="json", instructions="chunk1"
             )
             yield PredictionResult(
-                prediction=prediction, encoding="json", content="chunk2"
+                prediction=prediction, encoding="json", instructions="chunk2"
             )
 
         results = []

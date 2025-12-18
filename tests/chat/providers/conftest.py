@@ -84,7 +84,7 @@ def conversation_messages() -> List[Message]:
         ),
         Message(
             role="assistant",
-            content=[
+            instructions=[
                 MessageTextContent(text="I don't have access to current weather data.")
             ],
         ),
@@ -100,7 +100,7 @@ def tool_messages() -> List[Message]:
     return [
         Message(
             role="user",
-            content=[
+            instructions=[
                 MessageTextContent(text="Search for information about machine learning")
             ],
         )

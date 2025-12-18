@@ -46,7 +46,7 @@ async def test_create_message_image_content(user_id: str):
     message = await Message.create(
         user_id=user_id,
         thread_id="th1",
-        content=[
+        instructions=[
             {
                 "type": "image_url",
                 "image": {"type": "image", "uri": "https://example.com/image.jpg"},
@@ -67,7 +67,7 @@ async def test_create_message_mixed_content(user_id: str):
     message = await Message.create(
         user_id=user_id,
         thread_id="th1",
-        content=[
+        instructions=[
             {"type": "text", "text": "Hello"},
             {
                 "type": "image_url",

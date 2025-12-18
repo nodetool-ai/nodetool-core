@@ -783,14 +783,14 @@ class TestChatOperations:
             user_id="1",
             thread_id=thread.id,
             role="user",
-            content="Hello",
+            instructions="Hello",
             tool_calls=[],
         )
         await Message.create(
             user_id="1",
             thread_id=thread.id,
             role="assistant",
-            content="Hi there",
+            instructions="Hi there",
             tool_calls=[],
         )
 
@@ -817,7 +817,7 @@ class TestChatOperations:
 
             result = await send_chat_message(
                 thread_id=thread.id,
-                content="Hello AI",
+                instructions="Hello AI",
                 model="gpt-4o",
                 provider="openai",
             )
@@ -841,7 +841,7 @@ class TestStorageOperations:
         content = base64.b64encode(b"test file content").decode("utf-8")
 
         result = await upload_file_to_storage(
-            key="test.txt", content=content, temp=True
+            key="test.txt", instructions=content, temp=True
         )
 
         assert result["key"] == "test.txt"
@@ -858,7 +858,7 @@ class TestStorageOperations:
         content = base64.b64encode(b"test").decode("utf-8")
 
         with pytest.raises(ValueError, match="path separators not allowed"):
-            await upload_file_to_storage(key="path/to/file.txt", content=content)
+            await upload_file_to_storage(key="path/to/file.txt", instructions=content)
 
     @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
@@ -870,7 +870,7 @@ class TestStorageOperations:
         # Upload first
         content = base64.b64encode(b"test content").decode("utf-8")
         await upload_file_to_storage(
-            key="download-test.txt", content=content, temp=True
+            key="download-test.txt", instructions=content, temp=True
         )
 
         # Download
@@ -893,7 +893,7 @@ class TestStorageOperations:
 
         # Upload file
         content = base64.b64encode(b"metadata test").decode("utf-8")
-        await upload_file_to_storage(key="metadata.txt", content=content, temp=True)
+        await upload_file_to_storage(key="metadata.txt", instructions=content, temp=True)
 
         # Get metadata
         result = await get_file_metadata(key="metadata.txt", temp=True)
@@ -912,7 +912,7 @@ class TestStorageOperations:
 
         # Upload file
         content = base64.b64encode(b"delete me").decode("utf-8")
-        await upload_file_to_storage(key="delete.txt", content=content, temp=True)
+        await upload_file_to_storage(key="delete.txt", instructions=content, temp=True)
 
         # Delete
         result = await delete_file_from_storage(key="delete.txt", temp=True)

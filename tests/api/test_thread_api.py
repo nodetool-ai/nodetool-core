@@ -192,13 +192,13 @@
 #         user_id=user_id,
 #         thread_id=thread.id,
 #         role="user",
-#         content="Test message 1"
+#         instructions="Test message 1"
 #     )
 #     message2 = await Message.create(
 #         user_id=user_id,
 #         thread_id=thread.id,
 #         role="assistant",
-#         content="Test response"
+#         instructions="Test response"
 #     )
 
 #     # Delete the thread
@@ -242,7 +242,7 @@
 #         user_id=user_id,
 #         thread_id=thread.id,
 #         role="user",
-#         content="My message"
+#         instructions="My message"
 #     )
 
 #     # Create a message from another user (simulating shared thread scenario)
@@ -250,7 +250,7 @@
 #         user_id="other-user",
 #         thread_id=thread.id,
 #         role="user",
-#         content="Other user's message"
+#         instructions="Other user's message"
 #     )
 
 #     # Delete the thread
@@ -272,7 +272,7 @@
 #             user_id=user_id,
 #             thread_id=thread.id,
 #             role="user" if i % 2 == 0 else "assistant",
-#             content=f"Message {i}"
+#             instructions=f"Message {i}"
 #         )
 #         message_ids.append(message.id)
 
@@ -283,7 +283,7 @@
 #             user_id="other-user",
 #             thread_id=thread.id,
 #             role="user",
-#             content=f"Other user message {i}"
+#             instructions=f"Other user message {i}"
 #         )
 #         other_user_message_ids.append(message.id)
 

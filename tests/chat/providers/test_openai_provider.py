@@ -162,7 +162,7 @@ class TestOpenAIProvider(BaseProviderTest):
                     id="chatcmpl-123",
                     choices=[
                         ChunkChoice(
-                            delta=ChoiceDelta(content=chunk_text),
+                            delta=ChoiceDelta(instructions=chunk_text),
                             finish_reason="stop" if is_last else None,
                             index=0,
                             logprobs=None,
@@ -211,13 +211,13 @@ class TestOpenAIProvider(BaseProviderTest):
         if "tool_calls" in response_data:
             # Tool calling response
             openai_response = self.create_openai_completion_response(
-                content=response_data.get("text", "Hello, world!"),
+                instructions=response_data.get("text", "Hello, world!"),
                 tool_calls=response_data["tool_calls"],
             )
         else:
             # Regular text response
             openai_response = self.create_openai_completion_response(
-                content=response_data.get("text", "Hello, world!")
+                instructions=response_data.get("text", "Hello, world!")
             )
 
         # Mock the async create method

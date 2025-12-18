@@ -112,7 +112,7 @@ class TestAnthropicProvider(BaseProviderTest):
 
         return AnthropicMessage(
             id="msg_123",
-            content=content_blocks,
+            instructions=content_blocks,
             model="claude-3-sonnet-20240229",
             role="assistant",
             stop_reason="end_turn" if not tool_uses else "tool_use",
@@ -215,12 +215,12 @@ class TestAnthropicProvider(BaseProviderTest):
             ]
 
             anthropic_response = self.create_anthropic_message_response(
-                content=response_data.get("text"), tool_uses=tool_uses
+                instructions=response_data.get("text"), tool_uses=tool_uses
             )
         else:
             # Regular text response
             anthropic_response = self.create_anthropic_message_response(
-                content=response_data.get("text", "Hello, world!")
+                instructions=response_data.get("text", "Hello, world!")
             )
 
         # Mock the async create method
@@ -508,7 +508,7 @@ class TestAnthropicProvider(BaseProviderTest):
             ),
             Message(
                 role="assistant",
-                content=[
+                instructions=[
                     MessageTextContent(
                         text="I don't have access to current weather data."
                     )

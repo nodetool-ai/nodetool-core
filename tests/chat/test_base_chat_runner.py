@@ -136,7 +136,7 @@ class TestBaseChatRunner:
 
         # Mock database messages
         mock_messages = [
-            Mock(spec=DBMessage, id=f"msg_{i}", content=f"Message {i}", role="user")
+            Mock(spec=DBMessage, id=f"msg_{i}", instructions=f"Message {i}", role="user")
             for i in range(3)
         ]
 

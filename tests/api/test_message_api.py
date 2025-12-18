@@ -60,7 +60,7 @@ async def test_get_messages_reverse(
         user_id=message.user_id,
         thread_id=message.thread_id,
         role="user",
-        content="Last",
+        instructions="Last",
     )
     response = client.get(
         "/api/messages/",

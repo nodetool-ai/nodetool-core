@@ -63,7 +63,7 @@ async def sample_message():
         thread_id="test_thread",
         user_id="test_user",
         role="user",
-        content="Test message",
+        instructions="Test message",
     )
 
 
@@ -187,7 +187,7 @@ class TestAssetMethods:
             mock_require_scope.return_value = mock_scope
 
             result = await context.create_asset(
-                name="test.txt", content_type="text/plain", content=content
+                name="test.txt", content_type="text/plain", instructions=content
             )
 
             assert result is not None
@@ -290,7 +290,7 @@ class TestMessageMethods:
         request = MessageCreateRequest(
             thread_id=None,  # This should cause an error
             role="user",
-            content="Hello world",
+            instructions="Hello world",
         )
 
         with pytest.raises(ValueError, match="Thread ID is required"):

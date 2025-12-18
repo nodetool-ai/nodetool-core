@@ -3,13 +3,13 @@ import json
 import pytest
 
 from nodetool.agents.agent import Agent
-from nodetool.metadata.types import SubTask, Task, TaskPlan
+from nodetool.metadata.types import Step, Task, TaskPlan
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,
-    SubTaskResult,
+    StepResult,
     TaskUpdate,
     TaskUpdateEvent,
 )
@@ -17,20 +17,20 @@ from nodetool.workflows.types import (
 
 @pytest.mark.asyncio
 async def test_execute_with_initial_task(monkeypatch, tmp_path):
-    subtask = SubTask(id="sub1", content="do")
-    task = Task(title="t", subtasks=[subtask])
+    step = Step(id="sub1", instructions="do")
+    task = Task(title="t", steps=[step])
     provider = MockProvider([])
 
     async def fake_execute_tasks(self, ctx):
-        sub = self.task.subtasks[0]
+        sub = self.task.steps[0]
         yield TaskUpdate(
-            task=self.task, subtask=sub, event=TaskUpdateEvent.SUBTASK_STARTED
+            task=self.task, step=sub, event=TaskUpdateEvent.STEP_STARTED
         )
-        yield SubTaskResult(subtask=sub, result="part", is_task_result=False)
+        yield StepResult(step=sub, result="part", is_task_result=False)
         yield TaskUpdate(
-            task=self.task, subtask=sub, event=TaskUpdateEvent.SUBTASK_COMPLETED
+            task=self.task, step=sub, event=TaskUpdateEvent.STEP_COMPLETED
         )
-        yield SubTaskResult(subtask=sub, result="final", is_task_result=True)
+        yield StepResult(step=sub, result="final", is_task_result=True)
 
     class DummyExecutor:
         def __init__(self, *args, **kwargs):
@@ -57,12 +57,12 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
         results.append(item)
 
     assert agent.get_results() == "final"
-    assert subtask.output_schema == json.dumps({"type": "string"})
+    assert step.output_schema == json.dumps({"type": "string"})
 
     # Check that we have the expected types in the results
     result_types = [type(i) for i in results]
     assert TaskUpdate in result_types
-    assert SubTaskResult in result_types
+    assert StepResult in result_types
     # Check that we have at least the expected number of TaskUpdates
     task_update_count = sum(1 for t in result_types if t == TaskUpdate)
     assert task_update_count >= 3
@@ -81,15 +81,15 @@ class DummyTaskExecutor:
         self.task = task
 
     async def execute_tasks(self, context):
-        subtask = self.task.subtasks[0]
+        step = self.task.steps[0]
         yield TaskUpdate(
-            task=self.task, subtask=subtask, event=TaskUpdateEvent.SUBTASK_STARTED
+            task=self.task, step=step, event=TaskUpdateEvent.STEP_STARTED
         )
         yield Chunk(content="work")
         yield TaskUpdate(
-            task=self.task, subtask=subtask, event=TaskUpdateEvent.SUBTASK_COMPLETED
+            task=self.task, step=step, event=TaskUpdateEvent.STEP_COMPLETED
         )
-        yield SubTaskResult(subtask=subtask, result="done", is_task_result=True)
+        yield StepResult(step=step, result="done", is_task_result=True)
 
 
 class DummyTaskPlanner:
@@ -104,17 +104,15 @@ class DummyTaskPlanner:
         execution_tools,
         inputs,
         output_schema,
-        enable_analysis_phase,
-        enable_data_contracts_phase,
         use_structured_output,
         verbose,
     ):
-        sub = SubTask(content="do")
-        task = Task(title="t", subtasks=[sub])
+        sub = Step(instructions="do")
+        task = Task(title="t", steps=[sub])
         self.task_plan = TaskPlan(title="p", tasks=[task])
 
     async def create_task(self, processing_context, objective):
-        yield PlanningUpdate(phase="plan", status="ok", content="start")
+        yield PlanningUpdate(phase="plan", status="ok", instructions="start")
 
     async def save_task_plan(self):
         pass
@@ -123,8 +121,8 @@ class DummyTaskPlanner:
 @pytest.mark.asyncio
 async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
     provider = MockProvider([])
-    sub = SubTask(content="do")
-    task = Task(title="t", subtasks=[sub])
+    sub = Step(instructions="do")
+    task = Task(title="t", steps=[sub])
     monkeypatch.setattr("nodetool.agents.agent.TaskExecutor", DummyTaskExecutor)
     agent = Agent(
         name="a",
@@ -140,7 +138,7 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
     async for item in agent.execute(context):
         items.append(item)
 
-    assert any(isinstance(i, SubTaskResult) for i in items)
+    assert any(isinstance(i, StepResult) for i in items)
     assert any(
         isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED
         for i in items

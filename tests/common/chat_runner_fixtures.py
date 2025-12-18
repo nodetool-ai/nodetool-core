@@ -103,7 +103,7 @@ def create_api_message(
     """Create an API message for testing"""
     return ApiMessage(
         role=role,
-        content=content,
+        instructions=content,
         thread_id=thread_id,
         id=kwargs.get("id"),
         workflow_id=kwargs.get("workflow_id"),
@@ -187,7 +187,7 @@ class ChatHistoryBuilder:
         self.messages.append(
             create_api_message(
                 role="assistant",
-                content="",
+                instructions="",
                 tool_calls=[
                     {
                         "id": call_id,
@@ -203,7 +203,7 @@ class ChatHistoryBuilder:
         self, result: str, call_id: str = "call_123"
     ) -> "ChatHistoryBuilder":
         self.messages.append(
-            create_api_message(role="tool", content=result, tool_call_id=call_id)
+            create_api_message(role="tool", instructions=result, tool_call_id=call_id)
         )
         return self
 

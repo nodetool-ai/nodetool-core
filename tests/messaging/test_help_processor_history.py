@@ -78,7 +78,7 @@ async def test_help_processor_appends_tool_history():
     chat_history = [
         Message(
             role="user",
-            content="Please add nodes",
+            instructions="Please add nodes",
             provider=Provider.OpenAI,
             model="gpt-test",
             thread_id="t1",

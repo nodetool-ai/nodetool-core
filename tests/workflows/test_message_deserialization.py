@@ -120,9 +120,9 @@ def test_deserialize_task_update():
             "objective": "Test task",
             "status": "running",
             "plan": [],
-            "subtasks": [],
+            "steps": [],
         },
-        "subtask": None,
+        "step": None,
         "event": "task_created",
     }
 

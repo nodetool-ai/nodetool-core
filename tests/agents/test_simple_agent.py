@@ -32,7 +32,7 @@ async def test_execute_yields_results(monkeypatch, tmp_path):
     provider = MockProvider(
         [
             Message(
-                content='```json\n{"status": "completed", "result": "42"}\n```',
+                instructions='```json\n{"status": "completed", "result": "42"}\n```',
                 role="assistant",
             )
         ]

@@ -7,7 +7,7 @@ from nodetool.agents.task_planner import (
     TaskPlanner,
 )
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, SubTask, ToolCall
+from nodetool.metadata.types import Message, Step, ToolCall
 from nodetool.providers.base import MockProvider
 from nodetool.utils.message_parsing import (
     extract_json_from_message,
@@ -55,9 +55,9 @@ def test_format_message_content(tmp_path):
 
 def test_build_dependency_graph(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(id="task_a", content="a", input_tasks=[])
-    s2 = SubTask(id="task_b", content="b", input_tasks=["task_a"])
-    s3 = SubTask(id="task_c", content="c", input_tasks=["task_b", "task_a"])
+    s1 = Step(id="task_a", instructions="a", depends_on=[])
+    s2 = Step(id="task_b", instructions="b", depends_on=["task_a"])
+    s3 = Step(id="task_c", instructions="c", depends_on=["task_b", "task_a"])
     graph = planner._build_dependency_graph([s1, s2, s3])
     assert set(graph.edges()) == {
         ("task_a", "task_b"),
@@ -68,24 +68,24 @@ def test_build_dependency_graph(tmp_path):
 
 def test_validate_dependencies_cycle(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(id="task_a", content="a", input_tasks=["task_b"])
-    s2 = SubTask(id="task_b", content="b", input_tasks=["task_a"])
+    s1 = Step(id="task_a", instructions="a", depends_on=["task_b"])
+    s2 = Step(id="task_b", instructions="b", depends_on=["task_a"])
     errors = planner._validate_dependencies([s1, s2])
     assert any("Circular dependency" in e for e in errors)
 
 
 def test_validate_dependencies_missing_input(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(id="task_a", content="a", input_tasks=["missing_task"])
+    s1 = Step(id="task_a", instructions="a", depends_on=["missing_task"])
     errors = planner._validate_dependencies([s1])
-    assert any("missing subtask" in e for e in errors)
+    assert any("missing step" in e for e in errors)
 
 
 def test_task_id_uniqueness(tmp_path):
     """Test that task IDs should be unique in a plan"""
     make_planner(tmp_path)
-    s1 = SubTask(id="duplicate_id", content="a", input_tasks=[])
-    s2 = SubTask(id="duplicate_id", content="b", input_tasks=[])
+    s1 = Step(id="duplicate_id", instructions="a", depends_on=[])
+    s2 = Step(id="duplicate_id", instructions="b", depends_on=[])
     # Since task IDs should be unique, having duplicates would be caught
     # during plan validation - this tests the concept of ID uniqueness
     task_ids = [s.id for s in [s1, s2]]
@@ -99,12 +99,12 @@ def test_extract_json_from_message_with_code_fence(tmp_path):
     # Test with JSON code fence
     msg = Message(
         role="assistant",
-        content='Here is the plan:\n```json\n{"title": "Test", "subtasks": []}\n```'
+        content='Here is the plan:\n```json\n{"title": "Test", "steps": []}\n```'
     )
     result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test"
-    assert result["subtasks"] == []
+    assert result["steps"] == []
 
 
 def test_extract_json_from_message_with_plain_fence(tmp_path):
@@ -114,7 +114,7 @@ def test_extract_json_from_message_with_plain_fence(tmp_path):
     # Test with plain code fence
     msg = Message(
         role="assistant",
-        content='```\n{"title": "Test2", "subtasks": []}\n```'
+        content='```\n{"title": "Test2", "steps": []}\n```'
     )
     result = extract_json_from_message(msg)
     assert result is not None
@@ -128,7 +128,7 @@ def test_extract_json_from_message_with_raw_json(tmp_path):
     # Test with raw JSON
     msg = Message(
         role="assistant",
-        content='Some text before {"title": "Test3", "subtasks": []} some text after'
+        content='Some text before {"title": "Test3", "steps": []} some text after'
     )
     result = extract_json_from_message(msg)
     assert result is not None
@@ -142,7 +142,7 @@ def test_extract_json_from_message_with_think_tags(tmp_path):
     # Test that think tags are removed before extraction
     msg = Message(
         role="assistant",
-        content='<think>Planning...</think>\n```json\n{"title": "Test4", "subtasks": []}\n```'
+        content='<think>Planning...</think>\n```json\n{"title": "Test4", "steps": []}\n```'
     )
     result = extract_json_from_message(msg)
     assert result is not None
@@ -168,7 +168,7 @@ def test_extract_json_from_message_none(tmp_path):
     assert result is None
 
 
-def test_process_subtask_schema_with_dict(tmp_path):
+def test_process_step_schema_with_dict(tmp_path):
     planner = make_planner(tmp_path)
     schema = {
         "type": "object",
@@ -177,7 +177,7 @@ def test_process_subtask_schema_with_dict(tmp_path):
         },
     }
 
-    schema_str, errors = planner._process_subtask_schema(
+    schema_str, errors = planner._process_step_schema(
         {"output_schema": schema}, "schema test"
     )
 
@@ -189,7 +189,7 @@ def test_process_subtask_schema_with_dict(tmp_path):
     assert parsed["additionalProperties"] is False
 
 
-def test_process_subtask_schema_with_yaml_fallback(tmp_path):
+def test_process_step_schema_with_yaml_fallback(tmp_path):
     planner = make_planner(tmp_path)
     yaml_schema = """
 type: object
@@ -198,7 +198,7 @@ properties:
     type: string
 """
 
-    schema_str, errors = planner._process_subtask_schema(
+    schema_str, errors = planner._process_step_schema(
         {"output_schema": yaml_schema}, "schema yaml test"
     )
 
@@ -218,21 +218,21 @@ class ToolStub(Tool):
         return None
 
 
-def test_prepare_subtask_data_filters_tools(tmp_path):
+def test_prepare_step_data_filters_tools(tmp_path):
     planner = make_planner(tmp_path)
     planner.execution_tools = [ToolStub("browser"), ToolStub("google_search")]
     available_execution_tools = {tool.name: tool for tool in planner.execution_tools}
-    subtask_data = {
+    step_data = {
         "content": "Do work",
-        "input_tasks": [],
+        "depends_on": [],
         "model": "gpt",
         "tools": ["browser", "unknown"],
     }
-    filtered, errors = planner._prepare_subtask_data(
-        subtask_data,
+    filtered, errors = planner._prepare_step_data(
+        step_data,
         '{"type":"string"}',
         None,
-        "subtask 0",
+        "step 0",
         available_execution_tools,
     )
     assert errors == []

@@ -1,6 +1,6 @@
 from rich.table import Table
 
-from nodetool.metadata.types import SubTask, Task, ToolCall
+from nodetool.metadata.types import Step, Task, ToolCall
 from nodetool.ui.console import AgentConsole
 
 
@@ -52,19 +52,19 @@ def test_update_planning_display(monkeypatch):
 
 def test_create_execution_table(monkeypatch):
     console = AgentConsole(verbose=True)
-    sub1 = SubTask(
+    sub1 = Step(
         id="sub1",
-        content="task1",
+        instructions="task1",
         output_file="out1.txt",
         input_files=["in1.txt"],
         start_time=1,
         completed=True,
     )
-    sub2 = SubTask(id="sub2", content="task2", output_file="out2.txt", completed=True)
-    task = Task(title="t", subtasks=[sub1, sub2])
-    call = ToolCall(subtask_id=sub1.id, name="tool", message="m" * 80)
+    sub2 = Step(id="sub2", instructions="task2", output_file="out2.txt", completed=True)
+    task = Task(title="t", steps=[sub1, sub2])
+    call = ToolCall(step_id=sub1.id, name="tool", message="m" * 80)
     tree = console.create_execution_tree("Exec", task, [call])
-    node1 = console.subtask_nodes[sub1.id]
+    node1 = console.step_nodes[sub1.id]
     assert "task1" in node1.label
     # Check that tool calls are displayed with truncated message
     assert len(node1.children) > 0  # Should have tool calls
