@@ -1,19 +1,19 @@
 """
-🧠 SubTask Execution Context: Orchestrating Focused Task Execution
+🧠 Step Execution Context: Orchestrating Focused Task Execution
 
-This module provides the `SubTaskContext` class, the dedicated engine for executing
-a single, isolated subtask within a larger agentic workflow. It manages the state,
-communication, and tool usage necessary to fulfill the subtask's objective, ensuring
+This module provides the `StepExecutor` class, the dedicated engine for executing
+a single, isolated step within a larger agentic workflow. It manages the state,
+communication, and tool usage necessary to fulfill the step's objective, ensuring
 each step operates independently but contributes to the overall task goal.
 
 Core Components:
 ---------------
-*   `SubTaskContext`: The central class managing the lifecycle of a subtask.
+*   `StepExecutor`: The central class managing the lifecycle of a step.
     It maintains an isolated message history, manages available tools, monitors
     resource limits (tokens, iterations), and drives the interaction with the
     chosen language model (LLM).
 *   Structured completion responses: Instead of calling finish tools, the LLM ends
-    each subtask by emitting a compact JSON block with `"status": "completed"`
+    each step by emitting a compact JSON block with `"status": "completed"`
     and a `result` object that matches the declared output schema. The result is
     stored directly in the processing context and made available to downstream tasks.
 *   Helper Functions (`json_schema_for_output_type`, etc.):
@@ -22,22 +22,22 @@ Core Components:
 
 Execution Algorithm:
 --------------------
-1.  **Initialization**: A `SubTaskContext` is created for a specific `SubTask`,
+1.  **Initialization**: A `StepExecutor` is created for a specific `Step`,
     equipped with the necessary `ProcessingContext`, `ChatProvider`, tools,
     model, and resource limits.
-    A system prompt tailored to the subtask (execution vs. final aggregation) is
-    generated. The subtask's internal message history is initialized with this
+    A system prompt tailored to the step (execution vs. final aggregation) is
+    generated. The step's internal message history is initialized with this
     system prompt.
 
 2.  **LLM-Driven Execution Loop**: The context enters an iterative loop driven by
-    interactions with the LLM. The loop continues as long as the subtask is not
+    interactions with the LLM. The loop continues as long as the step is not
     completed:
     a.  **Iteration & Limit Checks (Pre-LLM Call)**:
         - Token count of the history is checked. If it exceeds `max_token_limit`
           and not already in conclusion stage, the context transitions to
           `in_conclusion_stage` (see step 2.e), which disables tool calls and
           asks the LLM to conclude.
-    b.  **Prepare Prompt & LLM Call**: The overall task description, current subtask
+    b.  **Prepare Prompt & LLM Call**: The overall task description, current step
         instructions, input task results (directly injected), and the current message
         history form the prompt. The LLM processes this history and generates a response.
         This response can be text content or a request to use one or more available tools
@@ -62,28 +62,28 @@ Execution Algorithm:
                it logs sources.
              - **Serialization**: Converts the processed tool result to a JSON
                string (`_serialize_tool_result_for_history`).
-        iii. The serialized JSON string (tool output) is then added to the subtask's
+        iii. The serialized JSON string (tool output) is then added to the step's
              internal message history as a `Message` with role 'tool'.
     d.  **Continuation**: The loop continues to the next LLM interaction unless the
-        subtask has emitted a completion JSON.
+        step has emitted a completion JSON.
     e.  **Conclusion Stage**: If the token limit is exceeded, the context enters a
         "conclusion stage". Tool calls are disabled and the LLM is instructed to
-        synthesize results and conclude the subtask by providing the completion JSON.
+        synthesize results and conclude the step by providing the completion JSON.
 
 3.  **Object Storage**: When a completion JSON is accepted (or when forced
     completion occurs), the result object is stored directly in the processing
-    context using the subtask ID (and the task ID if this is the final aggregation
-    subtask). This makes the result available to downstream tasks via direct
+    context using the step ID (and the task ID if this is the final aggregation
+    step). This makes the result available to downstream tasks via direct
     context access.
 
 4.  **Completion**: Once a valid completion JSON is captured (or synthesized as a
-    fallback), the subtask is marked `completed`, `SubTaskResult` / `TaskUpdate`
+    fallback), the step is marked `completed`, `StepResult` / `TaskUpdate`
     events are emitted, and the execution loop terminates.
 
 Key Data Structures:
 --------------------
 *   `Task`: Represents the overall goal.
-*   `SubTask`: Defines a single step, including its objective (`content`), input task IDs,
+*   `Step`: Defines a single step, including its objective (`content`), input task IDs,
     and expected output schema.
 *   `Message`: Represents a single turn in the conversation history (system, user,
     assistant, tool).
@@ -98,7 +98,7 @@ High-Level Execution Flow Diagram:
 ---------------------------------
 ```ascii
 +-----------------------+
-| Init SubTaskContext   |
+| Init StepExecutor   |
 | (History, Tools,      |
 |  System Prompt)       |
 +-----------+-----------+
@@ -179,12 +179,13 @@ from jsonschema import ValidationError
 from jsonschema import validate as jsonschema_validate
 
 from nodetool.agents.tools.base import Tool
+from nodetool.agents.tools.finish_step_tool import FinishStepTool
 from nodetool.chat.token_counter import (
     count_message_tokens,
     count_messages_tokens,
 )
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall
+from nodetool.metadata.types import Message, Step, Task, ToolCall
 from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.utils.message_parsing import (
@@ -192,7 +193,7 @@ from nodetool.utils.message_parsing import (
     remove_think_tags,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, SubTaskResult, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, LogUpdate, StepResult, TaskUpdate, TaskUpdateEvent
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
@@ -207,27 +208,23 @@ MAX_JSON_PARSE_FAILURES: int = 6
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 # Role
-You are executing a single subtask within a larger plan. Your job is to complete this subtask end-to-end.
+You are executing EXACTLY one step within a larger plan. Complete this step end-to-end.
 
-# Subtask Objective
-{{ subtask_content }}
+# Objective
+{{ step_content }}
 
-# Operating Mode
-Persistence and completion:
-- Keep going until the subtask is completed; do not hand back early.
-- If something is ambiguous, make the most reasonable assumption, proceed, and document the assumption in `metadata.notes`.
-- Prefer concrete tool calls and actions over clarifying questions.
-- Stay focused: avoid unnecessary exploration or tangential work.
+# Hard Constraint: No Human Feedback
+- Do NOT ask clarifying questions or request user input.
+- If something is ambiguous or missing, choose the simplest reasonable assumption and proceed.
 
-Agentic eagerness control:
-- The token budget is limited; stay focused on high-signal actions.
-- Be efficient and selective with tool usage.
-- Complete work directly when possible rather than adding subtasks for trivial steps.
+# Scope & Discipline
+- Do ONLY what is required to satisfy this step objective; avoid tangents and extra work.
+- Use upstream step results already present in context; do not ask for them again.
+- Never invent fields: the final result must match the schema exactly (no extra keys; include all required keys).
 
 Output style:
-- Be concise and minimize token usage.
-- Use structured, deterministic outputs over prose.
-- Provide brief reasoning explanations, not extensive chain-of-thought.
+- Keep non-tool messages concise (≤2 sentences).
+- Do not reveal chain-of-thought or internal reasoning traces.
 
 # Output Schema
 - The final `result` object MUST match this schema:
@@ -235,61 +232,34 @@ Output style:
 {{ output_schema_json }}
 ```
 
-# Completion Format
-- When the subtask is complete, respond with a single JSON block (no prose) formatted exactly as:
-```json
-{
-  "status": "completed",
-  "result": { ... }  // Matches the schema above
-}
-```
-- Do not emit this JSON until you are fully finished.
-- After you send the completion JSON, stop responding immediately.
+# Tool Use
+- Use tools only when they materially improve correctness or are required.
+- Avoid exploratory or repeated tool calls that are unlikely to change the outcome.
+- Progress updates: only when you start a new major phase or your plan changes; ≤1 sentence.
 
-# Tool Usage Guidelines
-
-## Communication Pattern (Tool Preambles)
-Before making tool calls, provide clear progress updates:
-1. First assistant message: Restate the subtask objective in one sentence, then list a short numbered plan (1-3 steps).
-2. Before each tool call: Emit a one-sentence message describing what you're doing and why.
-3. After tool results: Provide a brief update only if the result changes your plan.
-
-# Execution Protocol
-1. **Use provided context:** Upstream task results are already present in context. Do not re-request them.
-2. **Execute the work:** Perform the required steps to produce a result conforming to this subtask's schema.
-3. **Stay focused:** If you notice missing context, first reason whether it is essential or can be inferred from existing inputs.
-4. **Finish properly:** When ready, output the completion JSON described above. It must include `"status":"completed"` and a `result` that matches the schema.
-
-# Stop Conditions
-- Stop immediately after emitting the completion JSON.
-- If you enter conclusion stage due to token budget pressure, prioritize synthesizing available information and finishing.
-- Do not continue working after successful task completion.
-
-# Output Requirements
-- Do not reveal internal chain-of-thought or reasoning traces.
-- Output only necessary tool calls and required fields.
-- Prefer structured, deterministic outputs following the schema.
-- Keep all responses concise and token-efficient.
+# Completion (Tool Call Only)
+- When the step is complete, CALL `finish_step` exactly once with:
+  {"result": <result>}
+- Do NOT output the final result in assistant text.
+- Stop immediately after calling `finish_step`.
 """
 
 DEFAULT_FINISH_TASK_SYSTEM_PROMPT: str = """
 # Role
-You are completing the final aggregation task, synthesizing results from prior subtasks into a single deliverable.
+You are completing the final aggregation task, synthesizing results from prior steps into a single deliverable.
 
-# Operating Mode
-Persistence and completion:
-- Keep going until the final result is produced; do not hand back early.
-- Focus on synthesis and aggregation, not additional research.
+# Hard Constraint: No Human Feedback
+- Do NOT ask clarifying questions or request user input.
+- If something is ambiguous or missing, choose the simplest reasonable assumption and proceed.
 
-Agentic eagerness control:
-- Token budget is limited; stay laser-focused on synthesis.
-- Be highly selective with tool usage during aggregation.
-- Prioritize using existing results over gathering new information.
+# Scope & Discipline
+- Focus on synthesis and aggregation only (do not do additional research).
+- Use upstream step results already present in context; do not ask for them again.
+- Never invent fields: the final result must match the schema exactly (no extra keys; include all required keys).
 
 Output style:
-- Be concise and token-efficient.
-- Use structured, deterministic outputs.
-- Provide brief reasoning, not extensive explanations.
+- Keep non-tool messages concise (≤2 sentences).
+- Do not reveal chain-of-thought or internal reasoning traces.
 
 # Output Schema
 - The final deliverable must match this schema:
@@ -297,40 +267,16 @@ Output style:
 {{ output_schema_json }}
 ```
 
-# Completion Format
-- When aggregation is complete, respond with a single JSON block (no prose) formatted exactly as:
-```json
-{
-  "status": "completed",
-  "result": { ... }  // Matches the schema above
-}
-```
-- Do not emit this JSON until the final deliverable is ready.
-- After sending the completion JSON, stop responding immediately.
+# Tool Use
+- Use tools only when they materially improve correctness or are required.
+- Avoid exploratory or repeated tool calls that are unlikely to change the outcome.
+- Progress updates: only when you start a new major phase or your plan changes; ≤1 sentence.
 
-# Tool Usage Guidelines
-
-## Communication Pattern (Tool Preambles)
-1. First assistant message: Restate the overall objective in one sentence, then outline a short aggregation plan (1-3 steps).
-2. Before each tool call: Provide a one-sentence rationale of what you're doing and why.
-
-# Aggregation Protocol
-1. **Use provided results:** Upstream subtask results are already in context. Do not re-request them.
-2. **Review completeness:** Make sure all prerequisite subtasks have produced results before aggregating.
-3. **Extract and synthesize:** Gather key information from completed subtask results.
-4. **Produce final output:** Generate the complete deliverable matching the task schema.
-5. **Finish properly:** Output the completion JSON described above with `"status": "completed"` and the final `result`.
-
-# Stop Conditions
-- Stop immediately after emitting the completion JSON.
-- If conclusion stage triggers due to token budget pressure, finish with the information already available.
-- Do not continue working after successful completion.
-
-# Output Requirements
-- Do not reveal internal reasoning traces or chain-of-thought.
-- Output only necessary tool calls and required fields.
-- Prefer structured, deterministic outputs following the schema.
-- Keep all responses concise and token-efficient.
+# Completion (Tool Call Only)
+- When aggregation is complete, CALL `finish_step` exactly once with:
+  {"result": <result>}
+- Do NOT output the final result in assistant text.
+- Stop immediately after calling `finish_step`.
 """
 
 DEFAULT_UNSTRUCTURED_SYSTEM_PROMPT: str = """
@@ -338,12 +284,15 @@ DEFAULT_UNSTRUCTURED_SYSTEM_PROMPT: str = """
 You are executing a task. Your job is to complete it end-to-end.
 
 # Objective
-{{ subtask_content }}
+{{ step_content }}
+
+# Hard Constraint: No Human Feedback
+- Do NOT ask clarifying questions or request user input.
+- If something is ambiguous or missing, choose the simplest reasonable assumption and proceed.
 
 # Operating Mode
 - Use tools as needed to achieve the objective.
-- When you have the final answer or have completed the task, simply provide the result as your final response.
-- Do not wrap the result in JSON.
+- When you have the final answer or have completed the task, provide the result as your final response.
 
 # Tool Usage Guidelines
 ## Communication Pattern (Tool Preambles)
@@ -454,29 +403,29 @@ def _remove_think_tags(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-class SubTaskContext:
+class StepExecutor:
     """
-    🧠 The Task-Specific Brain - Isolated execution environment for a single subtask
+    🧠 The Task-Specific Brain - Isolated execution environment for a single step
 
-    This class maintains a completely isolated context for each subtask, with its own:
-    - Message history: Tracks all interactions in this specific subtask
-    - System prompt: Automatically selected based on subtask type (reasoning vs. standard)
+    This class maintains a completely isolated context for each step, with its own:
+    - Message history: Tracks all interactions in this specific step
+    - System prompt: Automatically selected based on step type (reasoning vs. standard)
     - Tools: Available for information gathering and task completion
     - Token tracking: Monitors context size with automatic summarization when needed
 
-    Each subtask operates like a dedicated worker with exactly the right skills and
+    Each step operates like a dedicated worker with exactly the right skills and
     information for that specific job, without interference from other tasks.
 
     Key Features:
     - Token limit monitoring with automatic context summarization when exceeding thresholds
     - Two-stage execution model: tool calling stage → conclusion stage
     - Safety limits: iteration tracking and strict token budget controls
-    - Explicit reasoning capabilities for "thinking" subtasks
+    - Explicit reasoning capabilities for "thinking" steps
     - Progress reporting throughout execution
     """
 
     task: Task
-    subtask: SubTask
+    step: Step
     processing_context: ProcessingContext
     model: str
     provider: BaseProvider
@@ -494,13 +443,14 @@ class SubTaskContext:
     _is_buffering_chunks: bool
     in_conclusion_stage: bool
     _output_result: Any
+    _finish_step_tool: FinishStepTool | None
     input_tokens_total: int
     output_tokens_total: int
 
     def __init__(
         self,
         task: Task,
-        subtask: SubTask,
+        step: Step,
         processing_context: ProcessingContext,
         tools: Sequence[Tool],
         model: str,
@@ -508,27 +458,27 @@ class SubTaskContext:
         system_prompt: Optional[str] = None,
         use_finish_task: bool = False,
         max_token_limit: int | None = None,
-    max_iterations: int | None = None,
+        max_iterations: int | None = None,
         display_manager: Optional[AgentConsole] = None,
     ):
         """
-        Initialize a subtask execution context.
+        Initialize a step execution context.
 
         Args:
             task (Task): The task to execute
-            subtask (SubTask): The subtask to execute
+            step (Step): The step to execute
             processing_context (ProcessingContext): The processing context
-            system_prompt (str): The system prompt for this subtask
-            tools (List[Tool]): Tools available to this subtask
-            model (str): The model to use for this subtask
-            provider (ChatProvider): The provider to use for this subtask
-            use_finish_task (bool): Whether this subtask produces the final aggregated task result
+            system_prompt (str): The system prompt for this step
+            tools (List[Tool]): Tools available to this step
+            model (str): The model to use for this step
+            provider (ChatProvider): The provider to use for this step
+            use_finish_task (bool): Whether this step produces the final aggregated task result
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Deprecated; token budget now controls termination
             display_manager (Optional[AgentConsole]): Console for beautiful terminal output
         """
         self.task = task
-        self.subtask = subtask
+        self.step = step
         self.processing_context = processing_context
         self.model = model
         self.provider = provider
@@ -548,7 +498,13 @@ class SubTaskContext:
         self.input_tokens_total = 0
         self.output_tokens_total = 0
 
-        self.tools = self._filter_tools_for_subtask(tools)
+        # Add finish_step tool with this step's output schema for reliable completion
+        self._finish_step_tool = None
+        if self.result_schema:
+            self._finish_step_tool = FinishStepTool(self.result_schema)
+            self.tools = list(tools) + [self._finish_step_tool]
+        else:
+            self.tools = tools
         self._available_tool_names = [tool.name for tool in self.tools]
 
         # --- Prepare prompt templates ---
@@ -561,16 +517,16 @@ class SubTaskContext:
                 prompt_context = {
                     "output_schema_json": schema_json,
                 }
-            else:  # Standard execution subtask
+            else:  # Standard execution step
                 base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
                 prompt_context = {
-                    "subtask_content": self.subtask.content,
+                    "step_content": self.step.instructions,
                     "output_schema_json": schema_json,
                 }
         else:
             base_system_prompt = system_prompt or DEFAULT_UNSTRUCTURED_SYSTEM_PROMPT
             prompt_context = {
-                "subtask_content": self.subtask.content,
+                "step_content": self.step.instructions,
             }
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
@@ -580,21 +536,21 @@ class SubTaskContext:
             + datetime.datetime.now().strftime("%Y-%m-%d")
         )
 
-        # Initialize isolated message history for this subtask
+        # Initialize isolated message history for this step
         self.history = [Message(role="system", content=self.system_prompt)]
 
-        # Track iterations for this subtask
+        # Track iterations for this step
         self.iterations = 0
         if max_iterations is not None:
             log.debug(
-                "SubTaskContext received deprecated max_iterations=%s; token budget now governs execution.",
+                "StepExecutor received deprecated max_iterations=%s; token budget now governs execution.",
                 max_iterations,
             )
 
         # Track sources for data lineage
         self.sources = []
 
-        # Track progress for this subtask
+        # Track progress for this step
         self.progress = []
 
         self.encoding = tiktoken.get_encoding("cl100k_base")
@@ -653,41 +609,16 @@ class SubTaskContext:
         """Emit a single multiline debug entry describing the initial context."""
 
         summary_lines = [
-            "SubTaskContext initialized:",
-            f"  subtask_id: {self.subtask.id} (final={self.use_finish_task})",
+            "StepExecutor initialized:",
+            f"  step_id: {self.step.id} (final={self.use_finish_task})",
             f"  task_title: {self.task.title}",
-            f"  instructions: {self.subtask.content}",
-            f"  output_schema: {self.subtask.output_schema}",
+            f"  instructions: {self.step.instructions}",
+            f"  output_schema: {self.step.output_schema}",
             f"  model: {self.model} ({self.provider.__class__.__name__})",
             f"  max_tokens: {self.max_token_limit}",
             f"  tools: {', '.join(self._available_tool_names) if self._available_tool_names else 'none'}",
         ]
         log.debug("\n".join(summary_lines))
-
-    def _filter_tools_for_subtask(self, tools: Sequence[Tool]) -> list[Tool]:
-        requested = getattr(self.subtask, "tools", None) or []
-        if not isinstance(requested, list) or not requested:
-            return list(tools)
-
-        normalized = [tool_name.strip() for tool_name in requested if isinstance(tool_name, str) and tool_name.strip()]
-        if not normalized:
-            return list(tools)
-
-        allowed = set(normalized)
-        filtered = [tool for tool in tools if tool.name in allowed]
-        missing = allowed - {tool.name for tool in filtered}
-        if missing:
-            log.warning(
-                "Subtask %s requested unavailable tools: %s",
-                self.subtask.id,
-                ", ".join(sorted(missing)),
-            )
-        if not filtered:
-            log.warning(
-                "Subtask %s restricted tool list leaves no execution tools available",
-                self.subtask.id,
-            )
-        return filtered
 
     async def _summarize_messages(self, messages: list[Message]) -> str:
         """Summarize older messages into a concise, factual summary."""
@@ -777,22 +708,22 @@ class SubTaskContext:
         )
 
     def _load_result_schema(self) -> Optional[Dict[str, Any]]:
-        """Parse and sanitize the declared output schema for this subtask."""
+        """Parse and sanitize the declared output schema for this step."""
 
-        if not self.subtask.output_schema:
+        if not self.step.output_schema:
             return None
 
         default_description = (
-            "The task result" if self.use_finish_task else "The subtask result"
+            "The task result" if self.use_finish_task else "The step result"
         )
-        raw_schema: Any = self.subtask.output_schema
+        raw_schema: Any = self.step.output_schema
 
         try:
             return _validate_and_sanitize_schema(raw_schema, default_description)
         except Exception as exc:  # pragma: no cover - defensive fallback
             log.warning(
-                "Failed to parse output_schema for subtask %s: %s. Using fallback string schema.",
-                self.subtask.id,
+                "Failed to parse output_schema for step %s: %s. Using fallback string schema.",
+                self.step.id,
                 exc,
             )
             return {
@@ -816,15 +747,15 @@ class SubTaskContext:
             return False, str(exc), normalized_result
 
     def _store_completion_result(self, normalized_result: Any) -> None:
-        """Persist the final result and mark the subtask as completed."""
+        """Persist the final result and mark the step as completed."""
 
-        self.subtask.completed = True
-        self.subtask.end_time = int(time.time())
-        self.processing_context.store_subtask_result(
-            self.subtask.id, normalized_result
+        self.step.completed = True
+        self.step.end_time = int(time.time())
+        self.processing_context.store_step_result(
+            self.step.id, normalized_result
         )
         if self.use_finish_task:
-            self.processing_context.store_subtask_result(
+            self.processing_context.store_step_result(
                 self.task.id, normalized_result
             )
         self._output_result = normalized_result
@@ -832,20 +763,16 @@ class SubTaskContext:
     def _append_completion_feedback(
         self, detail: str, submitted_result: Any | None = None
     ) -> None:
-        """Append a system message instructing the LLM to correct its JSON output."""
+        """Append a system message instructing the LLM to complete via finish_step."""
 
         schema_str = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
         message_lines = [
-            "SYSTEM: The final JSON response was invalid.",
+            "SYSTEM: Step completion must be signaled via the `finish_step` tool.",
             f"Detail: {detail}",
-            "Respond with a single JSON block formatted exactly as:",
-            "```json",
-            '{"status":"completed","result":{...}}',
-            "```",
+            "Call `finish_step` exactly once with:",
+            '{"result": <result>}',
             "Schema for `result`:",
-            "```json",
             schema_str,
-            "```",
         ]
 
         if submitted_result is not None:
@@ -879,48 +806,55 @@ class SubTaskContext:
 
         parsed = extract_json_from_message(message)
         if not isinstance(parsed, dict):
-            self._register_json_failure("Response did not contain a JSON object.")
+            # Completion is signaled via finish_step tool calls, not via assistant text.
             return False, None
 
-        status_value = str(parsed.get("status", "")).strip().lower()
-        if status_value not in VALID_COMPLETION_STATUSES:
-            self._register_json_failure("Missing or invalid status in completion JSON.")
-            return False, None
+        raw_content: str | None = None
+        if isinstance(message.content, str):
+            raw_content = message.content
+        elif isinstance(message.content, list):
+            try:
+                raw_content = "\n".join(str(item) for item in message.content)
+            except Exception:  # pragma: no cover - defensive fallback
+                raw_content = str(message.content)
 
-        if "result" not in parsed:
-            self._append_completion_feedback(
-                "Missing 'result' field in completion payload.", parsed
-            )
-            self._register_json_failure("Completion JSON missing result field.")
-            return False, None
-
-        is_valid, error_detail, normalized_result = self._validate_result_payload(
-            parsed["result"]
+        cleaned = remove_think_tags(raw_content).strip() if raw_content else ""
+        looks_like_json_only = (cleaned.startswith("{") and cleaned.endswith("}")) or (
+            cleaned.startswith("```") and cleaned.endswith("```")
         )
 
-        if not is_valid or normalized_result is None:
-            self._append_completion_feedback(
-                error_detail or "Result failed schema validation.",
-                parsed.get("result"),
-            )
-            self._register_json_failure(
-                error_detail or "Result failed schema validation."
-            )
+        has_completion_wrapper = ("status" in parsed) or ("result" in parsed)
+        if not (has_completion_wrapper or looks_like_json_only):
+            # Allow incidental JSON in assistant text without treating it as a completion attempt.
             return False, None
 
-        self._store_completion_result(normalized_result)
-        return True, normalized_result
+        # We do not accept JSON completion in assistant text; completion must happen via finish_step.
+        candidate_result = parsed.get("result") if "result" in parsed else parsed
+        is_valid, error_detail, normalized_result = self._validate_result_payload(candidate_result)
+        if is_valid and normalized_result is not None:
+            self._append_completion_feedback(
+                "Valid result detected in assistant text, but you must call finish_step instead.",
+                normalized_result,
+            )
+        else:
+            self._append_completion_feedback(
+                error_detail or "Result failed schema validation.", candidate_result
+            )
+        self._register_json_failure(
+            "Attempted to complete via assistant text instead of finish_step."
+        )
+        return False, None
 
     def _emit_completion_events(self, normalized_result: Any):
-        """Yield completion updates and a SubTaskResult message."""
+        """Yield completion updates and a StepResult message."""
 
         yield TaskUpdate(
             task=self.task,
-            subtask=self.subtask,
-            event=TaskUpdateEvent.SUBTASK_COMPLETED,
+            step=self.step,
+            event=TaskUpdateEvent.STEP_COMPLETED,
         )
-        yield SubTaskResult(
-            subtask=self.subtask,
+        yield StepResult(
+            step=self.step,
             result=normalized_result,
             is_task_result=self.use_finish_task,
         )
@@ -930,7 +864,7 @@ class SubTaskContext:
         self.json_parse_failures += 1
         log.warning(
             "Subtask %s JSON parse/validation failure %d/%d: %s",
-            self.subtask.id,
+            self.step.id,
             self.json_parse_failures,
             MAX_JSON_PARSE_FAILURES,
             detail,
@@ -939,16 +873,15 @@ class SubTaskContext:
         if self.json_parse_failures == JSON_FAILURE_ALERT_THRESHOLD:
             # Push a clear system nudge and force conclusion mode
             reminder = (
-                "SYSTEM: Output must be a single compact JSON block exactly like "
-                '{"status":"completed","result":{...}} with no markdown, commentary, '
-                "or trailing text. Use valid JSON only."
+                "SYSTEM: Do NOT output completion JSON in assistant text. You MUST call "
+                "`finish_step` with {'result': <result>} matching the schema, with no extra keys."
             )
             self.history.append(Message(role="system", content=reminder))
             self.in_conclusion_stage = True
 
         if self.json_parse_failures >= MAX_JSON_PARSE_FAILURES:
             raise ValueError(
-                f"Exceeded maximum JSON parse attempts ({MAX_JSON_PARSE_FAILURES}) for subtask {self.subtask.id}."
+                f"Exceeded maximum JSON parse attempts ({MAX_JSON_PARSE_FAILURES}) for step {self.step.id}."
             )
 
     def get_result(self) -> Any | None:
@@ -959,39 +892,39 @@ class SubTaskContext:
 
     async def execute(
         self,
-    ) -> AsyncGenerator[Chunk | ToolCall | TaskUpdate | SubTaskResult, None]:
+    ) -> AsyncGenerator[Chunk | ToolCall | TaskUpdate | StepResult, None]:
         """
-        Runs a single subtask to completion using the LLM-driven execution loop.
+        Runs a single step to completion using the LLM-driven execution loop.
 
         Yields:
-            Union[Chunk, ToolCall, TaskUpdate, SubTaskResult]: Live updates during task execution
+            Union[Chunk, ToolCall, TaskUpdate, StepResult]: Live updates during task execution
         """
-        # Record the start time of the subtask
+        # Record the start time of the step
         current_time = int(time.time())
-        self.subtask.start_time = current_time
+        self.step.start_time = current_time
 
-        # Ensure subtask logs are initialized
-        if not hasattr(self.subtask, "logs") or self.subtask.logs is None:
-            self.subtask.logs = []
+        # Ensure step logs are initialized
+        if not hasattr(self.step, "logs") or self.step.logs is None:
+            self.step.logs = []
 
-        # Set the current subtask for the display manager
+        # Set the current step for the display manager
         if self.display_manager:
-            self.display_manager.set_current_subtask(self.subtask)
+            self.display_manager.set_current_step(self.step)
 
         self._log_initial_state()
 
-        # Display beautiful subtask start panel
+        # Display beautiful step start panel
         if self.display_manager:
-            self.display_manager.display_subtask_start(self.subtask)
+            self.display_manager.display_step_start(self.step)
 
         # --- LLM-based Execution Logic ---
         prompt_parts = [
-            self.subtask.content,
+            self.step.instructions,
         ]
-        if self.subtask.input_tasks:
+        if self.step.depends_on:
             # Fetch and inject input results directly into the prompt
-            for input_task_id in self.subtask.input_tasks:
-                result = self.processing_context.load_subtask_result(
+            for input_task_id in self.step.depends_on:
+                result = self.processing_context.load_step_result(
                     input_task_id
                 )
                 if result is not None:
@@ -1000,33 +933,33 @@ class SubTaskContext:
                     )
 
         prompt_parts.append(
-            "Please perform the subtask based on the provided context, instructions, and upstream task results."
+            "Please perform the step based on the provided context, instructions, and upstream task results."
         )
         task_prompt = "\n".join(prompt_parts)
 
-        # Add the task prompt to this subtask's history
+        # Add the task prompt to this step's history
         self.history.append(Message(role="user", content=task_prompt))
 
-        # Yield task update for subtask start
+        # Yield task update for step start
         yield TaskUpdate(
             task=self.task,
-            subtask=self.subtask,
-            event=TaskUpdateEvent.SUBTASK_STARTED,
+            step=self.step,
+            event=TaskUpdateEvent.STEP_STARTED,
         )
 
         # Display task update event
         if self.display_manager:
             self.display_manager.display_task_update(
-                "SUBTASK_STARTED", self.subtask.content
+                "SUBTASK_STARTED", self.step.instructions
             )
 
         # Continue executing until the task is completed (token budget enforces termination)
-        while not self.subtask.completed:
+        while not self.step.completed:
             self.iterations += 1
             token_count = self._count_tokens(self.history)
             log.debug(
                 "%s | iteration %d | history=%d msgs | tokens=%d/%d",
-                self.subtask.id,
+                self.step.id,
                 self.iterations,
                 len(self.history),
                 token_count,
@@ -1046,14 +979,35 @@ class SubTaskContext:
                 # Yield the event after transitioning
                 yield TaskUpdate(
                     task=self.task,
-                    subtask=self.subtask,
+                    step=self.step,
                     event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
                 )
                 if self.display_manager:
                     self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
 
             # Process current iteration
-            message = await self._process_iteration()
+            yield LogUpdate(
+                node_id=self.step.id,
+                node_name=f"Step: {self.step.id}",
+                content="Generating next steps..." if not self.in_conclusion_stage else "Synthesizing final answer...",
+                severity="info",
+            )
+            message = None
+            async for update in self._process_iteration():
+                if isinstance(update, Message):
+                    message = update
+                else:
+                    yield update
+
+            if message is None:
+                log.error("Iteration failed to produce a message")
+                break
+
+            # If there was any final content that wasn't streamed (e.g. buffered), yield it now
+            if message.content and not message.tool_calls:
+                 # This is a fallback in case streaming didn't catch everything or provider buffered
+                 # Note: if streaming worked, this will redundant but Chunk(done=False) is fast.
+                 pass
 
             message.tool_calls = self._filter_tool_calls_for_current_stage(
                 message.tool_calls
@@ -1064,32 +1018,108 @@ class SubTaskContext:
             self.history.append(message)
 
             if message.tool_calls:
-                if message.content:
-                    yield Chunk(content=str(message.content))
-                for tool_call in message.tool_calls:
-                    tool_message = self._generate_tool_call_message(tool_call)
+                
+                # Check for finish_step tool call - handle specially for completion
+                finish_step_call = next(
+                    (tc for tc in message.tool_calls if tc.name == "finish_step"),
+                    None
+                )
+                
+                if finish_step_call:
+                    # Handle finish_step tool for step completion
+                    tool_message = self._generate_tool_call_message(finish_step_call)
                     yield ToolCall(
-                        id=tool_call.id,
-                        name=tool_call.name,
-                        args=tool_call.args,
-                        subtask_id=self.subtask.id,
+                        id=finish_step_call.id,
+                        name=finish_step_call.name,
+                        args=finish_step_call.args,
+                        step_id=self.step.id,
                         message=tool_message,
                     )
-                await self._process_tool_call_results(message.tool_calls)
+                    
+                    # Extract and validate result from tool call args
+                    result_payload = finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
+                    if result_payload is not None:
+                        is_valid, error_detail, normalized_result = self._validate_result_payload(result_payload)
+                        if is_valid and normalized_result is not None:
+                            # Add tool result to history
+                            self.history.append(Message(
+                                role="tool",
+                                tool_call_id=finish_step_call.id,
+                                name="finish_step",
+                                content='{"status": "completed"}',
+                            ))
+                            self._store_completion_result(normalized_result)
+                            log.debug(f"StepExecutor: {self.step.id} completed via tool. use_finish_task={self.use_finish_task}")
+                            for event in self._emit_completion_events(normalized_result):
+                                if isinstance(event, StepResult):
+                                    log.debug(f"StepExecutor: Yielding tool StepResult. is_task_result={event.is_task_result}")
+                                yield event
+                            break
+                        else:
+                            # Invalid result - add feedback and continue loop
+                            log.warning(f"finish_step result validation failed: {error_detail}")
+                            self.history.append(Message(
+                                role="tool",
+                                tool_call_id=finish_step_call.id,
+                                name="finish_step",
+                                content=f'{{"error": "Result validation failed: {error_detail}"}}',
+                            ))
+                            self._append_completion_feedback(error_detail or "Result failed schema validation.", result_payload)
+                    else:
+                        log.warning("finish_step called without result")
+                        self.history.append(Message(
+                            role="tool",
+                            tool_call_id=finish_step_call.id,
+                            name="finish_step",
+                            content='{"error": "Missing result in finish_step call"}',
+                        ))
+                else:
+                    # Process non-finish_step tool calls normally
+                    for tool_call in message.tool_calls:
+                        tool_message = self._generate_tool_call_message(tool_call)
+                        yield ToolCall(
+                            id=tool_call.id,
+                            name=tool_call.name,
+                            args=tool_call.args,
+                            step_id=self.step.id,
+                            message=tool_message,
+                        )
+                    
+                    # Provide immediate feedback that execution has started
+                    tool_names_str = ", ".join(tc.name for tc in message.tool_calls)
+                    yield LogUpdate(
+                        node_id=self.step.id,
+                        node_name=f"Step: {self.step.id}",
+                        content=f"Executing tools: {tool_names_str}...",
+                        severity="info",
+                    )
+                    
+                    await self._process_tool_call_results(message.tool_calls)
+                    
+                    yield LogUpdate(
+                        node_id=self.step.id,
+                        node_name=f"Step: {self.step.id}",
+                        content=f"Completed tool execution: {tool_names_str}.",
+                        severity="info",
+                    )
             elif message.content:
-                # Handle potential text chunk yields if provider supports streaming text
-                yield Chunk(content=str(message.content))
+                # Text chunks already yielded during _process_iteration
+                pass
 
             completed, normalized_result = self._maybe_finalize_from_message(message)
             if completed and normalized_result is not None:
+                self._store_completion_result(normalized_result)
+                log.debug(f"StepExecutor: {self.step.id} completed via message. use_finish_task={self.use_finish_task}")
                 for event in self._emit_completion_events(normalized_result):
+                    if isinstance(event, StepResult):
+                        log.debug(f"StepExecutor: Yielding message StepResult. is_task_result={event.is_task_result}")
                     yield event
                 break
 
         # Display completion event
         if self.display_manager:
             self.display_manager.display_completion_event(
-                self.subtask, self.subtask.completed, self._output_result
+                self.step, self.step.completed, self._output_result
             )
 
         # Useful debug printing
@@ -1106,15 +1136,22 @@ class SubTaskContext:
         1. Sets the conclusion stage flag
         2. Adds a clear transition message to the conversation history
         3. Logs the transition to the console
-        4. Restricts available tools entirely so the LLM must produce the final JSON
+        4. Restricts available tools to finish_step so the LLM can still complete reliably
         """
         self.in_conclusion_stage = True
-        transition_message = f"""
-        SYSTEM: The conversation history is approaching the token limit ({self.max_token_limit} tokens).
-        ENTERING CONCLUSION STAGE: You MUST now synthesize all gathered information and finalize the subtask.
-        Tools are no longer available. Respond directly with the completion JSON:
-        {{"status":"completed","result":{{...}}}} matching the declared schema.
-        """
+        if self._finish_step_tool:
+            transition_message = f"""
+            SYSTEM: The conversation history is approaching the token limit ({self.max_token_limit} tokens).
+            ENTERING CONCLUSION STAGE: You MUST now synthesize all gathered information and finalize the step.
+            Only the `finish_step` tool is available. Call `finish_step` exactly once with:
+            {{"result": <result>}} where <result> matches the declared schema.
+            """
+        else:
+            transition_message = f"""
+            SYSTEM: The conversation history is approaching the token limit ({self.max_token_limit} tokens).
+            ENTERING CONCLUSION STAGE: You MUST now synthesize all gathered information and finalize the step.
+            Tools are not available. Provide the final answer concisely.
+            """
         # Check if the message already exists to prevent duplicates if called multiple times
         if not any(
             m.role == "system" and "ENTERING CONCLUSION STAGE" in str(m.content)
@@ -1126,12 +1163,15 @@ class SubTaskContext:
 
     async def _process_iteration(
         self,
-    ) -> Message:
+    ) -> AsyncGenerator[Chunk | Message, None]:
         """
         Process a single iteration of the task.
         """
         await self._trim_history_if_needed()
-        tools_for_iteration = [] if self.in_conclusion_stage else self.tools
+        if self.in_conclusion_stage:
+            tools_for_iteration = [self._finish_step_tool] if self._finish_step_tool else []
+        else:
+            tools_for_iteration = list(self.tools)
 
         # Create a dictionary to track unique tools by name
         unique_tools = {tool.name: tool for tool in tools_for_iteration}
@@ -1143,19 +1183,35 @@ class SubTaskContext:
         except Exception as e:
             log.warning(f"Failed to count input tokens: {e}")
 
+        message = None
         try:
-            message = await self.provider.generate_message(
+            content = ""
+            tool_calls = []
+            async for chunk in self.provider.generate_messages(
                 messages=self.history,
                 model=self.model,
                 tools=final_tools,
+            ):
+                if isinstance(chunk, Chunk):
+                    if chunk.content:
+                        content += chunk.content
+                    yield chunk
+                elif isinstance(chunk, ToolCall):
+                    tool_calls.append(chunk)
+
+            message = Message(
+                role="assistant",
+                content=content if content else None,
+                tool_calls=tool_calls if tool_calls else None,
             )
+
         except Exception as e:
             log.error(f"Failed to generate message: {e}")
-            return Message(role="assistant", content=f"Error generating message: {e}")
+            message = Message(role="assistant", content=f"Error generating message: {e}")
 
         if message.tool_calls:
             for tool_call in message.tool_calls:
-                log.debug(f"{self.subtask.id} | {tool_call.name}: {tool_call.args}")
+                log.debug(f"{self.step.id} | {tool_call.name}: {tool_call.args}")
 
         # Clean message content from think tags to save tokens for local models
         if isinstance(message.content, str):
@@ -1171,7 +1227,12 @@ class SubTaskContext:
                         cleaned_text = remove_think_tags(None)  # Explicitly pass None
                         part_dict["text"] = cleaned_text  # Assigns None back
 
-        return message
+        try:
+            self.output_tokens_total += self._count_single_message_tokens(message)
+        except Exception as e:
+            log.warning(f"Failed to count output tokens: {e}")
+
+        yield message
 
     def _filter_tool_calls_for_current_stage(
         self, tool_calls: Optional[list[ToolCall]]
@@ -1183,11 +1244,14 @@ class SubTaskContext:
         if not self.in_conclusion_stage:
             return list(tool_calls)
 
-        if tool_calls:
+        allowed = [tool_call for tool_call in tool_calls if tool_call.name == "finish_step"]
+        ignored = [tool_call for tool_call in tool_calls if tool_call.name != "finish_step"]
+        if ignored:
             log.warning(
-                "LLM attempted to call tools during conclusion stage; all tool calls are ignored while finalizing."
+                "LLM attempted to call non-finish_step tools during conclusion stage; ignoring %d tool call(s).",
+                len(ignored),
             )
-        return []
+        return allowed
 
     async def _process_tool_call_results(
         self, valid_tool_calls: list[ToolCall]
@@ -1254,7 +1318,7 @@ class SubTaskContext:
             Message: A message object with role 'tool' containing the processed and serialized result.
         """
         if self.display_manager:
-            self.display_manager.debug_subtask_only(
+            self.display_manager.debug_step_only(
                 f"Handling tool call: {tool_call.name} (ID: {tool_call.id})"
             )
 
@@ -1262,7 +1326,7 @@ class SubTaskContext:
         tool_result = await self._process_tool_execution(tool_call)
 
         if self.display_manager:
-            self.display_manager.debug_subtask_only(
+            self.display_manager.debug_step_only(
                 f"Tool {tool_call.name} execution completed"
             )
 
@@ -1280,9 +1344,9 @@ class SubTaskContext:
         # 4. Process special tool side-effects (e.g., browser navigation)
         self._process_special_tool_side_effects(tool_result, tool_call)
 
-        # Log tool result only to subtask tree (not phase)
+        # Log tool result only to step tree (not phase)
         if self.display_manager:
-            self.display_manager.info_subtask_only(
+            self.display_manager.info_step_only(
                 f"Tool result received from {tool_call.name}"
             )
 
@@ -1342,7 +1406,7 @@ class SubTaskContext:
                 artifact_file.write(decoded_data)
 
             if self.display_manager:
-                self.display_manager.info_subtask_only(
+                self.display_manager.info_step_only(
                     f"Saved base64 {artifact_type} from tool '{tool_call_name}' to {artifact_rel_path}"
                 )
 
@@ -1496,7 +1560,7 @@ class SubTaskContext:
         compression_system_prompt = f"""
         # Goal
         Reduce the size of the 'TOOL RESULT TO COMPRESS' by removing duplicate information and summarizing the content.
-        Ensure that all information vital to achieving the subtask's objective ('{self.subtask.content}') is retained.
+        Ensure that all information vital to achieving the step's objective ('{self.step.instructions}') is retained.
 
         # Output Format
         - If the input is JSON, the output should ideally be a valid, smaller JSON object preserving the essential structure and data.
@@ -1506,11 +1570,11 @@ class SubTaskContext:
         - Tool Name: {tool_name}
         - Tool Arguments: {json.dumps(tool_args, ensure_ascii=False)}
         - Overall Task: {self.task.title} - {self.task.description}
-        - Current Subtask: {self.subtask.content}
+        - Current Subtask: {self.step.instructions}
 
         Instructions:
         - Focus ONLY on summarizing the 'TOOL RESULT TO COMPRESS' provided below.
-        - **Crucially, ensure that all information vital to achieving the subtask's objective ('{self.subtask.content}') is retained.**
+        - **Crucially, ensure that all information vital to achieving the step's objective ('{self.step.instructions}') is retained.**
         - Keep all URLs, file paths, and other references to external sources.
         - Keep all code snippets and other non-text information.
         - Keep all name, entity, and other specific information.
