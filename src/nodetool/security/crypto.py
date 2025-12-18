@@ -7,7 +7,7 @@ Fernet symmetric encryption (AES-128 in CBC mode with PKCS7 padding).
 
 import base64
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -90,7 +90,10 @@ class SecretCrypto:
             cryptography.fernet.InvalidToken: If the master key is incorrect or the data is corrupted.
         """
         fernet = SecretCrypto.derive_encryption_key(master_key, user_id)
-        decrypted = fernet.decrypt(encrypted_value.encode())
+        try:
+            decrypted = fernet.decrypt(encrypted_value.encode())
+        except InvalidToken as exc:
+            raise ValueError("Failed to decrypt secret") from exc
         return decrypted.decode()
 
     @staticmethod
