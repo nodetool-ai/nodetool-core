@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from nodetool.metadata.types import Chunk, SubTask, Task
+from nodetool.metadata.types import Chunk, Step, Task
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
@@ -12,20 +12,20 @@ class TaskUpdateEvent(str, Enum):
     """Enum for different task update event types."""
 
     TASK_CREATED = "task_created"
-    SUBTASK_STARTED = "subtask_started"
+    STEP_STARTED = "step_started"
     ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
-    SUBTASK_COMPLETED = "subtask_completed"
-    SUBTASK_FAILED = "subtask_failed"
+    STEP_COMPLETED = "step_completed"
+    STEP_FAILED = "step_failed"
     TASK_COMPLETED = "task_completed"
 
 
-class SubTaskResult(BaseModel):
+class StepResult(BaseModel):
     """
-    A message representing a result from a subtask.
+    A message representing a result from a step.
     """
 
-    type: Literal["subtask_result"] = "subtask_result"
-    subtask: SubTask
+    type: Literal["step_result"] = "step_result"
+    step: Step
     result: Any
     error: str | None = None
     is_task_result: bool = False
@@ -113,7 +113,7 @@ class TaskUpdate(BaseModel):
     type: Literal["task_update"] = "task_update"
     node_id: str | None = None
     task: Task
-    subtask: SubTask | None = None
+    step: Step | None = None
     event: TaskUpdateEvent
 
 
@@ -253,5 +253,5 @@ ProcessingMessage = (
     | ToolResultUpdate
     | PlanningUpdate
     | OutputUpdate
-    | SubTaskResult
+    | StepResult
 )

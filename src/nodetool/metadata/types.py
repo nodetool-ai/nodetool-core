@@ -1238,7 +1238,7 @@ class ToolName(BaseType):
 
 class LogEntry(BaseType):
     """
-    A log entry for a subtask.
+    A log entry for a step.
     """
 
     type: Literal["log_entry"] = "log_entry"
@@ -1249,79 +1249,58 @@ class LogEntry(BaseType):
     timestamp: int = Field(default=0, description="The timestamp of the log entry")
 
 
-class SubTask(BaseType):
-    """A subtask item with completion status, dependencies, and tools."""
+class Step(BaseType):
+    """A step item with completion status, dependencies, and tools."""
 
-    type: Literal["subtask"] = "subtask"
+    type: Literal["step"] = "step"
     id: str = Field(
         default="",
-        description="Unique identifier for the subtask",
+        description="Unique identifier for the step",
     )
 
-    content: str = Field(description="Instructions for the subtask")
-    logs: list[LogEntry] = Field(default=[], description="The logs of the subtask")
-    tools: list[str] = Field(
-        default=[], description="The tools available to the subtask"
-    )
+    instructions: str = Field(description="Instructions for the step to execute")
+    logs: list[LogEntry] = Field(default=[], description="The logs of the step")
     completed: bool = Field(
-        default=False, description="Whether the subtask is completed"
+        default=False, description="Whether the step is completed"
     )
-    start_time: int = Field(default=0, description="The start time of the subtask")
-    end_time: int = Field(default=0, description="The end time of the subtask")
-    input_tasks: list[str] = Field(
-        default=[], description="The input tasks for the subtask"
-    )
-    input_files: list[str] = Field(
-        default=[], description="The input files required for the subtask"
-    )
-    output_file: str = Field(
-        default="", description="The output file produced by the subtask"
+    start_time: int = Field(default=0, description="The start time of the step")
+    end_time: int = Field(default=0, description="The end time of the step")
+    depends_on: list[str] = Field(
+        default=[], description="The IDs of steps this step depends on"
     )
     output_schema: str = Field(
         default="",
-        description="The JSON schema of the output of the subtask",
-    )
-    mode: Optional[Literal["discover", "process", "aggregate"]] = Field(
-        default=None,
-        description="Optional execution mode hint (discover/process/aggregate).",
-    )
-    item_template: str = Field(
-        default="",
-        description="The template for the item of the subtask. The template is a string with placeholders for the item. The placeholders are the fields of the item.",
-    )
-    item_output_schema: str = Field(
-        default="",
-        description="The JSON schema of the output of the item of the subtask.",
+        description="The JSON schema of the output of the step",
     )
 
     def to_markdown(self) -> str:
-        """Convert the subtask to markdown format."""
+        """Convert the step to markdown format."""
         checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
         deps_str = (
-            f" (depends on {', '.join(self.input_tasks)})" if self.input_tasks else ""
+            f" (depends on {', '.join(self.depends_on)})" if self.depends_on else ""
         )
         output_schema_str = (
             f" (output schema: {self.output_schema})" if self.output_schema else ""
         )
-        return f"- {checkbox} {self.content}{deps_str}{output_schema_str}"
+        return f"- {checkbox} {self.instructions}{deps_str}{output_schema_str}"
 
     def is_running(self) -> bool:
         """
-        Check if the subtask is currently running.
+        Check if the step is currently running.
 
-        A subtask is considered running if:
+        A step is considered running if:
         1. It has a non-zero start time (execution has begun)
         2. It has a zero end time (execution has not completed)
         3. It is not marked as completed
 
         Returns:
-            bool: True if the subtask is currently running, False otherwise
+            bool: True if the step is currently running, False otherwise
         """
         return self.start_time > 0 and not self.completed
 
 
 class Task(BaseType):
-    """A task containing a title, description, and list of subtasks."""
+    """A task containing a title, description, and list of steps."""
 
     id: str = Field(
         default="",
@@ -1334,23 +1313,23 @@ class Task(BaseType):
     description: str = Field(
         default="", description="A description of the task, not used for execution"
     )
-    subtasks: list[SubTask] = Field(
-        default=[], description="The subtasks of the task, a list of subtask IDs"
+    steps: list[Step] = Field(
+        default=[], description="The steps of the task, a list of step IDs"
     )
 
     def is_completed(self) -> bool:
-        """Returns True if all subtasks are marked as completed."""
-        return all(subtask.completed for subtask in self.subtasks)
+        """Returns True if all steps are marked as completed."""
+        return all(step.completed for step in self.steps)
 
     def to_markdown(self) -> str:
-        """Converts task and subtasks to markdown format with headings and checkboxes."""
+        """Converts task and steps to markdown format with headings and checkboxes."""
         lines = f"# Task: {self.title}\n"
         lines += f"Description: {self.description}\n"
         if self.description:
             lines += f"{self.description}\n"
-        if self.subtasks:
-            for subtask in self.subtasks:
-                lines += f"{subtask.to_markdown()}\n"
+        if self.steps:
+            for step in self.steps:
+                lines += f"{step.to_markdown()}\n"
         return lines
 
 
@@ -1358,8 +1337,8 @@ class TaskPlan(BaseType):
     """
     A plan for an agent to achieve a specific objective.
     The plan is a list of tasks that are executed in order.
-    The tasks are a list of subtasks that are executed in order.
-    Each task has a title, description, and list of subtasks.
+    The tasks are a list of steps that are executed in order.
+    Each task has a title, description, and list of steps.
     """
 
     type: Literal["task_plan"] = "task_plan"
@@ -1634,7 +1613,7 @@ class ToolCall(BaseModel):
     name: str = ""
     args: dict[str, Any] = {}
     result: Any = None
-    subtask_id: str | None = None
+    step_id: str | None = None
     message: str | None = None
 
 
