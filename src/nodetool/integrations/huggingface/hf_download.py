@@ -24,11 +24,20 @@ from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import hf_auth
-from nodetool.integrations.huggingface.async_downloader import async_hf_download
-from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
+from nodetool.integrations.huggingface import async_downloader, hf_cache
 from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
+
+
+def filter_repo_paths(*args, **kwargs):
+    """Back-compat wrapper for tests and callers patching this symbol."""
+    return hf_cache.filter_repo_paths(*args, **kwargs)
+
+
+async def async_hf_download(*args, **kwargs):
+    """Back-compat wrapper for tests and callers patching this symbol."""
+    return await async_downloader.async_hf_download(*args, **kwargs)
 
 
 @dataclass

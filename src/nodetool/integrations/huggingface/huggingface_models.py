@@ -854,6 +854,7 @@ async def _build_cached_repo_entry(
     recommended_models: dict[str, list[UnifiedModel]],
     snapshot_dir: Path | None = None,
     file_list: list[str] | None = None,
+    model_info: ModelInfo | None = None,
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
     """
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
@@ -885,7 +886,10 @@ async def _build_cached_repo_entry(
     artifact_detection: ArtifactDetection | None = None
     if file_entries and snapshot_path:
         artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
-        artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
+        try:
+            artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
+        except Exception:
+            artifact_detection = None
 
     model_type = _infer_model_type_from_local_configs(
         file_entries,
@@ -921,8 +925,20 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
     """
 
-    # Discover repos by listing cache directory (lightweight)
-    repo_list = await HF_FAST_CACHE.discover_repos("model")
+    cache_key = "cached_hf_models"
+    try:
+        cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
+    except Exception:
+        cached_result = None
+
+    if cached_result is not None:
+        return cached_result
+
+    try:
+        repo_list = await HF_FAST_CACHE.discover_repos("model")
+    except Exception as exc:
+        log.debug("read_cached_hf_models: failed to discover repos: %s", exc)
+        return []
 
     recommended_models = get_recommended_models()
     models: list[UnifiedModel] = []
@@ -934,6 +950,15 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
             recommended_models,
         )
         models.append(repo_model)
+
+    try:
+        HF_FAST_CACHE.model_info_cache.set(
+            cache_key,
+            models,
+            DEFAULT_MODEL_INFO_CACHE_TTL,
+        )
+    except Exception:
+        pass
 
     return models
 
@@ -1138,7 +1163,16 @@ def _build_search_config_for_type(model_type: str) -> dict[str, list[str] | str]
     Returns:
         Search configuration dict with patterns, or None if type is not configured
     """
-    return HF_SEARCH_TYPE_CONFIG.get(model_type.lower())
+    normalized = model_type.lower()
+    config = HF_SEARCH_TYPE_CONFIG.get(normalized)
+    if config is not None:
+        return config
+    if normalized.startswith("hf."):
+        return {
+            "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
+            "repo_pattern": ["*"],
+        }
+    return None
 
 
 def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str | None:
@@ -1327,7 +1361,7 @@ async def get_models_by_hf_type(
     artifact hints) to label each result with the desired type.
     """
 
-    config = HF_SEARCH_TYPE_CONFIG.get(model_type.lower(), {})
+    config = _build_search_config_for_type(model_type) or {}
 
     def _filter_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
         """Apply type-specific structural rules then semantic matching."""
