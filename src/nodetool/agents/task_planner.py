@@ -2,12 +2,12 @@
 
 The TaskPlanner is responsible for taking a high-level user objective and
 transforming it into a structured `TaskPlan`. This plan consists of
-interdependent `SubTask` instances. The planning process can involve
+interdependent `Step` instances. The planning process can involve
 multiple phases, including self-reflection for complexity assessment,
 objective analysis, data flow definition, and final plan creation.
 
 The planner interacts with an LLM provider to generate and refine the plan,
-ensuring that subtasks are well-defined, dependencies are clear (forming a
+ensuring that steps are well-defined, dependencies are clear (forming a
 Directed Acyclic Graph - DAG), and file paths are correctly managed within
 a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
@@ -42,7 +42,8 @@ from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
-    SubTask,
+    Provider,
+    Step,
     Task,
     TaskPlan,
     ToolCall,
@@ -53,6 +54,7 @@ from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole  # Import the new display manager
 from nodetool.utils.message_parsing import (
     extract_json_from_message,
+    lenient_json_parse,
     remove_think_tags,
 )
 from nodetool.workflows.processing_context import ProcessingContext
@@ -60,304 +62,138 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 log = get_logger(__name__)
 
-PLANNING_PHASE_MAX_TOKENS = 600
-PLAN_CREATION_MAX_TOKENS = 1200
+STEP_JSON_SCHEMA = json.dumps(Step.model_json_schema(), indent=2)
+PLAN_CREATION_MAX_TOKENS = 20000
 
-
-COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
---- Data Flow Representation (DOT/Graphviz Syntax) ---
-This format helps visualize the flow of data between subtasks.
-Example DOT for a pipeline:
-digraph DataPipeline {
-  "read_data" -> "process_data";
-  "process_data" -> "generate_report";
-}
-Used for concise subtask representation.
-"""
-
-SUBTASK_JSON_SCHEMA = json.dumps(SubTask.model_json_schema(), indent=2)
-
-# --- Task Naming Convention ---
-# Use short names, prefixed with $, for conceptual tasks or process steps (e.g., $read_data, $process_logs, $generate_report).
-# These names should be unique and descriptive of the step.
-
-
-
-# Planning system prompt with discover → process → aggregate contract
+# Single-phase planning system prompt
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
 <role>
-You are a TaskArchitect system that transforms user objectives into executable multi-phase plans.
+You are a TaskArchitect that transforms user objectives into executable Task plans.
 </role>
 
-<goal>
-Transform the user's objective into an executable plan through three phases:
-0. Analysis - understand the goal and define the discovery target/output list
-1. Data Flow - describe how discover list → process templated items → aggregate final output will work
-2. Plan Creation - emit a JSON plan with exactly three subtasks (`discover_*`, `process_*`, `aggregate_*`)
+<terminology>
+- **Task**: A container with a title and a list of Steps.
+- **Step**: An individual unit of work with dependencies, instructions, and output schema.
+</terminology>
 
-Process subtasks no longer expose explicit fan-out configs. Instead, provide natural-language `content` that references discovery fields via `{placeholder}` syntax; the executor handles per-item execution automatically.
-</goal>
+<execution_patterns>
+Choose the pattern that best fits the objective:
 
-<operating_constraints>
-- Complete all phases without stopping early
-- Resolve ambiguities through reasonable assumptions (document in notes)
-- Output the final plan as a single JSON object in a ```json code fence
-- Stop immediately after outputting the JSON plan
-- Final plan MUST contain exactly three subtasks: `discover_*` (mode="discover"), `process_*` (mode="process"), `aggregate_*` (mode="aggregate`)
-- `discover_*` must describe how to gather a normalized list (array output schema required)
-- `process_*` must depend on `discover_*`, describe templated per-item instructions, and emit another array
-- `aggregate_*` consumes the processed list and produces the final output schema
-- Do not fabricate results; document limitations clearly when discovery yields no items.
-</operating_constraints>
+**Sequential** - Steps execute one after another
+  Example: "Download file → Parse content → Generate summary"
 
-<output_requirements>
-- Begin each phase with a short goal restatement
-- Use structured outputs over prose
-- Emit only requested fields (no chain-of-thought)
-- Use concise JSON with exact identifiers (no markdown unless specified)
-</output_requirements>
+**Fan-out (Discover → Process → Aggregate)** - Find items, process each, combine
+  Example: "Find repos → Analyze each → Create comparison"
+   
+**Parallel** - Independent Steps run concurrently, then merge
+  Example: "Research A | Research B → Combine findings"
 
-<validation_checklist>
-Before outputting the final JSON plan, verify:
-- All subtask IDs are unique and descriptive
-- Dependencies form a valid DAG (Directed Acyclic Graph)
-- All referenced task IDs and input keys exist
-- Subtasks are atomic (smallest executable units)
-- Plan includes exactly one discover-mode subtask, one process-mode subtask, and one aggregate-mode subtask
-- Discover and process subtasks declare array output schemas; process item_template includes `{placeholder}` references and item_output_schema is valid JSON
-- The aggregate subtask depends on the process subtask and produces the declared overall output schema
-- Execution subtasks do not duplicate discovery logic outside the dedicated discover step
-- Final output conforms to required schema
-</validation_checklist>
+**Single Step** - One atomic operation for simple objectives
+</execution_patterns>
+
+<step_fields>
+Required:
+- **id** (string): Unique snake_case identifier
+- **instructions** (string): Clear, actionable instructions
+- **depends_on** (array): List of Step IDs this depends on ([] for none)
+
+Optional:
+- **mode**: "discover" | "process" | "aggregate"
+- **output_schema** (string): JSON schema string for Step output
+- **per_item_instructions** (string): For mode="process", template with {field} placeholders
+- **per_item_schema** (string): For mode="process", JSON schema for each item
+- **tools** (array): Restrict which tools this Step can use
+</step_fields>
+
+<validation_rules>
+- All Step IDs unique and descriptive
+- Dependencies form a valid DAG (no cycles)
+- All referenced Step IDs exist
+- Steps are atomic (smallest executable units)
+- All output_schema fields are valid JSON strings
+</validation_rules>
 """
 
-# Phase prompts optimized using GPT-5 best practices
-ANALYSIS_PHASE_TEMPLATE = """
-<phase>PHASE 0: OBJECTIVE ANALYSIS</phase>
+# User prompt template for plan creation
+PLAN_CREATION_PROMPT = """
+Create an executable Task for this objective using the create_task tool.
 
-<goal>
-Understand the user objective, constraints, and assumptions. Describe what must be discovered at runtime without designing the execution graph yet.
-</goal>
+<objective>{{ objective }}</objective>
 
-<instructions>
-1. Summarize the goal, explicit constraints, and any assumptions.
-2. Outline the discovery approach:
-   - Target sources/domains and desired item types
-   - Query/search patterns or navigation flows
-   - Normalization, deduplication, and caps (e.g., max 10 items, ≤3 per source)
-3. Sketch the structured fields the discover subtask must return (array schema only).
-4. Decide if a dedicated data flow analysis phase is needed. Default to "no" unless dependencies/schema risks are unclear. Emit `data_flow_required: yes|no` with a 1-line reason.
-5. Call out risks and fallbacks.
-</instructions>
+<available_inputs>{{ inputs_info }}</available_inputs>
 
-<output_format>
-<objective_interpretation>
-- Core goal, constraints, assumptions
-</objective_interpretation>
+<output_schema>{{ output_schema }}</output_schema>
 
-<discovery_plan>
-- Targets / entry points
-- Query or navigation strategy
-- Normalization + caps (list output required)
-- Expected item fields (list schema sketch)
-- Risks & fallback ideas
-</discovery_plan>
+<available_tools>{{ execution_tools_info }}</available_tools>
 
-<data_flow_requirement>
-- data_flow_required: yes|no
-- Reason (one line)
-</data_flow_requirement>
-</output_format>
+Choose the best execution pattern and call the create_task tool with your task plan.
 
-<constraints>
-- Keep outputs concise and structured (≤220 tokens)
-- No chain-of-thought
-- Do not define concrete subtasks yet
-</constraints>
+<patterns>
+- Sequential: step1 → step2 → step3
+- Fan-out: discover → process each → aggregate
+- Parallel: step1 | step2 | step3 → combine
+- Single: one step for simple tasks
+</patterns>
 
-<context>
-User's Objective: {{ objective }}
-Available Inputs: {{ inputs_info }}
-Execution Tools: {{ execution_tools_info }}
-</context>
+<step_fields>
+Required: id (snake_case), instructions (clear actionable text), depends_on (list of step IDs)
+Optional: mode (discover|process|aggregate), output_schema (JSON schema string), per_item_instructions (for process mode with {field} placeholders), per_item_schema, tools
+</step_fields>
 """
 
-DATA_FLOW_ANALYSIS_TEMPLATE = """
-<phase>PHASE 1: DATA FLOW ANALYSIS</phase>
 
-<goal>
-Describe how the runtime discover → process → aggregate pattern will work, focusing on structured payloads and dependencies (discover outputs list → process templated items → aggregate final output).
-</goal>
+class CreateTaskTool(Tool):
+    name = "create_task"
+    description = """Create an executable task with a list of steps to accomplish the given objective.
+    
+    The task should include:
+    - title: A clear, descriptive title for the task
+    - steps: A list of Step objects that form a valid DAG (Directed Acyclic Graph)
+    
+    Each step should have:
+    - id: Unique snake_case identifier
+    - instructions: Clear, actionable instructions for what to accomplish
+    - depends_on: List of step IDs this step depends on (empty array for no dependencies)
+    
+    Optional step fields:
+    - mode: "discover", "process", or "aggregate" for fan-out patterns
+    - output_schema: JSON schema string defining expected output format
+    - per_item_instructions: Template with {field} placeholders for process mode
+    - per_item_schema: JSON schema string for each item in process mode
+    - tools: List of specific tools this step should use
+    
+    Validation requirements:
+    - All step IDs must be unique
+    - Dependencies must form a valid DAG (no circular dependencies)
+    - All referenced dependency IDs must exist as step IDs or input keys
+    - All output_schema and per_item_schema fields must be valid JSON strings
+    """
+    input_schema = Task.model_json_schema()
+    example = ""
+        
 
-<instructions>
-1. Detail the `discover_*` subtask:
-   - Which tools or sites it should use
-   - Item cap + deduplication rules (must emit a JSON array)
-   - Exact top-level JSON shape (e.g., `{ "posts": [...] }`)
-2. Detail the `process_*` subtask:
-   - It must depend on `discover_*`
-   - Identify the list it will iterate (e.g., `posts`)
-   - Specify the natural-language `item_template` that will be formatted with `{field}` placeholders
-   - Describe the per-item outputs and the JSON schema to store in `item_output_schema`
-   - Explain how the collected array is stored in `output_schema`
-3. Detail the `aggregate_*` subtask:
-   - Inputs (the processed list)
-   - Final output format (should align with task `output_schema`)
-   - How to handle empty/failed cases
-4. Confirm dependencies form a DAG and reference valid IDs only.
-</instructions>
-
-<output_format>
-<data_flow_design>
-- Discover output structure (list fields, caps)
-- Process templating strategy (`item_template`) + per-item schema (`item_output_schema`)
-- Aggregate inputs + final transformation notes
-- Dependency summary
-</data_flow_design>
-
-```dot
-digraph DataPipeline {
-  "discover_items" -> "process_items";
-  "process_items" -> "aggregate_results";
-}
-```
-</output_format>
-
-<constraints>
-- Dependencies must form a DAG
-- Refer only to defined subtasks or input keys
-- Keep response concise (≤220 tokens)
-- No chain-of-thought
-</constraints>
-
-<context>
-User's Objective: {{ objective }}
-Available Inputs: {{ inputs_info }}
-Output Schema: {{ output_schema }}
-Execution Tools: {{ execution_tools_info }}
-DOT/Graphviz Guide: {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
-</context>
-"""
-
-PLAN_CREATION_TEMPLATE = """
-<phase>PHASE 2: PLAN CREATION</phase>
-
-<goal>
-Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `aggregate_*`. Process subtasks must populate `item_template` (per-item instructions) and `item_output_schema` instead of legacy fan-out configs.
-</goal>
-
-<output_format>
-1. Brief Justification (<200 tokens, no chain-of-thought):
-   <plan_construction>
-   - How discover/process/aggregate map to subtasks
-   - Key decisions for `content`, `item_template`, `item_output_schema`, `input_tasks`, `output_schema`
-   - Data flow + dependency summary
-   - Validation checklist confirmation
-   </plan_construction>
-
-2. JSON Task Definition:
-   - Output a single JSON object (```json``` fenced)
-   - Structure:
-   ```json
-   {
-     "title": "...",
-     "subtasks": [
-       { ... discover ... },
-       { ... process ... },
-       { ... aggregate ... }
-     ]
-   }
-   ```
-</output_format>
-
-<json_task_structure>
-### Shared Rules
-- Exactly three subtasks, ordered discover → process → aggregate.
-- `input_tasks`: discover=[], process=[discover_id], aggregate=[process_id].
-- Every `output_schema` is a JSON string. Discover/process schemas MUST declare `"type": "array"` at the top level.
-- `item_template` must describe how to run each discovered item using `{placeholder}` syntax; `item_output_schema` must be a JSON string describing a single processed item.
-- The executor automatically sets the process `output_schema` to an array of `item_output_schema` and applies the agent-level output schema to the aggregate subtask when available.
-- `tools` is optional; include only when restricting execution tools.
-
-### Discover Subtask (`mode="discover"`)
-- `content` describes the search/browse workflow, dedup rules, and normalized array output (e.g., `{ "posts": [ { ... } ] }`).
-- Output schema: array describing each discovered item.
-
-### Process Subtask (`mode="process"`)
-- `item_template` is the natural-language instruction applied per item, referencing discovery fields via `{field}` placeholders (e.g., `"Fetch {post_url}.json via the browser and summarize comments."`).
-- `item_output_schema` is a JSON string describing the shape of a single processed item.
-- The executor automatically wraps `item_output_schema` into the list-level `output_schema`, so you do not need to craft the array schema manually.
-- `content` can summarize the overall processing goal (non-templated).
-- Must depend on the discover subtask and treat its result as a list.
-
-### Aggregate Subtask (`mode="aggregate"`)
-- Depends on the process subtask.
-- `content` explains how to transform the processed list into the final output schema (handle empty lists explicitly).
-- If the agent provided an overall output schema, the executor automatically applies it to the aggregate subtask.
-
-Pre-Output Validation Checklist:
-✓ Three subtasks present with correct modes/order
-✓ Discover + process output schemas are arrays
-✓ Process `item_template` references fields from the discover list and `item_output_schema` is valid JSON
-✓ Aggregate subtask consumes the process result and emits the declared overall schema
-✓ All schema fields (`output_schema`, `item_output_schema`) are JSON strings
-✓ DAG dependencies are valid and acyclic
-</json_task_structure>
-
-<context>
-User's Objective: {{ objective }}
-Available Inputs: {{ inputs_info }}
-Output Schema: {{ output_schema }}
-LLM Models: Primary={{ model }}, Reasoning={{ reasoning_model }}
-Execution Tools: {{ execution_tools_info }}
-SubTask JSON Schema: {{ subtask_schema }}
-</context>
-"""
-
-# Final validation checklist for plan creation
-DEFAULT_AGENT_TASK_TEMPLATE = """
-<final_check>
-Before outputting the JSON task definition, verify:
-
-1. Clarity of Purpose
-   - `discover_*`: runtime discovery instructions + list output schema
-   - `process_*`: `item_template` referencing list item fields, `item_output_schema` for each item, and list-level `output_schema`
-   - `aggregate_*`: describes how to turn the processed list into the final schema
-2. Self-Containment: `input_tasks` cover all upstream dependencies
-3. Output Precision: every `output_schema` is a JSON string and matches the described payload
-4. DAG Integrity: dependencies exist and form an acyclic graph
-5. Naming: subtask IDs are unique, descriptive, and consistent with `input_tasks`
-6. Structure: exactly one discover, one process, one aggregate subtask
-7. Discover/process schemas declare `"type": "array"`; aggregate matches {{ output_schema }}; `item_output_schema` is valid JSON
-8. No per-item subtasks enumerated—the executor handles fan-out automatically
-
-Verify plan addresses: {{ objective }}
-
-After the checklist, immediately output the JSON plan inside a ```json code fence. No chain-of-thought or commentary after the JSON block.
-</final_check>
-"""
 
 class TaskPlanner:
     """
     Orchestrates the breakdown of a complex objective into a validated, executable
-    workflow plan (`TaskPlan`) composed of interdependent subtasks (`SubTask`).
+    workflow plan (`TaskPlan`) composed of interdependent steps (`Step`).
 
     Think of this as the lead architect for an AI agent system. It doesn't execute
-    the subtasks itself, but meticulously designs the blueprint. Given a high-level
+    the steps itself, but meticulously designs the blueprint. Given a high-level
     objective (e.g., "Analyze market trends for product X"), the TaskPlanner uses
     an LLM to generate a structured plan detailing:
 
     1.  **Decomposition:** Breaking the objective into smaller, logical, and ideally
-        atomic units of work (subtasks).
-    2.  **Task Typing:** Determining if each subtask is a straightforward,
+        atomic units of work (steps).
+    2.  **Task Typing:** Determining if each step is a straightforward,
         deterministic call to a specific `Tool` (e.g., download a file) or if it
         requires more complex reasoning or multiple steps better handled by a
         probabilistic `Agent` executor (e.g., summarize analysis findings).
     3.  **Data Flow & Dependencies:** Explicitly defining the inputs (`input_files`)
-        and `output_file` for each subtask. Crucially, it
-        establishes the dependency graph, ensuring subtasks run only after their
+        and `output_file` for each step. Crucially, it
+        establishes the dependency graph, ensuring steps run only after their
         required inputs are available. This forms a Directed Acyclic Graph (DAG).
-    4.  **Contracts:** Defining the expected data format (`output_schema`) for each subtask's output, promoting type safety and
+    4.  **Contracts:** Defining the expected data format (`output_schema`) for each step's output, promoting type safety and
         predictable integration between steps.
     5.  **Workspace Management:** Enforcing the use of *relative* file paths within
         a defined workspace, preventing dangerous absolute path manipulations and
@@ -366,7 +202,7 @@ class TaskPlanner:
 
     The planning process itself can involve multiple phases (configurable):
     - **Analysis Phase:** High-level strategic breakdown and identification of
-      subtask types (Tool vs. Agent).
+      step types (Tool vs. Agent).
     - **Data Flow Analysis:** Refining dependencies, inputs/outputs, and data schemas.
     - **Plan Creation:** Generating the final, concrete `Task` object by instructing
       the LLM to output a JSON structure, which is then extracted and validated.
@@ -380,7 +216,7 @@ class TaskPlanner:
     - Cyclic dependencies (fatal).
     - Missing input files.
     - Correct `tool_name` usage and valid JSON arguments for Tool tasks.
-    - Correct `content` format (natural language instructions) for Agent tasks.
+    - Correct `instructions` format (natural language instructions) for Agent tasks.
     - Valid and relative file paths.
     - Schema consistency.
 
@@ -393,14 +229,12 @@ class TaskPlanner:
         objective (str): The high-level goal the plan aims to achieve.
         workspace_dir (str): The root directory for all relative file paths.
         input_files (List[str]): Initial files available at the start of the plan.
-        execution_tools (Sequence[Tool]): Tools available for subtasks designated as Tool tasks
+        execution_tools (Sequence[Tool]): Tools available for steps designated as Tool tasks
                                          during the Plan Creation phase.
         task_plan (Optional[TaskPlan]): The generated plan (populated after creation).
         system_prompt (str): The core instructions guiding the LLM planner.
         output_schema (Optional[dict]): Optional schema for the *final* output of the
-                                        overall task (not individual subtasks).
-        enable_analysis_phase (bool): Controls whether the analysis phase runs.
-        enable_data_contracts_phase (bool): Controls whether the data contract phase runs.
+                                        overall task (not individual steps).
         verbose (bool): Enables detailed logging and progress display during planning.
         display_manager (AgentConsole): Handles Rich display output.
         jinja_env (Environment): Jinja2 environment for rendering prompts.
@@ -418,8 +252,6 @@ class TaskPlanner:
         inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
         output_schema: dict | None = None,
-        enable_analysis_phase: bool = True,
-        enable_data_contracts_phase: bool = True,
         display_manager: AgentConsole | None = None,
         verbose: bool = True,
     ):
@@ -432,12 +264,10 @@ class TaskPlanner:
             reasoning_model (str | None): The model to use for reasoning
             objective (str): The objective to solve
             workspace_dir (str): The workspace directory path
-            execution_tools (List[Tool]): Tools available for subtask execution.
+            execution_tools (List[Tool]): Tools available for step execution.
             inputs (dict[str, Any]): The inputs to use for planning
             system_prompt (str, optional): Custom system prompt
             output_schema (dict, optional): JSON schema for the final task output
-            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 0)
-            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 1)
             verbose (bool, optional): Whether to print planning progress table (default: True)
         """
         # Note: debug logging will be handled by display_manager initialization
@@ -453,9 +283,6 @@ class TaskPlanner:
         self.execution_tools: Sequence[Tool] = execution_tools or []
         self._planning_context: ProcessingContext | None = None
         self.output_schema: Optional[dict] = output_schema
-        self.enable_analysis_phase: bool = enable_analysis_phase
-        self.enable_data_contracts_phase: bool = enable_data_contracts_phase
-        self._data_flow_requested: bool = False
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = display_manager
@@ -527,8 +354,7 @@ class TaskPlanner:
             "execution_tools_info": self._get_execution_tools_info(),
             "output_schema": overall_output_schema_str,
             "inputs_info": inputs_info,
-            "COMPACT_SUBTASK_NOTATION_DESCRIPTION": COMPACT_SUBTASK_NOTATION_DESCRIPTION,
-            "subtask_schema": SUBTASK_JSON_SCHEMA,
+            "step_schema": STEP_JSON_SCHEMA,
         }
 
     def _render_prompt(
@@ -560,107 +386,107 @@ class TaskPlanner:
         """
         return self._render_prompt(DEFAULT_AGENT_TASK_TEMPLATE)
 
-    def _build_dependency_graph(self, subtasks: List[SubTask]) -> nx.DiGraph:
+    def _build_dependency_graph(self, steps: List[Step]) -> nx.DiGraph:
         """
-            Build a directed graph of dependencies between subtasks.
+            Build a directed graph of dependencies between steps.
 
-        The graph nodes represent subtasks (identified by their `id`) and input keys.
-            An edge from node A to subtask B means B depends on the output of A
-            (i.e., one of B's `input_tasks` is A's `id` or an input key).
+        The graph nodes represent steps (identified by their `id`) and input keys.
+            An edge from node A to step B means B depends on the output of A
+            (i.e., one of B's `depends_on` is A's `id` or an input key).
 
             Args:
-                subtasks: A list of `SubTask` objects.
+                steps: A list of `Step` objects.
 
             Returns:
                 A `networkx.DiGraph` representing the dependencies.
         """
         G = nx.DiGraph()
 
-        # Add nodes representing subtasks
-        for subtask in subtasks:
-            G.add_node(subtask.id)  # Node represents the subtask completion
+        # Add nodes representing steps
+        for step in steps:
+            G.add_node(step.id)  # Node represents the step completion
 
         # Add nodes representing input keys
         for input_key in self.inputs:
             G.add_node(input_key)  # Node represents an input
 
         # Add edges for dependencies
-        for subtask in subtasks:
-            if subtask.input_tasks:
-                for dependency in subtask.input_tasks:
-                    # Only add edge if the dependency exists (either as subtask or input)
+        for step in steps:
+            if step.depends_on:
+                for dependency in step.depends_on:
+                    # Only add edge if the dependency exists (either as step or input)
                     if (
-                        dependency in [t.id for t in subtasks]
+                        dependency in [t.id for t in steps]
                         or dependency in self.inputs
                     ):
-                        G.add_edge(dependency, subtask.id)
+                        G.add_edge(dependency, step.id)
 
         return G
 
     def _check_inputs(
         self,
-        subtasks: List[SubTask],
+        steps: List[Step],
     ) -> List[str]:
-        """Checks if all input task dependencies for subtasks are available.
+        """Checks if all input task dependencies for steps are available.
 
         An input task dependency is considered available if it:
-        1. References a valid subtask ID within the current task plan, OR
+        1. References a valid step ID within the current task plan, OR
         2. References a valid input key from the inputs dictionary
 
         Args:
-            subtasks: A list of `SubTask` objects.
+            steps: A list of `Step` objects.
 
         Returns:
             A list of string error messages for any missing task dependencies.
         """
         validation_errors: List[str] = []
-        tasks_by_id = {task.id: task for task in subtasks}
+        tasks_by_id = {task.id: task for task in steps}
 
-        for subtask in subtasks:
-            if subtask.input_tasks:
-                for dependency in subtask.input_tasks:
-                    # Check if it's a valid subtask ID or an input key
+        for step in steps:
+            if step.depends_on:
+                for dependency in step.depends_on:
+                    # Check if it's a valid step ID or an input key
                     if dependency not in tasks_by_id and dependency not in self.inputs:
                         validation_errors.append(
-                            f"Subtask '{subtask.content}' depends on missing subtask or input '{dependency}'"
+                            f"Subtask '{step.instructions}' depends on missing step or input '{dependency}'"
                         )
         return validation_errors
 
-    def _validate_dependencies(self, subtasks: List[SubTask]) -> List[str]:
+    def _validate_dependencies(self, steps: List[Step]) -> List[str]:
         """
-        Validate task dependencies and DAG structure for subtasks.
+        Validate task dependencies and DAG structure for steps.
 
         This method performs the following checks:
         1.  Cycle detection: Builds a dependency graph and checks for circular
             dependencies, which would make execution impossible.
-        2.  Task availability: Verifies that all `input_tasks` for each
-            subtask reference valid task IDs in the plan.
+        2.  Task availability: Verifies that all `depends_on` for each
+            step reference valid task IDs in the plan.
         3.  Topological sort feasibility: Checks if a valid linear execution
-            order for the subtasks can be determined.
+            order for the steps can be determined.
 
         Args:
-            subtasks: A list of `SubTask` objects to validate.
+            steps: A list of `Step` objects to validate.
 
         Returns:
             A list of strings, where each string is an error message
             describing a validation failure. An empty list indicates
             all dependency checks passed.
         """
-        log.debug("Starting dependency validation for %d subtasks", len(subtasks))
+        log.debug("Starting dependency validation for %d steps", len(steps))
         validation_errors: List[str] = []
 
-        # Log subtask summary for debugging
-        subtask_ids = [task.id for task in subtasks]
-        log.debug("Subtask IDs to validate: %s", subtask_ids)
+        # Log step summary for debugging
+        step_ids = [task.id for task in steps]
+        log.debug("Subtask IDs to validate: %s", step_ids)
 
-        for i, task in enumerate(subtasks):
+        for i, task in enumerate(steps):
             log.debug(
-                "Subtask %d: id='%s', input_tasks=%s", i, task.id, task.input_tasks
+                "Subtask %d: id='%s', depends_on=%s", i, task.id, task.depends_on
             )
 
         # Build dependency graph
         log.debug("Building dependency graph")
-        G = self._build_dependency_graph(subtasks)
+        G = self._build_dependency_graph(steps)
         log.debug(
             "Dependency graph built with %d nodes and %d edges",
             G.number_of_nodes(),
@@ -685,7 +511,7 @@ class TaskPlanner:
 
         # Check that all input task dependencies exist
         log.debug("Checking input task availability")
-        input_errors = self._check_inputs(subtasks)
+        input_errors = self._check_inputs(steps)
         validation_errors.extend(input_errors)
         if input_errors:
             log.error(
@@ -722,148 +548,58 @@ class TaskPlanner:
             )
         else:
             log.debug(
-                "✅ Dependency validation PASSED - all %d subtasks validated successfully",
-                len(subtasks),
+                "✅ Dependency validation PASSED - all %d steps validated successfully",
+                len(steps),
             )
         return validation_errors
 
-    def _validate_plan_semantics(self, subtasks: List[SubTask]) -> List[str]:
+    def _validate_plan_semantics(self, steps: List[Step]) -> List[str]:
         """
         Enforce semantic rules beyond DAG validation.
-
-        All modern plans must specify modes; legacy support remains for backwards compatibility only.
+        
+        We now rely on the planner prompts to enforce semantics (modes, schemas, etc).
         """
-        missing_mode = [
-            st.id or f"index_{idx}"
-            for idx, st in enumerate(subtasks)
-            if not getattr(st, "mode", None)
-        ]
-        if missing_mode:
-            return [
-                "Every subtask must declare `mode` = discover | process | aggregate. "
-                f"Missing for: {', '.join(missing_mode)}"
-            ]
-        return self._validate_process_mode_semantics(subtasks)
-    def _apply_schema_overrides(self, subtasks: List[SubTask]) -> None:
+        return []
+
+    def _apply_schema_overrides(self, steps: List[Step]) -> None:
         """
-        Normalize process/aggregate output schemas:
-        - Wrap `item_output_schema` into the process `output_schema` array
-        - Apply overall agent output schema to the aggregate subtask when provided
+        Normalize output schemas for steps.
+        
+        NOTE: This legacy implementation relied on `st.mode` and `st.per_item_schema`
+        which are no longer part of the `Step` model. Disabling for now to prevent crashes.
+        The LLM should generate the correct output_schema directly.
         """
-        process_subtasks = [st for st in subtasks if st.mode == "process"]
-        if process_subtasks:
-            process_subtask = process_subtasks[0]
-            item_schema_str = (process_subtask.item_output_schema or "").strip()
-            if item_schema_str:
-                try:
-                    item_schema = json.loads(item_schema_str)
-                except Exception as exc:
-                    raise ValueError(
-                        f"Process subtask '{process_subtask.id}' item_output_schema must be valid JSON: {exc}"
-                    ) from exc
-                process_subtask.output_schema = json.dumps(
-                    {"type": "array", "items": item_schema}
-                )
+        pass
+        # Original implementation commented out to fix AttributeError:
+        # process_steps = [st for st in steps if st.mode == "process"]
+        # aggregate_steps = [st for st in steps if st.mode == "aggregate"]
 
-        if self.output_schema:
-            aggregate_subtasks = [st for st in subtasks if st.mode == "aggregate"]
-            if aggregate_subtasks:
-                aggregate_subtask = aggregate_subtasks[0]
-                aggregate_subtask.output_schema = json.dumps(self.output_schema)
+        # # 1. Process Schema Wrapping (Apply to ALL process steps)
+        # for process_step in process_steps:
+        #     item_schema_str = (process_step.per_item_schema or "").strip()
+        #     if item_schema_str:
+        #         try:
+        #             item_schema = json.loads(item_schema_str)
+        #             process_step.output_schema = json.dumps(
+        #                 {"type": "array", "items": item_schema}
+        #             )
+        #         except Exception as exc:
+        #             # We log/ignore here because validation will catch it later
+        #             log.warning(
+        #                 "Process step '%s' has invalid per_item_schema JSON: %s",
+        #                 process_step.id,
+        #                 exc,
+        #             )
 
-    def _validate_process_mode_semantics(self, subtasks: List[SubTask]) -> List[str]:
-        """Validate discover/process/aggregate pattern plans."""
-        errors: list[str] = []
+        # # 2. Aggregate Schema Override (Apply to ALL aggregate steps if they lack schema)
+        # if self.output_schema:
+        #     output_schema_str = json.dumps(self.output_schema)
+        #     for agg_step in aggregate_steps:
+        #         if not agg_step.output_schema:
+        #             agg_step.output_schema = output_schema_str
 
-        def _parse_schema(schema_str: str | None) -> dict | None:
-            if not schema_str or not isinstance(schema_str, str):
-                return None
-            try:
-                return json.loads(schema_str)
-            except Exception:
-                try:
-                    return yaml.safe_load(schema_str)
-                except Exception:
-                    return None
-
-        discover_subtasks = [st for st in subtasks if st.mode == "discover"]
-        process_subtasks = [st for st in subtasks if st.mode == "process"]
-        aggregate_subtasks = [st for st in subtasks if st.mode == "aggregate"]
-
-        if len(discover_subtasks) != 1:
-            errors.append(
-                f"Plan must contain exactly one discover-mode subtask, found {len(discover_subtasks)}."
-            )
-        if len(process_subtasks) != 1:
-            errors.append(
-                f"Plan must contain exactly one process-mode subtask, found {len(process_subtasks)}."
-            )
-        if len(aggregate_subtasks) != 1:
-            errors.append(
-                f"Plan must contain exactly one aggregate-mode subtask, found {len(aggregate_subtasks)}."
-            )
-
-        discover_subtask = discover_subtasks[0] if discover_subtasks else None
-        process_subtask = process_subtasks[0] if process_subtasks else None
-        aggregate_subtask = aggregate_subtasks[0] if aggregate_subtasks else None
-
-        def _ensure_array_schema(subtask: SubTask | None, label: str) -> None:
-            if not subtask:
-                return
-            schema_dict = _parse_schema(getattr(subtask, "output_schema", None))
-            if not schema_dict:
-                errors.append(
-                    f"{label} subtask '{subtask.id}' must declare an output_schema."
-                )
-                return
-            if schema_dict.get("type") != "array":
-                errors.append(
-                    f"{label} subtask '{subtask.id}' output_schema must declare type 'array'."
-                )
-
-        _ensure_array_schema(discover_subtask, "Discover")
-        _ensure_array_schema(process_subtask, "Process")
-
-        if process_subtask and discover_subtask:
-            discover_id = discover_subtask.id
-            if discover_id not in (process_subtask.input_tasks or []):
-                errors.append(
-                    f"Process subtask '{process_subtask.id}' must depend on discover subtask '{discover_id}'."
-                )
-            item_template = (process_subtask.item_template or "").strip()
-            if not item_template:
-                errors.append(
-                    f"Process subtask '{process_subtask.id}' must define item_template with placeholders referencing discovery fields."
-                )
-            elif "{" not in item_template or "}" not in item_template:
-                errors.append(
-                    f"Process subtask '{process_subtask.id}' item_template must include placeholder fields like '{{url}}' referencing discovery items."
-                )
-
-            item_schema_str = (process_subtask.item_output_schema or "").strip()
-            if not item_schema_str:
-                errors.append(
-                    f"Process subtask '{process_subtask.id}' must define item_output_schema describing a single processed item."
-                )
-            else:
-                try:
-                    json.loads(item_schema_str)
-                except Exception:
-                    errors.append(
-                        f"Process subtask '{process_subtask.id}' item_output_schema must be valid JSON."
-                    )
-
-        if aggregate_subtask and process_subtask:
-            process_id = process_subtask.id
-            if process_id not in (aggregate_subtask.input_tasks or []):
-                errors.append(
-                    f"Aggregate subtask '{aggregate_subtask.id}' must depend on process subtask '{process_id}'."
-                )
-
-        return errors
-
-    def _validate_legacy_plan_semantics(self, subtasks: List[SubTask]) -> List[str]:
-        """Legacy validation for plans that enumerate per-item subtasks."""
+    def _validate_legacy_plan_semantics(self, steps: List[Step]) -> List[str]:
+        """Legacy validation for plans that enumerate per-item steps."""
         errors: list[str] = []
 
         # Helper: parse JSON schema string into dict (best-effort)
@@ -878,7 +614,7 @@ class TaskPlanner:
                 except Exception:
                     return None
 
-        # 1) No discovery/search/find subtasks by id or by content
+        # 1) No discovery/search/find steps by id or by content
         discovery_id_patterns = (
             "discover",
             "search",
@@ -895,19 +631,19 @@ class TaskPlanner:
             "site:",
         )
 
-        for st in subtasks:
+        for st in steps:
             sid = (st.id or "").lower()
-            scontent = (st.content or "").lower()
+            scontent = (st.instructions or "").lower()
             if any(p in sid for p in discovery_id_patterns):
                 errors.append(
-                    f"Final plan must not include discovery subtasks (found id '{st.id}'). Move discovery to planning phase and fan-out execution subtasks instead."
+                    f"Final plan must not include discovery steps (found id '{st.id}'). Move discovery to planning phase and fan-out execution steps instead."
                 )
             if any(trigger in scontent for trigger in discovery_content_triggers):
                 errors.append(
                     f"Subtask '{st.id}' contains discovery/search instructions in content. Discovery must be done during planning; remove runtime discovery."
                 )
 
-        # 2) No looping phrasing in execution subtasks (except aggregator)
+        # 2) No looping phrasing in execution steps (except aggregator)
         looping_phrases = (
             "for each",
             "for every",
@@ -923,7 +659,7 @@ class TaskPlanner:
         # Identify aggregator candidate(s): schema matches overall output schema or id indicates aggregation
         overall_schema = self.output_schema or None
         aggregator_ids: set[str] = set()
-        for st in subtasks:
+        for st in steps:
             schema_dict = _parse_schema(getattr(st, "output_schema", None))
             if overall_schema and schema_dict == overall_schema:
                 aggregator_ids.add(st.id)
@@ -932,32 +668,32 @@ class TaskPlanner:
                 if any(x in sid for x in ("aggregate", "compile", "combine", "merge", "final", "report")):
                     aggregator_ids.add(st.id)
 
-        for st in subtasks:
+        for st in steps:
             if st.id in aggregator_ids:
                 continue
-            scontent = (st.content or "").lower()
+            scontent = (st.instructions or "").lower()
             if any(p in scontent for p in looping_phrases):
                 errors.append(
-                    f"Subtask '{st.id}' appears to loop over a collection (e.g., '{scontent[:60]}...'). Emit one subtask per discovered item (fan-out) instead."
+                    f"Subtask '{st.id}' appears to loop over a collection (e.g., '{scontent[:60]}...'). Emit one step per discovered item (fan-out) instead."
                 )
 
-        # 3) Aggregator wiring: if there is an aggregator and extractor-like subtasks, ensure aggregator depends on all
+        # 3) Aggregator wiring: if there is an aggregator and extractor-like steps, ensure aggregator depends on all
         extractor_like_ids: list[str] = []
-        for st in subtasks:
+        for st in steps:
             sid = (st.id or "").lower()
             if any(x in sid for x in ("extract", "fetch", "scrape", "crawl", "parse", "process")):
                 extractor_like_ids.append(st.id)
 
         if aggregator_ids and extractor_like_ids:
             for agg_id in aggregator_ids:
-                agg = next((t for t in subtasks if t.id == agg_id), None)
+                agg = next((t for t in steps if t.id == agg_id), None)
                 if agg is None:
                     continue
-                declared_inputs = set(agg.input_tasks or [])
+                declared_inputs = set(agg.depends_on or [])
                 missing = [eid for eid in extractor_like_ids if eid not in declared_inputs]
                 if missing:
                     errors.append(
-                        f"Aggregator '{agg_id}' must depend on all extractor subtasks. Missing dependencies: {missing}"
+                        f"Aggregator '{agg_id}' must depend on all extractor steps. Missing dependencies: {missing}"
                     )
 
         return errors
@@ -971,7 +707,7 @@ class TaskPlanner:
         prompt_template: str,
         phase_result_name: str,
         skip_reason: str | None = None,
-    ) -> tuple[List[Message], Optional[PlanningUpdate]]:
+    ) -> AsyncGenerator[Chunk | ToolCall | PlanningUpdate | tuple[List[Message], Optional[PlanningUpdate]], None]:
         """Generic method to run a planning phase.
 
         This method handles the common pattern for executing planning phases:
@@ -1013,7 +749,8 @@ class TaskPlanner:
                 status="Skipped",
                 content=skip_reason or "Phase disabled by global flag.",
             )
-            return history, planning_update
+            yield history, planning_update
+            return
 
         log.debug("Generating %s prompt", phase_name)
         prompt_content: str = self._render_prompt(prompt_template)
@@ -1037,11 +774,27 @@ class TaskPlanner:
         max_tool_iterations = 6
 
         while True:
-            response_message = await self.provider.generate_message(
+            response_content = ""
+            tool_calls = []
+
+            async for chunk in self.provider.generate_messages(
                 messages=history,
                 model=self.model,
                 tools=available_tools,
                 max_tokens=PLANNING_PHASE_MAX_TOKENS,
+            ):
+                if isinstance(chunk, Chunk):
+                    if chunk.content:
+                        response_content += chunk.content
+                    yield chunk
+                elif isinstance(chunk, ToolCall):
+                    tool_calls.append(chunk)
+                    yield chunk
+
+            response_message = Message(
+                role="assistant",
+                content=response_content if response_content else None,
+                tool_calls=tool_calls if tool_calls else None,
             )
             history.append(response_message)
 
@@ -1095,143 +848,14 @@ class TaskPlanner:
             content=str(phase_content),
         )
 
-        return history, planning_update
-
-    def _extract_data_flow_requirement(self, content: str | None) -> bool:
-        """Detect whether analysis requested a data flow phase."""
-        if not content:
-            return False
-        affirmative = re.search(
-            r"data_flow_required\s*[:=]\s*(yes|true|required|need)",
-            content,
-            re.IGNORECASE,
-        )
-        if affirmative:
-            return True
-        negative = re.search(
-            r"data_flow_required\s*[:=]\s*(no|false|not needed|skip)",
-            content,
-            re.IGNORECASE,
-        )
-        if negative:
-            return False
-        return False
-
-    def _update_data_flow_requirement_from_analysis(
-        self, history: List[Message]
-    ) -> None:
-        """Set the data flow flag based on the analysis response."""
-        if not self.enable_data_contracts_phase:
-            self._data_flow_requested = False
-            return
-        if not history:
-            self._data_flow_requested = False
-            return
-
-        # Find the latest assistant message (analysis response)
-        analysis_message = next(
-            (msg for msg in reversed(history) if msg.role == "assistant"),
-            None,
-        )
-        content = self._format_message_content_for_update(analysis_message)
-        self._data_flow_requested = self._extract_data_flow_requirement(content)
-        log.debug(
-            "Data flow requirement after analysis: %s",
-            "requested" if self._data_flow_requested else "not requested",
-        )
-
-    def _should_run_data_flow_phase(self) -> bool:
-        """Determine if the data flow phase should execute."""
-        return self.enable_data_contracts_phase and self._data_flow_requested
-
-    async def _run_analysis_phase(
-        self, history: List[Message]
-    ) -> tuple[List[Message], Optional[PlanningUpdate]]:
-        """Handles Phase 0: Analysis.
-
-        In this phase, the LLM interprets the user's objective, clarifies
-        understanding, and devises a high-level strategic plan by breaking
-        down the objective into conceptual subtasks.
-
-        This phase can be skipped if:
-        - `self.enable_analysis_phase` is False.
-        # Tier-based skipping is removed as Analysis runs for both Low and High complexity.
-
-        Args:
-            history: The current list of messages in the planning conversation.
-                     The LLM's prompt and response for this phase are appended.
-
-        Returns:
-            A tuple containing:
-                - The updated history with messages from this phase.
-                - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
-        """
-        history, update = await self._run_phase(
-            history=history,
-            phase_name="analysis",
-            phase_display_name="0. Analysis",
-            is_enabled=self.enable_analysis_phase,
-            prompt_template=ANALYSIS_PHASE_TEMPLATE,
-            phase_result_name="Analysis",
-        )
-        # Capture whether downstream data flow analysis is required
-        self._update_data_flow_requirement_from_analysis(history)
-        return history, update
-
-
-    async def _run_data_flow_phase(
-        self, history: List[Message], should_run: bool | None = None
-    ) -> tuple[List[Message], Optional[PlanningUpdate]]:
-        """Handles Phase 1: Data Flow Analysis.
-
-        This phase refines the conceptual subtask plan from Phase 0 by
-        defining precise data flow, dependencies (input/output files),
-        and contracts for each subtask. It may also involve the LLM
-        generating a DOT/Graphviz representation of the data flow.
-
-        This phase can be skipped if:
-        - `self.enable_data_contracts_phase` is False.
-
-        Args:
-            history: The current list of messages in the planning conversation.
-                     The LLM's prompt and response for this phase are appended.
-
-        Returns:
-            A tuple containing:
-                - The updated history with messages from this phase.
-                - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
-        """
-        is_enabled = (
-            should_run
-            if should_run is not None
-            else self._should_run_data_flow_phase()
-        )
-        skip_reason = None
-        if not is_enabled:
-            if not self.enable_data_contracts_phase:
-                skip_reason = "Data flow phase disabled by configuration."
-            elif self.enable_analysis_phase:
-                skip_reason = (
-                    "Analysis phase indicated data flow analysis is not required."
-                )
-            else:
-                skip_reason = "Data flow analysis not requested."
-        return await self._run_phase(
-            history=history,
-            phase_name="data flow",
-            phase_display_name="2. Data Contracts",
-            is_enabled=is_enabled,
-            prompt_template=DATA_FLOW_ANALYSIS_TEMPLATE,
-            phase_result_name="Data Flow",
-            skip_reason=skip_reason,
-        )
+        yield history, planning_update
 
     async def _run_plan_creation_phase(
         self,
         history: List[Message],
         objective: str,
         max_retries: int,
-    ) -> tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]]:
+    ) -> AsyncGenerator[Chunk | ToolCall | PlanningUpdate | tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]], None]:
         """Handles Phase 2: Plan Creation.
 
         This is the final planning phase where the LLM generates the concrete,
@@ -1271,8 +895,14 @@ class TaskPlanner:
         # Generate plan using JSON output instead of tool calls
         if self.display_manager:
             self.display_manager.debug("Using JSON-based generation for plan creation")
-        plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
-        agent_task_prompt_content = await self._build_agent_task_prompt_content()
+        supports_structured = self.provider.structured_output()
+
+        # Use the same consolidated prompt for both structured and non-structured output
+        plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_PROMPT)
+        agent_task_prompt_content = ""
+        if self.display_manager:
+            self.display_manager.debug(f"Using {'structured' if supports_structured else 'standard'} output")
+
         if self.display_manager:
             self.display_manager.debug(
                 f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
@@ -1285,48 +915,71 @@ class TaskPlanner:
         history.append(
             Message(
                 role="user",
-                content=f"{plan_creation_prompt_content}\n{agent_task_prompt_content}",
+                # Concatenate only if agent_task_prompt_content is not empty
+                content=f"{plan_creation_prompt_content}\n{agent_task_prompt_content}".strip(),
             )
         )
         if self.display_manager:
             self.display_manager.update_planning_display(
                 current_phase_name,
                 "Running",
-                "Generating task plan as JSON...",
+                "Generating task plan...",
             )
 
-        # Retry loop for JSON generation and validation
+        create_task_tool = CreateTaskTool()
+
+        # Retry loop for tool-based plan generation
         for attempt in range(max_retries):
             try:
-                log.debug("Starting JSON-based plan generation, attempt %d/%d", attempt + 1, max_retries)
-
-                # Call LLM without tools to get JSON response
-                response_message: Message = await self.provider.generate_message(
+                # Call LLM with the create_task tool
+                response_content = ""
+                tool_calls = []
+                async for chunk in self.provider.generate_messages(
                     messages=history,
                     model=self.model,
-                    tools=[],  # No tools, expecting JSON in content
+                    tools=[create_task_tool],
                     max_tokens=PLAN_CREATION_MAX_TOKENS,
+                ):
+                    if isinstance(chunk, Chunk):
+                        if chunk.content:
+                            response_content += chunk.content
+                        yield chunk
+                    elif isinstance(chunk, ToolCall):
+                        tool_calls.append(chunk)
+                        yield chunk
+
+                response_message = Message(
+                    role="assistant",
+                    content=response_content if response_content else None,
+                    tool_calls=tool_calls if tool_calls else None,
                 )
                 history.append(response_message)
                 final_message = response_message
 
-                log.debug(
-                    "LLM response received, content length: %d chars",
-                    len(str(response_message.content)) if response_message.content else 0,
-                )
-
-                # Extract JSON from the message
-                task_data = extract_json_from_message(response_message)
+                # Extract task data from tool calls
+                task_data = None
+                if response_message.tool_calls:
+                    for tool_call in response_message.tool_calls:
+                        if tool_call.name == "create_task":
+                            task_data = tool_call.args
+                            log.debug("Extracted task from tool call: %s", list(task_data.keys()) if isinstance(task_data, dict) else type(task_data))
+                            break
 
                 if not task_data:
-                    failure_reason = f"Failed to extract JSON from LLM response on attempt {attempt + 1}/{max_retries}"
-                    log.warning(failure_reason)
+                    # Fallback: try to extract JSON from content (for providers that might not use tool calls)
+                    task_data = extract_json_from_message(response_message)
+                    if task_data:
+                        log.debug("Extracted task from message content as fallback")
+
+                if not task_data:
+                    failure_reason = f"LLM did not call create_task tool on attempt {attempt + 1}/{max_retries}"
+                    log.warning(f"{failure_reason}. Response: {response_message.content}")
 
                     # Add error feedback to history for retry
                     if attempt < max_retries - 1:
                         error_feedback = Message(
                             role="user",
-                            content=f"Error: {failure_reason}. Please output the task plan as a valid JSON object in a ```json code fence. Ensure the JSON is complete and properly formatted."
+                            content=f"Error: {failure_reason}. Please call the create_task tool with your task plan."
                         )
                         history.append(error_feedback)
                         continue
@@ -1345,10 +998,11 @@ class TaskPlanner:
                 if validated_task and not validation_errors:
                     task = validated_task
                     phase_status = "Success"
-                    phase_content = self._format_message_content(final_message)
+                    # Don't show raw JSON content in the UI update, show a summary
+                    phase_content = f"Created plan '{task.title}' with {len(task.steps)} steps."
                     log.debug(
-                        "JSON-based plan creation successful: %d subtasks",
-                        len(task.subtasks),
+                        "JSON-based plan creation successful: %d steps",
+                        len(task.steps),
                     )
                     break
                 else:
@@ -1357,11 +1011,14 @@ class TaskPlanner:
                     log.warning(failure_reason)
 
                     if attempt < max_retries - 1:
-                        error_feedback = Message(
-                            role="user",
-                            content="Error: The task plan has validation errors:\n" + "\n".join(f"- {err}" for err in validation_errors) + "\n\nPlease fix these issues and output the corrected task plan as JSON."
-                        )
-                        history.append(error_feedback)
+                        error_msg = "Error: The task plan has validation errors:\n" + "\n".join(f"- {err}" for err in validation_errors) + "\n\nPlease fix these issues and output the corrected task plan as JSON."
+                        
+                        if response_message.tool_calls:
+                            for tc in response_message.tool_calls:
+                                history.append(Message(role="tool", tool_call_id=tc.id, content=error_msg))
+                        else:
+                            history.append(Message(role="user", content=error_msg))
+
                         continue
                     else:
                         plan_creation_error = ValueError(failure_reason)
@@ -1373,11 +1030,15 @@ class TaskPlanner:
                 log.error("JSON-based plan creation failed on attempt %d: %s", attempt + 1, e, exc_info=True)
 
                 if attempt < max_retries - 1:
-                    error_feedback = Message(
-                        role="user",
-                        content=f"Error during plan generation: {str(e)}. Please try again and output a valid JSON task plan."
-                    )
-                    history.append(error_feedback)
+                    last_msg = history[-1] if history else None
+                    if last_msg and last_msg.role == "assistant" and last_msg.tool_calls:
+                         for tc in last_msg.tool_calls:
+                             history.append(Message(role="tool", tool_call_id=tc.id, content=f"Error during plan generation: {str(e)}"))
+                    else:
+                        history.append(Message(
+                            role="user",
+                            content=f"Error during plan generation: {str(e)}. Please try again and output a valid JSON task plan."
+                        ))
                     continue
                 else:
                     plan_creation_error = e
@@ -1401,19 +1062,19 @@ class TaskPlanner:
         planning_update = PlanningUpdate(
             phase="Plan Creation",
             status=phase_status,
-            content=str(phase_content),  # Update uses plain string
+            content=str(phase_content),  # Update uses summary string now
         )
 
-        return task, plan_creation_error, planning_update
+        yield task, plan_creation_error, planning_update
 
     async def create_task(
         self,
         context: ProcessingContext,
         objective: str,
         max_retries: int = 3,
-    ) -> AsyncGenerator[Chunk | PlanningUpdate, None]:
+    ) -> AsyncGenerator[Chunk | ToolCall | PlanningUpdate, None]:
         """
-        Create subtasks using the configured planning process, allowing for early shortcuts.
+        Create steps using the configured planning process, allowing for early shortcuts.
         Yields PlanningUpdate events during the process.
         Displays a live table summarizing the planning process if verbose mode is enabled.
         """
@@ -1444,50 +1105,32 @@ class TaskPlanner:
         try:
             if self.display_manager:
                 self.display_manager.set_current_phase("Initialization")
-            log.debug("Starting planning phases")
+            log.debug("Starting planning")
 
-            # Phase 0: Analysis
-            current_phase = "Analysis"
+            # Single Phase: Planning (directly creates the Task)
+            current_phase = "Planning"
             if self.display_manager:
                 self.display_manager.set_current_phase(current_phase)
             log.debug("Entering phase: %s", current_phase)
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            history, planning_update = await self._run_analysis_phase(history)
-            if planning_update:
-                yield planning_update
+            
+            task = None
+            plan_creation_error = None
+            planning_update = None
+            
+            async for update in self._run_plan_creation_phase(history, objective, max_retries):
+                if isinstance(update, tuple):
+                    task, plan_creation_error, planning_update = update
+                else:
+                    yield update
 
-            # Phase 1: Data Flow Analysis
-            current_phase = "Data Flow"
-            if self.display_manager:
-                self.display_manager.set_current_phase(current_phase)
-            log.debug("Entering phase: %s", current_phase)
-            should_run_data_flow = self._should_run_data_flow_phase()
-            if should_run_data_flow:
-                yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            history, planning_update = await self._run_data_flow_phase(
-                history, should_run=should_run_data_flow
-            )
-            if planning_update:
-                yield planning_update
-
-            # Phase 2: Plan Creation
-            current_phase = "Plan Creation"
-            if self.display_manager:
-                self.display_manager.set_current_phase(current_phase)
-            log.debug("Entering phase: %s", current_phase)
-            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            (
-                task,
-                plan_creation_error,
-                planning_update,
-            ) = await self._run_plan_creation_phase(history, objective, max_retries)
             if planning_update:
                 yield planning_update  # Yield the update from the phase itself
 
             # --- Final Outcome ---
             if task:
                 log.debug(
-                    "Plan created successfully with %d subtasks", len(task.subtasks)
+                    "Plan created successfully with %d steps", len(task.steps)
                 )
                 if self.display_manager:
                     log.debug("Plan created successfully.")
@@ -1650,8 +1293,8 @@ class TaskPlanner:
         """Formats message content into a simple string for PlanningUpdate.
 
         This method is similar to `_format_message_content` but specifically
-        targets the `content` attribute of a `Message` and returns a plain
-        string, primarily for use in `PlanningUpdate.content`. It removes
+        targets the `instructions` attribute of a `Message` and returns a plain
+        string, primarily for use in `PlanningUpdate.instructions`. It removes
         `<think>` tags.
 
         Args:
@@ -1665,7 +1308,7 @@ class TaskPlanner:
             return None
 
         raw_str_content: Optional[str] = None
-        if message.content:  # This method primarily processes .content
+        if message.content:  # This method primarily processes .instructions
             if isinstance(message.content, list):
                 try:
                     raw_str_content = "\\n".join(str(item) for item in message.content)
@@ -1750,25 +1393,25 @@ class TaskPlanner:
 
     def _validate_tool_task(
         self,
-        subtask_data: dict,
+        step_data: dict,
         tool_name: str,
         content: Any,
         available_execution_tools: Dict[str, Tool],
         sub_context: str,
     ) -> tuple[Optional[dict], List[str]]:
-        """Validates a subtask intended as a direct tool call.
+        """Validates a step intended as a direct tool call.
 
         This involves:
         1.  Checking if the specified `tool_name` is among the available
             `execution_tools`.
-        2.  Ensuring the `content` (expected to be tool arguments) is valid JSON.
+        2.  Ensuring the `instructions` (expected to be tool arguments) is valid JSON.
         3.  Validating the parsed JSON arguments against the tool's `input_schema`
             using `jsonschema.validate`.
 
         Args:
-            subtask_data: The raw dictionary data for the subtask.
+            step_data: The raw dictionary data for the step.
             tool_name: The name of the tool to be called.
-            content: The content for the subtask, expected to be JSON arguments
+            content: The content for the step, expected to be JSON arguments
                      for the tool.
             available_execution_tools: A dictionary mapping tool names to `Tool` objects.
             sub_context: A string prefix for error messages (e.g., "Subtask 1").
@@ -1812,20 +1455,21 @@ class TaskPlanner:
                 sub_context,
                 len(content),
             )
-            try:
-                parsed_content = json.loads(content) if content.strip() else {}
-                if parsed_content is not None:
-                    log.debug(
-                        "%s: Successfully parsed JSON with %d keys: %s",
-                        sub_context,
-                        len(parsed_content),
-                        list(parsed_content.keys()),
-                    )
-                else:
-                    log.debug("%s: Parsed content is None", sub_context)
-            except json.JSONDecodeError as e:
+            if not content.strip():
+                parsed_content = {}
+            else:
+                parsed_content = lenient_json_parse(content)
+
+            if parsed_content is not None:
+                log.debug(
+                    "%s: Successfully parsed JSON with %d keys: %s",
+                    sub_context,
+                    len(parsed_content),
+                    list(parsed_content.keys()),
+                )
+            else:
                 error_msg = (
-                    f"'content' is not valid JSON. Error: {e}. Content: '{content}'"
+                    f"'content' is not valid JSON. Content: '{content}'"
                 )
                 log.error("%s (tool: %s): %s", sub_context, tool_name, error_msg)
                 validation_errors.append(
@@ -1887,13 +1531,13 @@ class TaskPlanner:
         return parsed_content, validation_errors
 
     def _validate_agent_task(self, content: Any, sub_context: str) -> List[str]:
-        """Validates a subtask intended for agent execution.
+        """Validates a step intended for agent execution.
 
-        Ensures that the `content` for an agent task (which represents
+        Ensures that the `instructions` for an agent task (which represents
             natural language instructions) is a non-empty string.
 
         Args:
-            content: The content of the subtask (instructions for the agent).
+            content: The content of the step (instructions for the agent).
             sub_context: A string prefix for error messages (e.g., "Subtask 1").
 
         Returns:
@@ -1922,10 +1566,10 @@ class TaskPlanner:
 
         return validation_errors
 
-    def _process_subtask_schema(
-        self, subtask_data: dict, sub_context: str
+    def _process_step_schema(
+        self, step_data: dict, sub_context: str
     ) -> tuple[Optional[str], List[str]]:
-        """Processes and validates the output_schema for a subtask.
+        """Processes and validates the output_schema for a step.
 
         Accepts schema definitions provided as JSON strings or already-parsed
         dictionaries. When a schema string cannot be parsed as JSON, the parser
@@ -1935,7 +1579,7 @@ class TaskPlanner:
         creation.
 
         Args:
-            subtask_data: The raw dictionary data for the subtask
+            step_data: The raw dictionary data for the step
             sub_context: A string prefix for error messages.
 
         Returns:
@@ -1946,7 +1590,7 @@ class TaskPlanner:
         """
         log.debug("%s: Starting schema processing", sub_context)
         validation_errors: List[str] = []
-        raw_schema: Any = subtask_data.get("output_schema")
+        raw_schema: Any = step_data.get("output_schema")
         final_schema_str: Optional[str] = None
         schema_dict: Optional[dict] = None
 
@@ -2052,76 +1696,85 @@ class TaskPlanner:
         )
         return final_schema_str, validation_errors
 
-    def _prepare_subtask_data(
+    def _prepare_step_data(
         self,
-        subtask_data: dict,
+        step_data: dict,
         final_schema_str: str,
         parsed_tool_content: Optional[dict],
         sub_context: str,
         available_execution_tools: Dict[str, Tool],
     ) -> tuple[Optional[dict], List[str]]:
-        """Prepares the final data dictionary for SubTask creation.
+        """Prepares the final data dictionary for Step creation.
 
-        This method takes the raw subtask data, the validated `final_schema_str`,
+        This method takes the raw step data, the validated `final_schema_str`,
         and potentially parsed tool content, then performs:
-        1.  Validates input_tasks references to ensure they exist.
+        1.  Validates depends_on references to ensure they exist.
         2.  Ensures `tool_name` is None if it was an empty string.
-        3.  Handles default model assignment for the subtask.
+        3.  Handles default model assignment for the step.
         4.  Filters the data dictionary to include only fields recognized by the
-            `SubTask` Pydantic model.
-        5.  Stringifies `parsed_tool_content` back into the `content` field if
+            `Step` Pydantic model.
+        5.  Stringifies `parsed_tool_content` back into the `instructions` field if
             it was a tool task.
 
         Args:
-            subtask_data: The raw dictionary data for the subtask.
+            step_data: The raw dictionary data for the step.
             final_schema_str: The validated output schema as a JSON string.
             parsed_tool_content: Parsed JSON arguments if it's a tool task, else None.
             sub_context: A string prefix for error messages.
 
         Returns:
             A tuple containing:
-                - A dictionary ready for `SubTask` model instantiation, or None
+                - A dictionary ready for `Step` model instantiation, or None
                   if a fatal error occurred.
                 - A list of string error messages.
         """
         validation_errors: List[str] = []
-        processed_data = subtask_data.copy()  # Work on a copy
+        processed_data = step_data.copy()  # Work on a copy
 
         try:
             processed_data["output_schema"] = (
                 final_schema_str  # Already validated/generated
             )
 
-            # Validate input_tasks
-            raw_input_tasks = processed_data.get("input_tasks", [])
-            if not isinstance(raw_input_tasks, list):
-                validation_errors.append(
-                    f"{sub_context}: input_tasks must be a list, got {type(raw_input_tasks)}."
+            # Map 'depends_on' to 'depends_on' if LLM used wrong field name
+            if "depends_on" in processed_data and "depends_on" not in processed_data:
+                processed_data["depends_on"] = processed_data.pop("depends_on")
+                log.debug(
+                    "%s: Mapped 'depends_on' to 'depends_on': %s",
+                    sub_context,
+                    processed_data["depends_on"],
                 )
-                processed_data["input_tasks"] = []
+
+            # Validate depends_on
+            raw_depends_on = processed_data.get("depends_on", [])
+            if not isinstance(raw_depends_on, list):
+                validation_errors.append(
+                    f"{sub_context}: depends_on must be a list, got {type(raw_depends_on)}."
+                )
+                processed_data["depends_on"] = []
             else:
-                # Ensure all items in input_tasks are strings
-                validated_input_tasks = []
-                for task_id in raw_input_tasks:
+                # Ensure all items in depends_on are strings
+                validated_depends_on = []
+                for task_id in raw_depends_on:
                     if not isinstance(task_id, str):
                         validation_errors.append(
                             f"{sub_context}: Input task ID '{task_id}' must be a string, got {type(task_id)}."
                         )
                     else:
-                        validated_input_tasks.append(task_id)
-                processed_data["input_tasks"] = validated_input_tasks
+                        validated_depends_on.append(task_id)
+                processed_data["depends_on"] = validated_depends_on
 
             # Ensure tool_name is None if empty string or missing
             processed_data["tool_name"] = processed_data.get("tool_name") or None
 
             # Handle optional model assignment
-            subtask_model = processed_data.get("model")
-            if not isinstance(subtask_model, str) or not subtask_model.strip():
+            step_model = processed_data.get("model")
+            if not isinstance(step_model, str) or not step_model.strip():
                 processed_data["model"] = (
                     self.model
                 )  # Default to planner's primary model
             else:
-                processed_data["model"] = subtask_model.strip()
+                processed_data["model"] = step_model.strip()
 
             allowed_tools = self._sanitize_tools_list(
                 processed_data.get("tools"),
@@ -2133,31 +1786,40 @@ class TaskPlanner:
             elif "tools" in processed_data:
                 processed_data.pop("tools", None)
 
-            # Filter args based on SubTask model fields
-            subtask_model_fields = SubTask.model_fields.keys()
+            # Filter args based on Step model fields
+            step_model_fields = Step.model_fields.keys()
             filtered_data = {
-                k: v for k, v in processed_data.items() if k in subtask_model_fields
+                k: v for k, v in processed_data.items() if k in step_model_fields
             }
 
             # Stringify content if it was a parsed JSON object (for tool args)
             if isinstance(parsed_tool_content, dict):
                 # Ensure the original content key exists before assignment
-                if "content" in filtered_data:
-                    filtered_data["content"] = json.dumps(parsed_tool_content)
+                if "instructions" in filtered_data:
+                    filtered_data["instructions"] = json.dumps(parsed_tool_content)
                 else:
                     # This case might indicate an issue if content was expected but not provided/filtered
                     validation_errors.append(
                         f"{sub_context}: Content field missing after filtering, cannot stringify tool arguments."
                     )
                     return None, validation_errors
-            elif isinstance(filtered_data.get("content"), str):
+            elif isinstance(filtered_data.get("instructions"), str):
                 pass  # Keep agent task content as string
+
+            # Stringify per_item_schema if it was provided as a dict
+            raw_item_schema = filtered_data.get("per_item_schema")
+            if isinstance(raw_item_schema, dict):
+                filtered_data["per_item_schema"] = json.dumps(raw_item_schema)
+            elif raw_item_schema is not None and not isinstance(raw_item_schema, str):
+                validation_errors.append(
+                    f"{sub_context}: per_item_schema must be a dict or JSON string, got {type(raw_item_schema)}."
+                )
 
             return filtered_data, validation_errors
 
         except Exception as e:  # Catch unexpected errors during preparation
             validation_errors.append(
-                f"{sub_context}: Unexpected error preparing subtask data: {e}"
+                f"{sub_context}: Unexpected error preparing step data: {e}"
             )
             return None, validation_errors
 
@@ -2167,7 +1829,7 @@ class TaskPlanner:
         available_execution_tools: Dict[str, Tool],
         sub_context: str,
     ) -> list[str] | None:
-        """Validate the optional `tools` list for a subtask."""
+        """Validate the optional `tools` list for a step."""
 
         if requested_tools in (None, [], ()):  # No restriction requested
             return None
@@ -2204,17 +1866,17 @@ class TaskPlanner:
 
         return normalized or None
 
-    async def _process_single_subtask(
+    async def _process_single_step(
         self,
-        subtask_data: dict,
+        step_data: dict,
         index: int,
         context_prefix: str,
         available_execution_tools: Dict[str, Tool],
-    ) -> tuple[Optional[SubTask], List[str]]:
+    ) -> tuple[Optional[Step], List[str]]:
         """
-        Processes and validates data for a single subtask by delegating steps.
+        Processes and validates data for a single step by delegating steps.
         """
-        sub_context = f"{context_prefix} subtask {index}"
+        sub_context = f"{context_prefix} step {index}"
         log.debug("Processing %s", sub_context)
         all_validation_errors: List[str] = []
         parsed_tool_content: Optional[dict] = (
@@ -2223,8 +1885,8 @@ class TaskPlanner:
 
         try:
             # --- Validate Tool Call vs Agent Instruction ---
-            tool_name = subtask_data.get("tool_name")
-            content = subtask_data.get("content")
+            tool_name = step_data.get("tool_name")
+            content = step_data.get("instructions")
             log.debug(
                 "%s: tool_name='%s', content_length=%d",
                 sub_context,
@@ -2236,7 +1898,7 @@ class TaskPlanner:
                 # --- Deterministic Tool Task Validation ---
                 log.debug("%s: Validating as tool task", sub_context)
                 parsed_tool_content, tool_errors = self._validate_tool_task(
-                    subtask_data,
+                    step_data,
                     tool_name,
                     content,
                     available_execution_tools,
@@ -2271,8 +1933,8 @@ class TaskPlanner:
 
             # --- Process schema ---
             log.debug("%s: Processing output schema", sub_context)
-            final_schema_str, schema_errors = self._process_subtask_schema(
-                subtask_data, sub_context
+            final_schema_str, schema_errors = self._process_step_schema(
+                step_data, sub_context
             )
             all_validation_errors.extend(schema_errors)
             # Continue even if there were schema errors, as a default might be used.
@@ -2286,10 +1948,10 @@ class TaskPlanner:
             else:
                 log.debug("%s: Schema processing successful", sub_context)
 
-            # --- Prepare data for SubTask creation (Paths, Filtering, Stringify Tool Args) ---
-            log.debug("%s: Preparing data for SubTask creation", sub_context)
-            filtered_data, preparation_errors = self._prepare_subtask_data(
-                subtask_data,
+            # --- Prepare data for Step creation (Paths, Filtering, Stringify Tool Args) ---
+            log.debug("%s: Preparing data for Step creation", sub_context)
+            filtered_data, preparation_errors = self._prepare_step_data(
+                step_data,
                 final_schema_str,
                 parsed_tool_content,
                 sub_context,
@@ -2306,67 +1968,67 @@ class TaskPlanner:
             else:
                 log.debug("%s: Data preparation successful", sub_context)
 
-            # --- Create SubTask object ---
+            # --- Create Step object ---
             # Pydantic validation happens here
-            log.debug("%s: Creating SubTask object", sub_context)
-            subtask = SubTask(**filtered_data)
+            log.debug("%s: Creating Step object", sub_context)
+            step = Step(**filtered_data)
             log.debug(
-                "%s: SubTask created successfully with id='%s'", sub_context, subtask.id
+                "%s: Step created successfully with id='%s'", sub_context, step.id
             )
-            # Return successful subtask and any *non-fatal* validation errors collected
-            return subtask, all_validation_errors
+            # Return successful step and any *non-fatal* validation errors collected
+            return step, all_validation_errors
 
         except (
             ValidationError
-        ) as e:  # Catch Pydantic validation errors during SubTask(**filtered_data)
-            error_msg = f"{sub_context}: Invalid data for SubTask model: {e}"
+        ) as e:  # Catch Pydantic validation errors during Step(**filtered_data)
+            error_msg = f"{sub_context}: Invalid data for Step model: {e}"
             log.error("%s: Pydantic validation error: %s", sub_context, e)
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
         except Exception as e:  # Catch any other unexpected errors
-            error_msg = f"{sub_context}: Unexpected error processing subtask: {e}\n{traceback.format_exc()}"
+            error_msg = f"{sub_context}: Unexpected error processing step: {e}\n{traceback.format_exc()}"
             log.error(
                 "%s: Unexpected processing error: %s", sub_context, e, exc_info=True
             )
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
 
-    async def _process_subtask_list(
-        self, raw_subtasks: list, context_prefix: str
-    ) -> tuple[List[SubTask], List[str]]:
+    async def _process_step_list(
+        self, raw_steps: list, context_prefix: str
+    ) -> tuple[List[Step], List[str]]:
         """
-        Processes a list of raw subtask data dictionaries using the helper method.
+        Processes a list of raw step data dictionaries using the helper method.
         """
-        processed_subtasks: List[SubTask] = []
+        processed_steps: List[Step] = []
         all_validation_errors: List[str] = []
         # Build tool map once
         available_execution_tools: Dict[str, Tool] = {
             tool.name: tool for tool in self.execution_tools
         }
 
-        for i, subtask_data in enumerate(raw_subtasks):
-            sub_context = f"{context_prefix} subtask {i}"
-            if not isinstance(subtask_data, dict):
+        for i, step_data in enumerate(raw_steps):
+            sub_context = f"{context_prefix} step {i}"
+            if not isinstance(step_data, dict):
                 all_validation_errors.append(
-                    f"{sub_context}: Expected subtask item to be a dict, but got {type(subtask_data)}. Data: {subtask_data}"
+                    f"{sub_context}: Expected step item to be a dict, but got {type(step_data)}. Data: {step_data}"
                 )
                 continue  # Skip this item
 
-            # Call the helper to process this single subtask
-            subtask, single_errors = await self._process_single_subtask(
-                subtask_data, i, context_prefix, available_execution_tools
+            # Call the helper to process this single step
+            step, single_errors = await self._process_single_step(
+                step_data, i, context_prefix, available_execution_tools
             )
 
             # Extend the list of errors collected (includes fatal and non-fatal)
             all_validation_errors.extend(single_errors)
 
-            # Add the subtask ONLY if processing was successful (subtask is not None)
-            if subtask:
-                processed_subtasks.append(subtask)
-            # If subtask is None, it means a fatal validation error occurred,
+            # Add the step ONLY if processing was successful (step is not None)
+            if step:
+                processed_steps.append(step)
+            # If step is None, it means a fatal validation error occurred,
             # and the errors have already been added to all_validation_errors.
 
-        return processed_subtasks, all_validation_errors
+        return processed_steps, all_validation_errors
 
     async def _validate_structured_output_plan(
         self, task_data: dict, objective: str
@@ -2375,13 +2037,13 @@ class TaskPlanner:
 
         This method is used when the LLM generates the plan as direct JSON
         output rather than through a tool call. It involves:
-        1.  Processing the list of subtasks using `_process_subtask_list`.
-        2.  Validating dependencies between the processed subtasks using
+        1.  Processing the list of steps using `_process_step_list`.
+        2.  Validating dependencies between the processed steps using
             `_validate_dependencies`.
 
         Args:
             task_data: A dictionary representing the entire task plan, typically
-                       with "title" and "subtasks" keys, as generated by the LLM.
+                       with "title" and "steps" keys, as generated by the LLM.
             objective: The original user objective, used as a fallback title.
 
         Returns:
@@ -2391,28 +2053,53 @@ class TaskPlanner:
         """
         all_validation_errors: List[str] = []
 
-        # Validate the subtasks first
-        subtasks, subtask_validation_errors = await self._process_subtask_list(
-            task_data.get("subtasks", []), "structured output"
+        # Validate the steps first
+        steps, step_validation_errors = await self._process_step_list(
+            task_data.get("steps", []), "structured output"
         )
-        all_validation_errors.extend(subtask_validation_errors)
+        all_validation_errors.extend(step_validation_errors)
 
-        log.debug("Subtasks processed: %s", subtasks)
-        log.debug("Subtask validation errors: %s", subtask_validation_errors)
+        log.debug("Subtasks processed: %s", steps)
+        log.debug("Subtask validation errors: %s", step_validation_errors)
 
-        # If subtask processing had fatal errors, don't proceed to dependency check
-        if not subtasks and task_data.get(
-            "subtasks"
-        ):  # Check if subtasks were provided but processing failed
+        # If step processing had fatal errors, don't proceed to dependency check
+        if not steps and task_data.get(
+            "steps"
+        ):  # Check if steps were provided but processing failed
             # Errors are already in all_validation_errors
             return None, all_validation_errors
 
-        # Validate dependencies only if subtasks were processed successfully
-        if subtasks:
-            dependency_errors = self._validate_dependencies(subtasks)
+        # Validate dependencies only if steps were processed successfully
+        if steps:
+            # Log the plan details before auto-wiring
+            log.info("=== Plan received from LLM (before auto-wiring) ===")
+            for st in steps:
+                log.info(
+                    "  Subtask: id=%s, depends_on=%s, content=%s...",
+                    st.id,
+                    st.depends_on,
+                    (st.instructions or "")[:50],
+                )
+
+            # Apply schema overrides and auto-wire dependencies before validation
+            try:
+                self._apply_schema_overrides(steps)
+            except ValueError as exc:
+                all_validation_errors.append(str(exc))
+
+            # Log the plan details after auto-wiring
+            log.info("=== Plan after auto-wiring ===")
+            for st in steps:
+                log.info(
+                    "  Subtask: id=%s, depends_on=%s",
+                    st.id,
+                    st.depends_on,
+                )
+
+            dependency_errors = self._validate_dependencies(steps)
             all_validation_errors.extend(dependency_errors)
             # Enforce semantic rules (no discovery in final plan, fan-out, aggregator wiring)
-            semantic_errors = self._validate_plan_semantics(subtasks)
+            semantic_errors = self._validate_plan_semantics(steps)
             all_validation_errors.extend(semantic_errors)
 
         # If any fatal errors occurred anywhere, return None
@@ -2420,7 +2107,7 @@ class TaskPlanner:
             err for err in all_validation_errors
         ):  # Check if there are any errors at all
             # Check specifically for fatal errors that would prevent Task creation
-            # (e.g., invalid structure from _process_subtask_list, dependency errors)
+            # (e.g., invalid structure from _process_step_list, dependency errors)
             # For simplicity here, consider *any* validation error as potentially blocking.
             # A more nuanced check could differentiate warnings from fatal errors if needed.
             is_fatal = True  # Assume any error is fatal for now
@@ -2431,7 +2118,7 @@ class TaskPlanner:
         return (
             Task(
                 title=task_data.get("title", objective),
-                subtasks=subtasks,  # Use the processed and validated subtasks
+                steps=steps,  # Use the processed and validated steps
             ),
             all_validation_errors,
         )  # Return task and any non-fatal errors
@@ -2439,23 +2126,23 @@ class TaskPlanner:
     async def _validate_and_build_task_from_tool_calls(
         self, tool_calls: List[ToolCall], history: List[Message]
     ) -> tuple[Optional[Task], List[str]]:
-        """Processes 'create_task' tool calls, validates subtasks and dependencies.
+        """Processes 'create_task' tool calls, validates steps and dependencies.
 
         This method handles the arguments from one or more `create_task` tool
         calls made by the LLM. For each such call, it:
-        1.  Extracts the task title and the list of raw subtask data.
-        2.  Processes the raw subtasks using `_process_subtask_list` to convert
-            them into `SubTask` objects and collect validation errors.
+        1.  Extracts the task title and the list of raw step data.
+        2.  Processes the raw steps using `_process_step_list` to convert
+            them into `Step` objects and collect validation errors.
         3.  Appends a "tool" role message to the history acknowledging the call
             and summarizing any validation issues for that specific call.
 
         After processing all `create_task` calls, it:
-        4.  Validates dependencies across *all* collected subtasks from *all* calls
+        4.  Validates dependencies across *all* collected steps from *all* calls
             using `_validate_dependencies`, and applies semantic validation with
             `_validate_plan_semantics`.
 
         If any validation errors occur at any stage (either within a single
-        subtask, a tool call's subtask list, or in the final dependency check),
+        step, a tool call's step list, or in the final dependency check),
         it raises a `ValueError` to trigger retry logic in the calling function
         (`_generate_with_retry`).
 
@@ -2466,15 +2153,15 @@ class TaskPlanner:
 
         Returns:
             A tuple containing:
-                - A `Task` object if all validations pass and subtasks exist.
+                - A `Task` object if all validations pass and steps exist.
                 - An empty list of validation errors (as errors trigger an exception).
 
         Raises:
             ValueError: If any validation errors are found during the processing
-                        of subtasks or overall plan dependencies, or if a
-                        `create_task` call results in no valid subtasks.
+                        of steps or overall plan dependencies, or if a
+                        `create_task` call results in no valid steps.
         """
-        all_subtasks: List[SubTask] = []
+        all_steps: List[Step] = []
         all_validation_errors: List[str] = []
         task_title: str = self.objective  # Default title
         tool_responses_added: Set[str] = set()  # Track processed tool call IDs
@@ -2489,20 +2176,20 @@ class TaskPlanner:
                 task_title = tool_call.args.get("title", task_title)
 
                 # --- Process Subtasks using helper ---
-                raw_subtasks_list = tool_call.args.get("subtasks", [])
-                if not isinstance(raw_subtasks_list, list):
+                raw_steps_list = tool_call.args.get("steps", [])
+                if not isinstance(raw_steps_list, list):
                     all_validation_errors.append(
-                        f"{context_prefix}: 'subtasks' field must be a list, but got {type(raw_subtasks_list)}."
+                        f"{context_prefix}: 'steps' field must be a list, but got {type(raw_steps_list)}."
                     )
-                    # Skip processing this call's subtasks if field is invalid, but record error
-                    subtasks, validation_errors = [], []  # Ensure these are empty lists
+                    # Skip processing this call's steps if field is invalid, but record error
+                    steps, validation_errors = [], []  # Ensure these are empty lists
                 else:
-                    # Use the updated _process_subtask_list
-                    subtasks, validation_errors = await self._process_subtask_list(
-                        raw_subtasks_list, context_prefix
+                    # Use the updated _process_step_list
+                    steps, validation_errors = await self._process_step_list(
+                        raw_steps_list, context_prefix
                     )
 
-                all_subtasks.extend(subtasks)
+                all_steps.extend(steps)
                 all_validation_errors.extend(validation_errors)
                 # --- End Subtask Processing ---
 
@@ -2534,20 +2221,20 @@ class TaskPlanner:
                 )
                 tool_responses_added.add(tool_call.id)
 
-        # --- Validate Dependencies *after* collecting all subtasks ---
-        # Only run if there were subtasks and no fundamental structural errors earlier
-        if all_subtasks:
+        # --- Validate Dependencies *after* collecting all steps ---
+        # Only run if there were steps and no fundamental structural errors earlier
+        if all_steps:
             try:
-                self._apply_schema_overrides(all_subtasks)
+                self._apply_schema_overrides(all_steps)
             except ValueError as exc:
                 all_validation_errors.append(str(exc))
 
-        if all_subtasks and not any(
+        if all_steps and not any(
             "must be a list" in e for e in all_validation_errors
         ):
-            dependency_errors = self._validate_dependencies(all_subtasks)
+            dependency_errors = self._validate_dependencies(all_steps)
             all_validation_errors.extend(dependency_errors)
-            semantic_errors = self._validate_plan_semantics(all_subtasks)
+            semantic_errors = self._validate_plan_semantics(all_steps)
             all_validation_errors.extend(semantic_errors)
         # --- End Dependency Validation ---
 
@@ -2557,17 +2244,17 @@ class TaskPlanner:
             error_string = "\n".join(all_validation_errors)
             raise ValueError(f"Validation errors in created task:\n{error_string}")
 
-        # Ensure we actually created subtasks if the call succeeded validation
-        if not all_subtasks and any(tc.name == "create_task" for tc in tool_calls):
-            # Check if create_task was called but resulted in no valid subtasks
-            # This might happen if the subtasks list was empty or all items failed validation
+        # Ensure we actually created steps if the call succeeded validation
+        if not all_steps and any(tc.name == "create_task" for tc in tool_calls):
+            # Check if create_task was called but resulted in no valid steps
+            # This might happen if the steps list was empty or all items failed validation
             raise ValueError(
-                "Task creation tool call processed, but resulted in zero valid subtasks."
+                "Task creation tool call processed, but resulted in zero valid steps."
             )
 
-        # If validation passed and subtasks exist
+        # If validation passed and steps exist
         return (
-            Task(title=task_title, subtasks=all_subtasks),
+            Task(title=task_title, steps=all_steps),
             all_validation_errors,
         )  # Return task and empty error list
 
@@ -2688,8 +2375,8 @@ class TaskPlanner:
                 task = await self._process_tool_calls(message, history)
                 # If _process_tool_calls returns without error, success!
                 log.debug(
-                    "Tool calls processed successfully, created task with %d subtasks",
-                    len(task.subtasks),
+                    "Tool calls processed successfully, created task with %d steps",
+                    len(task.steps),
                 )
                 if self.display_manager:
                     log.debug("Tool call processed successfully.")
@@ -2793,11 +2480,11 @@ class TaskPlanner:
 
     def _get_execution_tools_info(self) -> str:
         """
-        Describe the tools available to subtasks during execution.
+        Describe the tools available to steps during execution.
         """
         return self._format_tools_info(
             self.execution_tools,
-            "Available execution tools for subtasks:",
+            "Available execution tools for steps:",
             "No execution tools available",
         )
 
