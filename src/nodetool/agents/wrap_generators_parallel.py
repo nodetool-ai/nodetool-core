@@ -67,10 +67,6 @@ async def wrap_generators_parallel(*generators):
     # Wait for all tasks to complete
     await asyncio.wait(tasks)
 
-    # Raise exceptions if any were caught
+    # Raise the first exception (preserve its type/message) if any were caught
     if exceptions:
-        for exception in exceptions:
-            print(exception["stack_trace"])
-        raise Exception(
-            f"Exceptions occurred in generators: {exceptions[0]['exception']}"
-        )
+        raise exceptions[0]["exception"]

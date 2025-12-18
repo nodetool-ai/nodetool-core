@@ -26,7 +26,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Step, Task, ToolCall
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, LogUpdate, StepResult, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, StepResult, TaskUpdateEvent
 
 log = get_logger(__name__)
 
@@ -163,24 +163,12 @@ class TaskExecutor:
 
             step_ids = [s.id for s in executable_tasks]
             if self.parallel_execution:
-                yield LogUpdate(
-                    node_id="task_executor",
-                    node_name="Task Executor",
-                    content=f"Launching {len(step_ids)} parallel steps: {', '.join(step_ids)}...",
-                    severity="info",
-                )
                 # Execute all steps concurrently using wrap_generators_parallel
                 async for message in wrap_generators_parallel(*step_generators):
                     if isinstance(message, StepResult):
                         log.debug(f"TaskExecutor: Yielding StepResult from parallel for step {message.step.id}. is_task_result={message.is_task_result}")
                     yield message
             else:
-                yield LogUpdate(
-                    node_id="task_executor",
-                    node_name="Task Executor",
-                    content=f"Executing {len(step_ids)} steps sequentially: {', '.join(step_ids)}...",
-                    severity="info",
-                )
                 # Execute steps sequentially, one at a time
                 for generator in step_generators:
                     async for message in generator:

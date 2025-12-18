@@ -490,6 +490,7 @@ class StepExecutor:
         )
         self._output_result = None
         self.json_parse_failures = 0
+        self.generation_failures = 0
         self.display_manager = display_manager
         self.display_manager = display_manager
         self.result_schema = self._load_result_schema()
@@ -806,44 +807,37 @@ class StepExecutor:
 
         parsed = extract_json_from_message(message)
         if not isinstance(parsed, dict):
-            # Completion is signaled via finish_step tool calls, not via assistant text.
             return False, None
 
-        raw_content: str | None = None
-        if isinstance(message.content, str):
-            raw_content = message.content
-        elif isinstance(message.content, list):
-            try:
-                raw_content = "\n".join(str(item) for item in message.content)
-            except Exception:  # pragma: no cover - defensive fallback
-                raw_content = str(message.content)
-
-        cleaned = remove_think_tags(raw_content).strip() if raw_content else ""
-        looks_like_json_only = (cleaned.startswith("{") and cleaned.endswith("}")) or (
-            cleaned.startswith("```") and cleaned.endswith("```")
-        )
-
-        has_completion_wrapper = ("status" in parsed) or ("result" in parsed)
-        if not (has_completion_wrapper or looks_like_json_only):
-            # Allow incidental JSON in assistant text without treating it as a completion attempt.
+        status = parsed.get("status")
+        if status is not None and status != "completed":
             return False, None
 
-        # We do not accept JSON completion in assistant text; completion must happen via finish_step.
+        if status == "completed" and "result" not in parsed:
+            self.history.append(
+                Message(
+                    role="system",
+                    content="Missing 'result' in completion payload. Provide: "
+                    '{"status": "completed", "result": <your_result>}.',
+                )
+            )
+            return False, None
+
         candidate_result = parsed.get("result") if "result" in parsed else parsed
-        is_valid, error_detail, normalized_result = self._validate_result_payload(candidate_result)
-        if is_valid and normalized_result is not None:
-            self._append_completion_feedback(
-                "Valid result detected in assistant text, but you must call finish_step instead.",
-                normalized_result,
-            )
-        else:
-            self._append_completion_feedback(
-                error_detail or "Result failed schema validation.", candidate_result
-            )
-        self._register_json_failure(
-            "Attempted to complete via assistant text instead of finish_step."
+        is_valid, error_detail, normalized_result = self._validate_result_payload(
+            candidate_result
         )
-        return False, None
+        if not is_valid or normalized_result is None:
+            self.history.append(
+                Message(
+                    role="system",
+                    content=f"Schema validation failed: {error_detail or 'unknown error'}",
+                )
+            )
+            return False, None
+
+        self._store_completion_result(normalized_result)
+        return True, normalized_result
 
     def _emit_completion_events(self, normalized_result: Any):
         """Yield completion updates and a StepResult message."""
@@ -1206,8 +1200,14 @@ class StepExecutor:
             )
 
         except Exception as e:
+            self.generation_failures += 1
             log.error(f"Failed to generate message: {e}")
-            message = Message(role="assistant", content=f"Error generating message: {e}")
+            if isinstance(e, IndexError) or self.generation_failures >= 3:
+                raise
+            message = Message(
+                role="assistant",
+                content=f"Error generating message: {e}",
+            )
 
         if message.tool_calls:
             for tool_call in message.tool_calls:

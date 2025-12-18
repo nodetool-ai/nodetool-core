@@ -56,7 +56,13 @@ class NodeTool(Tool):
 
         # Set tool name - sanitize node type to meet provider requirements
         raw_node_type = self.node_class.get_node_type()
-        self.name = sanitize_node_name(raw_node_type)
+        if self.node_class.__module__.startswith("nodetool.nodes."):
+            tool_name_source = raw_node_type
+        else:
+            tool_name_source = (
+                f"{self.node_class.__module__.split('.')[-1]}.{self.node_class.__name__}"
+            )
+        self.name = sanitize_node_name(tool_name_source)
 
         # Set description from node metadata
         self.description = metadata.description or f"Execute {metadata.title} node"
@@ -76,6 +82,9 @@ class NodeTool(Tool):
             # Skip internal properties
             if prop.name.startswith("_"):
                 continue
+
+            if getattr(prop, "required", False):
+                required.append(prop.name)
 
             # Get JSON schema for property
             try:
