@@ -1,7 +1,8 @@
 import logging
 import os
 import sys
-from typing import ClassVar, Optional, Union
+from pathlib import Path
+from typing import Any, ClassVar, Optional, Union
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(
@@ -10,6 +11,7 @@ _DEFAULT_FORMAT = os.getenv(
 )
 _DEFAULT_DATEFMT = os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S")
 _configured = False
+_current_config: dict = {}
 
 
 def _supports_color() -> bool:
@@ -20,12 +22,14 @@ def _supports_color() -> bool:
 
 
 def configure_logging(
-    level: Optional[str | int] = None,
+    level: Optional[Union[str, int]] = None,
     fmt: Optional[str] = None,
     datefmt: Optional[str] = None,
     propagate_root: bool = False,
-) -> str | int:
-    """Configure root logging once with a consistent format.
+    log_file: Optional[Union[str, Path]] = None,
+    console_output: bool = True,
+) -> Union[str, int]:
+    """Configure root logging with consistent format, file logging, and console control.
 
     Environment overrides:
     - `NODETOOL_LOG_LEVEL`
@@ -34,7 +38,7 @@ def configure_logging(
     """
     from nodetool.config.environment import Environment
 
-    global _configured
+    global _current_config
 
     if isinstance(level, str):
         level = level.upper()
@@ -42,22 +46,33 @@ def configure_logging(
     if level is None:
         level = Environment.get_log_level()
 
-    if _configured and _configured == level:
-        return level
-    _configured = level
+    # Determine if configuration needs to change
+    new_config = {
+        "level": level,
+        "fmt": fmt,
+        "datefmt": datefmt,
+        "propagate_root": propagate_root,
+        "log_file": str(log_file) if log_file else None,
+        "console_output": console_output,
+    }
 
-    # If no explicit fmt provided and no env override, prefer colorful format when supported
-    use_color = _supports_color()
+    if _current_config == new_config:
+        return level
+
+    _current_config = new_config
+
+    # Resolve format and datefmt
+    use_color = _supports_color() and console_output
     if fmt is None:
         if os.getenv("NODETOOL_LOG_FORMAT") is None and use_color:
-            # Color by level using ANSI; name in cyan, ts in gray
             fmt = "\x1b[90m%(asctime)s\x1b[0m | %(levelname_color)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
         else:
             fmt = _DEFAULT_FORMAT
     datefmt = datefmt if datefmt is not None else _DEFAULT_DATEFMT
 
-    # Avoid reconfiguring if handlers already exist (e.g., in tests)
     root = logging.getLogger()
+    root.setLevel(level)
+    root.propagate = propagate_root
 
     class _LevelColorFormatter(logging.Formatter):
         COLORS: ClassVar[dict[str, str]] = {
@@ -67,7 +82,6 @@ def configure_logging(
             "ERROR": "\x1b[31m",  # red
             "CRITICAL": "\x1b[41m",  # red background
         }
-
         RESET: ClassVar[str] = "\x1b[0m"
 
         def format(self, record: logging.LogRecord) -> str:
@@ -81,38 +95,45 @@ def configure_logging(
                 record.levelname_color = record.levelname
             return super().format(record)
 
-    if root.handlers:
-        # Still align level/formatter for existing stream handlers
-        root.setLevel(level)
-        for h in root.handlers:
-            if isinstance(h, logging.StreamHandler):
-                h.setLevel(level)
-                h.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
-        root.propagate = propagate_root
+    # Manage handlers
+    # Remove existing handlers to avoid duplicates during reconfiguration
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
 
-    logging.basicConfig(level=level, format=fmt, datefmt=datefmt)
-    # Replace default formatter with our level-color one if using color
-    for h in logging.getLogger().handlers:
-        if isinstance(h, logging.StreamHandler):
-            h.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
-    logging.getLogger().propagate = propagate_root
+    # Console output handler
+    if console_output:
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
+        root.addHandler(console_handler)
+
+    # File logging handler
+    if log_file:
+        log_file_path = Path(log_file)
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setFormatter(logging.Formatter(fmt=_DEFAULT_FORMAT, datefmt=datefmt))
+        root.addHandler(file_handler)
+
     # Ensure noisy third-party loggers stay at INFO regardless of root level
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
     logging.getLogger("hpack").setLevel(logging.INFO)
     logging.getLogger("httpcore").setLevel(logging.INFO)
     logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("uvicorn.error").setLevel(
-        logging.WARNING
-    )  # Suppress DEBUG keepalive ping/pong messages
+    logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
     logging.getLogger("nodetool.models.sqlite_adapter").setLevel(logging.WARNING)
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
     return level
 
 
 def get_logger(name: str) -> logging.Logger:
     """Return a module-scoped logger."""
-    level = configure_logging()
+    root = logging.getLogger()
+    if not _current_config:
+        configure_logging()
+    
+    level = _current_config.get("level", logging.INFO)
     logger = logging.getLogger(name)
     logger.setLevel(level)
     return logger

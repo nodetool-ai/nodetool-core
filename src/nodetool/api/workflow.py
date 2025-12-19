@@ -468,7 +468,7 @@ async def update_workflow(
     background_tasks: BackgroundTasks,
     user: str = Depends(current_user),
 ) -> Workflow:
-    print(workflow_request.settings)
+    log.debug(f"Updating workflow {id} with settings: {workflow_request.settings}")
     workflow = await WorkflowModel.get(id)
     if not workflow:
         workflow = WorkflowModel(id=id, user_id=user)

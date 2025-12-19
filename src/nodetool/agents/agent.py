@@ -684,6 +684,7 @@ class Agent(BaseAgent):
                 max_step_iterations=self.max_step_iterations,
                 max_token_limit=self.max_token_limit or 100000,
                 parallel_execution=True,
+                display_manager=self.display_manager,
             )
 
             yield LogUpdate(

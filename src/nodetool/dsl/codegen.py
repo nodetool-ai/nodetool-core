@@ -12,6 +12,9 @@ from typing import Any, Union
 
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
@@ -138,14 +141,9 @@ def create_python_module_file(filename: str, content: str) -> None:
     try:
         subprocess.run(["black", filename], check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
-        print(
-            f"Error running black on {filename}: {e.stderr.decode()}", file=sys.stderr
-        )
+        log.error(f"Error running black on {filename}: {e.stderr.decode()}")
     except FileNotFoundError:
-        print(
-            "black formatter not found. Please ensure it is installed and in your PATH.",
-            file=sys.stderr,
-        )
+        log.error("black formatter not found. Please ensure it is installed and in your PATH.")
 
 
 def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
@@ -451,7 +449,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
             try:
                 annotation = _connect_annotation(field_type, field)
             except Exception as exc:  # pragma: no cover
-                print(f"Error generating field {field_name} for {node_cls.__name__}: {exc}")
+                log.error(f"Error generating field {field_name} for {node_cls.__name__}: {exc}")
                 raise
 
             field_entries.append(
@@ -608,7 +606,7 @@ def create_dsl_modules(source_path: str, target_path: str):
                 continue
 
         except ImportError as e:
-            print(f"Could not import {module_name}: {e}")
+            log.error(f"Could not import {module_name}: {e}")
             continue
 
         # Get the relative part of the module path
@@ -618,7 +616,7 @@ def create_dsl_modules(source_path: str, target_path: str):
 
         # Create the full target path
         full_target_path = os.path.join(target_path, relative_path)
-        print(f"Processing {relative_module} -> {full_target_path}")
+        log.debug(f"Processing {relative_module} -> {full_target_path}")
 
         if os.path.exists(full_target_path):
             if os.path.isdir(full_target_path):
@@ -660,5 +658,5 @@ def create_dsl_modules(source_path: str, target_path: str):
             + source_code
         )
 
-        print(f"Writing {target_file_path}")
+        log.info(f"Writing {target_file_path}")
         create_python_module_file(target_file_path, source_code)

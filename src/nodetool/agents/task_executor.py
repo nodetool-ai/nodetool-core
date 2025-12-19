@@ -54,6 +54,7 @@ class TaskExecutor:
         max_step_iterations: int = 10,
         max_token_limit: int = 100000,
         parallel_execution: bool = False,
+        display_manager: Any | None = None,
     ):
         """
         Initialize the TaskExecutor.
@@ -70,6 +71,7 @@ class TaskExecutor:
             max_step_iterations (int, optional): Maximum iterations allowed per step
             max_token_limit (int, optional): Maximum token limit before summarization
             parallel_execution (bool, optional): Whether to execute steps in parallel (True) or sequentially (False)
+            display_manager (Any, optional): The display manager for reporting progress
         """
         self.provider = provider
         self.model = model
@@ -83,6 +85,7 @@ class TaskExecutor:
         self.max_step_iterations = max_step_iterations
         self.output_files = []
         self.parallel_execution = parallel_execution
+        self.display_manager = display_manager
         self._finish_step_id: str | None = None
 
         # Lock for thread-safe step list access in parallel mode
@@ -155,6 +158,7 @@ class TaskExecutor:
                     provider=self.provider,
                     max_token_limit=self.max_token_limit,
                     use_finish_task=self._is_finish_step(step),
+                    display_manager=self.display_manager,
                 )
                 step_generators.append(step_executor.execute())
 

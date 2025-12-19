@@ -170,7 +170,8 @@ class AgentMessageProcessor(MessageProcessor):
                     },
                     "required": ["markdown"],
                 },
-                verbose=False,  # Disable verbose console output for websocket
+                verbose=kwargs.get("verbose", False),
+                display_manager=kwargs.get("display_manager"),
             )
 
             async for item in agent.execute(processing_context):

@@ -4,6 +4,9 @@ import subprocess
 import tempfile
 from io import BytesIO
 from typing import IO, Union
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 """
 Media Utilities Module
@@ -180,11 +183,11 @@ async def get_video_duration(input_io: BytesIO) -> float | None:
                 try:
                     return float(duration)
                 except ValueError as e:
-                    print(f"Error parsing duration: {e}")
+                    log.error(f"Error parsing duration: {e}")
                     return None
             return None
         else:
-            print(f"ffprobe error (using {FFPROBE_PATH}): {errors.decode()}")
+            log.error(f"ffprobe error (using {FFPROBE_PATH}): {errors.decode()}")
             return None
     finally:
         os.remove(temp_file_path)

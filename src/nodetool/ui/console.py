@@ -26,15 +26,16 @@ class AgentConsole:
     Manages Rich library components for displaying Agent planning and execution status.
     """
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True, console: Optional[Console] = None):
         """
         Initialize the AgentConsole.
 
         Args:
             verbose (bool): Enable/disable rich output.
+            console (Optional[Console]): Existing Rich console to use.
         """
         self.verbose: bool = verbose
-        self.console: Optional[Console] = Console() if verbose else None
+        self.console: Optional[Console] = console or (Console() if verbose else None)
         self.live: Optional[Live] = None
         self.current_table: Optional[Table] = None
         self.current_tree: Optional[Tree] = None
@@ -214,8 +215,8 @@ class AgentConsole:
                         f"[dim]+ {len(step.logs) - log_limit} more logs[/]"
                     )
 
-            # Add tool calls as child nodes if there are any relevant ones (for non-current steps)
-            if step.completed:
+            # Add tool calls as child nodes if there are any relevant ones
+            if True:
                 # Ensure tool_calls is not None before filtering
                 step_tool_calls = [
                     call for call in (tool_calls or []) if call.step_id == step.id

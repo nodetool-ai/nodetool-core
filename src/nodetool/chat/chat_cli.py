@@ -71,13 +71,19 @@ from nodetool.agents.tools.serp_tools import (
     GoogleNewsTool,
     GoogleSearchTool,
 )
+from nodetool.config.logging_config import configure_logging, get_logger
+from nodetool.config.settings import get_log_path
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
 from nodetool.metadata.types import LanguageModel, Message, Provider
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+
+log = get_logger(__name__)
+
 
 # Helper --------------------------------------------------------------------
 
@@ -145,6 +151,15 @@ class ChatCLI:
 
         # Rich console for beautiful output
         self.console = Console()
+        self.display_manager = AgentConsole(console=self.console)
+
+        # Configure logging: all logs to file, nothing to console
+        log_level = _determine_chat_log_level()
+        configure_logging(
+            level=log_level,
+            log_file=get_log_path("chat.log"),
+            console_output=False,
+        )
 
         # Initialize state
         self.context = ProcessingContext(user_id="1", auth_token="local_token")
@@ -552,6 +567,9 @@ class ChatCLI:
                         if self.debug_mode:
                             args = message.get("args")
                             self.console.print(f"\n[bold cyan]Tool Call ({escape(str(name))}):[/bold cyan] {escape(str(args))}")
+                        elif self.display_manager:
+                            # Skip if display_manager is present, as it handles tool calls in its tree view
+                            pass
                         else:
                             self.console.print(f"\n[italic cyan]{escape(str(msg))}[/italic cyan]")
 
@@ -563,34 +581,58 @@ class ChatCLI:
                                 content = message.get("content") or {}
                                 
                                 if event_type == "planning_update":
-                                    phase = content.get("phase")
-                                    status = content.get("status")
-                                    inner_content = content.get("content")
-                                    self.console.print(f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}")
-                                    if inner_content and self.debug_mode:
-                                        self.console.print(f"  {escape(str(inner_content))}")
+                                    log.info(f"[Planning] Phase: {content.get('phase')}, Status: {content.get('status')}")
+                                    if self.display_manager and not self.debug_mode:
+                                        # When display_manager is active, it handles planning updates
+                                        pass
+                                    else:
+                                        phase = content.get("phase")
+                                        status = content.get("status")
+                                        inner_content = content.get("content")
+                                        self.console.print(f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}")
+                                        if inner_content and self.debug_mode:
+                                            self.console.print(f"  {escape(str(inner_content))}")
                                         
                                 elif event_type == "task_update":
-                                    event = content.get("event")
-                                    step = content.get("step")
-                                    if event == "SUBTASK_STARTED" and step:
-                                        instructions = step.get('instructions')
-                                        self.console.print(f"\n[bold green]➜ {escape(str(instructions))}[/bold green]")
-                                    elif event == "ENTERED_CONCLUSION_STAGE":
-                                        self.console.print("[bold yellow]Entering conclusion stage...[/bold yellow]")
-                                    elif self.debug_mode:
-                                        self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
+                                    log.debug(f"[Task Event] {content.get('event')}")
+                                    if self.display_manager and not self.debug_mode:
+                                        # When display_manager is active, it handles task and step updates
+                                        pass
+                                    else:
+                                        event = content.get("event")
+                                        step = content.get("step")
+                                        if event == "SUBTASK_STARTED" and step:
+                                            instructions = step.get('instructions')
+                                            self.console.print(f"\n[bold green]➜ {escape(str(instructions))}[/bold green]")
+                                        elif event == "ENTERED_CONCLUSION_STAGE":
+                                            self.console.print("[bold yellow]Entering conclusion stage...[/bold yellow]")
+                                        elif self.debug_mode:
+                                            self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
                                         
                                 elif event_type == "log_update":
                                     log_content = content.get("content")
                                     severity = content.get("severity", "info")
-                                    color = "red" if severity == "error" else "yellow" if severity == "warning" else "white"
-                                    self.console.print(f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}")
-                                    
+                                    # Log to file regardless of console suppression
+                                    log_func = getattr(log, severity.lower(), log.info)
+                                    log_func(f"[Agent Log] {log_content}")
+
+                                    if self.display_manager and not self.debug_mode:
+                                        # Consistently skip technical logs in CLI unless in debug mode,
+                                        # matching the frontend refinement.
+                                        pass
+                                    else:
+                                        color = "red" if severity == "error" else "yellow" if severity == "warning" else "white"
+                                        self.console.print(f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}")
+                                        
                                 elif event_type == "step_result":
-                                    result = content.get("result")
-                                    if self.debug_mode:
-                                        self.console.print(f"[bold green]Step Result:[/bold green] {escape(str(result))}")
+                                    log.info(f"[Step Result] {content.get('result')}")
+                                    if self.display_manager and not self.debug_mode:
+                                        # display_manager handles step results
+                                        pass
+                                    else:
+                                        result = content.get("result")
+                                        if self.debug_mode:
+                                            self.console.print(f"[bold green]Step Result:[/bold green] {escape(str(result))}")
                                 
                                 continue # Already handled this special message
 
@@ -682,6 +724,8 @@ class ChatCLI:
             processor=processor,
             chat_history=list(self.messages),
             processing_context=self.context,
+            display_manager=self.display_manager,
+            verbose=not self.debug_mode,
         )
 
     async def process_regular_message(self, user_input: str) -> None:

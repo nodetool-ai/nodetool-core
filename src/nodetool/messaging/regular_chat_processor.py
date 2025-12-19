@@ -379,7 +379,7 @@ class RegularChatProcessor(MessageProcessor):
                 n_results=n_results,
                 include=["documents", "metadatas"],
             )
-            print(results)
+            log.debug(f"Query results for {collection_name}: {results}")
 
             if results["documents"] and results["documents"][0]:
                 collection_results = f"\n\n### Results from {collection_name}:\n"
