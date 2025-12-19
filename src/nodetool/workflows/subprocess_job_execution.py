@@ -530,10 +530,14 @@ class SubprocessJobExecution(JobExecution):
 
     def is_running(self) -> bool:
         """Check if the subprocess is still running."""
+        if self._status in {"completed", "failed", "cancelled", "error"}:
+            return False
         return self.process.returncode is None
 
     def is_completed(self) -> bool:
         """Check if the subprocess has completed."""
+        if self._status in {"completed", "failed", "cancelled", "error"}:
+            return True
         return self.process.returncode is not None
 
     def cancel(self) -> bool:

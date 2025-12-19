@@ -70,7 +70,7 @@ dependencies = [
     # AI dependencies
     "anthropic>=0.75.0",
     "huggingface_hub>=0.35.3",
-    "openai>=2.3.0",
+    "openai>=2.14.0",
     "fal-client>=0.8.1",
     "gguf>=0.17.1",
     "ollama>=0.6.0",

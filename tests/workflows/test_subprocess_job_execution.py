@@ -265,8 +265,16 @@ async def test_subprocess_job_database_record(simple_workflow, cleanup_jobs):
         await asyncio.sleep(wait_interval)
         elapsed += wait_interval
 
-    # Reload and check status
-    await db_job.reload()
+    # Wait for database to be updated (there's a small window between
+    # job.is_completed() returning True and the database being updated)
+    while elapsed < max_wait:
+        await db_job.reload()
+        if db_job.status in ["completed", "failed", "cancelled"]:
+            break
+        await asyncio.sleep(wait_interval)
+        elapsed += wait_interval
+
+    # Check final status
     assert db_job.status in ["completed", "failed", "cancelled"]
 
 

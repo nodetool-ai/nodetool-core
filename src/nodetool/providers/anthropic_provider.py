@@ -486,14 +486,10 @@ class AnthropicProvider(BaseProvider):
             betas.append("structured-outputs-2025-11-13")
 
         if betas:
-            # Use beta client if betas are present
-            client_interface = self.client.beta.messages
             request_kwargs["betas"] = betas
-        else:
-            client_interface = self.client.messages
 
         log.debug("Streaming response initialized")
-        async with client_interface.stream(**request_kwargs) as ctx_stream:  # type: ignore
+        async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
             async for event in ctx_stream:  # type: ignore
                 etype = getattr(event, "type", "")
                 if etype == "content_block_delta":

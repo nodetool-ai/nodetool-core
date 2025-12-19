@@ -1076,6 +1076,7 @@ class OpenAIProvider(BaseProvider):
         max_tokens: int = 16384,
         context_window: int = 128000,
         json_schema: dict | None = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Stream assistant deltas and tool calls from OpenAI.
@@ -1087,6 +1088,7 @@ class OpenAIProvider(BaseProvider):
             max_tokens: Maximum tokens to generate.
             context_window: Maximum tokens considered for context.
             json_schema: Optional response schema.
+            response_format: Optional structured output format.
             **kwargs: Additional OpenAI parameters such as temperature.
 
         Yields:
@@ -1108,9 +1110,13 @@ class OpenAIProvider(BaseProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if json_schema is not None:
-            if "response_format" in _kwargs:
-                raise ValueError("response_format and json_schema are mutually exclusive")
+        if response_format is None:
+            response_format = kwargs.get("response_format")
+        if response_format is not None and json_schema is not None:
+            raise ValueError("response_format and json_schema are mutually exclusive")
+        if response_format is not None:
+            _kwargs["response_format"] = response_format
+        elif json_schema is not None:
             _kwargs["response_format"] = {
                 "type": "json_schema",
                 "json_schema": json_schema,
@@ -1295,6 +1301,7 @@ class OpenAIProvider(BaseProvider):
         top_p: float | None = None,
         presence_penalty: float | None = None,
         frequency_penalty: float | None = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> Message:
         """Generate a non-streaming completion from OpenAI.
@@ -1322,7 +1329,13 @@ class OpenAIProvider(BaseProvider):
         request_kwargs: dict[str, Any] = {
             "max_completion_tokens": max_tokens,
         }
-        if json_schema is not None:
+        if response_format is None:
+            response_format = kwargs.get("response_format")
+        if response_format is not None and json_schema is not None:
+            raise ValueError("response_format and json_schema are mutually exclusive")
+        if response_format is not None:
+            request_kwargs["response_format"] = response_format
+        elif json_schema is not None:
             request_kwargs["response_format"] = {
                 "type": "json_schema",
                 "json_schema": json_schema,
