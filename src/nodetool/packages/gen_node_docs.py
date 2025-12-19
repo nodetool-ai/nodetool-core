@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Optional
 
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.packages.registry import Registry
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 def sanitize_filename(text: str) -> str:
@@ -259,7 +262,7 @@ def generate_node_docs(
         all_nodes = filtered_nodes
 
     if verbose:
-        print(f"Found {len(all_nodes)} nodes to document")
+        log.info(f"Found {len(all_nodes)} nodes to document")
 
     # Group nodes by namespace
     namespace_nodes: Dict[str, List[NodeMetadata]] = {}
@@ -300,7 +303,7 @@ def generate_node_docs(
             created_files += 1
 
             if verbose:
-                print(f"Created: {file_path}")
+                log.info(f"Created: {file_path}")
 
         # Create namespace index
         create_namespace_index(namespace_dir, namespace, nodes)

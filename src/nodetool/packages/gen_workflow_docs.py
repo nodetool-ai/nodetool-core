@@ -9,6 +9,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 
 def get_node_label(node: Dict[str, Any]) -> str:
     """Extract a readable label for a node.
@@ -330,14 +334,14 @@ def generate_workflow_docs(
             if create_jekyll_page(json_file, output_path, package_filter):
                 created_count += 1
                 if verbose:
-                    print(f"Created: {output_path / (json_file.stem.lower().replace(' ', '-') + '.md')}")
+                    log.info(f"Created: {output_path / (json_file.stem.lower().replace(' ', '-') + '.md')}")
         except Exception as e:
             error_msg = f"Error processing {json_file.name}: {e}"
             errors.append(error_msg)
             if verbose:
-                print(error_msg)
+                log.error(error_msg)
 
     if errors and verbose:
-        print(f"\nEncountered {len(errors)} errors during processing")
+        log.error(f"Encountered {len(errors)} errors during processing")
 
     return len(json_files), created_count

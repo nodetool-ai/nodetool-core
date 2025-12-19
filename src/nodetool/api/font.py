@@ -6,6 +6,10 @@ from typing import List
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 
 class FontResponse(BaseModel):
     fonts: List[str]
@@ -41,7 +45,7 @@ async def get_system_fonts() -> FontResponse:
                             font_name = os.path.splitext(font_file)[0]
                             fonts.append(font_name)
         except Exception as e:
-            print(f"Error getting macOS fonts: {e}")
+            log.error(f"Error getting macOS fonts: {e}")
 
     elif system == "Windows":
         try:
@@ -54,7 +58,7 @@ async def get_system_fonts() -> FontResponse:
                         font_name = os.path.splitext(font_file)[0]
                         fonts.append(font_name)
         except Exception as e:
-            print(f"Error getting Windows fonts: {e}")
+            log.error(f"Error getting Windows fonts: {e}")
 
     elif system == "Linux":
         try:
@@ -104,7 +108,7 @@ async def get_system_fonts() -> FontResponse:
             for sub in results:
                 fonts.extend(sub)
         except Exception as e:
-            print(f"Error getting Linux fonts: {e}")
+            log.error(f"Error getting Linux fonts: {e}")
 
     # Remove duplicates and sort
     fonts = sorted(set(fonts))

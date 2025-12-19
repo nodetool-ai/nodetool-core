@@ -428,7 +428,7 @@ def create_app(
         async def validation_exception_handler(
             request: Request, exc: RequestValidationError
         ):
-            print(f"Request validation error: {exc}")
+            log.error(f"Request validation error: {exc}")
             return JSONResponse({"detail": exc.errors()}, status_code=422)
 
     @app.get("/health")
@@ -533,7 +533,7 @@ def create_app(
         await websocket_updates.handle_client(websocket)
 
     if static_folder and os.path.exists(static_folder):
-        print(f"Mounting static folder: {static_folder}")
+        log.info(f"Mounting static folder: {static_folder}")
         app.mount("/", StaticFiles(directory=static_folder, html=True), name="static")
 
     return app
@@ -650,17 +650,17 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             workers=1,
         )
     except KeyboardInterrupt:
-        print("\nServer interrupted by user (Ctrl+C)")
+        log.info("Server interrupted by user (Ctrl+C)")
         # On Windows, uvicorn shutdown can hang - force exit immediately after cleanup
         if platform.system() == "Windows":
-            print("Windows detected: forcing immediate exit to prevent hanging...")
+            log.info("Windows detected: forcing immediate exit to prevent hanging...")
             # Use a separate thread to force exit after a short delay
             import threading
             import time
 
             def force_exit():
                 time.sleep(1)  # Give cleanup handlers time to run
-                print("Forcing process termination...")
+                log.info("Forcing process termination...")
                 os._exit(0)
 
             # Start the force exit timer

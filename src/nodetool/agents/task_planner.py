@@ -1137,7 +1137,7 @@ class TaskPlanner:
                 else:
                     log.debug("Plan created successfully.")
                 self.task_plan.tasks.append(task)
-                print(f"Task created: \n{task.to_markdown()}")
+                log.debug(f"Task created: \n{task.to_markdown()}")
             else:
                 # Construct error message based on plan_creation_error or last message
                 if plan_creation_error:

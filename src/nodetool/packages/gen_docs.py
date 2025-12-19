@@ -9,12 +9,7 @@ from pydantic import BaseModel
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# Logger is retrieved from our central configuration when possible
 logger = get_logger(__name__)
 
 
@@ -197,7 +192,7 @@ def process_module(
 
     module_path = os.path.join(base_path, f"{module_name}.md")
     os.makedirs(os.path.dirname(module_path), exist_ok=True)
-    print(f"Processing {module_name} -> {module_path}")
+    logger.info(f"Processing {module_name} -> {module_path}")
 
     with open(module_path, "w", encoding="utf-8") as file:
         file.write(f"# {module.__name__}\n\n")
@@ -256,7 +251,7 @@ def document_class(file: Any, cls: Type[Any], compact: bool = False) -> None:
                 try:
                     file.write(json.dumps(cls.get_json_schema()) + "\n")
                 except Exception as e:
-                    print(f"Error generating schema for {cls.__name__}: {e}")
+                    logger.error(f"Error generating schema for {cls.__name__}: {e}")
         else:
             file.write("**Fields:**\n")
             for name, field in cls.model_fields.items():

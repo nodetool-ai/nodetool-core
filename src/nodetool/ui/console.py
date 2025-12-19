@@ -522,7 +522,7 @@ class AgentConsole:
         Args:
             step (Step): The step being started.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             panel = Panel(
                 f"[bold cyan]Content:[/] {step.instructions}\n"
                 f"[bold cyan]ID:[/] {step.id}\n"
@@ -545,7 +545,7 @@ class AgentConsole:
             token_count (int): Current token count.
             max_tokens (int): Maximum allowed tokens.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             # Create progress bars for iterations and tokens
             iteration_progress = f"[cyan]Iteration:[/] {iteration}/{max_iterations}"
             token_progress = f"[cyan]Tokens:[/] {token_count}/{max_tokens}"
@@ -579,7 +579,7 @@ class AgentConsole:
             tool_name (str): Name of the tool being executed.
             args (dict): Arguments passed to the tool.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             # Format arguments as JSON with syntax highlighting
             args_json = Syntax(
                 json.dumps(args, indent=2, ensure_ascii=False),
@@ -607,7 +607,7 @@ class AgentConsole:
             result (Any): The result returned by the tool.
             compressed (bool): Whether the result was compressed.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             # Format result based on type
             if isinstance(result, dict):
                 # Pretty format JSON results
@@ -643,7 +643,7 @@ class AgentConsole:
             success (bool): Whether the step completed successfully.
             result (Any): The final result of the step.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             status = (
                 "[bold green]✅ Success[/]" if success else "[bold red]❌ Failed[/]"
             )
@@ -681,7 +681,7 @@ class AgentConsole:
             current (int): Current token count.
             limit (int): Token limit.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             percentage = (current / limit) * 100
             warning_text = "[bold yellow]⚠️  Token Usage Warning[/]\n\n"
             warning_text += f"Current tokens: [bold]{current:,}[/] / {limit:,} ([bold red]{percentage:.1f}%[/])\n"
@@ -692,7 +692,7 @@ class AgentConsole:
 
     def display_conclusion_stage(self) -> None:
         """Display entering conclusion stage with special formatting."""
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             self.console.print(
                 Rule("[bold magenta]🎯 Entering Conclusion Stage[/]", style="magenta")
             )
@@ -732,7 +732,7 @@ class AgentConsole:
             event (str): The event type.
             details (Optional[str]): Additional details about the event.
         """
-        if self.console:
+        if self.console and not (self.live and self.live.is_started):
             event_styles = {
                 "SUBTASK_STARTED": ("🚀", "green"),
                 "SUBTASK_COMPLETED": ("✅", "green"),

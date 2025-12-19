@@ -3,7 +3,8 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from rich.console import Console
+
+from nodetool.config.logging_config import get_logger
 
 from nodetool.api.utils import current_user
 from nodetool.api.workflow import from_model
@@ -13,7 +14,7 @@ from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
 
-console = Console()
+log = get_logger(__name__)
 
 
 def create_openai_compatible_router(
@@ -79,7 +80,7 @@ def create_openai_compatible_router(
                     },
                 )
         except Exception as e:
-            console.print(f"OpenAI Chat error: {e}")
+            log.error(f"OpenAI Chat error: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/models")
@@ -98,7 +99,7 @@ def create_openai_compatible_router(
             ]
             return {"object": "list", "data": data}
         except Exception as e:
-            console.print(f"OpenAI Models error: {e}")
+            log.error(f"OpenAI Models error: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router

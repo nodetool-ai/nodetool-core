@@ -128,7 +128,7 @@ async def summarize_thread(
 
     # Use the provided provider and model for LLM call
     provider = await get_provider(Provider(req.provider), user_id=user)
-    print(provider)
+    log.debug(f"Summarizing thread {thread_id} using provider: {provider}")
 
     # Make the LLM call
     response = await provider.generate_message(
@@ -144,7 +144,7 @@ async def summarize_thread(
             ),
         ],
     )
-    print(response)
+    log.debug(f"Summarization response: {response}")
 
     if response.content:
         new_title = str(response.content)

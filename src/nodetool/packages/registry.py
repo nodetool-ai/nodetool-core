@@ -93,7 +93,7 @@ REGISTRY_URL = (
 )
 DEFAULT_REGISTRY_REPO = "https://github.com/nodetool/package-registry.git"
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
 def json_serializer(obj: Any) -> dict:
@@ -265,7 +265,7 @@ class Registry:
         self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
         self._index_available = None  # Cache for package index availability
-        self.logger = logger
+        self.logger = log
 
     def list_installed_packages(self) -> List[PackageModel]:
         """List all installed node packages."""
@@ -1095,7 +1095,7 @@ async def _enrich_nodes_with_model_info(
     for repo_id, info in zip(repo_ids, results, strict=False):
         if isinstance(info, Exception):
             if verbose:
-                logger.warning("Failed to fetch model info for %s: %s", repo_id, info)
+                log.warning("Failed to fetch model info for %s: %s", repo_id, info)
             continue
         if info:
             model_info_map[repo_id] = info
@@ -1207,7 +1207,7 @@ def discover_node_packages() -> list[PackageModel]:
                             metadata["source_folder"] = source_folder
                             packages.append(PackageModel(**metadata))
                     except Exception as e:
-                        print(f"Error processing {metadata_file}: {e}")
+                        log.error(f"Error processing {metadata_file}: {e}")
                 # Avoid scanning both root and src when one already provided metadata
                 if metadata_files:
                     break
@@ -1239,7 +1239,7 @@ def discover_node_packages() -> list[PackageModel]:
                     if isinstance(pkg.name, str):
                         seen_names.add(pkg.name)
                 except Exception as e:
-                    print(f"Error processing {metadata_file}: {e}")
+                    log.error(f"Error processing {metadata_file}: {e}")
 
     return packages
 
@@ -1292,7 +1292,7 @@ def scan_for_package_nodes(
 
     # Check for pyproject.toml in current directory
     if not os.path.exists("pyproject.toml"):
-        print("Error: No pyproject.toml found in current directory")
+        log.error("No pyproject.toml found in current directory")
         sys.exit(1)
 
     # Read pyproject.toml
@@ -1302,7 +1302,7 @@ def scan_for_package_nodes(
     # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        print("Error: No [project] metadata found in pyproject.toml")
+        log.error("No [project] metadata found in pyproject.toml")
         sys.exit(1)
 
     # Name and version
@@ -1448,7 +1448,7 @@ def scan_for_package_nodes(
                 cls=EnumEncoder,
             )
 
-    print(
+    log.info(
         f"✅ Successfully created package metadata for {package.name} with {len(package.nodes or [])} total nodes, {len(package.examples or [])} examples, and {len(package.assets or [])} assets"
     )
 
@@ -1483,7 +1483,7 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     # Save to package_metadata directory
     metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
     if verbose:
-        print(f"Saving package metadata to {metadata_path}")
+        log.info(f"Saving package metadata to {metadata_path}")
 
     with open(metadata_path, "w") as f:
         json.dump(
@@ -1498,7 +1498,7 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     example_count = len(package.examples or [])
     asset_count = len(package.assets or [])
 
-    print(
+    log.info(
         f"Saved metadata with {node_count} nodes, {example_count} examples, and {asset_count} assets"
     )
 
@@ -1517,7 +1517,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
         if verbose:
-            print("pyproject.toml not found, skipping update")
+            log.info("pyproject.toml not found, skipping update")
         return
 
     # Read the pyproject.toml file
@@ -1592,7 +1592,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         if rel not in patterns:  # type: ignore
             patterns.append(rel)  # type: ignore
             if verbose:
-                print(f"Added package-data pattern: {rel}")
+                log.info(f"Added package-data pattern: {rel}")
 
     # Write back the file
     with open(pyproject_path, "w", encoding="utf-8") as f:
@@ -1604,7 +1604,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
             if "project" in data
             else "poetry.include"
         )
-        print(f"Updated {pyproject_path} {build_tool} with asset files")
+        log.info(f"Updated {pyproject_path} {build_tool} with asset files")
 
 
 def load_node_packages():
