@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 from nodetool.metadata.types import Message, MessageContent, ToolCall
@@ -9,7 +11,7 @@ class MessageCreateRequest(BaseModel):
     tool_call_id: str | None = None
     role: str = ""
     name: str | None = None
-    content: str | list[MessageContent] | None = None
+    content: str | dict[str, Any] | list[MessageContent] | None = None
     tool_calls: list[ToolCall] | None = None
     created_at: str | None = None
 

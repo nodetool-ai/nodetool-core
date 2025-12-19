@@ -16,7 +16,6 @@ Subclasses should implement transport-specific methods for:
 """
 
 import asyncio
-import json
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
@@ -178,15 +177,6 @@ class BaseChatRunner(ABC):
         data_copy.pop("id", None)
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
-
-        # For agent_execution messages, convert dict content to JSON string
-        if data_copy.get("role") == "agent_execution" and isinstance(
-            data_copy.get("content"), dict
-        ):
-            data_copy["content"] = json.dumps(data_copy["content"])
-            log.debug(
-                "Converted agent_execution message content dict to JSON string for DB storage"
-            )
 
         # Normalize tools field to expected types (list[str])
         try:

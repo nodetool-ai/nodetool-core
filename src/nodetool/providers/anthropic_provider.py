@@ -118,6 +118,7 @@ class AnthropicProvider(BaseProvider):
         # Remove unsupported keys
         # "Not supported: ... Numerical constraints (minimum, maximum...), String constraints (minLength...)"
         unsupported_keys = [
+            "default",
             "minimum",
             "maximum",
             "exclusiveMinimum",
@@ -127,6 +128,9 @@ class AnthropicProvider(BaseProvider):
             "maxLength",
             "minProperties",
             "maxProperties",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
         ]
 
         for k in unsupported_keys:

@@ -1,4 +1,5 @@
 import base64
+import json
 import enum
 from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
@@ -1730,7 +1731,7 @@ class Message(BaseType):
     The name of the tool that sent the message (aka tool result).
     """
 
-    content: str | list[MessageContent] | None = None
+    content: str | dict[str, Any] | list[MessageContent] | None = None
     """
     Text content or a list of message content objects, which can be text, images, or other types of content.
     """
@@ -1798,6 +1799,16 @@ class Message(BaseType):
     Whether to use help mode for processing this message.
     """
 
+    agent_execution_id: str | None = None
+    """
+    Identifier for grouping agent execution trace messages.
+    """
+
+    execution_event_type: str | None = None
+    """
+    Type of agent execution event (planning_update, task_update, step_result, log_update).
+    """
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_instructions_to_content(cls, data: Any) -> Any:
@@ -1807,12 +1818,12 @@ class Message(BaseType):
         content = data.get("content")
         instructions = data.get("instructions")
 
-        if content is None and instructions is not None:
+        if content is None and isinstance(instructions, (str, list)):
             data = dict(data)
             data["content"] = instructions
             return data
 
-        if instructions is None and content is not None:
+        if instructions is None and isinstance(content, (str, list)):
             data = dict(data)
             data["instructions"] = content
             return data
@@ -1830,13 +1841,32 @@ class Message(BaseType):
         Returns:
             Message: The abstract Message object.
         """
+        content = message.content
+        if message.role == "agent_execution" and isinstance(content, str):
+            try:
+                content = json.loads(content)
+                if isinstance(content, str):
+                    try:
+                        content = json.loads(content)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        execution_event_type = getattr(message, "execution_event_type", None)
+        agent_execution_id = getattr(message, "agent_execution_id", None)
+        if message.role == "agent_execution" and isinstance(content, dict):
+            if not execution_event_type:
+                execution_event_type = content.get("type")
+            if not agent_execution_id:
+                agent_execution_id = message.id
+
         return Message(
             id=message.id,
             thread_id=message.thread_id,
             tool_call_id=message.tool_call_id,
             role=message.role,
             name=message.name,
-            content=message.content,
+            content=content,
             tool_calls=message.tool_calls,
             created_at=message.created_at.isoformat() if message.created_at else None,
             provider=message.provider,
@@ -1844,6 +1874,8 @@ class Message(BaseType):
             agent_mode=message.agent_mode,
             workflow_assistant=message.workflow_assistant,
             help_mode=message.help_mode,
+            agent_execution_id=agent_execution_id,
+            execution_event_type=execution_event_type,
         )
 
 

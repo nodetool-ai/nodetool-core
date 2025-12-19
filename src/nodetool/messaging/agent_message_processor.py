@@ -129,7 +129,9 @@ class AgentMessageProcessor(MessageProcessor):
                 and hasattr(processing_context, "client_tools_manifest")
                 and processing_context.client_tools_manifest
             ):
-                from .help import UIToolProxy  # local proxy that forwards to frontend
+                from .help_message_processor import (
+                    UIToolProxy,
+                )  # local proxy that forwards to frontend
 
                 ui_tools: list[Tool] = []
                 for (
@@ -192,6 +194,8 @@ class AgentMessageProcessor(MessageProcessor):
                                 "name": item.name,
                                 "message": f"Calling {item.name}...",
                                 "args": item.args,
+                                "step_id": item.step_id,
+                                "agent_execution_id": agent_execution_id,
                             }
                         )
                         log.debug(f"Sent tool_call_update for {item.name}")
@@ -332,8 +336,11 @@ class AgentMessageProcessor(MessageProcessor):
                         # Prepare content as dict
                         content_dict = {
                             "type": "step_result",
-                            "result": str(item.result),
-                            "step_id": getattr(item, "step_id", None),
+                            "result": item.result,
+                            "step": item.step.model_dump() if item.step else None,
+                            "step_id": item.step.id if item.step else None,
+                            "error": item.error,
+                            "is_task_result": item.is_task_result,
                         }
 
                         # Send as message via WebSocket (base_chat_runner will save to DB)

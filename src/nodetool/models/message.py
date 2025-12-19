@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from nodetool.metadata.types import MessageContent, MessageFile, Provider, ToolCall
 from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
@@ -21,7 +22,7 @@ class Message(DBModel):
     tool_call_id: str | None = DBField(default=None)
     role: str | None = DBField(default=None)
     name: str | None = DBField(default=None)
-    content: str | list[MessageContent] | None = DBField(default=None)
+    content: str | dict[str, Any] | list[MessageContent] | None = DBField(default=None)
     tool_calls: list[ToolCall] | None = DBField(default=None)
     collections: list[str] | None = DBField(default=None)
     input_files: list[MessageFile] | None = DBField(default=None)

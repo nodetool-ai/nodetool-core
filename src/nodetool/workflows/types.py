@@ -155,9 +155,12 @@ class ToolCallUpdate(BaseModel):
 
     type: Literal["tool_call_update"] = "tool_call_update"
     node_id: str | None = None
+    tool_call_id: str | None = None
     name: str
     args: dict[str, Any]
     message: str | None = None
+    step_id: str | None = None
+    agent_execution_id: str | None = None
 
 
 class BinaryUpdate(BaseModel):
