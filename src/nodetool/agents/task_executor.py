@@ -165,7 +165,7 @@ class TaskExecutor:
             if not step_generators:
                 continue
 
-            step_ids = [s.id for s in executable_tasks]
+            [s.id for s in executable_tasks]
             if self.parallel_execution:
                 # Execute all steps concurrently using wrap_generators_parallel
                 async for message in wrap_generators_parallel(*step_generators):

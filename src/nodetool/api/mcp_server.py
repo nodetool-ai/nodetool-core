@@ -434,12 +434,12 @@ async def search_nodes(
 
     result = []
     registry = Registry.get_instance()
-    
+
     for node in nodes:
         if include_metadata:
             # Return full metadata
             node_metadata = registry.find_node_by_type(node.node_type)
-            
+
             if node_metadata:
                 result.append(node_metadata)
             else:
@@ -1366,10 +1366,7 @@ async def get_job_logs(job_id: str, limit: int = 200) -> dict[str, Any]:
 
     manager = JobExecutionManager.get_instance()
     live = manager.get_job(job_id)
-    if live is not None:
-        logs = live.get_live_logs(limit=limit)
-    else:
-        logs = (job.logs or [])[: max(0, limit)]
+    logs = live.get_live_logs(limit=limit) if live is not None else (job.logs or [])[:max(0, limit)]
 
     return {"job_id": job_id, "logs": logs}
 
@@ -2256,12 +2253,12 @@ async def _run_agent_impl(
                     # We could optionally stream chunks if FastMCP supports it for tools,
                     # but typically tools return a final value.
                     # ctx.info(event.content) might be too noisy.
-                
+
                 elif isinstance(event, PlanningUpdate):
                     if ctx:
                         await ctx.info(f"Plan: {event.phase} - {event.content}")
                     events.append(event.model_dump())
-                
+
                 elif isinstance(event, TaskUpdate):
                     if ctx:
                         task_title = event.task.title if event.task else "Task"
@@ -2272,7 +2269,7 @@ async def _run_agent_impl(
                      if ctx:
                         await ctx.info(f"Log: {event.content}")
                      events.append(event.model_dump())
-                     
+
                 else:
                     if hasattr(event, "model_dump"):
                         events.append(event.model_dump())

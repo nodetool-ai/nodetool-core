@@ -145,7 +145,7 @@ def test_completion_json_schema_validation_failure(tmp_path):
 
 def test_step_executor_respects_tool_list(tmp_path):
     """Test that StepExecutor correctly handles the tools passed to it.
-    
+
     Note: Tool filtering based on step.tools should be done by the caller
     (e.g., TaskExecutor) before passing to StepExecutor. StepExecutor
     auto-injects finish_step tool when output_schema is present.

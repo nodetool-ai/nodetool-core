@@ -140,7 +140,7 @@ class GoogleGroundedSearchTool(Tool):
 
         # Format the results
         formatted_sources = []
-        
+
         # Resolve redirect URLs
         import aiohttp
         try:

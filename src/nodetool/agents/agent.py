@@ -722,11 +722,7 @@ class Agent(BaseAgent):
                             event=TaskUpdateEvent.TASK_COMPLETED,
                         )
                     yield item
-                elif isinstance(item, TaskUpdate):
-                    yield item
-                elif isinstance(item, Chunk):  # Yield streaming chunks
-                    yield item
-                elif isinstance(item, LogUpdate):
+                elif isinstance(item, (TaskUpdate, Chunk, LogUpdate)):
                     yield item
                 else:
                     yield item

@@ -2,9 +2,11 @@ import asyncio
 import json
 import os
 from unittest.mock import MagicMock
+
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor, detect_mime_type
-from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import AssetRef
+from nodetool.providers.base import BaseProvider
+
 
 async def test_fix():
     print("Testing detect_mime_type...")
@@ -20,7 +22,7 @@ async def test_fix():
 
     # Test _process_tool_result with bytes
     print("Testing _process_tool_result with bytes...")
-    
+
     # Payload with nested bytes
     payload = {
         "message": "Here is an image",
@@ -30,19 +32,19 @@ async def test_fix():
     }
 
     result = await processor._process_tool_result(payload)
-    
+
     print("Result:", json.dumps(result, indent=2))
-    
+
     assert result["message"] == "Here is an image"
     assert result["image_data"]["type"] == "image"
     assert result["image_data"]["uri"].startswith("file://")
     assert result["image_data"]["uri"].endswith(".png")
-    
+
     assert result["audio_data"]["type"] == "audio"
     assert result["audio_data"]["uri"].startswith("file://")
-    
+
     assert result["plain_list"][2]["type"] == "asset" # simplebytes -> application/octet-stream -> AssetRef -> type="asset"
-    
+
     print("Verification successful!")
 
 if __name__ == "__main__":

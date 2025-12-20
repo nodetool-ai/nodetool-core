@@ -60,7 +60,7 @@ async def create_and_execute_workflow(
 
     graph = graph_planner.graph
     logger.info(f"Generated workflow has {len(graph.nodes)} nodes")
-    
+
     # Validation: Check for Preview nodes
     preview_nodes = [n for n in graph.nodes if "Preview" in n.get_node_type()]
     logger.info(f"Preview nodes found: {len(preview_nodes)}")

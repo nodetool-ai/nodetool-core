@@ -503,7 +503,7 @@ class StepExecutor:
         self._finish_step_tool = None
         if self.result_schema:
             self._finish_step_tool = FinishStepTool(self.result_schema)
-            self.tools = list(tools) + [self._finish_step_tool]
+            self.tools = [*list(tools), self._finish_step_tool]
         else:
             self.tools = tools
         self._available_tool_names = [tool.name for tool in self.tools]
@@ -1012,13 +1012,13 @@ class StepExecutor:
             self.history.append(message)
 
             if message.tool_calls:
-                
+
                 # Check for finish_step tool call - handle specially for completion
                 finish_step_call = next(
                     (tc for tc in message.tool_calls if tc.name == "finish_step"),
                     None
                 )
-                
+
                 if finish_step_call:
                     # Handle finish_step tool for step completion
                     tool_message = self._generate_tool_call_message(finish_step_call)
@@ -1029,7 +1029,7 @@ class StepExecutor:
                         step_id=self.step.id,
                         message=tool_message,
                     )
-                    
+
                     # Extract and validate result from tool call args
                     result_payload = finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
                     if result_payload is not None:
@@ -1078,7 +1078,7 @@ class StepExecutor:
                             step_id=self.step.id,
                             message=tool_message,
                         )
-                    
+
                     # Provide immediate feedback that execution has started
                     tool_names_str = ", ".join(tc.name for tc in message.tool_calls)
                     yield LogUpdate(
@@ -1087,9 +1087,9 @@ class StepExecutor:
                         content=f"Executing tools: {tool_names_str}...",
                         severity="info",
                     )
-                    
+
                     await self._process_tool_call_results(message.tool_calls)
-                    
+
                     yield LogUpdate(
                         node_id=self.step.id,
                         node_name=f"Step: {self.step.id}",

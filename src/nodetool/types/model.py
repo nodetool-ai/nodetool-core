@@ -31,7 +31,7 @@ class UnifiedModel(BaseModel):
 
 class ModelPack(BaseModel):
     """A curated bundle of models that work together.
-    
+
     Model packs group related models (e.g., Flux checkpoint + CLIP + T5 + VAE)
     into a single downloadable unit with a clear title and description.
     """

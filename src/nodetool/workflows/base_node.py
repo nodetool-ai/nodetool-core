@@ -106,9 +106,9 @@ from typing import (
     Type,
     TypedDict,
     TypeVar,
-    get_type_hints,
     get_args,
     get_origin,
+    get_type_hints,
 )
 from weakref import WeakKeyDictionary
 
@@ -164,10 +164,10 @@ log = get_logger(__name__)
 
 
 if TYPE_CHECKING:
+    from nodetool.types.model import ModelPack
+
     from .io import NodeInputs, NodeOutputs
     from .property import Property
-
-
 
 def sanitize_node_name(node_name: str) -> str:
     """
@@ -710,11 +710,11 @@ class BaseNode(BaseModel):
     @classmethod
     def get_model_packs(cls) -> list["ModelPack"]:
         """Return model packs for this node.
-        
+
         Model packs group related models (e.g., Flux checkpoint + CLIP + T5 + VAE)
         into a single downloadable unit with a clear title and description.
         Subclasses should override this to provide curated model bundles.
-        
+
         Returns:
             list[ModelPack]: List of model packs for this node.
         """
@@ -883,11 +883,9 @@ class BaseNode(BaseModel):
                             and hasattr(python_type, "from_dict")
                         ):
                             converted = python_type.from_dict(value)
-                        elif isinstance(value, dict) and hasattr(
+                        elif (isinstance(value, dict) and hasattr(
                             python_type, "model_validate"
-                        ):
-                            converted = python_type.model_validate(value)
-                        elif hasattr(python_type, "model_validate"):
+                        )) or hasattr(python_type, "model_validate"):
                             converted = python_type.model_validate(value)
                         else:
                             converted = value

@@ -18,11 +18,11 @@ import dotenv
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.ui.console import AgentConsole
 from nodetool.metadata.types import Provider
 from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, PlanningUpdate
 

@@ -18,6 +18,11 @@ from nodetool.agents.tools.help_tools import (
     SearchNodesTool,
 )
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
+from nodetool.chat.token_counter import (
+    count_json_tokens,
+    count_message_tokens,
+    get_default_encoding,
+)
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
@@ -28,11 +33,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
     ToolCallUpdate,
-)
-from nodetool.chat.token_counter import (
-    count_json_tokens,
-    count_message_tokens,
-    get_default_encoding,
 )
 
 from .context_packer import create_compact_graph_context
@@ -387,7 +387,7 @@ def _log_context_token_breakdown(messages: list[Message], model: Optional[str]) 
         per_message.append((tokens, idx, role, label))
 
     total = sum(tokens for tokens, *_ in per_message)
-    other_tokens = total - system_prompt_tokens - graph_context_tokens
+    total - system_prompt_tokens - graph_context_tokens
 
     per_message.sort(reverse=True)
     for tokens, idx, role, label in per_message[:25]:
@@ -468,7 +468,7 @@ class UIToolProxy(Tool):
             # Return a tool result shaped like other tool errors so the model can retry.
             return {"error": f"Frontend tool execution failed: {error_msg}"}
 
-        except TimeoutError as e:
+        except TimeoutError:
             return {"error": f"Frontend tool {self.name} timed out after 60 seconds"}
 
     def user_message(self, params: dict) -> str:
@@ -866,17 +866,17 @@ class HelpMessageProcessor(MessageProcessor):
         i = 0
         while i < len(history):
             msg = history[i]
-            
+
             # Handle Assistant messages with tool calls
             if msg.role == "assistant" and msg.tool_calls:
                 # Get all expected tool call IDs
                 expected_ids = {tc.id for tc in msg.tool_calls if tc.id}
-                
+
                 # Check subsequent messages for matching tool results
                 found_ids = set()
                 tool_msgs = []
                 j = i + 1
-                
+
                 # Look ahead for a sequence of tool messages
                 while j < len(history) and history[j].role == "tool":
                     tid = history[j].tool_call_id
@@ -884,7 +884,7 @@ class HelpMessageProcessor(MessageProcessor):
                         found_ids.add(tid)
                     tool_msgs.append(history[j])
                     j += 1
-                
+
                 # If we have all expected responses, keep the block
                 if expected_ids and expected_ids.issubset(found_ids):
                     sanitized.append(msg)
@@ -898,15 +898,15 @@ class HelpMessageProcessor(MessageProcessor):
                     )
                     # Skip the assistant and the partial tool messages
                     i = j
-            
+
             # Handle orphan Tool messages (those not consumed by the above block)
             elif msg.role == "tool":
                 log.warning(f"Dropping orphan tool message in chat history: {msg.tool_call_id}")
                 i += 1
-                
+
             # Keep all other messages (System, User, Assistant without tools)
             else:
                 sanitized.append(msg)
                 i += 1
-                
+
         return sanitized

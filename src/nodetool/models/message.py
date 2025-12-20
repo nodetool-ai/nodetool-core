@@ -38,9 +38,7 @@ class Message(DBModel):
 
     @classmethod
     async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
-        if "instructions" in kwargs and "content" not in kwargs:
-            kwargs["content"] = kwargs.pop("instructions")
-        elif "instructions" in kwargs and kwargs.get("content") is None:
+        if ("instructions" in kwargs and "content" not in kwargs) or ("instructions" in kwargs and kwargs.get("content") is None):
             kwargs["content"] = kwargs.pop("instructions")
         return await super().create(
             id=kwargs.get("id") is None and create_time_ordered_uuid(),

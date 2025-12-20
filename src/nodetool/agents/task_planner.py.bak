@@ -64,7 +64,6 @@ log = get_logger(__name__)
 
 STEP_JSON_SCHEMA = json.dumps(Step.model_json_schema(), indent=2)
 PLAN_CREATION_MAX_TOKENS = 20000
-PLANNING_PHASE_MAX_TOKENS = 20000  # Max tokens for planning phase
 
 # Single-phase planning system prompt
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
@@ -375,6 +374,17 @@ class TaskPlanner:
             context = self._get_prompt_context()
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
+
+    async def _build_agent_task_prompt_content(self) -> str:
+        """Builds the content for the agent task prompt using Jinja2.
+
+        This prompt (`DEFAULT_AGENT_TASK_TEMPLATE`) provides final check
+        guidelines to the LLM when it's constructing the `create_task` tool call.
+
+        Returns:
+            The rendered agent task prompt string.
+        """
+        return self._render_prompt(DEFAULT_AGENT_TASK_TEMPLATE)
 
     def _build_dependency_graph(self, steps: List[Step]) -> nx.DiGraph:
         """

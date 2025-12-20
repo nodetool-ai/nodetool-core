@@ -120,4 +120,4 @@ def extract_json_from_message(message: Optional[Message]) -> Optional[dict]:
     return None
 
 
-__all__ = ["extract_json_from_message", "remove_think_tags", "lenient_json_parse"]
+__all__ = ["extract_json_from_message", "lenient_json_parse", "remove_think_tags"]

@@ -20,7 +20,7 @@ import dotenv
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.serp_tools import GoogleNewsTool
 from nodetool.metadata.types import Provider
-from nodetool.providers import get_provider, BaseProvider
+from nodetool.providers import BaseProvider, get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext

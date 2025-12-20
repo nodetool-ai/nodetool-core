@@ -1,7 +1,10 @@
 import asyncio
 import mimetypes
 from io import BytesIO
-from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+
+if TYPE_CHECKING:
+    import httpx
 
 import aiohttp
 import numpy as np

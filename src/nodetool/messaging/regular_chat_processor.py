@@ -6,62 +6,64 @@ or special modes.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
+import mimetypes
+import tempfile
+from datetime import date, datetime
+from io import BytesIO
+from pathlib import Path
 from typing import List, Optional
 
 import httpx
 from pydantic import BaseModel
 
-from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
+from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    AssetRef,
+    AudioRef,
+    ImageRef,
     Message,
     MessageTextContent,
     ToolCall,
+    VideoRef,
 )
 from nodetool.providers.base import BaseProvider
-from datetime import date, datetime
-import mimetypes
-import hashlib
-import tempfile
-from pathlib import Path
-from io import BytesIO
-
+from nodetool.runtime.resources import require_scope
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
 )
-from nodetool.runtime.resources import require_scope
 
 from .message_processor import MessageProcessor
-from nodetool.metadata.types import (
-    Message,
-    MessageTextContent,
-    ToolCall,
-    AssetRef,
-    ImageRef,
-    AudioRef,
-    VideoRef,
-)
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
 def detect_mime_type(data: bytes) -> str:
     """Detect mime type from bytes magic numbers."""
-    if data.startswith(b'\x89PNG\r\n\x1a\n'): return 'image/png'
-    if data.startswith(b'\xff\xd8'): return 'image/jpeg'
-    if data.startswith(b'GIF8'): return 'image/gif'
-    if data.startswith(b'RIFF') and data[8:12] == b'WEBP': return 'image/webp'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if data.startswith(b'\xff\xd8'):
+        return 'image/jpeg'
+    if data.startswith(b'GIF8'):
+        return 'image/gif'
+    if data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+        return 'image/webp'
     # Audio
-    if data.startswith(b'ID3') or data.startswith(b'\xff\xfb') or data.startswith(b'\xff\xf3') or data.startswith(b'\xff\xf2'): return 'audio/mpeg'
-    if data.startswith(b'RIFF') and data[8:12] == b'WAVE': return 'audio/wav'
-    if data.startswith(b'OggS'): return 'audio/ogg'
+    if data.startswith(b'ID3') or data.startswith(b'\xff\xfb') or data.startswith(b'\xff\xf3') or data.startswith(b'\xff\xf2'):
+        return 'audio/mpeg'
+    if data.startswith(b'RIFF') and data[8:12] == b'WAVE':
+        return 'audio/wav'
+    if data.startswith(b'OggS'):
+        return 'audio/ogg'
     # Video
-    if len(data) > 12 and (data[4:12] == b'ftypisom' or data[4:12] == b'ftypmp42'): return 'video/mp4'
+    if len(data) > 12 and (data[4:12] == b'ftypisom' or data[4:12] == b'ftypmp42'):
+        return 'video/mp4'
     return 'application/octet-stream'
 
 REGULAR_SYSTEM_PROMPT = """
@@ -265,7 +267,7 @@ class RegularChatProcessor(MessageProcessor):
                         # However, _run_tool does logging and message creation which we partly did.
                         # To minimal change, let's keep _run_tool but ignore its returned message or change how we use it.
                         # Actually, keeping _run_tool is fine, it just resolves again (cached?) or cheap.
-                        
+
                         tool_result, _ = await self._run_tool(
                             processing_context, chunk, graph
                         )
@@ -457,7 +459,7 @@ class RegularChatProcessor(MessageProcessor):
         """Save data from an AssetRef and return the updated dict."""
         if not asset.data:
             return asset.model_dump()
-            
+
         data = asset.data
         # If data is a list (e.g. from some conversions), take first element or handle appropriately
         # For now assume data is bytes

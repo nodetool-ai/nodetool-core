@@ -1,10 +1,12 @@
 import logging
-from typing import Any, ClassVar, Dict, List
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List
 
 from nodetool.agents.tools.base import Tool
 from nodetool.api.model import get_all_models, recommended_models
-from nodetool.types.model import UnifiedModel
 from nodetool.workflows.processing_context import ProcessingContext
+
+if TYPE_CHECKING:
+    from nodetool.types.model import UnifiedModel
 
 log = logging.getLogger(__name__)
 
@@ -68,8 +70,8 @@ class QueryModelsTool(Tool):
                 # If user asks for "image", we match if "image" is in the type string.
                 # If user asks for "language", we match "text" or "llm" or "language".
                 m_type = (m.type or "").lower()
-                
-                # Heuristic mapping for broader categories if needed, 
+
+                # Heuristic mapping for broader categories if needed,
                 # but simple substring match is often enough for "image", "video".
                 # For "language", m.type is often "text-generation" or "chat".
                 if model_type == "language":
@@ -129,13 +131,13 @@ class QueryModelsTool(Tool):
             # Only add repo_id if relevant
             if m.repo_id:
                 summary["repo_id"] = m.repo_id
-            
-            # Add description only if very relevant or short? 
+
+            # Add description only if very relevant or short?
             # Or just omit it for 'token efficient' unless requested?
             # The prompt said "token efficient". Descriptions can be long.
-            # I'll omit description unless query matched it? 
+            # I'll omit description unless query matched it?
             # Or maybe just provide a short snippet.
-            # For now, excluding description is safest for efficiency. 
+            # For now, excluding description is safest for efficiency.
             results.append(summary)
 
         return results

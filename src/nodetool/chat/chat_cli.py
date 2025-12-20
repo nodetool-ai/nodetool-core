@@ -579,7 +579,7 @@ class ChatCLI:
                             if message.get("role") == "agent_execution":
                                 event_type = message.get("execution_event_type")
                                 content = message.get("content") or {}
-                                
+
                                 if event_type == "planning_update":
                                     log.info(f"[Planning] Phase: {content.get('phase')}, Status: {content.get('status')}")
                                     if self.display_manager and not self.debug_mode:
@@ -592,7 +592,7 @@ class ChatCLI:
                                         self.console.print(f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}")
                                         if inner_content and self.debug_mode:
                                             self.console.print(f"  {escape(str(inner_content))}")
-                                        
+
                                 elif event_type == "task_update":
                                     log.debug(f"[Task Event] {content.get('event')}")
                                     if self.display_manager and not self.debug_mode:
@@ -608,7 +608,7 @@ class ChatCLI:
                                             self.console.print("[bold yellow]Entering conclusion stage...[/bold yellow]")
                                         elif self.debug_mode:
                                             self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
-                                        
+
                                 elif event_type == "log_update":
                                     log_content = content.get("content")
                                     severity = content.get("severity", "info")
@@ -623,7 +623,7 @@ class ChatCLI:
                                     else:
                                         color = "red" if severity == "error" else "yellow" if severity == "warning" else "white"
                                         self.console.print(f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}")
-                                        
+
                                 elif event_type == "step_result":
                                     log.info(f"[Step Result] {content.get('result')}")
                                     if self.display_manager and not self.debug_mode:
@@ -633,7 +633,7 @@ class ChatCLI:
                                         result = content.get("result")
                                         if self.debug_mode:
                                             self.console.print(f"[bold green]Step Result:[/bold green] {escape(str(result))}")
-                                
+
                                 continue # Already handled this special message
 
                             parsed = Message.model_validate(message)

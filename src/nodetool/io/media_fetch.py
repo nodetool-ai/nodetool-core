@@ -133,41 +133,41 @@ def _extract_storage_key_from_url(uri: str) -> str:
 
 def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request.
-    
+
     This function works correctly whether called from a sync or async context
     by running the async storage operations in a separate thread.
     """
     import asyncio
     import concurrent.futures
     import mimetypes
-    
+
     key = _extract_storage_key_from_url(uri)
-    
+
     # Get storage from the current scope
     scope = require_scope()
     storage = scope.get_asset_storage()
-    
+
     async def _do_fetch() -> bytes:
         """Helper to run async storage operations."""
         exists = await storage.file_exists(key)
         if not exists:
             raise ValueError(f"Storage file not found: {key}")
-        
+
         stream = BytesIO()
         await storage.download(key, stream)
         return stream.getvalue()
-    
+
     # Run the async code in a separate thread to avoid event loop conflicts
     # when this sync function is called from an async context
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(asyncio.run, _do_fetch())
         data = future.result()
-    
+
     # Guess mime type from the key
     mime_type, _ = mimetypes.guess_type(key)
     if not mime_type:
         mime_type = "application/octet-stream"
-    
+
     return mime_type, data
 
 
@@ -175,25 +175,25 @@ async def _fetch_local_storage_async(uri: str) -> Tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request (async version)."""
     import mimetypes
     key = _extract_storage_key_from_url(uri)
-    
+
     # Get storage from the current scope
     scope = require_scope()
     storage = scope.get_asset_storage()
-    
+
     exists = await storage.file_exists(key)
     if not exists:
         raise ValueError(f"Storage file not found: {key}")
-    
+
     # Download the file
     stream = BytesIO()
     await storage.download(key, stream)
     data = stream.getvalue()
-    
+
     # Guess mime type from the key
     mime_type, _ = mimetypes.guess_type(key)
     if not mime_type:
         mime_type = "application/octet-stream"
-    
+
     return mime_type, data
 
 
@@ -201,7 +201,7 @@ def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:
     # Check for local storage URLs first - read directly instead of HTTP call
     if _is_local_storage_url(uri):
         return _fetch_local_storage_sync(uri)
-    
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "*/*",

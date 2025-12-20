@@ -9,9 +9,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.packages.registry import Registry
-from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 

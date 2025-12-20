@@ -9,8 +9,8 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 from uuid import uuid4
 
-from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
+from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
@@ -280,7 +280,7 @@ class AgentMessageProcessor(MessageProcessor):
                                 "content": f"{item.phase}: {item.content}",
                                 "severity": "error" if item.status == "Failed" else "info",
                             }
-                            
+
                             await self.send_message(
                                 {
                                     "type": "message",
@@ -312,7 +312,7 @@ class AgentMessageProcessor(MessageProcessor):
                             "content": item.content,
                             "severity": item.severity,
                         }
-                        
+
                         await self.send_message(
                             {
                                 "type": "message",

@@ -23,8 +23,7 @@ from huggingface_hub.errors import EntryNotFoundError
 from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface import hf_auth
-from nodetool.integrations.huggingface import async_downloader, hf_cache
+from nodetool.integrations.huggingface import async_downloader, hf_auth, hf_cache
 from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)

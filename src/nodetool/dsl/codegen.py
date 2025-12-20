@@ -12,6 +12,7 @@ from typing import Any, Union
 
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel
+
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)

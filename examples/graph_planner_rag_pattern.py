@@ -60,11 +60,11 @@ async def create_and_execute_workflow(
 
     graph = graph_planner.graph
     logger.info(f"Generated workflow has {len(graph.nodes)} nodes")
-    
+
     # Simple validation that RAG components are likely present
     node_types = [n.get_node_type() for n in graph.nodes]
     logger.info(f"Node types found: {node_types}")
-    
+
     req = RunJobRequest(
         graph=graph,
         params=inputs,

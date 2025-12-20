@@ -307,7 +307,7 @@ class OpenAICompat:
         self, text: str, tools: Sequence[Tool] | None = None
     ) -> tuple[list[ToolCall], str]:
         """Parse Python function calls from text using AST parsing.
-        
+
         Removes the function call lines from the text.
 
         Args:
@@ -332,7 +332,7 @@ class OpenAICompat:
             if not stripped or stripped.startswith("#") or stripped.startswith("```"):
                 cleaned_lines.append(line)
                 continue
-            
+
             # Look for patterns that might be function calls
             if not re.match(r"^\w+\(", stripped):
                 cleaned_lines.append(line)
@@ -423,7 +423,7 @@ class OpenAICompat:
                         tool_calls.append(tool_call)
                         log.debug(f"Parsed tool call: {tool_call}")
                         found_call_in_line = True
-                
+
                 # If we didn't find a valid tool call in this line, keep it
                 if not found_call_in_line:
                     cleaned_lines.append(line)

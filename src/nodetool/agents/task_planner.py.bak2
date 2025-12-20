@@ -376,6 +376,17 @@ class TaskPlanner:
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
 
+    async def _build_agent_task_prompt_content(self) -> str:
+        """Builds the content for the agent task prompt using Jinja2.
+
+        This prompt (`DEFAULT_AGENT_TASK_TEMPLATE`) provides final check
+        guidelines to the LLM when it's constructing the `create_task` tool call.
+
+        Returns:
+            The rendered agent task prompt string.
+        """
+        return self._render_prompt(DEFAULT_AGENT_TASK_TEMPLATE)
+
     def _build_dependency_graph(self, steps: List[Step]) -> nx.DiGraph:
         """
             Build a directed graph of dependencies between steps.

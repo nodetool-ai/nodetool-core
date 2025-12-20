@@ -108,19 +108,23 @@ import asyncio
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Import TypeMetadata at runtime so Pydantic can resolve forward references
-from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.metadata.type_metadata import TypeMetadata  # noqa: TC001
+from nodetool.workflows.processing_context import ProcessingContext  # noqa: TC001
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from nodetool.providers.base import BaseProvider
+    from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.types import Chunk
 
+from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.help_tools import SearchNodesTool
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.typecheck import typecheck
@@ -136,9 +140,6 @@ from nodetool.workflows.base_node import (
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import Chunk, PlanningUpdate
-
-from nodetool.agents.tools.base import Tool
-from nodetool.workflows.processing_context import ProcessingContext
 
 # Set up logger for this module
 logger = get_logger(__name__)
@@ -427,7 +428,7 @@ DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT = """
 # GraphArchitect AI System Core Directives
 
 ## Mission
-As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. 
+As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs.
 Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure.
 
 ## Core Principles
@@ -1188,7 +1189,7 @@ class GraphPlanner:
                             except Exception as e:
                                 logger.error(f"Error processing workflow design: {e}")
                                 tool_output_str = f"Error parsing workflow design: {e}. Please ensure your input matches the required schema."
-                        
+
                         # Handle search_nodes
                         elif tc.name == search_tool.name:
                             try:
@@ -1201,7 +1202,7 @@ class GraphPlanner:
                                 tool_output_str = str(e)
                         else:
                             tool_output_str = f"Unknown tool: {tc.name}"
-                        
+
                         return tool_output_str, design_result, success
 
                     # Execute all tool calls concurrently
@@ -1209,7 +1210,7 @@ class GraphPlanner:
                     executions = await asyncio.gather(*tasks)
 
                     # Add all tool responses to history
-                    for tc, (output, design_result, success) in zip(tool_calls, executions):
+                    for tc, (output, design_result, success) in zip(tool_calls, executions, strict=False):
                         history.append(
                             Message(
                                 role="tool",
@@ -1218,7 +1219,7 @@ class GraphPlanner:
                                 content=output,
                             )
                         )
-                        
+
                         # If a submission succeeded, we're done with the phase
                         if success and design_result:
                             yield (

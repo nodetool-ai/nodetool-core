@@ -73,7 +73,7 @@ async def run_web_search_example():
             print(item.content, end="", flush=True)
 
     print(f"\nWorkspace: {context.workspace_dir}")
-    
+
     # Check if results are available
     if agent.results:
         print("\n[bold green]Agent Execution Successful![/bold green]")

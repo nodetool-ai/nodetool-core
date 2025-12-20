@@ -12,7 +12,10 @@ import base64
 import inspect
 import io
 import math
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+
+if TYPE_CHECKING:
+    import httpx
 from urllib.parse import unquote_to_bytes
 
 import numpy as np
@@ -1397,7 +1400,7 @@ class OpenAIProvider(BaseProvider):
         except openai.OpenAIError as exc:
             raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from OpenAI API")
-        
+
         # Debug log the raw response for structured output debugging
         if completion.choices:
             choice = completion.choices[0]
@@ -1463,7 +1466,7 @@ class OpenAIProvider(BaseProvider):
         return message
 
     @staticmethod
-    def _as_httpx_status_error(exc: openai.OpenAIError) -> "httpx.HTTPStatusError":
+    def _as_httpx_status_error(exc: openai.OpenAIError) -> httpx.HTTPStatusError:
         """Normalize OpenAI SDK exceptions to `httpx.HTTPStatusError`.
 
         Provider tests and shared error handling expect HTTPStatusError semantics.

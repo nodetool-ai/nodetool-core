@@ -7,7 +7,10 @@ handling message conversion, streaming, and tool integration.
 
 import base64
 import json
-from typing import Any, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
+
+if TYPE_CHECKING:
+    import httpx
 
 import aiohttp
 import anthropic
@@ -496,7 +499,7 @@ class AnthropicProvider(BaseProvider):
                     delta = getattr(event, "delta", None)
                     # Prefer text; fall back to partial_json/thinking if present
                     text = getattr(delta, "text", None)
-                    partial_json = getattr(delta, "partial_json", None)
+                    getattr(delta, "partial_json", None)
                     thinking = getattr(delta, "thinking", None)
                     if isinstance(text, str):
                         yield Chunk(content=text, done=False)
@@ -597,10 +600,10 @@ class AnthropicProvider(BaseProvider):
             if "schema" not in json_schema:
                 log.error("schema is required in json_schema response format")
                 raise ValueError("schema is required in json_schema response format")
-            
+
             schema = json_schema["schema"]
             cleaned_schema = self._prepare_json_schema(schema)
-            
+
             output_format = {
                 "type": "json_schema",
                 "schema": cleaned_schema,
@@ -631,19 +634,19 @@ class AnthropicProvider(BaseProvider):
         }
         if anthropic_tools:
             create_kwargs["tools"] = anthropic_tools
-            
+
         if temperature is not None:
             create_kwargs["temperature"] = temperature
         if top_p is not None:
             create_kwargs["top_p"] = top_p
         if top_k is not None:
             create_kwargs["top_k"] = top_k
-            
+
         if output_format:
             create_kwargs["output_format"] = output_format
             if "structured-outputs-2025-11-13" not in betas:
                 betas.append("structured-outputs-2025-11-13")
-        
+
         # Strict tools also require the structured-outputs beta
         if anthropic_tools and "structured-outputs-2025-11-13" not in betas:
             betas.append("structured-outputs-2025-11-13")

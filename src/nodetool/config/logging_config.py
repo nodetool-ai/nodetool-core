@@ -22,13 +22,13 @@ def _supports_color() -> bool:
 
 
 def configure_logging(
-    level: Optional[Union[str, int]] = None,
+    level: Optional[str | int] = None,
     fmt: Optional[str] = None,
     datefmt: Optional[str] = None,
     propagate_root: bool = False,
-    log_file: Optional[Union[str, Path]] = None,
+    log_file: Optional[str | Path] = None,
     console_output: bool = True,
-) -> Union[str, int]:
+) -> str | int:
     """Configure root logging with consistent format, file logging, and console control.
 
     Environment overrides:
@@ -129,10 +129,10 @@ def configure_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Return a module-scoped logger."""
-    root = logging.getLogger()
+    logging.getLogger()
     if not _current_config:
         configure_logging()
-    
+
     level = _current_config.get("level", logging.INFO)
     logger = logging.getLogger(name)
     logger.setLevel(level)
