@@ -20,6 +20,9 @@ from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
 
 log = get_logger(__name__)
 
+# Default interval for the watchdog to check job health (in seconds)
+DEFAULT_WATCHDOG_INTERVAL = 30
+
 
 def workflow_has_trigger_nodes(workflow: WorkflowModel) -> bool:
     """
@@ -51,6 +54,7 @@ class TriggerWorkflowManager:
     - Starts trigger workflows in the background on server startup
     - Tracks running trigger workflows
     - Provides APIs to start/stop trigger workflows
+    - Monitors running jobs and restarts them if they die unexpectedly
     """
 
     _instance: Optional["TriggerWorkflowManager"] = None
@@ -59,6 +63,9 @@ class TriggerWorkflowManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._running_workflows: Dict[str, JobExecution] = {}
+            cls._instance._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
+            cls._instance._watchdog_task: Optional[asyncio.Task] = None
+            cls._instance._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
         return cls._instance
 
     @classmethod
@@ -67,6 +74,50 @@ class TriggerWorkflowManager:
         if cls._instance is None:
             cls._instance = TriggerWorkflowManager()
         return cls._instance
+
+    async def _start_single_job(
+        self,
+        workflow: WorkflowModel,
+        user_id: str,
+        auth_token: str = "local_token",
+    ) -> Optional[JobExecution]:
+        """
+        Start a single trigger workflow job.
+
+        This is the core method for starting a job. It creates the job request,
+        processing context, and starts the job through the JobExecutionManager.
+
+        Args:
+            workflow: The workflow model to start.
+            user_id: The user ID for the workflow.
+            auth_token: Authentication token for API calls.
+
+        Returns:
+            JobExecution if started successfully, None otherwise.
+        """
+        try:
+            # Create the job request
+            request = RunJobRequest(
+                workflow_id=workflow.id,
+                user_id=user_id,
+                params={},
+                auth_token=auth_token,
+                execution_strategy=ExecutionStrategy.THREADED,
+            )
+
+            # Create processing context
+            context = ProcessingContext()
+
+            # Start the job using JobExecutionManager
+            job_manager = JobExecutionManager.get_instance()
+            job = await job_manager.start_job(request, context)
+
+            log.info(f"Started job {job.job_id} for trigger workflow {workflow.id}")
+            return job
+
+        except Exception as e:
+            log.error(f"Failed to start job for trigger workflow {workflow.id}: {e}")
+            return None
 
     async def start_trigger_workflow(
         self,
@@ -97,32 +148,21 @@ class TriggerWorkflowManager:
 
         log.info(f"Starting trigger workflow: {workflow.name} ({workflow.id})")
 
-        try:
-            # Create the job request
-            request = RunJobRequest(
-                workflow_id=workflow.id,
-                user_id=user_id,
-                params={},
-                auth_token=auth_token,
-                execution_strategy=ExecutionStrategy.THREADED,
-            )
+        job = await self._start_single_job(workflow, user_id, auth_token)
 
-            # Create processing context
-            context = ProcessingContext()
-
-            # Start the job using JobExecutionManager
-            job_manager = JobExecutionManager.get_instance()
-            job = await job_manager.start_job(request, context)
-
+        if job:
             # Track the running workflow
             self._running_workflows[workflow.id] = job
+            # Store metadata for potential restarts
+            self._workflow_metadata[workflow.id] = {
+                "user_id": user_id,
+                "auth_token": auth_token,
+                "workflow_name": workflow.name,
+            }
 
             log.info(f"Started trigger workflow {workflow.id} with job {job.job_id}")
-            return job
 
-        except Exception as e:
-            log.error(f"Failed to start trigger workflow {workflow.id}: {e}")
-            return None
+        return job
 
     async def stop_trigger_workflow(self, workflow_id: str) -> bool:
         """
@@ -147,6 +187,8 @@ class TriggerWorkflowManager:
             if cancelled:
                 log.info(f"Stopped trigger workflow {workflow_id}")
                 del self._running_workflows[workflow_id]
+                # Remove metadata as workflow is intentionally stopped
+                self._workflow_metadata.pop(workflow_id, None)
                 return True
             else:
                 log.warning(f"Failed to cancel trigger workflow {workflow_id}")
@@ -171,12 +213,126 @@ class TriggerWorkflowManager:
         job = self._running_workflows[workflow_id]
         return job.is_running()
 
-    async def start_all_trigger_workflows(self, user_id: str) -> int:
+    async def _restart_workflow(self, workflow_id: str) -> bool:
         """
-        Start all workflows with run_mode="trigger" for a user.
+        Restart a trigger workflow that has died.
 
         Args:
-            user_id: The user ID to start workflows for. Required parameter.
+            workflow_id: The workflow ID to restart.
+
+        Returns:
+            True if restarted successfully, False otherwise.
+        """
+        metadata = self._workflow_metadata.get(workflow_id)
+        if not metadata:
+            log.warning(f"No metadata found for workflow {workflow_id}, cannot restart")
+            return False
+
+        try:
+            async with ResourceScope():
+                workflow = await WorkflowModel.get(workflow_id)
+                if not workflow:
+                    log.error(f"Workflow {workflow_id} not found, cannot restart")
+                    self._workflow_metadata.pop(workflow_id, None)
+                    return False
+
+                # Remove old job reference
+                self._running_workflows.pop(workflow_id, None)
+
+                # Start a new job
+                job = await self._start_single_job(
+                    workflow,
+                    metadata["user_id"],
+                    metadata["auth_token"],
+                )
+
+                if job:
+                    self._running_workflows[workflow_id] = job
+                    log.info(f"Successfully restarted trigger workflow {workflow_id}")
+                    return True
+                else:
+                    log.error(f"Failed to restart trigger workflow {workflow_id}")
+                    return False
+
+        except Exception as e:
+            log.error(f"Error restarting trigger workflow {workflow_id}: {e}")
+            return False
+
+    async def _watchdog_loop(self):
+        """
+        Watchdog loop that periodically checks job health and restarts dead jobs.
+
+        This runs as a background task and monitors all registered trigger workflows.
+        If a job has died unexpectedly, it will be restarted.
+        """
+        log.info(f"Starting trigger workflow watchdog (interval: {self._watchdog_interval}s)")
+
+        while True:
+            try:
+                await asyncio.sleep(self._watchdog_interval)
+
+                # Check all tracked workflows
+                workflows_to_restart = []
+
+                for workflow_id, job in list(self._running_workflows.items()):
+                    if not job.is_running() and not job.is_completed():
+                        # Job died unexpectedly
+                        log.warning(
+                            f"Trigger workflow {workflow_id} (job {job.job_id}) died unexpectedly, "
+                            f"status: {job.status}"
+                        )
+                        workflows_to_restart.append(workflow_id)
+                    elif job.is_completed():
+                        # Job completed (shouldn't happen for trigger workflows)
+                        log.warning(
+                            f"Trigger workflow {workflow_id} (job {job.job_id}) completed unexpectedly"
+                        )
+                        workflows_to_restart.append(workflow_id)
+
+                # Restart dead workflows
+                for workflow_id in workflows_to_restart:
+                    log.info(f"Attempting to restart trigger workflow {workflow_id}")
+                    await self._restart_workflow(workflow_id)
+
+            except asyncio.CancelledError:
+                log.info("Trigger workflow watchdog cancelled")
+                break
+            except Exception as e:
+                log.error(f"Error in trigger workflow watchdog: {e}")
+                # Continue running despite errors
+
+    async def start_watchdog(self, interval: int = DEFAULT_WATCHDOG_INTERVAL):
+        """
+        Start the watchdog task that monitors job health.
+
+        Args:
+            interval: How often to check job health (in seconds).
+        """
+        if self._watchdog_task is not None and not self._watchdog_task.done():
+            log.info("Watchdog is already running")
+            return
+
+        self._watchdog_interval = interval
+        self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+        log.info("Trigger workflow watchdog started")
+
+    async def stop_watchdog(self):
+        """Stop the watchdog task."""
+        if self._watchdog_task is not None:
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except asyncio.CancelledError:
+                pass
+            self._watchdog_task = None
+            log.info("Trigger workflow watchdog stopped")
+
+    async def start_all_trigger_workflows(self) -> int:
+        """
+        Start all workflows with run_mode="trigger" for all users.
+
+        This method queries for all trigger workflows across all users and
+        starts each one under the owner's user_id.
 
         Returns:
             Number of workflows started.
@@ -185,18 +341,23 @@ class TriggerWorkflowManager:
 
         try:
             async with ResourceScope():
-                # Get all trigger workflows
+                # Get all trigger workflows (no user filter to get all users)
+                # We need to query without user_id to get all trigger workflows
                 workflows, _ = await WorkflowModel.paginate(
-                    user_id=user_id,
+                    user_id=None,  # Get all users' workflows
                     limit=1000,
                     run_mode="trigger",
                 )
 
-                log.info(f"Found {len(workflows)} trigger workflows for user {user_id}")
+                log.info(f"Found {len(workflows)} trigger workflows across all users")
 
                 for workflow in workflows:
                     if workflow_has_trigger_nodes(workflow):
-                        job = await self.start_trigger_workflow(workflow, user_id)
+                        # Start workflow under the owner's user_id
+                        job = await self.start_trigger_workflow(
+                            workflow,
+                            user_id=workflow.user_id  # Use workflow owner's user_id
+                        )
                         if job:
                             started += 1
 
@@ -226,5 +387,6 @@ class TriggerWorkflowManager:
     async def shutdown(self):
         """Shutdown the trigger workflow manager."""
         log.info("Shutting down TriggerWorkflowManager")
+        await self.stop_watchdog()
         await self.stop_all_trigger_workflows()
         log.info("TriggerWorkflowManager shutdown complete")

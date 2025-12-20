@@ -350,15 +350,13 @@ def create_app(
             )
 
             trigger_manager = TriggerWorkflowManager.get_instance()
-            # Start trigger workflows for the default local user ("1").
-            # In multi-user/production deployments, this should iterate over
-            # all users with trigger workflows or use a service account.
-            # The user ID "1" is the default local development user.
-            default_local_user = "1"
-            started = await trigger_manager.start_all_trigger_workflows(
-                user_id=default_local_user
-            )
+            # Start trigger workflows for all users.
+            # Each workflow runs under its owner's user_id.
+            started = await trigger_manager.start_all_trigger_workflows()
             log.info(f"Started {started} trigger workflows on server startup")
+
+            # Start the watchdog to monitor and restart dead jobs
+            await trigger_manager.start_watchdog()
 
         # Hand control back to the app
         yield
