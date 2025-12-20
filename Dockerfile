@@ -95,8 +95,8 @@ RUN echo "Installing external nodetool packages from GitHub releases..." && \
     uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cu126 \
     --index-strategy unsafe-best-match \
-    git+https://github.com/nodetool-ai/nodetool-core.git@v0.6.2-rc.7 \
-    git+https://github.com/nodetool-ai/nodetool-base.git@v0.6.2-rc.7 && \
+    git+https://github.com/nodetool-ai/nodetool-core.git@v0.6.2-rc.12 \
+    git+https://github.com/nodetool-ai/nodetool-base.git@v0.6.2-rc.12 && \
     # Clean up pip, wheel, and other cached files to reduce image size
     find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /root/.cache/pip && \
