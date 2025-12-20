@@ -93,13 +93,15 @@ WORKDIR /app
 # Set USE_LOCAL_WHEELS=1 to use local wheel files from ./dist/
 ARG USE_LOCAL_WHEELS=0
 
-# Install external dependencies from GitHub releases (latest versions)
-RUN echo "Installing external nodetool packages from GitHub releases..." && \
-    uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
+# Install external dependencies from nodetool-registry
+RUN echo "Installing external nodetool packages from registry..." && \
+    uv pip install --no-cache-dir \
     --index-strategy unsafe-best-match \
-    git+https://github.com/nodetool-ai/nodetool-base.git@main \
-    git+https://github.com/nodetool-ai/nodetool-core.git@main \
-    git+https://github.com/nodetool-ai/nodetool-huggingface.git@main && \
+    --index-url https://pypi.org/simple \
+    --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+    nodetool-base \
+    nodetool-core \
+    nodetool-huggingface && \
     # Clean up pip, wheel, and other cached files to reduce image size
     find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /root/.cache/pip && \

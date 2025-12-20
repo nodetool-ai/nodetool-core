@@ -55,7 +55,7 @@ RUN apt-get update && \
     locale-gen en_US.UTF-8
 
 RUN uv python install $PYTHON_VERSION
-RUN uv venv $VIRTUAL_ENV
+RUN uv venv --python $PYTHON_VERSION $VIRTUAL_ENV
 
 # Set up the working directory
 WORKDIR /app
@@ -65,7 +65,17 @@ COPY nodetool-core /app/nodetool-core
 COPY nodetool-base /app/nodetool-base
 
 # Install both packages
-RUN uv pip install --no-cache-dir /app/nodetool-core
-RUN uv pip install --no-cache-dir /app/nodetool-base
+RUN uv pip install --no-cache-dir \
+    --index-strategy unsafe-best-match \
+    --index-url https://pypi.org/simple \
+    --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+    --extra-index-url https://download.pytorch.org/whl/cu128 \
+    /app/nodetool-core
+RUN uv pip install --no-cache-dir \
+    --index-strategy unsafe-best-match \
+    --index-url https://pypi.org/simple \
+    --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+    --extra-index-url https://download.pytorch.org/whl/cu128 \
+    /app/nodetool-base
 
 ENV PATH=/app/venv/bin:$PATH
