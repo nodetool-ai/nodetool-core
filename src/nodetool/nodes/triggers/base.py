@@ -167,6 +167,10 @@ class TriggerNode(BaseNode):
         """
         log.info(f"Starting trigger {self.get_title()} ({self._id})")
 
+        # Re-enable processing in case stop() was called before gen_process started
+        # but there are still events in the queue to process
+        self._is_running = True
+
         # Set up the trigger
         try:
             await self.setup_trigger(context)
@@ -177,7 +181,7 @@ class TriggerNode(BaseNode):
 
         events_processed = 0
 
-        while self._is_running:
+        while True:
             try:
                 # Wait for the next event
                 event = await self.wait_for_event(context)
@@ -225,15 +229,30 @@ class TriggerNode(BaseNode):
         Args:
             event: The event to push.
         """
+        import threading
+
         try:
-            if self._loop is not None and self._loop.is_running():
-                # Thread-safe: schedule put_nowait on the event loop
-                self._loop.call_soon_threadsafe(
-                    self._event_queue.put_nowait, event
-                )
-            else:
-                # Fallback for when running in same thread (tests)
-                self._event_queue.put_nowait(event)
+            # Check if we're calling from a different thread than the event loop
+            if self._loop is not None:
+                try:
+                    running_loop = asyncio.get_running_loop()
+                    # Same thread, same loop - use put_nowait directly
+                    if running_loop is self._loop:
+                        self._event_queue.put_nowait(event)
+                        return
+                except RuntimeError:
+                    # No running loop - check if we're in a different thread
+                    pass
+
+                # Different thread or no running loop - use thread-safe method
+                if self._loop.is_running():
+                    self._loop.call_soon_threadsafe(
+                        self._event_queue.put_nowait, event
+                    )
+                    return
+
+            # Fallback: direct put (e.g., loop not yet started)
+            self._event_queue.put_nowait(event)
         except Exception as e:
             log.error(f"Failed to push event: {e}")
 

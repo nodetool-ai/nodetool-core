@@ -31,7 +31,15 @@ class SimpleTrigger(TriggerNode):
         if self._events_emitted >= self.events_to_emit:
             return None
 
+        # Check if we should stop
+        if not self._is_running:
+            return None
+
         await asyncio.sleep(self.delay_between_events)
+
+        # Check again after sleep in case stop() was called
+        if not self._is_running:
+            return None
 
         self._events_emitted += 1
         return {
