@@ -7,9 +7,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+FROM base AS pip-deps
+
 # Install runtime dependencies
 COPY src/nodetool/proxy/requirements.txt /tmp/proxy-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/proxy-requirements.txt
+
+FROM base AS final
+
+COPY --from=pip-deps /usr/local /usr/local
 
 # Copy only the proxy package into the image
 RUN mkdir -p /app/nodetool

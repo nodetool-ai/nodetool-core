@@ -90,6 +90,8 @@ RUN uv venv --python $PYTHON_VERSION $VIRTUAL_ENV
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 
+FROM base AS pip-deps
+
 # Install external dependencies from GitHub releases (latest versions)
 RUN echo "Installing external nodetool packages from GitHub releases..." && \
     uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
@@ -103,7 +105,11 @@ RUN echo "Installing external nodetool packages from GitHub releases..." && \
     rm -rf /tmp/* && \
     rm -rf /var/tmp/*
 
-# RUN /app/venv/bin/playwright install
+FROM base AS final
+
+COPY --from=pip-deps $VIRTUAL_ENV $VIRTUAL_ENV
+
+RUN /app/venv/bin/playwright install
 
 # Expose port for the worker
 EXPOSE 7777

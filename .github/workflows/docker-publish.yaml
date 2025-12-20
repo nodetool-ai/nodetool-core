@@ -65,6 +65,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          no-cache-filters: |
+            pip-deps
           cache-from: |
             type=registry,ref=georgi/nodetool:buildcache
             type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache
