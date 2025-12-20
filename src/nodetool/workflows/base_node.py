@@ -1310,6 +1310,14 @@ class BaseNode(BaseModel):
             return []
 
         try:
+            if isinstance(return_type, dict):
+                return [
+                    OutputSlot(
+                        type=type_metadata(field_type, allow_optional=False),
+                        name=field,
+                    )
+                    for field, field_type in return_type.items()
+                ]
             # if return_type is a TypedDict, return an OutputSlot for each field
             if getattr(return_type, "__annotations__", None) and not issubclass(
                 return_type, BaseModel

@@ -143,6 +143,7 @@ class EdgeUpdate(BaseModel):
     type: Literal["edge_update"] = "edge_update"
     edge_id: str
     status: str
+    counter: int | None = None
 
 
 class ToolCallUpdate(BaseModel):

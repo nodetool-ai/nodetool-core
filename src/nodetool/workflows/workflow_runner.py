@@ -194,6 +194,7 @@ class WorkflowRunner:
         # Event loop where the runner is executing; used for thread-safe enqueues
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
+        self._edge_counters: dict[str, int] = defaultdict(int)
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (
@@ -354,8 +355,14 @@ class WorkflowRunner:
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
                             await inbox.put(edge.targetHandle, value)
+                            edge_id = edge.id or ""
+                            self._edge_counters[edge_id] += 1
                             context.post_message(
-                                EdgeUpdate(edge_id=edge.id or "", status="message_sent")
+                                EdgeUpdate(
+                                    edge_id=edge_id,
+                                    status="message_sent",
+                                    counter=self._edge_counters[edge_id],
+                                )
                             )
                         else:
                             log.debug(
@@ -479,7 +486,9 @@ class WorkflowRunner:
             - Updates workflow status to "completed", "cancelled", or "error".
             - Posts a final JobUpdate message with results or error information.
         """
-        log.info(f"Starting workflow execution for job_id: {self.job_id}")
+        log.info("Starting workflow run: job_id=%s", self.job_id)
+        self._edge_counters.clear()
+        self.status = "running"
         log.debug(
             "Run parameters: params=%s messages=%s", request.params, request.messages
         )
@@ -848,10 +857,13 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:
                     await inbox.put(edge.targetHandle, value_to_send)
+                edge_id = edge.id or ""
+                self._edge_counters[edge_id] += 1
                 context.post_message(
                     EdgeUpdate(
-                        edge_id=edge.id or "",
+                        edge_id=edge_id,
                         status="message_sent",
+                        counter=self._edge_counters[edge_id],
                     )
                 )
 
