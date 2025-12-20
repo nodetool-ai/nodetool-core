@@ -14,6 +14,21 @@ import os
 from typing import Any, List
 from uuid import uuid4
 
+# Try to import the Claude Agent SDK components at module level
+try:
+    from claude_agent_sdk import (
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        SdkMcpTool,
+        create_sdk_mcp_server,
+    )
+    from claude_agent_sdk import (
+        tool as sdk_tool,
+    )
+    CLAUDE_SDK_AVAILABLE = True
+except ImportError:
+    CLAUDE_SDK_AVAILABLE = False
+
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.config.logging_config import get_logger
@@ -92,18 +107,12 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             processing_context: Context for processing including user information
             **kwargs: Additional processor-specific parameters
         """
-        try:
-            from claude_agent_sdk import (
-                ClaudeAgentOptions,
-                ClaudeSDKClient,
-                create_sdk_mcp_server,
-            )
-        except ImportError:
-            log.error("claude-agent-sdk is not installed. Install it with: pip install claude-agent-sdk")
+        if not CLAUDE_SDK_AVAILABLE:
+            log.error("claude-agent-sdk is not installed. Install it with: pip install 'claude-agent-sdk>=0.1.18'")
             await self.send_message(
                 {
                     "type": "error",
-                    "message": "Claude Agent SDK is not installed",
+                    "message": "Claude Agent SDK is not installed. Install it with: pip install 'claude-agent-sdk>=0.1.18'",
                     "error_type": "import_error",
                 }
             )
@@ -569,8 +578,6 @@ If a tool fails, try alternative approaches or ask for clarification."""
         Returns:
             An SDK MCP tool wrapper
         """
-        from claude_agent_sdk import tool as sdk_tool
-
         # Create a wrapper function that calls the nodetool tool
         @sdk_tool(tool.name, tool.description, tool.input_schema)
         async def tool_wrapper(args: dict[str, Any]) -> dict[str, Any]:
@@ -609,8 +616,6 @@ If a tool fails, try alternative approaches or ask for clarification."""
         Returns:
             An SDK MCP tool wrapper for UI proxy
         """
-        from claude_agent_sdk import tool as sdk_tool
-
         name = tool_manifest["name"]
         description = tool_manifest.get("description", "UI tool")
         input_schema = tool_manifest.get("parameters", {})
