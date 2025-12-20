@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
+from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
     DBField,
     DBIndex,
@@ -23,6 +24,8 @@ Defines the Workflow database model.
 Represents a workflow in the nodetool system, including its structure (graph),
 metadata (name, description, tags), user association, access control, and settings.
 """
+
+log = get_logger(__name__)
 
 
 @DBIndex(columns=["user_id"])
@@ -56,6 +59,14 @@ class Workflow(DBModel):
     def before_save(self):
         """Updates the `updated_at` timestamp before saving."""
         self.updated_at = datetime.now()
+
+    async def save(self):
+        """
+        Save a workflow and auto-start trigger workflows when running in the server.
+        """
+        await super().save()
+        await self._maybe_autostart_trigger()
+        return self
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]):
@@ -116,6 +127,41 @@ class Workflow(DBModel):
             graph=graph,
             **kwargs,
         )
+
+    def has_trigger_nodes(self) -> bool:
+        """Check if the workflow graph contains trigger nodes."""
+        if not self.graph or "nodes" not in self.graph:
+            return False
+
+        for node in self.graph.get("nodes", []):
+            node_type = node.get("type", "")
+            if node_type.startswith("nodetool.nodes.triggers."):
+                return True
+
+        return False
+
+    async def _maybe_autostart_trigger(self) -> None:
+        if self.run_mode != "trigger":
+            return
+        if not self.has_trigger_nodes():
+            return
+
+        try:
+            from nodetool.workflows.trigger_workflow_manager import (
+                TriggerWorkflowManager,
+            )
+        except Exception as exc:
+            log.debug("TriggerWorkflowManager unavailable: %s", exc)
+            return
+
+        manager = TriggerWorkflowManager.get_instance()
+        if getattr(manager, "_watchdog_task", None) is None:
+            return
+
+        try:
+            await manager.start_trigger_workflow(self, self.user_id)
+        except Exception as exc:
+            log.error("Failed to auto-start trigger workflow %s: %s", self.id, exc)
 
     @classmethod
     async def paginate(
