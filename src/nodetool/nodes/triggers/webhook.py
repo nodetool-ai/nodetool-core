@@ -54,8 +54,8 @@ class WebhookTrigger(TriggerNode):
         description="URL path to listen on",
     )
     host: str = Field(
-        default="0.0.0.0",
-        description="Host address to bind to",
+        default="127.0.0.1",
+        description="Host address to bind to. Use '0.0.0.0' to listen on all interfaces.",
     )
     methods: list[str] = Field(
         default=["POST"],
@@ -146,11 +146,6 @@ class WebhookTrigger(TriggerNode):
         # Register handler for all methods at the configured path
         for method in self.methods:
             app.router.add_route(method, self.path, handle_webhook)
-
-        # Also handle root path if different from configured path
-        if self.path != "/":
-            for method in self.methods:
-                app.router.add_route(method, "/", handle_webhook)
 
         # Start the server
         runner = web.AppRunner(app)

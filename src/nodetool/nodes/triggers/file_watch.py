@@ -134,7 +134,7 @@ class FileWatchTrigger(TriggerNode):
                 trigger._last_events[path] = now
                 return False
 
-            def _emit_event(self, event_type: str, src_path: str, dest_path: str | None = None):
+            def _emit_event(self, event_type: str, src_path: str, dest_path: str | None = None, is_directory: bool = False):
                 """Emit a filesystem event."""
                 if event_type not in trigger.events:
                     return
@@ -149,7 +149,7 @@ class FileWatchTrigger(TriggerNode):
                     "data": {
                         "path": src_path,
                         "dest_path": dest_path,
-                        "is_directory": Path(src_path).is_dir() if Path(src_path).exists() else False,
+                        "is_directory": is_directory,
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "source": str(watch_path),
@@ -161,19 +161,19 @@ class FileWatchTrigger(TriggerNode):
 
             def on_created(self, event):
                 if isinstance(event, (FileCreatedEvent, DirCreatedEvent)):
-                    self._emit_event("created", event.src_path)
+                    self._emit_event("created", event.src_path, is_directory=isinstance(event, DirCreatedEvent))
 
             def on_modified(self, event):
                 if isinstance(event, (FileModifiedEvent, DirModifiedEvent)):
-                    self._emit_event("modified", event.src_path)
+                    self._emit_event("modified", event.src_path, is_directory=isinstance(event, DirModifiedEvent))
 
             def on_deleted(self, event):
                 if isinstance(event, (FileDeletedEvent, DirDeletedEvent)):
-                    self._emit_event("deleted", event.src_path)
+                    self._emit_event("deleted", event.src_path, is_directory=isinstance(event, DirDeletedEvent))
 
             def on_moved(self, event):
                 if isinstance(event, (FileMovedEvent, DirMovedEvent)):
-                    self._emit_event("moved", event.src_path, event.dest_path)
+                    self._emit_event("moved", event.src_path, event.dest_path, is_directory=isinstance(event, DirMovedEvent))
 
         # Create and start the observer
         self._observer = Observer()

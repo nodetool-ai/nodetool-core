@@ -20,6 +20,11 @@ from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
+# Minimum wait time in seconds to prevent tight loops when drift compensation
+# causes wait_time to be near zero. This ensures the event loop can process
+# other tasks and prevents CPU spinning.
+MIN_WAIT_SECONDS = 0.001
+
 
 class IntervalTrigger(TriggerNode):
     """
@@ -115,7 +120,7 @@ class IntervalTrigger(TriggerNode):
                 next_tick += self.initial_delay_seconds
 
             elapsed = (datetime.now(timezone.utc) - self._start_time).total_seconds()
-            wait_time = max(0.001, next_tick - elapsed)  # Minimum 1ms to prevent tight loops
+            wait_time = max(MIN_WAIT_SECONDS, next_tick - elapsed)
         else:
             wait_time = self.interval_seconds
 
