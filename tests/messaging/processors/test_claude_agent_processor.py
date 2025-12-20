@@ -168,9 +168,7 @@ class TestToolWrapper:
             description = "A mock tool for testing"
             input_schema = {
                 "type": "object",
-                "properties": {
-                    "param1": {"type": "string", "description": "A test parameter"}
-                },
+                "properties": {"param1": {"type": "string", "description": "A test parameter"}},
                 "required": ["param1"],
             }
 
@@ -202,18 +200,15 @@ class TestClaudeAgentMessageProcessor:
         assert processor.provider == mock_anthropic_provider
 
     @pytest.mark.asyncio
-    async def test_process_sends_planning_update(
-        self, mock_anthropic_provider, test_message, processing_context
-    ):
+    async def test_process_sends_planning_update(self, mock_anthropic_provider, test_message, processing_context):
         """Test that process sends planning update messages."""
         processor = ClaudeAgentMessageProcessor(mock_anthropic_provider)
         chat_history = [test_message]
 
-        # Mock the tool runner
+        # Mock the tool runner - create an empty async generator
         async def mock_runner_iter():
-            # Yield nothing - just return
-            if False:
-                yield
+            return
+            yield  # pragma: no cover - makes this an async generator
 
         mock_runner = MagicMock()
         mock_runner.__aiter__ = lambda self: mock_runner_iter()
@@ -223,9 +218,7 @@ class TestClaudeAgentMessageProcessor:
         mock_final_message.content = [MagicMock(text="Final response")]
         mock_runner.until_done = AsyncMock(return_value=mock_final_message)
 
-        mock_anthropic_provider.client.beta.messages.tool_runner = MagicMock(
-            return_value=mock_runner
-        )
+        mock_anthropic_provider.client.beta.messages.tool_runner = MagicMock(return_value=mock_runner)
 
         # Collect sent messages
         sent_messages = []
@@ -246,15 +239,12 @@ class TestClaudeAgentMessageProcessor:
         planning_updates = [
             msg
             for msg in sent_messages
-            if msg.get("type") == "message"
-            and msg.get("execution_event_type") == "planning_update"
+            if msg.get("type") == "message" and msg.get("execution_event_type") == "planning_update"
         ]
         assert len(planning_updates) >= 1
 
     @pytest.mark.asyncio
-    async def test_process_non_anthropic_provider_raises(
-        self, test_message, processing_context
-    ):
+    async def test_process_non_anthropic_provider_raises(self, test_message, processing_context):
         """Test that process fails when provider is not Anthropic."""
         # Change the message to use a different provider
         test_message.provider = Provider.OpenAI

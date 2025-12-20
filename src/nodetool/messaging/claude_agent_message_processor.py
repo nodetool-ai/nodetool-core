@@ -7,6 +7,7 @@ custom nodetool agent implementation.
 """
 
 import asyncio
+import json
 import logging
 from typing import Any, List
 from uuid import uuid4
@@ -55,8 +56,6 @@ def _create_anthropic_tool_wrapper(tool: Tool, context: ProcessingContext) -> Be
         log.debug(f"Tool {tool.name} returned: {result}")
         # Convert result to string if necessary for Anthropic
         if isinstance(result, (dict, list)):
-            import json
-
             return json.dumps(result)
         return str(result)
 
@@ -377,13 +376,3 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
         finally:
             self.is_processing = False
-
-    def _extract_objective(self, message: Message) -> str:
-        """Extract objective from message content."""
-        if isinstance(message.content, str):
-            return message.content
-        elif isinstance(message.content, list) and message.content:
-            for content_item in message.content:
-                if isinstance(content_item, MessageTextContent):
-                    return content_item.text
-        return "Complete the requested task"
