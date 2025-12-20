@@ -1,5 +1,3 @@
-[← Back to Docs Index](docs/index.md)
-
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
 
 <h3>AI Workflow Engine</h3>
@@ -74,13 +72,17 @@ print(result)
 python -m nodetool.cli --help
 ```
 
-See [docs/cli.md](docs/cli.md) for all commands.
-
 ## 📖 Documentation
 
-- [Concepts and Architecture](concepts/)
+For comprehensive documentation, visit **[docs.nodetool.ai](https://docs.nodetool.ai)**
+
+Key resources:
+- [Getting Started](https://docs.nodetool.ai/getting-started.html)
+- [CLI Reference](https://docs.nodetool.ai/cli.html)
+- [API Reference](https://docs.nodetool.ai/api-reference.html)
+- [Architecture](https://docs.nodetool.ai/architecture.html)
+- [Agent System](https://docs.nodetool.ai/AGENTS.html)
 - [Examples](examples/)
-- [Advanced Usage](advanced/)
 
 ## 🏗️ Architecture
 

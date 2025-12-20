@@ -1,5 +1,3 @@
-[← Back to Docs Index](../docs/index.md)
-
 # NodeTool Core Examples
 
 This directory contains example scripts that demonstrate how to use NodeTool Core for various use cases.

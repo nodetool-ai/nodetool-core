@@ -1,12 +1,11 @@
-[← Back to Docs Index](docs/index.md)
-
 # Repository Guidelines
 
 ## Project Structure & Module Organization
 
 - Source: `src/nodetool/` (e.g., `agents/`, `api/`, `chat/`, `common/`, `dsl/`, `workflows/`).
 - Tests: `tests/` mirrors the source layout (e.g., `tests/agents`, `tests/api`).
-- Docs and examples: `docs/`, `examples/`.
+- Docs: See [docs.nodetool.ai](https://docs.nodetool.ai) for comprehensive documentation.
+- Examples: `examples/` directory contains code examples.
 - Packaging: Hatch project (`pyproject.toml`), console entry `nodetool`.
 
 ## Build, Test, and Development Commands
@@ -60,7 +59,7 @@ pip install -e .
 
 - Commits: follow Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.); keep messages imperative and scoped.
 - PRs: include a clear description, linked issues, and screenshots/logs if UI/CLI behavior changes.
-- Checks: ensure `pytest`, `ruff`, `black`, and `mypy` pass locally; update docs/examples when APIs change.
+- Checks: ensure `pytest`, `ruff`, `black`, and `mypy` pass locally; update documentation at docs.nodetool.ai when APIs change.
 
 ## Security & Configuration Tips
 
