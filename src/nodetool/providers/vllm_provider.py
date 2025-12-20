@@ -105,7 +105,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
-        self._client: openai.AsyncClient | None = None
+        self._fallback_http_client: httpx.AsyncClient | None = None
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
@@ -122,36 +122,36 @@ class VllmProvider(BaseProvider, OpenAICompat):
         return env_vars
 
     def _ensure_client(self) -> openai.AsyncClient:
-        """Get or create the OpenAI async client for vLLM.
+        """Get the OpenAI async client for vLLM.
 
         Uses ResourceScope's HTTP client to ensure correct event loop binding.
+        Avoids caching across scopes because the scoped HTTP client is closed
+        on scope exit.
 
         Returns:
             Configured OpenAI AsyncClient instance.
         """
-        if self._client is None:
-            api_key = self._api_key or "sk-no-key-required"
-            # Use ResourceScope's HTTP client if available, otherwise create a new one
-            try:
-                http_client = require_scope().get_http_client()
-                log.debug("Using ResourceScope HTTP client for vLLM")
-            except RuntimeError:
-                # Fallback if no scope is bound (shouldn't happen in normal operation)
-                log.warning(
-                    "No ResourceScope bound, creating fallback HTTP client for vLLM"
-                )
-                http_client = httpx.AsyncClient(
+        api_key = self._api_key or "sk-no-key-required"
+        # Use ResourceScope's HTTP client if available, otherwise create a fallback one.
+        try:
+            http_client = require_scope().get_http_client()
+            log.debug("Using ResourceScope HTTP client for vLLM")
+        except RuntimeError:
+            # Fallback if no scope is bound (shouldn't happen in normal operation)
+            log.warning("No ResourceScope bound, creating fallback HTTP client for vLLM")
+            if self._fallback_http_client is None or self._fallback_http_client.is_closed:
+                self._fallback_http_client = httpx.AsyncClient(
                     follow_redirects=True,
                     timeout=self._timeout,
                     verify=self._verify_tls,
                 )
+            http_client = self._fallback_http_client
 
-            self._client = openai.AsyncClient(
-                base_url=f"{self._base_url}/v1",
-                api_key=api_key,
-                http_client=http_client,
-            )
-        return self._client
+        return openai.AsyncClient(
+            base_url=f"{self._base_url}/v1",
+            api_key=api_key,
+            http_client=http_client,
+        )
 
     def get_context_length(self, model: str) -> int:
         """Return the context window size for the given model.
