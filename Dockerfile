@@ -92,15 +92,38 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 FROM base AS pip-deps
 
-# Install external dependencies from nodetool-registry
-RUN uv pip install --no-cache-dir \
-    --index-strategy unsafe-best-match \
-    --index-url https://pypi.org/simple \
-    --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-    --extra-index-url https://download.pytorch.org/whl/cu128 \
-    nodetool-core==0.6.2rc12 \
-    nodetool-base==0.6.2rc12 && \
-    # Clean up pip, wheel, and other cached files to reduce image size
+ARG USE_LOCAL_REPO=0
+
+# Copy local repository if using local installation
+COPY --chown=root:root . /tmp/nodetool-core
+
+# Install dependencies - either from local repo or from nodetool-registry
+RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
+        echo "Installing from local repository..." && \
+        uv pip install --no-cache-dir \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+            --extra-index-url https://download.pytorch.org/whl/cu128 \
+            nodetool-base==0.6.2rc12 && \
+        cd /tmp/nodetool-core && \
+        uv pip install --no-cache-dir \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://download.pytorch.org/whl/cu128 \
+            -e . ; \
+    else \
+        echo "Installing from nodetool-registry..." && \
+        uv pip install --no-cache-dir \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+            --extra-index-url https://download.pytorch.org/whl/cu128 \
+            nodetool-core==0.6.2rc12 \
+            nodetool-base==0.6.2rc12 ; \
+    fi && \
+    # Clean up
+    rm -rf /tmp/nodetool-core && \
     find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /root/.cache/pip && \
     rm -rf /tmp/* && \
@@ -108,7 +131,19 @@ RUN uv pip install --no-cache-dir \
 
 FROM base AS final
 
+ARG USE_LOCAL_REPO=0
+
 COPY --from=pip-deps $VIRTUAL_ENV $VIRTUAL_ENV
+
+# Copy source code if using local repo (for editable install)
+COPY --chown=root:root . /app/nodetool-core
+RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
+        echo "Reinstalling local repository in final image..." && \
+        cd /app/nodetool-core && \
+        uv pip install --no-cache-dir -e . ; \
+    else \
+        rm -rf /app/nodetool-core ; \
+    fi
 
 RUN $VIRTUAL_ENV/bin/python -m playwright install
 

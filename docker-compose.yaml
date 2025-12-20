@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
       args:
         USE_LOCAL_WHEELS: ${USE_LOCAL_WHEELS:-0}
+        USE_LOCAL_REPO: ${USE_LOCAL_REPO:-0}
     volumes:
       - ${HF_HOME:-./.cache/huggingface}:/app/huggingface
       - /var/run/docker.sock:/var/run/docker.sock
@@ -20,6 +21,9 @@ services:
       - "7777"
     expose:
       - "7777"
+    depends_on:
+      vllm:
+        condition: service_healthy
     environment:
       ENV: ${ENV:-development}
       JOB_EXECUTION_STRATEGY: ${JOB_EXECUTION_STRATEGY:-threaded}
@@ -36,7 +40,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_KEY: ${SUPABASE_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8888}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8888/}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
       VLLM_HTTP_TIMEOUT: ${VLLM_HTTP_TIMEOUT:-600}
       VLLM_VERIFY_TLS: ${VLLM_VERIFY_TLS:-0}
@@ -49,17 +53,11 @@ services:
       NODETOOL_API_URL: ${NODETOOL_API_URL}
       CHROMA_PATH: /chroma-data
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 7777)); s.close()",
-        ]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7777/health"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 6
-      start_period: 20s
+      start_period: 30s
     runtime: nvidia
     deploy:
       resources:
@@ -86,7 +84,7 @@ services:
       - --host
       - 0.0.0.0
       - --port
-      - ${VLLM_PORT:-8888}
+      - "8888"
       - --model
       - ${VLLM_MODEL}
       - --max-model-len
@@ -94,19 +92,13 @@ services:
       - --gpu-memory-utilization
       - ${VLLM_GPU_MEMORY:-0.9}
     ports:
-      - ${VLLM_PORT:-8888}:8888
+      - "${VLLM_PORT:-8888}:8888"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 8888)); s.close()",
-        ]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8888/health"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 6
-      start_period: 20s
+      start_period: 30s
     runtime: nvidia
     deploy:
       resources:
@@ -129,3 +121,7 @@ services:
     ports:
       - 80:80
       - 443:443
+
+networks:
+  default:
+    driver: bridge

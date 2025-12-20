@@ -124,33 +124,29 @@ class VllmProvider(BaseProvider, OpenAICompat):
     def _ensure_client(self) -> openai.AsyncClient:
         """Get the OpenAI async client for vLLM.
 
-        Uses ResourceScope's HTTP client to ensure correct event loop binding.
-        Avoids caching across scopes because the scoped HTTP client is closed
-        on scope exit.
+        Uses a dedicated HTTP client to avoid ResourceScope lifecycle issues.
+        The ResourceScope's HTTP client gets closed when the context exits,
+        which happens immediately for streaming responses before the stream completes.
 
         Returns:
             Configured OpenAI AsyncClient instance.
         """
         api_key = self._api_key or "sk-no-key-required"
-        # Use ResourceScope's HTTP client if available, otherwise create a fallback one.
-        try:
-            http_client = require_scope().get_http_client()
-            log.debug("Using ResourceScope HTTP client for vLLM")
-        except RuntimeError:
-            # Fallback if no scope is bound (shouldn't happen in normal operation)
-            log.warning("No ResourceScope bound, creating fallback HTTP client for vLLM")
-            if self._fallback_http_client is None or self._fallback_http_client.is_closed:
-                self._fallback_http_client = httpx.AsyncClient(
-                    follow_redirects=True,
-                    timeout=self._timeout,
-                    verify=self._verify_tls,
-                )
-            http_client = self._fallback_http_client
+
+        # Always use a dedicated HTTP client for vLLM to avoid premature closure
+        # during streaming responses
+        if self._fallback_http_client is None or self._fallback_http_client.is_closed:
+            log.debug("Creating dedicated HTTP client for vLLM")
+            self._fallback_http_client = httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=self._timeout,
+                verify=self._verify_tls,
+            )
 
         return openai.AsyncClient(
             base_url=f"{self._base_url}/v1",
             api_key=api_key,
-            http_client=http_client,
+            http_client=self._fallback_http_client,
         )
 
     def get_context_length(self, model: str) -> int:
