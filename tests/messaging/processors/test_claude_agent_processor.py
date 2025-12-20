@@ -160,13 +160,15 @@ class TestToolWrapper:
     @pytest.mark.asyncio
     async def test_create_tool_wrapper(self, processing_context):
         """Test creating a tool wrapper for a nodetool Tool."""
+        from typing import Any, ClassVar, Dict
+
         from nodetool.agents.tools.base import Tool
 
         # Create a mock tool
         class MockTool(Tool):
-            name = "mock_tool"
-            description = "A mock tool for testing"
-            input_schema = {
+            name: str = "mock_tool"
+            description: str = "A mock tool for testing"
+            input_schema: ClassVar[Dict[str, Any]] = {
                 "type": "object",
                 "properties": {"param1": {"type": "string", "description": "A test parameter"}},
                 "required": ["param1"],
@@ -205,13 +207,16 @@ class TestClaudeAgentMessageProcessor:
         processor = ClaudeAgentMessageProcessor(mock_anthropic_provider)
         chat_history = [test_message]
 
-        # Mock the tool runner - create an empty async generator
-        async def mock_runner_iter():
-            return
-            yield  # pragma: no cover - makes this an async generator
+        # Mock the tool runner - create an empty async generator using a class
+        class EmptyAsyncIter:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
 
         mock_runner = MagicMock()
-        mock_runner.__aiter__ = lambda self: mock_runner_iter()
+        mock_runner.__aiter__ = lambda self: EmptyAsyncIter()
 
         # Mock until_done to return a final message
         mock_final_message = MagicMock()

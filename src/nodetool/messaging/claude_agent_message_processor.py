@@ -53,11 +53,18 @@ def _create_anthropic_tool_wrapper(tool: Tool, context: ProcessingContext) -> Be
         """Wrapper function that calls the nodetool Tool's process method."""
         log.debug(f"Tool wrapper called for {tool.name} with args: {kwargs}")
         result = await tool.process(context, kwargs)
-        log.debug(f"Tool {tool.name} returned: {result}")
-        # Convert result to string if necessary for Anthropic
-        if isinstance(result, (dict, list)):
+        log.debug(f"Tool {tool.name} returned result of type {type(result).__name__}")
+
+        # Convert result to string format for Anthropic
+        # Anthropic tool results must be strings
+        if isinstance(result, str):
+            return result
+        elif isinstance(result, (dict, list)):
+            log.debug(f"Converting {type(result).__name__} to JSON string")
             return json.dumps(result)
-        return str(result)
+        else:
+            log.debug(f"Converting {type(result).__name__} to string")
+            return str(result)
 
     # Create the BetaAsyncFunctionTool with the tool's schema
     return BetaAsyncFunctionTool(
@@ -294,14 +301,23 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             final_message = await runner.until_done()
             log.debug(f"Claude Agent SDK final message: {final_message}")
 
-            # Extract final content
+            # Extract final content from the message
+            # Prefer content from the final message, fall back to accumulated streaming content
             content = ""
             if hasattr(final_message, "content"):
                 for block in final_message.content:
                     if hasattr(block, "text"):
                         content += block.text
-            if not content:
+
+            # Use accumulated streaming content if final message has no text
+            if not content and full_content:
+                log.debug("Final message has no text content, using accumulated streaming content")
                 content = full_content
+
+            # Provide a default message if both are empty
+            if not content:
+                log.warning("No content available from final message or streaming, using default")
+                content = "Task completed."
 
             # Send completion planning update
             await self.send_message(
