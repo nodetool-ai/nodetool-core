@@ -343,11 +343,38 @@ def create_app(
         await job_manager.start_cleanup_task()
         log.info("JobExecutionManager cleanup task started")
 
+        # Start trigger workflows in the background
+        if not RUNNING_PYTEST:
+            from nodetool.workflows.trigger_workflow_manager import (
+                TriggerWorkflowManager,
+            )
+
+            trigger_manager = TriggerWorkflowManager.get_instance()
+            # Start trigger workflows for the default local user ("1").
+            # In multi-user/production deployments, this should iterate over
+            # all users with trigger workflows or use a service account.
+            # The user ID "1" is the default local development user.
+            default_local_user = "1"
+            started = await trigger_manager.start_all_trigger_workflows(
+                user_id=default_local_user
+            )
+            log.info(f"Started {started} trigger workflows on server startup")
+
         # Hand control back to the app
         yield
 
         # Shutdown: cleanup resources
         log.info("Server shutdown initiated - cleaning up resources")
+
+        # Shutdown trigger workflow manager
+        if not RUNNING_PYTEST:
+            from nodetool.workflows.trigger_workflow_manager import (
+                TriggerWorkflowManager,
+            )
+
+            trigger_manager = TriggerWorkflowManager.get_instance()
+            await trigger_manager.shutdown()
+            log.info("TriggerWorkflowManager shutdown complete")
 
         # Import here to avoid circular imports
         from nodetool.integrations.websocket.websocket_updates import websocket_updates
