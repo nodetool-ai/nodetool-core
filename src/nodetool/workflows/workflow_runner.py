@@ -47,6 +47,7 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
+from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
@@ -143,6 +144,7 @@ class WorkflowRunner:
         device: str | None = None,
         disable_caching: bool = False,
         buffer_limit: int | None = 3,
+        enable_event_logging: bool = True,
     ):
         """
         Initializes a new WorkflowRunner instance.
@@ -155,6 +157,7 @@ class WorkflowRunner:
             buffer_limit (Optional[int]): Maximum number of items allowed in each per-handle inbox buffer.
                                          When a buffer reaches this limit, producers will block until consumers
                                          drain the buffer, implementing backpressure. None means unlimited.
+            enable_event_logging (bool): Whether to enable event logging for resumability.
         """
         self.job_id = job_id
         self.status = "running"
@@ -195,6 +198,12 @@ class WorkflowRunner:
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
+        
+        # Event logging for resumability
+        self.enable_event_logging = enable_event_logging
+        self.event_logger: WorkflowEventLogger | None = None
+        if enable_event_logging:
+            self.event_logger = WorkflowEventLogger(run_id=job_id)
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (
@@ -545,6 +554,17 @@ class WorkflowRunner:
         start_time = time.time()
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
+        
+        # Log RunCreated event
+        if self.event_logger:
+            try:
+                await self.event_logger.log_run_created(
+                    graph=request.graph.model_dump() if request.graph else {},
+                    params=request.params or {},
+                    user_id=getattr(context, "user_id", ""),
+                )
+            except Exception as e:
+                log.warning(f"Failed to log RunCreated event: {e}")
 
         with self.torch_context(context):
             try:
@@ -637,6 +657,16 @@ class WorkflowRunner:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
+                
+                # Log RunCancelled event
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_cancelled(
+                            reason="Workflow execution cancelled"
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCancelled event: {e}")
+                
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(job_id=self.job_id, status="cancelled")
@@ -654,6 +684,17 @@ class WorkflowRunner:
                     # log.error already done by generic message
 
                 self.status = "error"
+                
+                # Log RunFailed event
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_failed(
+                            error=error_message_for_job_update[:1000],
+                            node_id=None,
+                        )
+                    except Exception as e2:
+                        log.warning(f"Failed to log RunFailed event: {e2}")
+                
                 # Always post the error JobUpdate
                 if send_job_updates:
                     context.post_message(
@@ -712,6 +753,17 @@ class WorkflowRunner:
                 log.info(
                     f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
                 )
+                
+                # Log RunCompleted event
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_completed(
+                            outputs=self.outputs,
+                            duration_ms=int(total_time * 1000),
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCompleted event: {e}")
+                
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(
