@@ -197,20 +197,24 @@ class CheckpointManager:
                     )
 
                 # Check if state already exists
-                existing_states = await IndexedNodeExecutionState.query(
-                    IndexedNodeExecutionState.workflow_execution_id
-                    == self.workflow_execution_id
-                    and IndexedNodeExecutionState.node_id == node._id
+                from nodetool.models.condition_builder import Field
+                
+                existing_states, _ = await IndexedNodeExecutionState.query(
+                    Field("workflow_execution_id").equals(self.workflow_execution_id)
+                    .and_(Field("node_id").equals(node._id)),
+                    limit=1,
                 )
                 
-                if existing_states[0]:
+                if existing_states and len(existing_states) > 0:
                     # Update existing state
-                    state = existing_states[0][0]
-                    await IndexedNodeExecutionState.get(state["id"]).update(
-                        status=status,
-                        properties=properties,
-                        updated_at=datetime.now(),
-                    )
+                    state_dict = existing_states[0]
+                    state = await IndexedNodeExecutionState.get(state_dict["id"])
+                    if state:
+                        await state.update(
+                            status=status,
+                            properties=properties,
+                            updated_at=datetime.now(),
+                        )
                 else:
                     # Create new state
                     state = IndexedNodeExecutionState(
@@ -264,22 +268,26 @@ class CheckpointManager:
                 message_count = runner._edge_counters.get(edge.id or "", 0)
 
                 # Check if state already exists
-                existing_states = await IndexedEdgeState.query(
-                    IndexedEdgeState.workflow_execution_id
-                    == self.workflow_execution_id
-                    and IndexedEdgeState.edge_id == (edge.id or "")
+                from nodetool.models.condition_builder import Field
+                
+                existing_states, _ = await IndexedEdgeState.query(
+                    Field("workflow_execution_id").equals(self.workflow_execution_id)
+                    .and_(Field("edge_id").equals(edge.id or "")),
+                    limit=1,
                 )
                 
-                if existing_states[0]:
+                if existing_states and len(existing_states) > 0:
                     # Update existing state
-                    state = existing_states[0][0]
-                    await IndexedEdgeState.get(state["id"]).update(
-                        buffered_values=buffered_values,
-                        open_upstream_count=open_count,
-                        is_streaming=is_streaming,
-                        message_count=message_count,
-                        updated_at=datetime.now(),
-                    )
+                    state_dict = existing_states[0]
+                    state = await IndexedEdgeState.get(state_dict["id"])
+                    if state:
+                        await state.update(
+                            buffered_values=buffered_values,
+                            open_upstream_count=open_count,
+                            is_streaming=is_streaming,
+                            message_count=message_count,
+                            updated_at=datetime.now(),
+                        )
                 else:
                     # Create new state
                     state = IndexedEdgeState(
@@ -313,19 +321,23 @@ class CheckpointManager:
             input_states = {}
             
             # Check if state already exists
-            existing_states = await IndexedInputQueueState.query(
-                IndexedInputQueueState.workflow_execution_id
-                == self.workflow_execution_id
+            from nodetool.models.condition_builder import Field
+            
+            existing_states, _ = await IndexedInputQueueState.query(
+                Field("workflow_execution_id").equals(self.workflow_execution_id),
+                limit=1,
             )
             
-            if existing_states[0]:
+            if existing_states and len(existing_states) > 0:
                 # Update existing state
-                state = existing_states[0][0]
-                await IndexedInputQueueState.get(state["id"]).update(
-                    pending_events=pending_events,
-                    input_states=input_states,
-                    updated_at=datetime.now(),
-                )
+                state_dict = existing_states[0]
+                state = await IndexedInputQueueState.get(state_dict["id"])
+                if state:
+                    await state.update(
+                        pending_events=pending_events,
+                        input_states=input_states,
+                        updated_at=datetime.now(),
+                    )
             else:
                 # Create new state
                 state = IndexedInputQueueState(
@@ -433,8 +445,10 @@ class CheckpointManager:
             return None, [], [], None
 
         # Load node states
+        from nodetool.models.condition_builder import Field
+        
         node_states_data, _ = await IndexedNodeExecutionState.query(
-            IndexedNodeExecutionState.workflow_execution_id == workflow_execution_id
+            Field("workflow_execution_id").equals(workflow_execution_id)
         )
         node_states = [
             await IndexedNodeExecutionState.get(state["id"])
@@ -444,7 +458,7 @@ class CheckpointManager:
 
         # Load edge states
         edge_states_data, _ = await IndexedEdgeState.query(
-            IndexedEdgeState.workflow_execution_id == workflow_execution_id
+            Field("workflow_execution_id").equals(workflow_execution_id)
         )
         edge_states = [
             await IndexedEdgeState.get(state["id"]) for state in edge_states_data
@@ -453,7 +467,8 @@ class CheckpointManager:
 
         # Load input queue state
         input_queue_states_data, _ = await IndexedInputQueueState.query(
-            IndexedInputQueueState.workflow_execution_id == workflow_execution_id
+            Field("workflow_execution_id").equals(workflow_execution_id),
+            limit=1,
         )
         input_queue_state = None
         if input_queue_states_data:
@@ -476,8 +491,11 @@ class CheckpointManager:
         Returns:
             The workflow execution state, or None if not found.
         """
+        from nodetool.models.condition_builder import Field
+        
         states_data, _ = await IndexedWorkflowExecutionState.query(
-            IndexedWorkflowExecutionState.job_id == job_id
+            Field("job_id").equals(job_id),
+            limit=1,
         )
         if states_data:
             return await IndexedWorkflowExecutionState.get(states_data[0]["id"])
