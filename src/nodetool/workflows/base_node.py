@@ -861,8 +861,6 @@ class BaseNode(BaseModel):
                                 converted = value
                         elif isinstance(value, dict) and "type" in value and hasattr(python_type, "from_dict"):
                             converted = python_type.from_dict(value)
-                        elif isinstance(value, dict) and hasattr(python_type, "model_validate"):
-                            converted = python_type.model_validate(value)
                         elif hasattr(python_type, "model_validate"):
                             converted = python_type.model_validate(value)
                         else:

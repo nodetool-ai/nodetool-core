@@ -2264,7 +2264,7 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
 
 async def _run_agent_impl(
     objective: str,
-    provider: Provider,
+    provider: str,
     model: str = "gpt-4o",
     tools: list[str] | None = None,
     output_schema: dict[str, Any] | None = None,
@@ -2293,7 +2293,7 @@ async def _run_agent_impl(
                 else:
                     log.warning(f"Unknown tool: {tool_name}, skipping")
 
-            provider_enum = provider if isinstance(provider, Provider) else Provider(provider)
+            provider_enum = Provider(provider)
             provider_instance = await get_provider(provider_enum)
 
             # Create and execute agent
@@ -2360,7 +2360,7 @@ async def _run_agent_impl(
 @mcp.tool()
 async def run_agent(
     objective: str,
-    provider: Provider,
+    provider: str,
     ctx: Context,
     model: str = "gpt-4o",
     tools: list[str] | None = None,
@@ -2375,7 +2375,7 @@ async def run_agent(
 
     Args:
         objective: The task description for the agent to accomplish
-        provider: AI provider (default: "openai"). Options: "openai", "anthropic",
+        provider: AI provider. Options: "openai", "anthropic",
                  "ollama", "gemini", "huggingface_cerebras", etc.
         model: Model to use (default: "gpt-4o")
         tools: List of tool names to enable. Options:

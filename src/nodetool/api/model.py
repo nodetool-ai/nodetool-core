@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Any, Callable, ClassVar, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -169,11 +169,6 @@ class ProviderInfo(BaseModel):
 
     provider: Provider
     capabilities: list[str]
-
-    class Config:
-        json_encoders: ClassVar[Dict[type, Callable[[Any], Any]]] = {
-            Provider: lambda v: v.value,
-        }
 
 
 async def get_providers_info(user: str) -> list[ProviderInfo]:

@@ -235,7 +235,6 @@ pretty = true
 [[tool.mypy.overrides]]
 module = [
     "tests.*",
-    "test_*",
 ]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false

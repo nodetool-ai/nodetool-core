@@ -2,10 +2,19 @@
 
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import httpx
 import pytest
 from huggingface_hub import _CACHED_NO_EXIST
 from huggingface_hub.errors import EntryNotFoundError, GatedRepoError
 from huggingface_hub.hf_api import RepoFile
+
+
+def _make_mock_response(status_code: int = 401) -> MagicMock:
+    """Create a mock httpx.Response for HuggingFace error classes."""
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = status_code
+    mock_response.headers = {"x-request-id": "test-request-id"}
+    return mock_response
 
 from nodetool.integrations.huggingface.hf_cache import (
     filter_repo_paths,
@@ -108,7 +117,7 @@ class TestDownloadManager:
         manager.add_websocket(mock_websocket)
 
         # Mock download_huggingface_repo to raise an error
-        test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
+        test_error = GatedRepoError("401 Client Error. Cannot access gated repo", response=_make_mock_response())
 
         with patch.object(manager, "download_huggingface_repo", side_effect=test_error):
             await manager.start_download(
@@ -152,7 +161,7 @@ class TestDownloadManager:
             mock_filter.return_value = [mock_file]
 
             # Mock asyncio.gather to return an exception
-            test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
+            test_error = GatedRepoError("401 Client Error. Cannot access gated repo", response=_make_mock_response())
             import asyncio
 
             async def mock_gather(*args, **kwargs):
@@ -187,7 +196,7 @@ class TestDownloadManager:
             mock_filter.return_value = [mock_file]
 
             # Create multiple exceptions
-            error1 = GatedRepoError("First error")
+            error1 = GatedRepoError("First error", response=_make_mock_response())
             error2 = ValueError("Second error")
 
             # Mock asyncio.gather to return exceptions
@@ -310,7 +319,7 @@ class TestDownloadManager:
         """Test that huggingface_download_endpoint sends error message on exception."""
         from nodetool.integrations.huggingface.hf_websocket import huggingface_download_endpoint
 
-        test_error = GatedRepoError("401 Client Error. Cannot access gated repo")
+        test_error = GatedRepoError("401 Client Error. Cannot access gated repo", response=_make_mock_response())
 
         with (
             patch("nodetool.integrations.huggingface.hf_download.DownloadManager") as mock_manager_class,
