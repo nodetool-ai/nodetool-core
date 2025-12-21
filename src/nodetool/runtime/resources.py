@@ -5,6 +5,8 @@ Provides ResourceScope for managing per-execution resources (database adapters)
 with proper cleanup and connection pooling.
 """
 
+from __future__ import annotations
+
 import contextvars
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
@@ -13,12 +15,12 @@ import httpx
 from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.storage.abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
     from supabase import AsyncClient
 
+    from nodetool.models.database_adapter import DatabaseAdapter
     from nodetool.storage.memcache_node_cache import AbstractNodeCache
     from nodetool.storage.memory_uri_cache import MemoryUriCache
 
