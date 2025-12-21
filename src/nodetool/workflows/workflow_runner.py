@@ -47,10 +47,12 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
+from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     BaseTorchSupport,
@@ -59,6 +61,8 @@ from nodetool.workflows.torch_support import (
     torch,
 )
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
+from nodetool.models.run_state import RunState
+from nodetool.models.run_node_state import RunNodeState
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -139,6 +143,7 @@ class WorkflowRunner:
         device: str | None = None,
         disable_caching: bool = False,
         buffer_limit: int | None = 3,
+        enable_event_logging: bool = True,
     ):
         """
         Initializes a new WorkflowRunner instance.
@@ -151,6 +156,7 @@ class WorkflowRunner:
             buffer_limit (Optional[int]): Maximum number of items allowed in each per-handle inbox buffer.
                                          When a buffer reaches this limit, producers will block until consumers
                                          drain the buffer, implementing backpressure. None means unlimited.
+            enable_event_logging (bool): Whether to enable event logging for resumability.
         """
         self.job_id = job_id
         self.status = "running"
@@ -185,6 +191,15 @@ class WorkflowRunner:
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
+        
+        # Event logging for resumability (audit-only, not source of truth)
+        self.enable_event_logging = enable_event_logging
+        self.event_logger: WorkflowEventLogger | None = None
+        if enable_event_logging:
+            self.event_logger = WorkflowEventLogger(run_id=job_id)
+        
+        # State table tracking (source of truth for correctness)
+        self.run_state: RunState | None = None
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
@@ -502,6 +517,30 @@ class WorkflowRunner:
         start_time = time.time()
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
+        
+        # Create run_state (source of truth) 
+        try:
+            self.run_state = await RunState.create_run(
+                run_id=self.job_id,
+                graph_json=request.graph.model_dump() if request.graph else {},
+                params_json=request.params or {},
+                user_id=getattr(context, "user_id", None),
+            )
+            log.info(f"Created run_state for {self.job_id} with status=running")
+        except Exception as e:
+            log.error(f"Failed to create run_state: {e}")
+            raise
+        
+        # Log RunCreated event (audit-only, non-fatal)
+        if self.event_logger:
+            try:
+                await self.event_logger.log_run_created(
+                    graph=request.graph.model_dump() if request.graph else {},
+                    params=request.params or {},
+                    user_id=getattr(context, "user_id", ""),
+                )
+            except Exception as e:
+                log.warning(f"Failed to log RunCreated event (non-fatal): {e}")
 
         with self.torch_context(context):
             try:
@@ -598,13 +637,135 @@ class WorkflowRunner:
                 # If we reach here, no exceptions from the main processing stages
                 if self.status == "running":  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
+                    
+                    # Update run_state (source of truth)
+                    if self.run_state:
+                        try:
+                            await self.run_state.mark_completed(
+                                outputs_json=self.outputs
+                            )
+                            log.info(f"Marked run_state as completed for {self.job_id}")
+                        except Exception as e:
+                            log.error(f"Failed to mark run_state as completed: {e}")
 
             except asyncio.CancelledError:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
+                
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_cancelled(
+                            reason="Workflow execution cancelled"
+                        )
+                        log.info(f"Marked run_state as cancelled for {self.job_id}")
+                    except Exception as e:
+                        log.error(f"Failed to mark run_state as cancelled: {e}")
+                
+                # Log RunCancelled event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_cancelled(
+                            reason="Workflow execution cancelled"
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
+
                 if send_job_updates:
-                    context.post_message(JobUpdate(job_id=self.job_id, status="cancelled"))
+                    context.post_message(
+                        JobUpdate(job_id=self.job_id, status="cancelled")
+                    )
+
+            except WorkflowSuspendedException as e:
+                # Handle workflow suspension from suspendable node
+                self.status = "suspended"
+
+                log.info(
+                    f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}"
+                )
+
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            state_json=e.state,
+                            metadata_json=e.metadata,
+                        )
+                        log.info(f"Marked run_state as suspended for {self.job_id} at node {e.node_id}")
+                    except Exception as e2:
+                        log.error(f"Failed to mark run_state as suspended: {e2}")
+                        raise
+
+                # Update node_state to suspended (source of truth)
+                try:
+                    node_state = await RunNodeState.get_or_create(
+                        run_id=self.job_id,
+                        node_id=e.node_id,
+                    )
+                    await node_state.mark_suspended(
+                        reason=e.reason,
+                        state_json=e.state,
+                    )
+                    log.info(f"Marked node_state as suspended for node {e.node_id}")
+                except Exception as e2:
+                    log.error(f"Failed to mark node_state as suspended: {e2}")
+                    raise
+
+                # Log suspension events (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        # Log NodeSuspended event
+                        await self.event_logger.log_node_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            state=e.state,
+                            metadata=e.metadata,
+                        )
+
+                        # Log RunSuspended event
+                        await self.event_logger.log_run_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            metadata=e.metadata,
+                        )
+
+                        # Flush projection to ensure suspension is persisted
+                        await self.event_logger.flush_projection()
+
+                        # Check if this is a trigger node suspension
+                        if e.metadata.get('trigger_node'):
+                            # Register with trigger wakeup service
+                            from nodetool.workflows.trigger_node import TriggerWakeupService
+
+                            wakeup_service = TriggerWakeupService.get_instance()
+                            wakeup_service.register_suspended_trigger(
+                                workflow_id=self.job_id,
+                                node_id=e.node_id,
+                                trigger_metadata=e.metadata,
+                            )
+                            log.info(
+                                f"Registered trigger node {e.node_id} for wake-up "
+                                f"in workflow {self.job_id}"
+                            )
+
+                    except Exception as e2:
+                        log.warning(f"Failed to log suspension events (non-fatal): {e2}")
+
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="suspended",
+                            message=f"Workflow suspended at node {e.node_id}: {e.reason}",
+                        )
+                    )
+
+                # Do not re-raise - suspension is a clean exit
+                return
+
             except Exception as e:
                 error_message_for_job_update = str(e)
                 log.error(f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}")
@@ -618,6 +779,28 @@ class WorkflowRunner:
                     # log.error already done by generic message
 
                 self.status = "error"
+                
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_failed(
+                            error=error_message_for_job_update[:1000],
+                            node_id=self.current_node,
+                        )
+                        log.info(f"Marked run_state as failed for {self.job_id}")
+                    except Exception as e2:
+                        log.error(f"Failed to mark run_state as failed: {e2}")
+                
+                # Log RunFailed event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_failed(
+                            error=error_message_for_job_update[:1000],
+                            node_id=None,
+                        )
+                    except Exception as e2:
+                        log.warning(f"Failed to log RunFailed event (non-fatal): {e2}")
+                
                 # Always post the error JobUpdate
                 if send_job_updates:
                     context.post_message(
@@ -668,8 +851,23 @@ class WorkflowRunner:
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
                 total_time = time.time() - start_time
-                log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
-                log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
+                log.info(
+                    f"Job {self.job_id} completed successfully (post-try-finally processing)"
+                )
+                log.info(
+                    f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
+                )
+
+                # Log RunCompleted event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_completed(
+                            outputs=self.outputs,
+                            duration_ms=int(total_time * 1000),
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCompleted event (non-fatal): {e}")
+
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(

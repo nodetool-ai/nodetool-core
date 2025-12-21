@@ -28,8 +28,15 @@ def get_all_models() -> list[Type]:
     from nodetool.models.message import Message
     from nodetool.models.oauth_credential import OAuthCredential
     from nodetool.models.prediction import Prediction
+    from nodetool.models.run_event import RunEvent
+    from nodetool.models.run_inbox_message import RunInboxMessage
+    from nodetool.models.run_lease import RunLease
+    from nodetool.models.run_node_state import RunNodeState
+    from nodetool.models.run_projection import RunProjection
+    from nodetool.models.run_state import RunState
     from nodetool.models.secret import Secret
     from nodetool.models.thread import Thread
+    from nodetool.models.trigger_input import TriggerInput
     from nodetool.models.workflow import Workflow
 
     # Order matters: migrations run in this order to handle foreign keys
@@ -42,6 +49,15 @@ def get_all_models() -> list[Type]:
         Prediction,
         Secret,
         OAuthCredential,
+        # New authoritative state tables (source of truth)
+        RunState,
+        RunNodeState,
+        RunInboxMessage,
+        TriggerInput,
+        # Old event sourcing tables (now audit-only)
+        RunEvent,
+        RunProjection,
+        RunLease,
     ]
 
 
