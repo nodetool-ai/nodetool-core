@@ -190,6 +190,127 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
         is_running=False,
         is_completed=not cancelled,
     )
+
+
+class TriggerWorkflowResponse(BaseModel):
+    workflow_id: str
+    job_id: Optional[str] = None
+    status: str
+    is_running: bool
+
+
+class TriggerWorkflowListResponse(BaseModel):
+    workflows: List[TriggerWorkflowResponse]
+
+
+@router.get("/triggers/running", response_model=TriggerWorkflowListResponse)
+async def list_running_trigger_workflows(user_id: str = Depends(current_user)):
+    """
+    List all currently running trigger workflows.
+
+    Args:
+        user_id: Current authenticated user ID
+
+    Returns:
+        List of running trigger workflows
+    """
+    from nodetool.workflows.trigger_workflow_manager import TriggerWorkflowManager
+
+    trigger_manager = TriggerWorkflowManager.get_instance()
+    running = trigger_manager.list_running_workflows()
+
+    return TriggerWorkflowListResponse(
+        workflows=[
+            TriggerWorkflowResponse(
+                workflow_id=workflow_id,
+                job_id=job.job_id,
+                status=job.status,
+                is_running=job.is_running(),
+            )
+            for workflow_id, job in running.items()
+        ]
+    )
+
+
+@router.post("/triggers/{workflow_id}/start", response_model=TriggerWorkflowResponse)
+async def start_trigger_workflow(
+    workflow_id: str, user_id: str = Depends(current_user)
+):
+    """
+    Start a trigger workflow in the background.
+
+    Args:
+        workflow_id: Workflow ID to start
+        user_id: Current authenticated user ID
+
+    Returns:
+        Trigger workflow status
+    """
+    from nodetool.models.workflow import Workflow as WorkflowModel
+    from nodetool.workflows.trigger_workflow_manager import (
+        TriggerWorkflowManager,
+        workflow_has_trigger_nodes,
+    )
+
+    workflow = await WorkflowModel.get(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not workflow_has_trigger_nodes(workflow):
+        raise HTTPException(
+            status_code=400, detail="Workflow does not contain trigger nodes"
+        )
+
+    trigger_manager = TriggerWorkflowManager.get_instance()
+    job = await trigger_manager.start_trigger_workflow(workflow, user_id)
+
+    if job:
+        return TriggerWorkflowResponse(
+            workflow_id=workflow_id,
+            job_id=job.job_id,
+            status=job.status,
+            is_running=job.is_running(),
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Failed to start trigger workflow")
+
+
+@router.post("/triggers/{workflow_id}/stop", response_model=TriggerWorkflowResponse)
+async def stop_trigger_workflow(
+    workflow_id: str, user_id: str = Depends(current_user)
+):
+    """
+    Stop a running trigger workflow.
+
+    Args:
+        workflow_id: Workflow ID to stop
+        user_id: Current authenticated user ID
+
+    Returns:
+        Trigger workflow status
+    """
+    from nodetool.models.workflow import Workflow as WorkflowModel
+    from nodetool.workflows.trigger_workflow_manager import TriggerWorkflowManager
+
+    workflow = await WorkflowModel.get(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    trigger_manager = TriggerWorkflowManager.get_instance()
+    stopped = await trigger_manager.stop_trigger_workflow(workflow_id)
+
+    return TriggerWorkflowResponse(
+        workflow_id=workflow_id,
+        job_id=None,
+        status="stopped" if stopped else "not_running",
+        is_running=False,
+    )
+
+
 async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
     """
     Ensure job status reflects the background execution manager.

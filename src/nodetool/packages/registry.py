@@ -88,9 +88,7 @@ PACKAGES_DIR = "packages"
 # New wheel-based package index (PEP 503 compliant)
 PACKAGE_INDEX_URL = "https://nodetool-ai.github.io/nodetool-registry/simple/"
 # Legacy JSON registry for backward compatibility
-REGISTRY_URL = (
-    "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
-)
+REGISTRY_URL = "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
 DEFAULT_REGISTRY_REPO = "https://github.com/nodetool/package-registry.git"
 
 log = get_logger(__name__)
@@ -189,18 +187,12 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        raise ValueError(
-            f"No PEP 621 [project] metadata found in pyproject.toml for {github_repo}"
-        )
+        raise ValueError(f"No PEP 621 [project] metadata found in pyproject.toml for {github_repo}")
 
     # Authors can be list of tables
     raw_authors = project_data.get("authors", [])
     authors: list[str] = []
-    if (
-        isinstance(raw_authors, list)
-        and raw_authors
-        and isinstance(raw_authors[0], dict)
-    ):
+    if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
         for a in raw_authors:
             name = a.get("name")
             email = a.get("email")
@@ -276,11 +268,7 @@ class Registry:
     def find_package_by_name(self, name: str) -> Optional[PackageModel]:
         """Find a package by name."""
         return next(
-            (
-                package
-                for package in self.list_installed_packages()
-                if package.name == name
-            ),
+            (package for package in self.list_installed_packages() if package.name == name),
             None,
         )
 
@@ -334,9 +322,7 @@ class Registry:
             if self._index_available:
                 self.logger.info(f"Package index available at {PACKAGE_INDEX_URL}")
             else:
-                self.logger.warning(
-                    f"Package index returned status {response.status_code}"
-                )
+                self.logger.warning(f"Package index returned status {response.status_code}")
         except Exception as e:
             self._index_available = False
             self.logger.warning(f"Package index not available: {e}")
@@ -409,8 +395,7 @@ class Registry:
         return [
             node
             for node in self._node_cache
-            if query in node.get("name", "").lower()
-            or query in node.get("description", "").lower()
+            if query in node.get("name", "").lower() or query in node.get("description", "").lower()
         ]
 
     async def _fetch_all_nodes_async(self) -> List[Dict[str, Any]]:
@@ -435,9 +420,7 @@ class Registry:
                 # Construct the URL to the package metadata file
                 package_name = package.repo_id.split("/")[1]
                 metadata_url = f"https://raw.githubusercontent.com/{package.repo_id}/main/src/nodetool/package_metadata/{package_name}.json"
-                tasks.append(
-                    self._fetch_package_nodes(client, metadata_url, package.repo_id)
-                )
+                tasks.append(self._fetch_package_nodes(client, metadata_url, package.repo_id))
 
             # Run all tasks in parallel and gather results
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -451,9 +434,7 @@ class Registry:
 
         return all_nodes
 
-    async def _fetch_package_nodes(
-        self, client: httpx.AsyncClient, url: str, repo_id: str
-    ) -> List[Dict[str, Any]]:
+    async def _fetch_package_nodes(self, client: httpx.AsyncClient, url: str, repo_id: str) -> List[Dict[str, Any]]:
         """
         Fetch node metadata for a single package.
 
@@ -552,9 +533,7 @@ class Registry:
         for package in installed_packages:
             if package.nodes:
                 for node in package.nodes:
-                    node_dict = (
-                        node.model_dump() if hasattr(node, "model_dump") else dict(node)
-                    )
+                    node_dict = node.model_dump() if hasattr(node, "model_dump") else dict(node)
                     if node_dict.get("node_type") == node_type:
                         node_dict["package"] = package.repo_id
                         node_dict["installed"] = True
@@ -603,11 +582,7 @@ class Registry:
                     continue
 
                 example_path = (
-                    Path(package.source_folder)
-                    / "nodetool"
-                    / "examples"
-                    / package.name
-                    / f"{example_meta.name}.json"
+                    Path(package.source_folder) / "nodetool" / "examples" / package.name / f"{example_meta.name}.json"
                 )
 
                 if not example_path.exists():
@@ -648,13 +623,9 @@ class Registry:
                         cache_key = f"{package.name}:{example_meta.name}"
                         self._example_search_cache[cache_key] = cached_item
                     except json.JSONDecodeError:
-                        self.logger.warning(
-                            f"Skipping corrupted example JSON: {example_path}"
-                        )
+                        self.logger.warning(f"Skipping corrupted example JSON: {example_path}")
                         continue
-        self.logger.info(
-            f"Cached {len(self._example_search_cache)} example workflows for search."
-        )
+        self.logger.info(f"Cached {len(self._example_search_cache)} example workflows for search.")
 
     def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
@@ -676,9 +647,7 @@ class Registry:
                 workflow = Workflow(**props)
                 return workflow
         except Exception as e:
-            self.logger.error(
-                f"Error decoding JSON for example workflow {file_path}: {e}"
-            )
+            self.logger.error(f"Error decoding JSON for example workflow {file_path}: {e}")
             # Return an empty Workflow with the name indicating it is broken
             now_str = datetime.now().isoformat()
             return Workflow(
@@ -694,9 +663,7 @@ class Registry:
                 path=file_path,
             )
 
-    def _load_examples_from_directory(
-        self, directory: str, package_name: str
-    ) -> List[ExampleMetadata]:
+    def _load_examples_from_directory(self, directory: str, package_name: str) -> List[ExampleMetadata]:
         """
         Load all example workflows from a directory.
 
@@ -716,9 +683,7 @@ class Registry:
         os.makedirs(package_dir, exist_ok=True)
 
         if not os.path.exists(package_dir):
-            self.logger.warning(
-                f"Package examples directory does not exist: {package_dir}"
-            )
+            self.logger.warning(f"Package examples directory does not exist: {package_dir}")
             return []
 
         examples = []
@@ -770,9 +735,7 @@ class Registry:
                         name=example_meta.name,
                         description=example_meta.description,
                         tags=example_meta.tags or [],
-                        graph=APIGraph(
-                            nodes=[], edges=[]
-                        ),  # Empty graph as we don't load the full workflow
+                        graph=APIGraph(nodes=[], edges=[]),  # Empty graph as we don't load the full workflow
                         access="public",
                         created_at=now_str,
                         updated_at=now_str,
@@ -839,26 +802,14 @@ class Registry:
         src_folders = get_nodetool_package_source_folders()
 
         package_folder = next(
-            (
-                src_folder
-                for src_folder in src_folders
-                if package.name in str(src_folder)
-            ),
+            (src_folder for src_folder in src_folders if package.name in str(src_folder)),
             None,
         )
 
         if not package_folder:
-            raise ValueError(
-                f"Package {workflow.package_name} not found in source editable folders"
-            )
+            raise ValueError(f"Package {workflow.package_name} not found in source editable folders")
 
-        path = (
-            package_folder
-            / "nodetool"
-            / "examples"
-            / package.name
-            / f"{workflow.name}.json"
-        )
+        path = package_folder / "nodetool" / "examples" / package.name / f"{workflow.name}.json"
         os.makedirs(path.parent, exist_ok=True)
 
         # Find the package folder
@@ -870,9 +821,7 @@ class Registry:
 
         return workflow
 
-    def _load_assets_from_directory(
-        self, directory: str, package_name: str
-    ) -> List[AssetInfo]:
+    def _load_assets_from_directory(self, directory: str, package_name: str) -> List[AssetInfo]:
         """
         Load all asset files from a directory.
 
@@ -920,9 +869,7 @@ class Registry:
 
         return assets
 
-    def find_asset_by_name(
-        self, name: str, package_name: Optional[str] = None
-    ) -> Optional[AssetInfo]:
+    def find_asset_by_name(self, name: str, package_name: Optional[str] = None) -> Optional[AssetInfo]:
         """
         Find an asset file by its file name, optionally filtering by package name.
 
@@ -935,11 +882,7 @@ class Registry:
         """
         if package_name:
             return next(
-                (
-                    asset
-                    for asset in self.list_assets()
-                    if asset.name == name and asset.package_name == package_name
-                ),
+                (asset for asset in self.list_assets() if asset.name == name and asset.package_name == package_name),
                 None,
             )
         else:
@@ -979,13 +922,7 @@ class Registry:
 
         # Construct the path to the example file
         # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
-        example_path = (
-            Path(package.source_folder)
-            / "nodetool"
-            / "examples"
-            / package_name
-            / f"{example_name}.json"
-        )
+        example_path = Path(package.source_folder) / "nodetool" / "examples" / package_name / f"{example_name}.json"
 
         if not example_path.exists():
             self._examples_cache[cache_key] = None  # Cache the None result too
@@ -1072,9 +1009,7 @@ def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | N
     )
 
 
-async def _enrich_nodes_with_model_info(
-    nodes: list[NodeMetadata], verbose: bool = False
-) -> None:
+async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool = False) -> None:
     """Fetch HF model metadata to populate recommended model details (size, tags, etc.)."""
     repo_to_models: dict[str, list[UnifiedModel]] = defaultdict(list)
     for node in nodes:
@@ -1125,9 +1060,7 @@ async def _enrich_nodes_with_model_info(
                     updates["size_on_disk"] = size
 
             if model.type is None:
-                inferred_type = model_type_from_model_info(
-                    repo_to_models, model.repo_id, info
-                )
+                inferred_type = model_type_from_model_info(repo_to_models, model.repo_id, info)
                 if inferred_type:
                     updates["type"] = inferred_type
 
@@ -1141,10 +1074,7 @@ async def _enrich_nodes_with_model_info(
                 updates["downloads"] = info.downloads
             if model.likes is None and getattr(info, "likes", None) is not None:
                 updates["likes"] = info.likes
-            if (
-                model.trending_score is None
-                and getattr(info, "trending_score", None) is not None
-            ):
+            if model.trending_score is None and getattr(info, "trending_score", None) is not None:
                 updates["trending_score"] = info.trending_score
 
             if updates:
@@ -1199,11 +1129,7 @@ def discover_node_packages() -> list[PackageModel]:
                                     continue
                                 seen_names.add(name)
                             # Prefer src folder if present for a cleaner source path
-                            source_folder = (
-                                str(base_path / "src")
-                                if (base_path / "src").exists()
-                                else str(base_path)
-                            )
+                            source_folder = str(base_path / "src") if (base_path / "src").exists() else str(base_path)
                             metadata["source_folder"] = source_folder
                             packages.append(PackageModel(**metadata))
                     except Exception as e:
@@ -1267,9 +1193,7 @@ def get_nodetool_package_source_folders() -> List[Path]:
     return source_folders
 
 
-def scan_for_package_nodes(
-    verbose: bool = False, fetch_model_info: bool = True
-) -> PackageModel:
+def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True) -> PackageModel:
     """Scan current directory for nodes and create package metadata.
 
     Args:
@@ -1315,11 +1239,7 @@ def scan_for_package_nodes(
     # Authors: PEP 621 may use list of tables
     raw_authors = project_data.get("authors", [])
     authors: list[str] = []
-    if (
-        isinstance(raw_authors, list)
-        and raw_authors
-        and isinstance(raw_authors[0], dict)
-    ):
+    if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
         for a in raw_authors:
             name = a.get("name")
             email = a.get("email")
@@ -1336,11 +1256,7 @@ def scan_for_package_nodes(
     repo_url: str | None = None
     # PEP 621: [project].urls.Repository or .Source
     urls = project_data.get("urls") if isinstance(project_data, dict) else None
-    repo_url = (
-        urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
-        if isinstance(urls, dict)
-        else None
-    )
+    repo_url = urls.get("Repository") or urls.get("Source") or urls.get("Homepage") if isinstance(urls, dict) else None
 
     def _to_repo_id(url: str | None) -> str | None:
         if not url or not isinstance(url, str):
@@ -1374,12 +1290,8 @@ def scan_for_package_nodes(
         authors=authors,
         repo_id=repo_id,
         nodes=[],
-        examples=registry._load_examples_from_directory(
-            "src/nodetool/examples", package_name
-        ),
-        assets=registry._load_assets_from_directory(
-            "src/nodetool/assets", package_name
-        ),
+        examples=registry._load_examples_from_directory("src/nodetool/examples", package_name),
+        assets=registry._load_assets_from_directory("src/nodetool/assets", package_name),
     )
 
     # Add src directory to Python path temporarily
@@ -1409,6 +1321,8 @@ def scan_for_package_nodes(
                 full_module_name = f"nodetool.nodes.{module_name}"
                 node_classes = get_node_classes_from_module(full_module_name, verbose)
                 if node_classes:
+                    if verbose:
+                        click.echo(f"Found {len(node_classes)} nodes in module {module_name}")
                     assert package.nodes is not None
                     package.nodes.extend(
                         node_class.get_metadata(include_model_info=False)
@@ -1416,13 +1330,12 @@ def scan_for_package_nodes(
                         if node_class.is_visible()
                     )
 
-
-
         if fetch_model_info and package.nodes:
             try:
                 asyncio.run(
                     _enrich_nodes_with_model_info(
-                        package.nodes, verbose=verbose  # type: ignore[arg-type]
+                        package.nodes,
+                        verbose=verbose,  # type: ignore[arg-type]
                     )
                 )
             except RuntimeError:
@@ -1430,7 +1343,8 @@ def scan_for_package_nodes(
                 try:
                     loop.run_until_complete(
                         _enrich_nodes_with_model_info(
-                            package.nodes, verbose=verbose  # type: ignore[arg-type]
+                            package.nodes,
+                            verbose=verbose,  # type: ignore[arg-type]
                         )
                     )
                 finally:
@@ -1498,9 +1412,7 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     example_count = len(package.examples or [])
     asset_count = len(package.assets or [])
 
-    log.info(
-        f"Saved metadata with {node_count} nodes, {example_count} examples, and {asset_count} assets"
-    )
+    log.info(f"Saved metadata with {node_count} nodes, {example_count} examples, and {asset_count} assets")
 
     return metadata_path
 
@@ -1584,9 +1496,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
 
     # Convert absolute source paths to patterns relative to package root
     metadata_rel = f"package_metadata/{package.name}.json"
-    asset_rels = [
-        f"assets/{package.name}/{asset.name}" for asset in package.assets or []
-    ]
+    asset_rels = [f"assets/{package.name}/{asset.name}" for asset in package.assets or []]
 
     for rel in [metadata_rel, *asset_rels]:
         if rel not in patterns:  # type: ignore
@@ -1599,11 +1509,7 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         f.write(tomlkit.dumps(data))
 
     if verbose:
-        build_tool = (
-            "hatch.build.targets.wheel.artifacts"
-            if "project" in data
-            else "poetry.include"
-        )
+        build_tool = "hatch.build.targets.wheel.artifacts" if "project" in data else "poetry.include"
         log.info(f"Updated {pyproject_path} {build_tool} with asset files")
 
 
@@ -1643,14 +1549,10 @@ def load_node_packages():
                     try:
                         if namespace.startswith("nodetool."):
                             namespace_suffix = namespace[9:]
-                            get_node_classes_from_namespace(
-                                f"nodetool.nodes.{namespace_suffix}"
-                            )
+                            get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
                             total_loaded += 1
                         else:
-                            get_node_classes_from_namespace(
-                                f"nodetool.nodes.{namespace}"
-                            )
+                            get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
                             total_loaded += 1
                     except Exception:
                         pass
@@ -1672,9 +1574,7 @@ async def main():
 
     print("\n--- Testing discover_node_packages ---")
     installed_discovered_packages = discover_node_packages()
-    print(
-        f"Discovered {len(installed_discovered_packages)} installed node packages (via discover_node_packages)."
-    )
+    print(f"Discovered {len(installed_discovered_packages)} installed node packages (via discover_node_packages).")
     for pkg in installed_discovered_packages:
         print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
 
@@ -1712,9 +1612,7 @@ async def main():
     print("\n--- Testing registry.get_package_for_node_type ---")
     # This test depends on search_nodes populating the cache.
     sample_node_type = "huggingface.text_to_image.StableDiffusion"
-    await (
-        registry.search_nodes()
-    )  # This might repopulate or confirm emptiness due to prior errors
+    await registry.search_nodes()  # This might repopulate or confirm emptiness due to prior errors
 
     package_repo_id = await registry.get_package_for_node_type(sample_node_type)
     if package_repo_id:
