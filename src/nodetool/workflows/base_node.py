@@ -1902,7 +1902,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
 class GroupNode(BaseNode):
     """
-    Contains a subgraph of nodes for hierarchical workflow organization.
+    Encapsulates a subgraph of nodes for hierarchical workflow organization.
 
     Use this node to group related nodes together, improving workflow readability
     and enabling reuse of common node patterns within larger workflows.
