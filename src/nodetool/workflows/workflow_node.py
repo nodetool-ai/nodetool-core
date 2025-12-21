@@ -21,18 +21,19 @@ from nodetool.workflows.types import (
 
 class WorkflowNode(BaseNode):
     """
-    A WorkflowNode is a node that can execute a sub-workflow.
+    Executes a sub-workflow as a reusable component within a larger workflow.
 
-    - Load and manage workflow definitions from JSON, including validation of the structure.
-    - Generate properties based on input nodes in the workflow, allowing for dynamic input handling.
-    - Execute sub-workflows within a larger workflow context, enabling modular workflow design.
-    - Handle progress updates, error reporting, and logging during workflow execution to facilitate debugging and monitoring.
+    Use this node to embed and run complete workflows inside other workflows,
+    enabling modular and composable workflow design. Input nodes in the sub-workflow
+    become dynamic properties, and output nodes provide the results.
     """
 
     _dynamic = True
     _supports_dynamic_outputs: ClassVar[bool] = True
 
-    workflow_json: dict[str, Any] = Field(default_factory=dict)
+    workflow_json: dict[str, Any] = Field(
+        default_factory=dict, description="The workflow definition as a JSON dictionary."
+    )
 
     @classmethod
     def is_streaming_output(cls):

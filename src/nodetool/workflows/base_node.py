@@ -366,20 +366,10 @@ class BaseNode(BaseModel):
     """
     The foundational class for all nodes in the workflow graph.
 
-    Attributes:
-        _id (str): Unique identifier for the node.
-        _parent_id (str | None): Identifier of the parent node, if any.
-        _ui_properties (dict[str, Any]): UI-specific properties for the node.
-        _dynamic_properties (dict[str, Any]): Dynamic runtime properties for the node.
-        _layout: ClassVar[str] (str): The layout style for the node in the UI.
-        _requires_grad: ClassVar[bool] (bool): Whether the node requires torch backward pass.
-        _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
-        _supports_dynamic_outputs: ClassVar[bool]  (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
-        _sync_mode (str): The input synchronization mode for the node.
-
-    Methods:
-        Includes methods for initialization, property management, metadata generation,
-        type checking, and node processing.
+    Use this as the base class when creating custom workflow nodes. It provides
+    core functionality for node registration, property management, type validation,
+    and workflow execution. Nodes can implement either `process()` for single-run
+    execution or `gen_process()` for streaming output.
     """
 
     _id: str = PrivateAttr(default="")
@@ -1587,11 +1577,11 @@ class BaseNode(BaseModel):
 
 class InputNode(BaseNode):
     """
-    A special node type representing an input to the workflow.
+    Represents an input parameter for a workflow.
 
-    Attributes:
-        label (str): A human-readable label for the input.
-        name (str): The parameter name for this input in the workflow.
+    Use this node to define entry points for data into your workflow. When the
+    workflow is executed, users can provide values for these inputs. Subclass
+    this to create typed input nodes (e.g., NumberInput, TextInput).
     """
 
     name: str = Field("", description="The parameter name for the workflow.")
@@ -1613,7 +1603,10 @@ class InputNode(BaseNode):
 
 class ToolResultNode(BaseNode):
     """
-    A special node type representing a tool result.
+    Captures and outputs the result of a tool execution within an agent workflow.
+
+    Used internally by agents to collect tool outputs and relay them back to the
+    orchestration system. Supports dynamic properties to handle varying result shapes.
     """
 
     _is_dynamic: ClassVar[bool] = True
@@ -1637,12 +1630,11 @@ class ToolResultNode(BaseNode):
 
 class OutputNode(BaseNode):
     """
-    A special node type representing an output from the workflow.
+    Represents an output from a workflow.
 
-    Attributes:
-        name (str): The parameter name for this output in the workflow.
-        description (str): A detailed description of the output.
-        value (Any): The value of the output.
+    Use this node to define the results that your workflow produces. Output nodes
+    collect processed data and make it available to the caller. Subclass this to
+    create typed output nodes (e.g., ImageOutput, TextOutput).
     """
 
     name: str = Field("", description="The parameter name for the workflow.")
@@ -1730,10 +1722,10 @@ class OutputNode(BaseNode):
 
 class Comment(BaseNode):
     """
-    A utility node for adding comments or annotations to the workflow graph.
+    Adds annotations or notes to the workflow graph for documentation purposes.
 
-    Attributes:
-        comment (list[Any]): The content of the comment, stored as a list of elements.
+    Use this node to leave comments explaining sections of your workflow or to
+    provide context for other users. Comments do not affect workflow execution.
     """
 
     headline: str = Field("", description="The headline for this comment.")
@@ -1748,10 +1740,10 @@ class Comment(BaseNode):
 
 class Preview(BaseNode):
     """
-    A utility node for previewing data within the workflow graph.
+    Displays intermediate data for debugging and inspection during workflow execution.
 
-    Attributes:
-        value (Any): The value to be previewed.
+    Use this node to inspect values flowing through your workflow without altering
+    them. Useful for debugging and understanding data transformations.
     """
 
     value: Any = Field(object(), description="The value to preview.")
@@ -1910,10 +1902,10 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
 class GroupNode(BaseNode):
     """
-    A special node type that can contain a subgraph of nodes.
-    group, workflow, structure, organize
+    Contains a subgraph of nodes for hierarchical workflow organization.
 
-    This node type allows for hierarchical structuring of workflows.
+    Use this node to group related nodes together, improving workflow readability
+    and enabling reuse of common node patterns within larger workflows.
     """
 
     @classmethod
