@@ -5,6 +5,8 @@ Provides ResourceScope for managing per-execution resources (database adapters)
 with proper cleanup and connection pooling.
 """
 
+from __future__ import annotations
+
 import contextvars
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
@@ -13,12 +15,12 @@ import httpx
 from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.models.database_adapter import DatabaseAdapter
-from nodetool.storage.abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
     from supabase import AsyncClient
 
+    from nodetool.models.database_adapter import DatabaseAdapter
+    from nodetool.storage.abstract_storage import AbstractStorage
     from nodetool.storage.memcache_node_cache import AbstractNodeCache
     from nodetool.storage.memory_uri_cache import MemoryUriCache
 
@@ -44,12 +46,12 @@ class DBResources(Protocol):
         ...
 
 # ContextVar to store the current scope
-_current_scope: contextvars.ContextVar[Optional["ResourceScope"]] = contextvars.ContextVar(
+_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar(
     "_current_scope", default=None
 )
 
 
-def require_scope() -> "ResourceScope":
+def require_scope() -> ResourceScope:
     """Get the current resource scope or raise if none is bound.
 
     Returns:
@@ -64,7 +66,7 @@ def require_scope() -> "ResourceScope":
     return scope
 
 
-def maybe_scope() -> Optional["ResourceScope"]:
+def maybe_scope() -> Optional[ResourceScope]:
     """Get the current resource scope or None if not bound.
 
     Returns:
@@ -187,7 +189,7 @@ class ResourceScope:
             self._memory_uri_cache: MemoryUriCache | None = None
             self._http_client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "ResourceScope":
+    async def __aenter__(self) -> ResourceScope:
         """Enter the async context manager.
 
         Acquires resources from the appropriate pool and binds this scope.

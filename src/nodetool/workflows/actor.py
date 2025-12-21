@@ -92,11 +92,7 @@ class NodeActor:
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node."""
-        return {
-            e.targetHandle
-            for e in self.context.graph.edges
-            if e.target == self.node._id
-        }
+        return {e.targetHandle for e in self.context.graph.edges if e.target == self.node._id}
 
     def _outbound_edges(self):
         """Return edges originating from this node (outbound)."""
@@ -146,9 +142,19 @@ class NodeActor:
         # If no effective handles remain, all upstreams are non-routable
         return len(self._effective_inbound_handles()) == 0
 
-    async def _gather_initial_inputs(
-        self, handles: set[str] | None = None
-    ) -> dict[str, Any]:
+    def _mark_inbound_edges_drained(self, handles: set[str] | list[str]) -> None:
+        """Post drained updates for inbound edges targeting the provided handles."""
+        if not handles:
+            return
+        handle_set = set(handles)
+        for edge in self.context.graph.edges:
+            if edge.target != self.node._id:
+                continue
+            if edge.targetHandle not in handle_set:
+                continue
+            self.context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
+
+    async def _gather_initial_inputs(self, handles: set[str] | None = None) -> dict[str, Any]:
         """Wait for exactly one value per specified inbound handle and return a map.
 
         Args:
@@ -190,6 +196,7 @@ class NodeActor:
             self.context.post_message(
                 EdgeUpdate(edge_id=edge.id or "", status="drained"),
             )
+
     async def process_node_with_inputs(
         self,
         inputs: dict[str, Any],
@@ -230,9 +237,7 @@ class NodeActor:
                     # Notify frontend of property change
                     await node.send_update(context, "running", properties=[name])
             except Exception as exc:
-                self.logger.error(
-                    "Error assigning property %s to node %s", name, node.id
-                )
+                self.logger.error("Error assigning property %s to node %s", name, node.id)
                 raise ValueError(f"Error assigning property {name}: {exc}") from exc
 
         await node.pre_process(context)
@@ -253,19 +258,14 @@ class NodeActor:
             driven_by_stream = context.graph.has_streaming_upstream(node._id)
 
             if requires_gpu and self.runner.device == "cpu":
-                error_msg = (
-                    f"Node {node.get_title()} ({node._id}) requires a GPU,"
-                    " but no GPU is available."
-                )
+                error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
                 self.logger.error(error_msg)
                 raise RuntimeError(error_msg)
 
             await node.send_update(context, "running", result=None)
 
             inbox = self.runner.node_inboxes.get(node._id)
-            outputs_collector = NodeOutputs(
-                self.runner, node, context, capture_only=True
-            )
+            outputs_collector = NodeOutputs(self.runner, node, context, capture_only=True)
             node_inputs = NodeInputs(inbox) if inbox is not None else None
 
             if requires_gpu and self.runner.device != "cpu":
@@ -281,18 +281,12 @@ class NodeActor:
                             reason=f"Preloading model for node {node._id}",
                             required_free_gb=1.0,
                         )
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM before GPU processing")
                     await node.preload_model(context)
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after preload_model")
 
                     await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 finally:
                     release_gpu_lock()
             else:
@@ -301,11 +295,7 @@ class NodeActor:
 
             result = outputs_collector.collected()
 
-            if (
-                node.is_cacheable()
-                and not self.runner.disable_caching
-                and not driven_by_stream
-            ):
+            if node.is_cacheable() and not self.runner.disable_caching and not driven_by_stream:
                 self.logger.debug(
                     "Caching result for node: %s (%s)",
                     node.get_title(),
@@ -315,6 +305,7 @@ class NodeActor:
 
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
+        self._mark_inbound_edges_drained(set(inputs.keys()))
 
     async def process_streaming_node_with_inputs(
         self,
@@ -352,16 +343,12 @@ class NodeActor:
                     if hasattr(self.runner, "send_property_update"):
                         await self.runner.send_property_update(node, context, name)
             except Exception as exc:
-                self.logger.error(
-                    "Error assigning property %s to node %s", name, node.id
-                )
+                self.logger.error("Error assigning property %s to node %s", name, node.id)
                 raise ValueError(f"Error assigning property {name}: {exc}") from exc
 
         await node.pre_process(context)
 
-        safe_properties = [
-            name for name in inputs if node.find_property(name) is not None
-        ]
+        safe_properties = [name for name in inputs if node.find_property(name) is not None]
 
         await node.send_update(context, "running", properties=safe_properties)
 
@@ -372,10 +359,7 @@ class NodeActor:
         completed_successfully = False
         try:
             if requires_gpu and self.runner.device == "cpu":
-                error_msg = (
-                    f"Node {node.get_title()} ({node._id}) requires a GPU,"
-                    " but no GPU is available."
-                )
+                error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
                 self.logger.error(error_msg)
                 raise RuntimeError(error_msg)
 
@@ -393,25 +377,17 @@ class NodeActor:
                             reason=f"Preloading model for node {node._id}",
                             required_free_gb=1.0,
                         )
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM before GPU processing")
 
                     await node.preload_model(context)
 
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after preload_model")
 
                     await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
 
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 except Exception as e:
-                    self.logger.error(
-                        f"Error running node {node.get_title()} ({node._id}): {e}"
-                    )
+                    self.logger.error(f"Error running node {node.get_title()} ({node._id}): {e}")
                     context.post_message(
                         NodeUpdate(
                             node_id=node.id,
@@ -431,9 +407,8 @@ class NodeActor:
             completed_successfully = True
         finally:
             if completed_successfully:
-                await node.send_update(
-                    context, "completed", result={"status": "completed"}
-                )
+                await node.send_update(context, "completed", result={"status": "completed"})
+            self._mark_inbound_edges_drained(set(inputs.keys()))
 
     async def _run_buffered_node(self) -> None:
         """Legacy buffered node execution (no streaming output)."""
@@ -458,14 +433,9 @@ class NodeActor:
             return
 
         handles = self._effective_inbound_handles()
-        streaming_output = (
-            node.__class__.is_streaming_output()
-            and not node.__class__.is_streaming_input()
-        )
+        streaming_output = node.__class__.is_streaming_output() and not node.__class__.is_streaming_input()
         processor = processor_override or (
-            self.process_streaming_node_with_inputs
-            if streaming_output
-            else self.process_node_with_inputs
+            self.process_streaming_node_with_inputs if streaming_output else self.process_node_with_inputs
         )
 
         if not handles:
@@ -474,16 +444,10 @@ class NodeActor:
             handle_streaming: dict[str, bool] = {}
             for handle in handles:
                 edge = next(
-                    (
-                        e
-                        for e in self.context.graph.edges
-                        if e.target == node._id and e.targetHandle == handle
-                    ),
+                    (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
                     None,
                 )
-                handle_streaming[handle] = (
-                    self.runner.edge_streams(edge) if edge is not None else False
-                )
+                handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
 
             sync_mode = node.get_sync_mode()
 
@@ -492,9 +456,7 @@ class NodeActor:
 
                 buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
                 sticky_values: dict[str, Any] = {}
-                is_sticky: dict[str, bool] = {
-                    h: not handle_streaming.get(h, False) for h in handles
-                }
+                is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
                 seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
 
                 def ready_to_zip() -> bool:
@@ -575,6 +537,7 @@ class NodeActor:
         # Drain inputs in arrival order and capture via runner
         async for handle, item in self.inbox.iter_any():
             await self.runner.process_output_node(ctx, node, {handle: item})  # type: ignore[arg-type]
+            self._mark_inbound_edges_drained({handle})
 
         # Upstream completed - mark downstream EOS
         await self._mark_downstream_eos()
@@ -587,6 +550,7 @@ class NodeActor:
         await node.pre_process(ctx)
         await node.send_update(ctx, "running", properties=[])
         requires_gpu = node.requires_gpu()
+        node._on_input_item = lambda handle: self._mark_inbound_edges_drained({handle})
 
         if requires_gpu and self.runner.device == "cpu":
             error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
@@ -607,24 +571,14 @@ class NodeActor:
                             reason=f"Preloading model for node {node._id}",
                             required_free_gb=1.0,
                         )
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM before GPU processing")
                     await node.preload_model(ctx)
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
-                    )
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after preload_model")
 
-                    await node.run(
-                        ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
-                    )
-                    self.runner.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
-                    )
+                    await node.run(ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx))
+                    self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 except Exception as e:
-                    self.logger.error(
-                        f"Error running node {node.get_title()} ({node._id}): {e}"
-                    )
+                    self.logger.error(f"Error running node {node.get_title()} ({node._id}): {e}")
                     ctx.post_message(
                         NodeUpdate(
                             node_id=node.id,
@@ -639,13 +593,12 @@ class NodeActor:
                     release_gpu_lock()
             else:
                 await node.preload_model(ctx)
-                await node.run(
-                    ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
-                )
+                await node.run(ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx))
 
             await node.send_update(ctx, "completed", result={"status": "completed"})
         finally:
             await node.handle_eos()
+            node._on_input_item = None
         await self._mark_downstream_eos()
 
     async def run(self) -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ServiceConfig(BaseModel):
@@ -85,6 +85,8 @@ class GlobalConfig(BaseModel):
 class ProxyConfig(BaseModel):
     """Complete proxy configuration."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     global_: GlobalConfig = Field(alias="global", description="Global configuration")
     services: List[ServiceConfig] = Field(..., description="List of services to proxy")
 
@@ -101,11 +103,6 @@ class ProxyConfig(BaseModel):
             raise ValueError("Service names must be unique")
 
         return v
-
-    class Config:
-        """Pydantic model config."""
-
-        populate_by_name = True
 
 
 def load_config(config_path: str) -> ProxyConfig:

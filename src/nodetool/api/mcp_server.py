@@ -56,7 +56,12 @@ from nodetool.packages.registry import Registry
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope, maybe_scope, require_scope
 from nodetool.security.secret_helper import get_secret
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema
+from nodetool.types.graph import (
+    Graph,
+    get_input_schema,
+    get_output_schema,
+    remove_connected_slots,
+)
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
@@ -213,6 +218,63 @@ async def get_workflow(workflow_id: str) -> dict[str, Any]:
         "output_schema": output_schema,
         "created_at": workflow.created_at.isoformat(),
         "updated_at": workflow.updated_at.isoformat(),
+    }
+
+
+@mcp.tool()
+async def create_workflow(
+    name: str,
+    graph: dict[str, Any],
+    description: str | None = None,
+    tags: list[str] | None = None,
+    access: str = "private",
+    settings: dict[str, Any] | None = None,
+    run_mode: str | None = None,
+) -> dict[str, Any]:
+    """
+    Create a new workflow in the database.
+
+    Args:
+        name: The workflow name
+        graph: Workflow graph structure with nodes and edges
+        description: Optional workflow description
+        tags: Optional workflow tags
+        access: Access level ("private" or "public")
+        settings: Optional workflow settings
+        run_mode: Optional run mode (e.g., "trigger")
+
+    Returns:
+        Workflow details including graph structure, input/output schemas
+    """
+    api_graph = Graph.model_validate(graph)
+    sanitized_graph = remove_connected_slots(api_graph)
+
+    async with ResourceScope():
+        workflow = await WorkflowModel.create(
+            user_id="1",
+            name=name,
+            graph=sanitized_graph.model_dump(),
+            description=description or "",
+            tags=tags or [],
+            access=access,
+            settings=settings or {},
+            run_mode=run_mode,
+        )
+
+    input_schema = get_input_schema(api_graph)
+    output_schema = get_output_schema(api_graph)
+
+    return {
+        "id": workflow.id,
+        "name": workflow.name,
+        "description": workflow.description or "",
+        "tags": workflow.tags,
+        "graph": api_graph.model_dump(),
+        "input_schema": input_schema,
+        "output_schema": output_schema,
+        "created_at": workflow.created_at.isoformat(),
+        "updated_at": workflow.updated_at.isoformat(),
+        "run_mode": workflow.run_mode,
     }
 
 
@@ -2202,7 +2264,7 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
 
 async def _run_agent_impl(
     objective: str,
-    provider: Provider,
+    provider: str,
     model: str = "gpt-4o",
     tools: list[str] | None = None,
     output_schema: dict[str, Any] | None = None,
@@ -2231,7 +2293,7 @@ async def _run_agent_impl(
                 else:
                     log.warning(f"Unknown tool: {tool_name}, skipping")
 
-            provider_enum = provider if isinstance(provider, Provider) else Provider(provider)
+            provider_enum = Provider(provider)
             provider_instance = await get_provider(provider_enum)
 
             # Create and execute agent
@@ -2298,7 +2360,7 @@ async def _run_agent_impl(
 @mcp.tool()
 async def run_agent(
     objective: str,
-    provider: Provider,
+    provider: str,
     ctx: Context,
     model: str = "gpt-4o",
     tools: list[str] | None = None,
@@ -2313,7 +2375,7 @@ async def run_agent(
 
     Args:
         objective: The task description for the agent to accomplish
-        provider: AI provider (default: "openai"). Options: "openai", "anthropic",
+        provider: AI provider. Options: "openai", "anthropic",
                  "ollama", "gemini", "huggingface_cerebras", etc.
         model: Model to use (default: "gpt-4o")
         tools: List of tool names to enable. Options:
