@@ -611,6 +611,21 @@ class NodeActor:
             node._id,
             node.get_node_type(),
         )
+        
+        # Log NodeScheduled event
+        if self.runner.event_logger:
+            try:
+                await self.runner.event_logger.log_node_scheduled(
+                    node_id=node._id,
+                    node_type=node.get_node_type(),
+                    attempt=1,  # TODO: track attempts properly
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to log NodeScheduled event: {e}")
+        
+        # Record start time for duration calculation
+        start_time = asyncio.get_event_loop().time()
+        
         try:
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
@@ -621,6 +636,21 @@ class NodeActor:
                 await self._run_streaming_output_batched_node()
             else:
                 await self._run_buffered_node()
+            
+            # Calculate duration
+            duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
+            
+            # Log NodeCompleted event
+            if self.runner.event_logger:
+                try:
+                    await self.runner.event_logger.log_node_completed(
+                        node_id=node._id,
+                        attempt=1,  # TODO: track attempts properly
+                        outputs={},  # Outputs are tracked separately in send_messages
+                        duration_ms=duration_ms,
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to log NodeCompleted event: {e}")
 
         except asyncio.CancelledError:
             self.logger.info(
@@ -645,6 +675,19 @@ class NodeActor:
                 node.get_node_type(),
                 e,
             )
+            
+            # Log NodeFailed event
+            if self.runner.event_logger:
+                try:
+                    await self.runner.event_logger.log_node_failed(
+                        node_id=node._id,
+                        attempt=1,  # TODO: track attempts properly
+                        error=str(e)[:1000],
+                        retryable=False,  # TODO: determine retryability
+                    )
+                except Exception as e2:
+                    self.logger.warning(f"Failed to log NodeFailed event: {e2}")
+            
             # Post error update and propagate; ensure EOS downstream
             try:
                 ctx.post_message(

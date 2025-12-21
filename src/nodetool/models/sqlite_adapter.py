@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import re
 import sqlite3
@@ -22,6 +23,58 @@ from nodetool.models.condition_builder import (
 from .database_adapter import DatabaseAdapter
 
 log = get_logger(__name__)
+
+
+class SafeJSONEncoder(json.JSONEncoder):
+    """
+    Custom JSON encoder that handles bytes and other non-serializable types.
+
+    Bytes are encoded as base64 strings with a special marker for decoding.
+    Other non-serializable types are converted to their string representation.
+    """
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, bytes):
+            # Encode bytes as base64 with a marker for decoding
+            return {"__bytes__": base64.b64encode(obj).decode("ascii")}
+        if isinstance(obj, datetime):
+            return {"__datetime__": obj.isoformat()}
+        if isinstance(obj, set):
+            return {"__set__": list(obj)}
+        # For any other non-serializable type, convert to string
+        try:
+            return super().default(obj)
+        except TypeError:
+            return {"__repr__": repr(obj)}
+
+
+def _decode_special_types(obj: Any) -> Any:
+    """
+    Object hook for json.loads to decode special types encoded by SafeJSONEncoder.
+    """
+    if isinstance(obj, dict):
+        if "__bytes__" in obj and len(obj) == 1:
+            return base64.b64decode(obj["__bytes__"])
+        if "__datetime__" in obj and len(obj) == 1:
+            return datetime.fromisoformat(obj["__datetime__"])
+        if "__set__" in obj and len(obj) == 1:
+            return set(obj["__set__"])
+        # __repr__ values are left as-is (they're informational)
+    return obj
+
+
+def safe_json_dumps(value: Any) -> str:
+    """
+    Serialize a value to JSON, handling bytes and other non-serializable types.
+    """
+    return json.dumps(value, cls=SafeJSONEncoder)
+
+
+def safe_json_loads(value: str) -> Any:
+    """
+    Deserialize JSON, decoding special types encoded by safe_json_dumps.
+    """
+    return json.loads(value, object_hook=_decode_special_types)
 
 
 async def retry_on_locked(func, max_retries=10, initial_delay=0.01):
@@ -88,18 +141,18 @@ def convert_to_sqlite_format(
         if len(args) == 1:
             return convert_to_sqlite_format(value, args[0])
         else:
-            return json.dumps(value)
+            return safe_json_dumps(value)
 
     if py_type in (str, int, float):
         return value
     elif py_type is set or origin is set:
-        return json.dumps(list(value))
+        return safe_json_dumps(list(value))
     elif py_type in (dict, list) or origin in (dict, list):
-        return json.dumps(value)
+        return safe_json_dumps(value)
     elif py_type is bytes:
         return value
     elif py_type is Any:
-        return json.dumps(value)
+        return safe_json_dumps(value)
     elif py_type is datetime:
         return value.isoformat()
     elif py_type is bool or (isinstance(py_type, type) and issubclass(py_type, bool)):
@@ -128,16 +181,16 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
         if len(args) == 1:
             return convert_from_sqlite_format(value, args[0])
         else:
-            return json.loads(value)
+            return safe_json_loads(value)
 
     if py_type in (str, int, float):
         return value
     elif py_type is Any:
-        return json.loads(value)
+        return safe_json_loads(value)
     elif py_type is set or origin is set:
-        return set(json.loads(value))
+        return set(safe_json_loads(value))
     elif py_type in (list, dict) or origin in (list, dict):
-        return json.loads(value)
+        return safe_json_loads(value)
     elif py_type is bytes:
         return value
     elif py_type is datetime:
@@ -192,7 +245,12 @@ def get_sqlite_type(field_type: Any) -> str:
         return get_sqlite_type(_type)
 
     # Direct mapping of Python types to SQLite types
-    if field_type is str or field_type is Any or field_type in (list, dict, set) or origin in (list, dict, set):
+    if (
+        field_type is str
+        or field_type is Any
+        or field_type in (list, dict, set)
+        or origin in (list, dict, set)
+    ):
         return "TEXT"
     elif field_type is int or field_type is bool:  # bool is stored as INTEGER (0 or 1)
         return "INTEGER"
@@ -311,7 +369,9 @@ class SQLiteAdapter(DatabaseAdapter):
         effective_timeout = timeout
         if effective_timeout is None and self.query_timeout is not None:
             effective_timeout = self.query_timeout
-        if self._is_shutting_down and (effective_timeout is None or effective_timeout > 5.0):
+        if self._is_shutting_down and (
+            effective_timeout is None or effective_timeout > 5.0
+        ):
             effective_timeout = 5.0
 
         if effective_timeout is None:
@@ -483,7 +543,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
         if fields_to_remove:
             # Create new table with desired schema
-            log.warning(f"Recreating table {self.table_name} to remove fields: {fields_to_remove}")
+            log.warning(
+                f"Recreating table {self.table_name} to remove fields: {fields_to_remove}"
+            )
             await self.create_table(suffix="_new")
 
             # Copy data
@@ -528,9 +590,7 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
 
         async def _save():
-            await self._execute_with_timeout(
-                self.connection.execute(query, values)
-            )
+            await self._execute_with_timeout(self.connection.execute(query, values))
             await self._execute_with_timeout(self.connection.commit())
 
         await retry_on_locked(_save)
@@ -627,11 +687,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if order_by is None:
             order_by = f"{self.table_name}.{pk}"
 
-        order_by = (
-            f"{order_by} DESC"
-            if reverse
-            else f"{order_by} ASC"
-        )
+        order_by = f"{order_by} DESC" if reverse else f"{order_by} ASC"
 
         if columns:
             cols = ", ".join([f"{self.table_name}.{col}" for col in columns])
@@ -653,7 +709,9 @@ class SQLiteAdapter(DatabaseAdapter):
                 self.connection.execute(query, params)
             )
             rows = await self._execute_with_timeout(cursor.fetchall())
-            res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
+            res = [
+                convert_from_sqlite_attributes(dict(row), self.fields) for row in rows
+            ]
 
             if len(res) <= limit:
                 return res, ""
@@ -681,6 +739,7 @@ class SQLiteAdapter(DatabaseAdapter):
             A list of dictionaries, where each dictionary represents a row
             returned by the query.
         """
+
         async def _execute():
             cursor = await self._execute_with_timeout(
                 self.connection.execute(sql, params or {})
