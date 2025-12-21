@@ -30,7 +30,10 @@ class RunProjection(DBModel):
 
     @classmethod
     def get_table_schema(cls):
-        return {"table_name": "run_projections"}
+        return {
+            "table_name": "run_projections",
+            "primary_key": "run_id",
+        }
 
     run_id: str = DBField(hash_key=True)
     status: str = DBField()  # running, completed, failed, cancelled

@@ -23,7 +23,10 @@ class RunLease(DBModel):
 
     @classmethod
     def get_table_schema(cls):
-        return {"table_name": "run_leases"}
+        return {
+            "table_name": "run_leases",
+            "primary_key": "run_id",
+        }
 
     run_id: str = DBField(hash_key=True)
     worker_id: str = DBField()
