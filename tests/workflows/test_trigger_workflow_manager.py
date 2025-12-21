@@ -28,7 +28,7 @@ def test_workflow_has_trigger_nodes_with_trigger():
         id="test-1",
         graph={
             "nodes": [
-                {"type": "nodetool.nodes.triggers.interval.IntervalTrigger"},
+                {"type": "triggers.interval.IntervalTrigger"},
                 {"type": "nodetool.output.TextOutput"},
             ],
             "edges": [],

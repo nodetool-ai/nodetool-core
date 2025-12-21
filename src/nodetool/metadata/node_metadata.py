@@ -46,35 +46,19 @@ class NodeMetadata(BaseModel):
     namespace: str = Field(description="Namespace of the node")
     node_type: str = Field(description="Fully qualified type of the node")
     layout: str = Field(default="default", description="UI Layout of the node")
-    properties: list[Property] = Field(
-        default_factory=list, description="Properties of the node"
-    )
-    outputs: list[OutputSlot] = Field(
-        default_factory=list, description="Outputs of the node"
-    )
-    the_model_info: dict[str, Any] = Field(
-        default_factory=dict, description="HF Model info for the node"
-    )
-    recommended_models: list[UnifiedModel] = Field(
-        default_factory=list, description="Recommended models for the node"
-    )
-    basic_fields: list[str] = Field(
-        default_factory=list, description="Basic fields of the node"
-    )
+    properties: list[Property] = Field(default_factory=list, description="Properties of the node")
+    outputs: list[OutputSlot] = Field(default_factory=list, description="Outputs of the node")
+    the_model_info: dict[str, Any] = Field(default_factory=dict, description="HF Model info for the node")
+    recommended_models: list[UnifiedModel] = Field(default_factory=list, description="Recommended models for the node")
+    basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
-    is_streaming_output: bool = Field(
-        default=False, description="Whether the node can stream output"
-    )
-    expose_as_tool: bool = Field(
-        default=False, description="Whether the node is exposed as a tool"
-    )
+    is_streaming_output: bool = Field(default=False, description="Whether the node can stream output")
+    expose_as_tool: bool = Field(default=False, description="Whether the node is exposed as a tool")
     supports_dynamic_outputs: bool = Field(
         default=False,
         description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
     )
-    model_packs: list["ModelPack"] = Field(
-        default_factory=list, description="Model packs associated with this node"
-    )
+    model_packs: list["ModelPack"] = Field(default_factory=list, description="Model packs associated with this node")
 
 
 class ExampleMetadata(BaseModel):
@@ -90,33 +74,19 @@ class PackageModel(BaseModel):
     """Metadata model for a node package."""
 
     name: str = Field(description="Unique name of the package")
-    description: str = Field(
-        description="Description of the package and its functionality"
-    )
+    description: str = Field(description="Description of the package and its functionality")
     version: str = Field(description="Version of the package (semver format)")
     authors: list[str] = Field(description="Authors of the package")
-    namespaces: list[str] = Field(
-        default_factory=list, description="Namespaces provided by this package"
-    )
-    repo_id: str | None = Field(
-        default=None, description="Repository ID in the format <owner>/<project>"
-    )
-    nodes: List[NodeMetadata] | None = Field(
-        default_factory=list, description="List of nodes provided by this package"
-    )
-    git_hash: str | None = Field(
-        default=None, description="Git commit hash of the package"
-    )
-    assets: List[AssetInfo] | None = Field(
-        default_factory=list, description="List of assets provided by this package"
-    )
+    namespaces: list[str] = Field(default_factory=list, description="Namespaces provided by this package")
+    repo_id: str | None = Field(default=None, description="Repository ID in the format <owner>/<project>")
+    nodes: List[NodeMetadata] | None = Field(default_factory=list, description="List of nodes provided by this package")
+    git_hash: str | None = Field(default=None, description="Git commit hash of the package")
+    assets: List[AssetInfo] | None = Field(default_factory=list, description="List of assets provided by this package")
     examples: List[ExampleMetadata] | None = Field(
         default_factory=list, description="List of examples provided by this package"
     )
 
-    source_folder: str | None = Field(
-        default=None, description="Source folder of the package"
-    )
+    source_folder: str | None = Field(default=None, description="Source folder of the package")
 
 
 class EnumEncoder(json.JSONEncoder):
@@ -148,9 +118,7 @@ def get_submodules(package_name: str, verbose: bool = False) -> List[str]:
             return [package_name]
 
         submodules = [package_name]
-        for _, name, is_pkg in pkgutil.iter_modules(
-            package.__path__, package.__name__ + "."
-        ):
+        for _, name, is_pkg in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
             if verbose:
                 logger.debug(f"Found submodule: {name}")
             if is_pkg:
@@ -164,9 +132,7 @@ def get_submodules(package_name: str, verbose: bool = False) -> List[str]:
         return []
 
 
-def get_node_classes_from_module(
-    module_name: str, verbose: bool = False
-) -> List[type[BaseNode]]:
+def get_node_classes_from_module(module_name: str, verbose: bool = False) -> List[type[BaseNode]]:
     """
     Find all classes in the given module that derive from BaseNode.
 
@@ -183,13 +149,14 @@ def get_node_classes_from_module(
     # Find all BaseNode subclasses in the module
     node_classes = []
     for _name, obj in inspect.getmembers(module):
+        if inspect.isclass(obj):
+            has_abstract_method = any(
+                getattr(member, "__isabstractmethod__", False) for _, member in inspect.getmembers(obj)
+            )
+            if has_abstract_method:
+                continue
         # Check if it's a class and a subclass of BaseNode (but not BaseNode itself)
-        if (
-            inspect.isclass(obj)
-            and issubclass(obj, BaseNode)
-            and obj is not BaseNode
-            and obj.__module__ == module_name
-        ):
+        if inspect.isclass(obj) and issubclass(obj, BaseNode) and obj is not BaseNode and obj.__module__ == module_name:
             node_classes.append(obj)
             if verbose:
                 logger.debug(f"Found node class: {obj.__name__} in {module_name}")
@@ -197,9 +164,7 @@ def get_node_classes_from_module(
     return node_classes
 
 
-def get_node_classes_from_namespace(
-    namespace: str, verbose: bool = False
-) -> List[type[BaseNode]]:
+def get_node_classes_from_namespace(namespace: str, verbose: bool = False) -> List[type[BaseNode]]:
     """
     Find all classes in the given namespace and its submodules that derive from BaseNode.
 

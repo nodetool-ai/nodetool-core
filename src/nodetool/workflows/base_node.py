@@ -106,9 +106,9 @@ from typing import (
     Type,
     TypedDict,
     TypeVar,
-    get_type_hints,
     get_args,
     get_origin,
+    get_type_hints,
 )
 from weakref import WeakKeyDictionary
 
@@ -166,7 +166,6 @@ log = get_logger(__name__)
 if TYPE_CHECKING:
     from .io import NodeInputs, NodeOutputs
     from .property import Property
-
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -259,9 +258,7 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
         add_comfy_classname(node_class)
 
 
-def type_metadata(
-    python_type: Type | UnionType, allow_optional: bool = True
-) -> TypeMetadata:
+def type_metadata(python_type: Type | UnionType, allow_optional: bool = True) -> TypeMetadata:
     """Generate `TypeMetadata` for a given Python type.
 
     Supports basic types, lists, tuples, dicts, optional types, unions,
@@ -292,29 +289,17 @@ def type_metadata(
     elif is_list_type(python_type):
         return TypeMetadata(
             type="list",
-            type_args=(
-                [type_metadata(python_type.__args__[0])]
-                if hasattr(python_type, "__args__")
-                else []
-            ),  # type: ignore
+            type_args=([type_metadata(python_type.__args__[0])] if hasattr(python_type, "__args__") else []),  # type: ignore
         )
     elif is_tuple_type(python_type):
         return TypeMetadata(
             type="tuple",
-            type_args=(
-                [type_metadata(t) for t in python_type.__args__]
-                if hasattr(python_type, "__args__")
-                else []
-            ),  # type: ignore
+            type_args=([type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else []),  # type: ignore
         )
     elif is_dict_type(python_type):
         return TypeMetadata(
             type="dict",
-            type_args=(
-                [type_metadata(t) for t in python_type.__args__]
-                if hasattr(python_type, "__args__")
-                else []
-            ),  # type: ignore
+            type_args=([type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else []),  # type: ignore
         )
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
@@ -325,11 +310,7 @@ def type_metadata(
     elif is_union_type(python_type):
         return TypeMetadata(
             type="union",
-            type_args=(
-                [type_metadata(t) for t in python_type.__args__]
-                if hasattr(python_type, "__args__")
-                else []
-            ),  # type: ignore
+            type_args=([type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else []),  # type: ignore
         )
     elif is_enum_type(python_type):
         assert not isinstance(python_type, UnionType)
@@ -343,9 +324,7 @@ def type_metadata(
             values=[e.value for e in python_type.__members__.values()],  # type: ignore
         )
     else:
-        raise ValueError(
-            f"Unknown type: {python_type}. Types must derive from BaseType"
-        )
+        raise ValueError(f"Unknown type: {python_type}. Types must derive from BaseType")
 
 
 T = TypeVar("T")
@@ -417,6 +396,7 @@ class BaseNode(BaseModel):
     _supports_dynamic_outputs: ClassVar[bool] = False
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
+    _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
 
     def __init__(
         self,
@@ -432,9 +412,7 @@ class BaseNode(BaseModel):
         self._id = id
         self._parent_id = parent_id
         self._ui_properties = {} if ui_properties is None else dict(ui_properties)
-        self._dynamic_properties = (
-            {} if dynamic_properties is None else dict(dynamic_properties)
-        )
+        self._dynamic_properties = {} if dynamic_properties is None else dict(dynamic_properties)
         self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
         self._sync_mode = sync_mode
         self._inbox = None
@@ -506,6 +484,11 @@ class BaseNode(BaseModel):
         if not self._inbox:
             raise RuntimeError("Inbox not attached to node; iter_input unavailable")
         async for item in self._inbox.iter_input(handle):
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception:
+                    pass
             yield item
 
     async def iter_any_input(self) -> AsyncIterator[tuple[str, Any]]:
@@ -518,6 +501,11 @@ class BaseNode(BaseModel):
         if not self._inbox:
             raise RuntimeError("Inbox not attached to node; iter_any_input unavailable")
         async for handle, item in self._inbox.iter_any():
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception:
+                    pass
             yield handle, item
 
     @classmethod
@@ -710,21 +698,20 @@ class BaseNode(BaseModel):
     @classmethod
     def get_model_packs(cls) -> list["ModelPack"]:
         """Return model packs for this node.
-        
+
         Model packs group related models (e.g., Flux checkpoint + CLIP + T5 + VAE)
         into a single downloadable unit with a clear title and description.
         Subclasses should override this to provide curated model bundles.
-        
+
         Returns:
             list[ModelPack]: List of model packs for this node.
         """
         from nodetool.types.model import ModelPack
+
         return []
 
     @classmethod
-    def unified_recommended_models(
-        cls, include_model_info: bool = False
-    ) -> list[UnifiedModel]:
+    def unified_recommended_models(cls, include_model_info: bool = False) -> list[UnifiedModel]:
         recommended_models = cls.get_recommended_models()
         if not recommended_models:
             return []
@@ -739,9 +726,7 @@ class BaseNode(BaseModel):
             return await unified_model(model, model_info=info)
 
         async def fetch_all_models():
-            return await asyncio.gather(
-                *(build_model(model) for model in recommended_models)
-            )
+            return await asyncio.gather(*(build_model(model) for model in recommended_models))
 
         try:
             asyncio.get_running_loop()
@@ -787,9 +772,7 @@ class BaseNode(BaseModel):
                 outputs=cls.outputs(),
                 the_model_info=cls.get_model_info(),
                 layout=cls.layout(),
-                recommended_models=cls.unified_recommended_models(
-                    include_model_info=include_model_info
-                ),
+                recommended_models=cls.unified_recommended_models(include_model_info=include_model_info),
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),
@@ -810,17 +793,13 @@ class BaseNode(BaseModel):
         try:
             return {
                 "type": "object",
-                "properties": {
-                    prop.name: prop.get_json_schema() for prop in cls.properties()
-                },
+                "properties": {prop.name: prop.get_json_schema() for prop in cls.properties()},
             }
         except Exception as e:
             log.error(f"Error getting JSON schema for {cls.__name__}: {e}")
             return {}
 
-    def assign_property(
-        self, name: str, value: Any, allow_undefined_properties: bool = True
-    ):
+    def assign_property(self, name: str, value: Any, allow_undefined_properties: bool = True):
         """
         Assign a value to a node property, performing type checking and conversion.
         If the property is dynamic, it will be added to the _dynamic_properties dictionary.
@@ -877,15 +856,9 @@ class BaseNode(BaseModel):
                                 converted = [subtype.model_validate(x) for x in value]
                             else:
                                 converted = value
-                        elif (
-                            isinstance(value, dict)
-                            and "type" in value
-                            and hasattr(python_type, "from_dict")
-                        ):
+                        elif isinstance(value, dict) and "type" in value and hasattr(python_type, "from_dict"):
                             converted = python_type.from_dict(value)
-                        elif isinstance(value, dict) and hasattr(
-                            python_type, "model_validate"
-                        ):
+                        elif isinstance(value, dict) and hasattr(python_type, "model_validate"):
                             converted = python_type.model_validate(value)
                         elif hasattr(python_type, "model_validate"):
                             converted = python_type.model_validate(value)
@@ -895,10 +868,7 @@ class BaseNode(BaseModel):
                         object.__setattr__(self, name, converted)
                         return None
                     except Exception as e:
-                        return (
-                            f"[{self.__class__.__name__}] Error converting value for "
-                            f"property `{name}`: {e}"
-                        )
+                        return f"[{self.__class__.__name__}] Error converting value for property `{name}`: {e}"
 
             if self._is_dynamic:
                 self._dynamic_properties[name] = value
@@ -922,20 +892,14 @@ class BaseNode(BaseModel):
                 v = python_type(value)
             elif prop.type.is_list_type() and len(type_args) == 1:
                 subtype = prop.type.type_args[0].get_python_type()
-                if hasattr(subtype, "from_dict") and all(
-                    isinstance(x, dict) and "type" in x for x in value
-                ):
+                if hasattr(subtype, "from_dict") and all(isinstance(x, dict) and "type" in x for x in value):
                     # Handle lists of dicts with 'type' field as BaseType instances
                     v = [subtype.from_dict(x) for x in value]
                 elif hasattr(subtype, "model_validate"):
                     v = [subtype.model_validate(x) for x in value]
                 else:
                     v = value
-            elif (
-                isinstance(value, dict)
-                and "type" in value
-                and hasattr(python_type, "from_dict")
-            ):
+            elif isinstance(value, dict) and "type" in value and hasattr(python_type, "from_dict"):
                 # Handle dicts with 'type' field as BaseType instances
                 v = python_type.from_dict(value)
             elif isinstance(value, dict) and hasattr(python_type, "model_validate"):
@@ -976,9 +940,7 @@ class BaseNode(BaseModel):
         elif self._is_dynamic and name in self._dynamic_properties:
             return self._dynamic_properties[name]
         else:
-            raise ValueError(
-                f"Property {name} does not exist in {self.__class__.__name__}: {self.node_properties()}"
-            )
+            raise ValueError(f"Property {name} does not exist in {self.__class__.__name__}: {self.node_properties()}")
 
     def set_node_properties(
         self,
@@ -1012,9 +974,7 @@ class BaseNode(BaseModel):
             error_msg = self.assign_property(name, value, allow_undefined_properties)
             if error_msg:
                 if not skip_errors:
-                    raise ValueError(
-                        f"Error setting property '{name}' on node '{self.id}': {error_msg}"
-                    )
+                    raise ValueError(f"Error setting property '{name}' on node '{self.id}': {error_msg}")
                 error_messages.append(error_msg)
 
         # Removed logging from here; caller will decide what to do with errors.
@@ -1116,9 +1076,7 @@ class BaseNode(BaseModel):
                 else:
                     props[p] = value
 
-        result_for_client = (
-            self.result_for_client(result) if result is not None else None
-        )
+        result_for_client = self.result_for_client(result) if result is not None else None
 
         if result_for_client:
             result_for_client = await context.normalize_output_value(result_for_client)
@@ -1160,6 +1118,7 @@ class BaseNode(BaseModel):
 
     def get_dynamic_properties(self):
         from .property import Property
+
         return {
             name: Property(
                 name=name,
@@ -1311,9 +1270,7 @@ class BaseNode(BaseModel):
 
         try:
             # if return_type is a TypedDict, return an OutputSlot for each field
-            if getattr(return_type, "__annotations__", None) and not issubclass(
-                return_type, BaseModel
-            ):
+            if getattr(return_type, "__annotations__", None) and not issubclass(return_type, BaseModel):
                 try:
                     annotations = get_type_hints(return_type)
                 except Exception:
@@ -1328,17 +1285,13 @@ class BaseNode(BaseModel):
                 ]
             return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
         except ValueError as e:
-            raise ValueError(
-                f"Invalid return type for node {cls.__name__}: {return_type} ({e})"
-            ) from e
+            raise ValueError(f"Invalid return type for node {cls.__name__}: {return_type} ({e})") from e
 
     def get_dynamic_output_slots(self) -> list[OutputSlot]:
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        return [
-            OutputSlot(type=tm, name=name) for name, tm in self._dynamic_outputs.items()
-        ]
+        return [OutputSlot(type=tm, name=name) for name, tm in self._dynamic_outputs.items()]
 
     def outputs_for_instance(self) -> list[OutputSlot]:
         """
@@ -1350,20 +1303,14 @@ class BaseNode(BaseModel):
         dynamic_unique = [o for o in dynamic_outputs if o.name not in existing]
         return [*class_outputs, *dynamic_unique]
 
-    def add_output(
-        self, name: str, python_type: Type | UnionType | None = None
-    ) -> None:
+    def add_output(self, name: str, python_type: Type | UnionType | None = None) -> None:
         """
         Add a dynamic output to this instance (only effective if node is dynamic).
         """
         if not self._is_dynamic:
             return
         try:
-            tm = (
-                type_metadata(python_type)
-                if python_type is not None
-                else TypeMetadata(type="any")
-            )
+            tm = type_metadata(python_type) if python_type is not None else TypeMetadata(type="any")
         except Exception:
             tm = TypeMetadata(type="any")
         self._dynamic_outputs[name] = tm
@@ -1397,15 +1344,13 @@ class BaseNode(BaseModel):
                 else " A type annotation could not be resolved."
             )
             raise NameError(
-                f"Failed to resolve type hints for node {cls.__name__} "
-                f"in {module_name} ({module_path}).{missing_hint}"
+                f"Failed to resolve type hints for node {cls.__name__} in {module_name} ({module_path}).{missing_hint}"
             ) from e
         except Exception as e:
             module_path = inspect.getsourcefile(cls) or "<unknown>"
             module_name = cls.__module__
             raise TypeError(
-                f"Failed to resolve type hints for node {cls.__name__} "
-                f"in {module_name} ({module_path}): {e}"
+                f"Failed to resolve type hints for node {cls.__name__} in {module_name} ({module_path}): {e}"
             ) from e
         super_types = {}
         for base in cls.__bases__:
@@ -1436,10 +1381,7 @@ class BaseNode(BaseModel):
         types = cls.field_types()
         fields = cls.inherited_fields()
         try:
-            return [
-                Property.from_field(name, type_metadata(types[name]), field)
-                for name, field in fields.items()
-            ]
+            return [Property.from_field(name, type_metadata(types[name]), field) for name, field in fields.items()]
         except Exception as e:
             raise ValueError(f"Failed to create properties for node {cls.__name__}: {e}") from e
 
@@ -1469,10 +1411,7 @@ class BaseNode(BaseModel):
 
         return_type = self.return_type()
 
-        if return_type and (
-            not getattr(return_type, "__annotations__", None)
-            or issubclass(return_type, BaseModel)
-        ):
+        if return_type and (not getattr(return_type, "__annotations__", None) or issubclass(return_type, BaseModel)):
             return {"output": output}
         else:
             return output
@@ -1578,9 +1517,7 @@ class BaseNode(BaseModel):
         """
         return None
 
-    async def run(
-        self, context: Any, inputs: "NodeInputs", outputs: "NodeOutputs"
-    ) -> None:
+    async def run(self, context: Any, inputs: "NodeInputs", outputs: "NodeOutputs") -> None:
         """
         Unified entry point for node execution.
 
@@ -1598,20 +1535,14 @@ class BaseNode(BaseModel):
             async for item in agen:
                 item_count += 1
                 if not isinstance(item, dict):
-                    raise TypeError(
-                        "Streaming nodes must yield dictionaries mapping output names to values."
-                    )
+                    raise TypeError("Streaming nodes must yield dictionaries mapping output names to values.")
 
                 for slot_name, value in item.items():
                     if not isinstance(slot_name, str):
-                        raise TypeError(
-                            "Streaming nodes must use string keys for output names."
-                        )
+                        raise TypeError("Streaming nodes must use string keys for output names.")
                     if value is not None:
                         await outputs.emit(slot_name, value)
-            log.debug(
-                f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}"
-            )
+            log.debug(f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}")
         else:
             # Buffered path: single call to process() and emit converted outputs
             log.debug(f"run() buffered mode: node={self.get_title()} ({self.id})")
@@ -1654,9 +1585,7 @@ class InputNode(BaseNode):
 
     name: str = Field("", description="The parameter name for the workflow.")
     value: Any = Field(None, description="The value of the input.")
-    description: str = Field(
-        "", description="The description of the input for the workflow."
-    )
+    description: str = Field("", description="The description of the input for the workflow.")
 
     @classmethod
     def get_basic_fields(cls):
@@ -1688,17 +1617,11 @@ class ToolResultNode(BaseNode):
             async for handle, value in self.iter_any_input():
                 result_payload = await context.normalize_output_value({handle: value})
                 yield {"result": result_payload}
-                context.post_message(
-                    ToolResultUpdate(node_id=self.id, result=result_payload)
-                )
+                context.post_message(ToolResultUpdate(node_id=self.id, result=result_payload))
         else:
-            result_payload = await context.normalize_output_value(
-                self._dynamic_properties
-            )
+            result_payload = await context.normalize_output_value(self._dynamic_properties)
             yield {"result": result_payload}
-            context.post_message(
-                ToolResultUpdate(node_id=self.id, result=result_payload)
-            )
+            context.post_message(ToolResultUpdate(node_id=self.id, result=result_payload))
 
 
 class OutputNode(BaseNode):
@@ -1713,9 +1636,7 @@ class OutputNode(BaseNode):
 
     name: str = Field("", description="The parameter name for the workflow.")
     value: Any = Field(None, description="The value of the output.")
-    description: str = Field(
-        "", description="The description of the output for the workflow."
-    )
+    description: str = Field("", description="The description of the output for the workflow.")
 
     @classmethod
     def is_visible(cls):
@@ -1749,9 +1670,7 @@ class OutputNode(BaseNode):
         async for _handle, value in self.iter_any_input():
             yielded = True
             normalized = (
-                await context.normalize_output_value(value)
-                if hasattr(context, "normalize_output_value")
-                else value
+                await context.normalize_output_value(value) if hasattr(context, "normalize_output_value") else value
             )
             # For streaming, preserve per-item semantics but align naming to tests
             context.post_message(
@@ -1808,9 +1727,7 @@ class Comment(BaseNode):
 
     headline: str = Field("", description="The headline for this comment.")
     comment: Any = Field(default={}, description="The comment for this node.")
-    comment_color: str = Field(
-        default="#f0f0f0", description="The color for the comment."
-    )
+    comment_color: str = Field(default="#f0f0f0", description="The color for the comment.")
     _visible: bool = False
 
     @classmethod
@@ -1889,9 +1806,7 @@ def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
                 full_node_type = node_type
                 try:
                     # Attempt to import the module
-                    module_path = "nodetool.nodes." + ".".join(
-                        full_node_type.split(".")[:-1]
-                    )
+                    module_path = "nodetool.nodes." + ".".join(full_node_type.split(".")[:-1])
                     if module_path:
                         importlib.import_module(module_path)
                         # Check if it's now registered

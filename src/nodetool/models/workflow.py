@@ -135,7 +135,8 @@ class Workflow(DBModel):
 
         for node in self.graph.get("nodes", []):
             node_type = node.get("type", "")
-            if node_type.startswith("nodetool.nodes.triggers."):
+            # Check if node type contains triggers namespace
+            if "triggers." in node_type:
                 return True
 
         return False

@@ -1,6 +1,6 @@
 import base64
-import json
 import enum
+import json
 from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
@@ -100,9 +100,7 @@ class BaseType(BaseModel):
         if type_name is None:
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
-            raise ValueError(
-                f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}"
-            )
+            raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
         return NameToType[type_name](**data)
 
 
@@ -161,11 +159,7 @@ class Datetime(BaseType):
             minute=self.minute,
             second=self.second,
             microsecond=self.microsecond,
-            tzinfo=(
-                timezone(timedelta(seconds=self.utc_offset), self.tzinfo)
-                if self.utc_offset
-                else UTC
-            ),
+            tzinfo=(timezone(timedelta(seconds=self.utc_offset), self.tzinfo) if self.utc_offset else UTC),
         )
 
     @staticmethod
@@ -382,9 +376,7 @@ class InferenceProvider(str, Enum):
 
 
 class InferenceProviderAudioClassificationModel(BaseType):
-    type: Literal["inference_provider_audio_classification_model"] = (
-        "inference_provider_audio_classification_model"
-    )
+    type: Literal["inference_provider_audio_classification_model"] = "inference_provider_audio_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
@@ -398,89 +390,67 @@ class InferenceProviderAutomaticSpeechRecognitionModel(BaseType):
 
 
 class InferenceProviderImageClassificationModel(BaseType):
-    type: Literal["inference_provider_image_classification_model"] = (
-        "inference_provider_image_classification_model"
-    )
+    type: Literal["inference_provider_image_classification_model"] = "inference_provider_image_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderImageToImageModel(BaseType):
-    type: Literal["inference_provider_image_to_image_model"] = (
-        "inference_provider_image_to_image_model"
-    )
+    type: Literal["inference_provider_image_to_image_model"] = "inference_provider_image_to_image_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderImageSegmentationModel(BaseType):
-    type: Literal["inference_provider_image_segmentation_model"] = (
-        "inference_provider_image_segmentation_model"
-    )
+    type: Literal["inference_provider_image_segmentation_model"] = "inference_provider_image_segmentation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextClassificationModel(BaseType):
-    type: Literal["inference_provider_text_classification_model"] = (
-        "inference_provider_text_classification_model"
-    )
+    type: Literal["inference_provider_text_classification_model"] = "inference_provider_text_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderSummarizationModel(BaseType):
-    type: Literal["inference_provider_summarization_model"] = (
-        "inference_provider_summarization_model"
-    )
+    type: Literal["inference_provider_summarization_model"] = "inference_provider_summarization_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToImageModel(BaseType):
-    type: Literal["inference_provider_text_to_image_model"] = (
-        "inference_provider_text_to_image_model"
-    )
+    type: Literal["inference_provider_text_to_image_model"] = "inference_provider_text_to_image_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTranslationModel(BaseType):
-    type: Literal["inference_provider_translation_model"] = (
-        "inference_provider_translation_model"
-    )
+    type: Literal["inference_provider_translation_model"] = "inference_provider_translation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToTextModel(BaseType):
-    type: Literal["inference_provider_text_to_text_model"] = (
-        "inference_provider_text_to_text_model"
-    )
+    type: Literal["inference_provider_text_to_text_model"] = "inference_provider_text_to_text_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToSpeechModel(BaseType):
-    type: Literal["inference_provider_text_to_speech_model"] = (
-        "inference_provider_text_to_speech_model"
-    )
+    type: Literal["inference_provider_text_to_speech_model"] = "inference_provider_text_to_speech_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToAudioModel(BaseType):
-    type: Literal["inference_provider_text_to_audio_model"] = (
-        "inference_provider_text_to_audio_model"
-    )
+    type: Literal["inference_provider_text_to_audio_model"] = "inference_provider_text_to_audio_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextGenerationModel(BaseType):
-    type: Literal["inference_provider_text_generation_model"] = (
-        "inference_provider_text_generation_model"
-    )
+    type: Literal["inference_provider_text_generation_model"] = "inference_provider_text_generation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
@@ -657,9 +627,7 @@ class HFStableDiffusionXL(HuggingFaceModel):
 
 
 class HFStableDiffusionXLCheckpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_xl_checkpoint"] = (
-        "hf.stable_diffusion_xl_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_xl_checkpoint"] = "hf.stable_diffusion_xl_checkpoint"
 
 
 class HFStableDiffusion3(HuggingFaceModel):
@@ -667,9 +635,7 @@ class HFStableDiffusion3(HuggingFaceModel):
 
 
 class HFStableDiffusion3Checkpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_3_checkpoint"] = (
-        "hf.stable_diffusion_3_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_3_checkpoint"] = "hf.stable_diffusion_3_checkpoint"
 
 
 class HFStableDiffusionXLRefiner(HuggingFaceModel):
@@ -677,9 +643,7 @@ class HFStableDiffusionXLRefiner(HuggingFaceModel):
 
 
 class HFStableDiffusionXLRefinerCheckpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_xl_refiner_checkpoint"] = (
-        "hf.stable_diffusion_xl_refiner_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_xl_refiner_checkpoint"] = "hf.stable_diffusion_xl_refiner_checkpoint"
 
 
 class HFFlux(HuggingFaceModel):
@@ -799,9 +763,7 @@ class HFImageToVideo(HuggingFaceModel):
 
 
 class HFUnconditionalImageGeneration(HuggingFaceModel):
-    type: Literal["hf.unconditional_image_generation"] = (
-        "hf.unconditional_image_generation"
-    )
+    type: Literal["hf.unconditional_image_generation"] = "hf.unconditional_image_generation"
 
 
 class HFUnet(HuggingFaceModel):
@@ -818,6 +780,7 @@ class HFCLIP(HuggingFaceModel):
 
 class HFT5(HuggingFaceModel):
     type: Literal["hf.t5"] = "hf.t5"
+
 
 class HFQwenVL(HuggingFaceModel):
     type: Literal["hf.qwen_vl"] = "hf.qwen_vl"
@@ -836,9 +799,7 @@ class HFTextToVideo(HuggingFaceModel):
 
 
 class HFZeroShotImageClassification(HuggingFaceModel):
-    type: Literal["hf.zero_shot_image_classification"] = (
-        "hf.zero_shot_image_classification"
-    )
+    type: Literal["hf.zero_shot_image_classification"] = "hf.zero_shot_image_classification"
 
 
 class HFMaskGeneration(HuggingFaceModel):
@@ -938,9 +899,7 @@ class HFAudioClassification(HuggingFaceModel):
 
 
 class HFZeroShotAudioClassification(HuggingFaceModel):
-    type: Literal["hf.zero_shot_audio_classification"] = (
-        "hf.zero_shot_audio_classification"
-    )
+    type: Literal["hf.zero_shot_audio_classification"] = "hf.zero_shot_audio_classification"
 
 
 class HFRealESRGAN(HuggingFaceModel):
@@ -1261,14 +1220,10 @@ class Step(BaseType):
 
     instructions: str = Field(description="Instructions for the step to execute")
     logs: list[LogEntry] = Field(default=[], description="The logs of the step")
-    completed: bool = Field(
-        default=False, description="Whether the step is completed"
-    )
+    completed: bool = Field(default=False, description="Whether the step is completed")
     start_time: int = Field(default=0, description="The start time of the step")
     end_time: int = Field(default=0, description="The end time of the step")
-    depends_on: list[str] = Field(
-        default=[], description="The IDs of steps this step depends on"
-    )
+    depends_on: list[str] = Field(default=[], description="The IDs of steps this step depends on")
     tools: list[str] | None = Field(
         default=None,
         description="Optional list of allowed tool names for this step (None = no restriction).",
@@ -1285,12 +1240,8 @@ class Step(BaseType):
     def to_markdown(self) -> str:
         """Convert the step to markdown format."""
         checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
-        deps_str = (
-            f" (depends on {', '.join(self.depends_on)})" if self.depends_on else ""
-        )
-        output_schema_str = (
-            f" (output schema: {self.output_schema})" if self.output_schema else ""
-        )
+        deps_str = f" (depends on {', '.join(self.depends_on)})" if self.depends_on else ""
+        output_schema_str = f" (output schema: {self.output_schema})" if self.output_schema else ""
         return f"- {checkbox} {self.instructions}{deps_str}{output_schema_str}"
 
     def is_running(self) -> bool:
@@ -1319,12 +1270,8 @@ class Task(BaseType):
     type: Literal["task"] = "task"
 
     title: str = Field(default="", description="The title of the task")
-    description: str = Field(
-        default="", description="A description of the task, not used for execution"
-    )
-    steps: list[Step] = Field(
-        default=[], description="The steps of the task, a list of step IDs"
-    )
+    description: str = Field(default="", description="A description of the task, not used for execution")
+    steps: list[Step] = Field(default=[], description="The steps of the task, a list of step IDs")
 
     def is_completed(self) -> bool:
         """Returns True if all steps are marked as completed."""
@@ -1459,9 +1406,7 @@ class NPArray(BaseType):
 
     @staticmethod
     def from_numpy(arr: np.ndarray, **kwargs):
-        return NPArray(
-            value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs
-        )
+        return NPArray(value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs)
 
     @staticmethod
     def from_list(arr: list, **_kwargs):
@@ -1477,13 +1422,7 @@ def to_numpy(num: float | int | NPArray) -> np.ndarray:
         raise ValueError()
 
 
-ColumnType = (
-    Literal["int"]
-    | Literal["float"]
-    | Literal["datetime"]
-    | Literal["string"]
-    | Literal["object"]
-)
+ColumnType = Literal["int"] | Literal["float"] | Literal["datetime"] | Literal["string"] | Literal["object"]
 
 
 class ColumnDef(BaseModel):
@@ -1652,11 +1591,7 @@ class MessageDocumentContent(BaseModel):
 
 
 MessageContent = (
-    MessageTextContent
-    | MessageImageContent
-    | MessageAudioContent
-    | MessageVideoContent
-    | MessageDocumentContent
+    MessageTextContent | MessageImageContent | MessageAudioContent | MessageVideoContent | MessageDocumentContent
 )
 
 
@@ -2046,19 +1981,11 @@ class PlotlySeries(BaseType):
         default=None,
         description="Column name for y-axis (optional for some charts like histogram)",
     )
-    color: str | None = Field(
-        default=None, description="Column name for color encoding"
-    )
+    color: str | None = Field(default=None, description="Column name for color encoding")
     size: str | None = Field(default=None, description="Column name for size encoding")
-    symbol: str | None = Field(
-        default=None, description="Column name for symbol encoding"
-    )
-    line_dash: str | None = Field(
-        default=None, description="Column name for line dash pattern encoding"
-    )
-    chart_type: str = Field(
-        description="The type of chart to create (scatter, line, bar, histogram, box, violin)"
-    )
+    symbol: str | None = Field(default=None, description="Column name for symbol encoding")
+    line_dash: str | None = Field(default=None, description="Column name for line dash pattern encoding")
+    chart_type: str = Field(description="The type of chart to create (scatter, line, bar, histogram, box, violin)")
 
 
 class PlotlyConfig(BaseType):

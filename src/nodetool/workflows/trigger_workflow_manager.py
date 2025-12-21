@@ -40,7 +40,7 @@ def workflow_has_trigger_nodes(workflow: WorkflowModel) -> bool:
     for node in workflow.graph.get("nodes", []):
         node_type = node.get("type", "")
         # Check if the node type is a trigger node
-        if node_type.startswith("nodetool.nodes.triggers."):
+        if "triggers." in node_type:
             return True
 
     return False
