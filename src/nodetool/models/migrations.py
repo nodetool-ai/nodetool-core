@@ -30,6 +30,12 @@ def get_all_models() -> list[Type]:
     from nodetool.models.secret import Secret
     from nodetool.models.thread import Thread
     from nodetool.models.workflow import Workflow
+    from nodetool.models.workflow_execution_state import (
+        IndexedWorkflowExecutionState,
+        IndexedNodeExecutionState,
+        IndexedEdgeState,
+        IndexedInputQueueState,
+    )
 
     # Order matters: migrations run in this order to handle foreign keys
     return [
@@ -40,6 +46,11 @@ def get_all_models() -> list[Type]:
         Job,
         Prediction,
         Secret,
+        # Workflow execution state models (depend on Job)
+        IndexedWorkflowExecutionState,
+        IndexedNodeExecutionState,
+        IndexedEdgeState,
+        IndexedInputQueueState,
     ]
 
 

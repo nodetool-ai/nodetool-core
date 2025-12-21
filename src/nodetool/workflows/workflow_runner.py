@@ -195,6 +195,10 @@ class WorkflowRunner:
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
+        # Checkpoint manager for resumable workflows
+        self._checkpoint_manager: Optional[Any] = None  # CheckpointManager instance
+        self._actor_tasks: dict[str, asyncio.Task] = {}  # Track actor tasks for cancellation
+        self._pause_requested: bool = False
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (
@@ -548,6 +552,21 @@ class WorkflowRunner:
 
         with self.torch_context(context):
             try:
+                # Create checkpoint state if checkpointing is enabled
+                if self._checkpoint_manager and request.graph:
+                    workflow_id = getattr(request, "workflow_id", "")
+                    user_id = getattr(request, "user_id", "")
+                    await self._checkpoint_manager.create_execution_state(
+                        job_id=self.job_id,
+                        workflow_id=workflow_id,
+                        user_id=user_id,
+                        graph=request.graph.model_dump(),
+                        params=request.params or {},
+                        device=self.device,
+                        disable_caching=self.disable_caching,
+                        buffer_limit=self.buffer_limit,
+                    )
+                
                 if request.params:
                     for key, value in request.params.items():
                         if key not in input_nodes:
@@ -560,6 +579,11 @@ class WorkflowRunner:
                     await self.validate_graph(context, graph)
                 if initialize_graph:
                     await self.initialize_graph(context, graph)
+                
+                # Save initial checkpoint after initialization
+                if self._checkpoint_manager:
+                    await self.save_checkpoint(reason="initialization")
+                
                 # Start input dispatcher to consume queued input events and route to inboxes
                 # Capture the runner's event loop for thread-safe enqueues
                 try:
@@ -648,6 +672,14 @@ class WorkflowRunner:
                 )
                 log.debug(f"Exception caught in WorkflowRunner.run: {e}", exc_info=True)
 
+                # Save checkpoint on error
+                if self._checkpoint_manager:
+                    try:
+                        await self.save_checkpoint(reason="error")
+                        await self._checkpoint_manager.mark_error(error_message_for_job_update)
+                    except Exception as checkpoint_error:
+                        log.error(f"Failed to save error checkpoint: {checkpoint_error}")
+
                 # Specific handling for OOM error message, but status is always error
                 if self._torch_support.is_cuda_oom_exception(e):
                     error_message_for_job_update = f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
@@ -705,6 +737,13 @@ class WorkflowRunner:
             # This part is reached ONLY IF no exception propagated from the try-except block.
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
+                # Mark as completed in checkpoint
+                if self._checkpoint_manager:
+                    try:
+                        await self._checkpoint_manager.mark_completed()
+                    except Exception as checkpoint_error:
+                        log.error(f"Failed to mark workflow as completed: {checkpoint_error}")
+                
                 total_time = time.time() - start_time
                 log.info(
                     f"Job {self.job_id} completed successfully (post-try-finally processing)"
@@ -943,13 +982,25 @@ class WorkflowRunner:
             except Exception:
                 pass
             actor = NodeActor(self, node, context, inbox)
-            tasks.append(asyncio.create_task(actor.run()))
+            task = asyncio.create_task(actor.run())
+            tasks.append(task)
+            # Track actor task for pause/resume support
+            self._actor_tasks[node._id] = task
+        
         # Wait for all, propagate first error if any
         results = await asyncio.gather(*tasks, return_exceptions=True)
         first_error: Exception | None = None
         for r in results:
             if isinstance(r, Exception) and first_error is None:
                 first_error = r
+        
+        # Save checkpoint after processing completes or errors
+        if self._checkpoint_manager and context:
+            try:
+                await self.save_checkpoint(reason="completion")
+            except Exception as e:
+                log.error(f"Failed to save final checkpoint: {e}")
+        
         if first_error is not None:
             raise first_error
 
@@ -1052,3 +1103,281 @@ class WorkflowRunner:
             f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}"
         )
         return await self._torch_support.process_with_gpu(self, context, node, retries)
+
+    # ============================================================================
+    # Resumable Workflow Support - Pause, Checkpoint, and Resume
+    # ============================================================================
+
+    def enable_checkpointing(
+        self,
+        workflow_execution_id: str | None = None,
+    ) -> None:
+        """
+        Enable checkpointing for this workflow execution.
+        
+        This must be called before starting the workflow if you want to enable
+        pause/resume functionality.
+        
+        Args:
+            workflow_execution_id: Optional ID of existing execution state to resume.
+                                  If None, a new execution state will be created.
+        """
+        from nodetool.workflows.checkpoint_manager import CheckpointManager
+        
+        self._checkpoint_manager = CheckpointManager(workflow_execution_id)
+        log.info(
+            f"Checkpointing enabled for job {self.job_id} "
+            f"(execution_id: {workflow_execution_id})"
+        )
+
+    async def pause_workflow(self) -> None:
+        """
+        Pause the workflow execution by cancelling all running actors.
+        
+        The workflow state will be checkpointed before pausing, allowing
+        it to be resumed later from the current point.
+        
+        This is a graceful pause that waits for actors to finish their
+        current operations.
+        """
+        if self._checkpoint_manager is None:
+            raise RuntimeError(
+                "Checkpointing must be enabled before pausing. "
+                "Call enable_checkpointing() first."
+            )
+
+        log.info(f"Pausing workflow execution for job {self.job_id}")
+        
+        # Set pause flag to prevent new work from starting
+        self._pause_requested = True
+        
+        # Save checkpoint before pausing
+        if self.context:
+            await self._checkpoint_manager.save_checkpoint(
+                self, self.context, reason="pause"
+            )
+        
+        # Cancel all running actor tasks
+        for node_id, task in self._actor_tasks.items():
+            if not task.done():
+                log.debug(f"Cancelling actor task for node {node_id}")
+                task.cancel()
+        
+        # Wait for tasks to complete cancellation (with timeout)
+        if self._actor_tasks:
+            await asyncio.gather(*self._actor_tasks.values(), return_exceptions=True)
+        
+        # Mark as paused in database
+        await self._checkpoint_manager.mark_paused()
+        
+        self.status = "paused"
+        log.info(f"Workflow execution paused for job {self.job_id}")
+
+    async def save_checkpoint(self, reason: str = "periodic") -> None:
+        """
+        Save a checkpoint of the current workflow state.
+        
+        This can be called at any time during execution to persist the
+        current state to the database.
+        
+        Args:
+            reason: Reason for checkpoint (e.g., 'periodic', 'pause', 'error')
+        """
+        if self._checkpoint_manager is None:
+            log.debug("Checkpointing not enabled, skipping checkpoint")
+            return
+        
+        if self.context is None:
+            log.warning("Cannot save checkpoint: context not initialized")
+            return
+        
+        await self._checkpoint_manager.save_checkpoint(self, self.context, reason)
+
+    async def resume_from_checkpoint(
+        self,
+        workflow_execution_id: str,
+        context: ProcessingContext,
+    ) -> None:
+        """
+        Resume a paused workflow from a saved checkpoint.
+        
+        This restores the complete workflow state from the database and
+        continues execution from where it left off.
+        
+        Args:
+            workflow_execution_id: ID of the saved workflow execution state
+            context: ProcessingContext to use for resumed execution
+        """
+        from nodetool.workflows.checkpoint_manager import CheckpointManager
+        
+        log.info(
+            f"Resuming workflow execution {workflow_execution_id} for job {self.job_id}"
+        )
+        
+        # Load execution state from database
+        (
+            execution_state,
+            node_states,
+            edge_states,
+            input_queue_state,
+        ) = await CheckpointManager.load_execution_state(workflow_execution_id)
+        
+        if execution_state is None:
+            raise ValueError(
+                f"Workflow execution state not found: {workflow_execution_id}"
+            )
+        
+        # Restore runner configuration
+        self.device = execution_state.device
+        self.disable_caching = execution_state.disable_caching
+        self.buffer_limit = execution_state.buffer_limit
+        
+        # Restore graph from saved state
+        from nodetool.workflows.graph import Graph
+        
+        graph = Graph.from_dict(
+            execution_state.graph,
+            skip_errors=False,
+            allow_undefined_properties=True,
+        )
+        context.graph = graph
+        self.context = context
+        context.device = self.device
+        
+        # Restore node states
+        await self._restore_node_states(graph, node_states)
+        
+        # Restore edge/inbox states
+        self._initialize_inboxes(context, graph)
+        await self._restore_edge_states(edge_states)
+        
+        # Restore input queue state
+        if input_queue_state:
+            await self._restore_input_queue_state(input_queue_state)
+        
+        # Enable checkpointing for continued execution
+        self.enable_checkpointing(workflow_execution_id)
+        
+        # Update status
+        self.status = "running"
+        if self._checkpoint_manager:
+            execution_state = await self._checkpoint_manager._update_execution_state(
+                self, context
+            )
+        
+        log.info(
+            f"Workflow execution state restored for job {self.job_id}, "
+            f"ready to resume"
+        )
+
+    async def _restore_node_states(
+        self,
+        graph: Graph,
+        node_states: list[Any],  # list[IndexedNodeExecutionState]
+    ) -> None:
+        """
+        Restore node properties and states from saved checkpoint.
+        
+        Args:
+            graph: The workflow graph
+            node_states: List of saved node execution states
+        """
+        node_state_map = {state.node_id: state for state in node_states}
+        
+        for node in graph.nodes:
+            state = node_state_map.get(node._id)
+            if state is None:
+                continue
+            
+            # Restore node properties
+            for prop_name, prop_value in state.properties.items():
+                try:
+                    node.assign_property(prop_name, prop_value)
+                    log.debug(
+                        f"Restored property {prop_name}={prop_value} "
+                        f"for node {node._id}"
+                    )
+                except Exception as e:
+                    log.warning(
+                        f"Failed to restore property {prop_name} for node {node._id}: {e}"
+                    )
+            
+            # Mark nodes as initialized if they were initialized before
+            if state.initialized and hasattr(node, "_initialized"):
+                node._initialized = True
+
+    async def _restore_edge_states(
+        self,
+        edge_states: list[Any],  # list[IndexedEdgeState]
+    ) -> None:
+        """
+        Restore inbox buffer states and EOS markers from saved checkpoint.
+        
+        Args:
+            edge_states: List of saved edge states
+        """
+        for edge_state in edge_states:
+            inbox = self.node_inboxes.get(edge_state.target_node_id)
+            if inbox is None:
+                log.warning(
+                    f"No inbox found for target node {edge_state.target_node_id}, "
+                    f"skipping edge state restoration"
+                )
+                continue
+            
+            # Restore buffered values
+            target_handle = edge_state.target_handle
+            for value in edge_state.buffered_values:
+                try:
+                    # Use asyncio.create_task to avoid blocking
+                    asyncio.create_task(inbox.put(target_handle, value))
+                except Exception as e:
+                    log.warning(
+                        f"Failed to restore buffered value for edge {edge_state.edge_id}: {e}"
+                    )
+            
+            # Restore open upstream count
+            if edge_state.open_upstream_count > 0:
+                inbox._open_counts[target_handle] = edge_state.open_upstream_count
+            else:
+                # If no upstreams are open, mark as done
+                inbox._open_counts[target_handle] = 0
+            
+            # Restore message counter
+            if edge_state.edge_id:
+                self._edge_counters[edge_state.edge_id] = edge_state.message_count
+            
+            # Restore streaming flag
+            if edge_state.edge_id:
+                self._streaming_edges[edge_state.edge_id] = edge_state.is_streaming
+            
+            log.debug(
+                f"Restored edge state for {edge_state.edge_id}: "
+                f"{len(edge_state.buffered_values)} buffered values, "
+                f"{edge_state.open_upstream_count} open upstreams"
+            )
+
+    async def _restore_input_queue_state(
+        self,
+        input_queue_state: Any,  # IndexedInputQueueState
+    ) -> None:
+        """
+        Restore input queue state for streaming inputs.
+        
+        Args:
+            input_queue_state: Saved input queue state
+        """
+        # Re-enqueue any pending input events
+        for event in input_queue_state.pending_events:
+            try:
+                if self._input_queue:
+                    await self._input_queue.put(event)
+            except Exception as e:
+                log.warning(
+                    f"Failed to restore input event {event}: {e}"
+                )
+        
+        log.debug(
+            f"Restored input queue state: "
+            f"{len(input_queue_state.pending_events)} pending events"
+        )
