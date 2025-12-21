@@ -116,10 +116,6 @@ from pydantic import BaseModel, Field, PrivateAttr
 from pydantic.fields import FieldInfo
 
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import (
-    fetch_model_info,
-    unified_model,
-)
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import (
     is_assignable,
@@ -714,6 +710,11 @@ class BaseNode(BaseModel):
 
     @classmethod
     def unified_recommended_models(cls, include_model_info: bool = False) -> list[UnifiedModel]:
+        from nodetool.integrations.huggingface.huggingface_models import (
+            fetch_model_info,
+            unified_model,
+        )
+
         recommended_models = cls.get_recommended_models()
         if not recommended_models:
             return []
