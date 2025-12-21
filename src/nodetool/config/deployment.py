@@ -215,21 +215,21 @@ class SelfHostedDeployment(BaseModel):
     state: SelfHostedState = Field(default_factory=SelfHostedState)
 
     @model_validator(mode="after")
-    def _ensure_proxy(cls, values: "SelfHostedDeployment") -> "SelfHostedDeployment":
+    def _ensure_proxy(self) -> "SelfHostedDeployment":
         """Provide a minimal proxy specification when omitted for backward compatibility."""
-        if values.proxy is None:
+        if self.proxy is None:
             default_service = ServiceSpec(
-                name=values.container.name,
+                name=self.container.name,
                 path="/",
                 image="nodetool/nodetool:latest",
             )
-            values.proxy = ProxySpec(
+            self.proxy = ProxySpec(
                 image="nodetool/proxy:latest",
-                domain=values.host,
+                domain=self.host,
                 email="admin@example.com",
                 services=[default_service],
             )
-        return values
+        return self
 
     def get_server_url(self) -> str:
         """Get the server URL for this deployment."""

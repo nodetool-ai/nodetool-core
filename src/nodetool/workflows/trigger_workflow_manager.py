@@ -16,7 +16,7 @@ from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
+from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 
 log = get_logger(__name__)
 

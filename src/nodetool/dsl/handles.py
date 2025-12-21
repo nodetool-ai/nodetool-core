@@ -147,6 +147,38 @@ def connect_field(
     """
     Wrapper around :func:`pydantic.Field` compatible with Connect[...] annotations.
     """
+    # Build json_schema_extra with deprecated extra params
+    extra_schema: dict[str, Any] = {}
+    if min_properties is not None:
+        extra_schema["min_properties"] = min_properties
+    if max_properties is not None:
+        extra_schema["max_properties"] = max_properties
+    if positional is not None:
+        extra_schema["positional"] = positional
+    if metadata is not None:
+        extra_schema["metadata"] = metadata
+    if alias_generator is not None:
+        extra_schema["alias_generator"] = alias_generator
+
+    # Merge with existing json_schema_extra if provided
+    final_json_schema_extra: dict[str, Any] | Callable[[], dict[str, Any]] | None
+    if extra_schema:
+        if json_schema_extra is None:
+            final_json_schema_extra = extra_schema
+        elif isinstance(json_schema_extra, dict):
+            final_json_schema_extra = {**json_schema_extra, **extra_schema}
+        else:
+            # json_schema_extra is a Callable, wrap it
+            original_callable = json_schema_extra
+
+            def merged_callable() -> dict[str, Any]:
+                result = original_callable()
+                result.update(extra_schema)
+                return result
+
+            final_json_schema_extra = merged_callable
+    else:
+        final_json_schema_extra = json_schema_extra
 
     return Field(
         default=default,
@@ -156,7 +188,7 @@ def connect_field(
         alias_priority=alias_priority,
         title=title,
         examples=examples,
-        json_schema_extra=json_schema_extra,
+        json_schema_extra=final_json_schema_extra,
         validation_alias=validation_alias,
         serialization_alias=serialization_alias,
         exclude=exclude,
@@ -176,16 +208,11 @@ def connect_field(
         min_items=min_items,
         max_items=max_items,
         unique_items=unique_items,
-        min_properties=min_properties,
-        max_properties=max_properties,
         frozen=frozen,
         repr=repr,
         init=init,
         init_var=init_var,
         kw_only=kw_only,
-        positional=positional,
-        metadata=metadata,
-        alias_generator=alias_generator,
     )
 
 
