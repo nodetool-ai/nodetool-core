@@ -150,6 +150,16 @@ class CheckpointManager:
                     exc_info=True,
                 )
 
+    async def update_status(self, runner: WorkflowRunner, context: ProcessingContext) -> None:
+        """
+        Update the workflow execution state status in the database.
+        
+        Args:
+            runner: The WorkflowRunner instance
+            context: The processing context
+        """
+        await self._update_execution_state(runner, context)
+
     async def _update_execution_state(
         self, runner: WorkflowRunner, context: ProcessingContext
     ) -> None:

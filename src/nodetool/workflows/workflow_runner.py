@@ -1260,10 +1260,8 @@ class WorkflowRunner:
         
         # Update status
         self.status = "running"
-        if self._checkpoint_manager:
-            execution_state = await self._checkpoint_manager._update_execution_state(
-                self, context
-            )
+        if self._checkpoint_manager and context:
+            await self._checkpoint_manager.update_status(self, context)
         
         log.info(
             f"Workflow execution state restored for job {self.job_id}, "
@@ -1325,12 +1323,12 @@ class WorkflowRunner:
                 )
                 continue
             
-            # Restore buffered values
+            # Restore buffered values synchronously to maintain state consistency
             target_handle = edge_state.target_handle
             for value in edge_state.buffered_values:
                 try:
-                    # Use asyncio.create_task to avoid blocking
-                    asyncio.create_task(inbox.put(target_handle, value))
+                    # Put values directly to restore buffer state
+                    await inbox.put(target_handle, value)
                 except Exception as e:
                     log.warning(
                         f"Failed to restore buffered value for edge {edge_state.edge_id}: {e}"
