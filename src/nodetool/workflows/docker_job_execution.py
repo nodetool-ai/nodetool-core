@@ -215,8 +215,8 @@ class NodetoolDockerRunner(StreamRunnerBase):
         result = super().build_container_environment(env)
 
         try:
-            # Load settings and secrets from YAML files
-            settings, secrets = load_settings()
+            # Load settings from YAML file
+            settings = load_settings()
 
             # Merge settings (non-sensitive configuration)
             for key, value in settings.items():
@@ -226,16 +226,12 @@ class NodetoolDockerRunner(StreamRunnerBase):
                     except Exception:
                         log.debug(f"Could not convert setting {key} to string")
 
-            # Merge secrets (API keys, tokens, passwords)
-            for key, value in secrets.items():
+            # Merge secrets from environment variables (using registered secret keys)
+            from nodetool.config.configuration import get_secrets_registry
+            for secret in get_secrets_registry():
+                value = os.getenv(secret.env_var)
                 if value is not None and str(value).strip():
-                    try:
-                        result[str(key)] = str(value)
-                    except Exception:
-                        log.debug(f"Could not convert secret {key} to string")
-                    value = os.getenv(key)
-                    if value:
-                        result[key] = value
+                    result[secret.env_var] = str(value)
 
             # Also include current environment variables (highest priority)
             # This allows runtime overrides

@@ -2149,16 +2149,20 @@ def env_for_deploy(
         "DEFAULT_MODEL": default_model,
     }
 
-    # Merge settings and secrets from settings.yaml and secrets.yaml into env
+    # Merge settings from settings.yaml into env
     # without overriding explicitly provided values
 
-    _settings, _secrets = load_settings()
+    _settings = load_settings()
     for _k, _v in (_settings or {}).items():
         if _v is not None and str(_v) != "" and _k not in env:
             env[_k] = str(_v)
-    for _k, _v in (_secrets or {}).items():
-        if _v is not None and str(_v) != "" and _k not in env:
-            env[_k] = str(_v)
+
+    # Merge secrets from environment variables (using registered secret keys)
+    from nodetool.config.configuration import get_secrets_registry
+    for secret in get_secrets_registry():
+        _v = os.environ.get(secret.env_var)
+        if _v is not None and str(_v) != "" and secret.env_var not in env:
+            env[secret.env_var] = str(_v)
 
     master_key = os.environ.get("SECRETS_MASTER_KEY")
     if master_key:

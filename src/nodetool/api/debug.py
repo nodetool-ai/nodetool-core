@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import platform
+import re
 import shutil
 import tempfile
 from contextlib import suppress
@@ -15,6 +16,88 @@ from pydantic import BaseModel, Field
 from nodetool.config.settings import get_system_data_path, load_settings
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.system import system_stats
+
+# Patterns that indicate a value might be a secret
+SECRET_KEY_PATTERNS = re.compile(
+    r"(api[_-]?key|[_-]token$|^token[_-]|secret|password|credential|bearer|access[_-]?key|private[_-]?key)",
+    re.IGNORECASE,
+)
+# Keys that should NEVER be redacted (even if they match other patterns)
+SAFE_KEY_PATTERNS = re.compile(
+    r"^(id|_id|node_id|workflow_id|user_id|thread_id|message_id|job_id|parent_id|"
+    r"source_id|target_id|ref|uuid|name|type|updated_at|created_at)$",
+    re.IGNORECASE,
+)
+# Patterns that look like actual secret values (API keys, tokens, etc.)
+SECRET_VALUE_PATTERNS = re.compile(
+    r"^(sk-[a-zA-Z0-9]{20,}|"  # OpenAI keys
+    r"sk-ant-[a-zA-Z0-9-]{20,}|"  # Anthropic keys
+    r"hf_[a-zA-Z0-9]{20,}|"  # HuggingFace tokens
+    r"r8_[a-zA-Z0-9]{20,}|"  # Replicate tokens
+    r"fal_[a-zA-Z0-9]{20,}|"  # FAL keys
+    r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)$"  # JWT tokens
+)
+REDACTED = "[REDACTED]"
+
+
+def _redact_secrets(data: Any, parent_key: str = "") -> Any:
+    """
+    Recursively redact potential secrets from data structures.
+    
+    Redacts values when:
+    - The key name suggests it's a secret (api_key, password, etc.)
+    - The value looks like a known secret pattern (OpenAI key, JWT, etc.)
+    
+    Does NOT redact:
+    - Keys that are known safe (id, name, type, timestamps, etc.)
+    """
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            str_key = str(key).lower()
+            # Skip redaction for known safe keys
+            if SAFE_KEY_PATTERNS.match(str_key):
+                result[key] = _redact_secrets(value, str_key)
+            # Check if key name suggests a secret
+            elif SECRET_KEY_PATTERNS.search(str_key):
+                if value and isinstance(value, str) and len(value) > 0:
+                    result[key] = REDACTED
+                else:
+                    result[key] = value
+            else:
+                result[key] = _redact_secrets(value, str_key)
+        return result
+    elif isinstance(data, list):
+        return [_redact_secrets(item, parent_key) for item in data]
+    elif isinstance(data, str):
+        # Check if string value looks like a secret (but only for specific patterns)
+        if len(data) >= 20 and SECRET_VALUE_PATTERNS.match(data):
+            return REDACTED
+        return data
+    else:
+        return data
+
+
+def _redact_log_secrets(log_content: str) -> str:
+    """
+    Redact potential secrets from log file content.
+    """
+    # Patterns to redact in logs
+    patterns = [
+        (r'(api[_-]?key|token|secret|password|bearer|authorization)["\s:=]+["\']?([a-zA-Z0-9_-]{20,})["\']?', r'\1: ' + REDACTED),
+        (r'(sk-[a-zA-Z0-9]{20,})', REDACTED),  # OpenAI
+        (r'(sk-ant-[a-zA-Z0-9-]{20,})', REDACTED),  # Anthropic
+        (r'(hf_[a-zA-Z0-9]{20,})', REDACTED),  # HuggingFace
+        (r'(r8_[a-zA-Z0-9]{20,})', REDACTED),  # Replicate
+        (r'(fal_[a-zA-Z0-9]{20,})', REDACTED),  # FAL
+        (r'(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)', REDACTED),  # JWT
+    ]
+    
+    result = log_content
+    for pattern, replacement in patterns:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    return result
+
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
@@ -42,7 +125,8 @@ def _get_default_save_dir(preferred: Optional[str]) -> Path:
     elif preferred == "downloads":
         candidates = [home / "Downloads", home / "Desktop", home]
     else:
-        candidates = [home / "Desktop", home / "Downloads", home]
+        # Default to Downloads folder (more appropriate for debug bundles)
+        candidates = [home / "Downloads", home / "Desktop", home]
     for c in candidates:
         try:
             if c.exists() and c.is_dir():
@@ -121,14 +205,16 @@ def _collect_env_info() -> Dict[str, Any]:
 
 def _collect_config_info() -> Dict[str, Any]:
     from nodetool.config.environment import Environment
+    from nodetool.security.secret_helper import get_secret_sync
 
     # Infer run mode (best-effort)
     run_mode = "cloud" if Environment.is_production() else "local"
 
-    settings, secrets = load_settings()
+    settings = load_settings()
 
     def has(key: str) -> bool:
-        v = secrets.get(key) or settings.get(key) or os.environ.get(key)
+        # Check settings, then use get_secret_sync which checks env vars and database
+        v = settings.get(key) or get_secret_sync(key)
         return bool(v)
 
     return {
@@ -190,15 +276,24 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
     log_file_path = system_logs_dir / "nodetool.log"
 
     if log_file_path.exists():
-        app_log_texts = log_file_path.read_text(encoding="utf-8").split("\n")
-        if not app_log_texts:
-            raise ValueError("No app logs found")
-        # Copy log file to staging directory
-        (staging_logs_dir / "nodetool.log").write_text(
-            "\n".join(app_log_texts), encoding="utf-8"
-        )
+        try:
+            log_content = log_file_path.read_text(encoding="utf-8")
+            if log_content.strip():
+                # Redact secrets from log content before saving
+                redacted_log = _redact_log_secrets(log_content)
+                (staging_logs_dir / "nodetool.log").write_text(redacted_log, encoding="utf-8")
+            else:
+                (staging_logs_dir / "nodetool.log").write_text(
+                    "Log file exists but is empty.", encoding="utf-8"
+                )
+        except Exception as e:
+            (staging_logs_dir / "nodetool.log").write_text(
+                f"Could not read log file: {e}", encoding="utf-8"
+            )
     else:
-        raise ValueError(f"Log file not found at {log_file_path}")
+        (staging_logs_dir / "nodetool.log").write_text(
+            f"Log file not found at {log_file_path}", encoding="utf-8"
+        )
 
     # Workflow info -> workflow/last-template.json
     workflow_payload: Dict[str, Any] = {}
@@ -222,8 +317,10 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
         workflow_payload["errors"] = payload.errors
     if not workflow_payload:
         workflow_payload = {"note": "No workflow context provided"}
+    # Redact any secrets from workflow data before saving
+    redacted_workflow = _redact_secrets(workflow_payload)
     (workflow_dir / "last-template.json").write_text(
-        json.dumps(workflow_payload, indent=2), encoding="utf-8"
+        json.dumps(redacted_workflow, indent=2), encoding="utf-8"
     )
 
     # Env info -> env/system.json and env/config.json
