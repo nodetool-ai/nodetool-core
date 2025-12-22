@@ -30,6 +30,7 @@ class Message(DBModel):
     created_at: datetime | None = DBField(default=None)
     provider: Provider | None = DBField(default=None)
     model: str | None = DBField(default=None)
+    cost: float | None = DBField(default=None)
     agent_mode: bool | None = DBField(default=None)
     workflow_assistant: bool | None = DBField(default=None)
     help_mode: bool | None = DBField(default=None)

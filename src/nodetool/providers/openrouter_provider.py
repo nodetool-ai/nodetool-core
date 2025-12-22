@@ -5,6 +5,7 @@ This module implements the ChatProvider interface for OpenRouter,
 which provides access to multiple AI models through a unified OpenAI-compatible API.
 
 OpenRouter API Documentation: https://openrouter.ai/docs/api/reference/overview
+OpenRouter Usage Accounting: https://openrouter.ai/docs/use-cases/usage-accounting
 """
 
 from __future__ import annotations
@@ -247,3 +248,415 @@ class OpenRouterProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching OpenRouter models: {e}")
             return []
+
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        max_tokens: int = 16384,
+        context_window: int = 128000,
+        json_schema: dict | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        response_format: dict | None = None,
+        **kwargs,
+    ) -> Message:
+        """Generate a non-streaming completion from OpenRouter with cost tracking.
+
+        This method extends OpenAI's generate_message to include OpenRouter's
+        usage accounting, which returns cost information in USD per request.
+
+        Args:
+            messages: The message history
+            model: The model to use
+            tools: Optional tools to provide to the model
+            max_tokens: The maximum number of tokens to generate
+            context_window: The maximum number of tokens to consider for the context
+            json_schema: Optional JSON schema for structured output
+            temperature: Optional sampling temperature
+            top_p: Optional nucleus sampling parameter
+            presence_penalty: Optional presence penalty
+            frequency_penalty: Optional frequency penalty
+            response_format: The format of the response
+            **kwargs: Additional arguments to pass to the API
+
+        Returns:
+            A Message object containing the model's response with cost tracking
+        """
+        import json
+
+        log.debug(f"Generating non-streaming message for model: {model}")
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
+
+        if not messages:
+            raise ValueError("messages must not be empty")
+
+        request_kwargs: dict[str, Any] = {
+            "max_completion_tokens": max_tokens,
+            # Enable OpenRouter usage accounting to get cost information
+            "extra_body": {"usage": {"include": True}},
+        }
+
+        if response_format is None:
+            response_format = kwargs.get("response_format")
+        if response_format is not None and json_schema is not None:
+            raise ValueError("response_format and json_schema are mutually exclusive")
+        if response_format is not None:
+            request_kwargs["response_format"] = response_format
+        elif json_schema is not None:
+            request_kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
+
+        # Common sampling params
+        if temperature is not None:
+            request_kwargs["temperature"] = temperature
+        if top_p is not None:
+            request_kwargs["top_p"] = top_p
+        if presence_penalty is not None:
+            request_kwargs["presence_penalty"] = presence_penalty
+        if frequency_penalty is not None:
+            request_kwargs["frequency_penalty"] = frequency_penalty
+
+        log.debug(f"Request kwargs: {request_kwargs}")
+
+        # Convert system messages to user messages for O1/O3 models
+        if model.startswith("o1") or model.startswith("o3"):
+            log.debug("Converting system messages for O-series model")
+            converted_messages = []
+            for msg in messages:
+                if msg.role == "system":
+                    log.debug("Converting system message to user message")
+                    converted_messages.append(
+                        Message(
+                            role="user",
+                            content=f"Instructions: {msg.content}",
+                            thread_id=msg.thread_id,
+                        )
+                    )
+                else:
+                    converted_messages.append(msg)
+            messages = converted_messages
+            log.debug(
+                f"Converted {len(converted_messages)} messages for O-series model"
+            )
+
+        self._log_api_request("chat", messages, **request_kwargs)
+
+        if len(tools) > 0:
+            request_kwargs["tools"] = self.format_tools(tools)
+            log.debug(f"Added {len(tools)} tools to request")
+
+        log.debug(f"Converting {len(messages)} messages to OpenAI format")
+        openai_messages = [await self.convert_message(m) for m in messages]
+        log.debug("Making non-streaming API call to OpenRouter")
+
+        # Make non-streaming call
+        try:
+            create_result = self.get_client().chat.completions.create(
+                model=model,
+                messages=openai_messages,
+                stream=False,
+                **request_kwargs,
+            )
+            import inspect
+
+            if inspect.isawaitable(create_result):
+                completion = await create_result
+            else:
+                completion = create_result
+        except openai.OpenAIError as exc:
+            raise self._as_httpx_status_error(exc) from exc
+        log.debug("Received response from OpenRouter API")
+
+        # Update usage stats and extract OpenRouter-specific cost
+        message_cost = 0.0
+        if completion.usage:
+            log.debug("Processing usage statistics")
+            self.usage["prompt_tokens"] += completion.usage.prompt_tokens
+            self.usage["completion_tokens"] += completion.usage.completion_tokens
+            self.usage["total_tokens"] += completion.usage.total_tokens
+
+            # Extract OpenRouter cost from usage (in USD)
+            # OpenRouter returns cost in the usage object
+            if hasattr(completion.usage, "cost") and completion.usage.cost is not None:
+                message_cost = float(completion.usage.cost)
+                self.cost += message_cost
+                log.debug(f"OpenRouter cost for this request: ${message_cost:.6f} USD")
+            else:
+                log.debug("No cost information returned from OpenRouter")
+
+            log.debug(f"Updated usage: {self.usage}, total cost: ${self.cost:.6f}")
+
+        choice = completion.choices[0]
+        response_message = choice.message
+        log.debug(f"Response content length: {len(response_message.content or '')}")
+
+        def try_parse_args(args: Any) -> Any:
+            try:
+                return json.loads(args)
+            except Exception:
+                log.warning(f"Error parsing tool call arguments: {args}")
+                print(f"Warning: Error parsing tool call arguments: {args}")
+                return {}
+
+        # Create tool calls if present
+        tool_calls = None
+        if response_message.tool_calls:
+            log.debug(f"Processing {len(response_message.tool_calls)} tool calls")
+            tool_calls = [
+                ToolCall(
+                    id=tool_call.id,
+                    name=tool_call.function.name,  # type: ignore
+                    args=try_parse_args(tool_call.function.arguments),  # type: ignore
+                )
+                for tool_call in response_message.tool_calls
+            ]
+        else:
+            log.debug("Response contains no tool calls")
+
+        message = Message(
+            role="assistant",
+            content=response_message.content,
+            tool_calls=tool_calls,
+        )
+
+        self._log_api_response("chat", message)
+        log.debug("Returning generated message")
+
+        return message
+
+    async def generate_messages(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        max_tokens: int = 16384,
+        context_window: int = 128000,
+        json_schema: dict | None = None,
+        **kwargs,
+    ) -> AsyncIterator[Chunk | ToolCall]:
+        """Stream assistant deltas and tool calls from OpenRouter with cost tracking.
+
+        This method extends OpenAI's generate_messages to include OpenRouter's
+        usage accounting in streaming mode.
+
+        Args:
+            messages: Conversation history to send.
+            model: Target model.
+            tools: Optional tool definitions to provide.
+            max_tokens: Maximum tokens to generate.
+            context_window: Maximum tokens considered for context.
+            json_schema: Optional response schema.
+            **kwargs: Additional parameters such as temperature.
+
+        Yields:
+            Text ``Chunk`` items and ``ToolCall`` objects when the model
+            requests tool execution.
+        """
+        import json
+
+        log.debug(f"Starting streaming generation for model: {model}")
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+
+        if not messages:
+            raise ValueError("messages must not be empty")
+
+        # Convert system messages to user messages for O1/O3 models
+        _kwargs: dict[str, Any] = {
+            "model": model,
+            "max_completion_tokens": max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            # Enable OpenRouter usage accounting for streaming
+            "extra_body": {"usage": {"include": True}},
+        }
+
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            _kwargs["response_format"] = kwargs["response_format"]
+        elif json_schema is not None:
+            _kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
+
+        # Common sampling params if provided
+        for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty"):
+            if key in kwargs and kwargs[key] is not None:
+                _kwargs[key] = kwargs[key]
+        log.debug(f"Initial kwargs: {_kwargs}")
+
+        if kwargs.get("audio"):
+            _kwargs["audio"] = kwargs.get("audio")
+            _kwargs["modalities"] = ["text", "audio"]
+            if not kwargs.get("audio"):
+                _kwargs["audio"] = {
+                    "voice": "alloy",
+                    "format": "pcm16",
+                }
+            log.debug("Added audio modalities to request")
+
+        if len(tools) > 0:
+            _kwargs["tools"] = self.format_tools(tools)
+            log.debug(f"Added {len(tools)} tools to request")
+
+        if model.startswith("o"):
+            log.debug("Converting system messages for O-series model")
+            _kwargs.pop("temperature", None)
+            converted_messages = []
+            for msg in messages:
+                if msg.role == "system":
+                    log.debug(
+                        "Converting system message to user message for O-series model"
+                    )
+                    converted_messages.append(
+                        Message(
+                            role="user",
+                            content=f"Instructions: {msg.content}",
+                            thread_id=msg.thread_id,
+                        )
+                    )
+                else:
+                    converted_messages.append(msg)
+            messages = converted_messages
+            log.debug(
+                f"Converted {len(converted_messages)} messages for O-series model"
+            )
+
+        self._log_api_request(
+            "chat_stream",
+            messages,
+            **_kwargs,
+        )
+
+        log.debug(f"Converting {len(messages)} messages to OpenAI format")
+        openai_messages = [await self.convert_message(m) for m in messages]
+        log.debug("Making streaming API call to OpenRouter")
+
+        create_result = self.get_client().chat.completions.create(
+            messages=openai_messages,
+            **_kwargs,
+        )
+        import inspect
+
+        if inspect.isawaitable(create_result):
+            completion = await create_result
+        else:
+            completion = create_result
+        log.debug("Streaming response initialized")
+        delta_tool_calls = {}
+        current_chunk = ""
+        chunk_count = 0
+
+        async for chunk in completion:
+            chunk_count += 1
+
+            # Track usage information (only available in the final chunk for streaming)
+            if chunk.usage:
+                log.debug("Processing usage statistics from chunk")
+                self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
+                self.usage["completion_tokens"] += chunk.usage.completion_tokens
+                self.usage["total_tokens"] += chunk.usage.total_tokens
+
+                # Extract OpenRouter cost from streaming usage
+                if hasattr(chunk.usage, "cost") and chunk.usage.cost is not None:
+                    message_cost = float(chunk.usage.cost)
+                    self.cost += message_cost
+                    log.debug(
+                        f"OpenRouter streaming cost: ${message_cost:.6f} USD"
+                    )
+
+                if (
+                    chunk.usage.prompt_tokens_details
+                    and chunk.usage.prompt_tokens_details.cached_tokens
+                ):
+                    self.usage[
+                        "cached_prompt_tokens"
+                    ] += chunk.usage.prompt_tokens_details.cached_tokens
+                if (
+                    chunk.usage.completion_tokens_details
+                    and chunk.usage.completion_tokens_details.reasoning_tokens
+                ):
+                    self.usage[
+                        "reasoning_tokens"
+                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                log.debug(f"Updated usage stats: {self.usage}")
+
+            if not chunk.choices:
+                log.debug("Chunk has no choices, skipping")
+                continue
+
+            delta = chunk.choices[0].delta
+
+            if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
+                log.debug("Yielding audio chunk")
+                yield Chunk(
+                    content=delta.audio["data"],  # type: ignore
+                    content_type="audio",
+                )
+
+            # Process tool call deltas before checking finish_reason
+            if delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    tc: dict[str, Any] | None = None
+                    if tool_call.index in delta_tool_calls:
+                        tc = delta_tool_calls[tool_call.index]
+                    else:
+                        tc = {"id": tool_call.id}
+                        delta_tool_calls[tool_call.index] = tc
+                    assert tc is not None, "Tool call must not be None"
+
+                    if tool_call.id:
+                        tc["id"] = tool_call.id
+                    if tool_call.function and tool_call.function.name:
+                        tc["name"] = tool_call.function.name
+                    if tool_call.function and tool_call.function.arguments:
+                        if "function" not in tc:
+                            tc["function"] = {}
+                        if "arguments" not in tc["function"]:
+                            tc["function"]["arguments"] = ""
+                        tc["function"]["arguments"] += tool_call.function.arguments
+
+            if delta.content or chunk.choices[0].finish_reason == "stop":
+                current_chunk += delta.content or ""
+                finish_reason = chunk.choices[0].finish_reason
+                log.debug(
+                    f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}"
+                )
+
+                if finish_reason == "stop":
+                    log.debug("Final chunk received, logging response")
+                    self._log_api_response(
+                        "chat_stream",
+                        Message(
+                            role="assistant",
+                            content=current_chunk,
+                        ),
+                    )
+
+                content_to_yield = delta.content or ""
+                yield Chunk(
+                    content=content_to_yield,
+                    done=finish_reason == "stop",
+                )
+
+            if chunk.choices[0].finish_reason == "tool_calls":
+                log.debug("Processing tool calls completion")
+                if delta_tool_calls:
+                    log.debug(f"Yielding {len(delta_tool_calls)} tool calls")
+                    for tc in delta_tool_calls.values():
+                        assert tc is not None, "Tool call must not be None"
+                        tool_call = ToolCall(
+                            id=tc["id"],
+                            name=tc["name"],
+                            args=json.loads(tc["function"]["arguments"]),
+                        )
+                        self._log_tool_call(tool_call)
+                        yield tool_call
+                else:
+                    log.error("No tool call found in delta_tool_calls")
+                    raise ValueError("No tool call found")

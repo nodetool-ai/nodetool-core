@@ -174,3 +174,65 @@ class TestOpenRouterProvider:
             assert result.role == "assistant"
             assert result.content == "Test response"
 
+    @pytest.mark.asyncio
+    async def test_cost_tracking(self):
+        """Test that OpenRouter cost tracking works correctly."""
+        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
+
+        # Create a CompletionUsage with additional cost attribute (via model_extra)
+        # OpenRouter returns cost in the usage object
+        mock_usage = CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+        )
+        # Add cost attribute directly to the object (OpenRouter-specific)
+        mock_usage.cost = 0.0025  # type: ignore
+
+        # Create mock response with cost
+        mock_response = ChatCompletion(
+            id="chatcmpl-openrouter-123",
+            choices=[
+                Choice(
+                    finish_reason="stop",
+                    index=0,
+                    message=ChatCompletionMessage(
+                        role="assistant",
+                        content="Test response with cost tracking"
+                    ),
+                    logprobs=None,
+                )
+            ],
+            created=1677652288,
+            model="anthropic/claude-3-opus",
+            object="chat.completion",
+            usage=mock_usage,
+        )
+
+        with patch.object(provider, "get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            mock_client.chat.completions.create = MagicMock(return_value=mock_response)
+
+            from nodetool.metadata.types import Message
+            messages = [Message(role="user", content="Test message")]
+
+            # Reset provider cost tracking
+            provider.cost = 0.0
+
+            result = await provider.generate_message(
+                messages=messages,
+                model="anthropic/claude-3-opus",
+                max_tokens=100,
+            )
+
+            # Verify response
+            assert result.role == "assistant"
+            assert result.content == "Test response with cost tracking"
+
+            # Verify cost tracking
+            assert provider.cost == 0.0025
+            assert provider.usage["prompt_tokens"] == 100
+            assert provider.usage["completion_tokens"] == 50
+            assert provider.usage["total_tokens"] == 150
+
