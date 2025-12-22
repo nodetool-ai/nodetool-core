@@ -370,42 +370,64 @@ class WebSocketRunner:
 
             # Only send terminal status if we didn't already receive one during streaming
             # This fallback is for older execution modes that don't send proper JobUpdates
-            if not received_terminal_update and job_ctx.job_execution.is_completed():
+            if not received_terminal_update:
+                # Wait briefly to allow any final messages to be posted by the job thread
+                # This handles the race condition where the job sets status before posting
+                # the terminal JobUpdate message
+                await asyncio.sleep(0.1)
+
+                # Process any remaining messages that arrived during the wait
+                while job_ctx.job_execution.context.has_messages():
+                    async for msg in process_message(
+                        job_ctx.job_execution.context, explicit_types
+                    ):
+                        msg["job_id"] = job_ctx.job_id
+                        msg["workflow_id"] = job_ctx.workflow_id
+                        await self.send_message(msg)
+                        if msg.get("type") == "job_update":
+                            status = msg.get("status")
+                            if status in ("completed", "failed", "cancelled", "error"):
+                                received_terminal_update = True
+
+            # If still no terminal update, check job status directly (not just is_completed)
+            if not received_terminal_update:
                 final_status = job_ctx.job_execution.status
-                log.info(
-                    f"Sending fallback terminal status for job {job_ctx.job_id}: {final_status}"
-                )
-                if final_status == "cancelled":
-                    await self.send_message(
-                        JobUpdate(
-                            status="cancelled",
-                            job_id=job_ctx.job_id,
-                            workflow_id=job_ctx.workflow_id,
-                        ).model_dump()
+                # Check if job has a terminal status even if future isn't marked done yet
+                if final_status in ("completed", "cancelled", "error", "failed") or job_ctx.job_execution.is_completed():
+                    log.info(
+                        f"Sending fallback terminal status for job {job_ctx.job_id}: {final_status}"
                     )
-                elif final_status in ("error", "failed"):
-                    # Try to include detailed error information from the job
-                    err = (
-                        getattr(job_ctx.job_execution, "error", None)
-                        or getattr(job_ctx.job_execution.job_model, "error", None)
-                        or "Unknown error"
-                    )
-                    await self.send_message(
-                        JobUpdate(
-                            status="failed",  # Normalize error to failed for terminal update
-                            job_id=job_ctx.job_id,
-                            workflow_id=job_ctx.workflow_id,
-                            error=str(err),
-                        ).model_dump()
-                    )
-                else:
-                    await self.send_message(
-                        JobUpdate(
-                            status="completed",
-                            job_id=job_ctx.job_id,
-                            workflow_id=job_ctx.workflow_id,
-                        ).model_dump()
-                    )
+                    if final_status == "cancelled":
+                        await self.send_message(
+                            JobUpdate(
+                                status="cancelled",
+                                job_id=job_ctx.job_id,
+                                workflow_id=job_ctx.workflow_id,
+                            ).model_dump()
+                        )
+                    elif final_status in ("error", "failed"):
+                        # Try to include detailed error information from the job
+                        err = (
+                            getattr(job_ctx.job_execution, "error", None)
+                            or getattr(job_ctx.job_execution.job_model, "error", None)
+                            or "Unknown error"
+                        )
+                        await self.send_message(
+                            JobUpdate(
+                                status="failed",  # Normalize error to failed for terminal update
+                                job_id=job_ctx.job_id,
+                                workflow_id=job_ctx.workflow_id,
+                                error=str(err),
+                            ).model_dump()
+                        )
+                    else:
+                        await self.send_message(
+                            JobUpdate(
+                                status="completed",
+                                job_id=job_ctx.job_id,
+                                workflow_id=job_ctx.workflow_id,
+                            ).model_dump()
+                        )
 
             log.info(f"Job streaming completed: {job_ctx.job_id}")
 
