@@ -97,6 +97,7 @@ def import_providers():
         huggingface_provider,
         ollama_provider,
         openai_provider,
+        openrouter_provider,
         vllm_provider,
     )
 

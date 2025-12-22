@@ -321,6 +321,7 @@ class FontRef(BaseType):
 class Provider(str, enum.Enum):
     AIME = "aime"
     OpenAI = "openai"
+    OpenRouter = "openrouter"
     Anthropic = "anthropic"
     Replicate = "replicate"
     Ollama = "ollama"
