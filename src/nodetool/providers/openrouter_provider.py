@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    ImageModel,
     LanguageModel,
     Message,
     Provider,
@@ -248,6 +249,203 @@ class OpenRouterProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching OpenRouter models: {e}")
             return []
+
+    async def get_available_image_models(self) -> List[ImageModel]:
+        """
+        Get available OpenRouter image generation models.
+
+        Fetches image models from the OpenRouter API that support image generation.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of ImageModel instances for OpenRouter image generation
+        """
+        from nodetool.metadata.types import ImageModel
+
+        if not self.api_key:
+            log.debug("No OpenRouter API key configured, returning empty image model list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://github.com/nodetool-ai/nodetool-core",
+                "X-Title": "NodeTool",
+            }
+            async with (
+                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+                session.get("https://openrouter.ai/api/v1/models") as response,
+            ):
+                if response.status != 200:
+                    log.warning(
+                        f"Failed to fetch OpenRouter models: HTTP {response.status}"
+                    )
+                    return []
+                payload = await response.json()
+                data = payload.get("data", [])
+
+                models: List[ImageModel] = []
+                for item in data:
+                    model_id = item.get("id")
+                    if not model_id:
+                        continue
+
+                    # Check if model supports image generation
+                    # OpenRouter uses "image" in the architecture field or specific model families
+                    architecture = item.get("architecture", {})
+                    modality = architecture.get("modality") if isinstance(architecture, dict) else None
+
+                    # Common image generation model patterns
+                    is_image_model = (
+                        modality == "image"
+                        or "dall-e" in model_id.lower()
+                        or "stable-diffusion" in model_id.lower()
+                        or "flux" in model_id.lower()
+                        or "midjourney" in model_id.lower()
+                        or "imagen" in model_id.lower()
+                    )
+
+                    if is_image_model:
+                        model_name = item.get("name", model_id)
+                        models.append(
+                            ImageModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=Provider.OpenRouter,
+                            )
+                        )
+                log.debug(f"Fetched {len(models)} OpenRouter image models")
+                return models
+        except Exception as e:
+            log.error(f"Error fetching OpenRouter image models: {e}")
+            return []
+
+    async def text_to_image(
+        self,
+        params: Any,  # TextToImageParams
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using OpenRouter's image generation models.
+
+        OpenRouter supports multiple image generation models including DALL-E, Stable Diffusion,
+        and Flux through an OpenAI-compatible API.
+
+        Args:
+            params: Text-to-image generation parameters including:
+                - prompt: Text description of the desired image
+                - model: ImageModel with OpenRouter model ID (e.g., "openai/dall-e-3")
+                - width: Desired width (optional, model-dependent)
+                - height: Desired height (optional, model-dependent)
+                - negative_prompt: What to avoid in the image (optional)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            node_id: Optional node ID for progress tracking
+
+        Returns:
+            Raw image bytes (PNG, JPEG, etc.)
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        import base64
+
+        from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
+
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("OPENROUTER_API_KEY is required for image generation.")
+
+        model_id = params.model.id
+        if not model_id:
+            raise ValueError(
+                "A text-to-image model with a valid id must be specified for image generation."
+            )
+
+        prompt = params.prompt.strip()
+        if params.negative_prompt:
+            prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
+
+        log.debug(f"Generating image with OpenRouter model: {model_id}")
+        log.debug(f"Prompt: {prompt[:100]}...")
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+            client = self.get_client()
+
+            # Build request parameters
+            request_params: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+                "n": 1,
+                "timeout": request_timeout,
+            }
+
+            # Add size if both width and height are specified
+            if params.width and params.height:
+                if params.width <= 0 or params.height <= 0:
+                    raise ValueError("width and height must be positive integers.")
+                # OpenRouter may support size parameter for compatible models
+                size = self._resolve_image_size(int(params.width), int(params.height))
+                if size:
+                    request_params["size"] = size
+
+            log.debug(f"Making image generation request with params: {request_params}")
+
+            # Call the API and handle potential awaitable
+            create_result = client.images.generate(**request_params)
+            import inspect
+
+            if inspect.isawaitable(create_result):
+                response = await create_result
+            else:
+                response = create_result
+
+            data = response.data or []
+            if len(data) == 0:
+                raise RuntimeError("OpenRouter image generation returned no data.")
+
+            image_entry = data[0]
+            image_bytes: bytes | None = None
+
+            # Try to get image from base64 first
+            b64_data = image_entry.b64_json
+            if b64_data:
+                image_bytes = base64.b64decode(b64_data)
+                log.debug("Retrieved image from base64 response")
+            else:
+                # Fall back to URL
+                image_url = image_entry.url
+                if image_url:
+                    log.debug(f"Fetching image from URL: {image_url}")
+                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+
+            if not image_bytes:
+                raise RuntimeError("OpenRouter image generation returned no image bytes.")
+
+            log.debug(f"Successfully generated image ({len(image_bytes)} bytes)")
+            return image_bytes
+
+        except openai.APIStatusError as api_error:
+            log.error(
+                "OpenRouter text-to-image generation failed (status=%s): %s",
+                api_error.status_code,
+                api_error.message,
+            )
+            raise RuntimeError(
+                f"OpenRouter text-to-image generation failed with status "
+                f"{api_error.status_code}: {api_error.message}"
+            ) from api_error
+        except Exception as exc:
+            log.error(f"OpenRouter text-to-image generation failed: {exc}")
+            raise RuntimeError(
+                f"OpenRouter text-to-image generation failed: {exc}"
+            ) from exc
 
     async def generate_message(
         self,

@@ -236,3 +236,128 @@ class TestOpenRouterProvider:
             assert provider.usage["completion_tokens"] == 50
             assert provider.usage["total_tokens"] == 150
 
+    @pytest.mark.asyncio
+    async def test_text_to_image(self):
+        """Test that OpenRouter text-to-image generation works correctly."""
+        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
+
+        # Create a mock image response
+        from openai.types import Image, ImagesResponse
+
+        mock_image_data = b"fake_image_data"
+        mock_b64 = "ZmFrZV9pbWFnZV9kYXRh"  # base64 of "fake_image_data"
+
+        mock_image = Image(
+            b64_json=mock_b64,
+            url=None,
+            revised_prompt=None,
+        )
+
+        mock_response = ImagesResponse(
+            created=1677652288,
+            data=[mock_image],
+        )
+
+        with patch.object(provider, "get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            mock_client.images.generate = MagicMock(return_value=mock_response)
+
+            from nodetool.metadata.types import ImageModel, Provider
+            from nodetool.providers.types import TextToImageParams
+
+            params = TextToImageParams(
+                model=ImageModel(
+                    id="openai/dall-e-3",
+                    name="DALL-E 3",
+                    provider=Provider.OpenRouter,
+                ),
+                prompt="A test image",
+                width=1024,
+                height=1024,
+            )
+
+            result = await provider.text_to_image(params, timeout_s=120)
+
+            # Verify response
+            assert result == mock_image_data
+            assert len(result) > 0
+
+            # Verify the client was called with correct parameters
+            mock_client.images.generate.assert_called_once()
+            call_args = mock_client.images.generate.call_args[1]
+            assert call_args["model"] == "openai/dall-e-3"
+            assert call_args["prompt"] == "A test image"
+            assert call_args["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_available_image_models(self):
+        """Test that OpenRouter can fetch available image models."""
+        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
+
+        # Mock the aiohttp response
+        mock_models_data = {
+            "data": [
+                {
+                    "id": "openai/dall-e-3",
+                    "name": "DALL-E 3",
+                    "architecture": {"modality": "text->image"},
+                },
+                {
+                    "id": "stability-ai/stable-diffusion-xl",
+                    "name": "Stable Diffusion XL",
+                    "architecture": {},
+                },
+                {
+                    "id": "black-forest-labs/flux-pro",
+                    "name": "Flux Pro",
+                    "architecture": {},
+                },
+                {
+                    "id": "openai/gpt-4",  # Non-image model
+                    "name": "GPT-4",
+                    "architecture": {"modality": "text"},
+                },
+            ]
+        }
+
+        # Create mock response object
+        class MockResponse:
+            status = 200
+
+            async def json(self):
+                return mock_models_data
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+        # Create mock session
+        class MockSession:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            def get(self, *args, **kwargs):
+                return MockResponse()
+
+        with patch("aiohttp.ClientSession", MockSession):
+            models = await provider.get_available_image_models()
+
+            # Verify we got image models (DALL-E, Stable Diffusion, Flux)
+            assert len(models) >= 3
+            model_ids = [m.id for m in models]
+            assert "openai/dall-e-3" in model_ids
+            assert "stability-ai/stable-diffusion-xl" in model_ids
+            assert "black-forest-labs/flux-pro" in model_ids
+            # GPT-4 should not be in the list
+            assert "openai/gpt-4" not in model_ids
+
+
