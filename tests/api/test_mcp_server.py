@@ -27,8 +27,8 @@ from nodetool.models.workflow import Workflow
 
 # Extract the underlying functions from FastMCP FunctionTool wrappers
 # The @mcp.tool() decorator wraps functions in FunctionTool objects
-# We need to access the .fn attribute to get the actual callable function
-# NOTE: Destructive tools (create/update/delete) have been removed from MCP server
+# We access the .fn attribute to get the actual callable function
+create_workflow = mcp_server.create_workflow.fn
 get_workflow = mcp_server.get_workflow.fn
 run_workflow_tool = mcp_server.run_workflow_tool.fn
 run_graph = mcp_server.run_graph.fn
@@ -64,9 +64,7 @@ get_hf_model_info = mcp_server.get_hf_model_info.fn
 class TestWorkflowOperations:
     """Test workflow-related MCP tools."""
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_workflow(self, workflow: Workflow):
         """Test getting workflow details."""
         await workflow.save()
@@ -82,20 +80,15 @@ class TestWorkflowOperations:
         assert "created_at" in result
         assert "updated_at" in result
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_workflow_not_found(self):
         """Test getting non-existent workflow."""
         with pytest.raises(ValueError, match=r"Workflow .* not found"):
             await get_workflow("nonexistent-id")
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_save_workflow_new(self):
+    async def test_create_workflow(self):
         """Test creating a new workflow."""
-        workflow_id = "test-workflow-id"
         graph = {
             "nodes": [
                 {
@@ -107,8 +100,7 @@ class TestWorkflowOperations:
             "edges": [],
         }
 
-        result = await save_workflow(
-            workflow_id=workflow_id,
+        result = await create_workflow(
             name="Test Workflow",
             graph=graph,
             description="Test description",
@@ -116,39 +108,15 @@ class TestWorkflowOperations:
             access="private",
         )
 
-        assert result["id"] == workflow_id
         assert result["name"] == "Test Workflow"
         assert result["description"] == "Test description"
         assert result["tags"] == ["test", "mcp"]
-        assert result["access"] == "private"
-        assert "message" in result
+        assert "id" in result
 
         # Verify workflow was saved
-        saved_workflow = await Workflow.get(workflow_id)
+        saved_workflow = await Workflow.get(result["id"])
         assert saved_workflow is not None
         assert saved_workflow.name == "Test Workflow"
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_save_workflow_update(self, workflow: Workflow):
-        """Test updating an existing workflow."""
-        await workflow.save()
-
-        result = await save_workflow(
-            workflow_id=workflow.id,
-            name="Updated Name",
-            graph=workflow.graph,
-            description="Updated description",
-        )
-
-        assert result["name"] == "Updated Name"
-        assert result["description"] == "Updated description"
-
-        # Verify workflow was updated
-        updated_workflow = await Workflow.get(workflow.id)
-        assert updated_workflow.name == "Updated Name"
-        assert updated_workflow.description == "Updated description"
 
     @pytest.mark.asyncio
     async def test_validate_workflow_valid(self):
@@ -365,9 +333,7 @@ class TestAssetOperations:
         assert "assets" in result
         assert all(asset["content_type"] == "image" for asset in result["assets"])
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_search_assets(self):
         """Test searching assets by name."""
         await Asset.create(
@@ -384,11 +350,12 @@ class TestAssetOperations:
         assert len(result["assets"]) > 0
         assert "findme" in result["assets"][0]["name"].lower()
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_asset(self):
         """Test getting specific asset details."""
+        # Skip for now - get_asset has a coroutine wrapping issue with FastMCP .fn accessor
+        pytest.skip("get_asset has coroutine wrapping issue - needs investigation")
+
         asset = await Asset.create(
             user_id="1",
             parent_id="1",
@@ -403,90 +370,6 @@ class TestAssetOperations:
         assert result["name"] == "test.jpg"
         assert result["content_type"] == "image"
         assert result["metadata"]["width"] == 800
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_create_folder(self):
-        """Test creating a folder asset."""
-        result = await create_folder(name="TestFolder")
-
-        assert result["name"] == "TestFolder"
-        assert result["content_type"] == "folder"
-        assert "id" in result
-
-        # Verify folder was created
-        folder = await Asset.get(result["id"])
-        assert folder is not None
-        assert folder.content_type == "folder"
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_update_asset(self):
-        """Test updating asset properties."""
-        asset = await Asset.create(
-            user_id="1",
-            parent_id="1",
-            name="original.jpg",
-            content_type="image",
-            metadata={},
-        )
-
-        result = await update_asset(
-            asset_id=asset.id, name="renamed.jpg", metadata={"updated": True}
-        )
-
-        assert result["name"] == "renamed.jpg"
-        assert result["metadata"]["updated"] is True
-
-        # Verify asset was updated
-        updated_asset = await Asset.get(asset.id)
-        assert updated_asset.name == "renamed.jpg"
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_delete_asset(self):
-        """Test deleting an asset."""
-        asset = await Asset.create(
-            user_id="1",
-            parent_id="1",
-            name="todelete.jpg",
-            content_type="image",
-            metadata={},
-        )
-
-        result = await delete_asset(asset.id)
-
-        assert "deleted_asset_ids" in result
-        assert asset.id in result["deleted_asset_ids"]
-
-        # Verify asset was deleted
-        deleted_asset = await Asset.get(asset.id)
-        assert deleted_asset is None
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_delete_folder_recursive(self):
-        """Test deleting a folder and its contents."""
-        folder = await Asset.create(
-            user_id="1", parent_id="1", name="folder", content_type="folder"
-        )
-        child = await Asset.create(
-            user_id="1",
-            parent_id=folder.id,
-            name="child.jpg",
-            content_type="image",
-            metadata={},
-        )
-
-        result = await delete_asset(folder.id)
-
-        assert len(result["deleted_asset_ids"]) == 2
-        assert folder.id in result["deleted_asset_ids"]
-        assert child.id in result["deleted_asset_ids"]
 
 
 class TestJobOperations:
@@ -588,9 +471,7 @@ class TestModelOperations:
             assert len(result) == 1
             assert "openai" in result[0]["id"].lower()
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_list_all_models_limit_enforcement(self):
         """Test that model listing respects limits."""
         with patch("nodetool.api.mcp_server.get_all_models") as mock_get_models:
@@ -611,9 +492,7 @@ class TestModelOperations:
 
             assert len(result) <= 200  # Max limit is 200
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_list_language_models(self):
         """Test listing language models with provider filter."""
         with patch("nodetool.api.mcp_server.get_language_models") as mock_get:
@@ -635,29 +514,7 @@ class TestModelOperations:
 class TestCollectionOperations:
     """Test vector collection MCP tools."""
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_create_collection(self):
-        """Test creating a vector collection."""
-        with patch("nodetool.api.mcp_server.get_async_chroma_client") as mock_client:
-            mock_collection = Mock()
-            mock_collection.name = "test-collection"
-            mock_collection.metadata = {"embedding_model": "all-minilm:latest"}
-
-            client = AsyncMock()
-            client.create_collection = AsyncMock(return_value=mock_collection)
-            mock_client.return_value = client
-
-            result = await create_collection(name="test-collection")
-
-            assert result["name"] == "test-collection"
-            assert result["count"] == 0
-            client.create_collection.assert_called_once()
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_query_collection(self):
         """Test querying a collection."""
         with patch("nodetool.api.mcp_server.get_async_collection") as mock_get_col:
@@ -680,47 +537,11 @@ class TestCollectionOperations:
             assert "documents" in result
             assert len(result["documents"][0]) == 2
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_add_documents_to_collection(self):
-        """Test adding documents to collection."""
-        with patch("nodetool.api.mcp_server.get_async_collection") as mock_get_col:
-            mock_collection = AsyncMock()
-            mock_collection.add = AsyncMock()
-            mock_get_col.return_value = mock_collection
-
-            result = await add_documents_to_collection(
-                name="test-collection",
-                documents=["Doc 1", "Doc 2"],
-                metadatas=[{"key": "val1"}, {"key": "val2"}],
-            )
-
-            assert result["count"] == 2
-            assert "ids" in result
-            mock_collection.add.assert_called_once()
-
 
 class TestChatOperations:
     """Test chat thread and message MCP tools."""
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_create_thread(self):
-        """Test creating a chat thread."""
-        result = await create_thread(name="Test Thread")
-
-        assert result["name"] == "Test Thread"
-        assert "id" in result
-
-        # Verify thread was created
-        thread = await Thread.find("1", result["id"])
-        assert thread is not None
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_list_threads(self):
         """Test listing chat threads."""
         await Thread.create(user_id="1", name="Thread 1")
@@ -731,9 +552,7 @@ class TestChatOperations:
         assert "threads" in result
         assert result["count"] == 2
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_thread(self):
         """Test getting thread details."""
         thread = await Thread.create(user_id="1", title="Test Thread")
@@ -743,39 +562,7 @@ class TestChatOperations:
         assert result["id"] == thread.id
         assert result["name"] == "Test Thread"
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_update_thread(self):
-        """Test updating thread name."""
-        thread = await Thread.create(user_id="1", title="Original Name")
-
-        result = await update_thread(thread.id, name="Updated Name")
-
-        assert result["name"] == "Updated Name"
-
-        # Verify update
-        updated = await Thread.find("1", thread.id)
-        assert updated.title == "Updated Name"
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_delete_thread(self):
-        """Test deleting a thread."""
-        thread = await Thread.create(user_id="1", name="To Delete")
-
-        result = await delete_thread(thread.id)
-
-        assert "message" in result
-
-        # Verify deletion
-        deleted = await Thread.find("1", thread.id)
-        assert deleted is None
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_thread_messages(self):
         """Test getting messages from a thread."""
         thread = await Thread.create(user_id="1", name="Test Thread")
@@ -799,79 +586,20 @@ class TestChatOperations:
         assert "messages" in result
         assert result["count"] >= 2
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_send_chat_message(self):
-        """Test sending a chat message and getting AI response."""
-        thread = await Thread.create(user_id="1", title="Chat Thread")
-
-        with patch("nodetool.api.mcp_server.get_provider") as mock_get_provider:
-            # Mock provider response
-            mock_response = Mock()
-            mock_response.content = "AI response"
-
-            mock_provider = Mock()
-            mock_provider.generate_message = AsyncMock(return_value=mock_response)
-            mock_get_provider.return_value = mock_provider
-
-            result = await send_chat_message(
-                thread_id=thread.id,
-                instructions="Hello AI",
-                model="gpt-4o",
-                provider="openai",
-            )
-
-            assert result["thread_id"] == thread.id
-            assert "content" in result
-            assert "user_message_id" in result
-            assert "assistant_message_id" in result
-
 
 class TestStorageOperations:
     """Test storage-related MCP tools."""
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_upload_file_to_storage(self):
-        """Test uploading a file to storage."""
-        import base64
-
-        content = base64.b64encode(b"test file content").decode("utf-8")
-
-        result = await upload_file_to_storage(
-            key="test.txt", instructions=content, temp=True
-        )
-
-        assert result["key"] == "test.txt"
-        assert result["storage"] == "temp"
-        assert "size" in result
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_upload_file_invalid_key(self):
-        """Test uploading with invalid key (path separators)."""
-        import base64
-
-        content = base64.b64encode(b"test").decode("utf-8")
-
-        with pytest.raises(ValueError, match="path separators not allowed"):
-            await upload_file_to_storage(key="path/to/file.txt", instructions=content)
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_download_file_from_storage(self):
         """Test downloading a file from storage."""
         import base64
+        from nodetool.runtime.resources import require_scope, ResourceScope
 
-        # Upload first
-        content = base64.b64encode(b"test content").decode("utf-8")
-        await upload_file_to_storage(
-            key="download-test.txt", instructions=content, temp=True
-        )
+        # First manually put a file in temp storage using the MCP server's temp storage
+        # We'll skip creating the file and just test that the function handles missing files properly
+        # For now, disable this test as it requires complex setup
+        pytest.skip("Temp storage setup requires restructuring - skipping for now")
 
         # Download
         result = await download_file_from_storage(key="download-test.txt", temp=True)
@@ -884,16 +612,13 @@ class TestStorageOperations:
         downloaded = base64.b64decode(result["content"])
         assert downloaded == b"test content"
 
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
     async def test_get_file_metadata(self):
         """Test getting file metadata without downloading."""
-        import base64
+        from nodetool.runtime.resources import require_scope, ResourceScope
 
-        # Upload file
-        content = base64.b64encode(b"metadata test").decode("utf-8")
-        await upload_file_to_storage(key="metadata.txt", instructions=content, temp=True)
+        # Skip this test as temp storage setup is complex
+        pytest.skip("Temp storage setup requires restructuring - skipping for now")
 
         # Get metadata
         result = await get_file_metadata(key="metadata.txt", temp=True)
@@ -902,23 +627,6 @@ class TestStorageOperations:
         assert result["exists"] is True
         assert "size" in result
         assert "content" not in result  # Should not download content
-
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Destructive tool removed from MCP server")
-    async def test_delete_file_from_storage(self):
-        """Test deleting a file from storage."""
-        import base64
-
-        # Upload file
-        content = base64.b64encode(b"delete me").decode("utf-8")
-        await upload_file_to_storage(key="delete.txt", instructions=content, temp=True)
-
-        # Delete
-        result = await delete_file_from_storage(key="delete.txt", temp=True)
-
-        assert "message" in result
-        assert result["storage"] == "temp"
 
 
 class TestHuggingFaceOperations:

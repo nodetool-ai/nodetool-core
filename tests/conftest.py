@@ -32,6 +32,16 @@ from nodetool.workflows.processing_context import ProcessingContext
 configure_logging("DEBUG")
 
 
+@pytest.fixture(scope="session")
+def worker_id(request):
+    """Provide worker_id for pytest-xdist compatibility.
+
+    Returns 'master' when not using xdist (sequential execution),
+    or the actual worker id when using xdist (parallel execution).
+    """
+    if hasattr(request.config, 'workerinput'):
+        return request.config.workerinput['workerid']
+    return 'master'
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -51,14 +61,17 @@ configure_logging("DEBUG")
 
 
 @pytest_asyncio.fixture(scope="session")
-async def test_db_pool():
+async def test_db_pool(worker_id):
     """Create test database once for entire session with connection pool.
 
     This fixture:
-    - Creates a single temporary database file
+    - Creates a single temporary database file per worker (for pytest-xdist compatibility)
     - Runs migrations once at session start
     - Creates a persistent connection pool
     - Cleans up pool at session end
+
+    Args:
+        worker_id: Provided by pytest-xdist to identify the worker process
 
     Yields:
         tuple: (pool, db_path) for use in tests
@@ -70,8 +83,10 @@ async def test_db_pool():
     from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
     # Create a temporary database file for the entire test session
+    # Use worker_id to ensure each xdist worker gets a unique database
+    worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
     with tempfile.NamedTemporaryFile(
-        suffix='.sqlite3',
+        suffix=f'{worker_suffix}.sqlite3',
         prefix='nodetool_test_session_',
         delete=False
     ) as temp_db:
@@ -79,7 +94,7 @@ async def test_db_pool():
 
     pool = None
     try:
-        # Create connection pool (will be reused across all tests)
+        # Create connection pool (will be reused across all tests in this worker)
         pool = await SQLiteConnectionPool.get_shared(db_path)
         # Run migrations once for the session
         await run_startup_migrations(pool)

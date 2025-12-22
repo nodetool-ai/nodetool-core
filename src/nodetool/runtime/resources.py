@@ -297,7 +297,10 @@ class ResourceScope:
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:
         """Get or create the asset storage adapter for this scope."""
         if self._asset_storage is None:
-            if RUNNING_PYTEST:
+            # Check environment dynamically to support pytest-xdist workers
+            import os
+            is_pytest = "PYTEST_CURRENT_TEST" in os.environ or RUNNING_PYTEST
+            if is_pytest:
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 log.info("Using memory storage for asset storage")

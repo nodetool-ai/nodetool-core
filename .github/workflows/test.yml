@@ -31,6 +31,7 @@ jobs:
           pip install -e .
           pip install git+https://github.com/nodetool-ai/nodetool-base
           pip install -r requirements-dev.txt
+          pip install pytest-xdist
 
       - name: Run Ruff
         run: |
@@ -38,4 +39,4 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --ignore=tests/workflows/test_docker_job_execution.py
+          pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py

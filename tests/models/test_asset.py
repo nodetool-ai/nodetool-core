@@ -8,6 +8,9 @@ from nodetool.models.asset import (
 from nodetool.runtime.resources import require_scope
 from tests.conftest import make_image
 
+# Ensure all tests in this module run in the same xdist worker to prevent database race conditions
+pytestmark = pytest.mark.xdist_group(name="database")
+
 
 @pytest.mark.asyncio
 async def test_asset_find(user_id: str):

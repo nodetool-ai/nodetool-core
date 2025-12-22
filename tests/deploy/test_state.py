@@ -283,6 +283,7 @@ class TestStateLocking:
         assert len(results) == 5
         assert all(r["status"] == "running" for r in results)
 
+    @pytest.mark.xdist_group(name="state_locking")
     def test_concurrent_write_safety(self, sample_config):
         """Test that concurrent writes are safe with locking."""
         _config, config_path = sample_config

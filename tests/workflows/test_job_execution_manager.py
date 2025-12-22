@@ -17,6 +17,9 @@ from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 
+# Ensure all tests in this module run in the same xdist worker to prevent resource conflicts
+pytestmark = pytest.mark.xdist_group(name="database")
+
 
 def check_docker_available() -> bool:
     """Check if Docker is available."""

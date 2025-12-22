@@ -10,12 +10,21 @@ from starlette.websockets import WebSocketDisconnect
 
 from nodetool.api.server import create_app
 
+# Ensure all tests in this module run in the same xdist worker to prevent environment conflicts
+pytestmark = pytest.mark.xdist_group(name="database")
+
 
 def _make_client(monkeypatch, env: str = "development", enable_flag: str | None = None) -> TestClient:
     monkeypatch.setenv("ENV", env)
     # Some production paths require this to be set; use a benign value for tests.
     if env == "production":
         monkeypatch.setenv("SECRETS_MASTER_KEY", "test-key")
+        # Set dummy S3 credentials and storage config for production mode tests
+        monkeypatch.setenv("S3_ACCESS_KEY_ID", "test-s3-key")
+        monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "test-s3-secret")
+        monkeypatch.setenv("S3_ENDPOINT_URL", "http://localhost:9000")
+        monkeypatch.setenv("ASSET_TEMP_BUCKET", "test-temp-bucket")
+        monkeypatch.setenv("ASSET_TEMP_DOMAIN", "http://localhost:9000")
     if enable_flag is None:
         monkeypatch.delenv("NODETOOL_ENABLE_TERMINAL_WS", raising=False)
     else:

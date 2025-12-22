@@ -15,6 +15,9 @@ from conftest import make_image, make_text
 
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
 
+# Ensure all tests in this module run in the same xdist worker to prevent database race conditions
+pytestmark = pytest.mark.xdist_group(name="database")
+
 
 @pytest.mark.asyncio
 async def test_index(client: TestClient, headers: dict[str, str], user_id: str):

@@ -228,6 +228,7 @@ async def test_subprocess_job_cleanup(simple_workflow, cleanup_jobs):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="subprocess_execution")
 async def test_subprocess_job_database_record(simple_workflow, cleanup_jobs):
     """Test that subprocess job creates and updates database record."""
     request = RunJobRequest(
@@ -256,8 +257,8 @@ async def test_subprocess_job_database_record(simple_workflow, cleanup_jobs):
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
 
-    # Wait for completion
-    max_wait = 5.0
+    # Wait for completion (increased timeout for high parallelism)
+    max_wait = 10.0  # Increased from 5.0 for parallel test runs
     wait_interval = 0.1
     elapsed = 0.0
 
