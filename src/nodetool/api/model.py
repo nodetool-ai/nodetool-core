@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from fnmatch import fnmatch
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,6 +35,7 @@ from nodetool.integrations.huggingface.huggingface_models import (
     get_models_by_hf_type,
     read_cached_hf_models,
     search_cached_hf_models,
+    HF_FAST_CACHE,
 )
 from nodetool.metadata.types import (
     ASRModel,
@@ -78,22 +80,6 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
             deduped_models.append(model)
     return deduped_models
 
-
-
-async def _mark_downloaded_status(models: list[UnifiedModel]) -> list[UnifiedModel]:
-    """
-    Check local cache for each model and update its 'downloaded' status.
-    Uses asyncio.gather for parallel checking.
-    """
-    async def check_model(model: UnifiedModel):
-        if model.repo_id:
-            # Run blocking file check in thread pool
-            is_downloaded = await asyncio.to_thread(has_cached_files, model.repo_id)
-            if is_downloaded:
-                model.downloaded = True
-
-    await asyncio.gather(*(check_model(m) for m in models))
-    return models
 
 
 # Exported functions for direct use (e.g., by MCP server)
@@ -156,7 +142,7 @@ async def recommended_models(_user: str) -> list[UnifiedModel]:
         for model in model_list
     ]
     models = [model for model in models if model is not None]
-    return await _mark_downloaded_status(models)
+    return models
 
 
 async def get_language_models(user: str = "1") -> list[LanguageModel]:
@@ -279,7 +265,7 @@ async def recommended_image_models_endpoint(
 ) -> list[UnifiedModel]:
     # Determine platform on the server; do not accept client override
     models = get_recommended_image_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/image/text-to-image")
@@ -287,7 +273,7 @@ async def recommended_text_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_text_to_image_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/image/image-to-image")
@@ -295,7 +281,7 @@ async def recommended_image_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_image_to_image_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/language")
@@ -303,7 +289,7 @@ async def recommended_language_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_language_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/language/text-generation")
@@ -311,7 +297,7 @@ async def recommended_language_text_generation_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_language_text_generation_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/language/embedding")
@@ -319,7 +305,7 @@ async def recommended_language_embedding_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_language_embedding_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/asr")
@@ -327,7 +313,7 @@ async def recommended_asr_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_asr_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/tts")
@@ -335,7 +321,7 @@ async def recommended_tts_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_tts_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/video/text-to-video")
@@ -343,7 +329,7 @@ async def recommended_text_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_text_to_video_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/recommended/video/image-to-video")
@@ -351,7 +337,7 @@ async def recommended_image_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     models = get_recommended_image_to_video_models()
-    return await _mark_downloaded_status(models)
+    return models
 
 
 @router.get("/all")
@@ -674,6 +660,53 @@ class HFCacheCheckResponse(BaseModel):
     missing: list[str]
 
 
+class HFFastCacheStatusRequest(BaseModel):
+    key: str
+    repo_id: str
+    path: str | None = None
+    allow_patterns: str | list[str] | None = None
+    ignore_patterns: str | list[str] | None = None
+
+
+class HFFastCacheStatusResponse(BaseModel):
+    key: str
+    downloaded: bool
+
+
+def _normalize_patterns(patterns: str | list[str] | None) -> list[str] | None:
+    if patterns is None:
+        return None
+    if isinstance(patterns, str):
+        return [patterns]
+    return [pattern for pattern in patterns if pattern]
+
+
+def _is_ignored(path: str, ignore_patterns: list[str] | None) -> bool:
+    if not ignore_patterns:
+        return False
+    return any(fnmatch(path, pattern) for pattern in ignore_patterns)
+
+
+def _is_downloaded_from_files(
+    files: list[str],
+    allow_patterns: list[str] | None,
+    ignore_patterns: list[str] | None,
+) -> bool:
+    if not files:
+        return False
+
+    if allow_patterns:
+        for pattern in allow_patterns:
+            if not any(
+                fnmatch(path, pattern) and not _is_ignored(path, ignore_patterns)
+                for path in files
+            ):
+                return False
+        return True
+
+    return any(not _is_ignored(path, ignore_patterns) for path in files)
+
+
 @router.post("/huggingface/check_cache")
 async def check_huggingface_cache(
     body: HFCacheCheckRequest, user: str = Depends(current_user)
@@ -717,6 +750,28 @@ async def check_huggingface_cache(
         total_files=len(filtered_files),
         missing=missing,
     )
+
+
+@router.post("/huggingface/cache_status")
+async def check_huggingface_cache_status(
+    body: list[HFFastCacheStatusRequest], _user: str = Depends(current_user)
+) -> list[HFFastCacheStatusResponse]:
+    async def resolve_item(item: HFFastCacheStatusRequest) -> HFFastCacheStatusResponse:
+        allow_patterns = _normalize_patterns(item.allow_patterns)
+        ignore_patterns = _normalize_patterns(item.ignore_patterns)
+
+        if item.path:
+            downloaded = await HF_FAST_CACHE.exists(item.repo_id, item.path)
+            return HFFastCacheStatusResponse(key=item.key, downloaded=downloaded)
+
+        files = await HF_FAST_CACHE.list_files(item.repo_id)
+        downloaded = _is_downloaded_from_files(files, allow_patterns, ignore_patterns)
+        return HFFastCacheStatusResponse(key=item.key, downloaded=downloaded)
+
+    if not body:
+        return []
+
+    return await asyncio.gather(*(resolve_item(item) for item in body))
 
 
 if not Environment.is_production():
