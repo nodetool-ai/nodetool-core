@@ -53,19 +53,14 @@ class TestOpenRouterProvider:
             mock_http_client = httpx.AsyncClient()
             mock_scope.return_value.get_http_client.return_value = mock_http_client
 
-            try:
-                client = provider.get_client()
+            client = provider.get_client()
 
-                # Verify base URL
-                assert str(client.base_url) == "https://openrouter.ai/api/v1/"
+            # Verify base URL
+            assert str(client.base_url) == "https://openrouter.ai/api/v1/"
 
-                # Verify OpenRouter-specific headers
-                assert "HTTP-Referer" in client.default_headers
-                assert "X-Title" in client.default_headers
-            finally:
-                # Clean up the http client
-                import asyncio
-                asyncio.run(mock_http_client.aclose())
+            # Verify OpenRouter-specific headers
+            assert "HTTP-Referer" in client.default_headers
+            assert "X-Title" in client.default_headers
 
     def test_context_length_openai_models(self):
         """Test context length detection for OpenAI models via OpenRouter."""
@@ -129,7 +124,6 @@ class TestOpenRouterProvider:
         """Test that container environment variables are correctly set."""
         provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
 
-        from unittest.mock import MagicMock
         mock_context = MagicMock()
 
         env = provider.get_container_env(mock_context)

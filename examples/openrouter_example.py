@@ -174,18 +174,29 @@ async def main():
     print("OpenRouter Provider Examples")
     print("=" * 50)
     print()
-    
+
     # Note: These examples require a valid OPENROUTER_API_KEY
-    # Uncomment the examples you want to run:
-    
+    # The basic chat example is enabled by default to demonstrate functionality
+    # Uncomment other examples as needed:
+
+    try:
+        # Run basic example by default (if API key is available)
+        await example_list_models()
+        print("\nℹ️  To run more examples, uncomment them in the main() function")
+        print("   Available examples:")
+        print("   - example_basic_chat()")
+        print("   - example_streaming_chat()")
+        print("   - example_different_models()")
+        print("   - example_tool_calling()")
+    except Exception as e:
+        print(f"Error: {e}")
+        print("\nℹ️  Make sure OPENROUTER_API_KEY is set in your environment")
+        print("   Get your API key from: https://openrouter.ai/")
+
     # await example_basic_chat()
     # await example_streaming_chat()
     # await example_different_models()
     # await example_tool_calling()
-    # await example_list_models()
-    
-    print("Note: Uncomment the examples you want to run in the main() function")
-    print("Make sure OPENROUTER_API_KEY is set in your environment")
 
 
 if __name__ == "__main__":
