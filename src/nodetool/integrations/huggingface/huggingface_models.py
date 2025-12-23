@@ -635,7 +635,6 @@ async def unified_model(
         description=None,
         readme=None,
         size_on_disk=size,
-        downloaded=False,
         pipeline_tag=model_info.pipeline_tag if model_info else None,
         tags=model_info.tags if model_info else None,
         has_model_index=has_model_index(model_info) if model_info else None,
