@@ -175,6 +175,9 @@ class BaseProvider:
         total_tokens: int = 0,
         cached_tokens: int | None = None,
         reasoning_tokens: int | None = None,
+        input_size: int | None = None,
+        output_size: int | None = None,
+        parameters: dict[str, Any] | None = None,
         node_id: str = "",
         workflow_id: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -186,11 +189,14 @@ class BaseProvider:
             provider: Provider name (e.g., "openai", "anthropic")
             model: Model identifier (e.g., "gpt-4o-mini")
             cost: Cost of the call in credits
-            input_tokens: Number of input/prompt tokens
-            output_tokens: Number of output/completion tokens
-            total_tokens: Total number of tokens used
+            input_tokens: Number of input/prompt tokens (for text models)
+            output_tokens: Number of output/completion tokens (for text models)
+            total_tokens: Total number of tokens used (for text models)
             cached_tokens: Number of cached tokens (if applicable)
             reasoning_tokens: Number of reasoning tokens (if applicable)
+            input_size: Input data size in bytes (for image/audio/video models)
+            output_size: Output data size in bytes (for image/audio/video models)
+            parameters: Model-specific parameters (resolution, quality, voice, etc.)
             node_id: Optional node ID for tracking
             workflow_id: Optional workflow ID for tracking
             metadata: Additional metadata about the call
@@ -210,6 +216,9 @@ class BaseProvider:
                 total_tokens=total_tokens,
                 cached_tokens=cached_tokens,
                 reasoning_tokens=reasoning_tokens,
+                input_size=input_size,
+                output_size=output_size,
+                parameters=parameters,
                 metadata=metadata,
                 status="completed",
             )
