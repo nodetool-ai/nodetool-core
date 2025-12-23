@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 
 CREDIT_PRICING_TIERS = {
     # Rates per 1,000 tokens
-    "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},
-    "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},
+    "o1_tier": {"input_1k_tokens": 2.25, "output_1k_tokens": 9.0},  # o1 models
+    "o1_mini_tier": {"input_1k_tokens": 0.45, "output_1k_tokens": 1.8},  # o1-mini
+    "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},  # gpt-4o
+    "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},  # gpt-4o-mini
+    "gpt4_turbo": {"input_1k_tokens": 1.5, "output_1k_tokens": 6.0},  # gpt-4-turbo
     # Rates per image for gpt-image-1 (1 credit = $0.01)
     "image_gpt_low": {"per_image": 1.5},
     "image_gpt_medium": {"per_image": 6.0},
@@ -44,18 +47,34 @@ CREDIT_PRICING_TIERS = {
 }
 
 MODEL_TO_TIER_MAP = {
-    # Top Tier Chat
+    # O1 Series (reasoning models)
+    "o1": "o1_tier",
+    "o1-preview": "o1_tier",
+    "o1-mini": "o1_mini_tier",
+    # O3/O4 Series (future models)
+    "o3": "o1_tier",
+    "o3-mini": "o1_mini_tier",
+    "o4-mini": "low_tier_chat",
+    # GPT-4o Series
     "gpt-4o": "top_tier_chat",
+    "gpt-4o-2024-11-20": "top_tier_chat",
+    "gpt-4o-2024-08-06": "top_tier_chat",
+    "gpt-4o-2024-05-13": "top_tier_chat",
     "gpt-4o-search-preview": "top_tier_chat",
-    "computer-use-preview": "top_tier_chat",
-    "o3": "top_tier_chat",  # From original pricing, mapped to top_tier
-    "gpt-4.1": "top_tier_chat",  # Assuming future model
-    # Low Tier Chat
     "gpt-4o-mini": "low_tier_chat",
+    "gpt-4o-mini-2024-07-18": "low_tier_chat",
     "gpt-4o-mini-search-preview": "low_tier_chat",
-    "o4-mini": "low_tier_chat",  # From original pricing, mapped to low_tier
-    "gpt-4.1-mini": "low_tier_chat",  # Assuming future model
-    "gpt-4.1-nano": "low_tier_chat",  # Assuming future model
+    # GPT-4 Turbo Series
+    "gpt-4-turbo": "gpt4_turbo",
+    "gpt-4-turbo-2024-04-09": "gpt4_turbo",
+    "gpt-4-turbo-preview": "gpt4_turbo",
+    "gpt-4-0125-preview": "gpt4_turbo",
+    "gpt-4-1106-preview": "gpt4_turbo",
+    # Future models
+    "gpt-4.1": "top_tier_chat",
+    "gpt-4.1-mini": "low_tier_chat",
+    "gpt-4.1-nano": "low_tier_chat",
+    "computer-use-preview": "top_tier_chat",
     # Image models like "gpt-image-1" are handled by create_image based on params.quality.
     # Whisper / Speech-to-Text
     "whisper-1": "whisper_standard",
