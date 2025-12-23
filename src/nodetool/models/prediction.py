@@ -43,11 +43,22 @@ class Prediction(DBModel):
     cost: float | None = DBField(default=None)
     duration: float | None = DBField(default=None)
     hardware: str | None = DBField(default=None)
+    
+    # Token-based usage (for text/chat/embedding models)
     input_tokens: int | None = DBField(default=None)
     output_tokens: int | None = DBField(default=None)
     total_tokens: int | None = DBField(default=None)
     cached_tokens: int | None = DBField(default=None)
     reasoning_tokens: int | None = DBField(default=None)
+    
+    # Size-based usage (for image/audio/video models)
+    input_size: int | None = DBField(default=None)  # Input data size in bytes
+    output_size: int | None = DBField(default=None)  # Output data size in bytes
+    
+    # Model parameters (resolution, quality, voice, etc.)
+    parameters: dict[str, Any] | None = DBField(default=None)
+    
+    # Additional metadata
     metadata: dict[str, Any] | None = DBField(default=None)
 
     @classmethod
@@ -70,6 +81,9 @@ class Prediction(DBModel):
         total_tokens: int | None = None,
         cached_tokens: int | None = None,
         reasoning_tokens: int | None = None,
+        input_size: int | None = None,
+        output_size: int | None = None,
+        parameters: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ):
         """Creates a new prediction record in the database.
@@ -92,6 +106,9 @@ class Prediction(DBModel):
             total_tokens: Optional total number of tokens used.
             cached_tokens: Optional number of cached tokens (for providers that support it).
             reasoning_tokens: Optional number of reasoning tokens (for providers that support it).
+            input_size: Optional input data size in bytes (for image/audio/video models).
+            output_size: Optional output data size in bytes (for image/audio/video models).
+            parameters: Optional model-specific parameters (resolution, quality, voice, etc.).
             metadata: Optional additional metadata about the prediction.
 
         Returns:
@@ -119,6 +136,9 @@ class Prediction(DBModel):
             total_tokens=total_tokens,
             cached_tokens=cached_tokens,
             reasoning_tokens=reasoning_tokens,
+            input_size=input_size,
+            output_size=output_size,
+            parameters=parameters,
             metadata=metadata,
         )
         await prediction.save()
