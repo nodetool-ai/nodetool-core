@@ -902,6 +902,7 @@ class HelpMessageProcessor(MessageProcessor):
                         processing_context.user_id,
                         last_message.provider,
                         last_message.model,
+                        processing_context.workflow_id,
                     )
                     break
 
@@ -1009,6 +1010,7 @@ class HelpMessageProcessor(MessageProcessor):
         user_id: str,
         provider: str | None,
         model: str | None,
+        workflow_id: str,
     ) -> None:
         """
         Log the provider call to the database for cost tracking.
@@ -1017,6 +1019,7 @@ class HelpMessageProcessor(MessageProcessor):
             user_id: User ID making the call
             provider: Provider name (e.g., "openai", "anthropic")
             model: Model identifier
+            workflow_id: Workflow ID for tracking
         """
         if not provider or not model:
             log.warning("Cannot log provider call: missing provider or model")

@@ -416,14 +416,15 @@ class RegularChatProcessor(MessageProcessor):
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
                     log.debug("No more unprocessed messages, completing generation")
-                    
+
                     # Log provider call for cost tracking
                     await self._log_provider_call(
                         processing_context.user_id,
                         last_message.provider,
                         last_message.model,
+                        processing_context.workflow_id,
                     )
-                    
+
                     break
                 else:
                     log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
@@ -682,6 +683,7 @@ class RegularChatProcessor(MessageProcessor):
         user_id: str,
         provider: str | None,
         model: str | None,
+        workflow_id: str,
     ) -> None:
         """
         Log the provider call to the database for cost tracking.
@@ -690,6 +692,7 @@ class RegularChatProcessor(MessageProcessor):
             user_id: User ID making the call
             provider: Provider name (e.g., "openai", "anthropic")
             model: Model identifier
+            workflow_id: Workflow ID for tracking
         """
         if not provider or not model:
             log.warning("Cannot log provider call: missing provider or model")
