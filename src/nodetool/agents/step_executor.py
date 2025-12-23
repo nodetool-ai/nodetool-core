@@ -301,9 +301,9 @@ Before making tool calls, provide clear progress updates:
 2. Before each tool call: Emit a one-sentence message describing what you're doing and why.
 3. After tool results: Provide a brief update only if the result changes your plan.
 """
-def _validate_and_sanitize_schema(
-    schema: Any, default_description: str = "Result object"
-) -> Dict[str, Any]:
+
+
+def _validate_and_sanitize_schema(schema: Any, default_description: str = "Result object") -> Dict[str, Any]:
     """
     Validates and sanitizes a JSON schema to ensure it's compatible with OpenAI function calling.
 
@@ -365,9 +365,7 @@ def _validate_and_sanitize_schema(
             return False
 
         # Treat as object if explicitly typed or if properties imply it
-        return schema_type == "object" or (
-            schema_type is None and obj.get("properties") is not None
-        )
+        return schema_type == "object" or (schema_type is None and obj.get("properties") is not None)
 
     def _clean_schema_recursive(obj: Any) -> Any:
         """Recursively clean schema objects to ensure compatibility."""
@@ -531,11 +529,7 @@ class StepExecutor:
             }
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
-        self.system_prompt = (
-            self.system_prompt
-            + "\n\nToday's date is "
-            + datetime.datetime.now().strftime("%Y-%m-%d")
-        )
+        self.system_prompt = self.system_prompt + "\n\nToday's date is " + datetime.datetime.now().strftime("%Y-%m-%d")
 
         # Initialize isolated message history for this step
         self.history = [Message(role="system", content=self.system_prompt)]
@@ -624,9 +618,7 @@ class StepExecutor:
     async def _summarize_messages(self, messages: list[Message]) -> str:
         """Summarize older messages into a concise, factual summary."""
 
-        joined = "\n".join(
-            f"{m.role.upper()}: {m.content}" for m in messages if m.content
-        )
+        joined = "\n".join(f"{m.role.upper()}: {m.content}" for m in messages if m.content)
         prompt = (
             "Summarize the following conversation concisely while preserving key facts, "
             "decisions, and results:\n\n" + joined
@@ -653,9 +645,7 @@ class StepExecutor:
         if token_count < self.max_token_limit * 0.9:
             return
 
-        log.debug(
-            "Trimming history (tokens=%d/%d)", token_count, self.max_token_limit
-        )
+        log.debug("Trimming history (tokens=%d/%d)", token_count, self.max_token_limit)
 
         preserved: list[Message] = []
         for msg in reversed(self.history):
@@ -664,9 +654,7 @@ class StepExecutor:
                 break
 
         earlier_count = len(self.history) - len(preserved)
-        earlier_context = (
-            self.history[1:earlier_count] if earlier_count > 1 else []
-        )  # exclude initial system prompt
+        earlier_context = self.history[1:earlier_count] if earlier_count > 1 else []  # exclude initial system prompt
 
         if earlier_context:
             summary = await self._summarize_messages(earlier_context)
@@ -686,10 +674,7 @@ class StepExecutor:
         self.history.extend(preserved)
         current_tokens = self._count_tokens(self.history)
         trimmed_messages = 0
-        while (
-            current_tokens > self.max_token_limit * 0.85
-            and len(self.history) > 2
-        ):
+        while current_tokens > self.max_token_limit * 0.85 and len(self.history) > 2:
             removed = self.history.pop(2)
             trimmed_messages += 1
             current_tokens = self._count_tokens(self.history)
@@ -704,9 +689,7 @@ class StepExecutor:
                 trimmed_messages,
             )
 
-        log.info(
-            "History trimmed at iteration %d. Token count reset.", self.iterations
-        )
+        log.info("History trimmed at iteration %d. Token count reset.", self.iterations)
 
     def _load_result_schema(self) -> Optional[Dict[str, Any]]:
         """Parse and sanitize the declared output schema for this step."""
@@ -714,9 +697,7 @@ class StepExecutor:
         if not self.step.output_schema:
             return None
 
-        default_description = (
-            "The task result" if self.use_finish_task else "The step result"
-        )
+        default_description = "The task result" if self.use_finish_task else "The step result"
         raw_schema: Any = self.step.output_schema
 
         try:
@@ -732,9 +713,7 @@ class StepExecutor:
                 "description": default_description,
             }
 
-    def _validate_result_payload(
-        self, result_payload: Any
-    ) -> tuple[bool, Optional[str], Any]:
+    def _validate_result_payload(self, result_payload: Any) -> tuple[bool, Optional[str], Any]:
         """Validate the provided result payload against the declared schema."""
 
         normalized_result = self._normalize_tool_result(result_payload)
@@ -752,18 +731,12 @@ class StepExecutor:
 
         self.step.completed = True
         self.step.end_time = int(time.time())
-        self.processing_context.store_step_result(
-            self.step.id, normalized_result
-        )
+        self.processing_context.store_step_result(self.step.id, normalized_result)
         if self.use_finish_task:
-            self.processing_context.store_step_result(
-                self.task.id, normalized_result
-            )
+            self.processing_context.store_step_result(self.task.id, normalized_result)
         self._output_result = normalized_result
 
-    def _append_completion_feedback(
-        self, detail: str, submitted_result: Any | None = None
-    ) -> None:
+    def _append_completion_feedback(self, detail: str, submitted_result: Any | None = None) -> None:
         """Append a system message instructing the LLM to complete via finish_step."""
 
         schema_str = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
@@ -785,16 +758,16 @@ class StepExecutor:
                 )
             except Exception:  # pragma: no cover
                 preview = str(submitted_result)
-            message_lines.extend([
-                "Previous submission preview:",
-                preview,
-            ])
+            message_lines.extend(
+                [
+                    "Previous submission preview:",
+                    preview,
+                ]
+            )
 
         self.history.append(Message(role="system", content="\n".join(message_lines)))
 
-    def _maybe_finalize_from_message(
-        self, message: Optional[Message]
-    ) -> tuple[bool, Optional[Any]]:
+    def _maybe_finalize_from_message(self, message: Optional[Message]) -> tuple[bool, Optional[Any]]:
         """Attempt to parse and store a completion payload from the assistant message."""
 
         if not message:
@@ -824,9 +797,7 @@ class StepExecutor:
             return False, None
 
         candidate_result = parsed.get("result") if "result" in parsed else parsed
-        is_valid, error_detail, normalized_result = self._validate_result_payload(
-            candidate_result
-        )
+        is_valid, error_detail, normalized_result = self._validate_result_payload(candidate_result)
         if not is_valid or normalized_result is None:
             self.history.append(
                 Message(
@@ -918,9 +889,7 @@ class StepExecutor:
         if self.step.depends_on:
             # Fetch and inject input results directly into the prompt
             for input_task_id in self.step.depends_on:
-                result = self.processing_context.load_step_result(
-                    input_task_id
-                )
+                result = self.processing_context.load_step_result(input_task_id)
                 if result is not None:
                     prompt_parts.append(
                         f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
@@ -943,9 +912,7 @@ class StepExecutor:
 
         # Display task update event
         if self.display_manager:
-            self.display_manager.display_task_update(
-                "SUBTASK_STARTED", self.step.instructions
-            )
+            self.display_manager.display_task_update("SUBTASK_STARTED", self.step.instructions)
 
         # Continue executing until the task is completed (token budget enforces termination)
         while not self.step.completed:
@@ -999,25 +966,19 @@ class StepExecutor:
 
             # If there was any final content that wasn't streamed (e.g. buffered), yield it now
             if message.content and not message.tool_calls:
-                 # This is a fallback in case streaming didn't catch everything or provider buffered
-                 # Note: if streaming worked, this will redundant but Chunk(done=False) is fast.
-                 pass
+                # This is a fallback in case streaming didn't catch everything or provider buffered
+                # Note: if streaming worked, this will redundant but Chunk(done=False) is fast.
+                pass
 
-            message.tool_calls = self._filter_tool_calls_for_current_stage(
-                message.tool_calls
-            )
+            message.tool_calls = self._filter_tool_calls_for_current_stage(message.tool_calls)
 
             # Add assistant message to history after any tool-call adjustments so the
             # stored conversation precisely matches what we'll execute/respond to.
             self.history.append(message)
 
             if message.tool_calls:
-
                 # Check for finish_step tool call - handle specially for completion
-                finish_step_call = next(
-                    (tc for tc in message.tool_calls if tc.name == "finish_step"),
-                    None
-                )
+                finish_step_call = next((tc for tc in message.tool_calls if tc.name == "finish_step"), None)
 
                 if finish_step_call:
                     # Handle finish_step tool for step completion
@@ -1031,42 +992,56 @@ class StepExecutor:
                     )
 
                     # Extract and validate result from tool call args
-                    result_payload = finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
+                    result_payload = (
+                        finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
+                    )
                     if result_payload is not None:
                         is_valid, error_detail, normalized_result = self._validate_result_payload(result_payload)
                         if is_valid and normalized_result is not None:
                             # Add tool result to history
-                            self.history.append(Message(
-                                role="tool",
-                                tool_call_id=finish_step_call.id,
-                                name="finish_step",
-                                content='{"status": "completed"}',
-                            ))
+                            self.history.append(
+                                Message(
+                                    role="tool",
+                                    tool_call_id=finish_step_call.id,
+                                    name="finish_step",
+                                    content='{"status": "completed"}',
+                                )
+                            )
                             self._store_completion_result(normalized_result)
-                            log.debug(f"StepExecutor: {self.step.id} completed via tool. use_finish_task={self.use_finish_task}")
+                            log.debug(
+                                f"StepExecutor: {self.step.id} completed via tool. use_finish_task={self.use_finish_task}"
+                            )
                             for event in self._emit_completion_events(normalized_result):
                                 if isinstance(event, StepResult):
-                                    log.debug(f"StepExecutor: Yielding tool StepResult. is_task_result={event.is_task_result}")
+                                    log.debug(
+                                        f"StepExecutor: Yielding tool StepResult. is_task_result={event.is_task_result}"
+                                    )
                                 yield event
                             break
                         else:
                             # Invalid result - add feedback and continue loop
                             log.warning(f"finish_step result validation failed: {error_detail}")
-                            self.history.append(Message(
+                            self.history.append(
+                                Message(
+                                    role="tool",
+                                    tool_call_id=finish_step_call.id,
+                                    name="finish_step",
+                                    content=f'{{"error": "Result validation failed: {error_detail}"}}',
+                                )
+                            )
+                            self._append_completion_feedback(
+                                error_detail or "Result failed schema validation.", result_payload
+                            )
+                    else:
+                        log.warning("finish_step called without result")
+                        self.history.append(
+                            Message(
                                 role="tool",
                                 tool_call_id=finish_step_call.id,
                                 name="finish_step",
-                                content=f'{{"error": "Result validation failed: {error_detail}"}}',
-                            ))
-                            self._append_completion_feedback(error_detail or "Result failed schema validation.", result_payload)
-                    else:
-                        log.warning("finish_step called without result")
-                        self.history.append(Message(
-                            role="tool",
-                            tool_call_id=finish_step_call.id,
-                            name="finish_step",
-                            content='{"error": "Missing result in finish_step call"}',
-                        ))
+                                content='{"error": "Missing result in finish_step call"}',
+                            )
+                        )
                 else:
                     # Process non-finish_step tool calls normally
                     for tool_call in message.tool_calls:
@@ -1112,9 +1087,7 @@ class StepExecutor:
 
         # Display completion event
         if self.display_manager:
-            self.display_manager.display_completion_event(
-                self.step, self.step.completed, self._output_result
-            )
+            self.display_manager.display_completion_event(self.step, self.step.completed, self._output_result)
 
         # Useful debug printing
         # for m in self.history:
@@ -1147,10 +1120,7 @@ class StepExecutor:
             Tools are not available. Provide the final answer concisely.
             """
         # Check if the message already exists to prevent duplicates if called multiple times
-        if not any(
-            m.role == "system" and "ENTERING CONCLUSION STAGE" in str(m.content)
-            for m in self.history
-        ):
+        if not any(m.role == "system" and "ENTERING CONCLUSION STAGE" in str(m.content) for m in self.history):
             self.history.append(Message(role="system", content=transition_message))
             if self.display_manager:
                 self.display_manager.display_conclusion_stage()
@@ -1234,9 +1204,7 @@ class StepExecutor:
 
         yield message
 
-    def _filter_tool_calls_for_current_stage(
-        self, tool_calls: Optional[list[ToolCall]]
-    ) -> list[ToolCall]:
+    def _filter_tool_calls_for_current_stage(self, tool_calls: Optional[list[ToolCall]]) -> list[ToolCall]:
         """Filter tool calls based on whether we're in the conclusion stage."""
         if not tool_calls:
             return []
@@ -1253,9 +1221,7 @@ class StepExecutor:
             )
         return allowed
 
-    async def _process_tool_call_results(
-        self, valid_tool_calls: list[ToolCall]
-    ) -> None:
+    async def _process_tool_call_results(self, valid_tool_calls: list[ToolCall]) -> None:
         """Execute tool calls and add their results to history."""
         if not valid_tool_calls:
             return
@@ -1266,13 +1232,9 @@ class StepExecutor:
         )
 
         valid_tool_messages: list[Message] = []
-        for tool_call, result in zip(
-            valid_tool_calls, tool_results, strict=True
-        ):
+        for tool_call, result in zip(valid_tool_calls, tool_results, strict=True):
             if isinstance(result, Exception):
-                log.error(
-                    f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}"
-                )
+                log.error(f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}")
                 error_message = Message(
                     role="tool",
                     tool_call_id=tool_call.id,
@@ -1283,9 +1245,7 @@ class StepExecutor:
             elif isinstance(result, Message):
                 valid_tool_messages.append(result)
             else:
-                log.error(
-                    f"Tool call {tool_call.id} ({tool_call.name}) returned unexpected type: {type(result)}"
-                )
+                log.error(f"Tool call {tool_call.id} ({tool_call.name}) returned unexpected type: {type(result)}")
                 error_message = Message(
                     role="tool",
                     tool_call_id=tool_call.id,
@@ -1318,42 +1278,30 @@ class StepExecutor:
             Message: A message object with role 'tool' containing the processed and serialized result.
         """
         if self.display_manager:
-            self.display_manager.debug_step_only(
-                f"Handling tool call: {tool_call.name} (ID: {tool_call.id})"
-            )
+            self.display_manager.debug_step_only(f"Handling tool call: {tool_call.name} (ID: {tool_call.id})")
 
         # 1. Execute the tool
         tool_result = await self._process_tool_execution(tool_call)
 
         if self.display_manager:
-            self.display_manager.debug_step_only(
-                f"Tool {tool_call.name} execution completed"
-            )
+            self.display_manager.debug_step_only(f"Tool {tool_call.name} execution completed")
 
         # 3. Handle binary artifacts (images, audio)
         if isinstance(tool_result, dict):
             if "image" in tool_result:
-                tool_result = self._handle_binary_artifact(
-                    tool_result, tool_call.name, "image"
-                )
+                tool_result = self._handle_binary_artifact(tool_result, tool_call.name, "image")
             elif "audio" in tool_result:
-                tool_result = self._handle_binary_artifact(
-                    tool_result, tool_call.name, "audio"
-                )
+                tool_result = self._handle_binary_artifact(tool_result, tool_call.name, "audio")
 
         # 4. Process special tool side-effects (e.g., browser navigation)
         self._process_special_tool_side_effects(tool_result, tool_call)
 
         # Log tool result only to step tree (not phase)
         if self.display_manager:
-            self.display_manager.info_step_only(
-                f"Tool result received from {tool_call.name}"
-            )
+            self.display_manager.info_step_only(f"Tool result received from {tool_call.name}")
 
         # 5. Serialize the final processed result for history
-        content_str = self._serialize_tool_result_for_history(
-            tool_result, tool_call.name
-        )
+        content_str = self._serialize_tool_result_for_history(tool_result, tool_call.name)
 
         # Return the tool result as a message to be added to history
         return Message(
@@ -1393,9 +1341,7 @@ class StepExecutor:
             # Generate a unique filename
             artifact_filename = f"artifact_{uuid.uuid4().hex[:8]}.{file_ext}"
             artifact_rel_path = artifact_filename  # Save at the root
-            artifact_abs_path = self.processing_context.resolve_workspace_path(
-                artifact_rel_path
-            )
+            artifact_abs_path = self.processing_context.resolve_workspace_path(artifact_rel_path)
 
             # Ensure artifacts directory exists (No longer needed for root saving, parent is workspace_dir)
             # os.makedirs(os.path.dirname(artifact_abs_path), exist_ok=True)
@@ -1418,20 +1364,14 @@ class StepExecutor:
 
         except (binascii.Error, ValueError) as e:
             if self.display_manager:
-                self.display_manager.error(
-                    f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}"
-                )
-            tool_result[f"{artifact_type}_path"] = (
-                f"Error decoding {artifact_type}: {e}"
-            )
+                self.display_manager.error(f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}")
+            tool_result[f"{artifact_type}_path"] = f"Error decoding {artifact_type}: {e}"
             tool_result.pop(artifact_key, None)
             if artifact_type == "audio" and "format" in tool_result:
                 del tool_result["format"]
         except Exception as e:
             if self.display_manager:
-                self.display_manager.error(
-                    f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
-                )
+                self.display_manager.error(f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}")
             tool_result[f"{artifact_type}_path"] = f"Error saving {artifact_type}: {e}"
             tool_result.pop(artifact_key, None)
             if artifact_type == "audio" and "format" in tool_result:
@@ -1446,9 +1386,7 @@ class StepExecutor:
             if url and url not in self.sources:  # Avoid duplicates
                 self.sources.append(url)
 
-    def _serialize_tool_result_for_history(
-        self, tool_result: Any, tool_name: str
-    ) -> str:
+    def _serialize_tool_result_for_history(self, tool_result: Any, tool_name: str) -> str:
         """Serializes the tool result to a JSON string for message history."""
 
         try:
@@ -1461,15 +1399,10 @@ class StepExecutor:
                     "Truncating tool result (%d chars) for history entry",
                     len(serialized),
                 )
-                serialized = (
-                    serialized[:MAX_TOOL_RESULT_CHARS]
-                    + "... [truncated to maintain context size]"
-                )
+                serialized = serialized[:MAX_TOOL_RESULT_CHARS] + "... [truncated to maintain context size]"
             return serialized
         except (TypeError, ValueError) as e:
-            log.error(
-                f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
-            )
+            log.error(f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}")
             return json.dumps(
                 {
                     "error": f"Failed to serialize tool result: {e}",
@@ -1477,9 +1410,7 @@ class StepExecutor:
                 }
             )
 
-    async def _request_completion_response(
-        self, system_prompt: str
-    ) -> Optional[Any]:
+    async def _request_completion_response(self, system_prompt: str) -> Optional[Any]:
         """Ask the LLM to provide the final completion JSON and return the parsed result."""
 
         self.history.append(Message(role="system", content=system_prompt))
@@ -1487,9 +1418,7 @@ class StepExecutor:
         try:
             input_tokens_now = self._count_tokens(self.history)
             self.input_tokens_total += input_tokens_now
-            log.debug(
-                f"Input tokens (forced completion): {input_tokens_now} (cumulative: {self.input_tokens_total})"
-            )
+            log.debug(f"Input tokens (forced completion): {input_tokens_now} (cumulative: {self.input_tokens_total})")
         except Exception as exc:  # pragma: no cover
             log.warning(f"Failed to count input tokens (forced completion): {exc}")
 
@@ -1530,9 +1459,7 @@ class StepExecutor:
 
         raise ValueError(f"Tool '{tool_call.name}' not found")
 
-    async def _compress_tool_result(
-        self, result_content: Any, tool_name: str, tool_args: dict
-    ) -> dict | str:
+    async def _compress_tool_result(self, result_content: Any, tool_name: str, tool_args: dict) -> dict | str:
         """
         Compresses large tool result content using an LLM call.
 
@@ -1547,9 +1474,7 @@ class StepExecutor:
         """
         try:
             # Serialize the original content for the LLM prompt
-            original_content_str = json.dumps(
-                result_content, indent=2, ensure_ascii=False
-            )
+            original_content_str = json.dumps(result_content, indent=2, ensure_ascii=False)
         except Exception as e:
             log.error(f"Failed to serialize result content for compression: {e}")
             return {
@@ -1594,9 +1519,7 @@ class StepExecutor:
                     ]
                 )
                 self.input_tokens_total += input_tokens_now
-                log.debug(
-                    f"Input tokens (compression): {input_tokens_now} (cumulative: {self.input_tokens_total})"
-                )
+                log.debug(f"Input tokens (compression): {input_tokens_now} (cumulative: {self.input_tokens_total})")
             except Exception as e:
                 log.warning(f"Failed to count input tokens (compression): {e}")
 
@@ -1612,34 +1535,24 @@ class StepExecutor:
             )
 
             try:
-                output_tokens_now = self._count_single_message_tokens(
-                    compression_response
-                )
+                output_tokens_now = self._count_single_message_tokens(compression_response)
                 self.output_tokens_total += output_tokens_now
-                log.debug(
-                    f"Output tokens (compression): {output_tokens_now} (cumulative: {self.output_tokens_total})"
-                )
+                log.debug(f"Output tokens (compression): {output_tokens_now} (cumulative: {self.output_tokens_total})")
             except Exception as e:
                 log.warning(f"Failed to count output tokens (compression): {e}")
 
             # Clean compression_response.content before str() and strip()
             if isinstance(compression_response.content, str):
-                compression_response.content = _remove_think_tags(
-                    compression_response.content
-                )
+                compression_response.content = _remove_think_tags(compression_response.content)
             elif isinstance(compression_response.content, list):
-                for (
-                    part_dict
-                ) in compression_response.content:  # Iterate directly over parts
+                for part_dict in compression_response.content:  # Iterate directly over parts
                     if isinstance(part_dict, dict) and part_dict.get("type") == "text":
                         text_val = part_dict.get("text")
                         if isinstance(text_val, str):
                             cleaned_text = _remove_think_tags(text_val)
                             part_dict["text"] = cleaned_text
                         elif text_val is None:
-                            cleaned_text = _remove_think_tags(
-                                None
-                            )  # Explicitly pass None
+                            cleaned_text = _remove_think_tags(None)  # Explicitly pass None
                             part_dict["text"] = cleaned_text  # Assigns None back
 
             compressed_content_str = str(compression_response.content).strip()
@@ -1661,13 +1574,10 @@ class StepExecutor:
 
         except Exception as e:
             if self.display_manager:
-                self.display_manager.error(
-                    f"Error during LLM call for tool result compression ('{tool_name}'): {e}"
-                )
+                self.display_manager.error(f"Error during LLM call for tool result compression ('{tool_name}'): {e}")
             # Return a structured error message instead of the original large content
             return {
                 "error": f"Failed to compress tool result via LLM: {e}",
                 "compression_failed": True,
-                "original_content_preview": original_content_str[:500]
-                + "...",  # Include a preview
+                "original_content_preview": original_content_str[:500] + "...",  # Include a preview
             }

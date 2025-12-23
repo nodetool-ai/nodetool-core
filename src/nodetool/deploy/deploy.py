@@ -77,22 +77,14 @@ def get_docker_username(
     """
     from .docker import get_docker_username_from_config
 
-    username = (
-        docker_username
-        or os.getenv("DOCKER_USERNAME")
-        or get_docker_username_from_config(docker_registry)
-    )
+    username = docker_username or os.getenv("DOCKER_USERNAME") or get_docker_username_from_config(docker_registry)
 
     if not username and not (skip_build and skip_push):
-        console.print(
-            "Error: Docker username is required for building and pushing images."
-        )
+        console.print("Error: Docker username is required for building and pushing images.")
         console.print("Provide it via one of these methods:")
         console.print("1. Command line: --docker-username myusername")
         console.print("2. Environment variable: export DOCKER_USERNAME=myusername")
-        console.print(
-            "3. Docker login: docker login (will be read from ~/.docker/config.json)"
-        )
+        console.print("3. Docker login: docker login (will be read from ~/.docker/config.json)")
         sys.exit(1)
 
     if username:

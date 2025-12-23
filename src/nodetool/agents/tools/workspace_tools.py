@@ -148,7 +148,7 @@ class ReadFileTool(Tool):
                                     "error": f"Invalid line range: start_line={start_line}, end_line={end_line}, total lines={total_lines}",
                                     "suggested_ranges": [
                                         f"1-{min(500, total_lines)}",
-                                        f"{max(1, total_lines-500)}-{total_lines}",
+                                        f"{max(1, total_lines - 500)}-{total_lines}",
                                     ],
                                 }
 
@@ -162,9 +162,7 @@ class ReadFileTool(Tool):
                         else:
                             # Read the whole file or up to max_length_per_file
                             content = f.read(max_length_per_file)
-                            line_info = {
-                                "total_lines": len(re.findall(r"\n", content)) + 1
-                            }
+                            line_info = {"total_lines": len(re.findall(r"\n", content)) + 1}
 
                     # Always count tokens
                     token_count = self.count_tokens(content)
@@ -177,24 +175,18 @@ class ReadFileTool(Tool):
                     if max_tokens and token_count > max_tokens:
                         total_lines = line_info.get("total_lines", 0)
                         approx_lines_per_token = total_lines / max(1, token_count)
-                        suggested_line_count = int(
-                            approx_lines_per_token * max_tokens * 0.9
-                        )  # 90% to be safe
+                        suggested_line_count = int(approx_lines_per_token * max_tokens * 0.9)  # 90% to be safe
 
                         if start_line:
                             # Suggest reducing the end line
-                            suggested_end = min(
-                                start_line + suggested_line_count - 1, total_lines
-                            )
+                            suggested_end = min(start_line + suggested_line_count - 1, total_lines)
                             suggested_ranges = [f"{start_line}-{suggested_end}"]
                         else:
                             # Suggest chunks of the file
                             chunk_size = min(suggested_line_count, 500)
                             suggested_ranges = []
                             for i in range(1, total_lines, chunk_size):
-                                suggested_ranges.append(
-                                    f"{i}-{min(i+chunk_size-1, total_lines)}"
-                                )
+                                suggested_ranges.append(f"{i}-{min(i + chunk_size - 1, total_lines)}")
                                 if len(suggested_ranges) >= 3:  # Limit to 3 suggestions
                                     break
 

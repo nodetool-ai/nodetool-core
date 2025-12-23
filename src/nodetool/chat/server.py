@@ -398,9 +398,7 @@ def run_chat_server(
     app = create_chat_server(provider, default_model, tools, workflows)
 
     console.print(f"🚀 Starting OpenAI-compatible chat server on {host}:{port}")
-    console.print(
-        f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions"
-    )
+    console.print(f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions")
     console.print(f"Models endpoint: http://{host}:{port}/v1/models")
     console.print("Auth provider:", Environment.get_auth_provider_kind())
     console.print("Default model:", f"{default_model} (provider: {provider})")

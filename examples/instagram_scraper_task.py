@@ -63,10 +63,7 @@ async def test_instagram_scraper_task(
                     "type": "array",
                     "items": {
                         "type": "object",
-                        "properties": {
-                            "hashtag": {"type": "string"},
-                            "description": {"type": "string"}
-                        },
+                        "properties": {"hashtag": {"type": "string"}, "description": {"type": "string"}},
                         "required": ["hashtag", "description"],
                     },
                 },

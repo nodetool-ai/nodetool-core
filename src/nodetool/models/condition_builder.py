@@ -69,8 +69,7 @@ class ConditionGroup:
             operator: The logical operator (AND/OR) to combine the conditions with.
         """
         self.conditions = [
-            condition.build() if isinstance(condition, ConditionBuilder) else condition
-            for condition in conditions
+            condition.build() if isinstance(condition, ConditionBuilder) else condition for condition in conditions
         ]
         self.operator = operator
 
@@ -87,9 +86,7 @@ class Field:
         """
         self.name = name
 
-    def _create_condition(
-        self, operator: Operator, value: Any | Variable
-    ) -> "ConditionBuilder":
+    def _create_condition(self, operator: Operator, value: Any | Variable) -> "ConditionBuilder":
         """
         Internal helper method to create a ConditionBuilder from a condition.
 
@@ -197,9 +194,7 @@ class ConditionBuilder:
         else:
             self.root = condition
 
-    def _add_condition(
-        self, other: "ConditionBuilder", operator: LogicalOperator
-    ) -> "ConditionBuilder":
+    def _add_condition(self, other: "ConditionBuilder", operator: LogicalOperator) -> "ConditionBuilder":
         """
         Internal helper to add another condition or group using a logical operator.
 
@@ -238,9 +233,7 @@ class ConditionBuilder:
             # Simplified logic for now: always create a group if combining
             # More complex logic would involve checking operator precedence and associativity
             # For now, treat the initial state as ready to form a group
-            self.root = ConditionGroup(
-                [self.root.conditions[0], other_condition], operator
-            )
+            self.root = ConditionGroup([self.root.conditions[0], other_condition], operator)
 
         # Check if the 'other' root is just a single condition
         elif (
@@ -291,9 +284,7 @@ class ConditionBuilder:
         """
         return self.root
 
-    def _get_variables(
-        self, values: dict[str, Any], condition: Condition | ConditionGroup
-    ):
+    def _get_variables(self, values: dict[str, Any], condition: Condition | ConditionGroup):
         """
         Recursively traverses the condition tree to find all Variable instances.
 
@@ -306,16 +297,12 @@ class ConditionBuilder:
                 # Store variable names, typically initializing value to None
                 values[condition.value.name] = None
             # Also check if the 'value' for IN or CONTAINS is a Variable list
-            elif isinstance(condition.value, list) and any(
-                isinstance(v, Variable) for v in condition.value
-            ):
+            elif isinstance(condition.value, list) and any(isinstance(v, Variable) for v in condition.value):
                 for item in condition.value:
                     if isinstance(item, Variable):
                         values[item.name] = None
             # Handle case where IN operator uses a single Variable representing a list
-            elif condition.operator == Operator.IN and isinstance(
-                condition.value, Variable
-            ):
+            elif condition.operator == Operator.IN and isinstance(condition.value, Variable):
                 values[condition.value.name] = None
 
         elif isinstance(condition, ConditionGroup):  # Check if it's a ConditionGroup

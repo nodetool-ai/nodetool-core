@@ -45,9 +45,7 @@ def json_schema_for_dictionary(fields: RecordType) -> dict:
     """
     return {
         "type": "object",
-        "properties": {
-            field.name: json_schema_for_column(field) for field in fields.columns
-        },
+        "properties": {field.name: json_schema_for_column(field) for field in fields.columns},
         "required": [field.name for field in fields.columns],
         "additionalProperties": False,
     }
@@ -82,9 +80,7 @@ class GenerateDataTool(Tool):
         self.columns = columns
         self.input_schema = {
             "type": "object",
-            "properties": {
-                column.name: json_schema_for_column(column) for column in columns
-            },
+            "properties": {column.name: json_schema_for_column(column) for column in columns},
             "required": [column.name for column in columns],
             "additionalProperties": False,
         }
@@ -114,10 +110,7 @@ def json_schema_for_dataframe(columns: list[ColumnDef]) -> dict:
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "properties": {
-                        column.name: json_schema_for_column(column)
-                        for column in columns
-                    },
+                    "properties": {column.name: json_schema_for_column(column) for column in columns},
                     "required": [column.name for column in columns],
                     "additionalProperties": False,
                 },

@@ -24,9 +24,7 @@ from .base import Tool
 
 class ChromaTextSearchTool(Tool):
     name = "chroma_text_search"
-    description = (
-        "Search all ChromaDB collections for similar text using semantic search"
-    )
+    description = "Search all ChromaDB collections for similar text using semantic search"
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -142,9 +140,7 @@ class ChromaIndexTool(Tool):
 
 class ChromaHybridSearchTool(Tool):
     name = "chroma_hybrid_search"
-    description = (
-        "Search all ChromaDB collections using both semantic and keyword-based search"
-    )
+    description = "Search all ChromaDB collections using both semantic and keyword-based search"
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -178,11 +174,7 @@ class ChromaHybridSearchTool(Tool):
         import re
 
         pattern = r"[ ,.!?\-_=|]+"
-        query_tokens = [
-            token.strip()
-            for token in re.split(pattern, text.lower())
-            if len(token.strip()) >= min_length
-        ]
+        query_tokens = [token.strip() for token in re.split(pattern, text.lower()) if len(token.strip()) >= min_length]
 
         if not query_tokens:
             return {}
@@ -250,9 +242,7 @@ class ChromaHybridSearchTool(Tool):
                         combined_scores[id_] = {"doc": doc, "score": score}
 
             # Sort and take top results
-            sorted_results = sorted(
-                combined_scores.items(), key=lambda x: x[1]["score"], reverse=True
-            )[:n_results]
+            sorted_results = sorted(combined_scores.items(), key=lambda x: x[1]["score"], reverse=True)[:n_results]
 
             # Convert to simple id->document dictionary
             return {str(id_): item["doc"] for id_, item in sorted_results}
@@ -270,9 +260,7 @@ class ChromaHybridSearchTool(Tool):
 
 class ChromaRecursiveSplitAndIndexTool(Tool):
     name = "chroma_recursive_split_and_index"
-    description = (
-        "Split text into chunks recursively and index them into a ChromaDB collection"
-    )
+    description = "Split text into chunks recursively and index them into a ChromaDB collection"
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -312,9 +300,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
     def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
-    async def _split_text_recursive(
-        self, text: str, document_id: str, params: dict
-    ) -> list[TextChunk]:
+    async def _split_text_recursive(self, text: str, document_id: str, params: dict) -> list[TextChunk]:
         from langchain_core.documents import Document
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -434,9 +420,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
     def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
-    async def _split_text_markdown(
-        self, text: str, document_id: str, params: dict
-    ) -> list[TextChunk]:
+    async def _split_text_markdown(self, text: str, document_id: str, params: dict) -> list[TextChunk]:
         from langchain_text_splitters import (
             MarkdownHeaderTextSplitter,
             RecursiveCharacterTextSplitter,
@@ -459,15 +443,10 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         # Further split by chunk size if specified
         chunk_size = params.get("chunk_size", 1000)
         chunk_overlap = params.get("chunk_overlap", 200)
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap
-        )
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         splits = text_splitter.split_documents(splits)
 
-        return [
-            TextChunk(text=doc.page_content, source_id=document_id, start_index=i)
-            for i, doc in enumerate(splits)
-        ]
+        return [TextChunk(text=doc.page_content, source_id=document_id, start_index=i) for i, doc in enumerate(splits)]
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
         file_path = params.get("file_path")
@@ -580,11 +559,7 @@ class ChromaBatchIndexTool(Tool):
 
         try:
             # Batch add to collection
-            await self.collection.add(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas if metadatas else None
-            )
+            await self.collection.add(ids=ids, documents=documents, metadatas=metadatas if metadatas else None)
 
             return {
                 "status": "success",

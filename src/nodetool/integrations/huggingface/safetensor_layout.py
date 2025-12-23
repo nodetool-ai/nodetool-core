@@ -85,9 +85,7 @@ def classify_safetensor_set(
     if len(paths) == 1:
         return SafetensorLayoutHint.SINGLE
 
-    summaries = [
-        summarize_safetensor(path, sample_limit=sample_limit) for path in paths
-    ]
+    summaries = [summarize_safetensor(path, sample_limit=sample_limit) for path in paths]
 
     sampled_key_sets = [set(summary.sampled_shapes.keys()) for summary in summaries]
     intersection = _intersect(sampled_key_sets)

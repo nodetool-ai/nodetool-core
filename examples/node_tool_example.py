@@ -46,9 +46,7 @@ class MathOperationNode(BaseNode):
 
     a: float = Field(description="First number")
     b: float = Field(description="Second number")
-    operation: str = Field(
-        default="add", description="Operation: add, subtract, multiply, divide"
-    )
+    operation: str = Field(default="add", description="Operation: add, subtract, multiply, divide")
 
     async def process(self, context: ProcessingContext) -> dict[str, float]:
         if self.operation == "add":
@@ -87,9 +85,7 @@ async def run_node_tool_example():
     print(f"Tool description: {text_tool.description}")
 
     # Execute the text processing tool directly
-    result = await text_tool.process(
-        context, {"text": "Hello World", "uppercase": True, "reverse": False}
-    )
+    result = await text_tool.process(context, {"text": "Hello World", "uppercase": True, "reverse": False})
     print(f"Direct result: {result}\n")
 
     # Example 2: Create tools for the agent

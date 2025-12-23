@@ -54,52 +54,50 @@ class WebSocketProxy:
         # Accept the incoming WebSocket connection
         await websocket.accept()
 
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            self.worker_url
-        ) as worker_ws:
+        async with aiohttp.ClientSession() as session, session.ws_connect(self.worker_url) as worker_ws:
 
-                async def send_back():
-                    # Continuously receive messages from the worker and forward them to the client
-                    async for msg in worker_ws:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            await websocket.send_text(msg.data)
-                        elif msg.type == aiohttp.WSMsgType.BINARY:
-                            await websocket.send_bytes(msg.data)
-                        elif msg.type == aiohttp.WSMsgType.CLOSE:
-                            await websocket.close()
-                        elif msg.type == aiohttp.WSMsgType.ERROR:
-                            log.error("WebSocket connection closed with exception")
-                            await websocket.close()
-                            break
+            async def send_back():
+                # Continuously receive messages from the worker and forward them to the client
+                async for msg in worker_ws:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        await websocket.send_text(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.BINARY:
+                        await websocket.send_bytes(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.CLOSE:
+                        await websocket.close()
+                    elif msg.type == aiohttp.WSMsgType.ERROR:
+                        log.error("WebSocket connection closed with exception")
+                        await websocket.close()
+                        break
 
-                # Create a background task to handle messages from worker to client
-                send_back_task = asyncio.create_task(send_back())
+            # Create a background task to handle messages from worker to client
+            send_back_task = asyncio.create_task(send_back())
 
-                try:
-                    # Main loop to receive messages from the client and forward them to the worker
-                    while True:
-                        message = await websocket.receive()
-                        if message["type"] == "websocket.disconnect":
-                            break
-                        if "bytes" in message:
-                            await worker_ws.send_bytes(message["bytes"])
-                        elif "text" in message:
-                            await worker_ws.send_str(message["text"])
-                except WebSocketDisconnect:
-                    # Handle client WebSocket disconnection
-                    send_back_task.cancel()
-                    log.info("WebSocket disconnected")
-                except Exception as e:
-                    # Handle any other exceptions
-                    send_back_task.cancel()
-                    log.error(f"WebSocket error: {str(e)}")
-                    log.exception(e)
-                else:
-                    # Wait for the send_back_task to complete if no exceptions occurred
-                    await send_back_task
-                finally:
-                    # Ensure the worker WebSocket is closed
-                    await worker_ws.close()
+            try:
+                # Main loop to receive messages from the client and forward them to the worker
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    if "bytes" in message:
+                        await worker_ws.send_bytes(message["bytes"])
+                    elif "text" in message:
+                        await worker_ws.send_str(message["text"])
+            except WebSocketDisconnect:
+                # Handle client WebSocket disconnection
+                send_back_task.cancel()
+                log.info("WebSocket disconnected")
+            except Exception as e:
+                # Handle any other exceptions
+                send_back_task.cancel()
+                log.error(f"WebSocket error: {str(e)}")
+                log.exception(e)
+            else:
+                # Wait for the send_back_task to complete if no exceptions occurred
+                await send_back_task
+            finally:
+                # Ensure the worker WebSocket is closed
+                await worker_ws.close()
 
     async def __call__(self, websocket: WebSocket):
         await self.proxy_websocket(websocket)

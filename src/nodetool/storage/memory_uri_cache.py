@@ -19,9 +19,7 @@ class MemoryUriCache(AbstractNodeCache):
     - Can be initialized with existing data from a shared dict
     """
 
-    def __init__(
-        self, default_ttl: int = 1800, initial_data: dict[str, Any] | None = None
-    ):
+    def __init__(self, default_ttl: int = 1800, initial_data: dict[str, Any] | None = None):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._default_ttl = int(default_ttl) if default_ttl and default_ttl > 0 else 300
         # If initial_data is provided, use it as the backing store (but convert to our format)
@@ -84,9 +82,7 @@ class MemoryUriCache(AbstractNodeCache):
         ttl_seconds = self._default_ttl if not ttl or ttl <= 0 else int(ttl)
         expiry_time = self._now() + ttl_seconds
 
-        log.debug(
-            f"Cache SET for key '{key}' on thread {thread_id} (TTL: {ttl_seconds}s)"
-        )
+        log.debug(f"Cache SET for key '{key}' on thread {thread_id} (TTL: {ttl_seconds}s)")
         # Always store as tuple for our internal format
         self._cache[key] = (value, expiry_time)
         # Opportunistically clean up to keep memory bounded over time

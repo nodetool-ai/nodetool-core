@@ -20,8 +20,7 @@ class ProvidersCommand(Command):
 
             if not providers:
                 cli.console.print(
-                    "[bold yellow]No providers available.[/bold yellow] "
-                    "Configure provider secrets to enable them."
+                    "[bold yellow]No providers available.[/bold yellow] Configure provider secrets to enable them."
                 )
                 return False
 
@@ -32,8 +31,7 @@ class ProvidersCommand(Command):
             for provider in providers:
                 status = (
                     "selected"
-                    if cli.selected_provider
-                    and provider.provider_name == cli.selected_provider.value
+                    if cli.selected_provider and provider.provider_name == cli.selected_provider.value
                     else "available"
                 )
                 table.add_row(provider.provider_name, status)

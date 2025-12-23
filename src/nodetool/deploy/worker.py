@@ -100,12 +100,8 @@ def create_worker_app(
     """
     tools = tools or []
     workflows = workflows or []
-    if Environment.is_production() and not os.environ.get(
-        "SECRETS_MASTER_KEY"
-    ):
-        raise RuntimeError(
-            "SECRETS_MASTER_KEY environment variable must be set for deployed workers."
-        )
+    if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
+        raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for deployed workers.")
 
     app = FastAPI(
         title="NodeTool Worker",
@@ -167,9 +163,7 @@ def create_worker_app(
             }
         except Exception as e:
             console.print(f"Health check error: {e}")
-            raise HTTPException(
-                status_code=500, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     return app
 
@@ -224,11 +218,7 @@ def run_worker(
     # Get authentication info
     auth_token = get_worker_auth_token()
     token_source = get_token_source()
-    masked_token = (
-        f"{auth_token[:8]}...{auth_token[-4:]}"
-        if auth_token and len(auth_token) > 12
-        else "***"
-    )
+    masked_token = f"{auth_token[:8]}...{auth_token[-4:]}" if auth_token and len(auth_token) > 12 else "***"
 
     console.print(f"🚀 Starting NodeTool worker on {host}:{port}")
     console.print("")
@@ -243,9 +233,7 @@ def run_worker(
     elif token_source == "config":
         console.print(f"📍 Source: Config file ({DEPLOYMENT_CONFIG_FILE})")
     else:  # generated
-        console.print(
-            f"📍 Source: Auto-generated and saved to {DEPLOYMENT_CONFIG_FILE}"
-        )
+        console.print(f"📍 Source: Auto-generated and saved to {DEPLOYMENT_CONFIG_FILE}")
         console.print(f"💾 Full token saved to: {DEPLOYMENT_CONFIG_FILE}")
 
     console.print("")
@@ -261,13 +249,9 @@ def run_worker(
     console.print("ENDPOINTS:")
     console.print("")
     console.print("OpenAI-Compatible:")
-    console.print(
-        f"  Chat: curl{auth_header} -X POST http://{host}:{port}/v1/chat/completions \\"
-    )
+    console.print(f"  Chat: curl{auth_header} -X POST http://{host}:{port}/v1/chat/completions \\")
     console.print('    -H "Content-Type: application/json" \\')
-    console.print(
-        f'    -d \'{{"model": "{default_model}", "messages": [{{"role": "user", "content": "Hello"}}]}}\''
-    )
+    console.print(f'    -d \'{{"model": "{default_model}", "messages": [{{"role": "user", "content": "Hello"}}]}}\'')
     console.print(f"  Models: curl{auth_header} http://{host}:{port}/v1/models")
     console.print("")
     console.print("Workflows:")
@@ -275,46 +259,26 @@ def run_worker(
     console.print("")
     console.print("Admin:")
     console.print(f"  Health (public): curl http://{host}:{port}/health")
-    console.print(
-        f"  HF download: curl{auth_header} -X POST http://{host}:{port}/admin/models/huggingface/download"
-    )
-    console.print(
-        f"  Cache scan: curl{auth_header} http://{host}:{port}/admin/cache/scan"
-    )
+    console.print(f"  HF download: curl{auth_header} -X POST http://{host}:{port}/admin/models/huggingface/download")
+    console.print(f"  Cache scan: curl{auth_header} http://{host}:{port}/admin/cache/scan")
     console.print("")
     console.print("Collections:")
     console.print(f"  List: curl{auth_header} http://{host}:{port}/admin/collections")
-    console.print(
-        f"  Create: curl{auth_header} -X POST http://{host}:{port}/admin/collections \\"
-    )
+    console.print(f"  Create: curl{auth_header} -X POST http://{host}:{port}/admin/collections \\")
     console.print('    -H "Content-Type: application/json" \\')
-    console.print(
-        '    -d \'{"name": "my_docs", "embedding_model": "all-minilm:latest"}\''
-    )
+    console.print('    -d \'{"name": "my_docs", "embedding_model": "all-minilm:latest"}\'')
     console.print("")
     console.print("Storage:")
-    console.print(
-        f"  Upload: curl{auth_header} -X PUT http://{host}:{port}/admin/storage/assets/file.png \\"
-    )
+    console.print(f"  Upload: curl{auth_header} -X PUT http://{host}:{port}/admin/storage/assets/file.png \\")
     console.print("    --data-binary @file.png")
-    console.print(
-        f"  Download: curl{auth_header} http://{host}:{port}/storage/assets/file.png"
-    )
+    console.print(f"  Download: curl{auth_header} http://{host}:{port}/storage/assets/file.png")
     console.print("")
     console.print("Assets:")
-    console.print(
-        f"  List: curl{auth_header} 'http://{host}:{port}/admin/assets?user_id=1'"
-    )
-    console.print(
-        f"  Create: curl{auth_header} -X POST 'http://{host}:{port}/admin/assets' \\"
-    )
+    console.print(f"  List: curl{auth_header} 'http://{host}:{port}/admin/assets?user_id=1'")
+    console.print(f"  Create: curl{auth_header} -X POST 'http://{host}:{port}/admin/assets' \\")
     console.print("    -d 'user_id=1&name=MyFolder&content_type=folder'")
-    console.print(
-        f"  Get: curl{auth_header} 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'"
-    )
-    console.print(
-        f"  Delete: curl{auth_header} -X DELETE 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'"
-    )
+    console.print(f"  Get: curl{auth_header} 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'")
+    console.print(f"  Delete: curl{auth_header} -X DELETE 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'")
     console.print("")
     console.print("Auth provider:", Environment.get_auth_provider_kind())
     console.print("Default model:", f"{default_model} (provider: {provider})")
@@ -340,11 +304,7 @@ if __name__ == "__main__":
     provider = os.getenv("CHAT_PROVIDER", "ollama")
     default_model = os.getenv("DEFAULT_MODEL", "gpt-oss:20b")
     tools_str = os.getenv("NODETOOL_TOOLS", "")
-    tools = (
-        [tool.strip() for tool in tools_str.split(",") if tool.strip()]
-        if tools_str
-        else []
-    )
+    tools = [tool.strip() for tool in tools_str.split(",") if tool.strip()] if tools_str else []
     port = int(os.getenv("PORT", 8000))
 
     run_worker(

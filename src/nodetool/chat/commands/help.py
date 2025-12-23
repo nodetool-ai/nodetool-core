@@ -24,9 +24,7 @@ class HelpCommand(Command):
         unique_commands = sorted(set(cli.commands.values()), key=lambda cmd: cmd.name)
 
         for cmd in unique_commands:
-            aliases = (
-                f" ({', '.join(['/' + a for a in cmd.aliases])})" if cmd.aliases else ""
-            )
+            aliases = f" ({', '.join(['/' + a for a in cmd.aliases])})" if cmd.aliases else ""
             table.add_row(f"/{cmd.name}{aliases}", cmd.description)
 
         cli.console.print(table)

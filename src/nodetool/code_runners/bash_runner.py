@@ -53,11 +53,7 @@ if __name__ == "__main__":
         ctx = ProcessingContext()
         node = _SmokeNode()
         # Read lines from stdin and echo to stdout and stderr to validate demux
-        user_code = (
-            "echo START; "
-            'while IFS= read -r line; do echo OUT: "$line"; echo ERR: "$line" 1>&2; done; '
-            "echo DONE"
-        )
+        user_code = 'echo START; while IFS= read -r line; do echo OUT: "$line"; echo ERR: "$line" 1>&2; done; echo DONE'
 
         async def stdin_gen():
             # Provide a few lines of input to verify stdin piping

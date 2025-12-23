@@ -20,9 +20,7 @@ from .base import Command
 
 class ToolsCommand(Command):
     def __init__(self):
-        super().__init__(
-            "tools", "List available tools or show details about a specific tool", ["t"]
-        )
+        super().__init__("tools", "List available tools or show details about a specific tool", ["t"])
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if not args:
@@ -57,8 +55,7 @@ class ToolsCommand(Command):
                         else "[bold red]DISABLED[/bold red]"
                     )
                     panel = Panel(
-                        f"[bold]Status:[/bold] {status}\n"
-                        f"[bold]Description:[/bold] {tool.description}\n\n",
+                        f"[bold]Status:[/bold] {status}\n[bold]Description:[/bold] {tool.description}\n\n",
                         title=f"Tool: {tool.name}",
                         border_style="green",
                     )
@@ -84,9 +81,7 @@ class ToolEnableCommand(Command):
             for tool in cli.all_tools:
                 cli.enabled_tools[tool.name] = True
             cli.refresh_tools()
-            cli.console.print(
-                f"[bold green]Enabled all {len(cli.all_tools)} tools[/bold green]"
-            )
+            cli.console.print(f"[bold green]Enabled all {len(cli.all_tools)} tools[/bold green]")
             cli.save_settings()
             return False
 
@@ -122,9 +117,7 @@ class ToolDisableCommand(Command):
             for tool in cli.all_tools:
                 cli.enabled_tools[tool.name] = False
             cli.refresh_tools()
-            cli.console.print(
-                f"[bold red]Disabled all {len(cli.all_tools)} tools[/bold red]"
-            )
+            cli.console.print(f"[bold red]Disabled all {len(cli.all_tools)} tools[/bold red]")
             cli.save_settings()
             return False
 
@@ -187,10 +180,7 @@ class ToolSearchCommand(Command):
 
             for tool in cli.all_tools:
                 # Search in name and description
-                if (
-                    query_lower in tool.name.lower()
-                    or query_lower in tool.description.lower()
-                ):
+                if query_lower in tool.name.lower() or query_lower in tool.description.lower():
                     matching_tools.append(tool)
 
             return matching_tools
@@ -242,11 +232,7 @@ class ToolSearchCommand(Command):
             for i, tool in enumerate(visible_tools):
                 actual_index = start_idx + i
                 indicator = "►" if actual_index == selected_index else " "
-                status = (
-                    "[green]ON[/green]"
-                    if cli.enabled_tools.get(tool.name, False)
-                    else "[red]OFF[/red]"
-                )
+                status = "[green]ON[/green]" if cli.enabled_tools.get(tool.name, False) else "[red]OFF[/red]"
 
                 # Highlight matches in name and description
                 tool_name = highlight_match(tool.name, search_query)
@@ -255,11 +241,7 @@ class ToolSearchCommand(Command):
                     desc = desc[: max_width - 43] + "..."
                 desc = highlight_match(desc, search_query)
 
-                lines.append(
-                    Text.from_markup(
-                        f"{indicator} [cyan]{tool_name}[/cyan] [{status}] {desc}"
-                    )
-                )
+                lines.append(Text.from_markup(f"{indicator} [cyan]{tool_name}[/cyan] [{status}] {desc}"))
 
             if not visible_tools:
                 lines.append(Text.from_markup("[dim]No tools found[/dim]"))
@@ -274,9 +256,7 @@ class ToolSearchCommand(Command):
 
         try:
             with Live(
-                create_display(
-                    search_query, filtered_tools, selected_index, scroll_offset
-                ),
+                create_display(search_query, filtered_tools, selected_index, scroll_offset),
                 refresh_per_second=10,
                 screen=True,
             ) as live:
@@ -300,9 +280,7 @@ class ToolSearchCommand(Command):
                                 elif arrow_char == "5":  # Page Up
                                     next_char = sys.stdin.read(1)  # Read the '~'
                                     if next_char == "~":
-                                        selected_index = max(
-                                            0, selected_index - tools_per_page
-                                        )
+                                        selected_index = max(0, selected_index - tools_per_page)
                                         update_scroll_offset()
                                 elif arrow_char == "6":  # Page Down
                                     next_char = sys.stdin.read(1)  # Read the '~'
@@ -319,40 +297,26 @@ class ToolSearchCommand(Command):
                             if filtered_tools and selected_index < len(filtered_tools):
                                 selected_tool = filtered_tools[selected_index]
                                 # Toggle tool status
-                                current_status = cli.enabled_tools.get(
-                                    selected_tool.name, False
-                                )
-                                cli.enabled_tools[
-                                    selected_tool.name
-                                ] = not current_status
+                                current_status = cli.enabled_tools.get(selected_tool.name, False)
+                                cli.enabled_tools[selected_tool.name] = not current_status
                                 cli.refresh_tools()
                                 cli.save_settings()
                         elif char == "\x7f":  # Backspace
                             if search_query:
                                 search_query = search_query[:-1]
                                 filtered_tools = filter_tools(search_query)
-                                selected_index = (
-                                    min(0, len(filtered_tools) - 1)
-                                    if filtered_tools
-                                    else 0
-                                )
+                                selected_index = min(0, len(filtered_tools) - 1) if filtered_tools else 0
                                 update_scroll_offset()
                         elif char == "\x03":  # Ctrl+C
                             break
                         elif char.isprintable():
                             search_query += char
                             filtered_tools = filter_tools(search_query)
-                            selected_index = (
-                                min(0, len(filtered_tools) - 1) if filtered_tools else 0
-                            )
+                            selected_index = min(0, len(filtered_tools) - 1) if filtered_tools else 0
                             update_scroll_offset()
 
                     # Update the display
-                    live.update(
-                        create_display(
-                            search_query, filtered_tools, selected_index, scroll_offset
-                        )
-                    )
+                    live.update(create_display(search_query, filtered_tools, selected_index, scroll_offset))
 
                     # Small delay to prevent excessive CPU usage
                     await asyncio.sleep(0.05)

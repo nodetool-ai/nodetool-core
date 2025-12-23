@@ -65,9 +65,7 @@ class OpenAIChatClient:
         )
 
         # Setup history file for readline functionality
-        self.history_file = os.path.join(
-            os.path.expanduser("~"), ".nodetool_chat_history"
-        )
+        self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_chat_history")
 
         # Initialize prompt session (will be set up in setup_prompt_session)
         self.session: Optional[PromptSession] = None
@@ -78,9 +76,7 @@ class OpenAIChatClient:
         commands = ["clear", "help", "history", "model", "quit", "exit"]
 
         # Create nested completer for commands
-        command_completer: Dict[str, Optional[Completer]] = {
-            f"/{cmd}": None for cmd in commands
-        }
+        command_completer: Dict[str, Optional[Completer]] = {f"/{cmd}": None for cmd in commands}
 
         # Create the main completer
         completer = NestedCompleter(command_completer)
@@ -148,9 +144,7 @@ class OpenAIChatClient:
 
             # Add assistant response to history
             if assistant_content:
-                assistant_message = ChatCompletionAssistantMessageParam(
-                    role="assistant", content=assistant_content
-                )
+                assistant_message = ChatCompletionAssistantMessageParam(role="assistant", content=assistant_content)
                 self.history.append(assistant_message)
 
         except Exception as e:
@@ -221,9 +215,7 @@ class OpenAIChatClient:
         await self.setup_prompt_session()
 
         console.print("\n[bold cyan]🤖 NodeTool Chat Client[/bold cyan]")
-        console.print(
-            "Type your messages below. Use 'quit', 'exit', or Ctrl+C to exit."
-        )
+        console.print("Type your messages below. Use 'quit', 'exit', or Ctrl+C to exit.")
         console.print("Use '/clear' to clear conversation history.")
         console.print("Use '/history' to view conversation history.")
         console.print("Use '/model' to change the AI model.")
@@ -236,9 +228,7 @@ class OpenAIChatClient:
                 try:
                     # Get user input with advanced prompt features
                     if self.session is None:
-                        console.print(
-                            "[bold red]Error: Prompt session not initialized[/bold red]"
-                        )
+                        console.print("[bold red]Error: Prompt session not initialized[/bold red]")
                         break
 
                     user_input = await self.session.prompt_async(
@@ -255,9 +245,7 @@ class OpenAIChatClient:
                         break
                     elif user_input == "/clear":
                         self.history.clear()
-                        console.print(
-                            "[yellow]💫 Conversation history cleared[/yellow]"
-                        )
+                        console.print("[yellow]💫 Conversation history cleared[/yellow]")
                         continue
                     elif user_input == "/history":
                         self.show_history()
@@ -332,9 +320,7 @@ class OpenAIChatClient:
         # Update model
         self.current_model = parts[1]
 
-        console.print(
-            f"[green]✅ Switched to model:[/green] [bold]{self.current_model}[/bold]"
-        )
+        console.print(f"[green]✅ Switched to model:[/green] [bold]{self.current_model}[/bold]")
 
 
 async def run_chat_client(

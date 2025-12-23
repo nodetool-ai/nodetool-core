@@ -35,9 +35,7 @@ class SupabaseAuthProvider(AuthProvider):
             return self._client
         async with self._client_lock:
             if self._client is None:
-                self._client = await create_async_client(
-                    self.supabase_url, self.supabase_key
-                )
+                self._client = await create_async_client(self.supabase_url, self.supabase_key)
         assert self._client is not None
         return self._client
 
@@ -75,7 +73,6 @@ class SupabaseAuthProvider(AuthProvider):
             self._token_cache.pop(oldest_key, None)
 
     async def verify_token(self, token: str) -> AuthResult:
-
         if not token:
             return AuthResult(ok=False, error="Missing Supabase token")
 
@@ -102,4 +99,3 @@ class SupabaseAuthProvider(AuthProvider):
         self._token_cache.clear()
         self._token_cache_order.clear()
         self._client = None
-

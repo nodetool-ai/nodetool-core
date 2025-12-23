@@ -26,9 +26,7 @@ def run_command(command: str, capture_output: bool = False) -> str:
     try:
         if capture_output:
             # For commands that need to return output, capture but still stream
-            result = subprocess.run(
-                command, shell=True, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
             output = result.stdout.strip()
             if output:
                 print(output)
@@ -119,9 +117,7 @@ def ensure_docker_auth(registry: str = "docker.io") -> None:
         print(f"\nYou are not authenticated with Docker registry: {registry}")
         print("You need to login to push images to the registry.")
 
-        response = (
-            input(f"Do you want to login to {registry} now? (y/n): ").lower().strip()
-        )
+        response = input(f"Do you want to login to {registry} now? (y/n): ").lower().strip()
         if response in ["y", "yes"]:
             try:
                 if registry == "docker.io":
@@ -138,9 +134,7 @@ def ensure_docker_auth(registry: str = "docker.io") -> None:
             sys.exit(1)
 
 
-def format_image_name(
-    base_name: str, docker_username: str, registry: str = "docker.io"
-) -> str:
+def format_image_name(base_name: str, docker_username: str, registry: str = "docker.io") -> str:
     """
     Format the image name with proper registry and username prefix.
 
@@ -277,9 +271,7 @@ def build_docker_image(
             discovered: list[dict] = []
             for dist in importlib_metadata.distributions():
                 try:
-                    raw_name = (
-                        dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
-                    )
+                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
                 except Exception:
                     continue
                 if not raw_name:
@@ -297,18 +289,14 @@ def build_docker_image(
                     if isinstance(url, str) and url and not url.startswith("file:"):
                         # Prefix with git+ if it looks like a Git URL and not already prefixed
                         install_url = url
-                        if install_url.startswith(
-                            "https://github.com/"
-                        ) and not install_url.startswith("git+"):
+                        if install_url.startswith("https://github.com/") and not install_url.startswith("git+"):
                             install_url = f"git+{install_url}"
                         info["install_url"] = install_url
                         discovered.append(info)
                         continue
 
                 # Fallback to canonical GitHub repo under nodetool-ai org
-                info["install_url"] = (
-                    f"git+https://github.com/nodetool-ai/{name_normalized}"
-                )
+                info["install_url"] = f"git+https://github.com/nodetool-ai/{name_normalized}"
                 discovered.append(info)
 
             # Stable order for reproducible Dockerfiles
@@ -325,9 +313,7 @@ def build_docker_image(
 
             lines = dockerfile_contents.splitlines()
             try:
-                cmd_index = max(
-                    i for i, ln in enumerate(lines) if ln.strip().startswith("CMD ")
-                )
+                cmd_index = max(i for i, ln in enumerate(lines) if ln.strip().startswith("CMD "))
             except ValueError:
                 cmd_index = len(lines)
 
@@ -347,10 +333,7 @@ def build_docker_image(
             # Insert before CMD
             new_lines = lines[:cmd_index] + run_lines + lines[cmd_index:]
             with open(dockerfile_path, "w", encoding="utf-8") as f:
-                f.write(
-                    "\n".join(new_lines)
-                    + ("\n" if not new_lines[-1].endswith("\n") else "")
-                )
+                f.write("\n".join(new_lines) + ("\n" if not new_lines[-1].endswith("\n") else ""))
 
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()
@@ -361,9 +344,7 @@ def build_docker_image(
             print("Building with Docker Hub cache optimization...")
 
             # Ensure docker buildx is available
-            run_command(
-                "docker buildx create --use --name nodetool-builder --driver docker-container || true"
-            )
+            run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
 
             # Try to build with cache from/to Docker Hub registry
             cache_from = f"--cache-from=type=registry,ref={image_name}:buildcache"
@@ -372,13 +353,7 @@ def build_docker_image(
             push_flag = "--push" if auto_push else "--load"
 
             build_cmd_with_cache = (
-                f"docker buildx build "
-                f"--platform {platform} "
-                f"-t {image_name}:{tag} "
-                f"{cache_from} "
-                f"{cache_to} "
-                f"{push_flag} "
-                f"."
+                f"docker buildx build --platform {platform} -t {image_name}:{tag} {cache_from} {cache_to} {push_flag} ."
             )
 
             print(f"Cache image: {image_name}:buildcache")
@@ -388,17 +363,10 @@ def build_docker_image(
                 run_command(build_cmd_with_cache)
                 image_pushed = auto_push
             except subprocess.CalledProcessError:
-                print(
-                    "Cache build failed, falling back to build without cache import..."
-                )
+                print("Cache build failed, falling back to build without cache import...")
                 # Fallback to build without cache import (but still export cache)
                 build_cmd_fallback = (
-                    f"docker buildx build "
-                    f"--platform {platform} "
-                    f"-t {image_name}:{tag} "
-                    f"{cache_to} "
-                    f"{push_flag} "
-                    f"."
+                    f"docker buildx build --platform {platform} -t {image_name}:{tag} {cache_to} {push_flag} ."
                 )
                 run_command(build_cmd_fallback)
                 image_pushed = auto_push
@@ -481,11 +449,7 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
         possible_registry_keys = [
             registry,
             f"https://{registry}/v1/",
-            (
-                "https://index.docker.io/v1/"
-                if registry == "docker.io"
-                else f"https://{registry}/v1/"
-            ),
+            ("https://index.docker.io/v1/" if registry == "docker.io" else f"https://{registry}/v1/"),
             "index.docker.io" if registry == "docker.io" else registry,
         ]
 

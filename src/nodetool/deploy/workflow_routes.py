@@ -97,16 +97,12 @@ def create_workflow_router() -> APIRouter:
         return {"status": "ok", "message": f"Workflow {id} deleted"}
 
     @router.post("/workflows/{id}/run")
-    async def execute_workflow(
-        id: str, request: Request, user: str = Depends(current_user)
-    ):
+    async def execute_workflow(id: str, request: Request, user: str = Depends(current_user)):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)
 
-            context = ProcessingContext(
-                user_id=user, asset_output_mode=AssetOutputMode.DATA_URI
-            )
+            context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
             results: Dict[str, object] = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
@@ -123,33 +119,23 @@ def create_workflow_router() -> APIRouter:
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(
-                status_code=404, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             print(f"Workflow execution error: {e}")
-            raise HTTPException(
-                status_code=500, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/workflows/{id}/run/stream")
-    async def execute_workflow_stream(
-        id: str, request: Request, user: str = Depends(current_user)
-    ):
+    async def execute_workflow_stream(id: str, request: Request, user: str = Depends(current_user)):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)
 
-            context = ProcessingContext(
-                user_id=user, asset_output_mode=AssetOutputMode.DATA_URI
-            )
+            context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
             async def generate_sse():
                 results: Dict[str, object] = {}
                 try:
-                    async for msg in run_workflow(
-                        req, context=context, use_thread=True
-                    ):
+                    async for msg in run_workflow(req, context=context, use_thread=True):
                         if isinstance(msg, JobUpdate):
                             event_data = {
                                 "type": "job_update",
@@ -195,13 +181,9 @@ def create_workflow_router() -> APIRouter:
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(
-                status_code=404, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             print(f"Workflow streaming error: {e}")
-            raise HTTPException(
-                status_code=500, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router

@@ -145,7 +145,6 @@ def deploy_to_gcp(
     gcs_bucket = deployment.storage.gcs_bucket if deployment.storage else None
     gcs_mount_path = deployment.storage.gcs_mount_path if deployment.storage else "/mnt/gcs"
 
-
     from .docker import (
         build_docker_image,
         run_command,
@@ -213,37 +212,25 @@ def deploy_to_gcp(
         # Push to Google Container Registry
         gcp_image_url = None
         if not skip_push:
-            gcp_image_url = push_to_gcr(
-                local_image_name, image_tag, project_id, registry
-            )
-            console.print(
-                f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]"
-            )
+            gcp_image_url = push_to_gcr(local_image_name, image_tag, project_id, registry)
+            console.print(f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]")
 
         # Set default cache envs (respect provided values)
         env.setdefault(
             "HF_HOME",
-            f"{gcs_mount_path}/.cache/huggingface"
-            if gcs_bucket
-            else "/workspace/.cache/huggingface",
+            f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface",
         )
         env.setdefault(
             "HF_HUB_CACHE",
-            f"{gcs_mount_path}/.cache/huggingface/hub"
-            if gcs_bucket
-            else "/workspace/.cache/huggingface/hub",
+            f"{gcs_mount_path}/.cache/huggingface/hub" if gcs_bucket else "/workspace/.cache/huggingface/hub",
         )
         env.setdefault(
             "TRANSFORMERS_CACHE",
-            f"{gcs_mount_path}/.cache/transformers"
-            if gcs_bucket
-            else "/workspace/.cache/transformers",
+            f"{gcs_mount_path}/.cache/transformers" if gcs_bucket else "/workspace/.cache/transformers",
         )
         env.setdefault(
             "OLLAMA_MODELS",
-            f"{gcs_mount_path}/.ollama/models"
-            if gcs_bucket
-            else "/workspace/.ollama/models",
+            f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models",
         )
 
         # Deploy to Cloud Run
@@ -313,9 +300,7 @@ def print_gcp_deployment_summary(
         project_id: Google Cloud project ID
         deployment_info: Cloud Run deployment information
     """
-    console.print(
-        "\n[bold green]🎉 Google Cloud Run Deployment completed successfully![/]"
-    )
+    console.print("\n[bold green]🎉 Google Cloud Run Deployment completed successfully![/]")
 
     console.print(f"[cyan]Local Image: {image_name}:{image_tag}[/]")
     if gcp_image_url:
@@ -336,9 +321,7 @@ def print_gcp_deployment_summary(
     console.print("\n[bold green]✅ Deployment ready for use![/]")
 
 
-def delete_gcp_service(
-    service_name: str, region: str = "us-central1", project_id: Optional[str] = None
-) -> bool:
+def delete_gcp_service(service_name: str, region: str = "us-central1", project_id: Optional[str] = None) -> bool:
     """
     Delete a Google Cloud Run service.
 
@@ -362,9 +345,7 @@ def delete_gcp_service(
     return delete_cloud_run_service(service_name, region, project_id)
 
 
-def list_gcp_services(
-    region: str = "us-central1", project_id: Optional[str] = None
-) -> list:
+def list_gcp_services(region: str = "us-central1", project_id: Optional[str] = None) -> list:
     """
     List Google Cloud Run services.
 

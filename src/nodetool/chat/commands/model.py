@@ -15,9 +15,7 @@ class ModelCommand(Command):
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if not cli.selected_provider:
-            cli.console.print(
-                "[bold red]No provider selected.[/bold red] Use /provider <name> first."
-            )
+            cli.console.print("[bold red]No provider selected.[/bold red] Use /provider <name> first.")
             return False
 
         if not args:
@@ -30,9 +28,7 @@ class ModelCommand(Command):
                     f"[bold yellow]Provider selected:[/bold yellow] {cli.selected_provider.value}. Use /models to list models or /model <model_id> to select."
                 )
             else:
-                cli.console.print(
-                    "[bold red]No provider selected.[/bold red] Use /provider <name> to select one."
-                )
+                cli.console.print("[bold red]No provider selected.[/bold red] Use /provider <name> to select one.")
             return False
 
         if len(args) != 1:
@@ -51,15 +47,11 @@ class ModelCommand(Command):
         model_id_lower = model_id_to_set.lower()
 
         models = await cli.load_models_for_provider(cli.selected_provider)
-        found_model = next(
-            (m for m in models if m.id.lower() == model_id_lower), None
-        )
+        found_model = next((m for m in models if m.id.lower() == model_id_lower), None)
 
         if found_model:
             cli.set_selected_model(found_model)
-            cli.console.print(
-                f"Model set to [bold green]{found_model.name}[/bold green] (ID: {found_model.id})"
-            )
+            cli.console.print(f"Model set to [bold green]{found_model.name}[/bold green] (ID: {found_model.id})")
             cli.save_settings()
         else:
             cli.console.print(
@@ -71,9 +63,7 @@ class ModelCommand(Command):
 
 class ModelsCommand(Command):
     def __init__(self):
-        super().__init__(
-            "models", "List available models for the current provider", ["ms"]
-        )
+        super().__init__("models", "List available models for the current provider", ["ms"])
 
     async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
         try:

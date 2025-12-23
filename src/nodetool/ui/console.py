@@ -133,13 +133,7 @@ class AgentConsole:
             is_error (bool): Flag indicating if the status represents an error.
         """
         if self.live and self.current_tree and self.live.is_started:
-            status_style = (
-                "bold red"
-                if is_error
-                else "bold green"
-                if status == "Success"
-                else "bold yellow"
-            )
+            status_style = "bold red" if is_error else "bold green" if status == "Success" else "bold yellow"
             # Truncate long content for better display
             content_str = str(content)
             if len(content_str) > 1000:
@@ -147,9 +141,7 @@ class AgentConsole:
 
             # Create the node label with phase and status
             status_icon = "❌" if is_error else "✓" if status == "Success" else "⏳"
-            node_label = (
-                f"[cyan]{phase_name}[/] [{status_style}]{status_icon} {status}[/]"
-            )
+            node_label = f"[cyan]{phase_name}[/] [{status_style}]{status_icon} {status}[/]"
 
             # Check if we already have a node for this phase
             if phase_name in self.phase_nodes:
@@ -170,9 +162,7 @@ class AgentConsole:
                 node.add(f"[dim]{content_str}[/]")
                 self.phase_nodes[phase_name] = node
 
-    def create_execution_tree(
-        self, title: str, task: "Task", tool_calls: List["ToolCall"]
-    ) -> Tree:
+    def create_execution_tree(self, title: str, task: "Task", tool_calls: List["ToolCall"]) -> Tree:
         """Create a rich tree for displaying steps and their tool calls."""
         tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
         self.step_nodes = {}
@@ -183,16 +173,8 @@ class AgentConsole:
             return tree
 
         for step in task.steps:
-            status_symbol = (
-                "✅" if step.completed else "🔄" if step.is_running() else "⏳"
-            )
-            (
-                "green"
-                if step.completed
-                else "yellow"
-                if step.is_running()
-                else "white"
-            )
+            status_symbol = "✅" if step.completed else "🔄" if step.is_running() else "⏳"
+            ("green" if step.completed else "yellow" if step.is_running() else "white")
 
             # Create step node with status and content
             node_label = f"{status_symbol} [green]{step.instructions}[/]"
@@ -211,22 +193,16 @@ class AgentConsole:
                     formatted_log = self._format_log_entry(log)
                     step_node.add(formatted_log)
                 if len(step.logs) > log_limit:
-                    step_node.add(
-                        f"[dim]+ {len(step.logs) - log_limit} more logs[/]"
-                    )
+                    step_node.add(f"[dim]+ {len(step.logs) - log_limit} more logs[/]")
 
             # Add tool calls as child nodes if there are any relevant ones
             if True:
                 # Ensure tool_calls is not None before filtering
-                step_tool_calls = [
-                    call for call in (tool_calls or []) if call.step_id == step.id
-                ]
+                step_tool_calls = [call for call in (tool_calls or []) if call.step_id == step.id]
 
                 if step_tool_calls:
                     tool_node = step_node.add("[cyan]🔧 Tools[/]")
-                    for _i, call in enumerate(
-                        step_tool_calls[-3:]
-                    ):  # Show last 3 tool calls
+                    for _i, call in enumerate(step_tool_calls[-3:]):  # Show last 3 tool calls
                         tool_name = call.name
                         message = str(call.message)
                         if len(message) > 70:
@@ -234,9 +210,7 @@ class AgentConsole:
                         tool_node.add(f"[dim]{tool_name}: {message}[/]")
 
                     if len(step_tool_calls) > 3:
-                        tool_node.add(
-                            f"[dim]+ {len(step_tool_calls) - 3} more tool calls[/]"
-                        )
+                        tool_node.add(f"[dim]+ {len(step_tool_calls) - 3} more tool calls[/]")
 
         return tree
 
@@ -269,9 +243,7 @@ class AgentConsole:
         if phase_name not in self.phase_logs:
             self.phase_logs[phase_name] = []
 
-    def log_to_phase(
-        self, level: str, message: str, phase_name: Optional[str] = None
-    ) -> None:
+    def log_to_phase(self, level: str, message: str, phase_name: Optional[str] = None) -> None:
         """
         Add a log entry to a specific phase.
 
@@ -399,13 +371,7 @@ class AgentConsole:
         """
         Refresh the execution tree with logs for all steps.
         """
-        if (
-            self.live
-            and self.current_tree
-            and self.live.is_started
-            and self.task
-            and self.task.steps
-        ):
+        if self.live and self.current_tree and self.live.is_started and self.task and self.task.steps:
             # Iterate through all steps and update their logs
             for step in self.task.steps:
                 if step.id in self.step_nodes:
@@ -416,9 +382,7 @@ class AgentConsole:
                     for child in step_node.children:
                         # Keep non-log children (inputs and tools sections)
                         child_label = str(child.label)
-                        if child_label.startswith(
-                            "[blue]📁 Inputs:[/]"
-                        ) or child_label.startswith("[cyan]🔧 Tools[/]"):
+                        if child_label.startswith("[blue]📁 Inputs:[/]") or child_label.startswith("[cyan]🔧 Tools[/]"):
                             children_to_keep.append(child)
 
                     step_node.children = children_to_keep
@@ -430,9 +394,7 @@ class AgentConsole:
                             formatted_log = self._format_log_entry(log)
                             step_node.add(formatted_log)
                         if len(step.logs) > log_limit:
-                            step_node.add(
-                                f"[dim]+ {len(step.logs) - log_limit} more logs[/]"
-                            )
+                            step_node.add(f"[dim]+ {len(step.logs) - log_limit} more logs[/]")
 
             self.live.update(self.current_tree)
 
@@ -498,9 +460,7 @@ class AgentConsole:
         self.log_to_step("warning", msg_str)
         self.log_to_phase("warning", msg_str)
 
-    def error(
-        self, message: object, style: Optional[str] = None, exc_info: bool = False
-    ) -> None:
+    def error(self, message: object, style: Optional[str] = None, exc_info: bool = False) -> None:
         """
         Add an error log entry to the current step and current phase.
 
@@ -533,9 +493,7 @@ class AgentConsole:
             )
             self.console.print(panel)
 
-    def display_iteration_status(
-        self, iteration: int, max_iterations: int, token_count: int, max_tokens: int
-    ) -> None:
+    def display_iteration_status(self, iteration: int, max_iterations: int, token_count: int, max_tokens: int) -> None:
         """
         Display current iteration and token status with progress bars.
 
@@ -556,9 +514,7 @@ class AgentConsole:
 
             # Create visual progress bars
             iter_bar = self._create_progress_bar(iter_percent, "blue")
-            token_bar = self._create_progress_bar(
-                token_percent, "yellow" if token_percent < 80 else "red"
-            )
+            token_bar = self._create_progress_bar(token_percent, "yellow" if token_percent < 80 else "red")
 
             # Display in columns
             columns = Columns(
@@ -567,9 +523,7 @@ class AgentConsole:
                 expand=True,
             )
 
-            self.console.print(
-                Panel(columns, title="[bold]📊 Status[/]", border_style="dim")
-            )
+            self.console.print(Panel(columns, title="[bold]📊 Status[/]", border_style="dim"))
 
     def display_tool_execution(self, tool_name: str, args: dict) -> None:
         """
@@ -596,9 +550,7 @@ class AgentConsole:
             )
             self.console.print(panel)
 
-    def display_tool_result(
-        self, tool_name: str, result: Any, compressed: bool = False
-    ) -> None:
+    def display_tool_result(self, tool_name: str, result: Any, compressed: bool = False) -> None:
         """
         Display tool results with beautiful formatting.
 
@@ -614,9 +566,7 @@ class AgentConsole:
                 result_str = json.dumps(result, indent=2, ensure_ascii=False)
                 if len(result_str) > 1000:
                     result_str = result_str[:997] + "..."
-                result_display = Syntax(
-                    result_str, "json", theme="monokai", line_numbers=False
-                )
+                result_display = Syntax(result_str, "json", theme="monokai", line_numbers=False)
             elif isinstance(result, str):
                 # Truncate long strings
                 result_display = result[:1000] + "..." if len(result) > 1000 else result
@@ -627,14 +577,10 @@ class AgentConsole:
             if compressed:
                 title += " [dim yellow](compressed)[/]"
 
-            panel = Panel(
-                result_display, title=title, border_style="green", expand=False
-            )
+            panel = Panel(result_display, title=title, border_style="green", expand=False)
             self.console.print(panel)
 
-    def display_completion_event(
-        self, step: "Step", success: bool, result: Any = None
-    ) -> None:
+    def display_completion_event(self, step: "Step", success: bool, result: Any = None) -> None:
         """
         Display step completion with nice formatting.
 
@@ -644,9 +590,7 @@ class AgentConsole:
             result (Any): The final result of the step.
         """
         if self.console and not (self.live and self.live.is_started):
-            status = (
-                "[bold green]✅ Success[/]" if success else "[bold red]❌ Failed[/]"
-            )
+            status = "[bold green]✅ Success[/]" if success else "[bold red]❌ Failed[/]"
             border_style = "green" if success else "red"
 
             content = [
@@ -657,9 +601,7 @@ class AgentConsole:
 
             if result:
                 result_str = (
-                    json.dumps(result, indent=2, ensure_ascii=False)
-                    if isinstance(result, dict)
-                    else str(result)
+                    json.dumps(result, indent=2, ensure_ascii=False) if isinstance(result, dict) else str(result)
                 )
                 if len(result_str) > 500:
                     result_str = result_str[:497] + "..."
@@ -693,9 +635,7 @@ class AgentConsole:
     def display_conclusion_stage(self) -> None:
         """Display entering conclusion stage with special formatting."""
         if self.console and not (self.live and self.live.is_started):
-            self.console.print(
-                Rule("[bold magenta]🎯 Entering Conclusion Stage[/]", style="magenta")
-            )
+            self.console.print(Rule("[bold magenta]🎯 Entering Conclusion Stage[/]", style="magenta"))
             panel = Panel(
                 "[yellow]The conversation history is approaching the token limit.\n"
                 "The agent will now synthesize all gathered information and finalize the step.\n"

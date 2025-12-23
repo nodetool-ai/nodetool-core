@@ -54,9 +54,7 @@ class WorkflowMessageProcessor(MessageProcessor):
         assert last_message.workflow_id is not None, "Workflow ID is required"
 
         workflow_runner = WorkflowRunner(job_id=job_id)
-        log.debug(
-            f"Initialized WorkflowRunner for workflow {last_message.workflow_id} with job_id {job_id}"
-        )
+        log.debug(f"Initialized WorkflowRunner for workflow {last_message.workflow_id} with job_id {job_id}")
 
         # Update processing context with workflow_id
         processing_context.workflow_id = last_message.workflow_id
@@ -82,9 +80,7 @@ class WorkflowMessageProcessor(MessageProcessor):
 
         # Signal completion
         await self.send_message({"type": "chunk", "content": "", "done": True})
-        await self.send_message(
-            self._create_response_message(result, last_message).model_dump()
-        )
+        await self.send_message(self._create_response_message(result, last_message).model_dump())
 
         # Always mark processing as complete
         self.is_processing = False

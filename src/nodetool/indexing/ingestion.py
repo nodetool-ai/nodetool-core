@@ -75,9 +75,7 @@ def chunk_documents_markdown(
     markdown_splitter = ExperimentalMarkdownSyntaxTextSplitter(
         headers_to_split_on=headers_to_split_on,
     )
-    recursive_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size, chunk_overlap=chunk_overlap
-    )
+    recursive_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     ids_docs: Dict[str, str] = {}
     metadatas: List[dict] = []
@@ -97,9 +95,7 @@ def chunk_documents_markdown(
     return ids_docs, metadatas
 
 
-def default_ingestion_workflow(
-    collection: chromadb.Collection, file_path: str, mime_type: str
-) -> None:
+def default_ingestion_workflow(collection: chromadb.Collection, file_path: str, mime_type: str) -> None:
     """Process a file and add it to the collection using default ingestion workflow."""
     if mime_type == "application/pdf":
         with open(file_path, "rb") as f:
@@ -109,9 +105,7 @@ def default_ingestion_workflow(
             documents = [Document(text=md_text, doc_id=file_path)]
     else:
         md = MarkItDown()
-        documents = [
-            Document(text=md.convert(file_path).text_content, doc_id=file_path)
-        ]
+        documents = [Document(text=md.convert(file_path).text_content, doc_id=file_path)]
 
     ids_docs, _ = chunk_documents_markdown(
         documents,
@@ -124,9 +118,7 @@ def default_ingestion_workflow(
     )
 
 
-async def default_ingestion_workflow_async(
-    collection: Any, file_path: str, mime_type: str
-) -> None:
+async def default_ingestion_workflow_async(collection: Any, file_path: str, mime_type: str) -> None:
     """Async version of default ingestion that works with AsyncChromaCollection.
 
     Offloads blocking I/O and CPU-bound parsing/chunking to a thread.

@@ -41,9 +41,7 @@ class AsyncReverseProxy:
         )
 
         # Precompute longest-prefix route index
-        self.services_by_name: Dict[str, ServiceConfig] = {
-            s.name: s for s in config.services
-        }
+        self.services_by_name: Dict[str, ServiceConfig] = {s.name: s for s in config.services}
         self.prefix_index: List[Tuple[str, ServiceConfig]] = sorted(
             [(s.path, s) for s in config.services],
             key=lambda x: (-len(x[0]), x[1].name),  # Sort by length desc, then name
@@ -57,9 +55,7 @@ class AsyncReverseProxy:
         # Create async HTTP client
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=60.0)
         limits = httpx.Limits(max_keepalive_connections=100, max_connections=200)
-        self.httpx_client = httpx.AsyncClient(
-            timeout=timeout, limits=limits, http2=False
-        )
+        self.httpx_client = httpx.AsyncClient(timeout=timeout, limits=limits, http2=False)
 
         # Initialize Docker manager
         await self.docker_manager.initialize()
@@ -81,9 +77,7 @@ class AsyncReverseProxy:
         await self.docker_manager.shutdown()
         log.info("Async proxy shutdown")
 
-    def match_service(
-        self, incoming_path: str
-    ) -> Tuple[Optional[ServiceConfig], Optional[str]]:
+    def match_service(self, incoming_path: str) -> Tuple[Optional[ServiceConfig], Optional[str]]:
         """
         Match incoming path to service using longest-prefix matching.
 
@@ -105,9 +99,7 @@ class AsyncReverseProxy:
 
         return None, None
 
-    async def handle_proxy_request(
-        self, request: Request, full_path: str
-    ) -> StreamingResponse:
+    async def handle_proxy_request(self, request: Request, full_path: str) -> StreamingResponse:
         """
         Handle a proxied HTTP request.
 
@@ -175,11 +167,8 @@ class AsyncReverseProxy:
                 headers=upstream_headers,
                 content=request_body_iter(),
             ) as upstream_response:
-
                 # Filter response headers
-                response_headers = filter_response_headers(
-                    dict(upstream_response.headers)
-                )
+                response_headers = filter_response_headers(dict(upstream_response.headers))
 
                 # For HEAD requests, don't stream body
                 if request.method.upper() == "HEAD":
@@ -203,9 +192,7 @@ class AsyncReverseProxy:
 
         except httpx.RequestError as e:
             log.error(f"Upstream error for {incoming_path}: {e}")
-            raise HTTPException(
-                status_code=502, detail=f"Upstream error: {e!s}"
-            ) from e
+            raise HTTPException(status_code=502, detail=f"Upstream error: {e!s}") from e
 
     async def handle_status(self) -> StreamingResponse:
         """
@@ -274,6 +261,7 @@ class AsyncReverseProxy:
             return PlainTextResponse("Not found", status_code=404)
 
         try:
+
             async def stream_file():
                 with open(challenge_path, "rb") as f:
                     while True:
@@ -424,9 +412,7 @@ async def run_proxy_app(
 
     if use_tls:
         if not config.global_.tls_certfile or not config.global_.tls_keyfile:
-            raise ValueError(
-                "TLS requested but tls_certfile or tls_keyfile not configured"
-            )
+            raise ValueError("TLS requested but tls_certfile or tls_keyfile not configured")
 
         uvicorn.run(
             app,

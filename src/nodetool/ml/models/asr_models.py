@@ -36,9 +36,7 @@ async def get_all_asr_models(user_id: str) -> List[ASRModel]:
     for provider in await list_providers(user_id):
         provider_models = await provider.get_available_asr_models()
         models.extend(provider_models)
-        log.debug(
-            f"Provider '{provider.provider_name}' returned {len(provider_models)} ASR models"
-        )
+        log.debug(f"Provider '{provider.provider_name}' returned {len(provider_models)} ASR models")
 
     log.info(f"Discovered {len(models)} total ASR models")
 

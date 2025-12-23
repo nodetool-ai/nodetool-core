@@ -170,14 +170,18 @@ class TaskExecutor:
                 # Execute all steps concurrently using wrap_generators_parallel
                 async for message in wrap_generators_parallel(*step_generators):
                     if isinstance(message, StepResult):
-                        log.debug(f"TaskExecutor: Yielding StepResult from parallel for step {message.step.id}. is_task_result={message.is_task_result}")
+                        log.debug(
+                            f"TaskExecutor: Yielding StepResult from parallel for step {message.step.id}. is_task_result={message.is_task_result}"
+                        )
                     yield message
             else:
                 # Execute steps sequentially, one at a time
                 for generator in step_generators:
                     async for message in generator:
                         if isinstance(message, StepResult):
-                            log.debug(f"TaskExecutor: Yielding StepResult from sequential for step {message.step.id}. is_task_result={message.is_task_result}")
+                            log.debug(
+                                f"TaskExecutor: Yielding StepResult from sequential for step {message.step.id}. is_task_result={message.is_task_result}"
+                            )
                         yield message
 
     def _get_all_executable_tasks(self) -> List[Step]:
@@ -244,22 +248,15 @@ class TaskExecutor:
             return step.id == self._finish_step_id
         return bool(self.task.steps) and step == self.task.steps[-1]
 
-    def _maybe_defer_finish_step(
-        self, executable_tasks: List[Step]
-    ) -> List[Step]:
+    def _maybe_defer_finish_step(self, executable_tasks: List[Step]) -> List[Step]:
         if not self._finish_step_id:
             return executable_tasks
 
-        finish_ready = any(
-            task.id == self._finish_step_id for task in executable_tasks
-        )
+        finish_ready = any(task.id == self._finish_step_id for task in executable_tasks)
         if not finish_ready:
             return executable_tasks
 
-        other_pending = any(
-            not step.completed and step.id != self._finish_step_id
-            for step in self.task.steps
-        )
+        other_pending = any(not step.completed and step.id != self._finish_step_id for step in self.task.steps)
         if not other_pending:
             return executable_tasks
 

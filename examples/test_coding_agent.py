@@ -130,14 +130,10 @@ async def run_coding_agent(
         # Display summary statistics if available
         print("\n📊 Analysis Summary:")
         print(f"   - Model Used: {model}")
-        print(
-            f"   - Total Files Generated: {len([f for f in generated_files if f.is_file()])}"
-        )
+        print(f"   - Total Files Generated: {len([f for f in generated_files if f.is_file()])}")
 
         # Check for specific output files
-        visualization_files = list(workspace_path.glob("*.png")) + list(
-            workspace_path.glob("*.jpg")
-        )
+        visualization_files = list(workspace_path.glob("*.png")) + list(workspace_path.glob("*.jpg"))
 
         if visualization_files:
             print(f"   - Visualizations Created: {len(visualization_files)}")
@@ -161,7 +157,6 @@ async def main():
             )
         except Exception as e:
             print(f"❌ Error during analysis: {e}")
-
 
 
 if __name__ == "__main__":

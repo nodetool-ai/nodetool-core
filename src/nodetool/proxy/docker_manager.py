@@ -65,6 +65,7 @@ class DockerManager:
 
         # Ensure network exists (if configured)
         if self.network_name:
+
             def _ensure_network():
                 assert self.network_name
                 try:
@@ -134,9 +135,7 @@ class DockerManager:
                 # Create + start new container
                 port_spec = {f"{internal_port}/tcp": desired_host_port or None}
                 ports_arg = port_spec if publish_host_port else None
-                nano_cpus = (
-                    int(service.cpus * 1_000_000_000) if service.cpus else None
-                )
+                nano_cpus = int(service.cpus * 1_000_000_000) if service.cpus else None
                 # Normalize volume spec for docker-py
                 volumes_arg = None
                 if service.volumes:
@@ -150,9 +149,7 @@ class DockerManager:
                             bind = parts[0]
                             mode = parts[1] if len(parts) > 1 else "rw"
                         if not bind:
-                            raise RuntimeError(
-                                f"Invalid volume mapping for {name}: {host} -> {target}"
-                            )
+                            raise RuntimeError(f"Invalid volume mapping for {name}: {host} -> {target}")
                         volumes_arg[host] = {"bind": bind, "mode": mode}
 
                 try:
@@ -174,9 +171,7 @@ class DockerManager:
                     log.info(f"Started container: {name}")
                 except APIError as e:
                     log.error(f"Failed to create/start container {name}: {e}")
-                    raise RuntimeError(
-                        f"Failed to start container {name}: {e}"
-                    ) from e
+                    raise RuntimeError(f"Failed to start container {name}: {e}") from e
             else:
                 container.reload()
                 if container.status != "running":
@@ -185,17 +180,13 @@ class DockerManager:
                         log.info(f"Restarted container: {name}")
                     except APIError as e:
                         log.error(f"Failed to restart container {name}: {e}")
-                        raise RuntimeError(
-                            f"Failed to restart container {name}: {e}"
-                        ) from e
+                        raise RuntimeError(f"Failed to restart container {name}: {e}") from e
 
             # Ensure container is attached to the managed network when configured
             if self.network_name:
                 try:
                     container.reload()
-                    networks = (
-                        container.attrs.get("NetworkSettings", {}).get("Networks", {})
-                    )
+                    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
                     if self.network_name not in networks and self.network is not None:
                         self.network.connect(container)
                 except APIError as e:
@@ -217,10 +208,7 @@ class DockerManager:
 
             if publish_host_port:
                 if key not in port_map or not port_map[key]:
-                    raise RuntimeError(
-                        f"Container {name} has no published host port for {key}. "
-                        f"Port map: {port_map}"
-                    )
+                    raise RuntimeError(f"Container {name} has no published host port for {key}. Port map: {port_map}")
                 host_port = int(port_map[key][0]["HostPort"])
                 return host_port
 
@@ -255,9 +243,7 @@ class DockerManager:
                 # Check if container exited with error
                 if container.status != "running":
                     error_logs = container.logs(stderr=True).decode("utf-8")
-                    raise RuntimeError(
-                        f"Container {container.name} exited: {error_logs[-500:]}"
-                    )
+                    raise RuntimeError(f"Container {container.name} exited: {error_logs[-500:]}")
 
                 # Get the host port to test connectivity
                 port_map = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
@@ -307,10 +293,7 @@ class DockerManager:
             return
 
         logs = container.logs(tail=50).decode("utf-8", errors="ignore")
-        raise RuntimeError(
-            f"Container {container.name} did not start within {timeout}s. "
-            f"Last logs: {logs[-500:]}"
-        )
+        raise RuntimeError(f"Container {container.name} did not start within {timeout}s. Last logs: {logs[-500:]}")
 
     async def stop_container_if_running(self, name: str) -> bool:
         """

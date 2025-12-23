@@ -45,9 +45,7 @@ async def create_and_execute_workflow(
 
     # Plan the graph
     logger.info(f"Planning workflow for: {objective}")
-    context = ProcessingContext(
-        workspace_dir=workspace, user_id="rag_pattern_test", auth_token="local_token"
-    )
+    context = ProcessingContext(workspace_dir=workspace, user_id="rag_pattern_test", auth_token="local_token")
 
     async for update in graph_planner.create_graph(context):
         if isinstance(update, PlanningUpdate):

@@ -59,9 +59,7 @@ class NodeTool(Tool):
         if self.node_class.__module__.startswith("nodetool.nodes."):
             tool_name_source = raw_node_type
         else:
-            tool_name_source = (
-                f"{self.node_class.__module__.split('.')[-1]}.{self.node_class.__name__}"
-            )
+            tool_name_source = f"{self.node_class.__module__.split('.')[-1]}.{self.node_class.__name__}"
         self.name = sanitize_node_name(tool_name_source)
 
         # Set description from node metadata

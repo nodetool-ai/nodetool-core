@@ -25,11 +25,7 @@ class ChangeToWorkspaceCommand(Command):
         try:
             os.chdir(workspace_dir)
             # No need to update context.workspace_dir here, we are just navigating to it
-            cli.console.print(
-                f"Changed to workspace: [bold green]{os.getcwd()}[/bold green]"
-            )
+            cli.console.print(f"Changed to workspace: [bold green]{os.getcwd()}[/bold green]")
         except Exception as e:
-            cli.console.print(
-                f"[bold red]Error changing to workspace directory:[/bold red] {e}"
-            )
+            cli.console.print(f"[bold red]Error changing to workspace directory:[/bold red] {e}")
         return False

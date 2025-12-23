@@ -101,9 +101,7 @@ class DBModel(BaseModel):
         if scope and scope.db:
             return await scope.db.adapter_for_model(cls)
 
-        raise Exception(
-            f"No ResourceScope bound for {cls.__name__}"
-        )
+        raise Exception(f"No ResourceScope bound for {cls.__name__}")
 
     @classmethod
     def has_indexes(cls) -> bool:

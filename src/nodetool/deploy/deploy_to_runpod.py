@@ -134,35 +134,21 @@ def deploy_to_runpod(
     platform = platform or deployment.platform
     template_name = template_name or name or deployment.template_name
     compute_type = deployment.compute_type
-    gpu_types = (
-        tuple(gpu_types)
-        if gpu_types is not None
-        else tuple(deployment.gpu_types)
-    )
+    gpu_types = tuple(gpu_types) if gpu_types is not None else tuple(deployment.gpu_types)
     gpu_count = gpu_count if gpu_count is not None else deployment.gpu_count
-    cpu_flavors: tuple = () # Not in the model
-    vcpu_count: Optional[int] = None # Not in the model
-    data_centers = (
-        tuple(data_centers)
-        if data_centers is not None
-        else tuple(deployment.data_centers)
-    )
+    cpu_flavors: tuple = ()  # Not in the model
+    vcpu_count: Optional[int] = None  # Not in the model
+    data_centers = tuple(data_centers) if data_centers is not None else tuple(deployment.data_centers)
     workers_min = workers_min if workers_min is not None else deployment.workers_min
     workers_max = workers_max if workers_max is not None else deployment.workers_max
     idle_timeout = idle_timeout if idle_timeout is not None else deployment.idle_timeout
-    execution_timeout = (
-        execution_timeout
-        if execution_timeout is not None
-        else deployment.execution_timeout
-    )
+    execution_timeout = execution_timeout if execution_timeout is not None else deployment.execution_timeout
     flashboot = flashboot if flashboot is not None else deployment.flashboot
     network_volume_id = deployment.network_volume_id
-    allowed_cuda_versions: tuple = () # Not in the model
+    allowed_cuda_versions: tuple = ()  # Not in the model
 
     # Get Docker username
-    docker_username = get_docker_username(
-        docker_username, docker_registry, skip_build, skip_push
-    )
+    docker_username = get_docker_username(docker_username, docker_registry, skip_build, skip_push)
 
     # Generate unique tag if not provided
     if tag:
@@ -218,9 +204,7 @@ def deploy_to_runpod(
         if not skip_template:
             env["PORT"] = "8000"
             env["PORT_HEALTH"] = "8000"
-            template_id = create_or_update_runpod_template(
-                template_name, full_image_name, image_tag, env=env
-            )
+            template_id = create_or_update_runpod_template(template_name, full_image_name, image_tag, env=env)
 
         # Create RunPod endpoint
         if not skip_endpoint and template_id:
@@ -228,9 +212,7 @@ def deploy_to_runpod(
             gpu_type_ids = list(gpu_types) if gpu_types else None
             cpu_flavor_ids = list(cpu_flavors) if cpu_flavors else None
             data_center_ids = list(data_centers) if data_centers else None
-            allowed_cuda_versions_list = (
-                list(allowed_cuda_versions) if allowed_cuda_versions else None
-            )
+            allowed_cuda_versions_list = list(allowed_cuda_versions) if allowed_cuda_versions else None
 
             assert name, "Name is required"
 

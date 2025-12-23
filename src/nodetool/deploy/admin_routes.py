@@ -174,9 +174,7 @@ def create_admin_router() -> APIRouter:
 
             async def generate_sse():
                 try:
-                    async for chunk in download_ollama_model(
-                        model_name=model_name, stream=data.get("stream", True)
-                    ):
+                    async for chunk in download_ollama_model(model_name=model_name, stream=data.get("stream", True)):
                         yield f"data: {json.dumps(chunk)}\n\n"
                     yield "data: [DONE]\n\n"
                 except Exception as e:
@@ -207,11 +205,7 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in scan_hf_cache():
                 results.append(chunk)
-            return (
-                results[0]
-                if results
-                else {"status": "error", "message": "No cache data"}
-            )
+            return results[0] if results else {"status": "error", "message": "No cache data"}
         except Exception as e:
             print(f"Cache scan error: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -223,11 +217,7 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in calculate_cache_size(cache_dir=cache_dir):
                 results.append(chunk)
-            return (
-                results[0]
-                if results
-                else {"status": "error", "message": "No size data"}
-            )
+            return results[0] if results else {"status": "error", "message": "No size data"}
         except Exception as e:
             print(f"Cache size calculation error: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -239,11 +229,7 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in delete_hf_model(repo_id=repo_id):
                 results.append(chunk)
-            return (
-                results[0]
-                if results
-                else {"status": "error", "message": "Delete failed"}
-            )
+            return results[0] if results else {"status": "error", "message": "Delete failed"}
         except Exception as e:
             print(f"HuggingFace model deletion error: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -292,9 +278,7 @@ def create_admin_router() -> APIRouter:
             metadata = {
                 "embedding_model": req.embedding_model,
             }
-            collection = await client.create_collection(
-                name=req.name, metadata=metadata
-            )
+            collection = await client.create_collection(name=req.name, metadata=metadata)
             return CollectionResponse(
                 name=collection.name,
                 metadata=collection.metadata,
@@ -321,9 +305,7 @@ def create_admin_router() -> APIRouter:
                 return None
 
             counts = await asyncio.gather(*(col.count() for col in collections))
-            workflows = await asyncio.gather(
-                *(get_workflow_name(col.metadata or {}) for col in collections)
-            )
+            workflows = await asyncio.gather(*(get_workflow_name(col.metadata or {}) for col in collections))
 
             return CollectionList(
                 collections=[
@@ -333,9 +315,7 @@ def create_admin_router() -> APIRouter:
                         workflow_name=wf,
                         count=count,
                     )
-                    for col, wf, count in zip(
-                        collections, workflows, counts, strict=False
-                    )
+                    for col, wf, count in zip(collections, workflows, counts, strict=False)
                 ],
                 count=len(collections),
             )
@@ -393,7 +373,9 @@ def create_admin_router() -> APIRouter:
         try:
             client = await get_async_chroma_client()
             collection = await client.get_collection(name=name)
-            await collection.add(documents=req.documents, ids=req.ids, metadatas=req.metadatas, embeddings=req.embeddings)
+            await collection.add(
+                documents=req.documents, ids=req.ids, metadatas=req.metadatas, embeddings=req.embeddings
+            )
             return {"message": f"Documents added to collection {name} successfully"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -506,9 +488,7 @@ def create_admin_router() -> APIRouter:
             async def delete_folder(uid: str, folder_id: str) -> List[str]:
                 ids = []
                 try:
-                    assets, _ = await AssetModel.paginate(
-                        user_id=uid, parent_id=folder_id, limit=10000
-                    )
+                    assets, _ = await AssetModel.paginate(user_id=uid, parent_id=folder_id, limit=10000)
                     # Delete children first
                     for a in assets:
                         if a.content_type == "folder":
@@ -528,9 +508,7 @@ def create_admin_router() -> APIRouter:
                     from nodetool.config.logging_config import get_logger
 
                     log = get_logger(__name__)
-                    log.exception(
-                        f"Error in delete_folder for folder {folder_id}: {str(e)}"
-                    )
+                    log.exception(f"Error in delete_folder for folder {folder_id}: {str(e)}")
                     raise
 
             async def delete_single_asset(a: AssetModel):
@@ -545,9 +523,7 @@ def create_admin_router() -> APIRouter:
                     from nodetool.config.logging_config import get_logger
 
                     log = get_logger(__name__)
-                    log.exception(
-                        f"Error in delete_single_asset for asset {a.id}: {str(e)}"
-                    )
+                    log.exception(f"Error in delete_single_asset for asset {a.id}: {str(e)}")
                     raise
 
             if asset.content_type == "folder":

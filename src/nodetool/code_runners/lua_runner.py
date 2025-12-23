@@ -67,9 +67,7 @@ def _lua_literal(value: Any, depth: int = 0) -> str:
             if isinstance(k, str) and k.isidentifier():
                 parts.append(f"{k} = {_lua_literal(v, depth + 1)}")
             else:
-                parts.append(
-                    f"[{_lua_literal(k, depth + 1)}] = {_lua_literal(v, depth + 1)}"
-                )
+                parts.append(f"[{_lua_literal(k, depth + 1)}] = {_lua_literal(v, depth + 1)}")
         return "{" + ", ".join(parts) + "}"
     # Fallback: coerce to string
     return _lua_escape_string(str(value))
@@ -88,9 +86,7 @@ class LuaRunner(StreamRunnerBase):
         super().__init__(*args, image=image, **kwargs)
         self.executable = executable
 
-    def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         """Return a `lua -e` command that evaluates sandboxed user code.
 
         The generated snippet:
@@ -103,9 +99,7 @@ class LuaRunner(StreamRunnerBase):
             if not isinstance(key, str) or not key.isidentifier():
                 # Skip invalid identifiers
                 continue
-            injected_locals_lines.append(
-                f"_ENV[{_lua_literal(key)}] = {_lua_literal(val)}"
-            )
+            injected_locals_lines.append(f"_ENV[{_lua_literal(key)}] = {_lua_literal(val)}")
 
         # Compose the sandbox prelude and user code executor
         lua_snippet = (

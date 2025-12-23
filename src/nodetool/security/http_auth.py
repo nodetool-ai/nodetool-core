@@ -36,9 +36,7 @@ def create_http_auth_middleware(
 
         token = static_provider.extract_token_from_headers(request.headers)
         if not token:
-            return _make_response(
-                "Authorization header required. Use 'Authorization: Bearer <token>'."
-            )
+            return _make_response("Authorization header required. Use 'Authorization: Bearer <token>'.")
 
         static_result = await static_provider.verify_token(token)
         if static_result.ok:

@@ -41,11 +41,7 @@ def convert_to_comfy_workflow(edges: list[Edge], nodes: list[BaseNode]):
     json = {}
     for node in nodes:
         inputs = node.node_properties()
-        inputs = {
-            k: v.to_dict() if hasattr(v, "to_dict") else v
-            for k, v in inputs.items()
-            if v is not None
-        }
+        inputs = {k: v.to_dict() if hasattr(v, "to_dict") else v for k, v in inputs.items() if v is not None}
         json[node._id] = {
             "class_type": node.__class__.__name__,
             "inputs": inputs,

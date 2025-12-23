@@ -34,13 +34,14 @@ class ModelPack(BaseModel):
     Model packs group related models (e.g., Flux checkpoint + CLIP + T5 + VAE)
     into a single downloadable unit with a clear title and description.
     """
-    id: str                              # Unique identifier, e.g., "flux_dev_fp8"
-    title: str                           # User-friendly title, e.g., "Flux Dev FP8"
-    description: str                     # Explains what this pack is for
-    category: str = "image_generation"   # For grouping in UI
-    tags: list[str] = []                 # Searchable tags
-    models: list[UnifiedModel] = []      # The actual models in the pack
-    total_size: int | None = None        # Combined size in bytes (computed)
+
+    id: str  # Unique identifier, e.g., "flux_dev_fp8"
+    title: str  # User-friendly title, e.g., "Flux Dev FP8"
+    description: str  # Explains what this pack is for
+    category: str = "image_generation"  # For grouping in UI
+    tags: list[str] = []  # Searchable tags
+    models: list[UnifiedModel] = []  # The actual models in the pack
+    total_size: int | None = None  # Combined size in bytes (computed)
 
     def compute_total_size(self) -> int:
         """Compute total size from individual model sizes."""

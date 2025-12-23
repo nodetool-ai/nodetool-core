@@ -378,9 +378,7 @@ def _log_context_token_breakdown(messages: list[Message], model: Optional[str]) 
         if idx == 0 and role == "system":
             system_prompt_tokens = tokens
             label = f"SYSTEM_PROMPT content_len={content_len}"
-        elif role == "system" and isinstance(content, str) and content.startswith(
-            "Current workflow context."
-        ):
+        elif role == "system" and isinstance(content, str) and content.startswith("Current workflow context."):
             graph_context_tokens += tokens
             label = f"GRAPH_CONTEXT content_len={content_len}"
 
@@ -391,14 +389,10 @@ def _log_context_token_breakdown(messages: list[Message], model: Optional[str]) 
 
     per_message.sort(reverse=True)
     for tokens, idx, role, label in per_message[:25]:
-        log.debug(
-            "Help context tokens: %5d  #%d  role=%s  %s", tokens, idx, role, label
-        )
+        log.debug("Help context tokens: %5d  #%d  role=%s  %s", tokens, idx, role, label)
 
 
-def _log_tool_definition_token_breakdown(
-    tools: list[Tool], model: Optional[str]
-) -> None:
+def _log_tool_definition_token_breakdown(tools: list[Tool], model: Optional[str]) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -406,9 +400,7 @@ def _log_tool_definition_token_breakdown(
     per_tool: list[tuple[int, str]] = []
     for tool in tools:
         try:
-            per_tool.append(
-                (count_json_tokens(tool.tool_param(), encoding=encoding), tool.name)
-            )
+            per_tool.append((count_json_tokens(tool.tool_param(), encoding=encoding), tool.name))
         except Exception:
             per_tool.append((0, getattr(tool, "name", "unknown")))
 
@@ -457,9 +449,7 @@ class UIToolProxy(Tool):
 
         # Wait for result with timeout
         try:
-            payload = await asyncio.wait_for(
-                context.tool_bridge.create_waiter(tool_call_id), timeout=60.0
-            )
+            payload = await asyncio.wait_for(context.tool_bridge.create_waiter(tool_call_id), timeout=60.0)
 
             if payload.get("ok"):
                 return payload.get("result", {})
@@ -511,10 +501,7 @@ class HelpMessageProcessor(MessageProcessor):
             help_tools_by_name = {t.name: t for t in help_tools}
             if last_message.tools:
                 tools = await asyncio.gather(
-                    *[
-                        resolve_tool_by_name(name, processing_context.user_id)
-                        for name in last_message.tools
-                    ]
+                    *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
                 )
             else:
                 tools = []
@@ -587,9 +574,7 @@ class HelpMessageProcessor(MessageProcessor):
                 assert last_message.model, "Model is required"
 
                 _log_context_token_breakdown(messages_to_send, last_message.model)
-                _log_tool_definition_token_breakdown(
-                    help_tools + tools + ui_tools, last_message.model
-                )
+                _log_tool_definition_token_breakdown(help_tools + tools + ui_tools, last_message.model)
 
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
@@ -600,9 +585,7 @@ class HelpMessageProcessor(MessageProcessor):
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         accumulated_content += chunk.content
-                        await self.send_message(
-                            {"type": "chunk", "content": chunk.content, "done": False}
-                        )
+                        await self.send_message({"type": "chunk", "content": chunk.content, "done": False})
                     elif isinstance(chunk, ToolCall):
                         log.debug(f"Processing help tool call: {chunk.name}")
 
@@ -626,9 +609,7 @@ class HelpMessageProcessor(MessageProcessor):
 
                             # Wait for result from frontend
                             try:
-                                tool_bridge = getattr(
-                                    processing_context, "tool_bridge", None
-                                )
+                                tool_bridge = getattr(processing_context, "tool_bridge", None)
                                 if tool_bridge is None:
                                     raise ValueError("Tool bridge not available")
 
@@ -647,11 +628,7 @@ class HelpMessageProcessor(MessageProcessor):
                             if payload.get("ok"):
                                 normalized = payload.get("result", {})
                             else:
-                                normalized = {
-                                    "error": payload.get(
-                                        "error", "Frontend tool execution failed"
-                                    )
-                                }
+                                normalized = {"error": payload.get("error", "Frontend tool execution failed")}
 
                             # Create tool result with the same id
                             tool_result = ToolCall(
@@ -673,9 +650,7 @@ class HelpMessageProcessor(MessageProcessor):
                                     ).model_dump()
                                 )
                                 try:
-                                    result = await tool_impl.process(
-                                        processing_context, chunk.args
-                                    )
+                                    result = await tool_impl.process(processing_context, chunk.args)
                                     tool_result = ToolCall(
                                         id=chunk.id,
                                         name=chunk.name,
@@ -690,16 +665,12 @@ class HelpMessageProcessor(MessageProcessor):
                                         id=chunk.id,
                                         name=chunk.name,
                                         args=chunk.args,
-                                        result={
-                                            "error": f"Tool execution failed: {str(e)}"
-                                        },
+                                        result={"error": f"Tool execution failed: {str(e)}"},
                                     )
                             else:
                                 # Try to process as regular server tool, with graceful error handling
                                 try:
-                                    tool_result = await self._run_tool(
-                                        processing_context, chunk
-                                    )
+                                    tool_result = await self._run_tool(processing_context, chunk)
                                 except ValueError:
                                     # Tool not found - return error to model instead of crashing
                                     # This helps smaller models that may hallucinate tool names
@@ -713,9 +684,7 @@ class HelpMessageProcessor(MessageProcessor):
                                         },
                                     )
 
-                        log.debug(
-                            f"Help tool {chunk.name} execution complete, id={tool_result.id}"
-                        )
+                        log.debug(f"Help tool {chunk.name} execution complete, id={tool_result.id}")
 
                         # Add tool messages to unprocessed messages
                         assistant_msg = Message(
@@ -732,9 +701,7 @@ class HelpMessageProcessor(MessageProcessor):
                         await self.send_message(assistant_msg.model_dump())
 
                         # Convert result to JSON
-                        converted_result = self._recursively_model_dump(
-                            tool_result.result
-                        )
+                        converted_result = self._recursively_model_dump(tool_result.result)
                         tool_result_json = json.dumps(converted_result)
                         tool_msg = Message(
                             role="tool",
@@ -771,9 +738,7 @@ class HelpMessageProcessor(MessageProcessor):
         except httpx.ConnectError as e:
             # Handle connection errors
             error_msg = self._format_connection_error(e)
-            log.error(
-                f"httpx.ConnectError in _process_help_messages: {e}", exc_info=True
-            )
+            log.error(f"httpx.ConnectError in _process_help_messages: {e}", exc_info=True)
 
             # Send error message to client
             await self.send_message(
@@ -814,9 +779,7 @@ class HelpMessageProcessor(MessageProcessor):
         from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 
         tool = await resolve_tool_by_name(tool_call.name, context.user_id)
-        log.debug(
-            f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
-        )
+        log.debug(f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}")
 
         # Send tool call to client
         await self.send_message(

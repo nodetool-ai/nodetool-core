@@ -146,7 +146,8 @@ class StreamRunnerBase:
                 log.debug("final received: ok=%s", msg.get("ok"))
                 if not msg.get("ok", False):
                     raise ContainerFailureError(
-                        f"Execution error: {msg.get('error', 'Unknown error')}", msg.get("exit_code", 1) if msg.get("exit_code") else 1
+                        f"Execution error: {msg.get('error', 'Unknown error')}",
+                        msg.get("exit_code", 1) if msg.get("exit_code") else 1,
                     )
                 break
 
@@ -176,9 +177,7 @@ class StreamRunnerBase:
                     with suppress(Exception):
                         c.remove(force=True)
 
-    def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         """Return the command list to run inside the container.
 
         Args:
@@ -194,9 +193,7 @@ class StreamRunnerBase:
         """
         raise NotImplementedError
 
-    def wrap_subprocess_command(
-        self, command: list[str], context: ProcessingContext
-    ) -> tuple[list[str], Any]:
+    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], Any]:
         """Hook to wrap subprocess command (e.g., with sandbox-exec).
 
         Subclasses can override this to wrap the command with additional
@@ -232,9 +229,7 @@ class StreamRunnerBase:
         except Exception:
             return None
 
-    def resolve_execution_workspace_path(
-        self, context: ProcessingContext
-    ) -> str | None:
+    def resolve_execution_workspace_path(self, context: ProcessingContext) -> str | None:
         """Return the path user code should treat as the workspace."""
         if self.mode == "docker":
             mount = self._resolve_workspace_mount(context)
@@ -243,31 +238,23 @@ class StreamRunnerBase:
             return self.docker_workdir
         return self.get_workspace_host_path(context)
 
-    def _resolve_workspace_mount(
-        self, context: ProcessingContext
-    ) -> tuple[str, str] | None:
+    def _resolve_workspace_mount(self, context: ProcessingContext) -> tuple[str, str] | None:
         """Compute the workspace mount tuple (host_path, container_path)."""
         if self.workspace_mount_path is None:
             return None
         host_path = self.get_workspace_host_path(context)
         if not host_path:
             return None
-        container_path = (
-            host_path if self.workspace_mount_path == "host" else self.workspace_mount_path
-        )
+        container_path = host_path if self.workspace_mount_path == "host" else self.workspace_mount_path
         return host_path, container_path
 
-    def _determine_container_workdir(
-        self, workspace_mount: tuple[str, str] | None
-    ) -> str | None:
+    def _determine_container_workdir(self, workspace_mount: tuple[str, str] | None) -> str | None:
         """Decide which directory to set as the container working directory."""
         if workspace_mount:
             return workspace_mount[1]
         return self.docker_workdir
 
-    def _extract_node_metadata(
-        self, node: BaseNode | None
-    ) -> tuple[str, str] | None:
+    def _extract_node_metadata(self, node: BaseNode | None) -> tuple[str, str] | None:
         """Return (node_id, node_name) if available."""
         if node is None:
             return None
@@ -393,9 +380,7 @@ class StreamRunnerBase:
             container = None
             cancel_timer: threading.Timer | None = None
             try:
-                container = self._create_container(
-                    client, image, command, environment, context, stdin_stream
-                )
+                container = self._create_container(client, image, command, environment, context, stdin_stream)
                 sock = self._attach_before_start(container, stdin_stream)
                 # Publish active resources for cooperative shutdown
                 with self._lock:
@@ -413,9 +398,7 @@ class StreamRunnerBase:
 
                 # Check exit code and fail if non-zero
                 if exit_code != 0:
-                    raise ContainerFailureError(
-                        f"Container exited with non-zero status: {exit_code}", exit_code
-                    )
+                    raise ContainerFailureError(f"Container exited with non-zero status: {exit_code}", exit_code)
 
                 self._finalize_success(queue, loop)
                 log.debug("_docker_run() completed successfully")
@@ -455,9 +438,7 @@ class StreamRunnerBase:
             command_vec = self.build_container_command(user_code, env_locals)
 
             # Allow subclass to wrap the command (e.g., with sandbox-exec)
-            command_vec, cleanup_data = self.wrap_subprocess_command(
-                command_vec, context
-            )
+            command_vec, cleanup_data = self.wrap_subprocess_command(command_vec, context)
 
             cmd_str = self._format_command_str(command_vec)
 
@@ -473,9 +454,7 @@ class StreamRunnerBase:
                 env=proc_env,
                 # If no stdin stream is provided, explicitly close stdin so
                 # commands like `cat` see EOF immediately and do not hang.
-                stdin=(
-                    subprocess.PIPE if stdin_stream is not None else subprocess.DEVNULL
-                ),
+                stdin=(subprocess.PIPE if stdin_stream is not None else subprocess.DEVNULL),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=1,  # line-buffered
@@ -543,15 +522,11 @@ class StreamRunnerBase:
             if rc != 0:
                 raise ContainerFailureError(f"Process exited with code {rc}", rc)
 
-            asyncio.run_coroutine_threadsafe(
-                queue.put({"type": "final", "ok": True}), loop
-            )
+            asyncio.run_coroutine_threadsafe(queue.put({"type": "final", "ok": True}), loop)
         except Exception as e:
             with suppress(Exception):
                 log.exception("_local_run() error for cmd=%s: %s", command_vec, e)
-            asyncio.run_coroutine_threadsafe(
-                queue.put({"type": "final", "ok": False, "error": str(e)}), loop
-            )
+            asyncio.run_coroutine_threadsafe(queue.put({"type": "final", "ok": False, "error": str(e)}), loop)
         finally:
             with suppress(Exception):
                 if cancel_timer is not None:
@@ -606,9 +581,7 @@ class StreamRunnerBase:
         try:
             client.ping()
         except Exception as e:
-            raise RuntimeError(
-                "Docker daemon is not available. Please start Docker and try again."
-            ) from e
+            raise RuntimeError("Docker daemon is not available. Please start Docker and try again.") from e
         return client
 
     def _format_command_str(self, command: list[str] | None) -> str | None:
@@ -671,19 +644,11 @@ class StreamRunnerBase:
             client.images.get(image)
         except Exception:
             log.debug("pulling image: %s", image)
-            self._maybe_post_notification(
-                context, node, content=f"Pulling image: {image}", severity="info"
-            )
-            self._maybe_post_log(
-                context, node, content=f"Pulling image: {image}", severity="info"
-            )
+            self._maybe_post_notification(context, node, content=f"Pulling image: {image}", severity="info")
+            self._maybe_post_log(context, node, content=f"Pulling image: {image}", severity="info")
             client.images.pull(image)
-            self._maybe_post_notification(
-                context, node, content=f"Downloaded image: {image}", severity="info"
-            )
-            self._maybe_post_log(
-                context, node, content=f"Downloaded image: {image}", severity="info"
-            )
+            self._maybe_post_notification(context, node, content=f"Downloaded image: {image}", severity="info")
+            self._maybe_post_log(context, node, content=f"Downloaded image: {image}", severity="info")
 
     def _create_container(
         self,
@@ -734,9 +699,7 @@ class StreamRunnerBase:
         log.debug("container created: id=%s", getattr(container, "id", "<no-id>"))
         return container
 
-    def _attach_before_start(
-        self, container: Any, stdin_stream: AsyncIterator[str] | None
-    ):  # type: ignore[no-untyped-def]
+    def _attach_before_start(self, container: Any, stdin_stream: AsyncIterator[str] | None):  # type: ignore[no-untyped-def]
         """Attach a hijacked socket before starting the container.
 
         Attaching prior to start ensures no early output is missed.
@@ -860,11 +823,7 @@ class StreamRunnerBase:
         try:
             res = container.wait()
             # Docker SDK returns {"StatusCode": int, ...}
-            status = (
-                int(res.get("StatusCode", 0) or 0)
-                if isinstance(res, dict)
-                else int(res or 0)
-            )
+            status = int(res.get("StatusCode", 0) or 0) if isinstance(res, dict) else int(res or 0)
             log.debug("container exit status: %s", status)
             return status
         except Exception as e:
@@ -949,9 +908,7 @@ class StreamRunnerBase:
         if stderr_buf:
             self._emit_line(queue, loop, context, node, "stderr", stderr_buf)
 
-    def _finalize_success(
-        self, queue: asyncio.Queue[dict[str, Any]], loop: asyncio.AbstractEventLoop
-    ) -> None:
+    def _finalize_success(self, queue: asyncio.Queue[dict[str, Any]], loop: asyncio.AbstractEventLoop) -> None:
         """Signal successful completion to the consumer loop.
 
         Args:
@@ -963,9 +920,7 @@ class StreamRunnerBase:
             loop,
         )
 
-    def _cleanup_container(
-        self, container: Any | None, cancel_timer: threading.Timer | None
-    ) -> None:
+    def _cleanup_container(self, container: Any | None, cancel_timer: threading.Timer | None) -> None:
         """Best-effort cleanup of timer and container resources.
 
         Args:
@@ -978,9 +933,7 @@ class StreamRunnerBase:
                     cancel_timer.cancel()
             if container is not None:
                 with suppress(Exception):
-                    log.debug(
-                        "removing container: id=%s", getattr(container, "id", "<no-id>")
-                    )
+                    log.debug("removing container: id=%s", getattr(container, "id", "<no-id>"))
                 with suppress(Exception):
                     container.remove(force=True)
 
@@ -1000,11 +953,7 @@ class StreamRunnerBase:
             loop: Event loop that owns the queue.
         """
         if command_str:
-            log.exception(
-                "_docker_run() error while running cmd=%s: %s", command_str, e
-            )
+            log.exception("_docker_run() error while running cmd=%s: %s", command_str, e)
         else:
             log.exception("_docker_run() error: %s", e)
-        asyncio.run_coroutine_threadsafe(
-            queue.put({"type": "final", "ok": False, "error": str(e)}), loop
-        )
+        asyncio.run_coroutine_threadsafe(queue.put({"type": "final", "ok": False, "error": str(e)}), loop)

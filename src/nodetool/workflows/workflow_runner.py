@@ -86,17 +86,13 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
         context (ProcessingContext): The processing context, used for sending updates.
     """
     if gpu_lock.locked():  # Check if the lock is currently held by another task
-        log.debug(
-            f"Node {node.get_title()} is waiting for GPU lock as it is currently held."
-        )
+        log.debug(f"Node {node.get_title()} is waiting for GPU lock as it is currently held.")
         await node.send_update(context, status="waiting")
     # Acquire the threading lock without blocking the event loop.
     # Use short timeouts so task cancellation does not leak a held lock.
     loop = asyncio.get_running_loop()
     while True:
-        acquired = await loop.run_in_executor(
-            None, lambda: gpu_lock.acquire(timeout=0.2)
-        )
+        acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=0.2))
         if acquired:
             break
         # Yield briefly before retrying to avoid busy-waiting
@@ -161,9 +157,7 @@ class WorkflowRunner:
         self.current_node: Optional[str] = None
         self.context: Optional[ProcessingContext] = None
         self.outputs: dict[str, Any] = {}
-        self.active_processing_node_ids: set[str] = (
-            set()
-        )  # Track nodes currently in an async task
+        self.active_processing_node_ids: set[str] = set()  # Track nodes currently in an async task
         self.node_inboxes: dict[str, NodeInbox] = {}
         self.disable_caching = disable_caching
         self.buffer_limit = buffer_limit
@@ -179,15 +173,11 @@ class WorkflowRunner:
             if TORCH_AVAILABLE:
                 if is_cuda_available():
                     self.device = "cuda"
-                elif (
-                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-                ):
+                elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                     self.device = "mps"
 
             log.info(f"Workflow runs on device: {self.device}")
-            log.debug(
-                f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}"
-            )
+            log.debug(f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}")
         # Streaming input queue and dispatcher task (created during run())
         self._input_queue: asyncio.Queue | None = None
         self._input_task: asyncio.Task | None = None
@@ -197,9 +187,7 @@ class WorkflowRunner:
         self._edge_counters: dict[str, int] = defaultdict(int)
 
     def _edge_key(self, edge: Edge) -> str:
-        return edge.id or (
-            f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}"
-        )
+        return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
 
     def edge_streams(self, edge: Edge) -> bool:
         """Return True if the given edge is marked as streaming."""
@@ -281,9 +269,7 @@ class WorkflowRunner:
                 return node._id
         raise ValueError(f"Input node not found for input name: {input_name}")
 
-    def push_input_value(
-        self, *, input_name: str, value: Any, source_handle: str | None = None
-    ) -> None:
+    def push_input_value(self, *, input_name: str, value: Any, source_handle: str | None = None) -> None:
         """
         Enqueue a streaming input event to be dispatched on the runner loop.
         """
@@ -296,14 +282,10 @@ class WorkflowRunner:
             "value": value,
             "handle": source_handle or "output",
         }
-        log.debug(
-            f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
-        )
+        log.debug(f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}")
         self._enqueue_input_event(event)
 
-    def finish_input_stream(
-        self, *, input_name: str, source_handle: str | None = None
-    ) -> None:
+    def finish_input_stream(self, *, input_name: str, source_handle: str | None = None) -> None:
         """
         Signal end-of-stream for a streaming input. This marks downstream inboxes as
         done for the corresponding target handles so consumers can complete.
@@ -312,9 +294,7 @@ class WorkflowRunner:
             raise RuntimeError("Input queue is not initialized")
         # Default to the standard InputNode output handle when none is provided
         event = {"op": "end", "input": input_name, "handle": source_handle or "output"}
-        log.debug(
-            f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
-        )
+        log.debug(f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}")
         self._enqueue_input_event(event)
 
     async def _dispatch_inputs(self, context: ProcessingContext) -> None:
@@ -323,16 +303,12 @@ class WorkflowRunner:
         graph = context.graph
         try:
             loop = asyncio.get_running_loop()
-            log.debug(
-                f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}"
-            )
+            log.debug(f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}")
         except Exception:
             log.debug("Input dispatcher started (loop id unavailable)")
         while True:
             ev = await self._input_queue.get()
-            log.debug(
-                f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}"
-            )
+            log.debug(f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}")
             if ev.get("op") == "shutdown":
                 log.debug("Input dispatcher received shutdown; exiting")
                 return
@@ -341,9 +317,7 @@ class WorkflowRunner:
                 node_id = self._find_input_node_id(context, input_name)
                 node = graph.find_node(node_id)
                 if node is None:
-                    log.warning(
-                        f"Dispatch event dropped: input node not found for {input_name}"
-                    )
+                    log.warning(f"Dispatch event dropped: input node not found for {input_name}")
                     continue
                 # Determine output handle from event or InputNode defaults
                 # Default to the standard InputNode output handle when none is provided
@@ -365,21 +339,15 @@ class WorkflowRunner:
                                 )
                             )
                         else:
-                            log.debug(
-                                f"No inbox for target {edge.target} on edge {edge.id}"
-                            )
+                            log.debug(f"No inbox for target {edge.target} on edge {edge.id}")
                 elif ev.get("op") == "end":
                     for edge in graph.find_edges(node_id, handle):
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
                             inbox.mark_source_done(edge.targetHandle)
-                            context.post_message(
-                                EdgeUpdate(edge_id=edge.id or "", status="drained")
-                            )
+                            context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
                         else:
-                            log.debug(
-                                f"No inbox for target {edge.target} on edge {edge.id}"
-                            )
+                            log.debug(f"No inbox for target {edge.target} on edge {edge.id}")
             except Exception as e:
                 log.error(f"Error dispatching input event: {e}")
                 pass
@@ -417,9 +385,7 @@ class WorkflowRunner:
             source_node = graph.find_node(edge.source)
             target_node = graph.find_node(edge.target)
             if source_node is None or target_node is None:
-                log.warning(
-                    f"Edge {edge.id} has a source or target node that does not exist"
-                )
+                log.warning(f"Edge {edge.id} has a source or target node that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -432,10 +398,7 @@ class WorkflowRunner:
                 continue
 
             # 4 - target property must exist unless node is dynamic
-            if (
-                not target_cls.is_dynamic()
-                and target_node.find_property(edge.targetHandle) is None
-            ):
+            if not target_cls.is_dynamic() and target_node.find_property(edge.targetHandle) is None:
                 log.warning(f"Edge {edge.id} has a target handle that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
@@ -489,12 +452,8 @@ class WorkflowRunner:
         log.info("Starting workflow run: job_id=%s", self.job_id)
         self._edge_counters.clear()
         self.status = "running"
-        log.debug(
-            "Run parameters: params=%s messages=%s", request.params, request.messages
-        )
-        log.debug(
-            f"WorkflowRunner.run called for job_id: {self.job_id} with req: {request}, context: {context}"
-        )
+        log.debug("Run parameters: params=%s messages=%s", request.params, request.messages)
+        log.debug(f"WorkflowRunner.run called for job_id: {self.job_id} with req: {request}, context: {context}")
 
         Environment.load_settings()
 
@@ -536,9 +495,7 @@ class WorkflowRunner:
             except Exception:
                 pass
         if invalid_inputs:
-            raise ValueError(
-                f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}"
-            )
+            raise ValueError(f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}")
 
         input_nodes = {node.name: node for node in graph.inputs()}
 
@@ -617,20 +574,14 @@ class WorkflowRunner:
                         handle_name = outputs[0].name if outputs else "output"
                     except Exception:
                         handle_name = "output"
-                    self.push_input_value(
-                        input_name=name, value=default_value, source_handle=handle_name
-                    )
+                    self.push_input_value(input_name=name, value=default_value, source_handle=handle_name)
                     if not node.is_streaming_output():
-                        self.finish_input_stream(
-                            input_name=name, source_handle=handle_name
-                        )
+                        self.finish_input_stream(input_name=name, source_handle=handle_name)
 
                 await self.process_graph(context, graph)
 
                 # If we reach here, no exceptions from the main processing stages
-                if (
-                    self.status == "running"
-                ):  # Check if it wasn't set to error by some internal logic
+                if self.status == "running":  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
             except asyncio.CancelledError:
@@ -638,19 +589,17 @@ class WorkflowRunner:
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
                 if send_job_updates:
-                    context.post_message(
-                        JobUpdate(job_id=self.job_id, status="cancelled")
-                    )
+                    context.post_message(JobUpdate(job_id=self.job_id, status="cancelled"))
             except Exception as e:
                 error_message_for_job_update = str(e)
-                log.error(
-                    f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}"
-                )
+                log.error(f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}")
                 log.debug(f"Exception caught in WorkflowRunner.run: {e}", exc_info=True)
 
                 # Specific handling for OOM error message, but status is always error
                 if self._torch_support.is_cuda_oom_exception(e):
-                    error_message_for_job_update = f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
+                    error_message_for_job_update = (
+                        f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
+                    )
                     # log.error already done by generic message
 
                 self.status = "error"
@@ -675,9 +624,7 @@ class WorkflowRunner:
                         await self._input_task
                 except Exception:
                     pass
-                if (
-                    graph and graph.nodes
-                ):  # graph is the internal Graph instance from the start of run
+                if graph and graph.nodes:  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
                         try:
                             await node.finalize(context)
@@ -706,12 +653,8 @@ class WorkflowRunner:
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
                 total_time = time.time() - start_time
-                log.info(
-                    f"Job {self.job_id} completed successfully (post-try-finally processing)"
-                )
-                log.info(
-                    f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
-                )
+                log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
+                log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(
@@ -738,9 +681,7 @@ class WorkflowRunner:
             ValueError: If the graph contains validation errors. The error message will
                         summarize the issues found.
         """
-        log.info(
-            "Validating graph - %d nodes, %d edges", len(graph.nodes), len(graph.edges)
-        )
+        log.info("Validating graph - %d nodes, %d edges", len(graph.nodes), len(graph.edges))
         is_valid = True
         all_errors = []
 
@@ -813,9 +754,7 @@ class WorkflowRunner:
                 log.debug(f"Initializing node: {node.get_title()} ({node.id})")
                 await node.initialize(context)
             except Exception as e:
-                log.error(
-                    f"Error initializing node {node.get_title()} ({node.id}): {str(e)}"
-                )
+                log.error(f"Error initializing node {node.get_title()} ({node.id}): {str(e)}")
                 context.post_message(
                     NodeUpdate(
                         node_id=node.id,
@@ -829,9 +768,7 @@ class WorkflowRunner:
         log.debug(f"Edges: {graph.edges}")
         log.debug("Graph initialization completed")
 
-    async def send_messages(
-        self, node: BaseNode, result: dict[str, Any], context: ProcessingContext
-    ):
+    async def send_messages(self, node: BaseNode, result: dict[str, Any], context: ProcessingContext):
         """
         Sends messages from a completed node or streaming node to connected target nodes.
 
@@ -909,18 +846,13 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is None:
                     continue
-                if (
-                    inbox.has_buffered(edge.targetHandle)
-                    or inbox.is_open(edge.targetHandle)
-                ) and edge.id:
+                if (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle)) and edge.id:
                     context.post_message(EdgeUpdate(edge_id=edge.id, status="drained"))
             except Exception:
                 # Best effort - ignore errors during draining
                 pass
 
-    async def process_graph(
-        self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
-    ) -> None:
+    async def process_graph(self, context: ProcessingContext, graph: Graph, parent_id: str | None = None) -> None:
         """Actor-based processing: start one actor per node and await completion.
 
         OutputNodes are not driven by actors (outputs are captured in send_messages).
@@ -1036,19 +968,13 @@ class WorkflowRunner:
             )
         else:
             # This case should ideally not happen if graph is validated.
-            log.warning(
-                f"OutputNode {node.name} ({node._id}) received no 'value' in inputs."
-            )
+            log.warning(f"OutputNode {node.name} ({node._id}) received no 'value' in inputs.")
             # Still send a completed update, but with no result value for this path.
             await node.send_update(context, "completed", result={}, properties=["name"])
 
-    async def process_with_gpu(
-        self, context: ProcessingContext, node: BaseNode, retries: int = 0
-    ):
+    async def process_with_gpu(self, context: ProcessingContext, node: BaseNode, retries: int = 0):
         """
         Processes a node with GPU, with retry logic for CUDA OOM errors.
         """
-        log.debug(
-            f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}"
-        )
+        log.debug(f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}")
         return await self._torch_support.process_with_gpu(self, context, node, retries)

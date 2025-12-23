@@ -109,9 +109,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         if Environment.enforce_auth():
             if user_id:
                 self.user_id = user_id
-                log.debug(
-                    "Remote auth enabled for WebSocket; using provided user_id without revalidation"
-                )
+                log.debug("Remote auth enabled for WebSocket; using provided user_id without revalidation")
             else:
                 # In production or when auth is enforced, authentication is required
                 if not self.auth_token:
@@ -206,10 +204,7 @@ class ChatWebSocketRunner(BaseChatRunner):
                 await self.heartbeat_task
         self.heartbeat_task = None
 
-        if (
-            self.websocket
-            and self.websocket.client_state != WebSocketState.DISCONNECTED
-        ):
+        if self.websocket and self.websocket.client_state != WebSocketState.DISCONNECTED:
             try:
                 await self.websocket.close()
             except Exception as e:
@@ -238,8 +233,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         # Guard against sending after close
         if (
             getattr(self.websocket, "client_state", None) == WebSocketState.DISCONNECTED
-            or getattr(self.websocket, "application_state", None)
-            == WebSocketState.DISCONNECTED
+            or getattr(self.websocket, "application_state", None) == WebSocketState.DISCONNECTED
         ):
             log.debug("Skipping send: WebSocket is disconnected")
             return
@@ -354,10 +348,7 @@ class ChatWebSocketRunner(BaseChatRunner):
                     continue
 
                 # Handle client tools manifest
-                if (
-                    isinstance(data, dict)
-                    and data.get("type") == "client_tools_manifest"
-                ):
+                if isinstance(data, dict) and data.get("type") == "client_tools_manifest":
                     tools = data.get("tools", [])
                     self.client_tools_manifest = {tool["name"]: tool for tool in tools}
                     try:

@@ -179,9 +179,7 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
     job_manager = JobExecutionManager.get_instance()
     cancelled = await job_manager.cancel_job(job_id)
 
-    status = (
-        "cancelled" if cancelled else "not_found_or_completed"
-    )
+    status = "cancelled" if cancelled else "not_found_or_completed"
     return BackgroundJobResponse(
         job_id=job_id,
         status=status,
@@ -233,9 +231,7 @@ async def list_running_trigger_workflows(user_id: str = Depends(current_user)):
 
 
 @router.post("/triggers/{workflow_id}/start", response_model=TriggerWorkflowResponse)
-async def start_trigger_workflow(
-    workflow_id: str, user_id: str = Depends(current_user)
-):
+async def start_trigger_workflow(workflow_id: str, user_id: str = Depends(current_user)):
     """
     Start a trigger workflow in the background.
 
@@ -259,9 +255,7 @@ async def start_trigger_workflow(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     if not workflow_has_trigger_nodes(workflow):
-        raise HTTPException(
-            status_code=400, detail="Workflow does not contain trigger nodes"
-        )
+        raise HTTPException(status_code=400, detail="Workflow does not contain trigger nodes")
 
     trigger_manager = TriggerWorkflowManager.get_instance()
     job = await trigger_manager.start_trigger_workflow(workflow, user_id)
@@ -278,9 +272,7 @@ async def start_trigger_workflow(
 
 
 @router.post("/triggers/{workflow_id}/stop", response_model=TriggerWorkflowResponse)
-async def stop_trigger_workflow(
-    workflow_id: str, user_id: str = Depends(current_user)
-):
+async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current_user)):
     """
     Stop a running trigger workflow.
 

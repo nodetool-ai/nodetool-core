@@ -102,9 +102,7 @@ class GoogleNewsTool(Tool):
             return {"error": "Failed to initialize SERP provider."}
 
         async with provider_instance as provider:
-            result_data = await provider.search_news(
-                keyword=keyword, num_results=num_results
-            )
+            result_data = await provider.search_news(keyword=keyword, num_results=num_results)
 
         if "error" in result_data:
             return result_data
@@ -162,9 +160,7 @@ class GoogleImagesTool(Tool):
             return {"error": "Failed to initialize SERP provider."}
 
         async with provider_instance as provider:
-            result_data = await provider.search_images(
-                keyword=keyword, image_url=image_url, num_results=num_results
-            )
+            result_data = await provider.search_images(keyword=keyword, image_url=image_url, num_results=num_results)
 
         if "error" in result_data:
             return result_data
@@ -285,9 +281,7 @@ class GoogleJobsTool(Tool):
             return {"error": "Failed to initialize SERP provider."}
 
         async with provider_instance as provider:
-            result_data = await provider.search_jobs(
-                query=query, location=location, num_results=num_results
-            )
+            result_data = await provider.search_jobs(query=query, location=location, num_results=num_results)
 
         if "error" in result_data:  # This includes errors from the provider itself
             return result_data
@@ -346,9 +340,7 @@ class GoogleLensTool(Tool):
             return {"error": "Failed to initialize SERP provider."}
 
         async with provider_instance as provider:
-            result_data = await provider.search_lens(
-                image_url=image_url, num_results=num_results
-            )
+            result_data = await provider.search_lens(image_url=image_url, num_results=num_results)
 
         if "error" in result_data:
             return result_data
@@ -423,9 +415,7 @@ class GoogleMapsTool(Tool):
 
     def user_message(self, params: dict) -> str:
         query = params.get("query")
-        search_term = (
-            f"'{query}'" if query else f"'{params.get('query', 'places')}'"
-        )
+        search_term = f"'{query}'" if query else f"'{params.get('query', 'places')}'"
 
         msg = f"Searching Google Maps for {search_term}..."
         if len(msg) > 80:
@@ -525,9 +515,9 @@ class GoogleShoppingTool(Tool):
 
 
 # Helper function to get a configured SERP provider
-async def _get_configured_serp_provider(context: ProcessingContext) -> (
-    tuple[Optional[SerpProvider], Optional[ErrorResponse]]
-):
+async def _get_configured_serp_provider(
+    context: ProcessingContext,
+) -> tuple[Optional[SerpProvider], Optional[ErrorResponse]]:
     """
     Selects and returns a configured SERP provider based on environment variables.
     Prioritizes SerpApi, then DataForSEO.
@@ -546,9 +536,7 @@ async def _get_configured_serp_provider(context: ProcessingContext) -> (
     elif d4seo_login and d4seo_password:
         return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
-        return None, {
-            "error": "NoERP provider is configured. Please set credentials for SerpApi or DataForSEO."
-        }
+        return None, {"error": "NoERP provider is configured. Please set credentials for SerpApi or DataForSEO."}
 
 
 if __name__ == "__main__":
@@ -591,9 +579,7 @@ if __name__ == "__main__":
         images_params_keyword = {"keyword": "aurora borealis", "num_results": 10}
         print(f"Tool: {images_tool.name}, Params: {images_params_keyword}")
         start_time = time.perf_counter()
-        images_result_keyword = await images_tool.process(
-            context, images_params_keyword
-        )
+        images_result_keyword = await images_tool.process(context, images_params_keyword)
         end_time = time.perf_counter()
         print("GoogleImagesTool Result:", json.dumps(images_result_keyword, indent=2))
         print(f"GoogleImagesTool (keyword) took {end_time - start_time:.4f} seconds")
@@ -647,17 +633,13 @@ if __name__ == "__main__":
         start_time = time.perf_counter()
         maps_search_result = await maps_tool.process(context, maps_search_params)
         end_time = time.perf_counter()
-        print(
-            "GoogleMapsTool (search) Result:", json.dumps(maps_search_result, indent=2)
-        )
+        print("GoogleMapsTool (search) Result:", json.dumps(maps_search_result, indent=2))
         print(f"GoogleMapsTool (search) took {end_time - start_time:.4f} seconds")
 
         # Example using GoogleMapsTool (auto-provider selection) - Place Details (using a known data_id if available)
         # This requires a valid data_id. If running this test, replace with a real one.
         # For now, this part of the test might show an error if the data_id is invalid or SerpApi key is not set.
-        print(
-            "\n--- Testing GoogleMapsTool (place details) (auto-provider selection) ---"
-        )
+        print("\n--- Testing GoogleMapsTool (place details) (auto-provider selection) ---")
         # Example data_id for "Googleplex". Replace if testing with a different place.
         maps_place_params = {
             "map_type": "place",
@@ -671,9 +653,7 @@ if __name__ == "__main__":
             "GoogleMapsTool (place details) Result:",
             json.dumps(maps_place_result, indent=2),
         )
-        print(
-            f"GoogleMapsTool (place details) took {end_time - start_time:.4f} seconds"
-        )
+        print(f"GoogleMapsTool (place details) took {end_time - start_time:.4f} seconds")
 
         # Example using GoogleShoppingTool (auto-provider selection)
         print("\n--- Testing GoogleShoppingTool (auto-provider selection) ---")

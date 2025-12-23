@@ -180,9 +180,7 @@ def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
     for snap in snapshot_paths:
         candidate = os.path.join(snap, filename)
         if os.path.exists(candidate):
-            log.debug(
-                f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}"
-            )
+            log.debug(f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}")
             return candidate
 
     return None
@@ -218,12 +216,10 @@ def _parse_model_args(model: str) -> Tuple[list[str], str]:
             if resolved:
                 return ["-m", resolved], alias
             raise FileNotFoundError(
-
-                    "Hugging Face model file not found in local cache: "
-                    f"{repo_id}:{tail}. Please download the model file locally "
-                    "(e.g., via 'huggingface_hub' or 'git lfs') so it appears in your HF hub cache, "
-                    "or provide an absolute path to the .gguf file."
-
+                "Hugging Face model file not found in local cache: "
+                f"{repo_id}:{tail}. Please download the model file locally "
+                "(e.g., via 'huggingface_hub' or 'git lfs') so it appears in your HF hub cache, "
+                "or provide an absolute path to the .gguf file."
             )
         else:
             # quant or tag appended to repo
@@ -262,8 +258,6 @@ def _gpu_seems_available() -> bool:
     except Exception:
         pass
     return False
-
-
 
 
 @dataclasses.dataclass
@@ -390,9 +384,7 @@ class LlamaServerManager:
         self._binary = Environment.get("LLAMA_SERVER_BINARY", "llama-server")
         self._host = Environment.get("LLAMA_SERVER_HOST", "127.0.0.1")
         self._ready_timeout = int(Environment.get("LLAMA_SERVER_READY_TIMEOUT", 300))
-        self._ttl_seconds = int(
-            Environment.get("LLAMA_SERVER_TTL_SECONDS", ttl_seconds or 300)
-        )
+        self._ttl_seconds = int(Environment.get("LLAMA_SERVER_TTL_SECONDS", ttl_seconds or 300))
         self._threads = Environment.get("LLAMA_SERVER_THREADS")
         self._parallel = Environment.get("LLAMA_SERVER_PARALLEL")
         self._ctx_size = Environment.get("LLAMA_SERVER_CTX_SIZE")
@@ -587,14 +579,10 @@ class LlamaServerManager:
             t_out: asyncio.Task | None = None
             t_err: asyncio.Task | None = None
             # Only attach readers if using asyncio subprocess with streams
-            if hasattr(proc, "stdout") and isinstance(
-                proc.stdout, asyncio.StreamReader
-            ):
+            if hasattr(proc, "stdout") and isinstance(proc.stdout, asyncio.StreamReader):
                 if proc.stdout is not None:
                     t_out = asyncio.create_task(_reader(proc.stdout, "stdout"))
-            if hasattr(proc, "stderr") and isinstance(
-                proc.stderr, asyncio.StreamReader
-            ):
+            if hasattr(proc, "stderr") and isinstance(proc.stderr, asyncio.StreamReader):
                 if proc.stderr is not None:
                     t_err = asyncio.create_task(_reader(proc.stderr, "stderr"))
 
@@ -730,9 +718,7 @@ class LlamaServerManager:
             except (NotImplementedError, RuntimeError):
                 # Fallback to basic signal module for non-asyncio environments
                 with suppress(Exception):
-                    signal.signal(
-                        sig_obj, lambda *_sig_args, sig=sig_name: _handle_signal(sig)
-                    )
+                    signal.signal(sig_obj, lambda *_sig_args, sig=sig_name: _handle_signal(sig))
         self._signals_installed = True
 
     def _register_instance_atexit(self) -> None:
@@ -853,9 +839,7 @@ class LlamaServerManager:
                 if inst.process.pid is not None:
                     procs.append(inst.process.pid)
             for pid in procs:
-                _kill_pid(
-                    pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT
-                )
+                _kill_pid(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT)
             with suppress(Exception):
                 time.sleep(0.3)
             for pid in procs:

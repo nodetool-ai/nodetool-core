@@ -46,9 +46,7 @@ class QueryModelsTool(Tool):
         },
     }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         query = params.get("query", "").lower()
         model_type = params.get("type", "").lower()
         provider = params.get("provider", "").lower()

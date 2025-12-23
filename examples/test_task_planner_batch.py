@@ -102,30 +102,21 @@ async def test_task_planner_batch_processing(
 
                 # Check for batch processing
                 for i, subtask in enumerate(item.task.subtasks):
-                    if (
-                        hasattr(subtask, "batch_processing")
-                        and subtask.batch_processing
-                    ):
+                    if hasattr(subtask, "batch_processing") and subtask.batch_processing:
                         if subtask.batch_processing.get("enabled", False):
                             batch_subtasks.append(i)
-                            print(f"\n   🔄 Subtask {i+1} - BATCH PROCESSING ENABLED:")
+                            print(f"\n   🔄 Subtask {i + 1} - BATCH PROCESSING ENABLED:")
                             print(f"      Content: {subtask.content[:100]}...")
-                            print(
-                                f"      Batch size: {subtask.batch_processing.get('batch_size', 'N/A')}"
-                            )
+                            print(f"      Batch size: {subtask.batch_processing.get('batch_size', 'N/A')}")
                             print(
                                 f"      Items: {subtask.batch_processing.get('start_index', 0)}-{subtask.batch_processing.get('end_index', 'N/A')}"
                             )
                             print(f"      Output: {subtask.output_file}")
 
                 if batch_subtasks:
-                    print(
-                        f"\n✅ Batch processing detected in {len(batch_subtasks)} subtasks!"
-                    )
+                    print(f"\n✅ Batch processing detected in {len(batch_subtasks)} subtasks!")
                 else:
-                    print(
-                        "\n⚠️  No batch processing detected (might process all at once)"
-                    )
+                    print("\n⚠️  No batch processing detected (might process all at once)")
 
         elif isinstance(item, Chunk):
             # Show execution progress
@@ -201,9 +192,7 @@ async def run_comparison_test():
     planning_model = "openai/gpt-oss-120b"
 
     # Run the test
-    results = await test_task_planner_batch_processing(
-        provider=provider, model=model, planning_model=planning_model
-    )
+    results = await test_task_planner_batch_processing(provider=provider, model=model, planning_model=planning_model)
 
     # Summary
     print("\n" + "=" * 80)
@@ -211,12 +200,8 @@ async def run_comparison_test():
     print("=" * 80)
 
     if results["batch_subtasks_count"] > 0:
-        print(
-            f"✅ SUCCESS: TaskPlanner created {results['batch_subtasks_count']} batch processing subtasks"
-        )
-        print(
-            "   The planner successfully detected the need to process items in batches!"
-        )
+        print(f"✅ SUCCESS: TaskPlanner created {results['batch_subtasks_count']} batch processing subtasks")
+        print("   The planner successfully detected the need to process items in batches!")
     else:
         print("⚠️  WARNING: No batch processing was detected")
         print("   The planner might have created a single task to process all items")

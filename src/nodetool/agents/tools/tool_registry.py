@@ -142,16 +142,12 @@ async def resolve_tool_by_name(
 
     _ensure_builtin_tools_registered()
 
-    tool_class = _tool_class_registry.get(name) or _tool_class_registry.get(
-        sanitized_name
-    )
+    tool_class = _tool_class_registry.get(name) or _tool_class_registry.get(sanitized_name)
     if tool_class:
         return tool_class()
 
     if name.startswith("workflow_"):
-        workflow = await Workflow.find_by_tool_name(
-            user_id, name.replace("workflow_", "")
-        )
+        workflow = await Workflow.find_by_tool_name(user_id, name.replace("workflow_", ""))
         if workflow:
             return WorkflowTool(from_model(workflow))
         else:

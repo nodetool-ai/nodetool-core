@@ -93,8 +93,7 @@ class SingleRunReport:
 class ChoiceGenerator(Protocol):
     """Protocol for objects providing a choice() helper."""
 
-    def choice(self, seq: Sequence[Any]) -> Any:
-        ...
+    def choice(self, seq: Sequence[Any]) -> Any: ...
 
 
 class SingleAgentRunner(Protocol):
@@ -107,8 +106,7 @@ class SingleAgentRunner(Protocol):
         model: ModelName,
         problem: Any,
         tools: Sequence[Any] | None = None,
-    ) -> Awaitable[SingleAgentRunResult]:
-        ...
+    ) -> Awaitable[SingleAgentRunResult]: ...
 
 
 ResultCheckerFn = Callable[[Any, Any], bool]
@@ -158,8 +156,8 @@ class AgentEvaluator:
         provider_key: ProviderKey,
         model: ModelName,
         *,
-            run_agent_fn: SingleAgentRunner | None = None,
-            rng: ChoiceGenerator | None = None,
+        run_agent_fn: SingleAgentRunner | None = None,
+        rng: ChoiceGenerator | None = None,
     ) -> SingleRunReport:
         """Execute a single agent for a random problem in-process.
 
@@ -187,9 +185,7 @@ class AgentEvaluator:
 
         runner = run_agent_fn or self.single_agent_runner
         if runner is None:
-            raise RuntimeError(
-                "Provide run_agent_fn or configure single_agent_runner to execute agents in-process."
-            )
+            raise RuntimeError("Provide run_agent_fn or configure single_agent_runner to execute agents in-process.")
 
         start_time = time.perf_counter()
         outcome = await runner(
@@ -201,9 +197,7 @@ class AgentEvaluator:
         elapsed_seconds = time.perf_counter() - start_time
 
         if not isinstance(outcome, SingleAgentRunResult):
-            raise TypeError(
-                "Single agent runner must return a SingleAgentRunResult instance."
-            )
+            raise TypeError("Single agent runner must return a SingleAgentRunResult instance.")
 
         def _coerce_usage(raw_usage: Usage | dict[str, Any] | None) -> Usage:
             if raw_usage is None:
@@ -234,9 +228,7 @@ class AgentEvaluator:
             correct=(True if is_correct else (False if expected is not None else None)),
             runtime_seconds=float(elapsed_seconds),
         )
-        return SingleRunReport(
-            log=log_entry, usage=usage, problem=problem_payload, expected=expected
-        )
+        return SingleRunReport(log=log_entry, usage=usage, problem=problem_payload, expected=expected)
 
     async def evaluate(self) -> EvaluationResult:
         """Run the evaluation across all (model, problem) pairs.
@@ -247,9 +239,7 @@ class AgentEvaluator:
         logs: list[LogEntry] = []
         lock = asyncio.Lock()
         if not (self.subprocess_runner_path and self.subprocess_agent):
-            raise RuntimeError(
-                "AgentEvaluator.evaluate requires subprocess_runner_path and subprocess_agent."
-            )
+            raise RuntimeError("AgentEvaluator.evaluate requires subprocess_runner_path and subprocess_agent.")
         sem = asyncio.Semaphore(self.concurrency)
 
         async def worker(
@@ -261,10 +251,7 @@ class AgentEvaluator:
             async with sem:
 
                 def _sanitize_for_filename(value: str) -> str:
-                    return "".join(
-                        ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
-                        for ch in value
-                    )[:64]
+                    return "".join(ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_" for ch in value)[:64]
 
                 timestamp_ms = int(time.time() * 1000)
                 pid = os.getpid()
@@ -322,22 +309,14 @@ class AgentEvaluator:
                 if is_correct:
                     s.correct += 1
                 s.total_runtime_seconds += float(elapsed_seconds)
-                problem_text = str(
-                    problem[0]
-                    if isinstance(problem, (tuple, list)) and len(problem) >= 1
-                    else problem
-                )
+                problem_text = str(problem[0] if isinstance(problem, (tuple, list)) and len(problem) >= 1 else problem)
                 logs.append(
                     LogEntry(
                         provider_key=provider_key,
                         model=model,
                         problem=problem_text,
                         result=(None if result is None else result),
-                        correct=(
-                            True
-                            if is_correct
-                            else (False if result is not None else None)
-                        ),
+                        correct=(True if is_correct else (False if result is not None else None)),
                         runtime_seconds=float(elapsed_seconds),
                     )
                 )

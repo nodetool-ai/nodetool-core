@@ -88,9 +88,7 @@ class GCPDeployer:
             # Check for configuration changes
             # TODO: Implement more granular change detection
             plan["changes"].append("Configuration may have changed")
-            plan["will_update"].append(
-                f"Cloud Run service: {self.deployment.service_name}"
-            )
+            plan["will_update"].append(f"Cloud Run service: {self.deployment.service_name}")
 
         return plan
 
@@ -116,16 +114,12 @@ class GCPDeployer:
 
         try:
             # Update state to deploying
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.DEPLOYING.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DEPLOYING.value)
 
             results["steps"].append("Starting Google Cloud Run deployment...")
 
             # Prepare environment variables
-            env = (
-                dict(self.deployment.environment) if self.deployment.environment else {}
-            )
+            env = dict(self.deployment.environment) if self.deployment.environment else {}
 
             # Call deploy function
             deploy_to_gcp(
@@ -155,9 +149,7 @@ class GCPDeployer:
             results["errors"].append(str(e))
 
             # Update state with error
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.ERROR.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.ERROR.value)
 
             raise
 
@@ -186,16 +178,11 @@ class GCPDeployer:
 
         # Try to get live status from Cloud Run
         try:
-            services = list_gcp_services(
-                region=self.deployment.region, project_id=self.deployment.project
-            )
+            services = list_gcp_services(region=self.deployment.region, project_id=self.deployment.project)
 
             # Find our service
             for service in services:
-                if (
-                    service.get("metadata", {}).get("name")
-                    == self.deployment.service_name
-                ):
+                if service.get("metadata", {}).get("name") == self.deployment.service_name:
                     status_info["live_status"] = service.get("status", {})
                     status_info["url"] = service.get("status", {}).get("url")
                     break
@@ -268,9 +255,7 @@ class GCPDeployer:
         }
 
         try:
-            results["steps"].append(
-                f"Deleting Cloud Run service: {self.deployment.service_name}..."
-            )
+            results["steps"].append(f"Deleting Cloud Run service: {self.deployment.service_name}...")
 
             success = delete_gcp_service(
                 service_name=self.deployment.service_name,
@@ -285,9 +270,7 @@ class GCPDeployer:
                 results["status"] = "error"
 
             # Update state
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.DESTROYED.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DESTROYED.value)
 
         except Exception as e:
             results["status"] = "error"

@@ -10,10 +10,10 @@ from nodetool.providers.base import BaseProvider
 
 async def test_fix():
     print("Testing detect_mime_type...")
-    assert detect_mime_type(b'\x89PNG\r\n\x1a\n') == 'image/png'
-    assert detect_mime_type(b'\xff\xd8') == 'image/jpeg'
-    assert detect_mime_type(b'ID3') == 'audio/mpeg'
-    assert detect_mime_type(b'some junk') == 'application/octet-stream'
+    assert detect_mime_type(b"\x89PNG\r\n\x1a\n") == "image/png"
+    assert detect_mime_type(b"\xff\xd8") == "image/jpeg"
+    assert detect_mime_type(b"ID3") == "audio/mpeg"
+    assert detect_mime_type(b"some junk") == "application/octet-stream"
     print("detect_mime_type passed.")
 
     # Mock provider
@@ -26,9 +26,9 @@ async def test_fix():
     # Payload with nested bytes
     payload = {
         "message": "Here is an image",
-        "image_data": b'\x89PNG\r\n\x1a\nfakeimagecontent',
-        "audio_data": b'ID3fakeaudiocontent',
-        "plain_list": [1, 2, b'simplebytes']
+        "image_data": b"\x89PNG\r\n\x1a\nfakeimagecontent",
+        "audio_data": b"ID3fakeaudiocontent",
+        "plain_list": [1, 2, b"simplebytes"],
     }
 
     result = await processor._process_tool_result(payload)
@@ -43,9 +43,12 @@ async def test_fix():
     assert result["audio_data"]["type"] == "audio"
     assert result["audio_data"]["uri"].startswith("file://")
 
-    assert result["plain_list"][2]["type"] == "asset" # simplebytes -> application/octet-stream -> AssetRef -> type="asset"
+    assert (
+        result["plain_list"][2]["type"] == "asset"
+    )  # simplebytes -> application/octet-stream -> AssetRef -> type="asset"
 
     print("Verification successful!")
+
 
 if __name__ == "__main__":
     asyncio.run(test_fix())

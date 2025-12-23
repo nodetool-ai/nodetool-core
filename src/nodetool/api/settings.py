@@ -61,9 +61,7 @@ class SecretsListResponse(BaseModel):
 @router.get("/")
 async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
     if Environment.is_production():
-        raise HTTPException(
-            status_code=403, detail="Settings cannot be read in production"
-        )
+        raise HTTPException(status_code=403, detail="Settings cannot be read in production")
 
     settings_registry = get_settings_registry()
     secrets_registry = get_secrets_registry()
@@ -71,6 +69,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
 
     # Load secret values from database
     from nodetool.models.secret import Secret
+
     secret_values = {}
     for secret_setting in secrets_registry:
         secret = await Secret.find(user, secret_setting.env_var)
@@ -118,14 +117,9 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
 
 
 @router.put("/")
-async def update_settings(
-    req: SettingsUpdateRequest,
-    user: str = Depends(current_user)
-) -> Dict[str, str]:
+async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> Dict[str, str]:
     if Environment.is_production():
-        raise HTTPException(
-            status_code=403, detail="Settings cannot be updated in production"
-        )
+        raise HTTPException(status_code=403, detail="Settings cannot be updated in production")
 
     settings = load_settings()  # Load only settings.yaml, ignore secrets.yaml
 
@@ -139,12 +133,7 @@ async def update_settings(
             continue
 
         # Save to encrypted database
-        await Secret.upsert(
-            user_id=user,
-            key=key,
-            value=value,
-            description=f"Secret for {key}"
-        )
+        await Secret.upsert(user_id=user, key=key, value=value, description=f"Secret for {key}")
 
     # Save only non-secret settings to settings.yaml
     # Secrets are now in the database, so we don't save them to secrets.yaml
@@ -162,9 +151,7 @@ async def update_settings(
 
 @router.get("/secrets")
 async def list_secrets(
-    limit: int = 100,
-    start_key: Optional[str] = None,
-    user: str = Depends(current_user)
+    limit: int = 100, start_key: Optional[str] = None, user: str = Depends(current_user)
 ) -> SecretsListResponse:
     """
     List all possible secrets from the settings registry.
@@ -190,17 +177,13 @@ async def list_secrets(
                     description=secret.description or setting.description,
                     created_at=secret.created_at.isoformat(),
                     updated_at=secret.updated_at.isoformat(),
-                    is_configured=True
+                    is_configured=True,
                 )
             )
         else:
             # Create a response for unconfigured secret
             secrets_response.append(
-                SecretResponse(
-                    key=setting.env_var,
-                    description=setting.description,
-                    is_configured=False
-                )
+                SecretResponse(key=setting.env_var, description=setting.description, is_configured=False)
             )
 
     # Apply limit
@@ -209,18 +192,11 @@ async def list_secrets(
     if len(secrets_response) > limit:
         next_key = secrets_response[limit].key
 
-    return SecretsListResponse(
-        secrets=limited_secrets,
-        next_key=next_key
-    )
+    return SecretsListResponse(secrets=limited_secrets, next_key=next_key)
 
 
 @router.get("/secrets/{key}")
-async def get_secret(
-    key: str,
-    decrypt: bool = False,
-    user: str = Depends(current_user)
-) -> Dict[str, Any]:
+async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> Dict[str, Any]:
     """
     Get a specific secret by key.
 
@@ -243,20 +219,13 @@ async def get_secret(
         try:
             response["value"] = await secret.get_decrypted_value()
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to decrypt secret: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Failed to decrypt secret: {str(e)}") from e
 
     return response
 
 
 @router.put("/secrets/{key}")
-async def update_secret(
-    key: str,
-    req: SecretUpdateRequest,
-    user: str = Depends(current_user)
-) -> SecretResponse:
+async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(current_user)) -> SecretResponse:
     """
     Update or create a secret.
 
@@ -269,16 +238,13 @@ async def update_secret(
     if not secret_setting:
         raise HTTPException(
             status_code=404,
-            detail=f"Secret key '{key}' is not available. Only secrets from the registry can be configured."
+            detail=f"Secret key '{key}' is not available. Only secrets from the registry can be configured.",
         )
 
     try:
         # Use upsert to create or update the secret
         secret = await Secret.upsert(
-            user_id=user,
-            key=key,
-            value=req.value,
-            description=req.description or secret_setting.description
+            user_id=user, key=key, value=req.value, description=req.description or secret_setting.description
         )
 
         return SecretResponse(
@@ -288,21 +254,15 @@ async def update_secret(
             description=secret.description,
             created_at=secret.created_at.isoformat(),
             updated_at=secret.updated_at.isoformat(),
-            is_configured=True
+            is_configured=True,
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to update secret: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Failed to update secret: {str(e)}") from e
 
 
 @router.delete("/secrets/{key}")
-async def delete_secret(
-    key: str,
-    user: str = Depends(current_user)
-) -> Dict[str, str]:
+async def delete_secret(key: str, user: str = Depends(current_user)) -> Dict[str, str]:
     """
     Delete a secret.
     """

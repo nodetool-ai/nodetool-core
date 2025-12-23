@@ -28,9 +28,7 @@ class PythonDockerRunner(StreamRunnerBase):
             **kwargs,
         )
 
-    def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         user_code_with_args = ""
         for key, value in env_locals.items():
             user_code_with_args += f"{key}={repr(value)}\n"

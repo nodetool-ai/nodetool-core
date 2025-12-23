@@ -56,9 +56,7 @@ def run_graphql_query(query: str) -> dict[str, Any]:
     response = requests.post(url, headers=headers, data=data, timeout=30)
 
     if response.status_code == HTTP_STATUS_UNAUTHORIZED:
-        raise error.AuthenticationError(
-            "Unauthorized request, please check your API key."
-        )
+        raise error.AuthenticationError("Unauthorized request, please check your API key.")
 
     if "errors" in response.json():
         raise error.QueryError(response.json()["errors"][0]["message"], query)
@@ -92,9 +90,7 @@ class GPUType(str, Enum):
         return [item.value for item in cls]
 
 
-def make_runpod_api_call(
-    endpoint: str, method: str = "GET", data: dict | None = None
-) -> dict:
+def make_runpod_api_call(endpoint: str, method: str = "GET", data: dict | None = None) -> dict:
     """
     Make a REST API call to RunPod.
 
@@ -194,9 +190,7 @@ def get_network_volume(volume_id: str) -> dict:
     return make_runpod_api_call(f"networkvolumes/{volume_id}", "GET")
 
 
-def update_network_volume(
-    volume_id: str, name: str | None = None, size: int | None = None
-) -> dict:
+def update_network_volume(volume_id: str, name: str | None = None, size: int | None = None) -> dict:
     """
     Update a network volume.
 
@@ -382,7 +376,7 @@ def get_runpod_endpoint_by_name(endpoint_name: str) -> dict | None:
         for i, endpoint in enumerate(endpoints):
             name = endpoint.get("name", "<no name>")
             endpoint_id = endpoint.get("id", "<no id>")
-            print(f"  [{i+1}] Name: '{name}' (ID: {endpoint_id})")
+            print(f"  [{i + 1}] Name: '{name}' (ID: {endpoint_id})")
 
     # Find endpoint with matching name (exact match first)
     for endpoint in endpoints:
@@ -420,9 +414,7 @@ def update_runpod_endpoint(endpoint_id: str, template_id: str, **kwargs) -> bool
         print(f"Updating endpoint {endpoint_id} with template {template_id}")
         make_runpod_api_call(f"endpoints/{endpoint_id}", "PATCH", update_data)
 
-        print(
-            f"Endpoint '{endpoint_id}' updated successfully with template: {template_id}"
-        )
+        print(f"Endpoint '{endpoint_id}' updated successfully with template: {template_id}")
         return True
 
     except Exception as e:
@@ -457,9 +449,7 @@ def delete_runpod_endpoint_by_name(endpoint_name: str) -> bool:
         for endpoint in endpoints:
             if endpoint.get("name") == endpoint_name:
                 endpoint_id = endpoint.get("id")
-                print(
-                    f"✅ Found exact match for deletion: '{endpoint_name}' (ID: {endpoint_id})"
-                )
+                print(f"✅ Found exact match for deletion: '{endpoint_name}' (ID: {endpoint_id})")
                 break
 
         # Try case-insensitive match as fallback
@@ -559,9 +549,7 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
 
         make_runpod_api_call(f"templates/{template_id}", "PATCH", update_data)
 
-        print(
-            f"Template '{template_data.get('name')}' updated with image: {image_name}:{tag}"
-        )
+        print(f"Template '{template_data.get('name')}' updated with image: {image_name}:{tag}")
         return True
 
     except Exception as e:
@@ -763,9 +751,7 @@ def create_or_update_runpod_endpoint(
             print(f"  CPU flavors: {cpu_flavor_ids}")
             if vcpu_count:
                 print(f"  vCPU count: {vcpu_count}")
-        print(
-            f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}"
-        )
+        print(f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}")
         print(f"  Workers: {workers_min}-{workers_max}")
 
         # Prepare the request data according to RunPod REST API format
@@ -906,9 +892,7 @@ def create_runpod_endpoint_graphql(
         print(f"  GPU count: {gpu_count}")
         print(f"  CPU flavors: {cpu_flavor_ids}")
         print(f"  vCPU count: {vcpu_count}")
-        print(
-            f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}"
-        )
+        print(f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}")
         print(f"  Workers: {workers_min}-{workers_max}")
         print(f"  Idle timeout: {idle_timeout}s")
         print(f"  Execution timeout: {execution_timeout_ms}ms")
@@ -951,7 +935,7 @@ def create_runpod_endpoint_graphql(
         mutation = f"""
         mutation {{
             saveEndpoint(input: {{
-                {', '.join(mutation_parts)}
+                {", ".join(mutation_parts)}
             }}) {{
                 id
                 name
@@ -996,9 +980,7 @@ def create_runpod_endpoint_graphql(
         print(f"  ID: {endpoint_id}")
         print(f"  Name: {endpoint_data.get('name')}")
         print(f"  GPU Configuration: {endpoint_data.get('gpuIds')}")
-        print(
-            f"  Workers: {endpoint_data.get('workersMin')}-{endpoint_data.get('workersMax')}"
-        )
+        print(f"  Workers: {endpoint_data.get('workersMin')}-{endpoint_data.get('workersMax')}")
         print(f"  Scaler: {endpoint_data.get('scalerType')}")
 
         return endpoint_id

@@ -80,10 +80,7 @@ class SSHConnection:
             ImportError: If paramiko is not installed
         """
         if not PARAMIKO_AVAILABLE:
-            raise ImportError(
-                "paramiko is required for SSH operations. "
-                "Install it with: pip install paramiko"
-            )
+            raise ImportError("paramiko is required for SSH operations. Install it with: pip install paramiko")
 
         self.host = host
         self.user = user
@@ -195,9 +192,7 @@ class SSHConnection:
         if not self._client:
             raise SSHConnectionError("Not connected to remote host")
 
-        _stdin, stdout, stderr = self._client.exec_command(
-            command, timeout=timeout or self.timeout
-        )
+        _stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout or self.timeout)
 
         # Wait for command to complete and read output
         exit_code = stdout.channel.recv_exit_status()
@@ -246,9 +241,7 @@ class SSHConnection:
 
         return self._sftp
 
-    def upload_file(
-        self, local_path: str, remote_path: str, mode: Optional[int] = None
-    ) -> None:
+    def upload_file(self, local_path: str, remote_path: str, mode: Optional[int] = None) -> None:
         """
         Upload a file to the remote host.
 
@@ -271,9 +264,7 @@ class SSHConnection:
         if mode is not None:
             sftp.chmod(remote_path, mode)
 
-    def upload_string(
-        self, content: str, remote_path: str, mode: Optional[int] = None
-    ) -> None:
+    def upload_string(self, content: str, remote_path: str, mode: Optional[int] = None) -> None:
         """
         Upload string content as a file to the remote host.
 

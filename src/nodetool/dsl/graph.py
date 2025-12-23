@@ -71,9 +71,7 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
         self.__class__.model_rebuild(force=True)
         if sync_mode is not None:
             if sync_mode not in ("on_any", "zip_all"):
-                raise ValueError(
-                    f"Invalid sync_mode '{sync_mode}'. Expected 'on_any' or 'zip_all'."
-                )
+                raise ValueError(f"Invalid sync_mode '{sync_mode}'. Expected 'on_any' or 'zip_all'.")
             data["sync_mode"] = sync_mode
         super().__init__(**data)
 
@@ -93,9 +91,7 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
 
         if slot is None:
             node_type = self.get_node_type()
-            raise TypeError(
-                f"{self.__class__.__name__} (node type '{node_type}') has no output 'output'"
-            )
+            raise TypeError(f"{self.__class__.__name__} (node type '{node_type}') has no output 'output'")
 
         return cast("OutputHandle[OutputT]", OutputHandle(self, "output", py_type))
 

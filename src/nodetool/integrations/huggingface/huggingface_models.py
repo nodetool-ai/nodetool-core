@@ -316,14 +316,10 @@ def size_on_disk(
         if not sib.rfilename:
             continue
 
-        if allow_patterns is not None and not any(
-            fnmatch(sib.rfilename, pattern) for pattern in allow_patterns
-        ):
+        if allow_patterns is not None and not any(fnmatch(sib.rfilename, pattern) for pattern in allow_patterns):
             continue
 
-        if ignore_patterns is not None and any(
-            fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns
-        ):
+        if ignore_patterns is not None and any(fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns):
             continue
 
         total_size += sib.size
@@ -333,9 +329,7 @@ def size_on_disk(
 
 def has_model_index(model_info: ModelInfo) -> bool:
     """Return True when hub metadata lists a `model_index.json` sibling."""
-    return any(
-        sib.rfilename == "model_index.json" for sib in (model_info.siblings or [])
-    )
+    return any(sib.rfilename == "model_index.json" for sib in (model_info.siblings or []))
 
 
 # Packaging heuristics ---------------------------------------------------------
@@ -397,9 +391,7 @@ def detect_repo_packaging(
     we see multiple quantizations or adapter-style weights that likely represent
     independent choices for the user.
     """
-    weight_entries = [
-        (name, size) for name, size in file_entries if _is_weight_file(name)
-    ]
+    weight_entries = [(name, size) for name, size in file_entries if _is_weight_file(name)]
     weight_files = [name for name, _ in weight_entries]
     lower_weight_files = [name.lower() for name in weight_files]
 
@@ -435,9 +427,7 @@ def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
     if has_model_index(model_info):
         return True
     library_name = getattr(model_info, "library_name", None)
-    return bool(
-        library_name and str(library_name).lower() in ("diffusers", "transformers")
-    )
+    return bool(library_name and str(library_name).lower() in ("diffusers", "transformers"))
 
 
 def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
@@ -474,12 +464,7 @@ def _has_adapter_candidates(weight_entries: Sequence[tuple[str, int]]) -> bool:
         if any(marker in lower for marker in _ADAPTER_MARKERS):
             adapter_like.append((name, size))
             continue
-        if (
-            lower.endswith(".safetensors")
-            and size
-            and size < _SMALL_ADAPTER_MAX_BYTES
-            and len(weight_entries) > 1
-        ):
+        if lower.endswith(".safetensors") and size and size < _SMALL_ADAPTER_MAX_BYTES and len(weight_entries) > 1:
             adapter_like.append((name, size))
     return len(adapter_like) >= 1
 
@@ -601,19 +586,13 @@ async def unified_model(
     otherwise we return a minimal record so callers can still render choices.
     """
 
-    model_id = (
-        f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
-    )
+    model_id = f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
 
     # Without hub lookups, size and metadata may be missing; rely on provided info only.
     if model_info is not None and size is None:
         if model.path:
             size = next(
-                (
-                    sib.size
-                    for sib in (model_info.siblings or [])
-                    if sib.rfilename == model.path
-                ),
+                (sib.size for sib in (model_info.siblings or []) if sib.rfilename == model.path),
                 None,
             )
         else:
@@ -744,11 +723,7 @@ def model_type_from_model_info(
         return recommended[0].type
     if model_info is None:
         return None
-    if (
-        model_info.config
-        and "diffusers" in model_info.config
-        and "_class_name" in model_info.config["diffusers"]
-    ):
+    if model_info.config and "diffusers" in model_info.config and "_class_name" in model_info.config["diffusers"]:
         return CLASSNAME_TO_MODEL_TYPE.get(
             model_info.config["diffusers"]["_class_name"],
             None,  # type: ignore[no-any-return]
@@ -806,16 +781,12 @@ def _infer_model_type_from_local_configs(
         return None
 
     config_candidates = [
-        rel_path
-        for rel_path, _ in file_entries
-        if rel_path.lower().endswith(("model_index.json", "config.json"))
+        rel_path for rel_path, _ in file_entries if rel_path.lower().endswith(("model_index.json", "config.json"))
     ]
     if not config_candidates:
         return None
 
-    for rel_path in sorted(
-        config_candidates, key=lambda value: (value.count("/"), len(value))
-    ):
+    for rel_path in sorted(config_candidates, key=lambda value: (value.count("/"), len(value))):
         config_path = snapshot_dir / rel_path
         data = _safe_load_json(config_path)
         if not data:
@@ -827,9 +798,7 @@ def _infer_model_type_from_local_configs(
             if mapped:
                 return mapped
 
-        model_type = (
-            str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
-        )
+        model_type = str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
         if model_type:
             mapped = _CONFIG_MODEL_TYPE_MAPPING.get(model_type)
             if mapped:
@@ -863,9 +832,7 @@ async def _build_cached_repo_entry(
     size_on_disk = 0
     snapshot_path: Path | None = snapshot_dir
     if snapshot_path is None:
-        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(
-            repo_id, repo_type="model"
-        )
+        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
         snapshot_path = Path(resolved_snapshot) if resolved_snapshot else None
 
     if snapshot_path:
@@ -910,9 +877,7 @@ async def _build_cached_repo_entry(
         size_on_disk=size_on_disk,
         artifact_family=artifact_detection.family if artifact_detection else None,
         artifact_component=artifact_detection.component if artifact_detection else None,
-        artifact_confidence=(
-            artifact_detection.confidence if artifact_detection else None
-        ),
+        artifact_confidence=(artifact_detection.confidence if artifact_detection else None),
         artifact_evidence=artifact_detection.evidence if artifact_detection else None,
     )
 
@@ -1114,9 +1079,7 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
 for _base, _ckpt in _CHECKPOINT_BASES.items():
     if _base in HF_SEARCH_TYPE_CONFIG and _ckpt not in HF_SEARCH_TYPE_CONFIG:
         _base_cfg = HF_SEARCH_TYPE_CONFIG[_base]
-        HF_SEARCH_TYPE_CONFIG[_ckpt] = {
-            k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()
-        }
+        HF_SEARCH_TYPE_CONFIG[_ckpt] = {k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()}
 
 HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.unet": {"file_only": True},
@@ -1214,19 +1177,14 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
     return slug.replace("_", "-")
 
 
-def _matches_repo_for_type(
-    normalized_type: str, repo_id: str, repo_id_from_id: str
-) -> bool:
+def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
     """Check if a repo id matches any hard-coded comfy-type mappings for a model type."""
     matchers = KNOWN_TYPE_REPO_MATCHERS.get(normalized_type)
     if not matchers:
         return False
     repo_lower = repo_id.lower()
     repo_from_id_lower = repo_id_from_id.lower()
-    return any(
-        repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower()
-        for candidate in matchers
-    )
+    return any(repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower() for candidate in matchers)
 
 
 def _matches_artifact_detection(
@@ -1251,9 +1209,7 @@ def _matches_artifact_detection(
     }:
         return "flux" in fam
     if normalized_type == "hf.stable_diffusion":
-        return (
-            fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
-        )
+        return fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
     if normalized_type == "hf.stable_diffusion_xl":
         return "sdxl" in fam
     if normalized_type == "hf.stable_diffusion_xl_refiner":
@@ -1281,9 +1237,7 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     def _is_qwen_text_encoder(path: str | None) -> bool:
         if not path:
             return False
-        return (
-            "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
-        )
+        return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
 
     def _is_qwen_vae(path: str | None) -> bool:
         if not path:
@@ -1296,9 +1250,7 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
 
     if model_type_lower:
         model_type_base = (
-            model_type_lower[: -len("_checkpoint")]
-            if model_type_lower.endswith("_checkpoint")
-            else model_type_lower
+            model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
         )
         if model_type_lower in target_types or model_type_base == normalized_type:
             return not (
@@ -1329,18 +1281,13 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     artifact_family = (getattr(model, "artifact_family", None) or "").lower()
     artifact_component = (getattr(model, "artifact_component", None) or "").lower()
     if artifact_family or artifact_component:
-        if _matches_artifact_detection(
-            normalized_type, artifact_family, artifact_component
-        ):
+        if _matches_artifact_detection(normalized_type, artifact_family, artifact_component):
             return True
 
     tags = [(tag or "").lower() for tag in (model.tags or [])]
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
     if keywords:
-        if any(
-            keyword in repo_id or any(keyword in tag for tag in tags)
-            for keyword in keywords
-        ):
+        if any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
             return True
         if path_lower and any(keyword in path_lower for keyword in keywords):
             return True
@@ -1366,9 +1313,7 @@ async def get_models_by_hf_type(
         """Apply type-specific structural rules then semantic matching."""
         rules = HF_TYPE_STRUCTURAL_RULES.get(model_type, {})
         file_only = rules.get("file_only", False)
-        checkpoint = rules.get("checkpoint", False) or model_type in set(
-            _CHECKPOINT_BASES.values()
-        )
+        checkpoint = rules.get("checkpoint", False) or model_type in set(_CHECKPOINT_BASES.values())
         nested_checkpoint = rules.get("nested_checkpoint", False)
         single_file_repo = rules.get("single_file_repo", False)
 
@@ -1390,9 +1335,7 @@ async def get_models_by_hf_type(
                     continue
                 if path_value:
                     path_lower = path_value.lower()
-                    if not _is_single_file_diffusion_weight(
-                        path_value
-                    ) and not path_lower.endswith(".gguf"):
+                    if not _is_single_file_diffusion_weight(path_value) and not path_lower.endswith(".gguf"):
                         continue
 
             if checkpoint:
@@ -1449,23 +1392,17 @@ async def iter_cached_model_files(
     or whose files cannot be listed are skipped.
     """
     repo_list = (
-        list(pre_resolved_repos)
-        if pre_resolved_repos is not None
-        else await HF_FAST_CACHE.discover_repos("model")
+        list(pre_resolved_repos) if pre_resolved_repos is not None else await HF_FAST_CACHE.discover_repos("model")
     )
 
     for repo_id, repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(
-            repo_id, repo_type="model"
-        )
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
         if not snapshot_dir:
             continue
         try:
             file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
         except Exception as exc:  # pragma: no cover - defensive guard
-            log.debug(
-                "iter_cached_model_files: list_files failed for %s: %s", repo_id, exc
-            )
+            log.debug("iter_cached_model_files: list_files failed for %s: %s", repo_id, exc)
             continue
 
         yield repo_id, Path(repo_dir), Path(snapshot_dir), file_list
@@ -1670,16 +1607,18 @@ async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
         except OSError:
             size = 0
 
-        models.append(UnifiedModel(
-            id=f"{repo_id}:{filename}" if repo_id else filename,
-            type="llama_cpp_model",
-            name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
-            repo_id=repo_id,
-            path=filename,
-            cache_path=file_path,
-            size_on_disk=size,
-            downloaded=True,
-        ))
+        models.append(
+            UnifiedModel(
+                id=f"{repo_id}:{filename}" if repo_id else filename,
+                type="llama_cpp_model",
+                name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
+                repo_id=repo_id,
+                path=filename,
+                cache_path=file_path,
+                size_on_disk=size,
+                downloaded=True,
+            )
+        )
 
     # Sort for stability
     models.sort(key=lambda m: (m.repo_id or "", m.path or ""))
@@ -1824,9 +1763,7 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(
-    user_id: str | None = None, **kwargs
-) -> list[ModelInfo]:
+async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
@@ -1845,9 +1782,7 @@ async def _fetch_models_by_author(
         )
         api = HfApi()
     # Run the blocking call in a thread executor
-    models = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: api.list_models(**kwargs)
-    )
+    models = await asyncio.get_event_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
     return list(models)
 
 
@@ -1913,9 +1848,7 @@ async def get_gguf_language_models_from_authors(
             )
 
     # Execute all unified_model calls in parallel
-    entries = await asyncio.gather(
-        *[unified_model(model, info, size) for model, info, size in tasks]
-    )
+    entries = await asyncio.gather(*[unified_model(model, info, size) for model, info, size in tasks])
 
     # Sort for stability: repo then filename
     entries = [entry for entry in entries if entry is not None]
@@ -1946,21 +1879,13 @@ async def get_mlx_language_models_from_authors(
     # Fetch authors concurrently
     # Note: user_id would need to be passed from caller context
     results = await asyncio.gather(
-        *(
-            _fetch_models_by_author(
-                user_id=None, author=a, limit=limit, sort=sort, tags=tags
-            )
-            for a in authors
-        )
+        *(_fetch_models_by_author(user_id=None, author=a, limit=limit, sort=sort, tags=tags) for a in authors)
     )
     model_infos = [item for sublist in results for item in sublist]
 
     # Execute all unified_model calls in parallel
     entries = await asyncio.gather(
-        *[
-            unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info)
-            for info in model_infos
-        ]
+        *[unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info) for info in model_infos]
     )
 
     # Stable order

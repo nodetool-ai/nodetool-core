@@ -97,9 +97,7 @@ class DatabaseAdapter(ABC):
         return self.table_schema.get("primary_key", "id")
 
     @abstractmethod
-    async def create_index(
-        self, index_name: str, columns: List[str], unique: bool = False
-    ) -> None:
+    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
         """
         Create an index on the table with the specified columns.
         :param index_name: The name of the index to create.
@@ -123,7 +121,6 @@ class DatabaseAdapter(ABC):
         :return: A list of dictionaries representing index metadata.
         """
         pass
-
 
     @abstractmethod
     async def auto_migrate(self):

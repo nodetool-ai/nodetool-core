@@ -66,10 +66,7 @@ def generate_mermaid_diagram(graph: Dict[str, Any]) -> str:
     mermaid_lines = ["graph TD"]
 
     # Skip Comment and Preview nodes from the diagram
-    skip_types = [
-        "nodetool.workflows.base_node.Comment",
-        "nodetool.workflows.base_node.Preview"
-    ]
+    skip_types = ["nodetool.workflows.base_node.Comment", "nodetool.workflows.base_node.Preview"]
 
     # Add nodes to diagram
     for node in nodes:
@@ -110,6 +107,7 @@ def extract_text_from_lexical(lexical_data: Any) -> str:
     Returns:
         Plain text extracted from the Lexical structure
     """
+
     def extract_from_node(node: Any) -> str:
         """Recursively extract text from a node."""
         if isinstance(node, dict):
@@ -206,11 +204,7 @@ def extract_description(graph: Dict[str, Any]) -> str:
     return ""
 
 
-def create_jekyll_page(
-    workflow_file: Path,
-    output_dir: Path,
-    package_filter: Optional[str] = None
-) -> bool:
+def create_jekyll_page(workflow_file: Path, output_dir: Path, package_filter: Optional[str] = None) -> bool:
     """Create a Jekyll documentation page for a workflow.
 
     Args:
@@ -289,10 +283,7 @@ Browse other [workflow examples](/cookbook.md) to discover more capabilities.
 
 
 def generate_workflow_docs(
-    examples_dir: str | Path,
-    output_dir: str | Path,
-    package_filter: Optional[str] = None,
-    verbose: bool = False
+    examples_dir: str | Path, output_dir: str | Path, package_filter: Optional[str] = None, verbose: bool = False
 ) -> tuple[int, int]:
     """Generate documentation for all workflow examples in a directory.
 

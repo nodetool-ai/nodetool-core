@@ -38,18 +38,12 @@ async def get_all_language_models(user_id: str) -> List[LanguageModel]:
             provider_models = await provider.get_available_language_models()
             models.extend(provider_models)
             successful_providers += 1
-            log.debug(
-                f"✓ Provider '{provider.provider_name}' returned {len(provider_models)} models"
-            )
+            log.debug(f"✓ Provider '{provider.provider_name}' returned {len(provider_models)} models")
         except Exception as e:
             failed_providers.append(provider.provider_name)
-            log.warning(
-                f"✗ Failed to get models from provider '{provider.provider_name}': {e}"
-            )
+            log.warning(f"✗ Failed to get models from provider '{provider.provider_name}': {e}")
 
-    log.info(
-        f"Discovered {len(models)} total language models from {successful_providers}/{len(providers)} providers"
-    )
+    log.info(f"Discovered {len(models)} total language models from {successful_providers}/{len(providers)} providers")
 
     if failed_providers:
         log.warning(f"Failed providers: {', '.join(failed_providers)}")

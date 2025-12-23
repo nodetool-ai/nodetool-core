@@ -78,9 +78,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         # No default URL - VLLM_BASE_URL must be explicitly set
         base_url = env.get("VLLM_BASE_URL")
         if not base_url:
-            raise ValueError(
-                "VLLM_BASE_URL environment variable must be set to use vLLM provider"
-            )
+            raise ValueError("VLLM_BASE_URL environment variable must be set to use vLLM provider")
         self._base_url: str = base_url.rstrip("/")
         self._api_key: str | None = secrets.get("VLLM_API_KEY")
         timeout_raw = env.get("VLLM_HTTP_TIMEOUT", 600)
@@ -89,9 +87,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         except (TypeError, ValueError):
             self._timeout = 600.0
         verify_env = env.get("VLLM_VERIFY_TLS")
-        self._verify_tls = _parse_bool(
-            verify_env if verify_env is None else str(verify_env), False
-        )
+        self._verify_tls = _parse_bool(verify_env if verify_env is None else str(verify_env), False)
         ctx_window_raw = env.get("VLLM_CONTEXT_WINDOW", 128000)
         try:
             self._default_context_window = int(ctx_window_raw)
@@ -277,20 +273,10 @@ class VllmProvider(BaseProvider, OpenAICompat):
                 self._usage["prompt_tokens"] += chunk.usage.prompt_tokens
                 self._usage["completion_tokens"] += chunk.usage.completion_tokens
                 self._usage["total_tokens"] += chunk.usage.total_tokens
-                if (
-                    chunk.usage.prompt_tokens_details
-                    and chunk.usage.prompt_tokens_details.cached_tokens
-                ):
-                    self._usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
-                if (
-                    chunk.usage.completion_tokens_details
-                    and chunk.usage.completion_tokens_details.reasoning_tokens
-                ):
-                    self._usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
+                    self._usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens
+                if chunk.usage.completion_tokens_details and chunk.usage.completion_tokens_details.reasoning_tokens:
+                    self._usage["reasoning_tokens"] += chunk.usage.completion_tokens_details.reasoning_tokens
 
             if not chunk.choices:
                 continue
@@ -323,11 +309,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
             if finish_reason == "tool_calls" and delta_tool_calls:
                 for tc in delta_tool_calls.values():
                     function = tc.get("function", {})
-                    arguments = (
-                        function.get("arguments", "")
-                        if isinstance(function, dict)
-                        else ""
-                    )
+                    arguments = function.get("arguments", "") if isinstance(function, dict) else ""
                     try:
                         args = json.loads(arguments)
                     except Exception:
@@ -410,20 +392,13 @@ class VllmProvider(BaseProvider, OpenAICompat):
             self._usage["prompt_tokens"] += completion.usage.prompt_tokens
             self._usage["completion_tokens"] += completion.usage.completion_tokens
             self._usage["total_tokens"] += completion.usage.total_tokens
-            if (
-                completion.usage.prompt_tokens_details
-                and completion.usage.prompt_tokens_details.cached_tokens
-            ):
-                self._usage[
-                    "cached_prompt_tokens"
-                ] += completion.usage.prompt_tokens_details.cached_tokens
+            if completion.usage.prompt_tokens_details and completion.usage.prompt_tokens_details.cached_tokens:
+                self._usage["cached_prompt_tokens"] += completion.usage.prompt_tokens_details.cached_tokens
             if (
                 completion.usage.completion_tokens_details
                 and completion.usage.completion_tokens_details.reasoning_tokens
             ):
-                self._usage[
-                    "reasoning_tokens"
-                ] += completion.usage.completion_tokens_details.reasoning_tokens
+                self._usage["reasoning_tokens"] += completion.usage.completion_tokens_details.reasoning_tokens
 
         choice = completion.choices[0]
         response_message = choice.message
@@ -446,9 +421,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     )
                 )
 
-        message = Message(
-            role="assistant", content=response_message.content, tool_calls=tool_calls
-        )
+        message = Message(role="assistant", content=response_message.content, tool_calls=tool_calls)
         self._log_api_response("chat", message)
         return message
 

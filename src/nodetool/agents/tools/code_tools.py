@@ -192,9 +192,7 @@ class RunnerExecutionTool(Tool):
 
         return stdout_lines, stderr_lines
 
-    def _build_runner(
-        self, mode: RunnerMode, params: dict[str, Any] | None
-    ) -> StreamRunnerBase:
+    def _build_runner(self, mode: RunnerMode, params: dict[str, Any] | None) -> StreamRunnerBase:
         workspace_mount = "host" if mode == "docker" else None
         call_options = self.runner_options_for_call(mode, params or {})
         runner_kwargs = {
@@ -207,15 +205,11 @@ class RunnerExecutionTool(Tool):
         }
         return self.runner_cls(**runner_kwargs)
 
-    def runner_options_for_call(
-        self, mode: RunnerMode, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    def runner_options_for_call(self, mode: RunnerMode, params: dict[str, Any]) -> dict[str, Any]:
         """Hook for subclasses to tweak runner options per invocation."""
         return {}
 
-    def build_env_locals(
-        self, context: ProcessingContext, runner: StreamRunnerBase
-    ) -> dict[str, Any]:
+    def build_env_locals(self, context: ProcessingContext, runner: StreamRunnerBase) -> dict[str, Any]:
         workspace_path = runner.resolve_execution_workspace_path(context)
         if not workspace_path:
             workspace_path = context.workspace_dir
@@ -225,9 +219,7 @@ class RunnerExecutionTool(Tool):
         env.update(self.additional_env_locals(context, runner))
         return env
 
-    def additional_env_locals(
-        self, context: ProcessingContext, runner: StreamRunnerBase
-    ) -> dict[str, Any]:
+    def additional_env_locals(self, context: ProcessingContext, runner: StreamRunnerBase) -> dict[str, Any]:
         return {}
 
     def _runner_mode(self, runner: StreamRunnerBase) -> RunnerMode:
@@ -250,9 +242,7 @@ class RunnerExecutionTool(Tool):
             "runner_mode": mode,
         }
         if fallback_reason:
-            response["runner_note"] = (
-                f"Fell back to subprocess after Docker error: {fallback_reason}"
-            )
+            response["runner_note"] = f"Fell back to subprocess after Docker error: {fallback_reason}"
         return response
 
     def _format_error(self, error: RunnerExecutionError) -> dict[str, Any]:
@@ -305,6 +295,7 @@ class ExecutePythonTool(RunnerExecutionTool):
     - beautifulsoup4
     """
 
+
 class ExecuteDatascienceTool(RunnerExecutionTool):
     """Execute Python code in the jupyter/datascience-notebook Docker image."""
 
@@ -313,10 +304,9 @@ class ExecuteDatascienceTool(RunnerExecutionTool):
     name = "execute_datascience"
     description = "Execute Python code in the jupyter/datascience-notebook Docker image."
 
-    def runner_options_for_call(
-        self, mode: RunnerMode, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    def runner_options_for_call(self, mode: RunnerMode, params: dict[str, Any]) -> dict[str, Any]:
         return {"image": "jupyter/datascience-notebook"}
+
 
 class ExecuteJavaScriptTool(RunnerExecutionTool):
     """Execute JavaScript (Node.js) code and stream stdout/stderr."""
@@ -324,10 +314,7 @@ class ExecuteJavaScriptTool(RunnerExecutionTool):
     runner_cls = JavaScriptDockerRunner
     language_label = "JavaScript"
     name = "execute_javascript"
-    description = (
-        "Execute JavaScript (Node.js) code inside an isolated environment and "
-        "stream stdout/stderr output."
-    )
+    description = "Execute JavaScript (Node.js) code inside an isolated environment and stream stdout/stderr output."
 
 
 class ExecuteBashTool(RunnerExecutionTool):
@@ -336,9 +323,7 @@ class ExecuteBashTool(RunnerExecutionTool):
     runner_cls = BashDockerRunner
     language_label = "Bash"
     name = "execute_bash"
-    description = (
-        "Execute Bash shell commands in an isolated environment and stream stdout/stderr output."
-    )
+    description = "Execute Bash shell commands in an isolated environment and stream stdout/stderr output."
 
 
 class ExecuteRubyTool(RunnerExecutionTool):
@@ -347,6 +332,4 @@ class ExecuteRubyTool(RunnerExecutionTool):
     runner_cls = RubyDockerRunner
     language_label = "Ruby"
     name = "execute_ruby"
-    description = (
-        "Execute Ruby scripts in an isolated environment and stream stdout/stderr output."
-    )
+    description = "Execute Ruby scripts in an isolated environment and stream stdout/stderr output."

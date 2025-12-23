@@ -114,9 +114,7 @@ class ThreadedEventLoop:
         """
         all_current_tasks = asyncio.all_tasks(self._loop)
         # Exclude the task running this coroutine itself, if applicable, though ensure_future handles it well.
-        tasks_to_cancel = [
-            t for t in all_current_tasks if t is not asyncio.current_task()
-        ]
+        tasks_to_cancel = [t for t in all_current_tasks if t is not asyncio.current_task()]
 
         if not tasks_to_cancel:
             log.debug("No tasks to cancel.")
@@ -130,14 +128,10 @@ class ThreadedEventLoop:
         # Using a timeout to prevent hanging indefinitely if a task misbehaves.
         try:
             # results will contain exceptions for cancelled tasks (CancelledError)
-            await asyncio.wait_for(
-                asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0
-            )
+            await asyncio.wait_for(asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0)
             log.debug("All cancellable tasks finished after cancellation signal.")
         except TimeoutError:
-            log.warning(
-                "Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
-            )
+            log.warning("Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly.")
         except Exception as e:
             log.error(
                 f"Error waiting for tasks during shutdown: {e}",
@@ -163,13 +157,9 @@ class ThreadedEventLoop:
             if self._loop and self._loop.is_running():  # Check again before stopping
                 self._loop.stop()
             else:
-                log.debug(
-                    "Loop was already stopped before explicit stop in shutdown_sequence."
-                )
+                log.debug("Loop was already stopped before explicit stop in shutdown_sequence.")
 
-        self._shutdown_future = asyncio.ensure_future(
-            shutdown_sequence_coro(), loop=self._loop
-        )
+        self._shutdown_future = asyncio.ensure_future(shutdown_sequence_coro(), loop=self._loop)
 
     def stop(self) -> None:
         """Stop the event loop and wait for the thread to finish."""
@@ -198,9 +188,7 @@ class ThreadedEventLoop:
             assert self._loop is not None
             self._loop.call_soon_threadsafe(self._shutdown_loop)
         else:
-            log.warning(
-                "Stop called, but internal loop was not reported as running. Cleanup will proceed."
-            )
+            log.warning("Stop called, but internal loop was not reported as running. Cleanup will proceed.")
             self._stop_initiated = True
 
         current_thread_id = threading.get_ident()
@@ -223,9 +211,7 @@ class ThreadedEventLoop:
 
         thread_still_alive = bool(self._thread and self._thread.is_alive())
         if thread_still_alive:
-            log.warning(
-                "Event loop thread still alive after join attempt; skipping loop.close() here."
-            )
+            log.warning("Event loop thread still alive after join attempt; skipping loop.close() here.")
             return
 
         self._thread = None
@@ -233,9 +219,7 @@ class ThreadedEventLoop:
         if self._loop is not None:
             try:
                 if self._loop.is_running():
-                    log.warning(
-                        "Internal loop reports running but thread is not alive; skipping close()."
-                    )
+                    log.warning("Internal loop reports running but thread is not alive; skipping close().")
                     return
                 if not self._loop.is_closed():
                     self._loop.close()
@@ -258,6 +242,7 @@ class ThreadedEventLoop:
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
                 from nodetool.config.environment import Environment
+
                 Environment.clear_thread_caches()
                 log.debug("Cleared thread-local caches via Environment.")
             except Exception as e:
@@ -270,9 +255,7 @@ class ThreadedEventLoop:
                 self._loop.close()
                 log.debug("Event loop closed.")
             else:
-                log.debug(
-                    "Event loop was already closed before explicit close call in _run_event_loop."
-                )
+                log.debug("Event loop was already closed before explicit close call in _run_event_loop.")
             log.debug(f"Event loop thread {threading.get_ident()} finished.")
 
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
@@ -335,11 +318,7 @@ class ThreadedEventLoop:
 
     def __del__(self) -> None:  # best-effort safety net
         try:
-            if (
-                self._loop is not None
-                and not self._loop.is_closed()
-                and not self._loop.is_running()
-            ):
+            if self._loop is not None and not self._loop.is_closed() and not self._loop.is_running():
                 # If user never started the loop, there is no thread; safe to close.
                 # If it was started but not stopped, closing here is best-effort.
                 self._loop.close()

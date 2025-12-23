@@ -175,11 +175,7 @@ def _resolve_default_device(explicit_device: str | None = None) -> str | None:
     try:
         import torch  # type: ignore
 
-        if (
-            hasattr(torch, "backends")
-            and hasattr(torch.backends, "mps")
-            and torch.backends.mps.is_available()
-        ):
+        if hasattr(torch, "backends") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
 
         if hasattr(torch, "cuda"):
@@ -281,10 +277,7 @@ class ProcessingContext:
         # Store passed client only as fallback if no scope is available
         if http_client is not None:
             self._http_client = http_client
-        self.workspace_dir = (
-            workspace_dir
-            or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
-        )
+        self.workspace_dir = workspace_dir or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}
@@ -308,9 +301,7 @@ class ProcessingContext:
         thread_id = threading.get_ident()
         try:
             value = require_scope().get_memory_uri_cache().get(key)
-            log.debug(
-                f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}"
-            )
+            log.debug(f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}")
             return value
         except RuntimeError:
             # No scope bound - return None
@@ -353,11 +344,7 @@ class ProcessingContext:
         last_exc: Exception | None = None
         for attempt in range(max_retries):
             try:
-                response = (
-                    await require_scope()
-                    .get_http_client()
-                    .request(method, url, **kwargs)
-                )
+                response = await require_scope().get_http_client().request(method, url, **kwargs)
                 status = response.status_code
                 log.info(f"{method.upper()} {url} {status}")
                 # Retry on common transient statuses
@@ -371,11 +358,7 @@ class ProcessingContext:
                         header_delay = float(retry_after) if retry_after else None
                     except Exception:
                         header_delay = None
-                    delay = (
-                        header_delay
-                        if header_delay is not None
-                        else backoff_seconds * (2**attempt)
-                    )
+                    delay = header_delay if header_delay is not None else backoff_seconds * (2**attempt)
                     log.warning(
                         f"{method.upper()} {url} got {status}; retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
                     )
@@ -460,19 +443,14 @@ class ProcessingContext:
         """
         from nodetool.providers import get_provider
 
-        provider_enum = (
-            Provider(provider_type) if isinstance(provider_type, str) else provider_type
-        )
+        provider_enum = Provider(provider_type) if isinstance(provider_type, str) else provider_type
 
         provider = await get_provider(provider_enum, self.user_id)
 
         # Defensive check: if provider is still awaitable, await it again
         # This handles edge cases where get_provider might return a coroutine
         if inspect.isawaitable(provider):
-            log.warning(
-                f"Provider was still awaitable after await, re-awaiting. "
-                f"type={type(provider)}"
-            )
+            log.warning(f"Provider was still awaitable after await, re-awaiting. type={type(provider)}")
             provider = await provider
 
         if not hasattr(provider, "generate_messages"):
@@ -505,9 +483,7 @@ class ProcessingContext:
             environment=self.environment,
             tool_bridge=self.tool_bridge,
             ui_tool_names=self.ui_tool_names.copy() if self.ui_tool_names else set(),
-            client_tools_manifest=(
-                self.client_tools_manifest.copy() if self.client_tools_manifest else {}
-            ),
+            client_tools_manifest=(self.client_tools_manifest.copy() if self.client_tools_manifest else {}),
         )
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -706,9 +682,7 @@ class ProcessingContext:
         Lists assets.
         """
         if recursive:
-            result = await Asset.get_assets_recursive(
-                self.user_id, parent_id or self.user_id
-            )
+            result = await Asset.get_assets_recursive(self.user_id, parent_id or self.user_id)
             return result["assets"], None
         else:
             assets, next_cursor = await Asset.paginate(
@@ -800,9 +774,7 @@ class ProcessingContext:
         """
         from nodetool.models.prediction import Prediction as PredictionModel
 
-        prediction = await self._prepare_prediction(
-            node_id, provider, model, params, data
-        )
+        prediction = await self._prepare_prediction(node_id, provider, model, params, data)
 
         started_at = datetime.now()
         async for msg in run_prediction_function(prediction, self.environment):
@@ -853,9 +825,7 @@ class ProcessingContext:
         Returns:
             AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]: An async generator yielding prediction results.
         """
-        prediction = await self._prepare_prediction(
-            node_id, provider, model, params, data
-        )
+        prediction = await self._prepare_prediction(node_id, provider, model, params, data)
 
         async for msg in run_prediction_function(prediction, self.environment):
             yield msg
@@ -1140,31 +1110,19 @@ class ProcessingContext:
                 if os.name == "nt":
                     # Windows handling: drive letters and UNC paths
                     if netloc:
-                        path = (
-                            Path(netloc + path_part)
-                            if ":" in netloc
-                            else Path("//" + netloc + path_part)
-                        )
+                        path = Path(netloc + path_part) if ":" in netloc else Path("//" + netloc + path_part)
                     else:
                         # file:///C:/path comes through as path_part="/C:/path"; strip leading slash
-                        if (
-                            len(path_part) >= 3
-                            and path_part[0] == "/"
-                            and path_part[2] == ":"
-                        ):
+                        if len(path_part) >= 3 and path_part[0] == "/" and path_part[2] == ":":
                             path_part = path_part.lstrip("/")
                         path = Path(path_part)
                 else:
                     # POSIX: netloc is typically empty or localhost; for others, treat as network path
-                    path = (
-                        Path("//" + netloc + path_part) if netloc else Path(path_part)
-                    )
+                    path = Path("//" + netloc + path_part) if netloc else Path(path_part)
 
                 resolved_path = path.expanduser()
                 if not resolved_path.exists():
-                    raise FileNotFoundError(
-                        f"No such file or directory: '{resolved_path}'"
-                    )
+                    raise FileNotFoundError(f"No such file or directory: '{resolved_path}'")
 
                 return open(resolved_path, "rb")
             except Exception as e:
@@ -1233,11 +1191,7 @@ class ProcessingContext:
         AudioSegment = _ensure_audio_segment()
 
         # Check for memory:// protocol URI first (preferred for performance)
-        if (
-            hasattr(asset_ref, "uri")
-            and asset_ref.uri
-            and asset_ref.uri.startswith("memory://")
-        ):
+        if hasattr(asset_ref, "uri") and asset_ref.uri and asset_ref.uri.startswith("memory://"):
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1280,9 +1234,7 @@ class ProcessingContext:
                         elif audio_arr.dtype in (np.float32, np.float64, np.float16):
                             raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
                         else:
-                            raise ValueError(
-                                f"Unsupported audio ndarray dtype {audio_arr.dtype}"
-                            )
+                            raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
                         seg = AudioSegment(
                             data=raw,
                             frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,  # default sample rate
@@ -1305,9 +1257,7 @@ class ProcessingContext:
                             out.seek(0)
                             return out
                         except Exception as e:
-                            raise ValueError(
-                                f"Failed to encode numpy video: {e}"
-                            ) from e
+                            raise ValueError(f"Failed to encode numpy video: {e}") from e
                     else:
                         # Generic fallback: return raw bytes
                         return BytesIO(obj.tobytes())
@@ -1362,9 +1312,7 @@ class ProcessingContext:
                     elif audio_arr.dtype in (np.float32, np.float64, np.float16):
                         raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
                     else:
-                        raise ValueError(
-                            f"Unsupported AudioRef ndarray dtype {audio_arr.dtype}"
-                        )
+                        raise ValueError(f"Unsupported AudioRef ndarray dtype {audio_arr.dtype}")
                     seg = AudioSegment(
                         data=raw,
                         frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,
@@ -1431,11 +1379,7 @@ class ProcessingContext:
         Converts an AssetRef to a URI with a specific MIME type.
         """
         pd = _ensure_pandas()
-        if (
-            asset_ref.data is None
-            and asset_ref.uri
-            and asset_ref.uri.startswith("memory://")
-        ):
+        if asset_ref.data is None and asset_ref.uri and asset_ref.uri.startswith("memory://"):
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1460,11 +1404,7 @@ class ProcessingContext:
         """
         PIL_Image, PIL_ImageOps = _ensure_pil()
         # Check for memory:// protocol URI first (preferred for performance)
-        if (
-            hasattr(image_ref, "uri")
-            and image_ref.uri
-            and image_ref.uri.startswith("memory://")
-        ):
+        if hasattr(image_ref, "uri") and image_ref.uri and image_ref.uri.startswith("memory://"):
             key = image_ref.uri
             obj = self._memory_get(key)
             if obj is not None and isinstance(obj, PIL_Image.Image):
@@ -1560,11 +1500,7 @@ class ProcessingContext:
         """
         AudioSegment = _ensure_audio_segment()
         # Check for memory:// protocol URI first (preferred for performance)
-        if (
-            hasattr(audio_ref, "uri")
-            and audio_ref.uri
-            and audio_ref.uri.startswith("memory://")
-        ):
+        if hasattr(audio_ref, "uri") and audio_ref.uri and audio_ref.uri.startswith("memory://"):
             key = audio_ref.uri
             obj = self._memory_get(key)
             if obj is not None and isinstance(obj, AudioSegment):
@@ -1668,9 +1604,7 @@ class ProcessingContext:
         """
         return await self.audio_from_io(BytesIO(b), name=name, parent_id=parent_id)
 
-    async def audio_from_base64(
-        self, b64: str, name: str | None = None, parent_id: str | None = None
-    ) -> AudioRef:
+    async def audio_from_base64(self, b64: str, name: str | None = None, parent_id: str | None = None) -> AudioRef:
         """
         Creates an AudioRef from a base64-encoded string.
 
@@ -1682,9 +1616,7 @@ class ProcessingContext:
         Returns:
             AudioRef: The AudioRef object.
         """
-        return await self.audio_from_io(
-            BytesIO(base64.b64decode(b64)), name=name, parent_id=parent_id
-        )
+        return await self.audio_from_io(BytesIO(base64.b64decode(b64)), name=name, parent_id=parent_id)
 
     async def audio_from_numpy(
         self,
@@ -1709,11 +1641,7 @@ class ProcessingContext:
         AudioSegment = _ensure_audio_segment()
         if data.dtype == np.int16:
             data_bytes = data.tobytes()
-        elif (
-            data.dtype == np.float32
-            or data.dtype == np.float64
-            or data.dtype == np.float16
-        ):
+        elif data.dtype == np.float32 or data.dtype == np.float64 or data.dtype == np.float16:
             data_bytes = (data * (2**14)).astype(np.int16).tobytes()
         else:
             raise ValueError(f"Unsupported dtype {data.dtype}")
@@ -1724,9 +1652,7 @@ class ProcessingContext:
             sample_width=2,  # 16-bit
             channels=num_channels,
         )
-        return await self.audio_from_segment(
-            audio_segment, name=name, parent_id=parent_id
-        )
+        return await self.audio_from_segment(audio_segment, name=name, parent_id=parent_id)
 
     async def audio_from_segment(
         self,
@@ -1834,9 +1760,7 @@ class ProcessingContext:
             ImageRef: The ImageRef object.
         """
         if name:
-            asset = await self.create_asset(
-                name=name, content_type="image/png", content=buffer, parent_id=parent_id
-            )
+            asset = await self.create_asset(name=name, content_type="image/png", content=buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url)
@@ -1861,9 +1785,7 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_io(
-            await self.download_file(url), name=name, parent_id=parent_id
-        )
+        return await self.image_from_io(await self.download_file(url), name=name, parent_id=parent_id)
 
     async def image_from_bytes(
         self,
@@ -1901,9 +1823,7 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_bytes(
-            base64.b64decode(b64), name=name, parent_id=parent_id
-        )
+        return await self.image_from_bytes(base64.b64decode(b64), name=name, parent_id=parent_id)
 
     async def image_from_pil(
         self,
@@ -1998,11 +1918,7 @@ class ProcessingContext:
         """
         if isinstance(text_ref, TextRef):
             # Check for memory:// protocol URI first (preferred for performance)
-            if (
-                hasattr(text_ref, "uri")
-                and text_ref.uri
-                and text_ref.uri.startswith("memory://")
-            ):
+            if hasattr(text_ref, "uri") and text_ref.uri and text_ref.uri.startswith("memory://"):
                 key = text_ref.uri
                 obj = self._memory_get(key)
                 if obj is not None and isinstance(obj, str):
@@ -2030,9 +1946,7 @@ class ProcessingContext:
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO(s.encode("utf-8"))
-            asset = await self.create_asset(
-                name, content_type, buffer, parent_id=parent_id
-            )
+            asset = await self.create_asset(name, content_type, buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return TextRef(asset_id=asset.id, uri=url)
@@ -2099,18 +2013,14 @@ class ProcessingContext:
             VideoRef: The VideoRef object.
         """
         if name:
-            asset = await self.create_asset(
-                name, "video/mpeg", buffer, parent_id=parent_id
-            )
+            asset = await self.create_asset(name, "video/mpeg", buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url)
         else:
             return VideoRef(data=buffer.read())
 
-    async def video_from_bytes(
-        self, b: bytes, name: str | None = None, parent_id: str | None = None
-    ) -> VideoRef:
+    async def video_from_bytes(self, b: bytes, name: str | None = None, parent_id: str | None = None) -> VideoRef:
         """
         Creates a VideoRef from a bytes object.
 
@@ -2157,11 +2067,7 @@ class ProcessingContext:
             ValueError: If the model reference is empty.
         """
         # Check for memory:// protocol URI first (preferred for performance)
-        if (
-            hasattr(model_ref, "uri")
-            and model_ref.uri
-            and model_ref.uri.startswith("memory://")
-        ):
+        if hasattr(model_ref, "uri") and model_ref.uri and model_ref.uri.startswith("memory://"):
             key = model_ref.uri
             obj = self._memory_get(key)
             # Return the model object directly if it's already a model
@@ -2175,9 +2081,7 @@ class ProcessingContext:
         file = await self.asset_to_io(model_ref)
         return joblib.load(file)
 
-    async def from_estimator(
-        self, est: BaseEstimator, name: str | None = None, **kwargs
-    ):  # type: ignore
+    async def from_estimator(self, est: BaseEstimator, name: str | None = None, **kwargs):  # type: ignore
         """
         Create a model asset from an estimator.
 
@@ -2297,12 +2201,7 @@ class ProcessingContext:
 
     def _is_asset_dict(self, value: dict[str, Any]) -> bool:
         """Best-effort detection for dicts shaped like serialized AssetRefs."""
-        return (
-            "type" in value
-            and value["type"] in asset_types
-            and "uri" in value
-            and "asset_id" in value
-        )
+        return "type" in value and value["type"] in asset_types and "uri" in value and "asset_id" in value
 
     def _guess_asset_mime_ext(self, asset: AssetRef) -> tuple[str, str]:
         """Return (mime, extension) defaults for a given asset type."""
@@ -2359,9 +2258,7 @@ class ProcessingContext:
         uri = await storage.upload(key, BytesIO(data_bytes))
         return {"type": asset.type, "uri": uri, "asset_id": asset.asset_id}
 
-    async def _asset_to_workspace_file(
-        self, asset: AssetRef
-    ) -> dict[str, Any] | AssetRef:
+    async def _asset_to_workspace_file(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
         """Persist asset to local workspace and return file path reference."""
         if isinstance(asset, DataframeRef):
             return await self.embed_assets_in_data(asset)
@@ -2387,19 +2284,13 @@ class ProcessingContext:
             return await self._asset_to_data_uri(value)
         elif isinstance(value, dict):
             keys = list(value.keys())
-            results = await asyncio.gather(
-                *[self.assets_to_data_uri(value[k]) for k in keys]
-            )
+            results = await asyncio.gather(*[self.assets_to_data_uri(value[k]) for k in keys])
             return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
-            results = await asyncio.gather(
-                *[self.assets_to_data_uri(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_data_uri(item) for item in value])
             return list(results)
         elif isinstance(value, tuple):
-            results = await asyncio.gather(
-                *[self.assets_to_data_uri(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_data_uri(item) for item in value])
             return tuple(results)
         else:
             return value
@@ -2410,19 +2301,13 @@ class ProcessingContext:
             return await self._asset_to_storage_url(value)
         elif isinstance(value, dict):
             keys = list(value.keys())
-            results = await asyncio.gather(
-                *[self.assets_to_storage_url(value[k]) for k in keys]
-            )
+            results = await asyncio.gather(*[self.assets_to_storage_url(value[k]) for k in keys])
             return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
-            results = await asyncio.gather(
-                *[self.assets_to_storage_url(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_storage_url(item) for item in value])
             return list(results)
         elif isinstance(value, tuple):
-            results = await asyncio.gather(
-                *[self.assets_to_storage_url(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_storage_url(item) for item in value])
             return tuple(results)
         else:
             return value
@@ -2433,19 +2318,13 @@ class ProcessingContext:
             return await self._asset_to_workspace_file(value)
         elif isinstance(value, dict):
             keys = list(value.keys())
-            results = await asyncio.gather(
-                *[self.assets_to_workspace_files(value[k]) for k in keys]
-            )
+            results = await asyncio.gather(*[self.assets_to_workspace_files(value[k]) for k in keys])
             return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
-            results = await asyncio.gather(
-                *[self.assets_to_workspace_files(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_workspace_files(item) for item in value])
             return list(results)
         elif isinstance(value, tuple):
-            results = await asyncio.gather(
-                *[self.assets_to_workspace_files(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.assets_to_workspace_files(item) for item in value])
             return tuple(results)
         else:
             return value
@@ -2457,27 +2336,19 @@ class ProcessingContext:
         if isinstance(value, AssetRef):
             if isinstance(value, DataframeRef):
                 return value
-            if (
-                value.uri and value.uri.startswith("memory://")
-            ) or value.data is not None:
+            if (value.uri and value.uri.startswith("memory://")) or value.data is not None:
                 data_bytes = await self.asset_to_bytes(value)
                 return value.model_copy(update={"uri": None, "data": data_bytes})
             return value
         elif isinstance(value, dict):
             keys = list(value.keys())
-            results = await asyncio.gather(
-                *[self.embed_assets_in_data(value[k]) for k in keys]
-            )
+            results = await asyncio.gather(*[self.embed_assets_in_data(value[k]) for k in keys])
             return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
-            results = await asyncio.gather(
-                *[self.embed_assets_in_data(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.embed_assets_in_data(item) for item in value])
             return list(results)
         elif isinstance(value, tuple):
-            results = await asyncio.gather(
-                *[self.embed_assets_in_data(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.embed_assets_in_data(item) for item in value])
             return tuple(results)
         else:
             return value
@@ -2513,19 +2384,13 @@ class ProcessingContext:
                 else:
                     return uploaded
             keys = list(value.keys())
-            results = await asyncio.gather(
-                *[self.upload_assets_to_temp(value[k]) for k in keys]
-            )
+            results = await asyncio.gather(*[self.upload_assets_to_temp(value[k]) for k in keys])
             return dict(zip(keys, results, strict=False))
         elif isinstance(value, list):
-            results = await asyncio.gather(
-                *[self.upload_assets_to_temp(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.upload_assets_to_temp(item) for item in value])
             return list(results)
         elif isinstance(value, tuple):
-            results = await asyncio.gather(
-                *[self.upload_assets_to_temp(item) for item in value]
-            )
+            results = await asyncio.gather(*[self.upload_assets_to_temp(item) for item in value])
             return tuple(results)
         else:
             return value
@@ -2651,9 +2516,7 @@ class ProcessingContext:
             )
             connection_timeout_ms = int(query_params_to_add.get("timeout", 30000))
 
-            browser = await playwright_instance.chromium.connect_over_cdp(
-                new_url, timeout=connection_timeout_ms
-            )
+            browser = await playwright_instance.chromium.connect_over_cdp(new_url, timeout=connection_timeout_ms)
         else:
             # Logic for local browser launch
             browser = await playwright_instance.chromium.launch(

@@ -37,11 +37,7 @@ def numpy_to_pil_image(arr: np.ndarray) -> PIL.Image.Image:
             if amin >= 0.0 and amax <= 1.0:
                 a = a * 255.0
             elif amax > 255.0 or amin < 0.0:
-                a = (
-                    (a - amin) * (255.0 / (amax - amin))
-                    if amax != amin
-                    else np.zeros_like(a)
-                )
+                a = (a - amin) * (255.0 / (amax - amin)) if amax != amin else np.zeros_like(a)
             a = np.clip(a, 0, 255).astype(np.uint8)
     elif a.dtype == np.uint16:
         a = (a / 257.0).astype(np.uint8)
@@ -70,9 +66,7 @@ def numpy_to_png_bytes(arr: np.ndarray) -> bytes:
     return pil_to_png_bytes(img)
 
 
-def pil_image_to_base64_jpeg(
-    image: PIL.Image.Image, max_size: tuple[int, int] = (512, 512), quality: int = 85
-) -> str:
+def pil_image_to_base64_jpeg(image: PIL.Image.Image, max_size: tuple[int, int] = (512, 512), quality: int = 85) -> str:
     """
     Convert a PIL Image to a base64-encoded JPEG string.
 
@@ -88,9 +82,7 @@ def pil_image_to_base64_jpeg(
     from io import BytesIO
 
     # Convert to RGB if needed (removes alpha channel)
-    if image.mode in ("RGBA", "LA") or (
-        image.mode == "P" and "transparency" in image.info
-    ):
+    if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
         background = PIL.Image.new("RGB", image.size, (255, 255, 255))
         background.paste(image, mask=image.split()[3] if image.mode == "RGBA" else None)
         image = background
@@ -110,9 +102,7 @@ def pil_image_to_base64_jpeg(
     return base64_data
 
 
-def image_data_to_base64_jpeg(
-    image_data: bytes, max_size: tuple[int, int] = (512, 512), quality: int = 85
-) -> str:
+def image_data_to_base64_jpeg(image_data: bytes, max_size: tuple[int, int] = (512, 512), quality: int = 85) -> str:
     """
     Convert image data (bytes) to a base64-encoded JPEG string.
 
@@ -131,9 +121,7 @@ def image_data_to_base64_jpeg(
         return pil_image_to_base64_jpeg(img, max_size, quality)
 
 
-def image_ref_to_base64_jpeg(
-    image_ref, max_size: tuple[int, int] = (512, 512), quality: int = 85
-) -> str:
+def image_ref_to_base64_jpeg(image_ref, max_size: tuple[int, int] = (512, 512), quality: int = 85) -> str:
     """
     Convert an ImageRef to a base64-encoded JPEG string.
 

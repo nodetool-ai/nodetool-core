@@ -214,9 +214,7 @@ class ComposeGenerator:
         }
 
 
-def generate_compose_file(
-    deployment: SelfHostedDeployment, output_path: Optional[str] = None
-) -> str:
+def generate_compose_file(deployment: SelfHostedDeployment, output_path: Optional[str] = None) -> str:
     """
     Generate docker-compose.yml file from deployment configuration.
 

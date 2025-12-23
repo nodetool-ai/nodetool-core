@@ -73,9 +73,10 @@ class DownloadFileTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            async with aiohttp.ClientSession() as session, session.get(
-                url, headers=merged_headers, timeout=timeout
-            ) as response:
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(url, headers=merged_headers, timeout=timeout) as response,
+            ):
                 if response.status != 200:
                     return {
                         "url": url,

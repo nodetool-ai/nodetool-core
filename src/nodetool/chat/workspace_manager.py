@@ -127,11 +127,7 @@ class WorkspaceManager:
         Returns:
             str: Newline-separated list of directory contents or error message
         """
-        full_path = (
-            os.path.join(self.current_workspace, path)
-            if path
-            else self.current_workspace
-        )
+        full_path = os.path.join(self.current_workspace, path) if path else self.current_workspace
         try:
             items = os.listdir(full_path)
             return "\n".join(items)

@@ -42,6 +42,7 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
+
 class ProviderCapability(str, Enum):
     """Capabilities that a provider can support.
 
@@ -56,9 +57,7 @@ class ProviderCapability(str, Enum):
     TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
-    AUTOMATIC_SPEECH_RECOGNITION = (
-        "automatic_speech_recognition"  # Speech → Text transcription
-    )
+    AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
     TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
     STRUCTURED_OUTPUT = "structured_output"  # Structured JSON output support
@@ -479,9 +478,7 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGE capability
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability")
 
     def generate_messages(
         self,
@@ -513,9 +510,7 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGES capability
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability")
 
     async def text_to_image(
         self,
@@ -541,9 +536,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability")
 
     async def image_to_image(
         self,
@@ -571,9 +564,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability")
 
     def text_to_speech(
         self,
@@ -610,9 +601,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability")
 
     async def automatic_speech_recognition(
         self,
@@ -647,9 +636,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If transcription fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability")
 
     async def text_to_video(
         self,
@@ -682,9 +669,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability")
 
     async def image_to_video(
         self,
@@ -720,9 +705,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability")
 
     def structured_output(self) -> bool:
         """Check if provider supports structured JSON output natively.
@@ -787,9 +770,7 @@ class MockProvider(BaseProvider):
 
         Logs the call and returns the next predefined response.
         """
-        self._log_api_request(
-            "generate_message", messages=messages, model=model, tools=tools, **kwargs
-        )
+        self._log_api_request("generate_message", messages=messages, model=model, tools=tools, **kwargs)
         self.call_log.append(
             {
                 "method": "generate_message",
@@ -827,9 +808,7 @@ class MockProvider(BaseProvider):
         Currently yields the entire next predefined response. Can be adapted
         to yield individual chunks/tool calls if needed for more granular testing.
         """
-        self._log_api_request(
-            "generate_messages", messages=messages, model=model, tools=tools, **kwargs
-        )
+        self._log_api_request("generate_messages", messages=messages, model=model, tools=tools, **kwargs)
         self.call_log.append(
             {
                 "method": "generate_messages",
@@ -840,9 +819,7 @@ class MockProvider(BaseProvider):
             }
         )
         response = self._get_next_response()
-        self._log_api_response(
-            "generate_messages", response=response
-        )  # Log the full conceptual response
+        self._log_api_response("generate_messages", response=response)  # Log the full conceptual response
 
         # Simulate streaming behavior
         if response.tool_calls:

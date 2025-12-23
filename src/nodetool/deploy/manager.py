@@ -79,9 +79,7 @@ class DeploymentManager:
 
         return deployments
 
-    def get_deployment(
-        self, name: str
-    ) -> SelfHostedDeployment | RunPodDeployment | GCPDeployment:
+    def get_deployment(self, name: str) -> SelfHostedDeployment | RunPodDeployment | GCPDeployment:
         """
         Get deployment configuration by name.
 
@@ -343,9 +341,7 @@ class DeploymentManager:
             "warnings": [],
         }
 
-        deployments_to_validate = (
-            [name] if name else list(self.config.deployments.keys())
-        )
+        deployments_to_validate = [name] if name else list(self.config.deployments.keys())
 
         for deployment_name in deployments_to_validate:
             try:
@@ -357,15 +353,11 @@ class DeploymentManager:
                 if isinstance(deployment, SelfHostedDeployment):
                     # Validate SSH config
                     if not deployment.ssh.key_path and not deployment.ssh.password:
-                        results["warnings"].append(
-                            f"{deployment_name}: No SSH authentication method configured"
-                        )
+                        results["warnings"].append(f"{deployment_name}: No SSH authentication method configured")
 
                     # Validate container
                     if not deployment.container:
-                        results["errors"].append(
-                            f"{deployment_name}: No container configured"
-                        )
+                        results["errors"].append(f"{deployment_name}: No container configured")
                         results["valid"] = False
 
             except Exception as e:

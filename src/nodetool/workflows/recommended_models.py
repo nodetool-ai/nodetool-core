@@ -23,6 +23,7 @@ def _check_server_health(url: str) -> bool:
     """
     try:
         import httpx
+
         with httpx.Client(timeout=2.0) as client:
             # Try common health endpoints
             for endpoint in ["/health", "/api/tags", "/"]:
@@ -361,21 +362,15 @@ def get_recommended_image_models(system: str | None = None) -> list[UnifiedModel
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(
-        get_recommended_models_flat(), predicate=_is_image_model, system=system
-    )
+    return _filter_models(get_recommended_models_flat(), predicate=_is_image_model, system=system)
 
 
 def get_recommended_text_to_image_models(system: str | None = None) -> list[UnifiedModel]:
-    return [
-        m for m in get_recommended_image_models(system) if _is_text_to_image_model(m)
-    ]
+    return [m for m in get_recommended_image_models(system) if _is_text_to_image_model(m)]
 
 
 def get_recommended_image_to_image_models(system: str | None = None) -> list[UnifiedModel]:
-    return [
-        m for m in get_recommended_image_models(system) if _is_image_to_image_model(m)
-    ]
+    return [m for m in get_recommended_image_models(system) if _is_image_to_image_model(m)]
 
 
 def _is_text_to_video_model(m: UnifiedModel) -> bool:
@@ -410,25 +405,15 @@ def get_recommended_language_models(system: str | None = None) -> list[UnifiedMo
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(
-        get_recommended_models_flat(), predicate=_is_language_model, system=system
-    )
+    return _filter_models(get_recommended_models_flat(), predicate=_is_language_model, system=system)
 
 
 def get_recommended_language_text_generation_models(system: str | None = None) -> list[UnifiedModel]:
-    return [
-        m
-        for m in get_recommended_language_models(system)
-        if _is_language_text_generation_model(m)
-    ]
+    return [m for m in get_recommended_language_models(system) if _is_language_text_generation_model(m)]
 
 
 def get_recommended_language_embedding_models(system: str | None = None) -> list[UnifiedModel]:
-    return [
-        m
-        for m in get_recommended_language_models(system)
-        if _is_language_embedding_model(m)
-    ]
+    return [m for m in get_recommended_language_models(system) if _is_language_embedding_model(m)]
 
 
 def get_recommended_asr_models(system: str | None = None) -> list[UnifiedModel]:
@@ -436,9 +421,7 @@ def get_recommended_asr_models(system: str | None = None) -> list[UnifiedModel]:
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(
-        get_recommended_models_flat(), predicate=_is_asr_model, system=system
-    )
+    return _filter_models(get_recommended_models_flat(), predicate=_is_asr_model, system=system)
 
 
 def get_recommended_tts_models(system: str | None = None) -> list[UnifiedModel]:
@@ -446,9 +429,7 @@ def get_recommended_tts_models(system: str | None = None) -> list[UnifiedModel]:
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(
-        get_recommended_models_flat(), predicate=_is_tts_model, system=system
-    )
+    return _filter_models(get_recommended_models_flat(), predicate=_is_tts_model, system=system)
 
 
 # Platform-agnostic variants for package metadata (include all models)
@@ -467,27 +448,19 @@ def _filter_models_no_platform(models: Iterable[UnifiedModel], *, predicate) -> 
 
 def get_all_recommended_image_models() -> list[UnifiedModel]:
     """All image-capable models from all packages without platform filtering."""
-    return _filter_models_no_platform(
-        get_recommended_models_flat(), predicate=_is_image_model
-    )
+    return _filter_models_no_platform(get_recommended_models_flat(), predicate=_is_image_model)
 
 
 def get_all_recommended_language_models() -> list[UnifiedModel]:
     """All language-capable models from all packages without platform filtering."""
-    return _filter_models_no_platform(
-        get_recommended_models_flat(), predicate=_is_language_model
-    )
+    return _filter_models_no_platform(get_recommended_models_flat(), predicate=_is_language_model)
 
 
 def get_all_recommended_asr_models() -> list[UnifiedModel]:
     """All ASR-capable models from all packages without platform filtering."""
-    return _filter_models_no_platform(
-        get_recommended_models_flat(), predicate=_is_asr_model
-    )
+    return _filter_models_no_platform(get_recommended_models_flat(), predicate=_is_asr_model)
 
 
 def get_all_recommended_tts_models() -> list[UnifiedModel]:
     """All TTS-capable models from all packages without platform filtering."""
-    return _filter_models_no_platform(
-        get_recommended_models_flat(), predicate=_is_tts_model
-    )
+    return _filter_models_no_platform(get_recommended_models_flat(), predicate=_is_tts_model)

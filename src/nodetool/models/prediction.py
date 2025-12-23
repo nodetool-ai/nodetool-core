@@ -138,9 +138,7 @@ class Prediction(DBModel):
         """
         if workflow_id is None:
             return await cls.query(
-                condition=Field("user_id")
-                .equals(user_id)
-                .and_(Field("id").greater_than(start_key or "")),
+                condition=Field("user_id").equals(user_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
         else:

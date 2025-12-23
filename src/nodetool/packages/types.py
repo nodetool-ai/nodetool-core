@@ -12,9 +12,7 @@ class PackageInfo(BaseModel):
     name: str
     description: str
     repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
-    namespaces: List[str] = Field(
-        default_factory=list, description="Namespaces provided by this package"
-    )
+    namespaces: List[str] = Field(default_factory=list, description="Namespaces provided by this package")
 
 
 class AssetInfo(BaseModel):

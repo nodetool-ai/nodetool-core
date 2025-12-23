@@ -33,9 +33,7 @@ def create_openai_compatible_router(
     tools = tools or []
 
     @router.post("/chat/completions")
-    async def openai_chat_completions(
-        request: Request, user: str = Depends(current_user)
-    ):
+    async def openai_chat_completions(request: Request, user: str = Depends(current_user)):
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
         try:
             data = await request.json()

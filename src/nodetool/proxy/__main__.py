@@ -55,9 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
 
     if not args.config:
-        raise SystemExit(
-            "Proxy configuration path not provided. Use --config or set PROXY_CONFIG."
-        )
+        raise SystemExit("Proxy configuration path not provided. Use --config or set PROXY_CONFIG.")
 
     config_path = Path(args.config)
     if not config_path.exists():

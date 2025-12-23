@@ -116,10 +116,7 @@ register_secret(
     description="Gemini API key for accessing Google's Gemini AI models",
 )
 register_secret(
-    package_name="nodetool",
-    env_var="HF_TOKEN",
-    group="HF",
-    description="Token for HuggingFace Inference Providers"
+    package_name="nodetool", env_var="HF_TOKEN", group="HF", description="Token for HuggingFace Inference Providers"
 )
 register_secret(
     package_name="nodetool",
@@ -306,6 +303,7 @@ def save_settings(settings: Dict[str, Any]) -> None:
 
     with open(settings_file, "w") as f:
         yaml.dump(settings, f)
+
 
 def get_value(
     key: str,

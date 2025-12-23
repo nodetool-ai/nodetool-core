@@ -44,27 +44,34 @@ from .message_processor import MessageProcessor
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
+
 def detect_mime_type(data: bytes) -> str:
     """Detect mime type from bytes magic numbers."""
-    if data.startswith(b'\x89PNG\r\n\x1a\n'):
-        return 'image/png'
-    if data.startswith(b'\xff\xd8'):
-        return 'image/jpeg'
-    if data.startswith(b'GIF8'):
-        return 'image/gif'
-    if data.startswith(b'RIFF') and data[8:12] == b'WEBP':
-        return 'image/webp'
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8"):
+        return "image/jpeg"
+    if data.startswith(b"GIF8"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
     # Audio
-    if data.startswith(b'ID3') or data.startswith(b'\xff\xfb') or data.startswith(b'\xff\xf3') or data.startswith(b'\xff\xf2'):
-        return 'audio/mpeg'
-    if data.startswith(b'RIFF') and data[8:12] == b'WAVE':
-        return 'audio/wav'
-    if data.startswith(b'OggS'):
-        return 'audio/ogg'
+    if (
+        data.startswith(b"ID3")
+        or data.startswith(b"\xff\xfb")
+        or data.startswith(b"\xff\xf3")
+        or data.startswith(b"\xff\xf2")
+    ):
+        return "audio/mpeg"
+    if data.startswith(b"RIFF") and data[8:12] == b"WAVE":
+        return "audio/wav"
+    if data.startswith(b"OggS"):
+        return "audio/ogg"
     # Video
-    if len(data) > 12 and (data[4:12] == b'ftypisom' or data[4:12] == b'ftypmp42'):
-        return 'video/mp4'
-    return 'application/octet-stream'
+    if len(data) > 12 and (data[4:12] == b"ftypisom" or data[4:12] == b"ftypmp42"):
+        return "video/mp4"
+    return "application/octet-stream"
+
 
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
@@ -125,9 +132,7 @@ def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> N
     per_tool: list[tuple[int, str]] = []
     for tool in tools:
         try:
-            per_tool.append(
-                (count_json_tokens(tool.tool_param(), encoding=encoding), tool.name)
-            )
+            per_tool.append((count_json_tokens(tool.tool_param(), encoding=encoding), tool.name))
         except Exception:
             per_tool.append((0, getattr(tool, "name", "unknown")))
 
@@ -172,10 +177,7 @@ class RegularChatProcessor(MessageProcessor):
 
         if last_message.tools:
             tools = await asyncio.gather(
-                *[
-                    resolve_tool_by_name(name, processing_context.user_id)
-                    for name in last_message.tools
-                ]
+                *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
         else:
             tools = []
@@ -193,13 +195,9 @@ class RegularChatProcessor(MessageProcessor):
         collection_context = ""
         if collections:
             log.debug(f"Querying collections: {collections}")
-            collection_context = await self._query_collections(
-                collections, query_text, n_results=5
-            )
+            collection_context = await self._query_collections(collections, query_text, n_results=5)
             if collection_context:
-                log.debug(
-                    f"Retrieved collection context: {len(collection_context)} characters"
-                )
+                log.debug(f"Retrieved collection context: {len(collection_context)} characters")
 
         assert last_message.model, "Model is required"
 
@@ -210,17 +208,13 @@ class RegularChatProcessor(MessageProcessor):
 
                 # Add collection context if available
                 if collection_context:
-                    messages_to_send = self._add_collection_context(
-                        messages_to_send, collection_context
-                    )
+                    messages_to_send = self._add_collection_context(messages_to_send, collection_context)
                     collection_context = ""  # Clear after first use
 
                 unprocessed_messages = []
 
                 _log_tool_definition_token_breakdown(tools, last_message.model)
-                log.debug(
-                    f"Calling provider.generate_messages with {len(messages_to_send)} messages"
-                )
+                log.debug(f"Calling provider.generate_messages with {len(messages_to_send)} messages")
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
@@ -268,17 +262,11 @@ class RegularChatProcessor(MessageProcessor):
                         # To minimal change, let's keep _run_tool but ignore its returned message or change how we use it.
                         # Actually, keeping _run_tool is fine, it just resolves again (cached?) or cheap.
 
-                        tool_result, _ = await self._run_tool(
-                            processing_context, chunk, graph
-                        )
-                        log.debug(
-                            f"Tool {chunk.name} execution complete, id={tool_result.id}"
-                        )
+                        tool_result, _ = await self._run_tool(processing_context, chunk, graph)
+                        log.debug(f"Tool {chunk.name} execution complete, id={tool_result.id}")
 
                         # Convert result to JSON
-                        converted_result = await self._process_tool_result(
-                            tool_result.result
-                        )
+                        converted_result = await self._process_tool_result(tool_result.result)
                         tool_result_json = json.dumps(converted_result)
                         tool_msg = Message(
                             role="tool",
@@ -299,9 +287,7 @@ class RegularChatProcessor(MessageProcessor):
                     log.debug("No more unprocessed messages, completing generation")
                     break
                 else:
-                    log.debug(
-                        f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop"
-                    )
+                    log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
 
             # Signal completion
             await self.send_message({"type": "chunk", "content": "", "done": True})
@@ -361,9 +347,7 @@ class RegularChatProcessor(MessageProcessor):
                     return content_item.text
         return ""
 
-    async def _query_collections(
-        self, collections: List[str], query_text: str, n_results: int
-    ) -> str:
+    async def _query_collections(self, collections: List[str], query_text: str, n_results: int) -> str:
         """Query ChromaDB collections and return concatenated results."""
         if not collections or not query_text:
             return ""
@@ -387,11 +371,7 @@ class RegularChatProcessor(MessageProcessor):
                 collection_results = f"\n\n### Results from {collection_name}:\n"
                 for doc, _metadata in zip(
                     results["documents"][0],
-                    (
-                        results["metadatas"][0]
-                        if results["metadatas"]
-                        else [{}] * len(results["documents"][0])
-                    ),
+                    (results["metadatas"][0] if results["metadatas"] else [{}] * len(results["documents"][0])),
                     strict=False,
                 ):
                     doc_preview = f"{doc[:200]}..." if len(doc) > 200 else doc
@@ -400,9 +380,7 @@ class RegularChatProcessor(MessageProcessor):
 
         return "\n".join(all_results) if all_results else ""
 
-    def _add_collection_context(
-        self, messages: List[Message], collection_context: str
-    ) -> List[Message]:
+    def _add_collection_context(self, messages: List[Message], collection_context: str) -> List[Message]:
         """Add collection context as a system message before the last user message."""
         # Find the last user message index
         last_user_index = -1
@@ -432,9 +410,7 @@ class RegularChatProcessor(MessageProcessor):
     ) -> tuple[ToolCall, str]:
         """Execute a tool call and return the result."""
         tool = await resolve_tool_by_name(tool_call.name, context.user_id)
-        log.debug(
-            f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
-        )
+        log.debug(f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}")
 
         # Send tool call to client
         # await self.send_message(
@@ -464,8 +440,8 @@ class RegularChatProcessor(MessageProcessor):
         # If data is a list (e.g. from some conversions), take first element or handle appropriately
         # For now assume data is bytes
         if isinstance(data, list):
-             # This case appears in some internal representations
-             data = data[0]
+            # This case appears in some internal representations
+            data = data[0]
 
         if not isinstance(data, (bytes, bytearray)):
             # If data is not bytes, we can't save it as file easily without more info
@@ -474,31 +450,31 @@ class RegularChatProcessor(MessageProcessor):
         # Determine extension based on AssetRef type or sniff if needed
         ext = None
         if isinstance(asset, ImageRef):
-             # Try to detect image format
-             mime = detect_mime_type(data)
-             if mime != 'application/octet-stream':
-                 ext = mimetypes.guess_extension(mime)
-             if not ext:
-                 ext = ".png" # Default for images
+            # Try to detect image format
+            mime = detect_mime_type(data)
+            if mime != "application/octet-stream":
+                ext = mimetypes.guess_extension(mime)
+            if not ext:
+                ext = ".png"  # Default for images
         elif isinstance(asset, AudioRef):
-             mime = detect_mime_type(data)
-             if mime != 'application/octet-stream':
-                 ext = mimetypes.guess_extension(mime)
-             if not ext:
-                 ext = ".wav" # Default for audio
+            mime = detect_mime_type(data)
+            if mime != "application/octet-stream":
+                ext = mimetypes.guess_extension(mime)
+            if not ext:
+                ext = ".wav"  # Default for audio
         elif isinstance(asset, VideoRef):
-             if hasattr(asset, 'format') and asset.format:
-                 ext = f".{asset.format}"
-             else:
-                 mime = detect_mime_type(data)
-                 if mime != 'application/octet-stream':
-                     ext = mimetypes.guess_extension(mime)
-             if not ext:
-                 ext = ".mp4" # Default for video
+            if hasattr(asset, "format") and asset.format:
+                ext = f".{asset.format}"
+            else:
+                mime = detect_mime_type(data)
+                if mime != "application/octet-stream":
+                    ext = mimetypes.guess_extension(mime)
+            if not ext:
+                ext = ".mp4"  # Default for video
         else:
-             # Generic AssetRef
-             mime = detect_mime_type(data)
-             ext = mimetypes.guess_extension(mime) or ".bin"
+            # Generic AssetRef
+            mime = detect_mime_type(data)
+            ext = mimetypes.guess_extension(mime) or ".bin"
 
         # Create hash for filename
         sha = hashlib.sha256(data).hexdigest()
@@ -510,7 +486,7 @@ class RegularChatProcessor(MessageProcessor):
 
         # Update the asset with URI and clear data
         asset.uri = uri
-        asset.data = None # Clear data to avoid serialization
+        asset.data = None  # Clear data to avoid serialization
         return asset.model_dump()
 
     async def _save_asset(self, data: bytes) -> dict:

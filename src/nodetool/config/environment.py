@@ -90,9 +90,7 @@ def load_dotenv_files():
 
     # Get the project root directory (where .env files should be located)
     current_file = Path(__file__)
-    project_root = (
-        current_file.parent.parent.parent.parent
-    )  # Go up to workspace/nodetool-core
+    project_root = current_file.parent.parent.parent.parent  # Go up to workspace/nodetool-core
 
     # Determine environment - check ENV var first, then default to development
     env_name = get_system_env_value("ENV", DEFAULT_ENV.get("ENV", "development"))
@@ -153,6 +151,7 @@ def load_dotenv_files():
                 # Show protocol and domain only
                 try:
                     from urllib.parse import urlparse
+
                     parsed = urlparse(value)
                     masked = f"{parsed.scheme}://{parsed.netloc}"
                     loaded_vars[var] = masked
@@ -527,9 +526,7 @@ class Environment:
         # Check if ASSET_BUCKET looks like a filesystem path (starts with / or .)
         # This allows using ASSET_BUCKET for both S3 bucket names and filesystem paths
         asset_bucket = cls.get("ASSET_BUCKET")
-        if asset_bucket and (
-            asset_bucket.startswith("/") or asset_bucket.startswith(".")
-        ):
+        if asset_bucket and (asset_bucket.startswith("/") or asset_bucket.startswith(".")):
             return str(asset_bucket)
 
         # Default to system-specific path

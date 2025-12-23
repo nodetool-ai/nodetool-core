@@ -19,9 +19,7 @@ async def run_simple_agent_test(provider: BaseProvider, model: str):
     Tests the SimpleAgent with a basic objective.
     """
     context = ProcessingContext()
-    objective = (
-        "What is the weather in London according to https://www.bbc.com/weather/2643743"
-    )
+    objective = "What is the weather in London according to https://www.bbc.com/weather/2643743"
 
     print(f"Objective: {objective}")
 

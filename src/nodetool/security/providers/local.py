@@ -12,4 +12,3 @@ class LocalAuthProvider(AuthProvider):
 
     async def verify_token(self, token: str | None = None) -> AuthResult:  # type: ignore[override]
         return AuthResult(ok=True, user_id="1", token_type=TokenType.USER)
-

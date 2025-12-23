@@ -54,9 +54,7 @@ def get_node_input_types(graph: Graph, node_id: str) -> dict[str, TypeMetadata |
         return None
 
     return {
-        edge.targetHandle: output_type(edge.source, edge.sourceHandle)
-        for edge in graph.edges
-        if edge.target == node_id
+        edge.targetHandle: output_type(edge.source, edge.sourceHandle) for edge in graph.edges if edge.target == node_id
     }
 
 
@@ -75,11 +73,7 @@ def get_downstream_subgraph(
     Returns:
         tuple[list[Edge], Graph]: A tuple containing the initial edges and the subgraph.
     """
-    initial_edges = [
-        edge
-        for edge in graph.edges
-        if edge.source == node_id and edge.sourceHandle == source_handle
-    ]
+    initial_edges = [edge for edge in graph.edges if edge.source == node_id and edge.sourceHandle == source_handle]
 
     included_node_ids: set[str] = set()
     included_edges = []
@@ -112,10 +106,6 @@ def get_downstream_subgraph(
             included_nodes.append(find_node(graph, nid))
 
     # Filter edges to those whose endpoints are both present in the included set
-    filtered_edges = [
-        e
-        for e in included_edges
-        if e.source in included_node_ids and e.target in included_node_ids
-    ]
+    filtered_edges = [e for e in included_edges if e.source in included_node_ids and e.target in included_node_ids]
 
     return initial_edges, Graph(nodes=included_nodes, edges=filtered_edges)

@@ -21,4 +21,3 @@ class StaticTokenAuthProvider(AuthProvider):
     def clear_caches(self) -> None:
         # No caches to clear for the static provider, but keep method for interface compatibility.
         return None
-

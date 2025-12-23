@@ -106,9 +106,7 @@ async def create(
     if from_example_package and from_example_name:
         example_registry = Registry()
         try:
-            example_workflow = example_registry.load_example(
-                from_example_package, from_example_name
-            )
+            example_workflow = example_registry.load_example(from_example_package, from_example_name)
             if not example_workflow:
                 raise HTTPException(
                     status_code=404,
@@ -120,11 +118,9 @@ async def create(
                 await WorkflowModel.create(
                     name=workflow_request.name,
                     package_name=workflow_request.package_name,
-                    description=workflow_request.description
-                    or example_workflow.description,
+                    description=workflow_request.description or example_workflow.description,
                     thumbnail=workflow_request.thumbnail,
-                    thumbnail_url=workflow_request.thumbnail_url
-                    or example_workflow.thumbnail_url,
+                    thumbnail_url=workflow_request.thumbnail_url or example_workflow.thumbnail_url,
                     tags=workflow_request.tags or example_workflow.tags,
                     access=workflow_request.access,
                     graph=example_workflow.graph.model_dump(),
@@ -133,9 +129,7 @@ async def create(
                 )
             )
         except ValueError as e:
-            raise HTTPException(
-                status_code=404, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=404, detail=str(e)) from e
     elif workflow_request.graph:
         workflow = await from_model(
             await WorkflowModel.create(
@@ -155,9 +149,7 @@ async def create(
         try:
             edges, nodes = read_graph(workflow_request.comfy_workflow)
         except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=400, detail=str(e)) from e
         workflow = await from_model(
             await WorkflowModel.create(
                 name=workflow_request.name,
@@ -198,9 +190,7 @@ async def index(
         run_mode=run_mode,
     )
     workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
-    return WorkflowList(
-        workflows=workflow_responses, next=cursor
-    )
+    return WorkflowList(workflows=workflow_responses, next=cursor)
 
 
 @router.get("/public")
@@ -211,13 +201,9 @@ async def public(
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
-    workflows, cursor = await WorkflowModel.paginate(
-        limit=limit, start_key=cursor, columns=column_list
-    )
+    workflows, cursor = await WorkflowModel.paginate(limit=limit, start_key=cursor, columns=column_list)
     workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
-    return WorkflowList(
-        workflows=workflow_responses, next=cursor
-    )
+    return WorkflowList(workflows=workflow_responses, next=cursor)
 
 
 @router.get("/public/{id}")
@@ -343,11 +329,7 @@ async def examples() -> WorkflowList:
     indices: list[int] = []
     for i, ex in enumerate(examples):
         if ex.package_name and ex.name:
-            load_tasks.append(
-                asyncio.to_thread(
-                    example_registry.load_example, ex.package_name, ex.name
-                )
-            )
+            load_tasks.append(asyncio.to_thread(example_registry.load_example, ex.package_name, ex.name))
             indices.append(i)
 
     loaded_map = {}
@@ -372,9 +354,7 @@ async def examples() -> WorkflowList:
                 ns = parse_namespace(node.type)
                 if ns in provider_namespaces:
                     required_providers.add(ns)
-                collect_from_value(
-                    getattr(node, "data", {}), required_providers, required_models
-                )
+                collect_from_value(getattr(node, "data", {}), required_providers, required_models)
 
         enriched.append(
             Workflow(
@@ -415,9 +395,7 @@ async def search_examples(query: str) -> WorkflowList:
         WorkflowList: A list of workflows that contain nodes matching the query
     """
     example_registry = Registry()
-    matching_workflows = await asyncio.to_thread(
-        example_registry.search_example_workflows, query
-    )
+    matching_workflows = await asyncio.to_thread(example_registry.search_example_workflows, query)
     return WorkflowList(workflows=matching_workflows, next=None)
 
 
@@ -446,9 +424,7 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
             )
         return workflow
     except ValueError as e:
-        raise HTTPException(
-            status_code=404, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.get("/{id}")
@@ -542,16 +518,12 @@ async def save_example_workflow(
         workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        saved_workflow = await asyncio.to_thread(
-            example_registry.save_example, workflow
-        )
+        saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
         return saved_workflow
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(
-            status_code=400, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 class RunWorkflowRequest(BaseModel):
@@ -588,9 +560,7 @@ async def run_workflow_by_id(
 
     if stream:
         runner = HTTPStreamRunner()
-        return StreamingResponse(
-            runner.run_job(job_request), media_type="application/x-ndjson"
-        )
+        return StreamingResponse(runner.run_job(job_request), media_type="application/x-ndjson")
     else:
         result = {}
         async for msg in run_workflow(job_request):

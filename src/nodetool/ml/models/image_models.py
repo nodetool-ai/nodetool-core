@@ -34,13 +34,9 @@ async def get_all_image_models(user_id: str) -> List[ImageModel]:
     for provider in providers:
         provider_models = await provider.get_available_image_models()
         models.extend(provider_models)
-        log.debug(
-            f"Provider '{provider.provider_name}' returned {len(provider_models)} models"
-        )
+        log.debug(f"Provider '{provider.provider_name}' returned {len(provider_models)} models")
 
-    log.info(
-        f"Discovered {len(models)} total image models from {len(providers)} providers"
-    )
+    log.info(f"Discovered {len(models)} total image models from {len(providers)} providers")
 
     return models
 

@@ -125,11 +125,7 @@ class BaseChatRunner(ABC):
         graph_obj = None
         if db_message.graph:
             try:
-                graph_obj = (
-                    Graph(**db_message.graph)
-                    if isinstance(db_message.graph, dict)
-                    else db_message.graph
-                )
+                graph_obj = Graph(**db_message.graph) if isinstance(db_message.graph, dict) else db_message.graph
             except Exception as e:
                 log.warning(f"Failed to convert graph to Graph object: {e}")
                 graph_obj = None
@@ -152,9 +148,7 @@ class BaseChatRunner(ABC):
             collections=db_message.collections,
             input_files=db_message.input_files,
             output_files=db_message.output_files,
-            created_at=(
-                db_message.created_at.isoformat() if db_message.created_at else None
-            ),
+            created_at=(db_message.created_at.isoformat() if db_message.created_at else None),
             provider=db_message.provider,
             model=db_message.model,
             agent_mode=db_message.agent_mode,
@@ -211,9 +205,7 @@ class BaseChatRunner(ABC):
 
         # Run the database operation in a thread pool to avoid blocking
         # Create database message directly with async
-        db_message = await DBMessage.create(
-            thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
-        )
+        db_message = await DBMessage.create(thread_id=message_thread_id, user_id=self.user_id or "", **data_copy)
 
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
@@ -235,21 +227,14 @@ class BaseChatRunner(ABC):
 
         try:
             # Load messages from database using the paginate method
-            db_messages, _ = await DBMessage.paginate(
-                thread_id=thread_id, limit=1000, reverse=False
-            )
+            db_messages, _ = await DBMessage.paginate(thread_id=thread_id, limit=1000, reverse=False)
 
             # Filter out agent_execution messages - these should not be sent to the LLM
             # Only user, assistant, system (non-execution), and tool messages should be included
-            filtered_messages = [
-                db_msg for db_msg in db_messages if db_msg.role != "agent_execution"
-            ]
+            filtered_messages = [db_msg for db_msg in db_messages if db_msg.role != "agent_execution"]
 
             # Convert database messages to metadata messages
-            chat_history = [
-                self._db_message_to_metadata_message(db_msg)
-                for db_msg in filtered_messages
-            ]
+            chat_history = [self._db_message_to_metadata_message(db_msg) for db_msg in filtered_messages]
             log.debug(
                 f"Fetched {len(filtered_messages)} messages from database for thread {thread_id} "
                 f"(filtered {len(db_messages) - len(filtered_messages)} agent_execution messages)"
@@ -288,9 +273,7 @@ class BaseChatRunner(ABC):
             try:
                 thread = await Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
-                    log.info(
-                        f"Thread {thread_id} not found, creating it for user {self.user_id}"
-                    )
+                    log.info(f"Thread {thread_id} not found, creating it for user {self.user_id}")
                     # Create a thread with the provided ID to maintain consistency with frontend
                     thread = await Thread.create(user_id=self.user_id, id=thread_id)
                     log.debug(f"Created thread {thread.id} with client-provided ID")
@@ -310,9 +293,7 @@ class BaseChatRunner(ABC):
             self.supabase = await create_async_client(supabase_url, supabase_key)
         else:
             if Environment.is_production():
-                log.warning(
-                    "Supabase URL or Key not configured in production environment."
-                )
+                log.warning("Supabase URL or Key not configured in production environment.")
 
     async def validate_token(self, token: str) -> bool:
         """
@@ -334,9 +315,7 @@ class BaseChatRunner(ABC):
                 user_response = await self.supabase.auth.get_user(token)
                 if user_response and user_response.user:
                     self.user_id = user_response.user.id
-                    log.debug(
-                        f"Token validated successfully for user: {user_response.user.id}"
-                    )
+                    log.debug(f"Token validated successfully for user: {user_response.user.id}")
                     return True
                 else:
                     log.warning(f"Token validation failed: {user_response}")
@@ -422,9 +401,7 @@ class BaseChatRunner(ABC):
             raise ValueError("No provider specified in the current conversation")
 
         provider = await get_provider(last_message.provider)
-        log.debug(
-            f"Using provider {provider.__class__.__name__} for model {last_message.model}"
-        )
+        log.debug(f"Using provider {provider.__class__.__name__} for model {last_message.model}")
 
         # Check for help request
         if last_message.help_mode:

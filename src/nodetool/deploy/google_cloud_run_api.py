@@ -165,13 +165,9 @@ def ensure_gcloud_auth() -> None:
         if response in ["y", "yes"]:
             try:
                 subprocess.run(["gcloud", "auth", "login"], check=True)
-                console.print(
-                    "[bold green]✅ Successfully authenticated with Google Cloud[/]"
-                )
+                console.print("[bold green]✅ Successfully authenticated with Google Cloud[/]")
             except subprocess.CalledProcessError:
-                console.print(
-                    "[bold red]❌ Failed to authenticate with Google Cloud[/]"
-                )
+                console.print("[bold red]❌ Failed to authenticate with Google Cloud[/]")
                 sys.exit(1)
         else:
             console.print("[bold red]❌ Google Cloud authentication is required[/]")
@@ -198,9 +194,7 @@ def get_default_project() -> Optional[str]:
         return None
 
 
-def ensure_cloud_run_permissions(
-    project_id: str, service_account: Optional[str] = None
-) -> None:
+def ensure_cloud_run_permissions(project_id: str, service_account: Optional[str] = None) -> None:
     """
     Ensure the current user has the required permissions for Cloud Run deployment.
 
@@ -228,15 +222,11 @@ def ensure_cloud_run_permissions(
         if service_account:
             # When using a service account, user only needs Cloud Run admin permissions
             required_roles = ["roles/run.admin"]
-            console.print(
-                "[cyan]Using service account - only Cloud Run admin permissions needed[/]"
-            )
+            console.print("[cyan]Using service account - only Cloud Run admin permissions needed[/]")
         else:
             # When not using a service account, user needs service account user permissions too
             required_roles = ["roles/run.admin", "roles/iam.serviceAccountUser"]
-            console.print(
-                "[cyan]No service account specified - need service account user permissions[/]"
-            )
+            console.print("[cyan]No service account specified - need service account user permissions[/]")
 
         for role in required_roles:
             console.print(f"[cyan]Granting {role}...[/]")
@@ -259,9 +249,7 @@ def ensure_cloud_run_permissions(
                 console.print(f"[green]✅ Granted {role}[/]")
             except subprocess.CalledProcessError:
                 # Role might already be assigned, that's ok
-                console.print(
-                    f"[yellow]⚠️ Could not grant {role} (might already exist)[/]"
-                )
+                console.print(f"[yellow]⚠️ Could not grant {role} (might already exist)[/]")
 
     except Exception as e:
         console.print(f"[yellow]⚠️ Could not auto-configure permissions: {e}[/]")
@@ -415,12 +403,8 @@ def deploy_to_cloud_run(
         ]
         # If a GCS bucket is provided, mount it via Cloud Storage FUSE
         if gcs_bucket:
-            cmd.extend(
-                ["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"]
-            )
-            cmd.extend(
-                ["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"]
-            )
+            cmd.extend(["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"])
+            cmd.extend(["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"])
         if gpu_type:
             cmd.extend(["--gpu-type", gpu_type])
             cmd.extend(["--no-cpu-throttling"])
@@ -442,9 +426,7 @@ def deploy_to_cloud_run(
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             deployment_info = json.loads(result.stdout)
             console.print("[bold green]✅ Successfully deployed to Cloud Run[/]")
-            console.print(
-                f"[cyan]Service URL: {deployment_info.get('status', {}).get('url', 'N/A')}[/]"
-            )
+            console.print(f"[cyan]Service URL: {deployment_info.get('status', {}).get('url', 'N/A')}[/]")
             return deployment_info
         except subprocess.CalledProcessError as e:
             console.print("[bold red]❌ Failed to deploy to Cloud Run[/]")
@@ -487,12 +469,8 @@ def deploy_to_cloud_run(
         ]
         # Update or add volume mounts for GCS if specified
         if gcs_bucket:
-            cmd.extend(
-                ["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"]
-            )
-            cmd.extend(
-                ["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"]
-            )
+            cmd.extend(["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"])
+            cmd.extend(["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"])
         # GPU-related flags (if supported in your region/tier)
         if gpu_type:
             cmd.extend(["--gpu-type", gpu_type])
@@ -537,9 +515,7 @@ def deploy_to_cloud_run(
                     )
 
             console.print("[bold green]✅ Successfully updated Cloud Run service[/]")
-            console.print(
-                f"[cyan]Service URL: {deployment_info.get('status', {}).get('url', 'N/A')}[/]"
-            )
+            console.print(f"[cyan]Service URL: {deployment_info.get('status', {}).get('url', 'N/A')}[/]")
             return deployment_info
         except subprocess.CalledProcessError as e:
             console.print("[bold red]❌ Failed to update Cloud Run service[/]")
@@ -586,9 +562,7 @@ def delete_cloud_run_service(service_name: str, region: str, project_id: str) ->
         return False
 
 
-def get_cloud_run_service(
-    service_name: str, region: str, project_id: str
-) -> Optional[Dict[str, Any]]:
+def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Optional[Dict[str, Any]]:
     """
     Get information about a Cloud Run service.
 
@@ -662,9 +636,7 @@ def list_cloud_run_services(region: str, project_id: str) -> List[Dict[str, Any]
         return []
 
 
-def push_to_gcr(
-    image_name: str, tag: str, project_id: str, registry: str = "gcr.io"
-) -> str:
+def push_to_gcr(image_name: str, tag: str, project_id: str, registry: str = "gcr.io") -> str:
     """
     Push a Docker image to Google Container Registry or Artifact Registry.
 
@@ -690,9 +662,7 @@ def push_to_gcr(
 
         # Try to create the repository if it doesn't exist
         try:
-            console.print(
-                f"[cyan]Ensuring Artifact Registry repository '{repo_name}' exists in {region}...[/]"
-            )
+            console.print(f"[cyan]Ensuring Artifact Registry repository '{repo_name}' exists in {region}...[/]")
             result = subprocess.run(
                 [
                     "gcloud",
@@ -713,14 +683,10 @@ def push_to_gcr(
             )
 
             if result.returncode == 0:
-                console.print(
-                    f"[green]✅ Repository '{repo_name}' created successfully[/]"
-                )
+                console.print(f"[green]✅ Repository '{repo_name}' created successfully[/]")
             else:
                 # Repository might already exist, that's ok
-                console.print(
-                    f"[cyan]Repository '{repo_name}' already exists or creation skipped[/]"
-                )
+                console.print(f"[cyan]Repository '{repo_name}' already exists or creation skipped[/]")
 
         except Exception as e:
             console.print(f"[yellow]⚠️ Could not create repository: {e}[/]")
@@ -752,9 +718,7 @@ def push_to_gcr(
 
     # Tag and push the image
     try:
-        subprocess.run(
-            ["docker", "tag", f"{image_name}:{tag}", full_image_url], check=True
-        )
+        subprocess.run(["docker", "tag", f"{image_name}:{tag}", full_image_url], check=True)
         subprocess.run(["docker", "push", full_image_url], check=True)
 
         console.print(f"[bold green]✅ Successfully pushed to {registry}[/]")

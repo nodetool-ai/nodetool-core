@@ -131,9 +131,7 @@ async def main(args):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Test workspace functionality with a simple agent"
-    )
+    parser = argparse.ArgumentParser(description="Test workspace functionality with a simple agent")
     parser.add_argument(
         "--docker-image",
         default=None,
@@ -143,4 +141,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     asyncio.run(main(args))
-

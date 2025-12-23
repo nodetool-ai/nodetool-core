@@ -175,9 +175,7 @@ def get_output_schema(graph: Graph):
                             "type": "array",
                             "items": {
                                 "type": "array",
-                                "items": {
-                                    "type": ["string", "number", "boolean", "null"]
-                                },
+                                "items": {"type": ["string", "number", "boolean", "null"]},
                             },
                         },
                     },

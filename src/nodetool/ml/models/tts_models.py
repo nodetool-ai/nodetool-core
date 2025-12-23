@@ -51,9 +51,7 @@ async def get_all_tts_models(user_id: str) -> List[TTSModel]:
     for provider in await list_providers(user_id):
         provider_models = await provider.get_available_tts_models()
         models.extend(provider_models)
-        log.debug(
-            f"Provider '{provider.provider_name}' returned {len(provider_models)} TTS models"
-        )
+        log.debug(f"Provider '{provider.provider_name}' returned {len(provider_models)} TTS models")
 
     log.info(f"Discovered {len(models)} total TTS models")
 

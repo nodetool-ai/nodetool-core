@@ -22,9 +22,7 @@ class ReaderTool:
     """
 
     name = "reader_lm"
-    description = (
-        "Send a chat completion request to jinaai/ReaderLM-v2:featherless-ai on HuggingFace Hub."
-    )
+    description = "Send a chat completion request to jinaai/ReaderLM-v2:featherless-ai on HuggingFace Hub."
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -64,11 +62,7 @@ class ReaderTool:
 
         # The .chat.completions.create API is synchronous, so run in executor
         completion = await client.chat.completions.create(
-            model="jinaai/ReaderLM-v2",
-            messages=[{
-                "role": "user",
-                "content": user_message
-            }]
+            model="jinaai/ReaderLM-v2", messages=[{"role": "user", "content": user_message}]
         )
         return completion.choices[0].message.content or ""
 
@@ -101,9 +95,7 @@ def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> st
         # Split classes and join with dots
         classes = class_name.strip().split()
         if classes:
-            selector += "." + ".".join(
-                classes[:2]
-            )  # Limit to first 2 classes for readability
+            selector += "." + ".".join(classes[:2])  # Limit to first 2 classes for readability
 
     # If we have a parent path, combine them
     if parent_path:
@@ -322,9 +314,7 @@ class BrowserTool(Tool):
         # from playwright.async_api import async_playwright # Removed unused import
 
         url = params.get("url")
-        timeout = (
-            30000  # This is page navigation timeout, distinct from connection timeout
-        )
+        timeout = 30000  # This is page navigation timeout, distinct from connection timeout
         if not url:
             return {"error": "URL is required"}
 
@@ -347,9 +337,7 @@ class BrowserTool(Tool):
             )
 
             page = await browser_context.new_page()
-            await page.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            )
+            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
             # Navigate to the URL with the specified timeout
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
@@ -394,9 +382,7 @@ class ScreenshotTool(Tool):
     """
 
     name = "take_screenshot"
-    description = (
-        "Take a screenshot of the current browser window or a specific element"
-    )
+    description = "Take a screenshot of the current browser window or a specific element"
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -663,9 +649,7 @@ class DOMSearchTool(Tool):
                 if exact_match:
                     elements = await page.locator(f"*:has-text('{query}')").all()
                 else:
-                    elements = await page.locator(
-                        f"*:text-matches('{query}', 'i')"
-                    ).all()
+                    elements = await page.locator(f"*:text-matches('{query}', 'i')").all()
 
             elif search_type == "attribute":
                 # Parse query as "attribute=value" or just "attribute"
@@ -993,9 +977,7 @@ IMPORTANT: When you find elements:
 
 Always be systematic and thorough. Return structured data when possible."""
 
-    async def extract_content(
-        self, url: str, objective: str, selector_hint: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def extract_content(self, url: str, objective: str, selector_hint: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract content from a web page based on the given objective.
 
@@ -1013,11 +995,7 @@ Always be systematic and thorough. Return structured data when possible."""
             Message(
                 role="user",
                 content=f"Extract the following from {url}: {objective}"
-                + (
-                    f"\nHint: Look for elements matching '{selector_hint}'"
-                    if selector_hint
-                    else ""
-                ),
+                + (f"\nHint: Look for elements matching '{selector_hint}'" if selector_hint else ""),
             ),
         ]
 
@@ -1054,9 +1032,7 @@ Always be systematic and thorough. Return structured data when possible."""
 
                 # Process tool calls
                 for tool_call in response.tool_calls:
-                    result["tool_calls"].append(
-                        {"name": tool_call.name, "args": tool_call.args}
-                    )
+                    result["tool_calls"].append({"name": tool_call.name, "args": tool_call.args})
 
                     # Execute the tool
                     tool_result = await self._execute_tool(tool_call)
@@ -1098,9 +1074,7 @@ class AgenticBrowserTool(Tool):
     """
 
     name = "agentic_browser"
-    description = (
-        "Intelligently extract specific content from web pages using an AI agent"
-    )
+    description = "Intelligently extract specific content from web pages using an AI agent"
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {

@@ -108,11 +108,7 @@ class Workflow(DBModel):
             The Workflow object if found and accessible, otherwise None.
         """
         workflow = await cls.get(workflow_id)
-        return (
-            workflow
-            if workflow and (workflow.user_id == user_id or workflow.access == "public")
-            else None
-        )
+        return workflow if workflow and (workflow.user_id == user_id or workflow.access == "public") else None
 
     @classmethod
     async def create(cls, user_id: str, name: str, graph: dict[str, Any], **kwargs):  # type: ignore
@@ -241,9 +237,7 @@ class Workflow(DBModel):
         return workflows, last_evaluated_key if len(results) > limit else ""
 
     @classmethod
-    async def paginate_tools(
-        cls, user_id: str, limit: int = 100, start_key: Optional[str] = None
-    ):
+    async def paginate_tools(cls, user_id: str, limit: int = 100, start_key: Optional[str] = None):
         """Paginate through tools, optionally filtering by user."""
         conditions = []
 
@@ -298,10 +292,7 @@ class Workflow(DBModel):
         return Graph(
             nodes=[
                 node
-                for node in [
-                    BaseNode.from_dict(node, skip_errors=True)[0]
-                    for node in self.graph["nodes"]
-                ]
+                for node in [BaseNode.from_dict(node, skip_errors=True)[0] for node in self.graph["nodes"]]
                 if node is not None
             ],
             edges=self.graph["edges"],

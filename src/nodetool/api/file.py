@@ -46,15 +46,11 @@ async def get_file_info(path: str) -> FileInfo:
             path=path,
             size=stat.st_size,
             is_dir=is_dir,
-            modified_at=datetime.fromtimestamp(
-                stat.st_mtime, tz=UTC
-            ).isoformat(),
+            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
-        raise HTTPException(
-            status_code=404, detail=f"File not found: {path}"
-        ) from e
+        raise HTTPException(status_code=404, detail=f"File not found: {path}") from e
 
 
 def ensure_within_root(root: str, path: str, error_message: str) -> str:
@@ -63,20 +59,14 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
     """
     normalized_root = os.path.normcase(os.path.abspath(root))
     normalized_path = os.path.normcase(os.path.abspath(path))
-    root_prefix = (
-        normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
-    )
-    if normalized_path != normalized_root and not normalized_path.startswith(
-        root_prefix
-    ):
+    root_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
+    if normalized_path != normalized_root and not normalized_path.startswith(root_prefix):
         raise HTTPException(status_code=403, detail=error_message)
     return normalized_path
 
 
 @router.get("/list")
-async def list_files(
-    path: str = ".", __user: str = Depends(current_user)
-) -> List[FileInfo]:
+async def list_files(path: str = ".", __user: str = Depends(current_user)) -> List[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
@@ -87,13 +77,9 @@ async def list_files(
             if os.name == "nt":
                 # Probe all possible drive letters concurrently
                 roots = [f"{letter}:\\" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
-                exists_flags = await asyncio.gather(
-                    *[asyncio.to_thread(os.path.exists, root) for root in roots]
-                )
+                exists_flags = await asyncio.gather(*[asyncio.to_thread(os.path.exists, root) for root in roots])
 
-                existing_roots = [
-                    root for root, ok in zip(roots, exists_flags, strict=False) if ok
-                ]
+                existing_roots = [root for root, ok in zip(roots, exists_flags, strict=False) if ok]
 
                 async def get_drive_mtime(root: str) -> float | None:
                     try:
@@ -103,18 +89,12 @@ async def list_files(
                         return None
 
                 # Fetch mtimes concurrently for existing roots
-                mtimes = await asyncio.gather(
-                    *[get_drive_mtime(root) for root in existing_roots]
-                )
+                mtimes = await asyncio.gather(*[get_drive_mtime(root) for root in existing_roots])
 
                 files: List[FileInfo] = []
                 now_iso = datetime.now(UTC).isoformat()
                 for root, mtime in zip(existing_roots, mtimes, strict=False):
-                    modified = (
-                        datetime.fromtimestamp(mtime, tz=UTC).isoformat()
-                        if mtime is not None
-                        else now_iso
-                    )
+                    modified = datetime.fromtimestamp(mtime, tz=UTC).isoformat() if mtime is not None else now_iso
 
                     files.append(
                         FileInfo(
@@ -202,9 +182,7 @@ async def download_file(path: str, __user: str = Depends(current_user)):
         return StreamingResponse(
             file_iterator(),
             media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="{os.path.basename(path)}"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{os.path.basename(path)}"'},
         )
     except HTTPException:
         # Re-raise HTTPExceptions (like from validate_path)
@@ -215,9 +193,7 @@ async def download_file(path: str, __user: str = Depends(current_user)):
 
 
 @router.post("/upload/{path:path}")
-async def upload_file(
-    path: str, file: UploadFile, __user: str = Depends(current_user)
-):
+async def upload_file(path: str, file: UploadFile, __user: str = Depends(current_user)):
     """
     Upload a file to the specified path
     """
@@ -247,9 +223,7 @@ def get_workspace_root() -> str:
     return os.path.abspath(os.path.expanduser("~/.nodetool-workspaces"))
 
 
-async def get_workspace_info_from_path(
-    workspace_path: str, workspace_id: str
-) -> WorkspaceInfo:
+async def get_workspace_info_from_path(workspace_path: str, workspace_id: str) -> WorkspaceInfo:
     """Helper function to get workspace information"""
     try:
         stat = await asyncio.to_thread(os.stat, workspace_path)
@@ -282,18 +256,12 @@ async def get_workspace_info_from_path(
             path=workspace_path,
             size=total_size,
             file_count=file_count,
-            created_at=datetime.fromtimestamp(
-                stat.st_ctime, tz=UTC
-            ).isoformat(),
-            modified_at=datetime.fromtimestamp(
-                stat.st_mtime, tz=UTC
-            ).isoformat(),
+            created_at=datetime.fromtimestamp(stat.st_ctime, tz=UTC).isoformat(),
+            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting workspace info for {workspace_path}: {str(e)}")
-        raise HTTPException(
-            status_code=404, detail=f"Workspace not found: {workspace_id}"
-        ) from e
+        raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}") from e
 
 
 @router.get("/workspaces")
@@ -320,9 +288,7 @@ async def list_workspaces(__user: str = Depends(current_user)) -> List[Workspace
 
             if is_dir:
                 try:
-                    workspace_info = await get_workspace_info_from_path(
-                        entry_path, entry
-                    )
+                    workspace_info = await get_workspace_info_from_path(entry_path, entry)
                     workspaces.append(workspace_info)
                 except Exception as e:
                     log.warning(f"Skipping workspace {entry}: {str(e)}")
@@ -338,9 +304,7 @@ async def list_workspaces(__user: str = Depends(current_user)) -> List[Workspace
 
 
 @router.get("/workspaces/{workspace_id}/info")
-async def get_workspace_info(
-    workspace_id: str, __user: str = Depends(current_user)
-) -> WorkspaceInfo:
+async def get_workspace_info(workspace_id: str, __user: str = Depends(current_user)) -> WorkspaceInfo:
     """
     Get information about a specific workspace
     """
@@ -350,9 +314,7 @@ async def get_workspace_info(
 
         exists = await asyncio.to_thread(os.path.exists, workspace_path)
         if not exists:
-            raise HTTPException(
-                status_code=404, detail=f"Workspace not found: {workspace_id}"
-            )
+            raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}")
 
         return await get_workspace_info_from_path(workspace_path, workspace_id)
     except HTTPException:
@@ -374,9 +336,7 @@ async def list_workspace_files(
         workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
 
         # Construct full path within workspace
-        full_path = workspace_path if path == "." else os.path.join(
-            workspace_path, path
-        )
+        full_path = workspace_path if path == "." else os.path.join(workspace_path, path)
 
         resolved_path = ensure_within_root(
             workspace_path,
@@ -407,9 +367,7 @@ async def list_workspace_files(
 
 
 @router.get("/workspaces/{workspace_id}/download/{file_path:path}")
-async def download_workspace_file(
-    workspace_id: str, file_path: str, __user: str = Depends(current_user)
-):
+async def download_workspace_file(workspace_id: str, file_path: str, __user: str = Depends(current_user)):
     """
     Download a file from a workspace
     """
@@ -419,9 +377,7 @@ async def download_workspace_file(
 
         exists = await asyncio.to_thread(os.path.exists, workspace_path)
         if not exists:
-            raise HTTPException(
-                status_code=404, detail=f"Workspace not found: {workspace_id}"
-            )
+            raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}")
 
         # Construct full file path
         full_path = ensure_within_root(
@@ -444,9 +400,7 @@ async def download_workspace_file(
         return StreamingResponse(
             file_iterator(),
             media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="{os.path.basename(file_path)}"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{os.path.basename(file_path)}"'},
         )
     except HTTPException:
         raise

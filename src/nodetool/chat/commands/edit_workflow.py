@@ -52,9 +52,7 @@ class EditWorkflowCommand(Command):
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if len(args) < 2:
-            cli.console.print(
-                "[bold red]Usage:[/bold red] /edit-workflow <workflow_name> <new_objective>"
-            )
+            cli.console.print("[bold red]Usage:[/bold red] /edit-workflow <workflow_name> <new_objective>")
             cli.console.print(
                 'Example: /edit-workflow "Sales Report" "Process sales data and include quarterly trends"'
             )
@@ -62,9 +60,7 @@ class EditWorkflowCommand(Command):
 
         # Check if model is selected
         if not cli.selected_model:
-            cli.console.print(
-                "[bold red]Error:[/bold red] No model selected. Use /model to select one."
-            )
+            cli.console.print("[bold red]Error:[/bold red] No model selected. Use /model to select one.")
             return False
 
         workflow_name = args[0]
@@ -82,9 +78,7 @@ class EditWorkflowCommand(Command):
                     break
 
             if not found_workflow:
-                cli.console.print(
-                    f"[bold red]Error:[/bold red] Workflow '{workflow_name}' not found"
-                )
+                cli.console.print(f"[bold red]Error:[/bold red] Workflow '{workflow_name}' not found")
                 cli.console.print("Available workflows:")
                 for wf in workflows[:10]:  # Show first 10 workflows
                     cli.console.print(f"  - {wf.name}")
@@ -92,13 +86,9 @@ class EditWorkflowCommand(Command):
                     cli.console.print(f"  ... and {len(workflows) - 10} more")
                 return False
 
-            cli.console.print(
-                f"[bold green]Found workflow:[/bold green] {found_workflow.name}"
-            )
+            cli.console.print(f"[bold green]Found workflow:[/bold green] {found_workflow.name}")
             if found_workflow.description:
-                cli.console.print(
-                    f"[bold cyan]Current Description:[/bold cyan] {found_workflow.description}"
-                )
+                cli.console.print(f"[bold cyan]Current Description:[/bold cyan] {found_workflow.description}")
 
         except Exception as e:
             cli.console.print(f"[bold red]Error loading workflow:[/bold red] {e}")
@@ -152,9 +142,7 @@ class EditWorkflowCommand(Command):
                             if update.status == "Starting"
                             else "red"
                         )
-                        cli.console.print(
-                            f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}"
-                        )
+                        cli.console.print(f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}")
                         if update.content:
                             cli.console.print(f"  {update.content}")
                     elif isinstance(update, Chunk):
@@ -188,9 +176,7 @@ class EditWorkflowCommand(Command):
 
             # Check if graph was created successfully
             if not planner.graph:
-                cli.console.print(
-                    "[bold red]Error:[/bold red] Failed to edit workflow graph"
-                )
+                cli.console.print("[bold red]Error:[/bold red] Failed to edit workflow graph")
                 return False
 
             # Display the updated visual graph
@@ -215,15 +201,9 @@ class EditWorkflowCommand(Command):
                 found_workflow.graph = planner.graph.model_dump()
                 found_workflow.save()
 
-                cli.console.print(
-                    "\n[bold green]✓ Workflow updated successfully![/bold green]"
-                )
-                cli.console.print(
-                    f"[bold cyan]Name:[/bold cyan] {workflow_name_updated}"
-                )
-                cli.console.print(
-                    f"[bold cyan]Description:[/bold cyan] {workflow_description_updated}"
-                )
+                cli.console.print("\n[bold green]✓ Workflow updated successfully![/bold green]")
+                cli.console.print(f"[bold cyan]Name:[/bold cyan] {workflow_name_updated}")
+                cli.console.print(f"[bold cyan]Description:[/bold cyan] {workflow_description_updated}")
                 cli.console.print(f"[bold cyan]ID:[/bold cyan] {found_workflow.id}")
                 cli.console.print(
                     f'\nUse [bold]/workflow "{workflow_name_updated}"[/bold] to run this updated workflow'
@@ -245,10 +225,6 @@ class EditWorkflowCommand(Command):
             cli.console.print("\n[bold yellow]Workflow editing cancelled[/bold yellow]")
         except Exception as e:
             cli.console.print(f"[bold red]Unexpected error:[/bold red] {e}")
-            cli.console.print(
-                Syntax(
-                    traceback.format_exc(), "python", theme="monokai", line_numbers=True
-                )
-            )
+            cli.console.print(Syntax(traceback.format_exc(), "python", theme="monokai", line_numbers=True))
 
         return False

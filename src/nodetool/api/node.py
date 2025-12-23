@@ -222,9 +222,6 @@ async def metadata() -> list[NodeMetadata]:
     return nodes
 
 
-
-
-
 @router.get("/replicate_status")
 async def replicate_status(node_type: str) -> str:
     """

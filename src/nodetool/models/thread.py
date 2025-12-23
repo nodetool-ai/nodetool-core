@@ -80,9 +80,7 @@ class Thread(DBModel):
             last evaluated thread (or an empty string if it's the last page).
         """
         return await cls.query(
-            condition=Field("user_id")
-            .equals(user_id)
-            .and_(Field("id").greater_than(start_key or "")),
+            condition=Field("user_id").equals(user_id).and_(Field("id").greater_than(start_key or "")),
             limit=limit,
             reverse=reverse,
         )

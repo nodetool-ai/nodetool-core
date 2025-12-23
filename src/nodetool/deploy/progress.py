@@ -47,9 +47,7 @@ class ProgressManager:
             self.tasks.clear()
             self.current_operations.clear()
 
-    def add_task(
-        self, operation_id: str, description: str, total: Optional[float] = None
-    ) -> int:
+    def add_task(self, operation_id: str, description: str, total: Optional[float] = None) -> int:
         """Add a new progress task."""
         self.start()
         assert self.progress is not None
@@ -135,10 +133,7 @@ class ProgressManager:
             if "current_file" in progress_update:
                 current_file = progress_update["current_file"]
 
-                if (
-                    "file_progress" in progress_update
-                    and "total_files" in progress_update
-                ):
+                if "file_progress" in progress_update and "total_files" in progress_update:
                     # File-based progress with progress bar
                     file_num = progress_update["file_progress"]
                     total_files = progress_update["total_files"]
@@ -149,9 +144,7 @@ class ProgressManager:
                     # Add or update file progress task
                     if operation_id not in self.tasks:
                         self.add_task(operation_id, description, total=total_files)
-                    self.update_task(
-                        operation_id, completed=file_num, description=description
-                    )
+                    self.update_task(operation_id, completed=file_num, description=description)
                 else:
                     # Single file progress without known total
                     self.console.print(f"[yellow]📁 {current_file}[/]")
@@ -177,14 +170,10 @@ class ProgressManager:
                     # Add or update download progress task
                     if operation_id not in self.tasks:
                         self.add_task(operation_id, description, total=total)
-                    self.update_task(
-                        operation_id, completed=downloaded, description=description
-                    )
+                    self.update_task(operation_id, completed=downloaded, description=description)
 
             # Handle general progress messages
-            if not any(
-                key in progress_update for key in ["current_file", "downloaded_size"]
-            ):
+            if not any(key in progress_update for key in ["current_file", "downloaded_size"]):
                 self.console.print(f"[yellow]⚙️ {message}[/]")
 
         elif status == "completed":
@@ -196,9 +185,7 @@ class ProgressManager:
                     self.complete_task(operation_id)
 
             if "downloaded_files" in progress_update:
-                self.console.print(
-                    f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]"
-                )
+                self.console.print(f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]")
 
         elif status.startswith("pulling"):
             # Handle Docker/Ollama pulling status with progress bars
@@ -213,9 +200,7 @@ class ProgressManager:
             # Create description with layer info
             description = f"🐋 Pulling layer {layer_id}"
             if digest and "sha256:" in digest:
-                short_digest = (
-                    digest.split(":")[-1][:12] if ":" in digest else digest[:12]
-                )
+                short_digest = digest.split(":")[-1][:12] if ":" in digest else digest[:12]
                 description += f" (sha256:{short_digest})"
 
             # Show progress with progress bar if size information is available
@@ -227,9 +212,7 @@ class ProgressManager:
                 # Add or update pulling progress task
                 if operation_id not in self.tasks:
                     self.add_task(operation_id, description, total=total)
-                self.update_task(
-                    operation_id, completed=completed, description=description
-                )
+                self.update_task(operation_id, completed=completed, description=description)
             elif total:
                 # Just show size without progress bar
                 total_mb = total / (1024 * 1024)
@@ -251,15 +234,9 @@ class ProgressManager:
             self.console.print("[green]✅ System is healthy[/]")
 
             # Display system information for health checks
-            self.console.print(
-                f"[cyan]🖥️ Platform: {progress_update.get('platform', 'Unknown')}[/]"
-            )
-            self.console.print(
-                f"[cyan]🐍 Python: {progress_update.get('python_version', 'Unknown')}[/]"
-            )
-            self.console.print(
-                f"[cyan]🏠 Hostname: {progress_update.get('hostname', 'Unknown')}[/]"
-            )
+            self.console.print(f"[cyan]🖥️ Platform: {progress_update.get('platform', 'Unknown')}[/]")
+            self.console.print(f"[cyan]🐍 Python: {progress_update.get('python_version', 'Unknown')}[/]")
+            self.console.print(f"[cyan]🏠 Hostname: {progress_update.get('hostname', 'Unknown')}[/]")
 
             # Memory info
             memory = progress_update.get("memory", {})
@@ -284,8 +261,6 @@ class ProgressManager:
                     used_mb = gpu.get("memory_used_mb", 0)
                     total_mb = gpu.get("memory_total_mb", 0)
                     used_pct = (used_mb / total_mb * 100) if total_mb > 0 else 0
-                    self.console.print(
-                        f"[cyan]  GPU {i}: {name} - {used_mb}MB/{total_mb}MB ({used_pct:.1f}% used)[/]"
-                    )
+                    self.console.print(f"[cyan]  GPU {i}: {name} - {used_mb}MB/{total_mb}MB ({used_pct:.1f}% used)[/]")
             elif gpus == "unavailable":
                 self.console.print("[yellow]🎮 GPUs: Not available[/]")

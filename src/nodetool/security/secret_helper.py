@@ -122,9 +122,7 @@ async def get_secret_required(key: str, user_id: str) -> str:
         return os.environ.get(key)
 
     log.debug(f"Secret '{key}' not found for user {user_id}")
-    raise ValueError(
-        f"Required secret '{key}' not found, please set it in the settings menu."
-    )
+    raise ValueError(f"Required secret '{key}' not found, please set it in the settings menu.")
 
 
 def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[str] = None) -> Optional[str]:
@@ -169,21 +167,18 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
                 return loop.run_until_complete(get_secret(key, resolved_user_id, default))
             except ImportError:
                 log.debug(
-                    f"Running event loop detected but nest_asyncio not available. "
-                    f"Skipping database lookup for '{key}'."
+                    f"Running event loop detected but nest_asyncio not available. Skipping database lookup for '{key}'."
                 )
         except RuntimeError:
             return asyncio.run(get_secret(key, resolved_user_id, default))
     else:
-        log.debug(
-            f"No user_id available for secret '{key}'. Skipping database lookup."
-        )
+        log.debug(f"No user_id available for secret '{key}'. Skipping database lookup.")
 
     # 4. Fallback to Environment if not found in DB or no user_id available
     # (This handles the case where DB lookup was skipped or failed to find it)
     if os.environ.get(key):
-         log.debug(f"Secret '{key}' found in environment variable (fallback)")
-         return os.environ.get(key)
+        log.debug(f"Secret '{key}' found in environment variable (fallback)")
+        return os.environ.get(key)
 
     # 4. Return default if provided
     if default is not None:
@@ -194,9 +189,7 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
     return None
 
 
-async def get_secrets_batch(
-    keys: list[str], user_id: str
-) -> dict[str, Optional[str]]:
+async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional[str]]:
     """
     Get multiple secrets for a user in a single database query.
 
@@ -222,7 +215,7 @@ async def get_secrets_batch(
             result[key] = _SECRET_CACHE[(user_id, key)]
         else:
             keys_not_in_cache.append(key)
-            result[key] = None # Initialize
+            result[key] = None  # Initialize
 
     if not keys_not_in_cache:
         return result

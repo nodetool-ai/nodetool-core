@@ -109,16 +109,12 @@ class RunPodDeployer:
 
         try:
             # Update state to deploying
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.DEPLOYING.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DEPLOYING.value)
 
             results["steps"].append("Starting RunPod deployment...")
 
             # Prepare environment variables
-            env = (
-                dict(self.deployment.environment) if self.deployment.environment else {}
-            )
+            env = dict(self.deployment.environment) if self.deployment.environment else {}
             template_name = self.deployment.template_name or self.deployment_name
 
             deploy_kwargs = {
@@ -166,9 +162,7 @@ class RunPodDeployer:
             results["errors"].append(str(e))
 
             # Update state with error
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.ERROR.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.ERROR.value)
 
             raise
 
@@ -219,8 +213,7 @@ class RunPodDeployer:
             NotImplementedError: RunPod serverless doesn't provide log access
         """
         raise NotImplementedError(
-            "RunPod serverless endpoints don't provide direct log access. "
-            "Check logs via RunPod web console or API."
+            "RunPod serverless endpoints don't provide direct log access. Check logs via RunPod web console or API."
         )
 
     def destroy(self) -> Dict[str, Any]:
@@ -242,17 +235,13 @@ class RunPodDeployer:
 
             # TODO: Implement endpoint deletion via RunPod API
             # For now, user must delete manually via RunPod console
-            results["steps"].append(
-                "⚠️  RunPod endpoint deletion must be done manually via RunPod console"
-            )
+            results["steps"].append("⚠️  RunPod endpoint deletion must be done manually via RunPod console")
             results["steps"].append(
                 f"Visit https://www.runpod.io/console/serverless and delete endpoint '{self.deployment_name}'"
             )
 
             # Update state
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.DESTROYED.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DESTROYED.value)
 
         except Exception as e:
             results["status"] = "error"

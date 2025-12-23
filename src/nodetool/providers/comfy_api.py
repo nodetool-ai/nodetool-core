@@ -65,9 +65,7 @@ def _attempt_websocket_reconnect(
     Raises:
         websocket.WebSocketConnectionClosedException: If reconnection fails after all attempts.
     """
-    print(
-        f"worker-comfyui - Websocket connection closed unexpectedly: {initial_error}. Attempting to reconnect..."
-    )
+    print(f"worker-comfyui - Websocket connection closed unexpectedly: {initial_error}. Attempting to reconnect...")
     last_reconnect_error: Exception = initial_error
     for attempt in range(max_attempts):
         srv_status = _comfy_server_status()
@@ -76,9 +74,7 @@ def _attempt_websocket_reconnect(
                 "worker-comfyui - ComfyUI HTTP unreachable - aborting websocket reconnect: "
                 f"{srv_status.get('error', 'status ' + str(srv_status.get('status_code')))}"
             )
-            raise websocket.WebSocketConnectionClosedException(
-                "ComfyUI HTTP unreachable during websocket reconnect"
-            )
+            raise websocket.WebSocketConnectionClosedException("ComfyUI HTTP unreachable during websocket reconnect")
 
         print(
             f"worker-comfyui - Reconnect attempt {attempt + 1}/{max_attempts}... (ComfyUI HTTP reachable, status {srv_status.get('status_code')})"
@@ -177,11 +173,7 @@ def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
             name = image["name"]
             image_data_uri = image["image"]
 
-            base64_data = (
-                image_data_uri.split(",", 1)[1]
-                if "," in image_data_uri
-                else image_data_uri
-            )
+            base64_data = image_data_uri.split(",", 1)[1] if "," in image_data_uri else image_data_uri
 
             blob = base64.b64decode(base64_data)
 
@@ -287,17 +279,10 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
                 error_message = error_data.get("message", "Workflow validation failed")
                 available_models = get_available_models()
                 if available_models.get("checkpoints"):
-                    error_message += (
-                        "\n\nThis usually means a required model or parameter is not available."
-                    )
-                    error_message += (
-                        "\nAvailable checkpoint models: "
-                        + ", ".join(available_models["checkpoints"])
-                    )
+                    error_message += "\n\nThis usually means a required model or parameter is not available."
+                    error_message += "\nAvailable checkpoint models: " + ", ".join(available_models["checkpoints"])
                 else:
-                    error_message += (
-                        "\n\nThis usually means a required model or parameter is not available."
-                    )
+                    error_message += "\n\nThis usually means a required model or parameter is not available."
                     error_message += (
                         "\nNo checkpoint models appear to be available. Please check your model installation."
                     )
@@ -305,16 +290,13 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
                 raise ValueError(error_message)
 
             if error_details:
-                detailed_message = f"{error_message}:\n" + "\n".join(
-                    f"• {detail}" for detail in error_details
-                )
+                detailed_message = f"{error_message}:\n" + "\n".join(f"• {detail}" for detail in error_details)
 
                 if any("not in list" in detail and "ckpt_name" in detail for detail in error_details):
                     available_models = get_available_models()
                     if available_models.get("checkpoints"):
-                        detailed_message += (
-                            "\n\nAvailable checkpoint models: "
-                            + ", ".join(available_models["checkpoints"])
+                        detailed_message += "\n\nAvailable checkpoint models: " + ", ".join(
+                            available_models["checkpoints"]
                         )
                     else:
                         detailed_message += (
@@ -326,10 +308,7 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
                 raise ValueError(f"{error_message}. Raw response: {response.text}")
 
         except (json.JSONDecodeError, KeyError) as e:
-            raise ValueError(
-                "ComfyUI validation failed (could not parse error response): "
-                + response.text
-            ) from e
+            raise ValueError("ComfyUI validation failed (could not parse error response): " + response.text) from e
 
     response.raise_for_status()
     return response.json()
@@ -344,9 +323,7 @@ def get_history(prompt_id: str) -> Dict[str, Any]:
 
 def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[bytes]:
     """Fetch image bytes from the ComfyUI /view endpoint."""
-    print(
-        f"worker-comfyui - Fetching image data: type={image_type}, subfolder={subfolder}, filename={filename}"
-    )
+    print(f"worker-comfyui - Fetching image data: type={image_type}, subfolder={subfolder}, filename={filename}")
     data = {"filename": filename, "subfolder": subfolder, "type": image_type}
     url_values = urllib.parse.urlencode(data)
     try:
@@ -417,9 +394,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(e, ValueError):
                 raise e
             else:
-                raise ValueError(
-                    f"Unexpected error queuing workflow: {e}"
-                ) from e
+                raise ValueError(f"Unexpected error queuing workflow: {e}") from e
 
         print(f"worker-comfyui - Waiting for workflow execution ({prompt_id})...")
         execution_done = False

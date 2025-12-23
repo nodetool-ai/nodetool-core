@@ -57,7 +57,9 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        logger.debug(f"get_hf_token (admin_operations): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
+        logger.debug(
+            f"get_hf_token (admin_operations): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)"
+        )
         return token
 
     # 2. Try to get from database if user_id is available
@@ -68,20 +70,28 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
             maybe_scope()
 
     if user_id:
-        logger.debug(f"get_hf_token (admin_operations): Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
+        logger.debug(
+            f"get_hf_token (admin_operations): Attempting to retrieve HF_TOKEN from database for user_id={user_id}"
+        )
         try:
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                logger.debug(f"get_hf_token (admin_operations): HF_TOKEN found in database secrets for user_id={user_id}")
+                logger.debug(
+                    f"get_hf_token (admin_operations): HF_TOKEN found in database secrets for user_id={user_id}"
+                )
                 return token
             else:
                 logger.debug(f"get_hf_token (admin_operations): HF_TOKEN not found in database for user_id={user_id}")
         except Exception as e:
-            logger.debug(f"get_hf_token (admin_operations): Failed to get HF_TOKEN from database for user_id={user_id}: {e}")
+            logger.debug(
+                f"get_hf_token (admin_operations): Failed to get HF_TOKEN from database for user_id={user_id}: {e}"
+            )
     else:
         logger.debug("get_hf_token (admin_operations): No user_id available, skipping database lookup")
 
-    logger.debug(f"get_hf_token (admin_operations): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
+    logger.debug(
+        f"get_hf_token (admin_operations): HF_TOKEN not found in environment or database secrets (user_id={user_id})"
+    )
     return None
 
 
@@ -112,7 +122,9 @@ class AdminDownloadManager:
         """
         logger.debug(f"AdminDownloadManager.create: Creating AdminDownloadManager with user_id={user_id}")
         token = await get_hf_token(user_id)
-        logger.debug(f"AdminDownloadManager.create: Retrieved token for user_id={user_id}, token_present={token is not None}")
+        logger.debug(
+            f"AdminDownloadManager.create: Retrieved token for user_id={user_id}, token_present={token is not None}"
+        )
         return cls(token=token)
 
     async def download_with_progress(
@@ -126,18 +138,24 @@ class AdminDownloadManager:
     ) -> AsyncGenerator[dict, None]:
         """Download HuggingFace model with detailed progress updates"""
 
-        logger.debug(f"AdminDownloadManager.download_with_progress: Starting download for {repo_id} with user_id={user_id}")
+        logger.debug(
+            f"AdminDownloadManager.download_with_progress: Starting download for {repo_id} with user_id={user_id}"
+        )
 
         # Ensure token is initialized
         if not self._token_initialized:
-            logger.debug(f"AdminDownloadManager.download_with_progress: Token not initialized, fetching with user_id={user_id}")
+            logger.debug(
+                f"AdminDownloadManager.download_with_progress: Token not initialized, fetching with user_id={user_id}"
+            )
             self.token = await get_hf_token(user_id)
             if self.token:
                 if isinstance(self.api, HfApi):
                     # Recreate the API client with token only when we're still using the default implementation.
                     self.api = HfApi(token=self.token)
                 self._token_initialized = True
-                logger.debug(f"AdminDownloadManager.download_with_progress: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)")
+                logger.debug(
+                    f"AdminDownloadManager.download_with_progress: Token initialized for user_id={user_id} (token length: {len(self.token)} chars)"
+                )
             else:
                 logger.debug(f"AdminDownloadManager.download_with_progress: No token found for user_id={user_id}")
 
@@ -161,9 +179,13 @@ class AdminDownloadManager:
                 }
                 # Use HF_TOKEN from secrets if available for gated model downloads
                 if self.token:
-                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
+                    logger.debug(
+                        f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})"
+                    )
                 else:
-                    logger.debug(f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
+                    logger.debug(
+                        f"AdminDownloadManager: Downloading single file {repo_id}/{file_path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})"
+                    )
                 local_path = hf_hub_download(repo_id, file_path, cache_dir=cache_dir, token=self.token)
                 yield {
                     "status": "completed",
@@ -182,11 +204,7 @@ class AdminDownloadManager:
 
             # Get file list
             raw_files = self.api.list_repo_tree(repo_id, recursive=True)
-            files = [
-                file
-                for file in raw_files
-                if isinstance(file, RepoFile) or hasattr(file, "path")
-            ]
+            files = [file for file in raw_files if isinstance(file, RepoFile) or hasattr(file, "path")]
             files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
             # Filter out cached files
@@ -240,9 +258,13 @@ class AdminDownloadManager:
                 try:
                     # Download individual file - use HF_TOKEN from secrets if available for gated model downloads
                     if self.token:
-                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})")
+                        logger.debug(
+                            f"AdminDownloadManager: Downloading file {repo_id}/{file.path} with HF_TOKEN (token length: {len(self.token)} chars, user_id={user_id})"
+                        )
                     else:
-                        logger.debug(f"AdminDownloadManager: Downloading file {repo_id}/{file.path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})")
+                        logger.debug(
+                            f"AdminDownloadManager: Downloading file {repo_id}/{file.path} without HF_TOKEN - gated models may not be accessible (user_id={user_id})"
+                        )
                     local_path = hf_hub_download(
                         repo_id=repo_id, filename=file.path, cache_dir=cache_dir, token=self.token
                     )
@@ -303,9 +325,7 @@ async def _resolve_admin_download_manager(
     """
     manager_cls = AdminDownloadManager
     candidate = (
-        manager_cls.create(user_id=user_id)
-        if inspect.isclass(manager_cls)
-        else manager_cls()  # type: ignore[call-arg]
+        manager_cls.create(user_id=user_id) if inspect.isclass(manager_cls) else manager_cls()  # type: ignore[call-arg]
     )
 
     if inspect.isawaitable(candidate):
@@ -488,9 +508,7 @@ async def download_hf_model(
             yield final_result
 
 
-async def download_ollama_model(
-    model_name: str, stream: bool = True
-) -> AsyncGenerator[dict, None]:
+async def download_ollama_model(model_name: str, stream: bool = True) -> AsyncGenerator[dict, None]:
     """Download Ollama model with optional streaming."""
     if not model_name:
         raise ValueError("model_name is required for Ollama download")

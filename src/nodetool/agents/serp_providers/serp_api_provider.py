@@ -33,9 +33,7 @@ class SerpApiProvider(SerpProvider):
         self._client: AsyncClient | None = None
 
         if not self.api_key:
-            raise ValueError(
-                "SerpApi API key (SERPAPI_API_KEY) not found or not provided."
-            )
+            raise ValueError("SerpApi API key (SERPAPI_API_KEY) not found or not provided.")
 
     def _get_client(self) -> AsyncClient:
         """Get or create HTTP client from ResourceScope.
@@ -50,13 +48,9 @@ class SerpApiProvider(SerpProvider):
                 self._client = AsyncClient(timeout=60.0)
         return self._client
 
-    async def _make_request(
-        self, params: dict[str, Any]
-    ) -> dict[str, Any] | ErrorResponse:
+    async def _make_request(self, params: dict[str, Any]) -> dict[str, Any] | ErrorResponse:
         if not self.api_key:
-            return {
-                "error": "SerpApi API key (SERPAPI_API_KEY) not found or not provided."
-            }
+            return {"error": "SerpApi API key (SERPAPI_API_KEY) not found or not provided."}
 
         all_params = {**params, "api_key": self.api_key}
 
@@ -89,20 +83,14 @@ class SerpApiProvider(SerpProvider):
         }
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
         # Check for SerpApi's own error reporting
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -121,19 +109,13 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -144,9 +126,7 @@ class SerpApiProvider(SerpProvider):
         num_results: int = 20,
     ) -> list[dict[str, Any]] | ErrorResponse:
         if not keyword and not image_url:
-            return {
-                "error": "One of 'keyword' or 'image_url' is required for image search."
-            }
+            return {"error": "One of 'keyword' or 'image_url' is required for image search."}
 
         params = {
             "engine": "google_images",
@@ -163,25 +143,17 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
-    async def search_finance(
-        self, query: str, window: str | None = None
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_finance(self, query: str, window: str | None = None) -> dict[str, Any] | ErrorResponse:
         """
         Retrieves financial data using SerpApi's Google Finance engine.
         """
@@ -196,23 +168,17 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             # This case handles critical errors from _make_request (e.g., API key missing, network issue)
             return result_data
 
         # Check for SerpApi's own error reporting within a successful HTTP response
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         # SerpApi might also return an error message directly at the top level
         serpapi_error_message = isinstance(result_data.get("error"), str)
 
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -233,19 +199,13 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -266,19 +226,13 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -303,17 +257,13 @@ class SerpApiProvider(SerpProvider):
 
         if map_type == "place":
             if not data_id:
-                return {
-                    "error": "data_id is required for map_type 'place' in SerpApiProvider."
-                }
+                return {"error": "data_id is required for map_type 'place' in SerpApiProvider."}
             params["type"] = "place"
             params["data_id"] = data_id
             # For 'place' type, 'q' and 'll' are not primary, data_id is key
         elif map_type == "search":
             if not query:
-                return {
-                    "error": "query is required for map_type 'search' in SerpApiProvider."
-                }
+                return {"error": "query is required for map_type 'search' in SerpApiProvider."}
             params["type"] = "search"
             params["q"] = query
             if ll:
@@ -333,9 +283,7 @@ class SerpApiProvider(SerpProvider):
         ):  # For place type, error might not have search_metadata
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
 
         # Place results have a different structure and error reporting sometimes
@@ -345,14 +293,10 @@ class SerpApiProvider(SerpProvider):
             and not serpapi_error_status
             and not serpapi_error_message
         ):
-            raise ValueError(
-                "SerpApi returned no place_results for the given data_id."
-            )
+            raise ValueError("SerpApi returned no place_results for the given data_id.")
 
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 
@@ -419,13 +363,9 @@ class SerpApiProvider(SerpProvider):
             elif (
                 condition.lower() == "refurbished"
             ):  # SerpApi might not have a direct p_cond for refurbished, often grouped with used
-                tbs_parts.append(
-                    "p_cond:used"
-                )  # Or could try general condition:refurbished if supported
+                tbs_parts.append("p_cond:used")  # Or could try general condition:refurbished if supported
 
-        if (
-            sort_by
-        ):  # Common values: "r" (relevance), "p" (price asc), "pd" (price desc)
+        if sort_by:  # Common values: "r" (relevance), "p" (price asc), "pd" (price desc)
             tbs_parts.append(f"sort:{sort_by}")
 
         if tbs_parts:
@@ -433,19 +373,13 @@ class SerpApiProvider(SerpProvider):
 
         result_data = await self._make_request(params)
 
-        if "error" in result_data and not isinstance(
-            result_data.get("search_metadata"), dict
-        ):
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
             return result_data
 
-        serpapi_error_status = (
-            result_data.get("search_metadata", {}).get("status") == "Error"
-        )
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
         serpapi_error_message = isinstance(result_data.get("error"), str)
         if serpapi_error_status or serpapi_error_message:
-            raise ValueError(
-                result_data.get("error", f"SerpApi returned an error: {result_data}")
-            )
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
 
         return _remove_base64_images(result_data)
 

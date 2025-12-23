@@ -221,9 +221,7 @@ class OpenRouterProvider(OpenAIProvider):
                 session.get("https://openrouter.ai/api/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenRouter models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch OpenRouter models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 data = payload.get("data", [])
@@ -278,9 +276,7 @@ class OpenRouterProvider(OpenAIProvider):
                 session.get("https://openrouter.ai/api/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenRouter models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch OpenRouter models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 data = payload.get("data", [])
@@ -363,9 +359,7 @@ class OpenRouterProvider(OpenAIProvider):
 
         model_id = params.model.id
         if not model_id:
-            raise ValueError(
-                "A text-to-image model with a valid id must be specified for image generation."
-            )
+            raise ValueError("A text-to-image model with a valid id must be specified for image generation.")
 
         prompt = params.prompt.strip()
         if params.negative_prompt:
@@ -438,14 +432,11 @@ class OpenRouterProvider(OpenAIProvider):
                 api_error.message,
             )
             raise RuntimeError(
-                f"OpenRouter text-to-image generation failed with status "
-                f"{api_error.status_code}: {api_error.message}"
+                f"OpenRouter text-to-image generation failed with status {api_error.status_code}: {api_error.message}"
             ) from api_error
         except Exception as exc:
             log.error(f"OpenRouter text-to-image generation failed: {exc}")
-            raise RuntimeError(
-                f"OpenRouter text-to-image generation failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"OpenRouter text-to-image generation failed: {exc}") from exc
 
     async def generate_message(
         self,
@@ -539,9 +530,7 @@ class OpenRouterProvider(OpenAIProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request("chat", messages, **request_kwargs)
 
@@ -708,9 +697,7 @@ class OpenRouterProvider(OpenAIProvider):
             converted_messages = []
             for msg in messages:
                 if msg.role == "system":
-                    log.debug(
-                        "Converting system message to user message for O-series model"
-                    )
+                    log.debug("Converting system message to user message for O-series model")
                     converted_messages.append(
                         Message(
                             role="user",
@@ -721,9 +708,7 @@ class OpenRouterProvider(OpenAIProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request(
             "chat_stream",
@@ -764,24 +749,12 @@ class OpenRouterProvider(OpenAIProvider):
                 if hasattr(chunk.usage, "cost") and chunk.usage.cost is not None:
                     message_cost = float(chunk.usage.cost)
                     self.cost += message_cost
-                    log.debug(
-                        f"OpenRouter streaming cost: ${message_cost:.6f} USD"
-                    )
+                    log.debug(f"OpenRouter streaming cost: ${message_cost:.6f} USD")
 
-                if (
-                    chunk.usage.prompt_tokens_details
-                    and chunk.usage.prompt_tokens_details.cached_tokens
-                ):
-                    self.usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
-                if (
-                    chunk.usage.completion_tokens_details
-                    and chunk.usage.completion_tokens_details.reasoning_tokens
-                ):
-                    self.usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
+                    self.usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens
+                if chunk.usage.completion_tokens_details and chunk.usage.completion_tokens_details.reasoning_tokens:
+                    self.usage["reasoning_tokens"] += chunk.usage.completion_tokens_details.reasoning_tokens
                 log.debug(f"Updated usage stats: {self.usage}")
 
             if not chunk.choices:
@@ -822,9 +795,7 @@ class OpenRouterProvider(OpenAIProvider):
             if delta.content or chunk.choices[0].finish_reason == "stop":
                 current_chunk += delta.content or ""
                 finish_reason = chunk.choices[0].finish_reason
-                log.debug(
-                    f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}"
-                )
+                log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
 
                 if finish_reason == "stop":
                     log.debug("Final chunk received, logging response")

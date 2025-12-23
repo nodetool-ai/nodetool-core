@@ -47,12 +47,8 @@ class SSHConfig(BaseModel):
     """SSH connection configuration."""
 
     user: str = Field(..., description="SSH username")
-    key_path: Optional[str] = Field(
-        None, description="Path to SSH private key (default: ~/.ssh/id_rsa)"
-    )
-    password: Optional[str] = Field(
-        None, description="SSH password (not recommended, use keys)"
-    )
+    key_path: Optional[str] = Field(None, description="Path to SSH private key (default: ~/.ssh/id_rsa)")
+    password: Optional[str] = Field(None, description="SSH password (not recommended, use keys)")
     port: int = Field(22, description="SSH port")
 
     @field_validator("key_path")
@@ -69,15 +65,9 @@ class ContainerConfig(BaseModel):
 
     name: str = Field(..., description="Container name")
     port: int = Field(..., description="Port to expose")
-    gpu: Optional[str] = Field(
-        None, description="GPU device ID(s) (e.g., '0' or '0,1')"
-    )
-    environment: Optional[Dict[str, str]] = Field(
-        None, description="Environment variables for the container"
-    )
-    workflows: Optional[List[str]] = Field(
-        None, description="Workflow IDs to run in this container"
-    )
+    gpu: Optional[str] = Field(None, description="GPU device ID(s) (e.g., '0' or '0,1')")
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the container")
+    workflows: Optional[List[str]] = Field(None, description="Workflow IDs to run in this container")
 
 
 class SelfHostedPaths(BaseModel):
@@ -118,42 +108,26 @@ class ServiceSpec(BaseModel):
     name: str = Field(..., description="Unique service identifier")
     path: str = Field(..., description="Path prefix to proxy (e.g., /app)")
     image: str = Field(..., description="Docker image for the service")
-    auth_token: Optional[str] = Field(
-        default=None, description="Bearer token for upstream service authentication"
-    )
-    environment: Optional[Dict[str, str]] = Field(
-        default=None, description="Environment variables for the service"
-    )
+    auth_token: Optional[str] = Field(default=None, description="Bearer token for upstream service authentication")
+    environment: Optional[Dict[str, str]] = Field(default=None, description="Environment variables for the service")
     volumes: Optional[Dict[str, str | Dict[str, str]]] = Field(
         default=None,
         description="Volume mounts (host -> container or detailed dict with bind/mode)",
     )
-    mem_limit: Optional[str] = Field(
-        default=None, description="Memory limit (e.g., 512m, 1g)"
-    )
-    cpus: Optional[float] = Field(
-        default=None, description="CPU quota in cores (e.g., 0.5, 1.0)"
-    )
+    mem_limit: Optional[str] = Field(default=None, description="Memory limit (e.g., 512m, 1g)")
+    cpus: Optional[float] = Field(default=None, description="CPU quota in cores (e.g., 0.5, 1.0)")
 
 
 class ProxySpec(BaseModel):
     """Proxy container specification for self-hosted deployments."""
 
     image: str = Field(..., description="Proxy image (e.g., nodetool/proxy:1.0.0)")
-    listen_http: int = Field(
-        80, ge=1, le=65535, description="HTTP port for ACME and health checks"
-    )
-    listen_https: int = Field(
-        443, ge=1, le=65535, description="HTTPS port for proxied traffic"
-    )
+    listen_http: int = Field(80, ge=1, le=65535, description="HTTP port for ACME and health checks")
+    listen_https: int = Field(443, ge=1, le=65535, description="HTTPS port for proxied traffic")
     domain: str = Field(..., description="Public domain served by the proxy")
     email: str = Field(..., description="Email for ACME/Let's Encrypt registration")
-    tls_certfile: Optional[str] = Field(
-        default=None, description="Path to TLS certificate (inside container)"
-    )
-    tls_keyfile: Optional[str] = Field(
-        default=None, description="Path to TLS private key (inside container)"
-    )
+    tls_certfile: Optional[str] = Field(default=None, description="Path to TLS certificate (inside container)")
+    tls_keyfile: Optional[str] = Field(default=None, description="Path to TLS private key (inside container)")
     local_tls_certfile: Optional[str] = Field(
         default=None,
         description="Local path to TLS certificate copied to remote host before deployment",
@@ -166,16 +140,12 @@ class ProxySpec(BaseModel):
         "/var/www/acme",
         description="Webroot directory for HTTP-01 challenges (inside container)",
     )
-    docker_network: str = Field(
-        "nodetool-net", description="Docker network shared between proxy and services"
-    )
+    docker_network: str = Field("nodetool-net", description="Docker network shared between proxy and services")
     connect_mode: Literal["docker_dns", "host_port"] = Field(
         "docker_dns",
         description="How the proxy connects to services",
     )
-    http_redirect_to_https: bool = Field(
-        True, description="Redirect HTTP traffic to HTTPS (except ACME)"
-    )
+    http_redirect_to_https: bool = Field(True, description="Redirect HTTP traffic to HTTPS (except ACME)")
     bearer_token: Optional[str] = Field(
         default=None,
         description="Bearer token for proxy authentication (auto-generated if omitted)",
@@ -186,9 +156,7 @@ class ProxySpec(BaseModel):
         description="Seconds before idle services are stopped by the proxy",
     )
     log_level: str = Field("INFO", description="Log level for proxy process")
-    services: List[ServiceSpec] = Field(
-        ..., description="List of services managed by the proxy"
-    )
+    services: List[ServiceSpec] = Field(..., description="List of services managed by the proxy")
     auto_certbot: bool = Field(
         False,
         description="When true, run certbot on the remote host to obtain/renew TLS certificates",
@@ -209,9 +177,7 @@ class SelfHostedDeployment(BaseModel):
         None,
         description="Authentication token for worker API (auto-generated if not set)",
     )
-    proxy: Optional[ProxySpec] = Field(
-        default=None, description="Proxy container specification"
-    )
+    proxy: Optional[ProxySpec] = Field(default=None, description="Proxy container specification")
     state: SelfHostedState = Field(default_factory=SelfHostedState)
 
     @model_validator(mode="after")
@@ -275,15 +241,9 @@ class RunPodTemplateConfig(BaseModel):
 
     name: str = Field(..., description="Template name")
     gpu_types: List[str] = Field(default_factory=list, description="Allowed GPU types")
-    data_centers: List[str] = Field(
-        default_factory=list, description="Preferred data center locations"
-    )
-    network_volume_id: Optional[str] = Field(
-        None, description="Network volume ID to attach"
-    )
-    allowed_cuda_versions: List[str] = Field(
-        default_factory=list, description="Allowed CUDA versions"
-    )
+    data_centers: List[str] = Field(default_factory=list, description="Preferred data center locations")
+    network_volume_id: Optional[str] = Field(None, description="Network volume ID to attach")
+    allowed_cuda_versions: List[str] = Field(default_factory=list, description="Allowed CUDA versions")
 
 
 class RunPodEndpointConfig(BaseModel):
@@ -292,12 +252,8 @@ class RunPodEndpointConfig(BaseModel):
     name: str = Field(..., description="Endpoint name")
     workers_min: int = Field(0, description="Minimum number of workers")
     workers_max: int = Field(3, description="Maximum number of workers")
-    idle_timeout: int = Field(
-        60, description="Seconds before scaling down idle workers"
-    )
-    execution_timeout: Optional[int] = Field(
-        None, description="Maximum execution time in milliseconds"
-    )
+    idle_timeout: int = Field(60, description="Seconds before scaling down idle workers")
+    execution_timeout: Optional[int] = Field(None, description="Maximum execution time in milliseconds")
     flashboot: bool = Field(False, description="Enable flashboot for faster startup")
     gpu_count: Optional[int] = Field(None, description="Number of GPUs per worker")
 
@@ -330,12 +286,8 @@ class RunPodDeployment(BaseModel):
     gpu_count: Optional[int] = None
     cpu_flavors: List[str] = Field(default_factory=list, description="Allowed CPU flavors")
     vcpu_count: Optional[int] = None
-    data_centers: List[str] = Field(
-        default_factory=list, description="Preferred data center locations"
-    )
-    network_volume_id: Optional[str] = Field(
-        None, description="Network volume ID to attach"
-    )
+    data_centers: List[str] = Field(default_factory=list, description="Preferred data center locations")
+    network_volume_id: Optional[str] = Field(None, description="Network volume ID to attach")
     allowed_cuda_versions: List[str] = Field(default_factory=list, description="Allowed CUDA versions")
     docker: RunPodDockerConfig = RunPodDockerConfig()
     platform: str = "linux/amd64"
@@ -346,12 +298,8 @@ class RunPodDeployment(BaseModel):
     idle_timeout: int = 5
     execution_timeout: Optional[int] = None
     flashboot: bool = False
-    environment: Optional[Dict[str, str]] = Field(
-        None, description="Environment variables for the deployment"
-    )
-    workflows: List[str] = Field(
-        default_factory=list, description="Workflow IDs to deploy"
-    )
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: RunPodState = Field(default=RunPodState())
 
     def get_server_url(self) -> Optional[str]:
@@ -373,12 +321,8 @@ class GCPBuildConfig(BaseModel):
 class GCPImageConfig(BaseModel):
     """Docker image configuration for GCP Cloud Run."""
 
-    registry: str = Field(
-        "us-docker.pkg.dev", description="Container registry (e.g., us-docker.pkg.dev)"
-    )
-    repository: str = Field(
-        ..., description="Full repository path (e.g., project/repo/image)"
-    )
+    registry: str = Field("us-docker.pkg.dev", description="Container registry (e.g., us-docker.pkg.dev)")
+    repository: str = Field(..., description="Full repository path (e.g., project/repo/image)")
     tag: str = Field(..., description="Image tag")
     build: GCPBuildConfig = Field(default_factory=GCPBuildConfig)
 
@@ -403,9 +347,7 @@ class GCPStorageConfig(BaseModel):
     """Cloud Run storage configuration."""
 
     gcs_bucket: Optional[str] = Field(None, description="GCS bucket name")
-    gcs_mount_path: str = Field(
-        "/mnt/gcs", description="Container path to mount GCS bucket"
-    )
+    gcs_mount_path: str = Field("/mnt/gcs", description="Container path to mount GCS bucket")
 
 
 class GCPIAMConfig(BaseModel):
@@ -436,9 +378,7 @@ class GCPDeployment(BaseModel):
     resources: GCPResourceConfig = Field(default_factory=GCPResourceConfig)
     storage: Optional[GCPStorageConfig] = None
     iam: GCPIAMConfig = Field(default_factory=GCPIAMConfig)
-    workflows: List[str] = Field(
-        default_factory=list, description="Workflow IDs to deploy"
-    )
+    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: GCPState = Field(default_factory=GCPState)
 
     def get_server_url(self) -> Optional[str]:
@@ -467,9 +407,7 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[
-        str, SelfHostedDeployment | RunPodDeployment | GCPDeployment
-    ] = {}
+    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
@@ -514,8 +452,7 @@ def load_deployment_config() -> DeploymentConfig:
 
     if not config_path.exists():
         raise FileNotFoundError(
-            f"Deployment configuration not found at {config_path}. "
-            f"Run 'nodetool deploy init' to create it."
+            f"Deployment configuration not found at {config_path}. Run 'nodetool deploy init' to create it."
         )
 
     with open(config_path) as f:
@@ -595,9 +532,7 @@ def init_deployment_config() -> DeploymentConfig:
     config_path = get_deployment_config_path()
 
     if config_path.exists():
-        raise FileExistsError(
-            f"Deployment configuration already exists at {config_path}"
-        )
+        raise FileExistsError(f"Deployment configuration already exists at {config_path}")
 
     # Create default configuration
     config = DeploymentConfig()

@@ -51,14 +51,10 @@ def resolve_workspace_path(workspace_dir: str, path: str) -> str:
             # For Windows absolute paths (e.g., C:\...), we still want to join them relative to workspace?
             # This behaviour might need clarification. Assuming here they are treated as relative for consistency.
             # If absolute paths outside workspace should be allowed, this needs change.
-            log.warning(
-                f"Treating absolute path '{path}' as relative to workspace root '{workspace_dir}'."
-            )
+            log.warning(f"Treating absolute path '{path}' as relative to workspace root '{workspace_dir}'.")
             # Attempt to get path relative to drive root
             _drive, path_part = os.path.splitdrive(normalized_path)
-            relative_path = path_part.lstrip(
-                "\\/"
-            )  # Strip leading slashes from the part after drive
+            relative_path = path_part.lstrip("\\/")  # Strip leading slashes from the part after drive
     # Handle relative paths
     else:
         relative_path = normalized_path
@@ -75,9 +71,7 @@ def resolve_workspace_path(workspace_dir: str, path: str) -> str:
             f"Resolved path '{abs_path}' is outside the workspace directory '{workspace_dir}'. Original path: '{path}'"
         )
         # Option 1: Raise an error
-        raise ValueError(
-            f"Resolved path '{abs_path}' is outside the workspace directory."
-        )
+        raise ValueError(f"Resolved path '{abs_path}' is outside the workspace directory.")
         # Option 2: Return a default safe path or the workspace root (less ideal)
         # return workspace_dir
 

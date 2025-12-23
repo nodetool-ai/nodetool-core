@@ -34,12 +34,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
             model = node_data["model"]
 
             # HuggingFace models
-            if (
-                "type" in model
-                and model.get("type", "").startswith("hf.")
-                and "repo_id" in model
-                and model["repo_id"]
-            ):
+            if "type" in model and model.get("type", "").startswith("hf.") and "repo_id" in model and model["repo_id"]:
                 # Create a unique key for this model
                 model_key = (
                     "hf",
@@ -63,11 +58,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
                     models.append(hf_model)
 
             # Ollama language models
-            elif (
-                model.get("type") == "language_model"
-                and model.get("provider") == "ollama"
-                and model.get("id")
-            ):
+            elif model.get("type") == "language_model" and model.get("provider") == "ollama" and model.get("id"):
                 model_key = ("ollama", model["id"])
 
                 if model_key not in seen_models:
@@ -80,11 +71,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
                     models.append(ollama_model)
 
             # llama_cpp language models (HuggingFace GGUF models)
-            elif (
-                model.get("type") == "language_model"
-                and model.get("provider") == "llama_cpp"
-                and model.get("id")
-            ):
+            elif model.get("type") == "language_model" and model.get("provider") == "llama_cpp" and model.get("id"):
                 # Parse repo_id:file_path format
                 model_id = model["id"]
                 if ":" in model_id:
@@ -104,11 +91,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
                         models.append(hf_model)
 
         # Check for language models at the root level (some nodes might have them directly)
-        if (
-            node_data.get("type") == "language_model"
-            and node_data.get("provider") == "ollama"
-            and node_data.get("id")
-        ):
+        if node_data.get("type") == "language_model" and node_data.get("provider") == "ollama" and node_data.get("id"):
             model_key = ("ollama", node_data["id"])
 
             if model_key not in seen_models:

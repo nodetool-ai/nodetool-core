@@ -45,9 +45,7 @@ async def create_and_execute_workflow(
 
     # Plan the graph
     logger.info(f"Planning workflow for: {objective}")
-    context = ProcessingContext(
-        workspace_dir=workspace, user_id="data_pattern_test", auth_token="local_token"
-    )
+    context = ProcessingContext(workspace_dir=workspace, user_id="data_pattern_test", auth_token="local_token")
 
     async for update in graph_planner.create_graph(context):
         if isinstance(update, PlanningUpdate):
@@ -104,14 +102,16 @@ async def example_data_workflow():
                 input_schema=[
                     GraphInput(
                         name="csv_file",
-                        type=TypeMetadata(type="string"), # DocumentInput/StringInput usually takes a path or content
+                        type=TypeMetadata(type="string"),  # DocumentInput/StringInput usually takes a path or content
                         description="Path to the CSV file",
                     )
                 ],
                 output_schema=[
                     GraphOutput(
                         name="filtered_data",
-                        type=TypeMetadata(type="string"), # DataframeOutput usually serializes to JSON/string for display
+                        type=TypeMetadata(
+                            type="string"
+                        ),  # DataframeOutput usually serializes to JSON/string for display
                         description="The filtered sales data for North region",
                     )
                 ],

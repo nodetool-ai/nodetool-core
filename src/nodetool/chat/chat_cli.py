@@ -260,9 +260,7 @@ class ChatCLI:
                         node_type = node_metadata.node_type
                         # Extract namespace from node_type (e.g., "nodetool.text" from "nodetool.text.Concatenate")
                         namespace_parts = node_type.split(".")[:-1]
-                        if (
-                            len(namespace_parts) >= 2
-                        ):  # Must have at least nodetool.something
+                        if len(namespace_parts) >= 2:  # Must have at least nodetool.something
                             namespace = ".".join(namespace_parts)
                             namespaces.add(namespace)
 
@@ -281,17 +279,11 @@ class ChatCLI:
                             # Try alternative approach using get_node_classes_from_namespace
                             try:
                                 if namespace.startswith("nodetool."):
-                                    namespace_suffix = namespace[
-                                        9:
-                                    ]  # Remove 'nodetool.'
-                                    get_node_classes_from_namespace(
-                                        f"nodetool.nodes.{namespace_suffix}"
-                                    )
+                                    namespace_suffix = namespace[9:]  # Remove 'nodetool.'
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
                                     total_loaded += 1
                                 else:
-                                    get_node_classes_from_namespace(
-                                        f"nodetool.nodes.{namespace}"
-                                    )
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
                                     total_loaded += 1
                             except Exception:
                                 # Silent fail for packages that can't be loaded
@@ -306,9 +298,7 @@ class ChatCLI:
             )
 
         except Exception as e:
-            self.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Failed to load all packages: {e}"
-            )
+            self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load all packages: {e}")
             # Continue anyway - some nodes may still be available
 
     async def initialize(self):
@@ -348,15 +338,11 @@ class ChatCLI:
 
     def refresh_tools(self):
         """Refresh the tools list based on current enabled status."""
-        self.tools = [
-            tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)
-        ]
+        self.tools = [tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)]
 
     def _build_command_completer(self) -> NestedCompleter:
         """Construct the nested completer with provider/model/tool suggestions."""
-        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(
-            self.commands.keys()
-        )
+        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
         provider_names = [provider.value for provider in Provider]
         model_ids = [model.id for model in self.language_models]
         all_tool_names = [tool.name for tool in self.all_tools]
@@ -365,25 +351,19 @@ class ChatCLI:
         command_completer["a"] = command_completer["agent"]
         command_completer["debug"] = WordCompleter(["on", "off"])
         command_completer["d"] = command_completer["debug"]
-        command_completer["provider"] = WordCompleter(
-            provider_names, ignore_case=True
-        )
+        command_completer["provider"] = WordCompleter(provider_names, ignore_case=True)
         command_completer["pr"] = command_completer["provider"]
         command_completer["model"] = WordCompleter(model_ids, ignore_case=True)
         command_completer["m"] = command_completer["model"]
         command_completer["tools"] = WordCompleter(all_tool_names, match_middle=True)
         command_completer["t"] = command_completer["tools"]
-        enable_disable_completer = WordCompleter(
-            [*all_tool_names, "all"], match_middle=True
-        )
+        enable_disable_completer = WordCompleter([*all_tool_names, "all"], match_middle=True)
         command_completer["enable"] = enable_disable_completer
         command_completer["en"] = enable_disable_completer
         command_completer["disable"] = enable_disable_completer
         command_completer["dis"] = enable_disable_completer
 
-        prefixed_command_completer = {
-            f"/{cmd}": completer for cmd, completer in command_completer.items()
-        }
+        prefixed_command_completer = {f"/{cmd}": completer for cmd, completer in command_completer.items()}
         return NestedCompleter(
             {
                 **prefixed_command_completer,
@@ -448,9 +428,7 @@ class ChatCLI:
 
         models = await self.load_models_for_provider(self.selected_provider)
         if not models:
-            raise ValueError(
-                f"No models available for provider {self.selected_provider.value}"
-            )
+            raise ValueError(f"No models available for provider {self.selected_provider.value}")
 
         target_id = self.model_id_from_settings
         selected = None
@@ -566,7 +544,9 @@ class ChatCLI:
                         msg = message.get("message")
                         if self.debug_mode:
                             args = message.get("args")
-                            self.console.print(f"\n[bold cyan]Tool Call ({escape(str(name))}):[/bold cyan] {escape(str(args))}")
+                            self.console.print(
+                                f"\n[bold cyan]Tool Call ({escape(str(name))}):[/bold cyan] {escape(str(args))}"
+                            )
                         elif self.display_manager:
                             # Skip if display_manager is present, as it handles tool calls in its tree view
                             pass
@@ -581,7 +561,9 @@ class ChatCLI:
                                 content = message.get("content") or {}
 
                                 if event_type == "planning_update":
-                                    log.info(f"[Planning] Phase: {content.get('phase')}, Status: {content.get('status')}")
+                                    log.info(
+                                        f"[Planning] Phase: {content.get('phase')}, Status: {content.get('status')}"
+                                    )
                                     if self.display_manager and not self.debug_mode:
                                         # When display_manager is active, it handles planning updates
                                         pass
@@ -589,7 +571,9 @@ class ChatCLI:
                                         phase = content.get("phase")
                                         status = content.get("status")
                                         inner_content = content.get("content")
-                                        self.console.print(f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}")
+                                        self.console.print(
+                                            f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}"
+                                        )
                                         if inner_content and self.debug_mode:
                                             self.console.print(f"  {escape(str(inner_content))}")
 
@@ -602,10 +586,14 @@ class ChatCLI:
                                         event = content.get("event")
                                         step = content.get("step")
                                         if event == "SUBTASK_STARTED" and step:
-                                            instructions = step.get('instructions')
-                                            self.console.print(f"\n[bold green]➜ {escape(str(instructions))}[/bold green]")
+                                            instructions = step.get("instructions")
+                                            self.console.print(
+                                                f"\n[bold green]➜ {escape(str(instructions))}[/bold green]"
+                                            )
                                         elif event == "ENTERED_CONCLUSION_STAGE":
-                                            self.console.print("[bold yellow]Entering conclusion stage...[/bold yellow]")
+                                            self.console.print(
+                                                "[bold yellow]Entering conclusion stage...[/bold yellow]"
+                                            )
                                         elif self.debug_mode:
                                             self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
 
@@ -621,8 +609,16 @@ class ChatCLI:
                                         # matching the frontend refinement.
                                         pass
                                     else:
-                                        color = "red" if severity == "error" else "yellow" if severity == "warning" else "white"
-                                        self.console.print(f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}")
+                                        color = (
+                                            "red"
+                                            if severity == "error"
+                                            else "yellow"
+                                            if severity == "warning"
+                                            else "white"
+                                        )
+                                        self.console.print(
+                                            f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}"
+                                        )
 
                                 elif event_type == "step_result":
                                     log.info(f"[Step Result] {content.get('result')}")
@@ -632,23 +628,19 @@ class ChatCLI:
                                     else:
                                         result = content.get("result")
                                         if self.debug_mode:
-                                            self.console.print(f"[bold green]Step Result:[/bold green] {escape(str(result))}")
+                                            self.console.print(
+                                                f"[bold green]Step Result:[/bold green] {escape(str(result))}"
+                                            )
 
-                                continue # Already handled this special message
+                                continue  # Already handled this special message
 
                             parsed = Message.model_validate(message)
                         except ValidationError as validation_error:
                             if self.debug_mode:
-                                self.console.print(
-                                    f"[bold red]Failed to parse message:[/bold red] {validation_error}"
-                                )
+                                self.console.print(f"[bold red]Failed to parse message:[/bold red] {validation_error}")
                             continue
 
-                        if (
-                            self.debug_mode
-                            and parsed.tool_calls
-                            and parsed.role == "assistant"
-                        ):
+                        if self.debug_mode and parsed.tool_calls and parsed.role == "assistant":
                             for tool_call in parsed.tool_calls:
                                 args_preview = json.dumps(tool_call.args)
                                 if len(args_preview) > 120:
@@ -674,14 +666,10 @@ class ChatCLI:
                         ):
                             self.console.print(Markdown(parsed.content))
                         elif (
-                            parsed.role == "assistant"
-                            and isinstance(parsed.content, dict)
-                            and not has_streaming_output
+                            parsed.role == "assistant" and isinstance(parsed.content, dict) and not has_streaming_output
                         ):
                             # If assistant returned structured content, pretty-print as Markdown code block
-                            self.console.print(
-                                Markdown(f"```json\n{json.dumps(parsed.content, indent=2)}\n```")
-                            )
+                            self.console.print(Markdown(f"```json\n{json.dumps(parsed.content, indent=2)}\n```"))
 
                         if self._should_store_message(parsed):
                             self.messages.append(parsed)
@@ -690,23 +678,19 @@ class ChatCLI:
 
                     elif message_type == "error":
                         error_msg = message.get("message", "Unknown error")
-                        self.console.print(
-                            f"[bold red]Error:[/bold red] {error_msg}"
-                        )
+                        self.console.print(f"[bold red]Error:[/bold red] {error_msg}")
                     else:
                         if self.debug_mode:
-                            self.console.print(
-                                f"[yellow]Unhandled processor message:[/yellow] {message}"
-                            )
+                            self.console.print(f"[yellow]Unhandled processor message:[/yellow] {message}")
                 else:
                     await asyncio.sleep(0.01)
 
             await processor_task
         finally:
-                if not processor_task.done():
-                    processor_task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await processor_task
+            if not processor_task.done():
+                processor_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await processor_task
 
     async def process_agent_response(self, problem: str):
         """Process input in agent mode using the messaging processors."""
@@ -761,9 +745,7 @@ class ChatCLI:
 
                 # Check if target exists before listing
                 if not target_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Path '{target_path_str}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Path '{target_path_str}' does not exist.")
                     return
 
                 # If target is a file, just show the file
@@ -794,11 +776,7 @@ class ChatCLI:
                     )
 
             elif cmd == "cd":
-                new_dir_path = (
-                    Path.home()
-                    if not args
-                    else (current_dir / args[0]).resolve()
-                )
+                new_dir_path = Path.home() if not args else (current_dir / args[0]).resolve()
 
                 if not new_dir_path.is_dir():
                     self.console.print(
@@ -809,30 +787,20 @@ class ChatCLI:
                     os.chdir(new_dir_path)
                     # Update context.workspace_dir to reflect the change, although it's less central now
                     self.context.workspace_dir = str(new_dir_path)
-                    self.console.print(
-                        f"Changed to: [bold green]{os.getcwd()}[/bold green]"
-                    )
+                    self.console.print(f"Changed to: [bold green]{os.getcwd()}[/bold green]")
                 except Exception as e:
-                    self.console.print(
-                        f"[bold red]Error changing directory:[/bold red] {e}"
-                    )
+                    self.console.print(f"[bold red]Error changing directory:[/bold red] {e}")
 
             elif cmd == "mkdir":
                 if not args:
-                    self.console.print(
-                        "[bold red]Error:[/bold red] Directory name required"
-                    )
+                    self.console.print("[bold red]Error:[/bold red] Directory name required")
                     return
                 new_dir_path = (current_dir / args[0]).resolve()
                 try:
                     new_dir_path.mkdir(parents=True, exist_ok=True)
-                    self.console.print(
-                        f"Created directory: [bold green]{new_dir_path}[/bold green]"
-                    )
+                    self.console.print(f"Created directory: [bold green]{new_dir_path}[/bold green]")
                 except Exception as e:
-                    self.console.print(
-                        f"[bold red]Error creating directory:[/bold red] {e}"
-                    )
+                    self.console.print(f"[bold red]Error creating directory:[/bold red] {e}")
 
             elif cmd == "rm":
                 if not args:
@@ -840,38 +808,28 @@ class ChatCLI:
                     return
                 target_path = (current_dir / args[0]).resolve()
                 if not target_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Path '{args[0]}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Path '{args[0]}' does not exist.")
                     return
 
                 try:
                     if target_path.is_dir():
                         shutil.rmtree(target_path)
-                        self.console.print(
-                            f"Removed directory: [bold green]{target_path}[/bold green]"
-                        )
+                        self.console.print(f"Removed directory: [bold green]{target_path}[/bold green]")
                     else:
                         target_path.unlink()
-                        self.console.print(
-                            f"Removed file: [bold green]{target_path}[/bold green]"
-                        )
+                        self.console.print(f"Removed file: [bold green]{target_path}[/bold green]")
                 except Exception as e:
                     self.console.print(f"[bold red]Error removing:[/bold red] {e}")
 
             elif cmd == "open":
                 if not args:
-                    self.console.print(
-                        "[bold red]Error:[/bold red] File or directory path required"
-                    )
+                    self.console.print("[bold red]Error:[/bold red] File or directory path required")
                     return
                 target_path_str = args[0]
                 target_path = (current_dir / target_path_str).resolve()
 
                 if not target_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Path '{target_path_str}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Path '{target_path_str}' does not exist.")
                     return
 
                 try:
@@ -881,9 +839,7 @@ class ChatCLI:
                         subprocess.run(["open", str(target_path)], check=True)
                     else:  # Linux and other POSIX
                         subprocess.run(["xdg-open", str(target_path)], check=True)
-                    self.console.print(
-                        f"Opened: [bold green]{target_path}[/bold green]"
-                    )
+                    self.console.print(f"Opened: [bold green]{target_path}[/bold green]")
                 except Exception as e:
                     self.console.print(f"[bold red]Error opening:[/bold red] {e}")
 
@@ -894,9 +850,7 @@ class ChatCLI:
                 target_path = (current_dir / args[0]).resolve()
 
                 if not target_path.is_file():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] '{args[0]}' is not a file or does not exist"
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] '{args[0]}' is not a file or does not exist")
                     return
 
                 try:
@@ -913,24 +867,18 @@ class ChatCLI:
                     self.console.print(f"[bold red]Error reading file:[/bold red] {e}")
             elif cmd == "cp":
                 if len(args) != 2:
-                    self.console.print(
-                        "[bold red]Usage: cp <source> <destination>[/bold red]"
-                    )
+                    self.console.print("[bold red]Usage: cp <source> <destination>[/bold red]")
                     return
                 src_path = (current_dir / args[0]).resolve()
                 dest_path = (current_dir / args[1]).resolve()
 
                 if not src_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Source '{args[0]}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Source '{args[0]}' does not exist.")
                     return
 
                 # Prevent copying directory onto itself or file onto itself
                 if src_path == dest_path:
-                    self.console.print(
-                        "[bold red]Error:[/bold red] Source and destination are the same."
-                    )
+                    self.console.print("[bold red]Error:[/bold red] Source and destination are the same.")
                     return
 
                 try:
@@ -942,11 +890,7 @@ class ChatCLI:
                             )
                             return
                         # If dest is an existing dir, copy *into* it
-                        dest_final = (
-                            dest_path
-                            if not dest_path.is_dir()
-                            else dest_path / src_path.name
-                        )
+                        dest_final = dest_path if not dest_path.is_dir() else dest_path / src_path.name
                         shutil.copytree(src_path, dest_final, dirs_exist_ok=True)
                     else:  # Source is a file
                         # If destination exists and is a directory, copy into it
@@ -962,24 +906,18 @@ class ChatCLI:
 
             elif cmd == "mv":
                 if len(args) != 2:
-                    self.console.print(
-                        "[bold red]Usage: mv <source> <destination>[/bold red]"
-                    )
+                    self.console.print("[bold red]Usage: mv <source> <destination>[/bold red]")
                     return
                 src_path = (current_dir / args[0]).resolve()
                 dest_path = (current_dir / args[1]).resolve()
 
                 if not src_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Source '{args[0]}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Source '{args[0]}' does not exist.")
                     return
 
                 # Prevent moving onto itself
                 if src_path == dest_path:
-                    self.console.print(
-                        "[bold red]Error:[/bold red] Source and destination are the same."
-                    )
+                    self.console.print("[bold red]Error:[/bold red] Source and destination are the same.")
                     return
 
                 try:
@@ -997,9 +935,7 @@ class ChatCLI:
 
             elif cmd == "grep":
                 if not args:
-                    self.console.print(
-                        "[bold red]Usage: grep <pattern> [path][/bold red]"
-                    )
+                    self.console.print("[bold red]Usage: grep <pattern> [path][/bold red]")
                     return
 
                 pattern = args[0]
@@ -1008,17 +944,13 @@ class ChatCLI:
                 search_path = (current_dir / search_path_str).resolve()
 
                 if not search_path.exists():
-                    self.console.print(
-                        f"[bold red]Error:[/bold red] Path '{search_path_str}' does not exist."
-                    )
+                    self.console.print(f"[bold red]Error:[/bold red] Path '{search_path_str}' does not exist.")
                     return
 
                 try:
                     regex = re.compile(pattern)
                 except re.error as e:
-                    self.console.print(
-                        f"[bold red]Invalid regex pattern:[/bold red] {e}"
-                    )
+                    self.console.print(f"[bold red]Invalid regex pattern:[/bold red] {e}")
                     return
 
                 files_to_search = []
@@ -1038,9 +970,7 @@ class ChatCLI:
                         if item.is_file() and not item.name.startswith("."):
                             # Basic check to avoid huge files or likely binaries (can be improved)
                             try:
-                                if (
-                                    item.stat().st_size < 10 * 1024 * 1024
-                                ):  # Skip files > 10MB
+                                if item.stat().st_size < 10 * 1024 * 1024:  # Skip files > 10MB
                                     files_to_search.append(item)
                             except OSError:
                                 continue  # Skip files we can't access stats for
@@ -1059,31 +989,23 @@ class ChatCLI:
                                 if not file_match_found:
                                     # Print filename relative to CWD only once
                                     try:
-                                        rel_file_path = abs_file_path.relative_to(
-                                            current_dir
-                                        )
+                                        rel_file_path = abs_file_path.relative_to(current_dir)
                                     except ValueError:  # Handle case where file is not under CWD (e.g., symlink)
                                         rel_file_path = abs_file_path  # Show absolute path if not relative
 
-                                    self.console.print(
-                                        f"\n[bold magenta]{rel_file_path}[/bold magenta]:"
-                                    )
+                                    self.console.print(f"\n[bold magenta]{rel_file_path}[/bold magenta]:")
                                     file_match_found = True
                                     match_found = True
 
                                 # Highlight the match within the line
-                                highlighted_line = (
-                                    line.strip()
-                                )  # Process stripped line first
+                                highlighted_line = line.strip()  # Process stripped line first
                                 with suppress(Exception):
                                     highlighted_line = regex.sub(
                                         lambda m: f"[bold yellow]{m.group(0)}[/bold yellow]",
                                         highlighted_line,
                                     )
 
-                                self.console.print(
-                                    f"  [cyan]{i+1}:[/cyan] {highlighted_line}"
-                                )
+                                self.console.print(f"  [cyan]{i + 1}:[/cyan] {highlighted_line}")
 
                     except UnicodeDecodeError:
                         # Skip files that are not valid UTF-8 text
@@ -1095,19 +1017,13 @@ class ChatCLI:
                         except Exception:
                             rel_file_path = file_path.resolve()
 
-                        self.console.print(
-                            f"[yellow]Warning:[/yellow] Could not read or process {rel_file_path}: {e}"
-                        )
+                        self.console.print(f"[yellow]Warning:[/yellow] Could not read or process {rel_file_path}: {e}")
 
                 if not match_found:
-                    self.console.print(
-                        f"No matches found for pattern '{pattern}' in '{search_path_str}'"
-                    )
+                    self.console.print(f"No matches found for pattern '{pattern}' in '{search_path_str}'")
 
         except Exception as e:
-            self.console.print(
-                f"[bold red]Error executing workspace command:[/bold red] {e}"
-            )
+            self.console.print(f"[bold red]Error executing workspace command:[/bold red] {e}")
             # Optionally print traceback if needed for debugging
             # self.console.print(Syntax(traceback.format_exc(), "python", theme="monokai"))
 
@@ -1130,9 +1046,7 @@ class ChatCLI:
             with open(self.settings_file, "w") as f:
                 json.dump(settings, f, indent=2)
         except Exception as e:
-            self.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Failed to save settings: {e}"
-            )
+            self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to save settings: {e}")
 
     def load_settings(self) -> None:
         """Load settings from the dotfile."""
@@ -1142,9 +1056,7 @@ class ChatCLI:
                     settings = json.load(f)
 
                 # Load the model ID preference to be used in initialize()
-                self.model_id_from_settings = settings.get(
-                    "model_id", self.model_id_from_settings
-                )
+                self.model_id_from_settings = settings.get("model_id", self.model_id_from_settings)
                 provider_value = settings.get("provider")
                 if provider_value:
                     with suppress(Exception):
@@ -1157,9 +1069,7 @@ class ChatCLI:
                 self.enabled_tools = settings.get("enabled_tools", {})
 
         except Exception as e:
-            self.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Failed to load settings: {e}"
-            )
+            self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load settings: {e}")
             # Keep default settings
             pass
 
@@ -1191,11 +1101,7 @@ class ChatCLI:
             if self.selected_provider
             else "None"
         )
-        model_display = (
-            self.selected_model.id
-            if self.selected_model
-            else self.model_id_from_settings or "None"
-        )
+        model_display = self.selected_model.id if self.selected_model else self.model_id_from_settings or "None"
         settings_list.extend(
             [
                 f"[bold cyan]Provider:[/bold cyan] {provider_display}",
@@ -1240,9 +1146,7 @@ class ChatCLI:
                 cwd = os.getcwd()
                 home_dir = str(Path.home())
                 # Show ~ for home directory, otherwise show full path
-                display_path = (
-                    cwd.replace(home_dir, "~", 1) if cwd.startswith(home_dir) else cwd
-                )
+                display_path = cwd.replace(home_dir, "~", 1) if cwd.startswith(home_dir) else cwd
                 prompt = f"[{display_path}]> "
 
                 # Get input with prompt_toolkit (supports multi-line input and better completion)
@@ -1293,9 +1197,7 @@ class ChatCLI:
                     await self.process_regular_message(user_input)
 
             except KeyboardInterrupt:
-                self.console.print(
-                    "\n[bold yellow]Interrupted. Press Ctrl+C again to exit.[/bold yellow]"
-                )
+                self.console.print("\n[bold yellow]Interrupted. Press Ctrl+C again to exit.[/bold yellow]")
                 try:
                     # Wait for a moment to see if the user presses Ctrl+C again
                     await asyncio.sleep(1)

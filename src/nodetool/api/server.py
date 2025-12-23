@@ -228,18 +228,14 @@ def setup_ollama_url():
                     response = client.get(base + path)
                     if response.status_code == 200:
                         os.environ["OLLAMA_API_URL"] = base
-                        log.info(
-                            f"Detected Ollama at {base}, enabling provider via OLLAMA_API_URL"
-                        )
+                        log.info(f"Detected Ollama at {base}, enabling provider via OLLAMA_API_URL")
                         return
                 except Exception:
                     continue
     except Exception as e:
         log.debug(f"Could not check Ollama availability: {e}")
 
-    log.info(
-        "Ollama not detected at localhost:11434, using OLLAMA_API_URL from environment if provided"
-    )
+    log.info("Ollama not detected at localhost:11434, using OLLAMA_API_URL from environment if provided")
 
 
 def create_app(
@@ -318,9 +314,7 @@ def create_app(
     setup_ollama_url()
 
     if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
-        raise RuntimeError(
-            "SECRETS_MASTER_KEY environment variable must be set for production API deployments."
-        )
+        raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for production API deployments.")
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
@@ -450,9 +444,7 @@ def create_app(
     if not Environment.is_production():
 
         @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(
-            request: Request, exc: RequestValidationError
-        ):
+        async def validation_exception_handler(request: Request, exc: RequestValidationError):
             log.error(f"Request validation error: {exc}")
             return JSONResponse({"detail": exc.errors()}, status_code=422)
 
@@ -472,9 +464,7 @@ def create_app(
             static = get_static_auth_provider()
             return None, static.user_id
 
-        token = static_provider.extract_token_from_ws(
-            websocket.headers, websocket.query_params
-        )
+        token = static_provider.extract_token_from_ws(websocket.headers, websocket.query_params)
         if not token:
             # Must accept before closing to avoid 403
             await websocket.accept()
@@ -489,12 +479,8 @@ def create_app(
         if Environment.get_auth_provider_kind() == "supabase":
             if not user_provider:
                 await websocket.accept()
-                await websocket.close(
-                    code=1008, reason="Authentication provider not configured"
-                )
-                log.warning(
-                    "WebSocket connection rejected: Auth provider not configured"
-                )
+                await websocket.close(code=1008, reason="Authentication provider not configured")
+                log.warning("WebSocket connection rejected: Auth provider not configured")
                 return None, None
             user_result = await user_provider.verify_token(token)
             if user_result.ok and user_result.user_id:
@@ -590,9 +576,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
 
     configure_logging(
         fmt=(
-            "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
-            if use_color
-            else None
+            "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s" if use_color else None
         )
     )
 
@@ -654,9 +638,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         time.sleep(0.2)  # Give uvicorn time to configure logging
         uvicorn_access_logger = logging.getLogger("uvicorn.access")
         # Check if filter already exists
-        filter_exists = any(
-            isinstance(f, HealthCheckFilter) for f in uvicorn_access_logger.filters
-        )
+        filter_exists = any(isinstance(f, HealthCheckFilter) for f in uvicorn_access_logger.filters)
         if not filter_exists:
             uvicorn_access_logger.addFilter(health_filter)
 

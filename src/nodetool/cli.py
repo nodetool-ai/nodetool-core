@@ -82,13 +82,16 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
 
     return asyncio.run(_load())
 
+
 warnings.filterwarnings("ignore")
+
 
 def _get_supported_gpu_types() -> list[str]:
     """Return list of supported GPU types from RunPod API."""
     from nodetool.deploy.runpod_api import GPUType
 
     return GPUType.list_values()
+
 
 def _format_size(num_bytes: int | None) -> str:
     """Format byte counts for human-friendly display."""
@@ -373,9 +376,7 @@ def run(
                 sys.stdout.flush()
                 sys.exit(1)
             else:
-                console.print(
-                    Panel.fit(f"Failed to prepare workflow: {e}", style="bold red")
-                )
+                console.print(Panel.fit(f"Failed to prepare workflow: {e}", style="bold red"))
                 traceback.print_exc()
                 sys.exit(1)
     else:
@@ -424,27 +425,19 @@ def run(
         # Interactive pretty-printed mode
         async def run_interactive():
             workflow_desc = workflow or "stdin"
-            console.print(
-                Panel.fit(f"Running workflow {workflow_desc}...", style="blue")
-            )
+            console.print(Panel.fit(f"Running workflow {workflow_desc}...", style="blue"))
             try:
                 async for message in run_workflow(request):
                     # Pretty-print each message coming from the runner
                     if isinstance(message, JobUpdate) and message.status == "error":
-                        console.print(
-                            Panel.fit(f"Error: {message.error}", style="bold red")
-                        )
+                        console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
                         sys.exit(1)
                     else:
                         msg_type = Text(message.type, style="bold cyan")
                         console.print(f"{msg_type}: {message.model_dump_json()}")
-                console.print(
-                    Panel.fit("Workflow finished successfully", style="green")
-                )
+                console.print(Panel.fit("Workflow finished successfully", style="green"))
             except Exception as e:
-                console.print(
-                    Panel.fit(f"Error running workflow: {e}", style="bold red")
-                )
+                console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
                 traceback.print_exc()
                 sys.exit(1)
 
@@ -554,13 +547,9 @@ def worker(
     loaded_workflows = [load_workflow(f) for f in workflows]
 
     # Parse comma-separated tools string into list
-    tools_list = (
-        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
-    )
+    tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
 
-    run_worker(
-        host, port, remote_auth, provider, default_model, tools_list, loaded_workflows
-    )
+    run_worker(host, port, remote_auth, provider, default_model, tools_list, loaded_workflows)
 
 
 @cli.command("dsl-export")
@@ -632,7 +621,7 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
 @click.option(
     "--theme",
     default=None,
-    help="Optional Gradio theme name (e.g., \"soft\").",
+    help='Optional Gradio theme name (e.g., "soft").',
 )
 @click.option(
     "--description",
@@ -693,9 +682,7 @@ def gradio_export(
 @cli.command("chat-server")
 @click.option("--host", default="127.0.0.1", help="Host address to bind to.")
 @click.option("--port", default=8080, help="Port to listen on.", type=int)
-@click.option(
-    "--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth)."
-)
+@click.option("--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth).")
 @click.option(
     "--default-model",
     default="gpt-oss:20b",
@@ -775,9 +762,7 @@ def chat_server(
     loaded_workflows = [load_workflow(f) for f in workflows]
 
     # Parse comma-separated tools string into list
-    tools_list = (
-        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
-    )
+    tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
 
     if auth_provider:
         os.environ["AUTH_PROVIDER"] = auth_provider.lower()
@@ -960,11 +945,7 @@ def codegen_cmd():
         click.echo(f"Error: Nodes directory not found at {base_nodes_path}", err=True)
         return
 
-    namespaces = [
-        d
-        for d in os.listdir(base_nodes_path)
-        if os.path.isdir(os.path.join(base_nodes_path, d))
-    ]
+    namespaces = [d for d in os.listdir(base_nodes_path) if os.path.isdir(os.path.join(base_nodes_path, d))]
 
     if not namespaces:
         click.echo(
@@ -981,9 +962,7 @@ def codegen_cmd():
         shutil.rmtree(output_path, ignore_errors=True)
         os.makedirs(output_path, exist_ok=True)
 
-        click.echo(
-            f"Generating DSL modules from {source_path} to {output_path} for namespace '{namespace}'..."
-        )
+        click.echo(f"Generating DSL modules from {source_path} to {output_path} for namespace '{namespace}'...")
         create_dsl_modules(source_path, output_path)
         click.echo(f"✅ DSL module generation complete for namespace '{namespace}'!")
 
@@ -1019,7 +998,6 @@ def show_settings():
 
     # Display the table
     console.print(table)
-
 
 
 @cli.group()
@@ -1101,9 +1079,7 @@ def list_all_hf_models(limit: int | None, as_json: bool, repo_only: bool):
 
     if include_files:
         patterns = [*HF_DEFAULT_FILE_PATTERNS, *HF_PTH_FILE_PATTERNS]
-        models: list[UnifiedModel] = asyncio.run(
-            search_cached_hf_models(filename_patterns=patterns)
-        )
+        models: list[UnifiedModel] = asyncio.run(search_cached_hf_models(filename_patterns=patterns))
     else:
         models = asyncio.run(read_cached_hf_models())
 
@@ -1215,9 +1191,7 @@ def package():
 
 
 @package.command("list")
-@click.option(
-    "--available", "-a", is_flag=True, help="List available packages from the registry"
-)
+@click.option("--available", "-a", is_flag=True, help="List available packages from the registry")
 def list_packages(available):
     """List installed or available packages."""
     from nodetool.packages.registry import Registry
@@ -1227,9 +1201,7 @@ def list_packages(available):
     if available:
         packages = registry.list_available_packages()
         if not packages:
-            console.print(
-                "[bold red]No packages available in the registry or unable to fetch package list.[/]"
-            )
+            console.print("[bold red]No packages available in the registry or unable to fetch package list.[/]")
             return
 
         table = Table(title="Available Packages")
@@ -1253,17 +1225,13 @@ def list_packages(available):
         table.add_column("Nodes", style="magenta")
 
         for pkg in packages:
-            table.add_row(
-                pkg.name, pkg.version, pkg.description, str(len(pkg.nodes or []))
-            )
+            table.add_row(pkg.name, pkg.version, pkg.description, str(len(pkg.nodes or [])))
 
         console.print(table)
 
 
 @package.command()
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output during scanning"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output during scanning")
 def scan(verbose):
     """Scan current directory for nodes and create package metadata."""
     import sys
@@ -1307,9 +1275,7 @@ def init():
     import os
 
     if os.path.exists("pyproject.toml"):
-        if not click.confirm(
-            "pyproject.toml already exists. Do you want to overwrite it?"
-        ):
+        if not click.confirm("pyproject.toml already exists. Do you want to overwrite it?"):
             return
 
     # Gather project information
@@ -1321,9 +1287,7 @@ def init():
 
     # Create pyproject.toml content
     author_name = author.split(" <")[0] if " <" in author else author
-    author_email = (
-        author.split(" <")[1].rstrip(">") if " <" in author else "author@example.com"
-    )
+    author_email = author.split(" <")[1].rstrip(">") if " <" in author else "author@example.com"
     python_req = python_version.lstrip("^")
 
     pyproject_content = f"""[build-system]
@@ -1374,9 +1338,7 @@ packages = ["src/nodetool"]
     is_flag=True,
     help="Generate compact documentation for LLM usage",
 )
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output during scanning"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output during scanning")
 def docs(output_dir: str, compact: bool, verbose: bool):
     """Generate documentation for the package nodes."""
     import os
@@ -1399,9 +1361,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
 
         nodes_path = os.path.join(src_path, "nodetool", "nodes")
         if not os.path.exists(nodes_path):
-            click.echo(
-                "Error: No nodes directory found at src/nodetool/nodes", err=True
-            )
+            click.echo("Error: No nodes directory found at src/nodetool/nodes", err=True)
             sys.exit(1)
 
         # Get package name from pyproject.toml
@@ -1451,9 +1411,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
                         except Exception as e:
                             traceback.print_exc()
                             if verbose:
-                                click.echo(
-                                    f"Error processing {module_name}: {e}", err=True
-                                )
+                                click.echo(f"Error processing {module_name}: {e}", err=True)
 
             bar.update(40)
 
@@ -1494,9 +1452,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
     default=None,
     help="Filter nodes by package name (optional)",
 )
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 def node_docs(output_dir: str, package_name: str | None, verbose: bool):
     """Generate documentation pages for NodeTool nodes.
 
@@ -1524,9 +1480,7 @@ def node_docs(output_dir: str, package_name: str | None, verbose: bool):
         click.echo("Generating node documentation...")
 
         total_nodes, created_files = generate_node_docs(
-            output_dir=output_dir,
-            package_filter=package_name,
-            verbose=verbose
+            output_dir=output_dir, package_filter=package_name, verbose=verbose
         )
 
         click.echo(f"✅ Documented {total_nodes} nodes, created {created_files} files in {output_dir}")
@@ -1540,6 +1494,7 @@ def node_docs(output_dir: str, package_name: str | None, verbose: bool):
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -1564,9 +1519,7 @@ def node_docs(output_dir: str, package_name: str | None, verbose: bool):
     default=None,
     help="Filter workflows by package name (optional)",
 )
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, verbose: bool):
     """Generate Jekyll documentation pages for workflow examples.
 
@@ -1592,10 +1545,7 @@ def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, 
         click.echo(f"Processing workflow examples from {examples_dir}...")
 
         _total_files, created_count = generate_workflow_docs(
-            examples_dir=examples_dir,
-            output_dir=output_dir,
-            package_filter=package_name,
-            verbose=verbose
+            examples_dir=examples_dir, output_dir=output_dir, package_filter=package_name, verbose=verbose
         )
 
         click.echo(f"✅ Created {created_count} documentation pages in {output_dir}")
@@ -1612,6 +1562,7 @@ def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, 
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -1634,16 +1585,10 @@ def admin():
 
 @admin.command("download-hf")
 @click.option("--repo-id", required=True, help="HuggingFace repository ID to download")
-@click.option(
-    "--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path"
-)
+@click.option("--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path")
 @click.option("--file-path", help="Specific file to download (optional)")
-@click.option(
-    "--allow-patterns", multiple=True, help="Patterns to allow (can specify multiple)"
-)
-@click.option(
-    "--ignore-patterns", multiple=True, help="Patterns to ignore (can specify multiple)"
-)
+@click.option("--allow-patterns", multiple=True, help="Patterns to allow (can specify multiple)")
+@click.option("--ignore-patterns", multiple=True, help="Patterns to ignore (can specify multiple)")
 @click.option(
     "--server-url",
     required=True,
@@ -1760,9 +1705,7 @@ def download_ollama(
             api_key = os.getenv("RUNPOD_API_KEY")
 
             client = AdminHTTPClient(server_url, auth_token=api_key)
-            async for progress_update in client.download_ollama_model(
-                model_name=model_name
-            ):
+            async for progress_update in client.download_ollama_model(model_name=model_name):
                 manager._display_progress_update(progress_update)
 
         except Exception as e:
@@ -1863,9 +1806,7 @@ def scan_cache(server_url: str):
 
 
 @admin.command("delete-hf")
-@click.option(
-    "--repo-id", required=True, help="HuggingFace repository ID to delete from cache"
-)
+@click.option("--repo-id", required=True, help="HuggingFace repository ID to delete from cache")
 @click.option(
     "--server-url",
     required=True,
@@ -1894,9 +1835,7 @@ def delete_hf(repo_id: str, server_url: str):
         console.print()
         manager = _get_progress_manager()
 
-        if not click.confirm(
-            f"Are you sure you want to delete {repo_id} from the cache?"
-        ):
+        if not click.confirm(f"Are you sure you want to delete {repo_id} from the cache?"):
             console.print("[yellow]❌ Operation cancelled[/]")
             return
 
@@ -1920,9 +1859,7 @@ def delete_hf(repo_id: str, server_url: str):
 
 
 @admin.command("cache-size")
-@click.option(
-    "--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path"
-)
+@click.option("--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path")
 @click.option(
     "--server-url",
     required=True,
@@ -1977,9 +1914,7 @@ def cache_size(cache_dir: str, server_url: str, api_key: str | None):
             size_gb = progress_update.get("size_gb", 0)
 
             console.print("[green]✅ Cache size calculation completed[/]")
-            console.print(
-                f"[cyan]📊 Total size: {size_gb} GB ({total_size:,} bytes)[/]"
-            )
+            console.print(f"[cyan]📊 Total size: {size_gb} GB ({total_size:,} bytes)[/]")
         elif "status" in progress_update and progress_update["status"] == "error":
             error = progress_update.get("error", "Unknown error")
             console.print(f"[red]❌ Error: {error}[/]")
@@ -2005,6 +1940,7 @@ def _handle_list_options(
         CUDAVersion,
         DataCenter,
     )
+
     supported_gpu_types = _get_supported_gpu_types()
 
     if list_gpu_types:
@@ -2077,9 +2013,7 @@ def list_gcp_options():
     console.print("  asia-docker.pkg.dev")
 
 
-def _handle_docker_config_check(
-    check_docker_config: bool, docker_registry: str, docker_username: str | None
-) -> None:
+def _handle_docker_config_check(check_docker_config: bool, docker_registry: str, docker_username: str | None) -> None:
     """Handle Docker configuration check and exit if specified."""
     if not check_docker_config:
         return
@@ -2124,9 +2058,7 @@ def _handle_docker_config_check(
         console.print(f"\n🎉 Final resolved username: {final_username}")
 
         # Show what the full image name would be
-        example_image = format_image_name(
-            "my-workflow", final_username, docker_registry
-        )
+        example_image = format_image_name("my-workflow", final_username, docker_registry)
         example_tag = generate_image_tag()
         console.print(f"Example image name: {example_image}:{example_tag}")
     else:
@@ -2159,6 +2091,7 @@ def env_for_deploy(
 
     # Merge secrets from environment variables (using registered secret keys)
     from nodetool.config.configuration import get_secrets_registry
+
     for secret in get_secrets_registry():
         _v = os.environ.get(secret.env_var)
         if _v is not None and str(_v) != "" and secret.env_var not in env:
@@ -2204,20 +2137,14 @@ async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str,
                 "key": secret.key,
                 "encrypted_value": secret.encrypted_value,
                 "description": secret.description,
-                "created_at": secret.created_at.isoformat()
-                if secret.created_at
-                else None,
-                "updated_at": secret.updated_at.isoformat()
-                if secret.updated_at
-                else None,
+                "created_at": secret.created_at.isoformat() if secret.created_at else None,
+                "updated_at": secret.updated_at.isoformat() if secret.updated_at else None,
             }
         )
     return payload
 
 
-async def _import_secrets_to_worker(
-    server_url: str, auth_token: str, payload: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: List[Dict[str, Any]]) -> Dict[str, Any]:
     from nodetool.deploy.admin_client import AdminHTTPClient
 
     client = AdminHTTPClient(server_url, auth_token)
@@ -2227,9 +2154,7 @@ async def _import_secrets_to_worker(
 def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     server_url = getattr(deployment, "get_server_url", lambda: None)()
     if not server_url:
-        console.print(
-            f"[yellow]Skipping secret sync for '{name}': server URL unavailable.[/]"
-        )
+        console.print(f"[yellow]Skipping secret sync for '{name}': server URL unavailable.[/]")
         return
 
     auth_token = getattr(deployment, "worker_auth_token", None)
@@ -2237,17 +2162,13 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
         env: Optional[Dict[str, str]] = None
         if hasattr(deployment, "environment") and deployment.environment:
             env = deployment.environment
-        elif hasattr(deployment, "container") and getattr(
-            deployment.container, "environment", None
-        ):
+        elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
             env = deployment.container.environment
         if env:
             auth_token = env.get("WORKER_AUTH_TOKEN")
 
     if not auth_token:
-        console.print(
-            f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]"
-        )
+        console.print(f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]")
         return
 
     secrets_payload = asyncio.run(_export_encrypted_secrets_payload())
@@ -2259,9 +2180,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
         asyncio.run(_import_secrets_to_worker(server_url, auth_token, secrets_payload))
         console.print(f"[green]Synced {len(secrets_payload)} secret(s) to '{name}'.[/]")
     except Exception as exc:
-        console.print(
-            f"[yellow]Warning: failed to sync secrets for '{name}': {exc}[/]"
-        )
+        console.print(f"[yellow]Warning: failed to sync secrets for '{name}': {exc}[/]")
 
 
 @cli.group()
@@ -2284,9 +2203,7 @@ def deploy_init():
         config_path = get_deployment_config_path()
 
         if config_path.exists():
-            if not click.confirm(
-                f"Deployment configuration already exists at {config_path}. Overwrite?"
-            ):
+            if not click.confirm(f"Deployment configuration already exists at {config_path}. Overwrite?"):
                 console.print("[yellow]Operation cancelled[/]")
                 return
 
@@ -2362,9 +2279,7 @@ def deploy_show(name: str):
             content.append(f"  • {deployment.container.name}")
             content.append(f"    Port: {deployment.container.port}")
             if deployment.container.workflows:
-                content.append(
-                    f"    Workflows: {', '.join(deployment.container.workflows)}"
-                )
+                content.append(f"    Workflows: {', '.join(deployment.container.workflows)}")
             if deployment.container.gpu:
                 content.append(f"    GPU: {deployment.container.gpu}")
             content.append("")
@@ -2513,44 +2428,34 @@ def deploy_add(name: str, deployment_type: str):
             console.print("[cyan]Self-Hosted Configuration:[/]")
             host = click.prompt("Host address", type=str)
             ssh_user = click.prompt("SSH username", type=str)
-            ssh_key_path = click.prompt(
-                "SSH key path", type=str, default="~/.ssh/id_rsa"
-            )
+            ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
 
             # Container configuration
             console.print()
             console.print("[cyan]Container configuration:[/]")
 
-            container_name = click.prompt(
-                "  Container name", type=str
-            )
+            container_name = click.prompt("  Container name", type=str)
             container_port = click.prompt("  Port", type=int)
 
             # Optional GPU
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
-                gpu = click.prompt(
-                    "  GPU device(s) (e.g., '0' or '0,1')", type=str
-                )
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
 
             # Optional workflows
-            has_workflows = click.confirm(
-                "  Assign specific workflows?", default=False
-            )
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
             if has_workflows:
-                workflows_str = click.prompt(
-                    "  Workflow IDs (comma-separated)", type=str
-                )
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
 
             container = ContainerConfig(
-                    name=container_name,
-                    port=container_port,
-                    gpu=gpu,
-                    workflows=workflows,
-                )
+                name=container_name,
+                port=container_port,
+                gpu=gpu,
+                workflows=workflows,
+            )
 
             deployment = SelfHostedDeployment(
                 host=host,
@@ -2660,9 +2565,7 @@ def deploy_edit(name: Optional[str]):
                         console.print(f"  • {dep_name}")
                     sys.exit(1)
 
-                console.print(
-                    f"[cyan]Opening deployment.yaml (deployment: {name})...[/]"
-                )
+                console.print(f"[cyan]Opening deployment.yaml (deployment: {name})...[/]")
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not verify deployment: {e}[/]")
         else:
@@ -2686,9 +2589,7 @@ def deploy_edit(name: Optional[str]):
                 console.print(f"  3. Apply changes: nodetool deploy apply {name}")
             else:
                 console.print("  1. Review deployments: nodetool deploy list")
-                console.print(
-                    "  2. Show specific deployment: nodetool deploy show <name>"
-                )
+                console.print("  2. Show specific deployment: nodetool deploy show <name>")
 
         except subprocess.CalledProcessError:
             console.print("[red]Error: Failed to edit the file[/]")
@@ -2758,9 +2659,7 @@ def deploy_list():
                 except Exception:
                     pass
 
-            table.add_row(
-                deployment["name"], deployment["type"], status, location, last_deployed
-            )
+            table.add_row(deployment["name"], deployment["type"], status, location, last_deployed)
 
         console.print(table)
 
@@ -2816,11 +2715,7 @@ def deploy_plan(name: str):
                 console.print(f"  - {item}")
             console.print()
 
-        if (
-            not plan.get("changes")
-            and not plan.get("will_create")
-            and not plan.get("will_update")
-        ):
+        if not plan.get("changes") and not plan.get("will_create") and not plan.get("will_update"):
             console.print("[green]✅ No changes - deployment is up to date[/]")
 
     except KeyError:
@@ -2836,9 +2731,7 @@ def deploy_plan(name: str):
 
 @deploy.command("apply")
 @click.argument("name")
-@click.option(
-    "--dry-run", is_flag=True, help="Show what would be done without executing"
-)
+@click.option("--dry-run", is_flag=True, help="Show what would be done without executing")
 def deploy_apply(name: str, dry_run: bool):
     """Apply deployment configuration to target platform."""
     import asyncio
@@ -2858,9 +2751,7 @@ def deploy_apply(name: str, dry_run: bool):
             try:
                 master_key = asyncio.run(MasterKeyManager.get_master_key())
             except Exception as e:
-                console.print(
-                    f"[red]Failed to retrieve master key from keychain: {e}[/]"
-                )
+                console.print(f"[red]Failed to retrieve master key from keychain: {e}[/]")
                 sys.exit(1)
 
         _populate_master_key_env(deployment, master_key)
@@ -2935,9 +2826,7 @@ def deploy_status(name: str):
             console.print(status["live_status"])
 
         if status.get("live_status_error"):
-            console.print(
-                f"[yellow]Could not get live status: {status['live_status_error']}[/]"
-            )
+            console.print(f"[yellow]Could not get live status: {status['live_status_error']}[/]")
 
     except KeyError:
         console.print(f"[red]Deployment '{name}' not found[/]")
@@ -2954,9 +2843,7 @@ def deploy_status(name: str):
 @click.argument("name")
 @click.option("--service", help="Specific service/container name")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output")
-@click.option(
-    "--tail", default=100, type=int, help="Number of lines from end (default: 100)"
-)
+@click.option("--tail", default=100, type=int, help="Number of lines from end (default: 100)")
 def deploy_logs(name: str, service: Optional[str], follow: bool, tail: int):
     """View logs from deployed containers."""
     from nodetool.deploy.manager import DeploymentManager
@@ -2999,9 +2886,7 @@ def deploy_destroy(name: str, force: bool):
         manager = DeploymentManager()
 
         if not force:
-            if not click.confirm(
-                f"Are you sure you want to destroy deployment '{name}'?"
-            ):
+            if not click.confirm(f"Are you sure you want to destroy deployment '{name}'?"):
                 console.print("[yellow]Operation cancelled[/]")
                 return
 
@@ -3061,9 +2946,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
     from nodetool.models.workflow import Workflow
     from nodetool.runtime.resources import require_scope
 
-    async def extract_and_download_models(
-        workflow_data: dict, client: AdminHTTPClient
-    ) -> int:
+    async def extract_and_download_models(workflow_data: dict, client: AdminHTTPClient) -> int:
         """Extract model references from workflow and download them on remote."""
         models = extract_models(workflow_data)
 
@@ -3107,16 +2990,12 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                     downloaded_count += 1
 
                 # Handle Ollama models
-                elif (
-                    model_type == "language_model" and model.get("provider") == "ollama"
-                ):
+                elif model_type == "language_model" and model.get("provider") == "ollama":
                     model_id = model.get("id")
                     console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
 
                     last_status = None
-                    async for progress in client.download_ollama_model(
-                        model_name=model_id
-                    ):
+                    async for progress in client.download_ollama_model(model_name=model_id):
                         last_status = progress.get("status")
                         if last_status and last_status != "success":
                             console.print(f"    [yellow]{last_status}[/]", end="\r")
@@ -3129,15 +3008,11 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                     downloaded_count += 1
 
             except Exception as e:
-                console.print(
-                    f"    [red]✗ Failed to download model: {e}[/]"
-                )
+                console.print(f"    [red]✗ Failed to download model: {e}[/]")
 
         return downloaded_count
 
-    async def extract_and_sync_assets(
-        workflow_data: dict, client: AdminHTTPClient
-    ) -> int:
+    async def extract_and_sync_assets(workflow_data: dict, client: AdminHTTPClient) -> int:
         """Extract asset references from workflow and sync them to remote."""
         asset_ids = set()
 
@@ -3225,12 +3100,8 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
-                console.print(
-                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
+                console.print("[yellow]The deployment may not be active yet. Try deploying first with:[/]")
                 console.print(f"  nodetool deploy apply {deployment_name}")
                 sys.exit(1)
 
@@ -3278,6 +3149,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
 
             # Close database connections
             from nodetool.models.base_model import close_all_database_adapters
+
             with suppress(Exception):
                 await close_all_database_adapters()
 
@@ -3324,18 +3196,12 @@ def deploy_workflows_list(deployment_name: str):
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
-                console.print(
-                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
+                console.print("[yellow]The deployment may not be active yet. Try deploying first with:[/]")
                 console.print(f"  nodetool deploy apply {deployment_name}")
                 sys.exit(1)
 
-            console.print(
-                f"[bold cyan]📋 Fetching workflows from {deployment_name}...[/]"
-            )
+            console.print(f"[bold cyan]📋 Fetching workflows from {deployment_name}...[/]")
             console.print(f"[cyan]Server: {server_url}[/]")
             console.print()
 
@@ -3365,9 +3231,7 @@ def deploy_workflows_list(deployment_name: str):
                 table.add_row(
                     workflow.get("id", ""),
                     workflow.get("name", ""),
-                    workflow.get("description", "")[:50]
-                    if workflow.get("description")
-                    else "",
+                    workflow.get("description", "")[:50] if workflow.get("description") else "",
                 )
 
             console.print(table)
@@ -3406,12 +3270,8 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
-                console.print(
-                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
+                console.print("[yellow]The deployment may not be active yet. Try deploying first with:[/]")
                 console.print(f"  nodetool deploy apply {deployment_name}")
                 sys.exit(1)
 
@@ -3422,9 +3282,7 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
                     console.print("[yellow]Operation cancelled[/]")
                     return
 
-            console.print(
-                f"[bold yellow]🗑️ Deleting workflow from {deployment_name}...[/]"
-            )
+            console.print(f"[bold yellow]🗑️ Deleting workflow from {deployment_name}...[/]")
             console.print(f"[cyan]Server: {server_url}[/]")
             console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
             console.print()
@@ -3482,12 +3340,8 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
-                console.print(
-                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
+                console.print("[yellow]The deployment may not be active yet. Try deploying first with:[/]")
                 console.print(f"  nodetool deploy apply {deployment_name}")
                 sys.exit(1)
 
@@ -3496,16 +3350,12 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
             for param in params:
                 if "=" not in param:
                     console.print(f"[red]Invalid parameter format: {param}[/]")
-                    console.print(
-                        "[yellow]Use key=value format, e.g., -p prompt='Hello'[/]"
-                    )
+                    console.print("[yellow]Use key=value format, e.g., -p prompt='Hello'[/]")
                     sys.exit(1)
                 key, value = param.split("=", 1)
                 workflow_params[key] = value
 
-            console.print(
-                f"[bold cyan]▶️  Running workflow on {deployment_name}...[/]"
-            )
+            console.print(f"[bold cyan]▶️  Running workflow on {deployment_name}...[/]")
             console.print(f"[cyan]Server: {server_url}[/]")
             console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
             if workflow_params:
@@ -3528,6 +3378,7 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
 
             # Display results
             import json
+
             console.print(json.dumps(result.get("results", {}), indent=2))
 
         except KeyError:
@@ -3568,9 +3419,7 @@ def deploy_database_get(deployment_name: str, table: str, key: str):
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
                 sys.exit(1)
 
             # Get auth token from deployment (for self-hosted deployments)
@@ -3586,6 +3435,7 @@ def deploy_database_get(deployment_name: str, table: str, key: str):
 
             console.print(f"[bold cyan]Item from {table}/{key}:[/]")
             import json
+
             console.print(json.dumps(item, indent=2))
 
         except KeyError:
@@ -3618,9 +3468,7 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
                 sys.exit(1)
 
             # Parse JSON data
@@ -3650,6 +3498,7 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
         except Exception as e:
             console.print(f"[red]❌ Failed to save item: {e}[/]")
             import traceback
+
             traceback.print_exc()
             sys.exit(1)
 
@@ -3676,15 +3525,11 @@ def deploy_database_delete(deployment_name: str, table: str, key: str, force: bo
             # Get server URL from deployment
             server_url = deployment.get_server_url()
             if not server_url:
-                console.print(
-                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
-                )
+                console.print(f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]")
                 sys.exit(1)
 
             if not force:
-                if not click.confirm(
-                    f"Are you sure you want to delete {table}/{key} from '{deployment_name}'?"
-                ):
+                if not click.confirm(f"Are you sure you want to delete {table}/{key} from '{deployment_name}'?"):
                     console.print("[yellow]Operation cancelled[/]")
                     return
 
@@ -3764,18 +3609,12 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
 
             # Get collection metadata to extract embedding model
             collection_metadata = collection.metadata
-            embedding_model = collection_metadata.get(
-                "embedding_model", "all-minilm:latest"
-            )
+            embedding_model = collection_metadata.get("embedding_model", "all-minilm:latest")
 
             # Create collection on remote if it doesn't exist
             try:
-                console.print(
-                    f"Creating collection '{collection_name}' with embedding model '{embedding_model}'..."
-                )
-                await client.create_collection(
-                    name=collection_name, embedding_model=embedding_model
-                )
+                console.print(f"Creating collection '{collection_name}' with embedding model '{embedding_model}'...")
+                await client.create_collection(name=collection_name, embedding_model=embedding_model)
                 console.print("[green]✓ Collection created[/]")
             except Exception as e:
                 # Collection might already exist, that's ok
@@ -3802,18 +3641,13 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
                 if batch["ids"]:
                     # Convert numpy arrays to lists for JSON serialization
                     embeddings = (
-                        [emb.tolist() for emb in batch["embeddings"]]
-                        if batch["embeddings"] is not None
-                        else []
+                        [emb.tolist() for emb in batch["embeddings"]] if batch["embeddings"] is not None else []
                     )
 
                     # Convert None metadatas to dicts with placeholder
                     # ChromaDB requires non-empty metadata dicts
                     metadatas = (
-                        [
-                            meta if meta is not None and meta else {"_empty": "true"}
-                            for meta in batch["metadatas"]
-                        ]
+                        [meta if meta is not None and meta else {"_empty": "true"} for meta in batch["metadatas"]]
                         if batch["metadatas"] is not None
                         else []
                     )
@@ -3826,13 +3660,9 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
                         embeddings=embeddings,
                     )
                     synced_count += len(batch["ids"])
-                    console.print(
-                        f"  Synced batch {i // batch_size + 1} ({synced_count}/{existing_count} items)"
-                    )
+                    console.print(f"  Synced batch {i // batch_size + 1} ({synced_count}/{existing_count} items)")
 
-            console.print(
-                f"[green]✅ Synced {synced_count} items to collection '{collection_name}'[/]"
-            )
+            console.print(f"[green]✅ Synced {synced_count} items to collection '{collection_name}'[/]")
 
         except KeyError:
             console.print(f"[red]Deployment '{deployment_name}' not found[/]")
@@ -3889,9 +3719,7 @@ def sync_workflow(workflow_id: str, server_url: str):
             # Use optional API key for auth if present
             api_key = os.getenv("RUNPOD_API_KEY")
             client = AdminHTTPClient(server_url, auth_token=api_key)
-            res = await client.update_workflow(
-                workflow_id, from_model(workflow).model_dump()
-            )
+            res = await client.update_workflow(workflow_id, from_model(workflow).model_dump())
 
             status = res.get("status", "ok")
             if status == "ok":
@@ -4010,9 +3838,7 @@ def proxy(
         # Run proxy
         use_tls = not no_tls
         if use_tls:
-            console.print(
-                f"[cyan]Starting proxy with TLS on {host}:{port}[/]"
-            )
+            console.print(f"[cyan]Starting proxy with TLS on {host}:{port}[/]")
         else:
             console.print(f"[cyan]Starting proxy on {host}:{port} (HTTP only)[/]")
 
@@ -4030,6 +3856,7 @@ def proxy(
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
         raise SystemExit(1) from e
+
 
 @cli.command("proxy-daemon")
 @click.option(
@@ -4138,9 +3965,7 @@ def proxy_status(config: str, server_url: str, bearer_token: str):
 
             for service in status_data:
                 status = service["status"]
-                status_color = (
-                    "green" if status == "running" else "yellow" if status == "stopped" else "red"
-                )
+                status_color = "green" if status == "running" else "yellow" if status == "stopped" else "red"
                 status_text = f"[{status_color}]{status}[/{status_color}]"
 
                 last_access = service.get("last_access_epoch")
@@ -4163,9 +3988,7 @@ def proxy_status(config: str, server_url: str, bearer_token: str):
             console.print(table)
 
         except httpx.ConnectError as exc:
-            console.print(
-                f"[red]❌ Failed to connect to proxy at {server_url}[/]"
-            )
+            console.print(f"[red]❌ Failed to connect to proxy at {server_url}[/]")
             raise SystemExit(1) from exc
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:

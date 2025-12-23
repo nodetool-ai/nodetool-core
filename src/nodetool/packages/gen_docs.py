@@ -285,9 +285,7 @@ def document_methods(file: Any, cls: Type[Any], compact: bool = False) -> None:
             document_function(file, method, is_method=True, compact=compact)
 
 
-def document_function(
-    file: Any, func: Any, is_method: bool = False, compact: bool = False
-) -> None:
+def document_function(file: Any, func: Any, is_method: bool = False, compact: bool = False) -> None:
     """
     Document a function or method, including its signature, docstring, and parameters.
 

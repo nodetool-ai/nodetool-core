@@ -72,9 +72,7 @@ class PackageAsset(BaseModel):
     id: str
     name: str
     package_name: str
-    virtual_path: str = PydanticField(
-        ..., description="Virtual path to access the asset"
-    )
+    virtual_path: str = PydanticField(..., description="Virtual path to access the asset")
 
 
 class PackageAssetList(BaseModel):
@@ -160,9 +158,7 @@ async def search_assets_global(
     """
     # Validate query length
     if len(query.strip()) < MIN_SEARCH_QUERY_LENGTH:
-        raise HTTPException(
-            status_code=400, detail="Search query must be at least 2 characters long"
-        )
+        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters long")
 
     try:
         # Search assets globally using the model's search method
@@ -205,9 +201,7 @@ async def search_assets_global(
 
     except Exception as e:
         log.exception(f"Error searching assets for user {user}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Search temporarily unavailable"
-        ) from e
+        raise HTTPException(status_code=500, detail="Search temporarily unavailable") from e
 
 
 # Routes for package assets
@@ -237,9 +231,7 @@ async def list_package_assets():
         return PackageAssetList(assets=formatted_assets)
     except Exception as e:
         log.exception(f"Error listing package assets: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error listing package assets: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error listing package assets: {str(e)}") from e
 
 
 @router.get("/packages/{package_name}", response_model=PackageAssetList)
@@ -255,9 +247,7 @@ async def list_package_assets_by_package(package_name: str):
         all_assets = registry.list_assets()
 
         # Filter assets by package name
-        package_assets = [
-            asset for asset in all_assets if asset.package_name == package_name
-        ]
+        package_assets = [asset for asset in all_assets if asset.package_name == package_name]
 
         # Convert to Pydantic models
         formatted_assets = [
@@ -305,15 +295,11 @@ async def get_package_asset(package_name: str, asset_name: str):
                 detail=f"Asset '{asset_name}' not found in package '{package_name}'",
             )
 
-        asset_path = os.path.join(
-            str(package.source_folder), "nodetool", "assets", package_name, asset_name
-        )
+        asset_path = os.path.join(str(package.source_folder), "nodetool", "assets", package_name, asset_name)
 
         # Get the physical path to the asset file
         if not os.path.exists(asset_path):
-            raise HTTPException(
-                status_code=404, detail=f"Asset file not found at path: {asset_path}"
-            )
+            raise HTTPException(status_code=404, detail=f"Asset file not found at path: {asset_path}")
 
         # Determine the content type based on file extension
         content_type, _ = mimetypes.guess_type(asset_path)
@@ -335,12 +321,8 @@ async def get_package_asset(package_name: str, asset_name: str):
     except HTTPException:
         raise
     except Exception as e:
-        log.exception(
-            f"Error serving asset {asset_name} from package {package_name}: {str(e)}"
-        )
-        raise HTTPException(
-                status_code=500, detail=f"Error serving asset: {str(e)}"
-            ) from e
+        log.exception(f"Error serving asset {asset_name} from package {package_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving asset: {str(e)}") from e
 
 
 @router.get("/{id}")
@@ -420,17 +402,13 @@ async def delete(id: str, user: str = Depends(current_user)):
         return {"deleted_asset_ids": deleted_asset_ids}
     except Exception as e:
         log.exception(f"Asset deletion failed: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting asset: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}") from e
 
 
 async def delete_folder(user_id: str, folder_id: str) -> List[str]:
     deleted_asset_ids = []
     try:
-        assets, _next_cursor = await AssetModel.paginate(
-            user_id=user_id, parent_id=folder_id, limit=10000
-        )
+        assets, _next_cursor = await AssetModel.paginate(user_id=user_id, parent_id=folder_id, limit=10000)
         # Delete children first
         for _index, asset in enumerate(assets, 1):
             if asset.content_type == "folder":
@@ -450,9 +428,7 @@ async def delete_folder(user_id: str, folder_id: str) -> List[str]:
         log.info(f"Total assets deleted: {len(deleted_asset_ids)}")
         return deleted_asset_ids
     except Exception as e:
-        log.exception(
-            f"Error in delete_folder function for folder {folder_id}: {str(e)}"
-        )
+        log.exception(f"Error in delete_folder function for folder {folder_id}: {str(e)}")
         raise
 
 
@@ -469,9 +445,7 @@ async def delete_single_asset(asset: AssetModel):
         except Exception as e:
             log.warning(f"Error deleting file for asset {asset.id}: {e}")
     except Exception as e:
-        log.exception(
-            f"Error in delete_single_asset function for asset {asset.id}: {str(e)}"
-        )
+        log.exception(f"Error in delete_single_asset function for asset {asset.id}: {str(e)}")
         raise
 
 
@@ -535,9 +509,7 @@ async def create(
         log.exception(e, stack_info=True)
         if asset:
             await asset.delete()
-        raise HTTPException(
-            status_code=500, detail="Error uploading asset"
-        ) from e
+        raise HTTPException(status_code=500, detail="Error uploading asset") from e
 
     return await from_model(asset)
 
@@ -595,10 +567,7 @@ async def download_assets(
         parent_asset = await AssetModel.get(parent_id)
         if parent_asset:
             all_assets_with_parents[parent_id] = parent_asset
-            if (
-                parent_asset.parent_id
-                and parent_asset.parent_id not in all_assets_with_parents
-            ):
+            if parent_asset.parent_id and parent_asset.parent_id not in all_assets_with_parents:
                 parents_to_fetch.add(parent_asset.parent_id)
 
     asset_paths: Dict[str, str] = {}
@@ -699,9 +668,7 @@ async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)
 
 
 @router.get("/by-filename/{filename}")
-async def get_by_filename(
-    filename: str, user: str = Depends(current_user)
-) -> Asset:
+async def get_by_filename(filename: str, user: str = Depends(current_user)) -> Asset:
     """
     Returns the asset for the given filename.
     """

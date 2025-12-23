@@ -77,4 +77,3 @@ async def run_startup_migrations(pool: SQLiteConnectionPool | None = None) -> No
                     raise
 
     log.info(f"Database migrations completed successfully ({len(models)} tables)")
-

@@ -34,15 +34,11 @@ class _SingleThreadExecutor:
     """
 
     def __init__(self, thread_name_prefix: str = "chroma-io") -> None:
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix=thread_name_prefix
-        )
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=thread_name_prefix)
 
     async def run(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            self._executor, partial(func, *args, **kwargs)
-        )
+        return await loop.run_in_executor(self._executor, partial(func, *args, **kwargs))
 
     def shutdown(self, wait: bool = False) -> None:
         self._executor.shutdown(wait=wait, cancel_futures=True)
@@ -87,9 +83,7 @@ class AsyncChromaCollection:
         )
 
     async def peek(self, limit: int = 10, include: Optional[Iterable] = None) -> dict:
-        return await self._executor.run(
-            self._collection.peek, limit=limit, include=include or []
-        )
+        return await self._executor.run(self._collection.peek, limit=limit, include=include or [])
 
     async def query(
         self,
@@ -159,9 +153,7 @@ class AsyncChromaCollection:
         if metadata is not None:
             self.metadata = metadata
 
-    async def delete(
-        self, ids: Optional[Iterable[str]] = None, where: Optional[dict] = None
-    ) -> None:
+    async def delete(self, ids: Optional[Iterable[str]] = None, where: Optional[dict] = None) -> None:
         await self._executor.run(self._collection.delete, ids=ids, where=where)
 
 
@@ -170,9 +162,7 @@ class AsyncChromaClient:
     Async wrapper around a Chroma `ClientAPI` using a dedicated single thread.
     """
 
-    def __init__(
-        self, client: ClientAPI, thread_name_prefix: str = "chroma-io"
-    ) -> None:
+    def __init__(self, client: ClientAPI, thread_name_prefix: str = "chroma-io") -> None:
         self._client = client
         self._executor = _SingleThreadExecutor(thread_name_prefix=thread_name_prefix)
 
@@ -185,18 +175,13 @@ class AsyncChromaClient:
         self,
     ) -> list[AsyncChromaCollection]:
         collections = await self._executor.run(self._client.list_collections)
-        return [
-            AsyncChromaCollection(collection, self._executor)
-            for collection in collections
-        ]
+        return [AsyncChromaCollection(collection, self._executor) for collection in collections]
 
     async def count_collections(self) -> int:
         collections = await self.list_collections()
         return len(collections)
 
-    async def get_collection(
-        self, name: str, embedding_function: Any | None = None
-    ) -> AsyncChromaCollection:
+    async def get_collection(self, name: str, embedding_function: Any | None = None) -> AsyncChromaCollection:
         collection = await self._executor.run(
             self._client.get_collection,
             name=name,
@@ -207,17 +192,11 @@ class AsyncChromaClient:
     async def get_or_create_collection(
         self, name: str, metadata: Optional[dict[str, Any]] = None
     ) -> AsyncChromaCollection:
-        collection = await self._executor.run(
-            self._client.get_or_create_collection, name=name, metadata=metadata
-        )
+        collection = await self._executor.run(self._client.get_or_create_collection, name=name, metadata=metadata)
         return AsyncChromaCollection(collection, self._executor)
 
-    async def create_collection(
-        self, name: str, metadata: Optional[dict[str, Any]] = None
-    ) -> AsyncChromaCollection:
-        collection = await self._executor.run(
-            self._client.create_collection, name=name, metadata=metadata
-        )
+    async def create_collection(self, name: str, metadata: Optional[dict[str, Any]] = None) -> AsyncChromaCollection:
+        collection = await self._executor.run(self._client.create_collection, name=name, metadata=metadata)
         return AsyncChromaCollection(collection, self._executor)
 
     async def delete_collection(self, name: str) -> None:
@@ -229,9 +208,7 @@ async def get_async_chroma_client(user_id: str | None = None) -> AsyncChromaClie
     Create an AsyncChromaClient wrapping the synchronous client from `get_chroma_client`.
     """
     loop = asyncio.get_running_loop()
-    client: ClientAPI = await loop.run_in_executor(
-        None, partial(get_chroma_client, user_id)
-    )
+    client: ClientAPI = await loop.run_in_executor(None, partial(get_chroma_client, user_id))
     return AsyncChromaClient(client)
 
 

@@ -143,8 +143,7 @@ class SearchNodesTool(Tool):
                     for prop in node_type.properties
                 ]
                 item["outputs"] = [
-                    {"name": out.name, "type": out.type.type if out.type else "any"}
-                    for out in node_type.outputs
+                    {"name": out.name, "type": out.type.type if out.type else "any"} for out in node_type.outputs
                 ]
                 item["is_dynamic"] = node_type.is_dynamic
             enriched.append(item)
@@ -154,7 +153,9 @@ class SearchNodesTool(Tool):
 
 class SearchExamplesTool(Tool):
     name: str = "search_examples"
-    description: str = "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
+    description: str = (
+        "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
+    )
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
