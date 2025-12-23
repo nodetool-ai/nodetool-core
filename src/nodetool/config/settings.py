@@ -99,6 +99,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="OPENROUTER_API_KEY",
+    group="OpenRouter",
+    description="OpenRouter API key for accessing multiple AI models through a unified API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ANTHROPIC_API_KEY",
     group="Anthropic",
     description="Anthropic API key for accessing Claude models and other Anthropic services",

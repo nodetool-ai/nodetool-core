@@ -249,9 +249,6 @@ class SQLiteConnectionPool:
         async with self._lock:
             self.active_count = 0
 
-        if connections_closed > 0:
-            log.info(f"Closed {connections_closed} connection(s) for {self.db_path} with WAL checkpoint")
-
 
 async def shutdown_all_sqlite_pools() -> None:
     """Shutdown SQLite connection pools for the current event loop.

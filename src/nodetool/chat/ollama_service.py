@@ -50,7 +50,6 @@ async def get_ollama_models_unified() -> list[UnifiedModel]:
             description=None,
             readme=None,
             size_on_disk=model.size,
-            downloaded=True,
             pipeline_tag=None,
             tags=None,
             has_model_index=False,
