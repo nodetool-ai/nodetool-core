@@ -519,14 +519,19 @@ class TestAnthropicProvider(BaseProviderTest):
 class TestAnthropicBaseUrl:
     """Test suite for ANTHROPIC_BASE_URL functionality."""
 
+    @pytest.fixture(autouse=True)
+    def reset_environment(self):
+        """Reset Environment settings cache before and after each test."""
+        from nodetool.config.environment import Environment
+
+        Environment.settings = None
+        yield
+        Environment.settings = None
+
     def test_provider_without_base_url(self, monkeypatch):
         """Test provider initialization without custom base URL."""
         # Ensure ANTHROPIC_BASE_URL is not set
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-        # Clear Environment cache to force reload
-        from nodetool.config.environment import Environment
-
-        Environment.settings = None
 
         provider = AnthropicProvider(secrets={"ANTHROPIC_API_KEY": "test-key"})
         assert provider._base_url is None
@@ -536,10 +541,6 @@ class TestAnthropicBaseUrl:
     def test_provider_with_base_url(self, monkeypatch):
         """Test provider initialization with custom base URL."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://custom-api.example.com")
-        # Clear Environment cache to force reload
-        from nodetool.config.environment import Environment
-
-        Environment.settings = None
 
         provider = AnthropicProvider(secrets={"ANTHROPIC_API_KEY": "test-key"})
         assert provider._base_url == "https://custom-api.example.com"
@@ -549,9 +550,6 @@ class TestAnthropicBaseUrl:
     def test_get_container_env_without_base_url(self, monkeypatch):
         """Test get_container_env without custom base URL."""
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-        from nodetool.config.environment import Environment
-
-        Environment.settings = None
 
         provider = AnthropicProvider(secrets={"ANTHROPIC_API_KEY": "test-api-key"})
         env_vars = provider.get_container_env(None)  # type: ignore
@@ -562,9 +560,6 @@ class TestAnthropicBaseUrl:
     def test_get_container_env_with_base_url(self, monkeypatch):
         """Test get_container_env with custom base URL."""
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://custom-api.example.com")
-        from nodetool.config.environment import Environment
-
-        Environment.settings = None
 
         provider = AnthropicProvider(secrets={"ANTHROPIC_API_KEY": "test-api-key"})
         env_vars = provider.get_container_env(None)  # type: ignore
