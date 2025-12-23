@@ -164,6 +164,52 @@ class BaseProvider:
         }
         self.secrets = secrets or {}
 
+    async def log_provider_call(
+        self,
+        user_id: str,
+        provider: str,
+        model_id: str,
+        cost: float,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+        cached_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Log an API call to the database for cost tracking.
+
+        Args:
+            user_id: ID of the user making the call
+            provider: Provider name (e.g., "openai", "anthropic")
+            model_id: Model identifier (e.g., "gpt-4o-mini")
+            cost: Cost of the call in credits
+            input_tokens: Number of input/prompt tokens
+            output_tokens: Number of output/completion tokens
+            total_tokens: Total number of tokens used
+            cached_tokens: Number of cached tokens (if applicable)
+            reasoning_tokens: Number of reasoning tokens (if applicable)
+            metadata: Additional metadata about the call
+        """
+        try:
+            from nodetool.models.provider_call import ProviderCall
+
+            await ProviderCall.create(
+                user_id=user_id,
+                provider=provider,
+                model_id=model_id,
+                cost=cost,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                reasoning_tokens=reasoning_tokens,
+                metadata=metadata,
+            )
+        except Exception as e:
+            # Don't fail the API call if logging fails
+            log.error(f"Failed to log provider call: {e}")
+
     def get_capabilities(self) -> Set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""
         return {
