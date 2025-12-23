@@ -206,9 +206,15 @@ class BaseProvider:
                 reasoning_tokens=reasoning_tokens,
                 metadata=metadata,
             )
+        except ImportError as e:
+            # Handle missing module gracefully
+            log.warning(f"ProviderCall model not available: {e}")
+        except (ValueError, TypeError) as e:
+            # Handle invalid parameter values
+            log.warning(f"Invalid parameters for provider call logging: {e}")
         except Exception as e:
             # Don't fail the API call if logging fails
-            log.error(f"Failed to log provider call: {e}")
+            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
     def get_capabilities(self) -> Set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""

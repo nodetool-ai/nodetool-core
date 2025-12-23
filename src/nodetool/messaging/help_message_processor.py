@@ -1012,7 +1012,7 @@ class HelpMessageProcessor(MessageProcessor):
     ) -> None:
         """
         Log the provider call to the database for cost tracking.
-        
+
         Args:
             user_id: User ID making the call
             provider: Provider name (e.g., "openai", "anthropic")
@@ -1021,12 +1021,12 @@ class HelpMessageProcessor(MessageProcessor):
         if not provider or not model:
             log.warning("Cannot log provider call: missing provider or model")
             return
-        
+
         try:
             # Get usage and cost from provider
             usage = self.provider.usage
             cost = self.provider.cost
-            
+
             await self.provider.log_provider_call(
                 user_id=user_id,
                 provider=str(provider),
@@ -1039,8 +1039,12 @@ class HelpMessageProcessor(MessageProcessor):
                 reasoning_tokens=usage.get("reasoning_tokens"),
             )
             log.debug(f"Logged provider call: {provider}/{model}, cost={cost}, tokens={usage.get('total_tokens', 0)}")
+        except (KeyError, AttributeError, TypeError) as e:
+            # Handle missing or invalid usage data
+            log.warning(f"Failed to log provider call due to invalid data: {e}")
         except Exception as e:
-            log.error(f"Failed to log provider call: {e}", exc_info=True)
+            # Log unexpected errors but don't fail the chat
+            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
     def _sanitize_chat_history(self, history: List[Message]) -> List[Message]:
         """
