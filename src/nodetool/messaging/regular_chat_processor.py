@@ -416,6 +416,14 @@ class RegularChatProcessor(MessageProcessor):
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
                     log.debug("No more unprocessed messages, completing generation")
+                    
+                    # Log provider call for cost tracking
+                    await self._log_provider_call(
+                        processing_context.user_id,
+                        last_message.provider,
+                        last_message.model,
+                    )
+                    
                     break
                 else:
                     log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
@@ -668,3 +676,41 @@ class RegularChatProcessor(MessageProcessor):
             return "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
         else:
             return f"Connection error: {error_msg}"
+
+    async def _log_provider_call(
+        self,
+        user_id: str,
+        provider: str | None,
+        model: str | None,
+    ) -> None:
+        """
+        Log the provider call to the database for cost tracking.
+        
+        Args:
+            user_id: User ID making the call
+            provider: Provider name (e.g., "openai", "anthropic")
+            model: Model identifier
+        """
+        if not provider or not model:
+            log.warning("Cannot log provider call: missing provider or model")
+            return
+        
+        try:
+            # Get usage and cost from provider
+            usage = self.provider.usage
+            cost = self.provider.cost
+            
+            await self.provider.log_provider_call(
+                user_id=user_id,
+                provider=str(provider),
+                model_id=model,
+                cost=cost,
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+                cached_tokens=usage.get("cached_prompt_tokens"),
+                reasoning_tokens=usage.get("reasoning_tokens"),
+            )
+            log.debug(f"Logged provider call: {provider}/{model}, cost={cost}, tokens={usage.get('total_tokens', 0)}")
+        except Exception as e:
+            log.error(f"Failed to log provider call: {e}", exc_info=True)
