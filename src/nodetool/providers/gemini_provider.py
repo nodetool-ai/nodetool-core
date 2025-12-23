@@ -121,7 +121,7 @@ class GeminiProvider(BaseProvider):
         try:
             timeout = aiohttp.ClientTimeout(total=3)
             # API permits key either as header or query parameter; use query to avoid header nuances
-            url = f"https://generativelanguage.googleapis.com/v1/models?key={self.api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
             async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
                 if response.status != 200:
                     log.warning(f"Failed to fetch Gemini models: HTTP {response.status}")
@@ -131,6 +131,11 @@ class GeminiProvider(BaseProvider):
 
                 models: List[LanguageModel] = []
                 for item in items:
+                    # Filter for models that support generating content (exclude embeddings, etc.)
+                    methods = item.get("supportedGenerationMethods") or []
+                    if "generateContent" not in methods:
+                        continue
+
                     # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
                     raw_name: str | None = item.get("name")
                     if not raw_name:
