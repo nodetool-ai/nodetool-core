@@ -407,13 +407,13 @@ async def calculate_chat_cost(
     model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0
 ) -> float:
     """Calculates cost in CREDITS for chat models.
-    
+
     Args:
         model_id: Model identifier
         input_tokens: Number of input/prompt tokens
         output_tokens: Number of output/completion tokens
         cached_tokens: Number of cached input tokens (for models that support caching)
-    
+
     Returns:
         Cost in credits
     """
@@ -427,7 +427,7 @@ async def calculate_chat_cost(
             # Calculate cost for non-cached input tokens
             non_cached_input = max(0, input_tokens - cached_tokens)
             cost_input = (non_cached_input / 1000) * tier_pricing["input_1k_tokens"]
-            
+
             # Add cost for cached tokens if applicable
             if cached_tokens > 0 and "cached_input_1k_tokens" in tier_pricing:
                 cost_cached = (cached_tokens / 1000) * tier_pricing["cached_input_1k_tokens"]
@@ -435,7 +435,7 @@ async def calculate_chat_cost(
             elif cached_tokens > 0:
                 # If model doesn't have cached pricing, treat as regular input
                 cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
-            
+
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             cost = cost_input + cost_output
         # else:
