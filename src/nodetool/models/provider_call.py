@@ -14,14 +14,14 @@ from nodetool.models.condition_builder import Field
 class ProviderCall(DBModel):
     """
     Model for tracking individual API calls to AI providers.
-    
+
     This model logs granular information about each API call including:
     - User making the call
     - Provider and model used
     - Cost and token usage
     - Timestamps
     - Additional metadata
-    
+
     Used for cost aggregation, usage analytics, and billing.
     """
 
@@ -48,13 +48,13 @@ class ProviderCall(DBModel):
     async def create(cls, user_id: str, provider: str, model_id: str, **kwargs) -> "ProviderCall":
         """
         Create a new provider call record.
-        
+
         Args:
             user_id: ID of the user making the call
             provider: Provider name (e.g., "openai", "anthropic")
             model_id: Model identifier (e.g., "gpt-4o-mini", "claude-3-opus")
             **kwargs: Additional fields (cost, tokens, metadata, etc.)
-        
+
         Returns:
             Created ProviderCall instance
         """
@@ -78,7 +78,7 @@ class ProviderCall(DBModel):
     ):
         """
         Paginate provider call records with optional filtering.
-        
+
         Args:
             user_id: Filter by user ID
             provider: Filter by provider name
@@ -86,13 +86,13 @@ class ProviderCall(DBModel):
             limit: Maximum number of records to return
             start_key: Pagination start key
             reverse: Sort in reverse chronological order
-        
+
         Returns:
             Tuple of (list of ProviderCall instances, next pagination key)
         """
         # Build condition
         condition = Field("id").greater_than(start_key or "")
-        
+
         if user_id:
             condition = condition.and_(Field("user_id").equals(user_id))
         if provider:
@@ -115,12 +115,12 @@ class ProviderCall(DBModel):
     ) -> dict[str, Any]:
         """
         Aggregate cost and usage statistics for a user.
-        
+
         Args:
             user_id: User ID to aggregate for
             provider: Optional provider filter
             model_id: Optional model filter
-        
+
         Returns:
             Dictionary with aggregated totals
         """
@@ -157,10 +157,10 @@ class ProviderCall(DBModel):
     ) -> list[dict[str, Any]]:
         """
         Aggregate cost and usage by provider for a user.
-        
+
         Args:
             user_id: User ID to aggregate for
-        
+
         Returns:
             List of aggregations, one per provider
         """
@@ -183,7 +183,7 @@ class ProviderCall(DBModel):
                     "total_tokens": 0,
                     "call_count": 0,
                 }
-            
+
             stats = provider_stats[call.provider]
             stats["total_cost"] += call.cost
             stats["total_input_tokens"] += call.input_tokens
@@ -201,11 +201,11 @@ class ProviderCall(DBModel):
     ) -> list[dict[str, Any]]:
         """
         Aggregate cost and usage by model for a user.
-        
+
         Args:
             user_id: User ID to aggregate for
             provider: Optional provider filter
-        
+
         Returns:
             List of aggregations, one per model
         """
@@ -231,7 +231,7 @@ class ProviderCall(DBModel):
                     "total_tokens": 0,
                     "call_count": 0,
                 }
-            
+
             stats = model_stats[key]
             stats["total_cost"] += call.cost
             stats["total_input_tokens"] += call.input_tokens
