@@ -114,7 +114,6 @@ class MiniMaxProvider(AnthropicProvider):
             timeout = aiohttp.ClientTimeout(total=3)
             headers = {
                 "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
             }
             models_url = f"{MINIMAX_BASE_URL}/models"
             async with (
