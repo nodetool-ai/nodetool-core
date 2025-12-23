@@ -58,8 +58,8 @@ class WorkflowRecoveryService:
         if not projection:
             return False
         
-        # Only running or failed runs can be resumed
-        return projection.status in ["running", "failed"]
+        # Only running, failed, or suspended runs can be resumed
+        return projection.status in ["running", "failed", "suspended"]
 
     async def acquire_run_lease(self, run_id: str) -> RunLease | None:
         """
@@ -171,18 +171,32 @@ class WorkflowRecoveryService:
                     "attempt": state.get("attempt", 1) + 1,
                 }
                 log.info(f"Node {node_id} failed but is retryable, will reschedule")
+                
+            elif status == "suspended":
+                # Node is suspended - resume with saved state
+                resumption_plan[node_id] = {
+                    "action": "resume_suspended",
+                    "reason": "resuming_suspended_node",
+                    "attempt": state.get("attempt", 1),
+                    "saved_state": state.get("suspension_state", {}),
+                }
+                log.info(
+                    f"Node {node_id} is suspended, will resume with saved state "
+                    f"(reason: {state.get('suspension_reason', 'unknown')})"
+                )
         
         return resumption_plan
 
     async def schedule_resumption_events(
-        self, run_id: str, resumption_plan: dict[str, dict[str, Any]]
+        self, run_id: str, resumption_plan: dict[str, dict[str, Any]], graph: Graph
     ):
         """
-        Append NodeScheduled events for nodes that need to resume.
+        Append events for nodes that need to resume.
         
         Args:
             run_id: The workflow run identifier
             resumption_plan: Plan from determine_resumption_points()
+            graph: Workflow graph (needed for suspended node handling)
         """
         for node_id, plan in resumption_plan.items():
             if plan["action"] == "reschedule":
@@ -198,6 +212,46 @@ class WorkflowRecoveryService:
                 log.info(
                     f"Scheduled node {node_id} for attempt {plan['attempt']} (reason: {plan['reason']})"
                 )
+                
+            elif plan["action"] == "resume_suspended":
+                # Log NodeResumed event with saved state
+                await RunEvent.append_event(
+                    run_id=run_id,
+                    event_type="NodeResumed",
+                    node_id=node_id,
+                    payload={
+                        "state": plan["saved_state"],
+                    },
+                )
+                
+                # Also log RunResumed to mark the workflow as running again
+                await RunEvent.append_event(
+                    run_id=run_id,
+                    event_type="RunResumed",
+                    node_id=None,
+                    payload={
+                        "node_id": node_id,
+                        "metadata": {"reason": plan["reason"]},
+                    },
+                )
+                
+                # Set the node to resuming mode with saved state
+                node = graph.find_node(node_id)
+                if node and hasattr(node, "_set_resuming_state"):
+                    node._set_resuming_state(
+                        saved_state=plan["saved_state"],
+                        event_seq=-1,  # Will be updated from actual event
+                    )
+                    log.info(
+                        f"Set node {node_id} to resuming mode with saved state "
+                        f"(keys: {list(plan['saved_state'].keys())})"
+                    )
+                else:
+                    log.warning(
+                        f"Node {node_id} is not suspendable but has suspended state"
+                    )
+                
+                log.info(f"Resuming suspended node {node_id}")
 
     async def reregister_triggers(
         self, projection: RunProjection, graph: Graph, context: ProcessingContext
@@ -282,7 +336,7 @@ class WorkflowRecoveryService:
                 return True, "No resumption needed"
             
             # Schedule resumption events
-            await self.schedule_resumption_events(run_id, resumption_plan)
+            await self.schedule_resumption_events(run_id, resumption_plan, graph)
             
             # Re-register triggers if any
             await self.reregister_triggers(projection, graph, context)

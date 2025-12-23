@@ -111,6 +111,17 @@ class RunProjection(DBModel):
             self.status = "cancelled"
             self.metadata["reason"] = payload.get("reason")
             
+        elif event_type == "RunSuspended":
+            self.status = "suspended"
+            self.metadata["suspension_reason"] = payload.get("reason")
+            self.metadata["suspended_node_id"] = payload.get("node_id")
+            self.metadata["suspension_metadata"] = payload.get("metadata", {})
+            
+        elif event_type == "RunResumed":
+            self.status = "running"
+            self.metadata["resumed_node_id"] = payload.get("node_id")
+            self.metadata["resumption_metadata"] = payload.get("metadata", {})
+            
         elif event_type == "NodeScheduled":
             node_id = event.node_id
             if node_id:
@@ -146,6 +157,24 @@ class RunProjection(DBModel):
             if node_id and node_id in self.node_states:
                 self.node_states[node_id]["checkpoint"] = payload.get("checkpoint_data")
                 self.node_states[node_id]["checkpointed_at"] = event.event_time.isoformat()
+                
+        elif event_type == "NodeSuspended":
+            node_id = event.node_id
+            if node_id:
+                if node_id not in self.node_states:
+                    self.node_states[node_id] = {}
+                self.node_states[node_id]["status"] = "suspended"
+                self.node_states[node_id]["suspended_at"] = event.event_time.isoformat()
+                self.node_states[node_id]["suspension_reason"] = payload.get("reason")
+                self.node_states[node_id]["suspension_state"] = payload.get("state", {})
+                self.node_states[node_id]["suspension_metadata"] = payload.get("metadata", {})
+                
+        elif event_type == "NodeResumed":
+            node_id = event.node_id
+            if node_id and node_id in self.node_states:
+                self.node_states[node_id]["status"] = "running"
+                self.node_states[node_id]["resumed_at"] = event.event_time.isoformat()
+                self.node_states[node_id]["resumed_state"] = payload.get("state", {})
                 
         elif event_type == "TriggerRegistered":
             node_id = event.node_id

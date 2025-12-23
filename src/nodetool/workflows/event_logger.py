@@ -123,6 +123,20 @@ class WorkflowEventLogger:
         """Log RunCancelled event."""
         return await self.log_event("RunCancelled", payload={"reason": reason})
 
+    async def log_run_suspended(self, node_id: str, reason: str, metadata: dict):
+        """Log RunSuspended event."""
+        return await self.log_event(
+            "RunSuspended",
+            payload={"node_id": node_id, "reason": reason, "metadata": metadata},
+        )
+
+    async def log_run_resumed(self, node_id: str, metadata: dict):
+        """Log RunResumed event."""
+        return await self.log_event(
+            "RunResumed",
+            payload={"node_id": node_id, "metadata": metadata},
+        )
+
     async def log_node_scheduled(self, node_id: str, node_type: str, attempt: int = 1):
         """Log NodeScheduled event."""
         return await self.log_event(
@@ -160,6 +174,24 @@ class WorkflowEventLogger:
         return await self.log_event(
             "NodeFailed",
             payload={"attempt": attempt, "error": error, "retryable": retryable},
+            node_id=node_id,
+        )
+
+    async def log_node_suspended(
+        self, node_id: str, reason: str, state: dict, metadata: dict
+    ):
+        """Log NodeSuspended event."""
+        return await self.log_event(
+            "NodeSuspended",
+            payload={"reason": reason, "state": state, "metadata": metadata},
+            node_id=node_id,
+        )
+
+    async def log_node_resumed(self, node_id: str, state: dict):
+        """Log NodeResumed event."""
+        return await self.log_event(
+            "NodeResumed",
+            payload={"state": state},
             node_id=node_id,
         )
 

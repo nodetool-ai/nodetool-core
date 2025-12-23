@@ -52,6 +52,7 @@ from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     BaseTorchSupport,
@@ -671,6 +672,52 @@ class WorkflowRunner:
                     context.post_message(
                         JobUpdate(job_id=self.job_id, status="cancelled")
                     )
+                    
+            except WorkflowSuspendedException as e:
+                # Handle workflow suspension from suspendable node
+                self.status = "suspended"
+                
+                log.info(
+                    f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}"
+                )
+                
+                # Log suspension events
+                if self.event_logger:
+                    try:
+                        # Log NodeSuspended event
+                        await self.event_logger.log_node_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            state=e.state,
+                            metadata=e.metadata,
+                        )
+                        
+                        # Log RunSuspended event
+                        await self.event_logger.log_run_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            metadata=e.metadata,
+                        )
+                        
+                        # Flush projection to ensure suspension is persisted
+                        await self.event_logger.flush_projection()
+                        
+                    except Exception as e2:
+                        log.error(f"Failed to log suspension events: {e2}")
+                        raise
+                
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="suspended",
+                            message=f"Workflow suspended at node {e.node_id}: {e.reason}",
+                        )
+                    )
+                
+                # Do not re-raise - suspension is a clean exit
+                return
+                
             except Exception as e:
                 error_message_for_job_update = str(e)
                 log.error(
