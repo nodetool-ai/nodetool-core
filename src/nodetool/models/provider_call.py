@@ -123,13 +123,19 @@ class ProviderCall(DBModel):
 
         Returns:
             Dictionary with aggregated totals
+
+        Note:
+            For production use with large datasets, consider implementing
+            database-level aggregation queries instead of in-memory aggregation.
         """
-        # Fetch all records for the user with filters
+        # Fetch records for the user with filters
+        # Note: This implementation fetches all records which may not scale
+        # for very large datasets. Consider database-level aggregation for production.
         calls, _ = await cls.paginate(
             user_id=user_id,
             provider=provider,
             model_id=model_id,
-            limit=10000,  # High limit to get all records
+            limit=10000,  # High limit for aggregation, see note above
             reverse=False,
         )
 
@@ -163,11 +169,15 @@ class ProviderCall(DBModel):
 
         Returns:
             List of aggregations, one per provider
+
+        Note:
+            For production use with large datasets, consider implementing
+            database-level GROUP BY queries instead of in-memory aggregation.
         """
         # Fetch all records for the user
         calls, _ = await cls.paginate(
             user_id=user_id,
-            limit=10000,
+            limit=10000,  # High limit for aggregation
             reverse=False,
         )
 
@@ -208,19 +218,23 @@ class ProviderCall(DBModel):
 
         Returns:
             List of aggregations, one per model
+
+        Note:
+            For production use with large datasets, consider implementing
+            database-level GROUP BY queries instead of in-memory aggregation.
         """
         # Fetch all records for the user
         calls, _ = await cls.paginate(
             user_id=user_id,
             provider=provider,
-            limit=10000,
+            limit=10000,  # High limit for aggregation
             reverse=False,
         )
 
-        # Group by model
-        model_stats: dict[str, dict[str, Any]] = {}
+        # Group by model using tuple key to avoid collisions
+        model_stats: dict[tuple[str, str], dict[str, Any]] = {}
         for call in calls:
-            key = f"{call.provider}:{call.model_id}"
+            key = (call.provider, call.model_id)
             if key not in model_stats:
                 model_stats[key] = {
                     "provider": call.provider,
