@@ -52,17 +52,22 @@ def _is_retryable_error(self, error: Exception) -> bool:
     return False
 ```
 
-### 3. Output Tracking
+### 3. Output Tracking with Large Object Handling
 **Location**: `src/nodetool/workflows/actor.py` line 696
 **Issue**: NodeCompleted event has empty `outputs={}` 
 **Impact**: Recovery can't verify node outputs, may cause duplicate work
+**Strategy**: Store large objects separately to avoid bloating event log
+- AssetRef types (ImageRef, VideoRef, AudioRef, etc.) → store only URI/asset_id reference
+- Large objects (>1MB) → store in Asset storage, reference by ID
+- Small objects (<1MB) → serialize directly in event payload
+
 **Fix Required**:
 ```python
 # Capture outputs from send_messages
 result = {}
 for key, value in outputs_collector.collected().items():
-    # Serialize outputs for event log
-    result[key] = self._serialize_output(value)
+    # Serialize outputs for event log with size limits
+    result[key] = self._serialize_output_for_event_log(value)
 
 await self.runner.event_logger.log_node_completed(
     node_id=node._id,
@@ -70,6 +75,35 @@ await self.runner.event_logger.log_node_completed(
     outputs=result,
     duration_ms=duration_ms,
 )
+
+def _serialize_output_for_event_log(self, value: Any, max_size_bytes: int = 1_000_000) -> dict:
+    """Serialize output for event log, storing large objects separately.
+    
+    Returns dict with either:
+    - {'type': 'asset_ref', 'uri': '...', 'asset_id': '...'} for AssetRef types
+    - {'type': 'inline', 'value': {...}} for small objects
+    - {'type': 'external_ref', 'storage_id': '...'} for large objects stored separately
+    """
+    # Handle AssetRef types (already references, not data)
+    if isinstance(value, AssetRef):
+        return {
+            'type': 'asset_ref',
+            'asset_type': value.__class__.__name__,
+            'uri': value.uri,
+            'asset_id': value.asset_id,
+        }
+    
+    # Try to serialize inline
+    try:
+        serialized = json.dumps(value)
+        if len(serialized) <= max_size_bytes:
+            return {'type': 'inline', 'value': value}
+    except (TypeError, ValueError):
+        pass
+    
+    # Too large or not JSON-serializable - store separately
+    storage_id = await self._store_large_output(value)
+    return {'type': 'external_ref', 'storage_id': storage_id}
 ```
 
 ## High Priority Issues

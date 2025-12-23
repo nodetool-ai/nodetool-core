@@ -250,7 +250,17 @@ This implementation adds resumable workflows to NodeTool's actor-based execution
    - NodeFailed event has retryable flag
    - Not yet automatically determined from exception type
 
-3. **Event Log Size**
+3. **Output Tracking (Intentionally Limited)**
+   - NodeCompleted events currently log `outputs={}` (empty)
+   - This is intentional to avoid bloating event log with large objects
+   - **Strategy for future enhancement**:
+     - AssetRef types → log only URI/asset_id reference (~100 bytes)
+     - Small objects (<1MB) → serialize inline as JSON
+     - Large objects (>1MB) → store separately, log reference ID
+   - Current approach sufficient for basic recovery (nodes re-execute if incomplete)
+   - Full output tracking needed only for optimizations (skip completed nodes)
+
+4. **Event Log Size**
    - No automatic compaction or archiving yet
    - Old runs accumulate events indefinitely
 

@@ -601,7 +601,25 @@ async def release_lease(run_id: str, worker_id: str):
    - Decision: 30 days, then archive to cold storage
    
 3. **Large Payloads:** How to handle large outputs in events?
-   - Decision: Store large outputs separately (Asset storage), reference by ID in event
+   - **Decision**: Multi-tiered storage strategy based on output type and size
+   - **AssetRef Types** (ImageRef, VideoRef, AudioRef, etc.): These already store references (URI/asset_id) to assets in storage, not the actual data. Log only the reference metadata (~100 bytes).
+   - **Small Objects** (<1MB): Serialize directly into event payload as JSON
+   - **Large Objects** (>1MB): Store in Asset storage separately, log only the storage reference ID
+   - **Benefits**:
+     - Event log remains compact and fast to query
+     - Large media files don't bloat the database
+     - Recovery can reconstruct outputs by following references
+     - Leverages existing Asset storage infrastructure
+   - **Example**:
+     ```json
+     {
+       "outputs": {
+         "image": {"type": "asset_ref", "uri": "file:///path/to/image.png", "asset_id": "abc123"},
+         "result": {"type": "inline", "value": {"status": "ok", "count": 42}},
+         "large_data": {"type": "external_ref", "storage_id": "output_xyz789"}
+       }
+     }
+     ```
 
 4. **Distributed Execution:** How to coordinate across multiple machines?
    - Decision: Lease-based locking, events replicated to shared DB
