@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -6,37 +5,39 @@ from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
-from nodetool.models.provider_call import ProviderCall
+from nodetool.models.prediction import Prediction
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/costs", tags=["costs"])
 
 
-class ProviderCallResponse(BaseModel):
-    """Response model for a single provider call record."""
+class PredictionResponse(BaseModel):
+    """Response model for a single prediction/cost record."""
 
     id: str
     user_id: str
+    node_id: str
     provider: str
-    model_id: str
-    cost: float
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
+    model: str
+    workflow_id: Optional[str] = None
+    cost: Optional[float] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
     cached_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
-    created_at: str
+    created_at: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
     class Config:
         from_attributes = True
 
 
-class ProviderCallListResponse(BaseModel):
-    """Response model for a list of provider calls."""
+class PredictionListResponse(BaseModel):
+    """Response model for a list of predictions."""
 
-    calls: List[ProviderCallResponse]
+    calls: List[PredictionResponse]
     next_start_key: Optional[str] = None
 
 
@@ -55,7 +56,7 @@ class UserAggregateResponse(AggregateResponse):
 
     user_id: str
     provider: Optional[str] = None
-    model_id: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ProviderAggregateResponse(AggregateResponse):
@@ -68,14 +69,14 @@ class ModelAggregateResponse(AggregateResponse):
     """Response model for model-level aggregation."""
 
     provider: str
-    model_id: str
+    model: str
 
 
-@router.get("/", response_model=ProviderCallListResponse)
+@router.get("/", response_model=PredictionListResponse)
 async def list_provider_calls(
     user_id: str = Depends(current_user),
     provider: Optional[str] = Query(None, description="Filter by provider"),
-    model_id: Optional[str] = Query(None, description="Filter by model ID"),
+    model: Optional[str] = Query(None, description="Filter by model"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     start_key: Optional[str] = Query(None, description="Pagination start key"),
 ):
@@ -85,17 +86,17 @@ async def list_provider_calls(
     Args:
         user_id: Current authenticated user ID
         provider: Optional filter by provider name
-        model_id: Optional filter by model ID
+        model: Optional filter by model name
         limit: Maximum number of records to return (1-1000)
         start_key: Pagination start key
 
     Returns:
-        List of provider call records
+        List of prediction/cost records
     """
-    calls, next_start_key = await ProviderCall.paginate(
+    predictions, next_start_key = await Prediction.paginate(
         user_id=user_id,
         provider=provider,
-        model_id=model_id,
+        model=model,
         limit=limit,
         start_key=start_key,
         reverse=True,  # Most recent first
@@ -106,29 +107,31 @@ async def list_provider_calls(
         extra={
             "user_id": user_id,
             "provider": provider,
-            "model_id": model_id,
+            "model": model,
             "limit": limit,
-            "call_count": len(calls),
+            "call_count": len(predictions),
         },
     )
 
-    return ProviderCallListResponse(
+    return PredictionListResponse(
         calls=[
-            ProviderCallResponse(
-                id=call.id,
-                user_id=call.user_id,
-                provider=call.provider,
-                model_id=call.model_id,
-                cost=call.cost,
-                input_tokens=call.input_tokens,
-                output_tokens=call.output_tokens,
-                total_tokens=call.total_tokens,
-                cached_tokens=call.cached_tokens,
-                reasoning_tokens=call.reasoning_tokens,
-                created_at=call.created_at.isoformat() if call.created_at else "",
-                metadata=call.metadata,
+            PredictionResponse(
+                id=pred.id,
+                user_id=pred.user_id,
+                node_id=pred.node_id,
+                provider=pred.provider,
+                model=pred.model,
+                workflow_id=pred.workflow_id,
+                cost=pred.cost,
+                input_tokens=pred.input_tokens,
+                output_tokens=pred.output_tokens,
+                total_tokens=pred.total_tokens,
+                cached_tokens=pred.cached_tokens,
+                reasoning_tokens=pred.reasoning_tokens,
+                created_at=pred.created_at.isoformat() if pred.created_at else None,
+                metadata=pred.metadata,
             )
-            for call in calls
+            for pred in predictions
         ],
         next_start_key=next_start_key,
     )
@@ -138,7 +141,7 @@ async def list_provider_calls(
 async def aggregate_costs(
     user_id: str = Depends(current_user),
     provider: Optional[str] = Query(None, description="Filter by provider"),
-    model_id: Optional[str] = Query(None, description="Filter by model ID"),
+    model: Optional[str] = Query(None, description="Filter by model"),
 ):
     """
     Get aggregated cost statistics for the current user.
@@ -146,15 +149,15 @@ async def aggregate_costs(
     Args:
         user_id: Current authenticated user ID
         provider: Optional filter by provider name
-        model_id: Optional filter by model ID
+        model: Optional filter by model name
 
     Returns:
         Aggregated cost and usage statistics
     """
-    aggregation = await ProviderCall.aggregate_by_user(
+    aggregation = await Prediction.aggregate_by_user(
         user_id=user_id,
         provider=provider,
-        model_id=model_id,
+        model=model,
     )
 
     log.info(
@@ -162,7 +165,7 @@ async def aggregate_costs(
         extra={
             "user_id": user_id,
             "provider": provider,
-            "model_id": model_id,
+            "model": model,
             "total_cost": aggregation["total_cost"],
         },
     )
@@ -183,7 +186,7 @@ async def aggregate_costs_by_provider(
     Returns:
         List of aggregations, one per provider
     """
-    aggregations = await ProviderCall.aggregate_by_provider(user_id=user_id)
+    aggregations = await Prediction.aggregate_by_provider(user_id=user_id)
 
     log.info(
         "Costs API aggregate_costs_by_provider",
@@ -211,7 +214,7 @@ async def aggregate_costs_by_model(
     Returns:
         List of aggregations, one per model
     """
-    aggregations = await ProviderCall.aggregate_by_model(
+    aggregations = await Prediction.aggregate_by_model(
         user_id=user_id,
         provider=provider,
     )
@@ -248,16 +251,16 @@ async def get_cost_summary(
         Comprehensive cost summary
     """
     # Get overall aggregation
-    overall = await ProviderCall.aggregate_by_user(user_id=user_id)
+    overall = await Prediction.aggregate_by_user(user_id=user_id)
 
     # Get provider breakdown
-    by_provider = await ProviderCall.aggregate_by_provider(user_id=user_id)
+    by_provider = await Prediction.aggregate_by_provider(user_id=user_id)
 
     # Get model breakdown
-    by_model = await ProviderCall.aggregate_by_model(user_id=user_id)
+    by_model = await Prediction.aggregate_by_model(user_id=user_id)
 
     # Get recent calls (last 10)
-    recent_calls, _ = await ProviderCall.paginate(
+    recent_predictions, _ = await Prediction.paginate(
         user_id=user_id,
         limit=10,
         reverse=True,
@@ -279,13 +282,13 @@ async def get_cost_summary(
         "by_model": by_model,
         "recent_calls": [
             {
-                "id": call.id,
-                "provider": call.provider,
-                "model_id": call.model_id,
-                "cost": call.cost,
-                "total_tokens": call.total_tokens,
-                "created_at": call.created_at.isoformat() if call.created_at else "",
+                "id": pred.id,
+                "provider": pred.provider,
+                "model": pred.model,
+                "cost": pred.cost,
+                "total_tokens": pred.total_tokens,
+                "created_at": pred.created_at.isoformat() if pred.created_at else "",
             }
-            for call in recent_calls
+            for pred in recent_predictions
         ],
     }
