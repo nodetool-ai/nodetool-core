@@ -4,6 +4,15 @@ from typing import Any
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
 
+# TODO: For production use with large datasets (>10k records per user),
+# replace in-memory aggregation with database-level GROUP BY queries.
+# Example SQL for aggregate_by_provider:
+#   SELECT provider, SUM(cost), SUM(input_tokens), SUM(output_tokens),
+#          SUM(total_tokens), COUNT(*)
+#   FROM nodetool_provider_calls
+#   WHERE user_id = ?
+#   GROUP BY provider
+
 
 @DBIndex(columns=["user_id"], name="idx_provider_call_user_id")
 @DBIndex(columns=["provider"], name="idx_provider_call_provider")
