@@ -22,18 +22,69 @@ if TYPE_CHECKING:
 # --- New Credit-Based Pricing System ---
 # 1 credit = $0.01 USD (i.e., 1000 credits = $10 USD)
 # All rates include a 50% premium over provider base costs.
+# Pricing updated based on official OpenAI pricing (December 2023)
 
 CREDIT_PRICING_TIERS = {
-    # Rates per 1,000 tokens
+    # GPT-5 Series (newest flagship models)
+    # GPT-5.2: $1.75/1M input ($0.175/1M cached), $14/1M output → with 50% premium
+    "gpt5_tier": {
+        "input_1k_tokens": 0.002625,  # ($1.75/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0002625,  # ($0.175/1M * 1.5) / 1000
+        "output_1k_tokens": 0.021,  # ($14/1M * 1.5) / 1000
+    },
+    # GPT-5.2 pro: $21/1M input, $168/1M output → with 50% premium
+    "gpt5_pro_tier": {
+        "input_1k_tokens": 0.0315,  # ($21/1M * 1.5) / 1000
+        "output_1k_tokens": 0.252,  # ($168/1M * 1.5) / 1000
+    },
+    # GPT-5 mini: $0.25/1M input ($0.025/1M cached), $2/1M output → with 50% premium
+    "gpt5_mini_tier": {
+        "input_1k_tokens": 0.000375,  # ($0.25/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0000375,  # ($0.025/1M * 1.5) / 1000
+        "output_1k_tokens": 0.003,  # ($2/1M * 1.5) / 1000
+    },
+    # GPT-4.1 family
+    # GPT-4.1: $3/1M input ($0.75/1M cached), $12/1M output → with 50% premium
+    "gpt4_1_tier": {
+        "input_1k_tokens": 0.0045,  # ($3/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.001125,  # ($0.75/1M * 1.5) / 1000
+        "output_1k_tokens": 0.018,  # ($12/1M * 1.5) / 1000
+    },
+    # GPT-4.1 mini: $0.80/1M input ($0.20/1M cached), $3.20/1M output → with 50% premium
+    "gpt4_1_mini_tier": {
+        "input_1k_tokens": 0.0012,  # ($0.80/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0003,  # ($0.20/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0048,  # ($3.20/1M * 1.5) / 1000
+    },
+    # GPT-4.1 nano: $0.20/1M input ($0.05/1M cached), $0.80/1M output → with 50% premium
+    "gpt4_1_nano_tier": {
+        "input_1k_tokens": 0.0003,  # ($0.20/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.000075,  # ($0.05/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0012,  # ($0.80/1M * 1.5) / 1000
+    },
+    # O4-mini (reasoning): $4/1M input ($1/1M cached), $16/1M output → with 50% premium
+    "o4_mini_tier": {
+        "input_1k_tokens": 0.006,  # ($4/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0015,  # ($1/1M * 1.5) / 1000
+        "output_1k_tokens": 0.024,  # ($16/1M * 1.5) / 1000
+    },
+    # O1 Series (existing reasoning models)
     "o1_tier": {"input_1k_tokens": 2.25, "output_1k_tokens": 9.0},  # o1 models
     "o1_mini_tier": {"input_1k_tokens": 0.45, "output_1k_tokens": 1.8},  # o1-mini
+    # GPT-4o Series
     "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},  # gpt-4o
     "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},  # gpt-4o-mini
+    # GPT-4 Turbo
     "gpt4_turbo": {"input_1k_tokens": 1.5, "output_1k_tokens": 6.0},  # gpt-4-turbo
     # Rates per image for gpt-image-1 (1 credit = $0.01)
     "image_gpt_low": {"per_image": 1.5},
     "image_gpt_medium": {"per_image": 6.0},
     "image_gpt_high": {"per_image": 25.0},
+    # Image generation GPT-image-1.5: $5/1M input, $10/1M output → with 50% premium
+    "image_gpt_1_5": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.015,  # ($10/1M * 1.5) / 1000
+    },
     # Rates per minute of audio
     "whisper_standard": {"per_minute": 0.9},
     "whisper_low_cost": {"per_minute": 0.45},
@@ -47,14 +98,23 @@ CREDIT_PRICING_TIERS = {
 }
 
 MODEL_TO_TIER_MAP = {
-    # O1 Series (reasoning models)
+    # GPT-5 Series (newest models)
+    "gpt-5.2": "gpt5_tier",
+    "gpt-5.2-pro": "gpt5_pro_tier",
+    "gpt-5-mini": "gpt5_mini_tier",
+    # GPT-4.1 Family
+    "gpt-4.1": "gpt4_1_tier",
+    "gpt-4.1-mini": "gpt4_1_mini_tier",
+    "gpt-4.1-nano": "gpt4_1_nano_tier",
+    # O4 Series (reasoning models)
+    "o4-mini": "o4_mini_tier",
+    # O1 Series (existing reasoning models)
     "o1": "o1_tier",
     "o1-preview": "o1_tier",
     "o1-mini": "o1_mini_tier",
-    # O3/O4 Series (future models)
+    # O3 Series (future models)
     "o3": "o1_tier",
     "o3-mini": "o1_mini_tier",
-    "o4-mini": "low_tier_chat",
     # GPT-4o Series
     "gpt-4o": "top_tier_chat",
     "gpt-4o-2024-11-20": "top_tier_chat",
@@ -70,11 +130,9 @@ MODEL_TO_TIER_MAP = {
     "gpt-4-turbo-preview": "gpt4_turbo",
     "gpt-4-0125-preview": "gpt4_turbo",
     "gpt-4-1106-preview": "gpt4_turbo",
-    # Future models
-    "gpt-4.1": "top_tier_chat",
-    "gpt-4.1-mini": "low_tier_chat",
-    "gpt-4.1-nano": "low_tier_chat",
     "computer-use-preview": "top_tier_chat",
+    # Image models
+    "gpt-image-1.5": "image_gpt_1_5",
     # Image models like "gpt-image-1" are handled by create_image based on params.quality.
     # Whisper / Speech-to-Text
     "whisper-1": "whisper_standard",
@@ -345,8 +403,20 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 # --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
 
 
-async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculates cost in CREDITS for chat models."""
+async def calculate_chat_cost(
+    model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0
+) -> float:
+    """Calculates cost in CREDITS for chat models.
+    
+    Args:
+        model_id: Model identifier
+        input_tokens: Number of input/prompt tokens
+        output_tokens: Number of output/completion tokens
+        cached_tokens: Number of cached input tokens (for models that support caching)
+    
+    Returns:
+        Cost in credits
+    """
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -354,7 +424,18 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
     if tier_name and tier_name in CREDIT_PRICING_TIERS:
         tier_pricing = CREDIT_PRICING_TIERS[tier_name]
         if "input_1k_tokens" in tier_pricing and "output_1k_tokens" in tier_pricing:
-            cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+            # Calculate cost for non-cached input tokens
+            non_cached_input = max(0, input_tokens - cached_tokens)
+            cost_input = (non_cached_input / 1000) * tier_pricing["input_1k_tokens"]
+            
+            # Add cost for cached tokens if applicable
+            if cached_tokens > 0 and "cached_input_1k_tokens" in tier_pricing:
+                cost_cached = (cached_tokens / 1000) * tier_pricing["cached_input_1k_tokens"]
+                cost_input += cost_cached
+            elif cached_tokens > 0:
+                # If model doesn't have cached pricing, treat as regular input
+                cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+            
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             cost = cost_input + cost_output
         # else:
