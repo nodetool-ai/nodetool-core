@@ -602,29 +602,50 @@ async def release_lease(run_id: str, worker_id: str):
    
 3. **Large Payloads:** How to handle large outputs in events?
    - **Decision**: Multi-tiered storage strategy based on output type and size
-   - **AssetRef Types** (ImageRef, VideoRef, AudioRef, etc.): These already store references (URI/asset_id) to assets in storage, not the actual data. Log only the reference metadata (~100 bytes).
+   - **AssetRef Types** (ImageRef, VideoRef, AudioRef, etc.): 
+     - Use temp storage for in-flight AssetRefs instead of memory URIs
+     - Store outputs durably in temp bucket for resumability
+     - Log only the temp storage reference metadata (~100 bytes)
+     - Promotes to permanent storage if needed after workflow completion
    - **Small Objects** (<1MB): Serialize directly into event payload as JSON
-   - **Large Objects** (>1MB): Store in Asset storage separately, log only the storage reference ID
+   - **Large Objects** (>1MB): Store in temp storage, log only the storage reference ID
    - **Benefits**:
      - Event log remains compact and fast to query
      - Large media files don't bloat the database
+     - In-flight outputs are durable (survive crashes)
      - Recovery can reconstruct outputs by following references
-     - Leverages existing Asset storage infrastructure
+     - Leverages existing temp storage infrastructure
    - **Example**:
      ```json
      {
        "outputs": {
-         "image": {"type": "asset_ref", "uri": "file:///path/to/image.png", "asset_id": "abc123"},
+         "image": {"type": "asset_ref", "uri": "temp://bucket/xyz.png", "asset_id": "temp_abc123"},
          "result": {"type": "inline", "value": {"status": "ok", "count": 42}},
-         "large_data": {"type": "external_ref", "storage_id": "output_xyz789"}
+         "large_data": {"type": "external_ref", "storage_id": "temp_output_xyz789"}
        }
      }
      ```
 
-4. **Distributed Execution:** How to coordinate across multiple machines?
+4. **Streaming Node Outputs:** How to handle thousands of small streaming messages?
+   - **Problem**: Streaming nodes can emit thousands of chunks, causing database write contention
+   - **Decision**: Compress streaming outputs at node completion
+     - Don't log each streaming chunk individually (causes write contention)
+     - Streaming chunks always complete until EOS (end-of-stream)
+     - Log only completed nodes, not intermediate chunks
+     - At node completion, compress all streamed outputs into one log entry
+     - Store compressed output chunks in temp storage if needed
+     - Example: Node emits 1000 image chunks → stored as single compressed array reference
+   - **Benefits**:
+     - Eliminates write contention on database
+     - Event log stays compact (one entry per completed node, not per chunk)
+     - Recovery still works (re-execute incomplete nodes, completed nodes have full output)
+     - Leverages streaming's atomic completion guarantee (EOS)
+   - **Implementation Note**: Current implementation logs `outputs={}` for all nodes, which inherently avoids this issue. When output tracking is enabled, must implement compression for streaming nodes.
+
+5. **Distributed Execution:** How to coordinate across multiple machines?
    - Decision: Lease-based locking, events replicated to shared DB
 
-5. **Backfilling:** How to add event log to existing runs?
+6. **Backfilling:** How to add event log to existing runs?
    - Decision: New runs only, old runs remain as-is
 
 ## References

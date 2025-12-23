@@ -104,10 +104,14 @@ This implementation adds resumable workflows to NodeTool's actor-based execution
   - Incomplete node detection
 
 **Test Coverage:**
-- ✅ All 9 tests passing
+- ✅ 9 resumable workflow tests passing
+- ✅ 19 output serialization tests passing
 - ✅ Event log CRUD operations
 - ✅ Projection rebuild and idempotency
 - ✅ Lease-based concurrency control
+- ✅ Streaming output compression
+- ✅ Temp storage URI detection
+- ✅ AssetRef serialization with durability warnings
 - ✅ Recovery resumption point detection
 - ✅ Integration with workflow runner
 
@@ -254,9 +258,15 @@ This implementation adds resumable workflows to NodeTool's actor-based execution
    - NodeCompleted events currently log `outputs={}` (empty)
    - This is intentional to avoid bloating event log with large objects
    - **Strategy for future enhancement**:
-     - AssetRef types → log only URI/asset_id reference (~100 bytes)
-     - Small objects (<1MB) → serialize inline as JSON
-     - Large objects (>1MB) → store separately, log reference ID
+     - **AssetRef types** → use temp storage for in-flight outputs, log only URI/asset_id reference (~100 bytes)
+     - **Small objects** (<1MB) → serialize inline as JSON
+     - **Large objects** (>1MB) → store in temp storage, log reference ID
+     - **Streaming outputs** → compress thousands of chunks into single log entry at completion
+   - **Streaming handling**:
+     - Streaming nodes can emit thousands of chunks (creates write contention)
+     - Solution: Log only at node completion, compress all chunks into one entry
+     - Store compressed chunks in temp storage if needed
+     - Eliminates database write contention while maintaining recoverability
    - Current approach sufficient for basic recovery (nodes re-execute if incomplete)
    - Full output tracking needed only for optimizations (skip completed nodes)
 

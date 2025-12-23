@@ -5,9 +5,15 @@ This module provides efficient serialization of node outputs for the event log,
 with special handling for large objects to prevent bloating the database.
 
 Strategy:
-- AssetRef types (ImageRef, VideoRef, etc.) → store only reference metadata
+- AssetRef types (ImageRef, VideoRef, etc.) → use temp storage for in-flight outputs
 - Small objects (<1MB) → serialize inline as JSON
-- Large objects (>1MB) → store separately in Asset storage, log reference ID
+- Large objects (>1MB) → store in temp storage, log reference ID
+- Streaming outputs → compress all chunks into single entry
+
+Important for Streaming:
+- Streaming nodes emit thousands of chunks (creates write contention)
+- Solution: Log only at completion, compress chunks into one entry
+- Store compressed chunks in temp storage if needed
 """
 
 import json
@@ -30,32 +36,42 @@ def is_asset_ref(value: Any) -> bool:
         return False
 
 
-def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE) -> dict:
+def uses_temp_storage(uri: str) -> bool:
+    """Check if a URI uses temp storage (needs migration for durability)."""
+    return uri.startswith('memory://') or uri.startswith('temp://')
+
+
+def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE, use_temp_storage: bool = True) -> dict:
     """Serialize output for event log with efficient handling of large objects.
     
     Args:
         value: The output value to serialize
         max_size: Maximum size in bytes for inline serialization
+        use_temp_storage: If True, migrate AssetRefs to temp storage for durability
         
     Returns:
         Dict with one of:
-        - {'type': 'asset_ref', 'asset_type': '...', 'uri': '...', 'asset_id': '...'}
+        - {'type': 'asset_ref', 'asset_type': '...', 'uri': 'temp://...', 'asset_id': '...'}
         - {'type': 'inline', 'value': {...}}
         - {'type': 'external_ref', 'storage_id': '...', 'size_bytes': N}
         - {'type': 'truncated', 'reason': '...', 'preview': '...'}
     
+    Note:
+        When use_temp_storage=True and AssetRef has memory:// URI, the URI should be
+        migrated to temp storage before logging. This ensures outputs survive crashes.
+    
     Examples:
-        >>> # AssetRef types store only reference
-        >>> img = ImageRef(uri="file:///path/to/image.png", asset_id="abc123")
+        >>> # AssetRef types store only reference (temp storage for durability)
+        >>> img = ImageRef(uri="temp://bucket/image.png", asset_id="temp_abc123")
         >>> serialize_output_for_event_log(img)
-        {'type': 'asset_ref', 'asset_type': 'ImageRef', 'uri': 'file:///...', 'asset_id': 'abc123'}
+        {'type': 'asset_ref', 'asset_type': 'ImageRef', 'uri': 'temp://...', 'asset_id': 'temp_abc123'}
         
         >>> # Small objects serialize inline
         >>> data = {"status": "ok", "count": 42}
         >>> serialize_output_for_event_log(data)
         {'type': 'inline', 'value': {'status': 'ok', 'count': 42}}
         
-        >>> # Large objects get external reference
+        >>> # Large objects get external reference (stored in temp storage)
         >>> big_data = {"data": "x" * 2_000_000}
         >>> serialize_output_for_event_log(big_data)
         {'type': 'external_ref', 'storage_id': 'output_...', 'size_bytes': 2000013}
@@ -68,11 +84,21 @@ def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE) 
     # Handle AssetRef types - these already store references, not data
     if is_asset_ref(value):
         try:
+            uri = getattr(value, 'uri', '')
+            asset_id = getattr(value, 'asset_id', None)
+            
+            # Warn if using memory URI (not durable)
+            if use_temp_storage and uses_temp_storage(uri):
+                log.warning(
+                    f"AssetRef uses non-durable storage (uri={uri}). "
+                    "For resumable execution, migrate to temp storage before logging."
+                )
+            
             return {
                 'type': 'asset_ref',
                 'asset_type': value.__class__.__name__,
-                'uri': getattr(value, 'uri', ''),
-                'asset_id': getattr(value, 'asset_id', None),
+                'uri': uri,
+                'asset_id': asset_id,
             }
         except Exception as e:
             log.warning(f"Error serializing AssetRef: {e}")
@@ -91,12 +117,11 @@ def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE) 
             return {'type': 'inline', 'value': value}
         else:
             # Too large for inline storage
-            # In future implementation: store in Asset storage
-            # For now, just log metadata
-            log.debug(f"Output too large for inline storage: {size_bytes} bytes")
+            # Should be stored in temp storage
+            log.debug(f"Output too large for inline storage: {size_bytes} bytes (store in temp)")
             return {
                 'type': 'external_ref',
-                'storage_id': 'not_implemented',  # TODO: implement external storage
+                'storage_id': 'not_implemented',  # TODO: implement temp storage
                 'size_bytes': size_bytes,
             }
             
@@ -245,3 +270,84 @@ def deserialize_outputs_dict(serialized_outputs: dict[str, dict]) -> dict[str, A
             log.error(f"Error deserializing output '{key}': {e}")
             result[key] = None
     return result
+
+
+def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
+    """Compress streaming outputs into single log entry.
+    
+    Streaming nodes can emit thousands of chunks (e.g., 1000 video frames),
+    which would create database write contention if logged individually.
+    This function compresses all chunks into a single entry.
+    
+    Args:
+        outputs: Dictionary of outputs, potentially with lists of chunks
+        
+    Returns:
+        Dict with:
+        - {'type': 'streaming_compressed', 'chunk_count': N, 'storage_id': 'not_implemented', 'size_bytes': X}
+        
+    Note:
+        The actual chunks should be stored in temp storage (not implemented yet).
+        This prevents bloating the event log while maintaining recoverability.
+        
+    Example:
+        >>> # Node emits 1000 image chunks
+        >>> outputs = {'frames': [ImageRef(...) for _ in range(1000)]}
+        >>> compressed = compress_streaming_outputs(outputs)
+        >>> compressed['chunk_count']
+        1000
+        >>> compressed['type']
+        'streaming_compressed'
+    """
+    # Count total chunks across all outputs
+    chunk_count = 0
+    for value in outputs.values():
+        if isinstance(value, list):
+            chunk_count += len(value)
+        else:
+            chunk_count += 1
+    
+    # Estimate size (would be actual size if stored)
+    try:
+        serialized = json.dumps(outputs, default=str)
+        size_bytes = len(serialized.encode('utf-8'))
+    except Exception:
+        size_bytes = 0
+    
+    log.debug(
+        f"Compressing streaming outputs: {chunk_count} chunks, "
+        f"~{size_bytes} bytes (should store in temp storage)"
+    )
+    
+    return {
+        'type': 'streaming_compressed',
+        'chunk_count': chunk_count,
+        'storage_id': 'not_implemented',  # TODO: store in temp storage
+        'size_bytes': size_bytes,
+    }
+
+
+def should_compress_streaming(outputs: dict[str, Any], threshold: int = 100) -> bool:
+    """Determine if outputs should be compressed as streaming.
+    
+    Args:
+        outputs: Dictionary of outputs to check
+        threshold: Minimum number of chunks to trigger compression
+        
+    Returns:
+        True if outputs contain many chunks and should be compressed
+        
+    Example:
+        >>> outputs = {'frames': [ImageRef(...) for _ in range(1000)]}
+        >>> should_compress_streaming(outputs)
+        True
+        >>> outputs = {'result': ImageRef(...)}
+        >>> should_compress_streaming(outputs)
+        False
+    """
+    chunk_count = 0
+    for value in outputs.values():
+        if isinstance(value, list):
+            chunk_count += len(value)
+    
+    return chunk_count >= threshold

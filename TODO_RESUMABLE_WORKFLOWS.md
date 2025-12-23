@@ -57,17 +57,31 @@ def _is_retryable_error(self, error: Exception) -> bool:
 **Issue**: NodeCompleted event has empty `outputs={}` 
 **Impact**: Recovery can't verify node outputs, may cause duplicate work
 **Strategy**: Store large objects separately to avoid bloating event log
-- AssetRef types (ImageRef, VideoRef, AudioRef, etc.) → store only URI/asset_id reference
-- Large objects (>1MB) → store in Asset storage, reference by ID
+- AssetRef types (ImageRef, VideoRef, AudioRef, etc.) → use temp storage for in-flight outputs
+- Large objects (>1MB) → store in temp storage, reference by ID
 - Small objects (<1MB) → serialize directly in event payload
+- **Streaming nodes** → compress all output chunks into single log entry at completion
+
+**Important for Streaming**:
+- Streaming nodes emit thousands of small chunks (e.g., video frames, audio samples)
+- Logging each chunk creates database write contention
+- Solution: Log only at node completion, compress all chunks into one entry
+- Store compressed chunks in temp storage if needed
+- Example: 1000 image chunks → stored as single compressed array reference
 
 **Fix Required**:
 ```python
 # Capture outputs from send_messages
 result = {}
-for key, value in outputs_collector.collected().items():
-    # Serialize outputs for event log with size limits
-    result[key] = self._serialize_output_for_event_log(value)
+is_streaming = node.__class__.is_streaming_output()
+
+if is_streaming:
+    # For streaming nodes, compress all chunks into one entry
+    result = self._compress_streaming_outputs(outputs_collector.collected())
+else:
+    # For regular nodes, serialize each output
+    for key, value in outputs_collector.collected().items():
+        result[key] = self._serialize_output_for_event_log(value)
 
 await self.runner.event_logger.log_node_completed(
     node_id=node._id,
@@ -80,12 +94,21 @@ def _serialize_output_for_event_log(self, value: Any, max_size_bytes: int = 1_00
     """Serialize output for event log, storing large objects separately.
     
     Returns dict with either:
-    - {'type': 'asset_ref', 'uri': '...', 'asset_id': '...'} for AssetRef types
+    - {'type': 'asset_ref', 'uri': 'temp://...', 'asset_id': '...'} for AssetRef types
     - {'type': 'inline', 'value': {...}} for small objects
     - {'type': 'external_ref', 'storage_id': '...'} for large objects stored separately
     """
-    # Handle AssetRef types (already references, not data)
+    # Handle AssetRef types - use temp storage for in-flight outputs
     if isinstance(value, AssetRef):
+        # If using memory URI, migrate to temp storage for durability
+        if value.uri.startswith('memory://'):
+            temp_uri, temp_id = await self._migrate_to_temp_storage(value)
+            return {
+                'type': 'asset_ref',
+                'asset_type': value.__class__.__name__,
+                'uri': temp_uri,
+                'asset_id': temp_id,
+            }
         return {
             'type': 'asset_ref',
             'asset_type': value.__class__.__name__,
@@ -101,9 +124,30 @@ def _serialize_output_for_event_log(self, value: Any, max_size_bytes: int = 1_00
     except (TypeError, ValueError):
         pass
     
-    # Too large or not JSON-serializable - store separately
-    storage_id = await self._store_large_output(value)
+    # Too large or not JSON-serializable - store in temp storage
+    storage_id = await self._store_large_output_to_temp(value)
     return {'type': 'external_ref', 'storage_id': storage_id}
+
+def _compress_streaming_outputs(self, outputs: dict) -> dict:
+    """Compress streaming outputs into single log entry.
+    
+    For nodes that emit many chunks (e.g., 1000 video frames), this compresses
+    all chunks into a single entry to avoid write contention on the database.
+    
+    Returns:
+    - {'type': 'streaming_compressed', 'chunk_count': N, 'storage_id': '...'}
+    """
+    chunk_count = sum(len(v) if isinstance(v, list) else 1 for v in outputs.values())
+    
+    # Store compressed chunks in temp storage
+    storage_id = await self._store_compressed_chunks_to_temp(outputs)
+    
+    return {
+        'type': 'streaming_compressed',
+        'chunk_count': chunk_count,
+        'storage_id': storage_id,
+        'size_bytes': len(json.dumps(outputs).encode('utf-8')),
+    }
 ```
 
 ## High Priority Issues

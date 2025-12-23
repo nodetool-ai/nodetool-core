@@ -189,3 +189,65 @@ def test_deserialize_outputs_dict():
     
     assert result['result'] == {"status": "ok"}
     assert hasattr(result['image'], 'uri')
+
+
+def test_compress_streaming_outputs():
+    """Test compression of streaming outputs."""
+    from nodetool.metadata.types import ImageRef
+    from nodetool.workflows.output_serialization import compress_streaming_outputs
+    
+    # Simulate 1000 image chunks from streaming node
+    outputs = {
+        'frames': [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
+        'metadata': {"fps": 30, "duration": 33.33}
+    }
+    
+    compressed = compress_streaming_outputs(outputs)
+    
+    assert compressed['type'] == 'streaming_compressed'
+    assert compressed['chunk_count'] == 1001  # 1000 frames + 1 metadata
+    assert 'size_bytes' in compressed
+    assert compressed['storage_id'] == 'not_implemented'  # TODO: implement temp storage
+
+
+def test_should_compress_streaming():
+    """Test detection of streaming outputs that need compression."""
+    from nodetool.metadata.types import ImageRef
+    from nodetool.workflows.output_serialization import should_compress_streaming
+    
+    # Many chunks - should compress
+    many_chunks = {'frames': [ImageRef(uri=f"temp://f{i}.png") for i in range(500)]}
+    assert should_compress_streaming(many_chunks, threshold=100) is True
+    
+    # Few chunks - no compression needed
+    few_chunks = {'frames': [ImageRef(uri=f"temp://f{i}.png") for i in range(10)]}
+    assert should_compress_streaming(few_chunks, threshold=100) is False
+    
+    # Single output - no compression
+    single = {'image': ImageRef(uri="temp://image.png")}
+    assert should_compress_streaming(single, threshold=100) is False
+
+
+def test_uses_temp_storage():
+    """Test detection of temp/memory storage URIs."""
+    from nodetool.workflows.output_serialization import uses_temp_storage
+    
+    assert uses_temp_storage('memory://bucket/file.png') is True
+    assert uses_temp_storage('temp://bucket/file.png') is True
+    assert uses_temp_storage('file:///path/to/file.png') is False
+    assert uses_temp_storage('s3://bucket/file.png') is False
+
+
+def test_serialize_with_memory_uri_warning(caplog):
+    """Test that serializing AssetRef with memory URI logs warning."""
+    from nodetool.metadata.types import ImageRef
+    from nodetool.workflows.output_serialization import serialize_output_for_event_log
+    import logging
+    
+    # Enable logging capture
+    with caplog.at_level(logging.WARNING):
+        img = ImageRef(uri="memory://temp/image.png", asset_id="mem123")
+        result = serialize_output_for_event_log(img, use_temp_storage=True)
+    
+    assert result['type'] == 'asset_ref'
+    assert 'non-durable storage' in caplog.text
