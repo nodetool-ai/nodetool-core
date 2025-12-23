@@ -1030,13 +1030,14 @@ class HelpMessageProcessor(MessageProcessor):
             await self.provider.log_provider_call(
                 user_id=user_id,
                 provider=str(provider),
-                model_id=model,
+                model=model,
                 cost=cost,
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
                 total_tokens=usage.get("total_tokens", 0),
                 cached_tokens=usage.get("cached_prompt_tokens"),
                 reasoning_tokens=usage.get("reasoning_tokens"),
+                workflow_id=workflow_id,
             )
             log.debug(f"Logged provider call: {provider}/{model}, cost={cost}, tokens={usage.get('total_tokens', 0)}")
         except (KeyError, AttributeError, TypeError) as e:
