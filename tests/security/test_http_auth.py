@@ -49,9 +49,7 @@ def test_static_token_required():
     assert response.status_code == 401
 
     # Valid static token
-    response = client.get(
-        "/protected", headers={"Authorization": "Bearer static-token"}
-    )
+    response = client.get("/protected", headers={"Authorization": "Bearer static-token"})
     assert response.status_code == 200
 
 
@@ -61,20 +59,14 @@ def test_remote_auth_falls_back_to_user_provider():
     client = TestClient(app)
 
     # Static token still accepted
-    response = client.get(
-        "/protected", headers={"Authorization": "Bearer static-token"}
-    )
+    response = client.get("/protected", headers={"Authorization": "Bearer static-token"})
     assert response.status_code == 200
 
     # Supabase token accepted via user provider
-    response = client.get(
-        "/protected", headers={"Authorization": "Bearer user-token"}
-    )
+    response = client.get("/protected", headers={"Authorization": "Bearer user-token"})
     assert response.status_code == 200
     assert user_provider.calls == ["user-token"]
 
     # Invalid user token rejected
-    response = client.get(
-        "/protected", headers={"Authorization": "Bearer bad-token"}
-    )
+    response = client.get("/protected", headers={"Authorization": "Bearer bad-token"})
     assert response.status_code == 401

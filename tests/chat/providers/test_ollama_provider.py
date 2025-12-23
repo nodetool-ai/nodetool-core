@@ -129,9 +129,7 @@ class TestOllamaProvider(BaseProviderTest):
             "eval_duration": 700000000,
         }
 
-    def create_ollama_streaming_responses(
-        self, text: str = "Hello world!"
-    ) -> List[Dict[str, Any]]:
+    def create_ollama_streaming_responses(self, text: str = "Hello world!") -> List[Dict[str, Any]]:
         """Create realistic Ollama streaming response chunks."""
         chunks = []
         words = text.split()
@@ -157,9 +155,7 @@ class TestOllamaProvider(BaseProviderTest):
             return httpx.HTTPStatusError(
                 message="model 'test-model' not found",
                 request=MagicMock(),
-                response=MagicMock(
-                    status_code=404, text="model 'test-model' not found"
-                ),
+                response=MagicMock(status_code=404, text="model 'test-model' not found"),
             )
         elif error_type == "context_length":
             return httpx.HTTPStatusError(
@@ -241,18 +237,12 @@ class TestOllamaProvider(BaseProviderTest):
         with patch(
             "httpx.AsyncClient.get",
             return_value=MagicMock(
-                json=AsyncMock(
-                    return_value={
-                        "models": [{"name": "test-model:latest", "size": 1000000}]
-                    }
-                )
+                json=AsyncMock(return_value={"models": [{"name": "test-model:latest", "size": 1000000}]})
             ),
         ):
             # Should not raise error for available model
             with self.mock_api_call(ResponseFixtures.simple_text_response()):
-                response = await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+                response = await provider.generate_message(self.create_simple_messages(), "test-model")
             assert response.role == "assistant"
 
     @pytest.mark.asyncio
@@ -260,12 +250,8 @@ class TestOllamaProvider(BaseProviderTest):
         """Test automatic model pulling when model is not found."""
         provider = self.create_provider()
 
-        with self.mock_error_response("model_not_found"), pytest.raises(
-            httpx.HTTPStatusError
-        ):
-            await provider.generate_message(
-                self.create_simple_messages(), "unknown-model"
-            )
+        with self.mock_error_response("model_not_found"), pytest.raises(httpx.HTTPStatusError):
+            await provider.generate_message(self.create_simple_messages(), "unknown-model")
 
     @pytest.mark.asyncio
     async def test_keep_alive_parameter(self):

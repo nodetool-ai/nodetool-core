@@ -33,6 +33,7 @@ class StaticProducer(GraphNode[float]):
             return typing.cast("OutputsProxy[float]", OutputsProxy(self))
         return typing.cast("OutputHandle[float]", self._single_output_handle())
 
+
 def test_graph_node_sync_mode_default():
     producer = StaticProducer(a=1.0, b=2.0)
     assert producer.sync_mode == "on_any"
@@ -308,7 +309,6 @@ def test_dynamic_outputs_forwarded_to_base_node():
     assert len(g.nodes) == 1
     node = g.nodes[0]
     assert node.dynamic_outputs["branch_a"].type == "str"
-
 
 
 def test_static_node_unknown_slot_errors():

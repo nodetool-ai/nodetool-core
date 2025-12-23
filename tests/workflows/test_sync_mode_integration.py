@@ -84,9 +84,7 @@ class GenerateSequence(BaseNode):
     class OutputType(TypedDict):
         output: int
 
-    async def gen_process(
-        self, context: ProcessingContext
-    ) -> AsyncGenerator[OutputType, None]:
+    async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
         for i in range(self.start, self.stop, self.step):
             yield {"output": i}
 

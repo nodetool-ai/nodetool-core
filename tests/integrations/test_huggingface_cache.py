@@ -16,6 +16,7 @@ def _make_mock_response(status_code: int = 401) -> MagicMock:
     mock_response.headers = {"x-request-id": "test-request-id"}
     return mock_response
 
+
 from nodetool.integrations.huggingface.hf_cache import (
     filter_repo_paths,
     has_cached_files,
@@ -127,16 +128,14 @@ class TestDownloadManager:
 
             # Wait for the background task to complete
             import asyncio
+
             await asyncio.sleep(0.1)
 
             # Verify error message was sent via WebSocket
             assert mock_websocket.send_json.called
             # Check that error status was sent
             calls = mock_websocket.send_json.call_args_list
-            error_sent = any(
-                call[0][0].get("status") == "error" and "error" in call[0][0]
-                for call in calls
-            )
+            error_sent = any(call[0][0].get("status") == "error" and "error" in call[0][0] for call in calls)
             assert error_sent, "Error message should have been sent via WebSocket"
 
     @pytest.mark.asyncio
@@ -225,17 +224,23 @@ class TestDownloadManager:
         manager.downloads["test/repo"] = state
 
         with (
-            patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=_CACHED_NO_EXIST),
+            patch(
+                "nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=_CACHED_NO_EXIST
+            ),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
-            patch("nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock) as mock_download,
+            patch(
+                "nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock
+            ) as mock_download,
         ):
             mock_filter.side_effect = lambda files, *_args, **_kwargs: files
+
             # async_hf_download returns just the path, run_single_download wraps it in tuple
             async def mock_download_func(*args, **kwargs):
-                filename = kwargs.get('filename', args[1] if len(args) > 1 else None)
+                filename = kwargs.get("filename", args[1] if len(args) > 1 else None)
                 if filename == "config.json":
                     return "/tmp/config.json"
                 return "/tmp/model.safetensors"
+
             mock_download.side_effect = mock_download_func
 
             await manager.download_huggingface_repo(
@@ -270,7 +275,9 @@ class TestDownloadManager:
         with (
             patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None),
             patch("nodetool.integrations.huggingface.hf_cache.filter_repo_paths") as mock_filter,
-            patch("nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock) as mock_download,
+            patch(
+                "nodetool.integrations.huggingface.async_downloader.async_hf_download", new_callable=AsyncMock
+            ) as mock_download,
         ):
             mock_filter.side_effect = lambda files, *_args, **_kwargs: files
             mock_download.return_value = "/tmp/config.json"
@@ -332,6 +339,7 @@ class TestDownloadManager:
             mock_websocket.accept = AsyncMock()
             # Make receive_json raise an exception after first call to break the loop
             call_count = 0
+
             async def mock_receive_json():
                 nonlocal call_count
                 call_count += 1
@@ -344,6 +352,7 @@ class TestDownloadManager:
                 else:
                     # Raise an exception to break the while True loop
                     raise ConnectionError("WebSocket closed")
+
             mock_websocket.receive_json = mock_receive_json
             mock_websocket.close = AsyncMock()
 
@@ -358,10 +367,7 @@ class TestDownloadManager:
             assert mock_websocket.send_json.called
             # Check that at least one call had error status with error field
             calls = mock_websocket.send_json.call_args_list
-            error_sent = any(
-                call[0][0].get("status") == "error" and "error" in call[0][0]
-                for call in calls
-            )
+            error_sent = any(call[0][0].get("status") == "error" and "error" in call[0][0] for call in calls)
             assert error_sent, "Error message should have been sent via WebSocket"
 
 
@@ -447,9 +453,7 @@ class TestDeleteCachedHfModel:
                 "nodetool.integrations.huggingface.huggingface_models.os.path.exists",
                 return_value=True,
             ) as mock_exists,
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
-            ) as mock_rmtree,
+            patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,
@@ -476,12 +480,8 @@ class TestDeleteCachedHfModel:
                 new_callable=AsyncMock,
                 return_value=None,
             ) as mock_repo_root,
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.os.path.exists"
-            ) as mock_exists,
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
-            ) as mock_rmtree,
+            patch("nodetool.integrations.huggingface.huggingface_models.os.path.exists") as mock_exists,
+            patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,
@@ -512,9 +512,7 @@ class TestDeleteCachedHfModel:
                 "nodetool.integrations.huggingface.huggingface_models.os.path.exists",
                 return_value=False,
             ) as mock_exists,
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.shutil.rmtree"
-            ) as mock_rmtree,
+            patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
             ) as mock_delete_pattern,

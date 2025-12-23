@@ -97,10 +97,7 @@ def test_extract_json_from_message_with_code_fence(tmp_path):
     make_planner(tmp_path)
 
     # Test with JSON code fence
-    msg = Message(
-        role="assistant",
-        content='Here is the plan:\n```json\n{"title": "Test", "steps": []}\n```'
-    )
+    msg = Message(role="assistant", content='Here is the plan:\n```json\n{"title": "Test", "steps": []}\n```')
     result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test"
@@ -112,10 +109,7 @@ def test_extract_json_from_message_with_plain_fence(tmp_path):
     make_planner(tmp_path)
 
     # Test with plain code fence
-    msg = Message(
-        role="assistant",
-        content='```\n{"title": "Test2", "steps": []}\n```'
-    )
+    msg = Message(role="assistant", content='```\n{"title": "Test2", "steps": []}\n```')
     result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test2"
@@ -126,10 +120,7 @@ def test_extract_json_from_message_with_raw_json(tmp_path):
     make_planner(tmp_path)
 
     # Test with raw JSON
-    msg = Message(
-        role="assistant",
-        content='Some text before {"title": "Test3", "steps": []} some text after'
-    )
+    msg = Message(role="assistant", content='Some text before {"title": "Test3", "steps": []} some text after')
     result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test3"
@@ -140,10 +131,7 @@ def test_extract_json_from_message_with_think_tags(tmp_path):
     make_planner(tmp_path)
 
     # Test that think tags are removed before extraction
-    msg = Message(
-        role="assistant",
-        content='<think>Planning...</think>\n```json\n{"title": "Test4", "steps": []}\n```'
-    )
+    msg = Message(role="assistant", content='<think>Planning...</think>\n```json\n{"title": "Test4", "steps": []}\n```')
     result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test4"
@@ -177,9 +165,7 @@ def test_process_step_schema_with_dict(tmp_path):
         },
     }
 
-    schema_str, errors = planner._process_step_schema(
-        {"output_schema": schema}, "schema test"
-    )
+    schema_str, errors = planner._process_step_schema({"output_schema": schema}, "schema test")
 
     assert errors == []
     parsed = json.loads(schema_str or "{}")
@@ -198,9 +184,7 @@ properties:
     type: string
 """
 
-    schema_str, errors = planner._process_step_schema(
-        {"output_schema": yaml_schema}, "schema yaml test"
-    )
+    schema_str, errors = planner._process_step_schema({"output_schema": yaml_schema}, "schema yaml test")
 
     assert errors == []
     parsed = json.loads(schema_str or "{}")

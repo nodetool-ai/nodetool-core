@@ -15,12 +15,13 @@ class TestHuggingFaceModels(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
 
-    @patch('nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE')
-    @patch('nodetool.integrations.huggingface.huggingface_models.inspect_paths')
-    @patch('nodetool.integrations.huggingface.huggingface_models._get_file_size')
+    @patch("nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE")
+    @patch("nodetool.integrations.huggingface.huggingface_models.inspect_paths")
+    @patch("nodetool.integrations.huggingface.huggingface_models._get_file_size")
     def test_build_cached_repo_entry(self, mock_get_size, mock_inspect, mock_cache):
         # Setup
         repo_id = "test/repo"
@@ -33,12 +34,7 @@ class TestHuggingFaceModels(unittest.TestCase):
 
         mock_get_size.return_value = 100
 
-        mock_inspect.return_value = MagicMock(
-            family="sdxl",
-            component="unet",
-            confidence=0.9,
-            evidence=[]
-        )
+        mock_inspect.return_value = MagicMock(family="sdxl", component="unet", confidence=0.9, evidence=[])
 
         # Execute
         async def run_test():
@@ -48,7 +44,7 @@ class TestHuggingFaceModels(unittest.TestCase):
                 model_info=None,
                 recommended_models={},
                 snapshot_dir=snapshot_dir,
-                file_list=["model.safetensors", "config.json"]
+                file_list=["model.safetensors", "config.json"],
             )
 
         model, files = asyncio.run(run_test())
@@ -67,8 +63,8 @@ class TestHuggingFaceModels(unittest.TestCase):
         # args = mock_inspect.call_args[0][0]
         # self.assertEqual(sorted(args), sorted(expected_paths))
 
-    @patch('nodetool.integrations.huggingface.huggingface_models.iter_cached_model_files')
-    @patch('nodetool.integrations.huggingface.huggingface_models._repo_has_diffusion_artifacts')
+    @patch("nodetool.integrations.huggingface.huggingface_models.iter_cached_model_files")
+    @patch("nodetool.integrations.huggingface.huggingface_models._repo_has_diffusion_artifacts")
     def test_get_diffusion_models(self, mock_has_artifacts, mock_iter_files):
         # Setup
         repo_id = "test/diffusion"
@@ -86,7 +82,7 @@ class TestHuggingFaceModels(unittest.TestCase):
         models = asyncio.run(huggingface_models.get_text_to_image_models_from_hf_cache())
 
         # Verify
-        self.assertEqual(len(models), 3) # 2 files + 1 repo bundle
+        self.assertEqual(len(models), 3)  # 2 files + 1 repo bundle
 
         file_models = [m for m in models if ":" in m.id]
         repo_models = [m for m in models if ":" not in m.id]

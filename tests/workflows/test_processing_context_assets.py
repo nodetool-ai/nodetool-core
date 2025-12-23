@@ -72,9 +72,7 @@ def sample_audio_segment():
     for sample in samples:
         audio_data.extend(sample.to_bytes(2, byteorder="little", signed=True))
 
-    return AudioSegment(
-        data=bytes(audio_data), sample_width=2, frame_rate=sample_rate, channels=1
-    )
+    return AudioSegment(data=bytes(audio_data), sample_width=2, frame_rate=sample_rate, channels=1)
 
 
 class TestAssetConversion:
@@ -95,9 +93,7 @@ class TestAssetConversion:
         """Test converting AssetRef with asset_id to IO object."""
         asset_ref = AssetRef(asset_id="test_asset_id")
 
-        with patch.object(
-            context, "download_asset", return_value=BytesIO(b"downloaded content")
-        ) as mock_download:
+        with patch.object(context, "download_asset", return_value=BytesIO(b"downloaded content")) as mock_download:
             io_obj = await context.asset_to_io(asset_ref)
             assert io_obj.read() == b"downloaded content"
             mock_download.assert_called_once_with("test_asset_id")
@@ -107,9 +103,7 @@ class TestAssetConversion:
         """Test converting AssetRef with URI to IO object."""
         asset_ref = AssetRef(uri="http://example.com/file.txt")
 
-        with patch.object(
-            context, "download_file", return_value=BytesIO(b"uri content")
-        ) as mock_download:
+        with patch.object(context, "download_file", return_value=BytesIO(b"uri content")) as mock_download:
             io_obj = await context.asset_to_io(asset_ref)
             assert io_obj.read() == b"uri content"
             mock_download.assert_called_once_with("http://example.com/file.txt")
@@ -153,9 +147,7 @@ class TestAssetOutputModes:
         assert result is image_ref  # untouched in python mode
 
     @pytest.mark.asyncio
-    async def test_normalize_data_uri_mode(
-        self, context: ProcessingContext, sample_image
-    ):
+    async def test_normalize_data_uri_mode(self, context: ProcessingContext, sample_image):
         context.asset_output_mode = AssetOutputMode.DATA_URI
         buffer = BytesIO()
         sample_image.save(buffer, format="PNG")
@@ -177,9 +169,7 @@ class TestAssetOutputModes:
 
         assert result["image"]["type"] == "image"
         assert result["image"]["asset_id"] is None
-        assert result["image"]["uri"].startswith(
-            Environment.get_temp_storage_api_url()
-        )
+        assert result["image"]["uri"].startswith(Environment.get_temp_storage_api_url())
 
     @pytest.mark.asyncio
     async def test_normalize_storage_url_mode(self, context: ProcessingContext):
@@ -225,14 +215,8 @@ class TestAssetOutputModes:
 
     def test_context_mode_defaults(self):
         assert ProcessingContext().asset_output_mode == AssetOutputMode.PYTHON
-        assert (
-            ProcessingContext(encode_assets_as_base64=True).asset_output_mode
-            == AssetOutputMode.DATA_URI
-        )
-        assert (
-            ProcessingContext(upload_assets_to_s3=True).asset_output_mode
-            == AssetOutputMode.STORAGE_URL
-        )
+        assert ProcessingContext(encode_assets_as_base64=True).asset_output_mode == AssetOutputMode.DATA_URI
+        assert ProcessingContext(upload_assets_to_s3=True).asset_output_mode == AssetOutputMode.STORAGE_URL
 
 
 class TestImageMethods:
@@ -357,9 +341,7 @@ class TestImageMethods:
         buffer = BytesIO()
         test_image.save(buffer, format="PNG")
 
-        with patch.object(
-            context, "download_file", return_value=BytesIO(buffer.getvalue())
-        ):
+        with patch.object(context, "download_file", return_value=BytesIO(buffer.getvalue())):
             result = await context.image_from_url("http://example.com/image.png")
             assert isinstance(result, ImageRef)
             assert result.data is not None
@@ -383,18 +365,14 @@ class TestAudioMethods:
             assert result == mock_segment
 
     @pytest.mark.asyncio
-    async def test_audio_to_numpy(
-        self, context: ProcessingContext, sample_audio_segment
-    ):
+    async def test_audio_to_numpy(self, context: ProcessingContext, sample_audio_segment):
         """Test converting AudioRef to numpy array."""
         # Create AudioRef from segment
         buffer = BytesIO()
         sample_audio_segment.export(buffer, format="wav")
         audio_ref = AudioRef(data=buffer.getvalue())
 
-        with patch.object(
-            context, "audio_to_audio_segment", return_value=sample_audio_segment
-        ):
+        with patch.object(context, "audio_to_audio_segment", return_value=sample_audio_segment):
             samples, frame_rate, channels = await context.audio_to_numpy(audio_ref)
             assert isinstance(samples, np.ndarray)
             assert samples.dtype == np.float32
@@ -450,9 +428,7 @@ class TestAudioMethods:
         assert result.uri.startswith("memory://")  # Should be a memory URI
 
     @pytest.mark.asyncio
-    async def test_audio_from_segment(
-        self, context: ProcessingContext, sample_audio_segment
-    ):
+    async def test_audio_from_segment(self, context: ProcessingContext, sample_audio_segment):
         """Test creating AudioRef from AudioSegment."""
         result = await context.audio_from_segment(sample_audio_segment)
         assert isinstance(result, AudioRef)
@@ -634,9 +610,7 @@ class TestModelMethods:
 
             with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
                 mock_storage_instance = Mock()
-                mock_storage_instance.get_url.return_value = (
-                    "http://test.com/model.joblib"
-                )
+                mock_storage_instance.get_url.return_value = "http://test.com/model.joblib"
                 mock_scope = Mock()
                 mock_scope.get_asset_storage.return_value = mock_storage_instance
                 mock_require_scope.return_value = mock_scope
@@ -667,17 +641,11 @@ class TestUtilityMethods:
         assert isinstance(result["asset"], AssetRef)
         assert result["asset"].uri.startswith("data:application/octet-stream;base64,")
         assert isinstance(result["nested"]["another_asset"], AssetRef)
-        assert result["nested"]["another_asset"].uri.startswith(
-            "data:application/octet-stream;base64,"
-        )
+        assert result["nested"]["another_asset"].uri.startswith("data:application/octet-stream;base64,")
         assert isinstance(result["nested"]["list"][0], AssetRef)
-        assert result["nested"]["list"][0].uri.startswith(
-            "data:application/octet-stream;base64,"
-        )
+        assert result["nested"]["list"][0].uri.startswith("data:application/octet-stream;base64,")
         assert isinstance(result["tuple"][0], AssetRef)
-        assert result["tuple"][0].uri.startswith(
-            "data:application/octet-stream;base64,"
-        )
+        assert result["tuple"][0].uri.startswith("data:application/octet-stream;base64,")
 
     @pytest.mark.asyncio
     async def test_upload_assets_to_temp(self, context: ProcessingContext):
@@ -699,9 +667,11 @@ class TestUtilityMethods:
 
     def test_get_system_font_path(self, context: ProcessingContext):
         """Test getting system font path."""
-        with patch("platform.system", return_value="Darwin"), patch(
-            "os.path.exists", return_value=True
-        ), patch("os.walk") as mock_walk:
+        with (
+            patch("platform.system", return_value="Darwin"),
+            patch("os.path.exists", return_value=True),
+            patch("os.walk") as mock_walk,
+        ):
             mock_walk.return_value = [("/Library/Fonts", [], ["Arial.ttf"])]
 
             result = context.get_system_font_path("Arial.ttf")
@@ -709,9 +679,11 @@ class TestUtilityMethods:
 
     def test_get_system_font_path_not_found(self, context: ProcessingContext):
         """Test getting system font path when font not found."""
-        with patch("platform.system", return_value="Linux"), patch(
-            "os.path.exists", return_value=False
-        ), pytest.raises(FileNotFoundError):
+        with (
+            patch("platform.system", return_value="Linux"),
+            patch("os.path.exists", return_value=False),
+            pytest.raises(FileNotFoundError),
+        ):
             context.get_system_font_path("NonExistentFont.ttf")
 
     def test_resolve_workspace_path(self, context: ProcessingContext):
@@ -724,9 +696,7 @@ class TestUtilityMethods:
         result = context.resolve_workspace_path("output/file.txt")
         assert result.endswith("output/file.txt")
 
-    def test_resolve_workspace_path_traversal_protection(
-        self, context: ProcessingContext
-    ):
+    def test_resolve_workspace_path_traversal_protection(self, context: ProcessingContext):
         """Test workspace path traversal protection."""
         with pytest.raises(ValueError, match="outside the workspace directory"):
             context.resolve_workspace_path("../../../etc/passwd")
@@ -738,16 +708,13 @@ class TestBrowserMethods:
     @pytest.mark.asyncio
     async def test_get_browser_local(self, context: ProcessingContext):
         """Test getting local browser instance."""
-        with patch.object(Environment, "get", return_value=None), patch(
-            "nodetool.workflows.processing_context.async_playwright"
-        ) as mock_playwright:
+        with (
+            patch.object(Environment, "get", return_value=None),
+            patch("nodetool.workflows.processing_context.async_playwright") as mock_playwright,
+        ):
             mock_playwright_instance = Mock()
-            mock_playwright_instance.start = AsyncMock(
-                return_value=mock_playwright_instance
-            )
-            mock_playwright_instance.chromium.launch = AsyncMock(
-                return_value="mock_browser"
-            )
+            mock_playwright_instance.start = AsyncMock(return_value=mock_playwright_instance)
+            mock_playwright_instance.chromium.launch = AsyncMock(return_value="mock_browser")
             mock_playwright.return_value = mock_playwright_instance
 
             browser = await context.get_browser()
@@ -776,9 +743,7 @@ class TestBrowserMethods:
         with patch.object(context, "get_browser_context", return_value=mock_context):
             page = await context.get_browser_page("http://example.com")
             assert page == mock_page
-            mock_page.goto.assert_called_once_with(
-                "http://example.com", wait_until="domcontentloaded", timeout=30000
-            )
+            mock_page.goto.assert_called_once_with("http://example.com", wait_until="domcontentloaded", timeout=30000)
 
     @pytest.mark.asyncio
     async def test_cleanup_browser(self, context: ProcessingContext):

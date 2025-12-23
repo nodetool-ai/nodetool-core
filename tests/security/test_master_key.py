@@ -100,9 +100,7 @@ class TestMasterKeyManager:
         assert MasterKeyManager._cached_master_key == test_key
 
         # Should be stored in keyring
-        mock_keyring.set_password.assert_called_once_with(
-            "nodetool", "secrets_master_key", test_key
-        )
+        mock_keyring.set_password.assert_called_once_with("nodetool", "secrets_master_key", test_key)
 
     @patch("nodetool.security.master_key.keyring")
     def test_delete_master_key(self, mock_keyring):
@@ -113,9 +111,7 @@ class TestMasterKeyManager:
         assert MasterKeyManager._cached_master_key is None
 
         # Should be deleted from keyring
-        mock_keyring.delete_password.assert_called_once_with(
-            "nodetool", "secrets_master_key"
-        )
+        mock_keyring.delete_password.assert_called_once_with("nodetool", "secrets_master_key")
 
     async def test_export_master_key(self):
         """Test exporting master key."""
@@ -158,9 +154,7 @@ class TestMasterKeyManager:
         key = await MasterKeyManager.get_master_key()
 
         assert key == test_key
-        mock_client.get_secret_value.assert_called_once_with(
-            SecretId="nodetool-master-key"
-        )
+        mock_client.get_secret_value.assert_called_once_with(SecretId="nodetool-master-key")
 
     @patch("nodetool.security.master_key.boto3")
     @patch("nodetool.security.master_key.keyring")

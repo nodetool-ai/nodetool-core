@@ -36,9 +36,7 @@ class TestImageUtilsExtra(unittest.TestCase):
         mock_convert.return_value = "mocked_base64_data"
 
         # Create a data URI with base64 encoded test image
-        data_uri = (
-            f"data:image/jpeg;base64,{base64.b64encode(self.test_image_data).decode()}"
-        )
+        data_uri = f"data:image/jpeg;base64,{base64.b64encode(self.test_image_data).decode()}"
 
         image_ref = MagicMock()
         image_ref.data = None
@@ -142,18 +140,14 @@ class TestImageUtilsExtra(unittest.TestCase):
 
     def test_image_ref_to_base64_jpeg_with_custom_max_size_and_quality(self):
         """Test that custom max_size and quality parameters are passed through."""
-        with patch(
-            "nodetool.media.image.image_utils.image_data_to_base64_jpeg"
-        ) as mock_convert:
+        with patch("nodetool.media.image.image_utils.image_data_to_base64_jpeg") as mock_convert:
             mock_convert.return_value = "mocked_base64_data"
 
             image_ref = MagicMock()
             image_ref.data = self.test_image_data
             image_ref.uri = None
 
-            result = image_ref_to_base64_jpeg(
-                image_ref, max_size=(256, 256), quality=90
-            )
+            result = image_ref_to_base64_jpeg(image_ref, max_size=(256, 256), quality=90)
 
             self.assertEqual(result, "mocked_base64_data")
             mock_convert.assert_called_once_with(self.test_image_data, (256, 256), 90)

@@ -88,9 +88,7 @@ async def test_websocket_runner_disconnects(websocket_runner, mock_websocket):
 
 
 @pytest.mark.asyncio
-async def test_websocket_runner_manages_multiple_jobs(
-    websocket_runner, mock_websocket, simple_workflow, cleanup_jobs
-):
+async def test_websocket_runner_manages_multiple_jobs(websocket_runner, mock_websocket, simple_workflow, cleanup_jobs):
     """Test that WebSocketRunner can manage multiple concurrent jobs."""
     await websocket_runner.connect(mock_websocket)
 
@@ -160,9 +158,7 @@ async def test_websocket_runner_send_message_when_disconnected(websocket_runner)
 
 
 @pytest.mark.asyncio
-async def test_websocket_runner_get_status_with_job_id(
-    websocket_runner, mock_websocket, simple_workflow, cleanup_jobs
-):
+async def test_websocket_runner_get_status_with_job_id(websocket_runner, mock_websocket, simple_workflow, cleanup_jobs):
     """Test getting status for a specific job."""
     await websocket_runner.connect(mock_websocket)
 

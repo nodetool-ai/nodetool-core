@@ -44,9 +44,7 @@ async def test_paginate_jobs(user_id: str):
     jobs, last_evaluated_key = await Job.paginate(user_id=user_id, limit=10)
     assert len(jobs) > 0
 
-    jobs, last_evaluated_key = await Job.paginate(
-        user_id=user_id, start_key=last_evaluated_key
-    )
+    jobs, last_evaluated_key = await Job.paginate(user_id=user_id, start_key=last_evaluated_key)
     assert len(jobs) > 0
 
 
@@ -64,7 +62,5 @@ async def test_paginate_jobs_by_workflow(user_id: str):
             user_id=user_id,
         )
 
-    jobs, _last_evaluated_key = await Job.paginate(
-        user_id=user_id, workflow_id="workflow_id"
-    )
+    jobs, _last_evaluated_key = await Job.paginate(user_id=user_id, workflow_id="workflow_id")
     assert len(jobs) == 10

@@ -80,9 +80,10 @@ class TestDeploymentManager:
     @pytest.fixture
     def manager(self, mock_config, mock_state_manager):
         """Create a DeploymentManager with mocked dependencies."""
-        with patch(
-            "nodetool.deploy.manager.load_deployment_config"
-        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+        with (
+            patch("nodetool.deploy.manager.load_deployment_config") as mock_load,
+            patch("nodetool.deploy.manager.StateManager") as mock_state_cls,
+        ):
             mock_load.return_value = mock_config
             mock_state_cls.return_value = mock_state_manager
 
@@ -94,9 +95,10 @@ class TestDeploymentManager:
 
     def test_init(self, mock_config, mock_state_manager):
         """Test DeploymentManager initialization."""
-        with patch(
-            "nodetool.deploy.manager.load_deployment_config"
-        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+        with (
+            patch("nodetool.deploy.manager.load_deployment_config") as mock_load,
+            patch("nodetool.deploy.manager.StateManager") as mock_state_cls,
+        ):
             mock_load.return_value = mock_config
             mock_state_cls.return_value = mock_state_manager
 
@@ -111,9 +113,10 @@ class TestDeploymentManager:
         """Test DeploymentManager initialization with custom config path."""
         config_path = Path("/custom/path/deployment.yaml")
 
-        with patch(
-            "nodetool.deploy.manager.load_deployment_config"
-        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+        with (
+            patch("nodetool.deploy.manager.load_deployment_config") as mock_load,
+            patch("nodetool.deploy.manager.StateManager") as mock_state_cls,
+        ):
             mock_load.return_value = mock_config
             mock_state_cls.return_value = mock_state_manager
 
@@ -339,9 +342,7 @@ class TestDeploymentManager:
 
             assert result == "container logs here"
             mock_deployer_cls.assert_called_once()
-            mock_deployer.logs.assert_called_once_with(
-                service="wf1", follow=False, tail=50
-            )
+            mock_deployer.logs.assert_called_once_with(service="wf1", follow=False, tail=50)
 
     def test_logs_with_follow(self, manager):
         """Test getting logs with follow option."""
@@ -354,9 +355,7 @@ class TestDeploymentManager:
             result = manager.logs("production", follow=True)
 
             assert result == "streaming logs..."
-            mock_deployer.logs.assert_called_once_with(
-                service=None, follow=True, tail=100
-            )
+            mock_deployer.logs.assert_called_once_with(service=None, follow=True, tail=100)
 
     def test_logs_runpod(self, manager):
         """Test getting logs from RunPod deployment."""
@@ -547,9 +546,10 @@ class TestDeploymentManagerEdgeCases:
         """Create a manager with empty config."""
         mock_state_manager = Mock()
 
-        with patch(
-            "nodetool.deploy.manager.load_deployment_config"
-        ) as mock_load, patch("nodetool.deploy.manager.StateManager") as mock_state_cls:
+        with (
+            patch("nodetool.deploy.manager.load_deployment_config") as mock_load,
+            patch("nodetool.deploy.manager.StateManager") as mock_state_cls,
+        ):
             mock_load.return_value = empty_config
             mock_state_cls.return_value = mock_state_manager
 

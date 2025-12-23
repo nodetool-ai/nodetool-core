@@ -90,8 +90,7 @@ if False:
             assert result_node.type == expected_node.type
 
         result_edges_tuples = {
-            (edge.source, edge.sourceHandle, edge.target, edge.targetHandle)
-            for edge in result_edges
+            (edge.source, edge.sourceHandle, edge.target, edge.targetHandle) for edge in result_edges
         }
 
         assert result_edges_tuples == expected_edges_data
@@ -150,10 +149,7 @@ def test_read_graph_custom_format():
         assert result_node.type == expected_node.type
         assert result_node.data == expected_node.data
 
-    result_edges_tuples = {
-        (edge.source, edge.sourceHandle, edge.target, edge.targetHandle)
-        for edge in result_edges
-    }
+    result_edges_tuples = {(edge.source, edge.sourceHandle, edge.target, edge.targetHandle) for edge in result_edges}
 
     assert result_edges_tuples == expected_edges_data
 

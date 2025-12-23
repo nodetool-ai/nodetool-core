@@ -54,9 +54,7 @@ class TypedDictProcessNode(BaseNode):
         text: str
         count: int
 
-    async def process(
-        self, context: ProcessingContext
-    ) -> "TypedDictProcessNode.OutputType":
+    async def process(self, context: ProcessingContext) -> "TypedDictProcessNode.OutputType":
         return {"text": "hello", "count": 0}
 
 
@@ -65,9 +63,7 @@ class TypedDictStreamNode(BaseNode):
         text: str
         count: int
 
-    async def gen_process(
-        self, context: ProcessingContext
-    ) -> AsyncGenerator["TypedDictStreamNode.OutputType", None]:
+    async def gen_process(self, context: ProcessingContext) -> AsyncGenerator["TypedDictStreamNode.OutputType", None]:
         yield {"text": "hello", "count": 0}
 
 
@@ -75,9 +71,7 @@ class StreamNode(BaseNode):
     class OutputType(TypedDict):
         stream: int
 
-    async def gen_process(
-        self, context: ProcessingContext
-    ) -> AsyncGenerator[OutputType, None]:
+    async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
         yield {"stream": 1}
 
 
@@ -171,9 +165,7 @@ def test_string_node_output_type():
 
 def test_image_return_node_outputs():
     node = ImageReturnNode()
-    assert node.outputs() == [
-        OutputSlot(type=TypeMetadata(type="image"), name="output")
-    ]
+    assert node.outputs() == [OutputSlot(type=TypeMetadata(type="image"), name="output")]
 
 
 def test_dict_return_node_outputs():
@@ -265,9 +257,7 @@ def test_type_metadata_basic_types():
 
 
 def test_type_metadata_list():
-    assert type_metadata(list[int]) == TypeMetadata(
-        type="list", type_args=[TypeMetadata(type="int")]
-    )
+    assert type_metadata(list[int]) == TypeMetadata(type="list", type_args=[TypeMetadata(type="int")])
 
 
 def test_type_metadata_dict():
@@ -294,9 +284,7 @@ def test_type_metadata_enum():
     metadata = type_metadata(TestEnum)
     assert metadata.type == "enum"
     # Type name includes the function scope for locally defined classes
-    assert (
-        metadata.type_name == "test_base_node.test_type_metadata_enum.<locals>.TestEnum"
-    )
+    assert metadata.type_name == "test_base_node.test_type_metadata_enum.<locals>.TestEnum"
     assert metadata.values is not None
     assert set(metadata.values) == {"a", "b"}
 

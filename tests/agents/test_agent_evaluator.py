@@ -23,9 +23,7 @@ async def test_run_single_agent_random_problem_reports_success():
     async def runner(*, provider_key, model, problem, tools=None):
         calls.append((provider_key, model, problem, tools))
         # Provide usage metadata to ensure it is preserved
-        return SingleAgentRunResult(
-            result=problem * 2, usage=Usage(input_tokens=11, output_tokens=7)
-        )
+        return SingleAgentRunResult(result=problem * 2, usage=Usage(input_tokens=11, output_tokens=7))
 
     evaluator = AgentEvaluator(
         models=[("provider", "model-a")],

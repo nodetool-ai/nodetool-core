@@ -49,9 +49,7 @@ async def test_summarize_rss():
         graph=graph,
     )
 
-    ctx = ProcessingContext(
-        user_id=req.user_id, job_id="job", auth_token=req.auth_token
-    )
+    ctx = ProcessingContext(user_id=req.user_id, job_id="job", auth_token=req.auth_token)
 
     found_summary = False
     async for msg in run_workflow(req, context=ctx, use_thread=False):

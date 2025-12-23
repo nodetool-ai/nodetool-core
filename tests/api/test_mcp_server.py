@@ -12,7 +12,6 @@ Tests cover all major tool categories:
 - Storage operations
 - HuggingFace cache/hub queries
 """
-# ruff: noqa: F821
 
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -201,9 +200,7 @@ class TestWorkflowOperations:
         await workflow.save()
 
         # Create another workflow
-        await Workflow.create(
-            user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []}
-        )
+        await Workflow.create(user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []})
 
         result = await list_workflows(limit=10)
 
@@ -406,9 +403,7 @@ class TestJobOperations:
         )
 
         # Create another workflow and job
-        workflow2 = await Workflow.create(
-            user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []}
-        )
+        workflow2 = await Workflow.create(user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []})
         await Job.create(
             user_id="1",
             workflow_id=workflow2.id,
@@ -503,9 +498,7 @@ class TestModelOperations:
                 Mock(id="claude-3", name="Claude 3", provider=Provider.Anthropic),
             ]
 
-            result = await list_models(
-                provider="openai", model_type="language_model", limit=50
-            )
+            result = await list_models(provider="openai", model_type="language_model", limit=50)
 
             assert len(result) == 1
             assert result[0]["provider"] == "openai"
@@ -529,9 +522,7 @@ class TestCollectionOperations:
             )
             mock_get_col.return_value = mock_collection
 
-            result = await query_collection(
-                name="test-collection", query_texts=["search query"], n_results=10
-            )
+            result = await query_collection(name="test-collection", query_texts=["search query"], n_results=10)
 
             assert "ids" in result
             assert "documents" in result
@@ -594,7 +585,8 @@ class TestStorageOperations:
     async def test_download_file_from_storage(self):
         """Test downloading a file from storage."""
         import base64
-        from nodetool.runtime.resources import require_scope, ResourceScope
+
+        from nodetool.runtime.resources import ResourceScope, require_scope
 
         # First manually put a file in temp storage using the MCP server's temp storage
         # We'll skip creating the file and just test that the function handles missing files properly
@@ -615,7 +607,7 @@ class TestStorageOperations:
     @pytest.mark.asyncio
     async def test_get_file_metadata(self):
         """Test getting file metadata without downloading."""
-        from nodetool.runtime.resources import require_scope, ResourceScope
+        from nodetool.runtime.resources import ResourceScope, require_scope
 
         # Skip this test as temp storage setup is complex
         pytest.skip("Temp storage setup requires restructuring - skipping for now")
@@ -696,9 +688,7 @@ class TestHuggingFaceOperations:
             mock_file_info2.size = 1000
 
             mock_api = Mock()
-            mock_api.list_repo_files = Mock(
-                return_value=["model.safetensors", "config.json"]
-            )
+            mock_api.list_repo_files = Mock(return_value=["model.safetensors", "config.json"])
             mock_api.get_paths_info = Mock(
                 side_effect=[
                     [mock_file_info],

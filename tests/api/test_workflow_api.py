@@ -8,9 +8,7 @@ from nodetool.types.workflow import WorkflowList, WorkflowRequest
 
 
 @pytest.mark.asyncio
-async def test_create_workflow(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: str):
     params = {
         "name": "Test Workflow",
         "graph": {
@@ -38,9 +36,7 @@ async def test_create_workflow(
 
 
 @pytest.mark.asyncio
-async def test_get_workflows(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     await workflow.save()
     response = client.get("/api/workflows/", headers=headers)
     assert response.status_code == 200
@@ -50,9 +46,7 @@ async def test_get_workflows(
 
 
 @pytest.mark.asyncio
-async def test_get_workflow(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     await workflow.save()
     response = client.get(f"/api/workflows/{workflow.id}", headers=headers)
     assert response.status_code == 200
@@ -73,9 +67,7 @@ async def test_get_workflow(
 
 
 @pytest.mark.asyncio
-async def test_get_public_workflow(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_public_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     await workflow.save()
     response = client.get(f"/api/workflows/public/{workflow.id}", headers=headers)
     assert response.status_code == 404
@@ -110,9 +102,7 @@ async def test_index(client: TestClient, workflow: Workflow, headers: dict[str, 
 
 
 @pytest.mark.asyncio
-async def test_get_public_workflows(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_public_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     await workflow.save()
     response = client.get("/api/workflows/public", headers=headers)
     assert response.status_code == 200
@@ -128,9 +118,7 @@ async def test_get_public_workflows(
 
 
 @pytest.mark.asyncio
-async def test_update_workflow(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_update_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     request = WorkflowRequest(
         name="Updated Workflow",
         description="Updated Workflow Description",
@@ -141,9 +129,7 @@ async def test_update_workflow(
             edges=[Edge(**e) for e in workflow.graph["edges"]],
         ),
     )
-    response = client.put(
-        f"/api/workflows/{workflow.id}", json=request.model_dump(), headers=headers
-    )
+    response = client.put(f"/api/workflows/{workflow.id}", json=request.model_dump(), headers=headers)
     assert response.status_code == 200
     assert "id" in response.json()
 
@@ -154,9 +140,7 @@ async def test_update_workflow(
 
 
 @pytest.mark.asyncio
-async def test_delete_workflow(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_delete_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     await workflow.save()
     response = client.delete(f"/api/workflows/{workflow.id}", headers=headers)
     assert response.status_code == 200

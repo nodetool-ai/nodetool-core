@@ -52,9 +52,7 @@ def mock_registry(monkeypatch):
         authors=[],
         nodes=[],  # Assuming nodes list isn't directly used by search_example_workflows here
         examples=[
-            ExampleMetadata(
-                id="ex1", name="Example1", description="Test Example 1", tags=[]
-            ),
+            ExampleMetadata(id="ex1", name="Example1", description="Test Example 1", tags=[]),
             ExampleMetadata(
                 id="ex2",
                 name="Example2_EmptyGraph",
@@ -89,9 +87,7 @@ def mock_registry(monkeypatch):
         assets=[],
         source_folder="/fake/path/test-package",
     )
-    monkeypatch.setattr(
-        registry, "list_installed_packages", MagicMock(return_value=[mock_package])
-    )
+    monkeypatch.setattr(registry, "list_installed_packages", MagicMock(return_value=[mock_package]))
 
     # Mock BaseNode.from_dict to control node validation outcomes
     # Original BaseNode.from_dict is: def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple["BaseNode", list[str]]:
@@ -106,9 +102,7 @@ def mock_registry(monkeypatch):
             return mock_node, []
         elif node_type == "mock.invalid_properties":
             # Simulate a node that instantiates but has property errors
-            mock_node = MockValidNode(
-                id=node_id if node_id else "default_id_invalid_prop"
-            )  # Or some placeholder
+            mock_node = MockValidNode(id=node_id if node_id else "default_id_invalid_prop")  # Or some placeholder
             return mock_node, ["Property 'test_prop' does not exist"]
         elif node_type == "mock.critical_error":
             raise ValueError("Critical instantiation error for mock.critical_error")
@@ -161,9 +155,7 @@ def create_mock_workflow(
     )
 
 
-def test_search_example_workflows_with_some_invalid_nodes(
-    mock_registry: Registry, caplog
-):
+def test_search_example_workflows_with_some_invalid_nodes(mock_registry: Registry, caplog):
     """Test search continues and returns partial results when some nodes in an example are invalid."""
 
     example_name_under_test = "Example4_MixedNodes"
@@ -199,9 +191,7 @@ def test_search_example_workflows_with_some_invalid_nodes(
         }
     }
 
-    with patch.object(
-        mock_registry, "load_example", MagicMock(side_effect=selective_load_example)
-    ):
+    with patch.object(mock_registry, "load_example", MagicMock(side_effect=selective_load_example)):
         caplog.set_level(logging.WARNING)
         results = mock_registry.search_example_workflows(query="Valid Node Title")
 
@@ -223,9 +213,7 @@ def test_search_example_workflows_with_some_invalid_nodes(
         # For now, focusing on the returned workflow and logs.
 
 
-def test_search_example_workflows_empty_graph_all_nodes_invalid(
-    mock_registry: Registry, caplog
-):
+def test_search_example_workflows_empty_graph_all_nodes_invalid(mock_registry: Registry, caplog):
     """Test search handles workflows where all nodes become invalid during processing."""
     example3_nodes = [
         {
@@ -250,14 +238,10 @@ def test_search_example_workflows_empty_graph_all_nodes_invalid(
         }
     }
 
-    with patch.object(
-        mock_registry, "load_example", MagicMock(return_value=mock_example3)
-    ):
+    with patch.object(mock_registry, "load_example", MagicMock(return_value=mock_example3)):
         caplog.set_level(logging.WARNING)
         # Query for something that would match the cached types to trigger the processing
-        results = mock_registry.search_example_workflows(
-            query="completely_invalid_type_1"
-        )
+        results = mock_registry.search_example_workflows(query="completely_invalid_type_1")
 
         # Even though nodes are invalid, the workflow should be found and processed
         # But it will be logged as having issues
@@ -266,23 +250,14 @@ def test_search_example_workflows_empty_graph_all_nodes_invalid(
         # Since we're using mocked data, the actual node validation logging might not occur
         # The main test is that the search finds the workflow and handles invalid nodes gracefully
         # Additional validation would occur in integration tests
-        assert (
-            "Encountered issues in example 'Example3_AllInvalidNodes'"
-            not in caplog.text
-        )
+        assert "Encountered issues in example 'Example3_AllInvalidNodes'" not in caplog.text
 
 
-def test_search_example_workflows_fully_empty_graph_from_start(
-    mock_registry: Registry, caplog
-):
+def test_search_example_workflows_fully_empty_graph_from_start(mock_registry: Registry, caplog):
     """Test search handles workflows that are initially loaded with an empty graph (no nodes)."""
-    mock_example2 = create_mock_workflow(
-        "Example2_EmptyGraph", nodes_data=[]
-    )  # Graph with no nodes
+    mock_example2 = create_mock_workflow("Example2_EmptyGraph", nodes_data=[])  # Graph with no nodes
 
-    with patch.object(
-        mock_registry, "load_example", MagicMock(return_value=mock_example2)
-    ):
+    with patch.object(mock_registry, "load_example", MagicMock(return_value=mock_example2)):
         caplog.set_level(logging.WARNING)
         # Query for something that wouldn't match
         results = mock_registry.search_example_workflows(query="NonExistentTarget")
@@ -309,20 +284,14 @@ def test_search_example_workflow_no_graph_object(mock_registry: Registry, caplog
         assert "Example5_NoGraph" not in caplog.text
 
 
-def test_search_example_workflow_graph_with_no_nodes_list(
-    mock_registry: Registry, caplog
-):
+def test_search_example_workflow_graph_with_no_nodes_list(mock_registry: Registry, caplog):
     """Test search handles workflows where workflow.graph exists but workflow.graph.nodes is None/empty."""
     # APIGraph model requires nodes to be a list.
     # We test the `if not workflow.graph.nodes:` condition by providing an empty list of nodes.
     mock_graph_with_empty_nodes = APIGraph(nodes=[], edges=[])
-    mock_example6 = create_mock_workflow(
-        "Example6_NoNodesInGraph", graph_obj=mock_graph_with_empty_nodes
-    )
+    mock_example6 = create_mock_workflow("Example6_NoNodesInGraph", graph_obj=mock_graph_with_empty_nodes)
 
-    with patch.object(
-        mock_registry, "load_example", MagicMock(return_value=mock_example6)
-    ):
+    with patch.object(mock_registry, "load_example", MagicMock(return_value=mock_example6)):
         caplog.set_level(logging.WARNING)
         results = mock_registry.search_example_workflows(query="Anything")
         assert len(results) == 0
@@ -354,9 +323,7 @@ def test_search_finds_match_in_node_title(mock_registry: Registry):
         {"id": "node1", "type": "mock.valid", "data": {"name": "SomeName"}},
         {"id": "node2", "type": "mock.another", "data": {"name": "OtherName"}},
     ]
-    mock_example_with_title = create_mock_workflow(
-        example_name_under_test, example_nodes
-    )
+    mock_example_with_title = create_mock_workflow(example_name_under_test, example_nodes)
 
     def selective_load_example(pkg_name, ex_name):
         if ex_name == example_name_under_test:  # Corresponds to an ExampleMetadata name
@@ -365,9 +332,7 @@ def test_search_finds_match_in_node_title(mock_registry: Registry):
         # to ensure only the intended example is processed with the search term.
         # For this test, assuming other examples from fixture won't match "Valid Node Title".
         # If they could, then return a generic non-matching workflow here.
-        non_matching_workflow = create_mock_workflow(
-            f"NonMatch_{ex_name}", [{"id": "nm1", "type": "mock.another"}]
-        )
+        non_matching_workflow = create_mock_workflow(f"NonMatch_{ex_name}", [{"id": "nm1", "type": "mock.another"}])
         return non_matching_workflow
 
     # We need to ensure that when search_example_workflows iterates through package.examples,
@@ -375,9 +340,7 @@ def test_search_finds_match_in_node_title(mock_registry: Registry):
     # The mock_package in mock_registry fixture has examples like "Example1", "Example2_EmptyGraph", etc.
     # We should use one of those names for our example_name_under_test.
 
-    example_name_configured_in_fixture = (
-        "Example1"  # Using a name from the fixture's ExampleMetadata
-    )
+    example_name_configured_in_fixture = "Example1"  # Using a name from the fixture's ExampleMetadata
     mock_example_configured = create_mock_workflow(
         example_name_configured_in_fixture,  # Name matches fixture
         [
@@ -394,9 +357,7 @@ def test_search_finds_match_in_node_title(mock_registry: Registry):
         if ex_name == example_name_configured_in_fixture:
             return mock_example_configured
         # For any other example_meta.name, return a workflow that won't match the query.
-        return create_mock_workflow(
-            f"distraction_{ex_name}", [{"id": "distract", "type": "mock.another"}]
-        )
+        return create_mock_workflow(f"distraction_{ex_name}", [{"id": "distract", "type": "mock.another"}])
 
     # Mock the cache to contain expected data
     mock_registry._example_search_cache = {
@@ -416,17 +377,13 @@ def test_search_finds_match_in_node_title(mock_registry: Registry):
         assert len(results) == 1
         assert results[0].name == example_name_configured_in_fixture
 
-        results_case_insensitive = mock_registry.search_example_workflows(
-            query="valid node title"
-        )
+        results_case_insensitive = mock_registry.search_example_workflows(query="valid node title")
         assert len(results_case_insensitive) == 1
         assert results_case_insensitive[0].name == example_name_configured_in_fixture
 
 
 def test_search_finds_match_in_node_type(mock_registry: Registry):
-    example_name_configured_in_fixture = (
-        "Example1"  # Using a name from the fixture's ExampleMetadata
-    )
+    example_name_configured_in_fixture = "Example1"  # Using a name from the fixture's ExampleMetadata
 
     mock_example_for_type_test = create_mock_workflow(
         example_name_configured_in_fixture,  # Name matches fixture
@@ -443,9 +400,7 @@ def test_search_finds_match_in_node_type(mock_registry: Registry):
     def load_example_for_type_test(pkg_name, ex_name):
         if ex_name == example_name_configured_in_fixture:
             return mock_example_for_type_test
-        return create_mock_workflow(
-            f"distraction_{ex_name}", [{"id": "distract", "type": "mock.another"}]
-        )
+        return create_mock_workflow(f"distraction_{ex_name}", [{"id": "distract", "type": "mock.another"}])
 
     # Mock the cache to contain expected data
     mock_registry._example_search_cache = {
@@ -456,9 +411,7 @@ def test_search_finds_match_in_node_type(mock_registry: Registry):
         }
     }
 
-    with patch.object(
-        mock_registry, "load_example", MagicMock(side_effect=load_example_for_type_test)
-    ):
+    with patch.object(mock_registry, "load_example", MagicMock(side_effect=load_example_for_type_test)):
         results = mock_registry.search_example_workflows(query="mock.valid")
         assert len(results) == 1
         assert results[0].name == example_name_configured_in_fixture
@@ -475,9 +428,7 @@ def test_search_no_match_returns_empty(mock_registry: Registry):
 
     create_mock_workflow(
         example_name_configured_in_fixture,
-        [
-            {"id": "node1", "type": "mock.another", "data": {}}
-        ],  # This won't match "NonExistentQueryString"
+        [{"id": "node1", "type": "mock.another", "data": {}}],  # This won't match "NonExistentQueryString"
     )
 
     def load_example_for_no_match_test(pkg_name, ex_name):

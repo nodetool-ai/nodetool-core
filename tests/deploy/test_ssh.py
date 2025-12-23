@@ -18,11 +18,12 @@ class TestSSHConnection:
     @pytest.fixture
     def mock_paramiko(self):
         """Mock paramiko module."""
-        with patch("nodetool.deploy.ssh.paramiko") as mock, patch(
-            "nodetool.deploy.ssh.PARAMIKO_AVAILABLE", True
-        ), patch("nodetool.deploy.ssh.SSHClient") as mock_client_cls, patch(
-            "nodetool.deploy.ssh.AutoAddPolicy"
-        ) as mock_policy:
+        with (
+            patch("nodetool.deploy.ssh.paramiko") as mock,
+            patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", True),
+            patch("nodetool.deploy.ssh.SSHClient") as mock_client_cls,
+            patch("nodetool.deploy.ssh.AutoAddPolicy") as mock_policy,
+        ):
             yield {
                 "paramiko": mock,
                 "SSHClient": mock_client_cls,
@@ -72,8 +73,9 @@ class TestSSHConnection:
 
     def test_init_without_paramiko(self):
         """Test initialization without paramiko raises error."""
-        with patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", False), pytest.raises(
-            ImportError, match="paramiko is required"
+        with (
+            patch("nodetool.deploy.ssh.PARAMIKO_AVAILABLE", False),
+            pytest.raises(ImportError, match="paramiko is required"),
         ):
             SSHConnection(
                 host="example.com",

@@ -15,9 +15,7 @@ def test_run_uvicorn_server_configures_loop_and_workers(monkeypatch):
     with (
         patch("nodetool.api.server.uvicorn") as mock_run,
         patch("nodetool.api.server.platform.system", return_value="Linux"),
-        patch(
-            "nodetool.api.server.get_nodetool_package_source_folders", return_value=[]
-        ),
+        patch("nodetool.api.server.get_nodetool_package_source_folders", return_value=[]),
     ):
         run_uvicorn_server(dummy_app, host="0.0.0.0", port=8123, reload=False)
         mock_run.assert_called_once()

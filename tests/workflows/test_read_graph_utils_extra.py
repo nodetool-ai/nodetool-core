@@ -26,9 +26,7 @@ def test_convert_graph_basic(monkeypatch):
         "links": [[0, 1, "out"]],
     }
 
-    monkeypatch.setattr(
-        read_graph, "get_widget_names", lambda t: ["a"] if t == "A" else ["x", "y"]
-    )
+    monkeypatch.setattr(read_graph, "get_widget_names", lambda t: ["a"] if t == "A" else ["x", "y"])
     out = read_graph.convert_graph(inp)
     assert out["1"]["data"]["a"] == 5
     assert out["2"]["data"]["x"] == ["1", "out"]

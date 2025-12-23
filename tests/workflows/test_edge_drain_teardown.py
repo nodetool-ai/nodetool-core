@@ -55,11 +55,7 @@ def test_drain_active_edges_posts_drained_updates():
         runner.drain_active_edges(ctx, graph)
 
         msgs = _collect_messages(ctx)
-        drained_ids = {
-            m.edge_id
-            for m in msgs
-            if isinstance(m, EdgeUpdate) and m.status == "drained"
-        }
+        drained_ids = {m.edge_id for m in msgs if isinstance(m, EdgeUpdate) and m.status == "drained"}
         assert drained_ids == {"e1", "e2"}
 
     asyncio.run(_run())

@@ -34,9 +34,7 @@ class MockWebSocket:
         # Simulate receiving a message that will trigger a connection error
         return {
             "type": "websocket.receive",
-            "bytes": msgpack.packb(
-                {"role": "user", "content": "Hello, can you help me?", "model": "gpt-4"}
-            ),
+            "bytes": msgpack.packb({"role": "user", "content": "Hello, can you help me?", "model": "gpt-4"}),
         }
 
 

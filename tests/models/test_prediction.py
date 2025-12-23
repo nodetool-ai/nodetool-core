@@ -54,9 +54,7 @@ async def test_paginate_predictions_by_workflow(user_id: str):
             model="test_model",
         )
 
-    predictions, last_key = await Prediction.paginate(
-        user_id=user_id, workflow_id="test_workflow", limit=4
-    )
+    predictions, last_key = await Prediction.paginate(user_id=user_id, workflow_id="test_workflow", limit=4)
     assert len(predictions) > 0
 
     predictions, last_key = await Prediction.paginate(

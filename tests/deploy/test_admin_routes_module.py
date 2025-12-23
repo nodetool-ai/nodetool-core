@@ -30,9 +30,7 @@ class TestAdminRoutes:
 
             mock_dl.return_value = gen()
 
-            with client.stream(
-                "POST", "/admin/models/huggingface/download", json={"repo_id": "r"}
-            ) as resp:
+            with client.stream("POST", "/admin/models/huggingface/download", json={"repo_id": "r"}) as resp:
                 assert resp.status_code == 200
                 text = resp.read().decode()
                 assert "data: " in text
@@ -49,9 +47,7 @@ class TestAdminRoutes:
 
             mock_dl.return_value = gen()
 
-            with client.stream(
-                "POST", "/admin/models/ollama/download", json={"model_name": "m"}
-            ) as resp:
+            with client.stream("POST", "/admin/models/ollama/download", json={"model_name": "m"}) as resp:
                 assert resp.status_code == 200
                 text = resp.read().decode()
                 assert "data: " in text

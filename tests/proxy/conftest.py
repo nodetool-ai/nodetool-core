@@ -105,9 +105,7 @@ def config_yaml_content(sample_proxy_config: ProxyConfig) -> str:
 @pytest.fixture
 def temp_config_file(config_yaml_content: str) -> Path:
     """Create a temporary config file."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(config_yaml_content)
         return Path(f.name)
 

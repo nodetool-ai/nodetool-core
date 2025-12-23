@@ -27,11 +27,7 @@ async def openai_chat_completions_endpoint(request: Request):
 
     # Extract auth token from headers
     auth_header = request.headers.get("Authorization", "")
-    auth_token = (
-        auth_header.replace("Bearer ", "")
-        if auth_header.startswith("Bearer ")
-        else None
-    )
+    auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
 
     # Create SSE runner
     runner = ChatSSERunner(auth_token)
@@ -91,9 +87,7 @@ class TestOpenAIChatSSEIntegration:
 
             # Verify response
             assert response.status_code == 200
-            assert (
-                response.headers["content-type"] == "text/event-stream; charset=utf-8"
-            )
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
     def test_openai_sse_event_parsing(self):
         """Test parsing OpenAI-compatible SSE events from response"""
@@ -176,9 +170,7 @@ class OpenAISSEClient:
     """Example client for consuming OpenAI-compatible SSE streams"""
 
     @staticmethod
-    async def consume_openai_sse_stream(
-        url: str, data: dict, headers: dict | None = None
-    ):
+    async def consume_openai_sse_stream(url: str, data: dict, headers: dict | None = None):
         """
         Example of how a client would consume OpenAI-compatible SSE events
 
@@ -188,9 +180,7 @@ class OpenAISSEClient:
 
         import aiohttp
 
-        async with aiohttp.ClientSession() as session, session.post(
-            url, json=data, headers=headers
-        ) as response:
+        async with aiohttp.ClientSession() as session, session.post(url, json=data, headers=headers) as response:
             async for line in response.content:
                 line = line.decode("utf-8").strip()
                 if line.startswith("data:"):

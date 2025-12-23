@@ -58,9 +58,7 @@ async def test_model_delete(model: TestModel):
 @pytest.mark.asyncio
 async def test_model_query(model: TestModel):
     await model.save()
-    retrieved_instances, _ = await TestModel.query(
-        condition=Field("username").equals("Test")
-    )
+    retrieved_instances, _ = await TestModel.query(condition=Field("username").equals("Test"))
     assert len(retrieved_instances) > 0
     assert retrieved_instances[0].id == "1"
     assert retrieved_instances[0].username == "Test"

@@ -71,9 +71,7 @@ class TestChatWebSocketRunner:
             await wait_for(runner.connect(websocket))
 
             # Verify connection was closed with correct code and reason
-            websocket.close.assert_called_once_with(
-                code=1008, reason="Missing authentication"
-            )
+            websocket.close.assert_called_once_with(code=1008, reason="Missing authentication")
             # Verify accept was never called
             assert not hasattr(websocket, "accept") or not websocket.accept.called
 
@@ -89,9 +87,7 @@ class TestChatWebSocketRunner:
                 await wait_for(runner.connect(websocket))
 
             # Verify connection was closed with correct code and reason
-            websocket.close.assert_called_once_with(
-                code=1008, reason="Invalid authentication"
-            )
+            websocket.close.assert_called_once_with(code=1008, reason="Invalid authentication")
             # Verify accept was never called
             assert not hasattr(websocket, "accept") or not websocket.accept.called
 
@@ -211,9 +207,7 @@ class TestChatWebSocketRunner:
         test_data = {"type": "chat", "content": "Hello"}
         packed_data = msgpack.packb(test_data)
 
-        self.runner.websocket.receive = AsyncMock(
-            return_value={"type": "websocket.message", "bytes": packed_data}
-        )
+        self.runner.websocket.receive = AsyncMock(return_value={"type": "websocket.message", "bytes": packed_data})
 
         # Receive message
         result = await wait_for(self.runner.receive_message())
@@ -229,9 +223,7 @@ class TestChatWebSocketRunner:
         test_data = {"type": "chat", "content": "Hello"}
         json_data = json.dumps(test_data)
 
-        self.runner.websocket.receive = AsyncMock(
-            return_value={"type": "websocket.message", "text": json_data}
-        )
+        self.runner.websocket.receive = AsyncMock(return_value={"type": "websocket.message", "text": json_data})
 
         # Receive message
         result = await wait_for(self.runner.receive_message())
@@ -244,9 +236,7 @@ class TestChatWebSocketRunner:
         """Test receiving disconnect message"""
         self.runner.websocket = Mock(spec=WebSocket)
 
-        self.runner.websocket.receive = AsyncMock(
-            return_value={"type": "websocket.disconnect"}
-        )
+        self.runner.websocket.receive = AsyncMock(return_value={"type": "websocket.disconnect"})
 
         # Receive message
         result = await wait_for(self.runner.receive_message())
@@ -261,17 +251,13 @@ class TestChatWebSocketRunner:
         self.runner.websocket = websocket  # Set websocket to avoid assertion error
 
         # Mock connect method
-        with patch.object(
-            self.runner, "connect", new_callable=AsyncMock
-        ) as mock_connect:
+        with patch.object(self.runner, "connect", new_callable=AsyncMock) as mock_connect:
             # Mock _receive_messages to simulate immediate completion
             async def mock_receive():
                 await asyncio.sleep(0.01)  # Small delay to simulate work
                 return
 
-            with patch.object(
-                self.runner, "_receive_messages", side_effect=mock_receive
-            ):
+            with patch.object(self.runner, "_receive_messages", side_effect=mock_receive):
                 await wait_for(self.runner.run(websocket))
 
                 # Verify connect was called with websocket and user_id
@@ -291,9 +277,10 @@ class TestChatWebSocketRunner:
         # Simulate receiving stop command then disconnect
         messages = [{"type": "stop"}, None]  # Disconnect
 
-        with patch.object(self.runner, "receive_message", side_effect=messages), patch.object(
-            self.runner, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with (
+            patch.object(self.runner, "receive_message", side_effect=messages),
+            patch.object(self.runner, "send_message", new_callable=AsyncMock) as mock_send,
+        ):
             await wait_for(self.runner._receive_messages())
 
             # Verify task was cancelled
@@ -315,9 +302,10 @@ class TestChatWebSocketRunner:
         # Simulate receiving one message then disconnect
         messages = [test_message, None]
 
-        with patch.object(self.runner, "receive_message", side_effect=messages), patch.object(
-            self.runner, "handle_message", new_callable=AsyncMock
-        ) as mock_handle:
+        with (
+            patch.object(self.runner, "receive_message", side_effect=messages),
+            patch.object(self.runner, "handle_message", new_callable=AsyncMock) as mock_handle,
+        ):
             await wait_for(self.runner._receive_messages())
 
             # Verify message was handled
@@ -330,9 +318,10 @@ class TestChatWebSocketRunner:
         # Create a side effect that raises an exception on first call, then returns None
         side_effects = [Exception("Test error"), None]
 
-        with patch.object(self.runner, "receive_message", side_effect=side_effects), patch.object(
-            self.runner, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with (
+            patch.object(self.runner, "receive_message", side_effect=side_effects),
+            patch.object(self.runner, "send_message", new_callable=AsyncMock) as mock_send,
+        ):
             await wait_for(self.runner._receive_messages())
 
             # Verify error message was sent
@@ -356,9 +345,10 @@ class TestChatWebSocketRunner:
         # Simulate receiving new message then disconnect
         messages = [new_message, None]
 
-        with patch.object(
-            self.runner, "receive_message", side_effect=messages
-        ), patch.object(self.runner, "handle_message", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "receive_message", side_effect=messages),
+            patch.object(self.runner, "handle_message", new_callable=AsyncMock),
+        ):
             await self.runner._receive_messages()
 
         # Verify old task was cancelled

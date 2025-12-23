@@ -59,9 +59,7 @@ async def test_pagination(client: TestClient, headers: dict[str, str], user_id: 
     assert response.status_code == 200
     assert len(response.json()["assets"]) == 3
     next_cursor = response.json()["next"]
-    response = client.get(
-        "/api/assets", params={"cursor": next_cursor, "page_size": 3}, headers=headers
-    )
+    response = client.get("/api/assets", params={"cursor": next_cursor, "page_size": 3}, headers=headers)
     assert response.status_code == 200
     assert len(response.json()["assets"]) == 2
     assert response.json()["next"] == ""
@@ -88,9 +86,7 @@ async def test_put(client: TestClient, headers: dict[str, str], user_id: str):
     image = await make_image(user_id)
     response = client.put(
         f"/api/assets/{image.id}",
-        json=AssetUpdateRequest(
-            parent_id=user_id, name="bild.jpeg", content_type="image/jpeg"
-        ).model_dump(),
+        json=AssetUpdateRequest(parent_id=user_id, name="bild.jpeg", content_type="image/jpeg").model_dump(),
         headers=headers,
     )
     assert response.status_code == 200
@@ -122,9 +118,7 @@ async def test_create(client: TestClient, headers: dict[str, str], user_id: str)
 
 
 @pytest.mark.asyncio
-async def test_storage_stream_content_length(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_storage_stream_content_length(client: TestClient, headers: dict[str, str], user_id: str):
     image = await make_image(user_id)
     storage = require_scope().get_asset_storage()
     expected_size = len(storage.storage[image.file_name])
@@ -135,9 +129,7 @@ async def test_storage_stream_content_length(
 
 
 @pytest.mark.asyncio
-async def test_download_deduplicated_names(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_download_deduplicated_names(client: TestClient, headers: dict[str, str], user_id: str):
     """Ensure duplicate asset names are uniquified in zip downloads."""
     img1 = await make_image(user_id)
     img2 = await make_image(user_id)
@@ -158,9 +150,7 @@ async def test_download_deduplicated_names(
 
 # Search functionality tests
 @pytest.mark.asyncio
-async def test_search_basic_functionality(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_basic_functionality(client: TestClient, headers: dict[str, str], user_id: str):
     """Test basic search functionality with valid queries."""
     # Create test assets with different names
     img = await make_image(user_id)
@@ -171,9 +161,7 @@ async def test_search_basic_functionality(
     await txt.update(name="document.txt")
 
     # Test basic search
-    response = client.get(
-        "/api/assets/search", params={"query": "photo"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["is_global_search"] is True
@@ -182,9 +170,7 @@ async def test_search_basic_functionality(
 
 
 @pytest.mark.asyncio
-async def test_search_query_validation(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_query_validation(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search query length validation."""
     # Test query too short
     response = client.get("/api/assets/search", params={"query": "a"}, headers=headers)
@@ -197,9 +183,7 @@ async def test_search_query_validation(
 
 
 @pytest.mark.asyncio
-async def test_search_with_content_type_filter(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_with_content_type_filter(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with content type filtering."""
     # Create assets of different types
     img = await make_image(user_id)
@@ -220,9 +204,7 @@ async def test_search_with_content_type_filter(
 
 
 @pytest.mark.asyncio
-async def test_search_pagination(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_pagination(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search pagination functionality."""
     # Create multiple matching assets
     for i in range(5):
@@ -230,9 +212,7 @@ async def test_search_pagination(
         await img.update(name=f"photo_{i}")
 
     # Test first page
-    response = client.get(
-        "/api/assets/search", params={"query": "photo", "page_size": 2}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "photo", "page_size": 2}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 2
@@ -249,25 +229,17 @@ async def test_search_pagination(
 
 
 @pytest.mark.asyncio
-async def test_search_folder_path_information(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_folder_path_information(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search returns folder path information."""
     # Create folder structure
-    folder = await Asset.create(
-        user_id=user_id, name="My Folder", content_type="folder"
-    )
-    subfolder = await Asset.create(
-        user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id
-    )
+    folder = await Asset.create(user_id=user_id, name="My Folder", content_type="folder")
+    subfolder = await Asset.create(user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id)
 
     # Create asset in subfolder
     image = await make_image(user_id, parent_id=subfolder.id)
     await image.update(name="nested_photo")
 
-    response = client.get(
-        "/api/assets/search", params={"query": "photo"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
@@ -281,16 +253,12 @@ async def test_search_folder_path_information(
 
 
 @pytest.mark.asyncio
-async def test_search_empty_results(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_empty_results(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with no matching results."""
     img = await make_image(user_id)
     await img.update(name="sunset")
 
-    response = client.get(
-        "/api/assets/search", params={"query": "nonexistent"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "nonexistent"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 0
@@ -298,26 +266,20 @@ async def test_search_empty_results(
 
 
 @pytest.mark.asyncio
-async def test_search_case_insensitive(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_case_insensitive(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search is case insensitive."""
     img = await make_image(user_id)
     await img.update(name="SUNSET_Photo")
 
     # Test lowercase search
-    response = client.get(
-        "/api/assets/search", params={"query": "sunset"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "sunset"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
 
 
 @pytest.mark.asyncio
-async def test_search_special_characters(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_special_characters(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with special characters that could cause SQL injection."""
     img = await make_image(user_id)
     await img.update(name="test_file")
@@ -326,9 +288,7 @@ async def test_search_special_characters(
     malicious_queries = ["'; DROP TABLE assets; --", "test%", "test_", "test\\"]
 
     for query in malicious_queries:
-        response = client.get(
-            "/api/assets/search", params={"query": query}, headers=headers
-        )
+        response = client.get("/api/assets/search", params={"query": query}, headers=headers)
         # Should not crash and should return proper response
         assert response.status_code == 200
         # Response should be well-formed JSON
@@ -337,9 +297,7 @@ async def test_search_special_characters(
 
 
 @pytest.mark.asyncio
-async def test_search_user_isolation(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_user_isolation(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search only returns current user's assets."""
     # Create asset for current user
     img = await make_image(user_id)
@@ -350,9 +308,7 @@ async def test_search_user_isolation(
     Asset.create(user_id=other_user_id, name="other_photo", content_type="image/jpeg")
 
     # Search should only return current user's assets
-    response = client.get(
-        "/api/assets/search", params={"query": "photo"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
@@ -361,9 +317,7 @@ async def test_search_user_isolation(
 
 
 @pytest.mark.asyncio
-async def test_search_contains_behavior(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_search_contains_behavior(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search finds matches anywhere in the filename."""
     # Create assets with query in different positions
     img = await make_image(user_id)
@@ -373,9 +327,7 @@ async def test_search_contains_behavior(
     img = await make_image(user_id)
     await img.update(name="vacation_photo")  # at end
 
-    response = client.get(
-        "/api/assets/search", params={"query": "photo"}, headers=headers
-    )
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200
     data = response.json()
     # Should find all three

@@ -99,9 +99,7 @@ async def test_run_workflow_error(monkeypatch):
 
     results = []
     with pytest.raises(RuntimeError, match="boom"):
-        async for m in run_workflow(
-            req, runner=runner, context=context, use_thread=False
-        ):
+        async for m in run_workflow(req, runner=runner, context=context, use_thread=False):
             results.append(m)
 
     assert any(isinstance(m, JobUpdate) and m.status == "failed" for m in results)

@@ -121,9 +121,7 @@ class TestAnthropicProvider(BaseProviderTest):
             usage=Usage(input_tokens=10, output_tokens=25),
         )
 
-    def create_anthropic_streaming_responses(
-        self, text: str = "Hello world!", chunk_size: int = 5
-    ) -> List[Dict]:
+    def create_anthropic_streaming_responses(self, text: str = "Hello world!", chunk_size: int = 5) -> List[Dict]:
         """Create realistic Anthropic streaming response events."""
         events = []
 
@@ -209,10 +207,7 @@ class TestAnthropicProvider(BaseProviderTest):
         """Mock Anthropic API call with structured response."""
         if "tool_calls" in response_data:
             # Tool use response
-            tool_uses = [
-                {"id": tc["id"], "name": tc["name"], "args": tc["args"]}
-                for tc in response_data["tool_calls"]
-            ]
+            tool_uses = [{"id": tc["id"], "name": tc["name"], "args": tc["args"]} for tc in response_data["tool_calls"]]
 
             anthropic_response = self.create_anthropic_message_response(
                 content=response_data.get("text"), tool_uses=tool_uses
@@ -284,9 +279,7 @@ class TestAnthropicProvider(BaseProviderTest):
     def mock_error_response(self, error_type: str):
         """Mock Anthropic API error response."""
         error = self.create_anthropic_error(error_type)
-        return patch.object(
-            anthropic.resources.messages.AsyncMessages, "create", side_effect=error
-        )
+        return patch.object(anthropic.resources.messages.AsyncMessages, "create", side_effect=error)
 
     @pytest.mark.asyncio
     async def test_anthropic_specific_features(self):
@@ -294,9 +287,7 @@ class TestAnthropicProvider(BaseProviderTest):
         provider = self.create_provider()
         messages = self.create_simple_messages("Test Anthropic features")
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Claude response")
-        ) as mock_call:
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Claude response")) as mock_call:
             await provider.generate_message(
                 messages,
                 "claude-3-sonnet-20240229",
@@ -330,9 +321,7 @@ class TestAnthropicProvider(BaseProviderTest):
         }
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(
-                messages, "claude-3-sonnet-20240229", tools=tools
-            )
+            response = await provider.generate_message(messages, "claude-3-sonnet-20240229", tools=tools)
 
         assert hasattr(response, "tool_calls")
         assert response.tool_calls is not None
@@ -400,9 +389,7 @@ class TestAnthropicProvider(BaseProviderTest):
             Message(role="user", content=[MessageTextContent(text="Hello")]),
         ]
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Hello! How can I help you?")
-        ) as mock_call:
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Hello! How can I help you?")) as mock_call:
             await provider.generate_message(messages, "claude-3-sonnet-20240229")
 
         # Verify system message was handled correctly
@@ -487,9 +474,7 @@ class TestAnthropicProvider(BaseProviderTest):
             return_value=MockToolStream(),
         ):
             results = []
-            async for result in provider.generate_messages(
-                messages, "claude-3-sonnet-20240229", tools=tools
-            ):
+            async for result in provider.generate_messages(messages, "claude-3-sonnet-20240229", tools=tools):
                 results.append(result)
 
             # Should process streaming tool use
@@ -508,11 +493,7 @@ class TestAnthropicProvider(BaseProviderTest):
             ),
             Message(
                 role="assistant",
-                instructions=[
-                    MessageTextContent(
-                        text="I don't have access to current weather data."
-                    )
-                ],
+                instructions=[MessageTextContent(text="I don't have access to current weather data.")],
             ),
             Message(
                 role="user",
@@ -521,9 +502,7 @@ class TestAnthropicProvider(BaseProviderTest):
         ]
 
         with self.mock_api_call(
-            ResponseFixtures.simple_text_response(
-                "I'd suggest checking a weather app first."
-            )
+            ResponseFixtures.simple_text_response("I'd suggest checking a weather app first.")
         ) as mock_call:
             await provider.generate_message(conversation, "claude-3-sonnet-20240229")
 

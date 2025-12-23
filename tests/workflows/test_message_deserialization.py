@@ -45,21 +45,19 @@ def test_message_type_map_completeness():
     ]
 
     for msg_type in expected_types:
-        assert (
-            msg_type in MESSAGE_TYPE_MAP
-        ), f"MESSAGE_TYPE_MAP should include {msg_type}"
+        assert msg_type in MESSAGE_TYPE_MAP, f"MESSAGE_TYPE_MAP should include {msg_type}"
 
 
 def test_docker_and_subprocess_maps_match():
     """Test that Docker and subprocess MESSAGE_TYPE_MAPs are identical."""
-    assert set(MESSAGE_TYPE_MAP.keys()) == set(
-        SUBPROCESS_MESSAGE_TYPE_MAP.keys()
-    ), "Docker and subprocess MESSAGE_TYPE_MAPs should have the same keys"
+    assert set(MESSAGE_TYPE_MAP.keys()) == set(SUBPROCESS_MESSAGE_TYPE_MAP.keys()), (
+        "Docker and subprocess MESSAGE_TYPE_MAPs should have the same keys"
+    )
 
     for key in MESSAGE_TYPE_MAP:
-        assert (
-            MESSAGE_TYPE_MAP[key] == SUBPROCESS_MESSAGE_TYPE_MAP[key]
-        ), f"Message type {key} should map to the same class in both implementations"
+        assert MESSAGE_TYPE_MAP[key] == SUBPROCESS_MESSAGE_TYPE_MAP[key], (
+            f"Message type {key} should map to the same class in both implementations"
+        )
 
 
 def test_deserialize_preview_update():

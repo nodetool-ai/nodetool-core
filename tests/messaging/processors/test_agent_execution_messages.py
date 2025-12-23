@@ -103,9 +103,7 @@ class TestAgentExecutionMessageStorage:
         # Create a mock agent that yields a TaskUpdate event
         task = Task(id="task1", title="Test Task", description="Test Description")
         step = Step(id="step1", instructions="Test Subtask")
-        task_update = TaskUpdate(
-            event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step
-        )
+        task_update = TaskUpdate(event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step)
 
         # Mock the agent execution to yield the task update
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -140,13 +138,10 @@ class TestAgentExecutionMessageStorage:
             task_update_messages = [
                 msg
                 for msg in sent_messages
-                if msg.get("type") == "message"
-                and msg.get("execution_event_type") == "task_update"
+                if msg.get("type") == "message" and msg.get("execution_event_type") == "task_update"
             ]
 
-            assert (
-                len(task_update_messages) > 0
-            ), "TaskUpdate should be saved as message"
+            assert len(task_update_messages) > 0, "TaskUpdate should be saved as message"
 
             message = task_update_messages[0]
             assert message["thread_id"] == test_thread_id
@@ -209,13 +204,10 @@ class TestAgentExecutionMessageStorage:
             planning_messages = [
                 msg
                 for msg in sent_messages
-                if msg.get("type") == "message"
-                and msg.get("execution_event_type") == "planning_update"
+                if msg.get("type") == "message" and msg.get("execution_event_type") == "planning_update"
             ]
 
-            assert (
-                len(planning_messages) > 0
-            ), "PlanningUpdate should be saved as message"
+            assert len(planning_messages) > 0, "PlanningUpdate should be saved as message"
 
             message = planning_messages[0]
             assert message["thread_id"] == test_thread_id
@@ -276,8 +268,7 @@ class TestAgentExecutionMessageStorage:
             step_messages = [
                 msg
                 for msg in sent_messages
-                if msg.get("type") == "message"
-                and msg.get("execution_event_type") == "step_result"
+                if msg.get("type") == "message" and msg.get("execution_event_type") == "step_result"
             ]
 
             assert len(step_messages) > 0, "StepResult should be saved as message"
@@ -292,21 +283,15 @@ class TestAgentExecutionMessageStorage:
             assert content["result"] == "Subtask completed successfully"
 
     @pytest.mark.asyncio
-    async def test_all_events_share_same_execution_id(
-        self, agent_processor, test_message, processing_context
-    ):
+    async def test_all_events_share_same_execution_id(self, agent_processor, test_message, processing_context):
         """Test that all events from the same execution share the same agent_execution_id."""
         chat_history = [test_message]
 
         # Create multiple events - use statuses that trigger message sending
         task = Task(id="task1", title="Test Task")
         step = Step(id="step1", instructions="Test Subtask")
-        task_update = TaskUpdate(
-            event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step
-        )
-        planning_update = PlanningUpdate(
-            phase="planning", status="Success", instructions="Planning", node_id="node1"
-        )
+        task_update = TaskUpdate(event=TaskUpdateEvent.STEP_COMPLETED, task=task, step=step)
+        planning_update = PlanningUpdate(phase="planning", status="Success", instructions="Planning", node_id="node1")
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:
             mock_agent_instance = MagicMock()
@@ -337,9 +322,7 @@ class TestAgentExecutionMessageStorage:
 
             # Get all execution message calls
             execution_messages = [
-                msg
-                for msg in sent_messages
-                if msg.get("type") == "message" and msg.get("role") == "agent_execution"
+                msg for msg in sent_messages if msg.get("type") == "message" and msg.get("role") == "agent_execution"
             ]
 
             assert len(execution_messages) >= 2, "Should have multiple execution events"
@@ -348,18 +331,14 @@ class TestAgentExecutionMessageStorage:
             execution_ids = [msg["agent_execution_id"] for msg in execution_messages]
 
             # All execution IDs should be the same
-            assert (
-                len(set(execution_ids)) == 1
-            ), "All events should share the same execution ID"
+            assert len(set(execution_ids)) == 1, "All events should share the same execution ID"
 
 
 class TestAgentExecutionMessageFiltering:
     """Tests for filtering agent_execution messages from chat history."""
 
     @pytest.mark.asyncio
-    async def test_agent_execution_messages_filtered_from_history(
-        self, test_thread_id, test_user_id
-    ):
+    async def test_agent_execution_messages_filtered_from_history(self, test_thread_id, test_user_id):
         """Test that agent_execution messages are filtered out when loading chat history."""
         # Create a mix of message types
         messages_to_create = [
@@ -401,9 +380,7 @@ class TestAgentExecutionMessageFiltering:
             message = DBMessage(id=str(uuid4()), created_at=None, **msg)
             mock_db_messages.append(message)
 
-        with patch.object(
-            DBMessage, "paginate", new_callable=AsyncMock
-        ) as mock_paginate:
+        with patch.object(DBMessage, "paginate", new_callable=AsyncMock) as mock_paginate:
             mock_paginate.return_value = (mock_db_messages, None)
 
             # Create a test chat runner
@@ -422,9 +399,7 @@ class TestAgentExecutionMessageFiltering:
             assert "agent_execution" not in roles
 
     @pytest.mark.asyncio
-    async def test_only_regular_messages_sent_to_llm(
-        self, test_thread_id, test_user_id
-    ):
+    async def test_only_regular_messages_sent_to_llm(self, test_thread_id, test_user_id):
         """Test that only user, assistant, system, and tool messages are sent to LLM."""
         messages_to_create = [
             {
@@ -476,9 +451,7 @@ class TestAgentExecutionMessageFiltering:
             message = DBMessage(id=str(uuid4()), created_at=None, **msg)
             mock_db_messages.append(message)
 
-        with patch.object(
-            DBMessage, "paginate", new_callable=AsyncMock
-        ) as mock_paginate:
+        with patch.object(DBMessage, "paginate", new_callable=AsyncMock) as mock_paginate:
             mock_paginate.return_value = (mock_db_messages, None)
 
             chat_runner = TestChatRunner()

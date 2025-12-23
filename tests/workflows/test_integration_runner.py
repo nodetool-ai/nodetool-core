@@ -70,12 +70,8 @@ async def test_workflow_runner_completes_and_produces_output():
         ),
     ]
     edges = [
-        APIEdge(
-            id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"
-        ),
-        APIEdge(
-            id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"
-        ),
+        APIEdge(id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"),
+        APIEdge(id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"),
         APIEdge(
             id="e3",
             source="mul",
@@ -95,9 +91,7 @@ async def test_workflow_runner_completes_and_produces_output():
     try:
         await asyncio.wait_for(runner.run(req, ctx), timeout=ASYNC_TEST_TIMEOUT)
     except TimeoutError:
-        pytest.fail(
-            f"WorkflowRunner.run timed out after {ASYNC_TEST_TIMEOUT}s for job job-int-1"
-        )
+        pytest.fail(f"WorkflowRunner.run timed out after {ASYNC_TEST_TIMEOUT}s for job job-int-1")
 
     assert runner.status == "completed"
     assert runner.outputs.get("result") and runner.outputs["result"][-1] == 15.0

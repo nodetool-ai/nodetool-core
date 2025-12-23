@@ -95,9 +95,7 @@ def processing_context(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires network access for embedding model download")
-async def test_chroma_markdown_split_and_index_basic(
-    test_collection, test_markdown, processing_context
-):
+async def test_chroma_markdown_split_and_index_basic(test_collection, test_markdown, processing_context):
     """Test basic markdown splitting and indexing functionality."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
 
@@ -130,9 +128,7 @@ async def test_chroma_markdown_split_and_index_basic(
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires network access for embedding model download")
-async def test_chroma_markdown_split_and_index_custom_chunk_size(
-    test_collection, test_markdown, processing_context
-):
+async def test_chroma_markdown_split_and_index_custom_chunk_size(test_collection, test_markdown, processing_context):
     """Test markdown splitting with custom chunk size."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
 
@@ -160,9 +156,7 @@ async def test_chroma_markdown_split_and_index_custom_chunk_size(
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires network access for embedding model download")
-async def test_chroma_markdown_split_and_index_from_file(
-    test_collection, test_markdown, processing_context
-):
+async def test_chroma_markdown_split_and_index_from_file(test_collection, test_markdown, processing_context):
     """Test markdown splitting from a file path."""
     # Create a markdown file inside the workspace directory
     # resolve_workspace_path treats paths relative to workspace_dir
@@ -188,9 +182,7 @@ async def test_chroma_markdown_split_and_index_from_file(
 
 
 @pytest.mark.asyncio
-async def test_chroma_markdown_split_and_index_no_text_or_file(
-    test_collection, processing_context
-):
+async def test_chroma_markdown_split_and_index_no_text_or_file(test_collection, processing_context):
     """Test that the tool raises an error when neither text nor file_path is provided."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
 
@@ -202,9 +194,7 @@ async def test_chroma_markdown_split_and_index_no_text_or_file(
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires network access for embedding model download")
-async def test_chroma_markdown_split_and_index_multiple_h1_headers(
-    test_collection, processing_context
-):
+async def test_chroma_markdown_split_and_index_multiple_h1_headers(test_collection, processing_context):
     """Test handling of multiple H1 headers."""
     markdown_with_multiple_h1 = """
 # First Header
@@ -238,9 +228,7 @@ Content under third header.
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires network access for embedding model download")
-async def test_chroma_markdown_split_and_index_nested_headers(
-    test_collection, processing_context
-):
+async def test_chroma_markdown_split_and_index_nested_headers(test_collection, processing_context):
     """Test handling of nested headers (H1, H2, H3)."""
     markdown_with_nested = """
 # Main Title
@@ -302,9 +290,7 @@ async def test_chroma_markdown_split_and_index_user_message(
 
 
 @pytest.mark.asyncio
-async def test_chroma_markdown_split_and_index_empty_markdown(
-    test_collection, processing_context
-):
+async def test_chroma_markdown_split_and_index_empty_markdown(test_collection, processing_context):
     """Test handling of empty markdown content."""
     tool = ChromaMarkdownSplitAndIndexTool(collection=test_collection)
 
@@ -318,4 +304,3 @@ async def test_chroma_markdown_split_and_index_empty_markdown(
     assert result["status"] == "success"
     # The result may have 0 chunks or 1 chunk depending on implementation
     assert "indexed_ids" in result
-

@@ -201,9 +201,7 @@ class TestLoadConfig:
 
     def test_load_invalid_yaml(self):
         """Test loading invalid YAML file."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: content: [")
             temp_path = f.name
 
@@ -215,9 +213,7 @@ class TestLoadConfig:
 
     def test_load_empty_file(self):
         """Test loading empty YAML file."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("")
             temp_path = f.name
 
@@ -229,9 +225,7 @@ class TestLoadConfig:
 
     def test_load_invalid_config_structure(self):
         """Test loading file with invalid config structure."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump({"invalid": "structure"}, f)
             temp_path = f.name
 

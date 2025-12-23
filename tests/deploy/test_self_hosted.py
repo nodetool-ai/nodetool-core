@@ -188,9 +188,7 @@ class TestSelfHostedDeployer:
         assert any("/proxy" in item for item in plan["will_create"])
         assert any("/acme" in item for item in plan["will_create"])
 
-    def test_plan_existing_deployment_no_changes(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_plan_existing_deployment_no_changes(self, basic_deployment, mock_state_manager):
         """Test generating plan for existing deployment with no changes."""
         current_hash = ProxyRunGenerator(basic_deployment).generate_hash()
 
@@ -208,14 +206,10 @@ class TestSelfHostedDeployer:
         plan = deployer.plan()
 
         # No configuration changes
-        config_changes = [
-            c for c in plan["changes"] if "configuration has changed" in c
-        ]
+        config_changes = [c for c in plan["changes"] if "configuration has changed" in c]
         assert len(config_changes) == 0
 
-    def test_plan_existing_deployment_with_changes(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_plan_existing_deployment_with_changes(self, basic_deployment, mock_state_manager):
         """Test generating plan for existing deployment with changes."""
         current_hash = ProxyRunGenerator(basic_deployment).generate_hash()
 
@@ -258,9 +252,10 @@ class TestSelfHostedDeployer:
         mock_ssh.mkdir = Mock()
         mock_ssh.execute = Mock(return_value=(0, "container_id_123", ""))
 
-        with patch(
-            "nodetool.deploy.self_hosted.SSHConnection"
-        ) as mock_ssh_cls, patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
+        with (
+            patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls,
+            patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls,
+        ):
             mock_ssh_cls.return_value = mock_ssh
 
             mock_gen = Mock()
@@ -293,9 +288,10 @@ class TestSelfHostedDeployer:
 
     def test_apply_localhost(self, localhost_deployment, mock_state_manager):
         """Test deployment to localhost."""
-        with patch("nodetool.deploy.self_hosted.LocalExecutor") as mock_exec_cls, patch(
-            "nodetool.deploy.self_hosted.ProxyRunGenerator"
-        ) as mock_gen_cls:
+        with (
+            patch("nodetool.deploy.self_hosted.LocalExecutor") as mock_exec_cls,
+            patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls,
+        ):
             mock_exec = Mock()
             mock_exec.__enter__ = Mock(return_value=mock_exec)
             mock_exec.__exit__ = Mock(return_value=False)
@@ -341,9 +337,7 @@ class TestSelfHostedDeployer:
                 deployer.apply(dry_run=False)
 
             # Should update status to error
-            mock_state_manager.update_deployment_status.assert_any_call(
-                "test", DeploymentStatus.ERROR.value
-            )
+            mock_state_manager.update_deployment_status.assert_any_call("test", DeploymentStatus.ERROR.value)
 
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""
@@ -427,9 +421,7 @@ class TestSelfHostedDeployer:
         assert any("Stopped proxy" in step for step in results["steps"])
         assert any("Removed proxy" in step for step in results["steps"])
 
-    def test_stop_existing_container_not_found(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_stop_existing_container_not_found(self, basic_deployment, mock_state_manager):
         """Test stopping when no existing container."""
         mock_ssh = Mock()
         # Container doesn't exist (check returns empty)
@@ -472,9 +464,7 @@ class TestSelfHostedDeployer:
 
         with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
             mock_gen = Mock()
-            mock_gen.generate_command.return_value = (
-                "docker run -d nodetool/nodetool:latest"
-            )
+            mock_gen.generate_command.return_value = "docker run -d nodetool/nodetool:latest"
             mock_gen.generate_hash.return_value = "hash123"
             mock_gen.get_container_name.return_value = "nodetool-proxy-default"
             mock_gen_cls.return_value = mock_gen
@@ -500,9 +490,7 @@ class TestSelfHostedDeployer:
 
         with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
             mock_gen = Mock()
-            mock_gen.generate_command.return_value = (
-                "docker run -d nodetool/nodetool:latest"
-            )
+            mock_gen.generate_command.return_value = "docker run -d nodetool/nodetool:latest"
             mock_gen.get_container_name.return_value = "nodetool-proxy-default"
             mock_gen_cls.return_value = mock_gen
 
@@ -547,9 +535,7 @@ class TestSelfHostedDeployer:
             assert any("Container status" in step for step in results["steps"])
             assert any("Health endpoint OK" in step for step in results["steps"])
 
-    def test_check_health_container_not_running(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_check_health_container_not_running(self, basic_deployment, mock_state_manager):
         """Test health check when container not running."""
         mock_ssh = Mock()
         mock_ssh.execute = Mock(return_value=(0, "", ""))
@@ -564,9 +550,7 @@ class TestSelfHostedDeployer:
             results = {"steps": []}
             deployer._check_health(mock_ssh, results, "token-123")
 
-            assert any(
-                "not running" in step for step in results["steps"]
-            )
+            assert any("not running" in step for step in results["steps"])
 
     def test_destroy_success(self, basic_deployment, mock_state_manager):
         """Test successful deployment destruction."""
@@ -605,9 +589,7 @@ class TestSelfHostedDeployer:
         mock_ssh.__enter__ = Mock(return_value=mock_ssh)
         mock_ssh.__exit__ = Mock(return_value=False)
         # Stop fails (container not running), but remove succeeds
-        stop_error = SSHCommandError(
-            "Container not running", 1, "", "No such container"
-        )
+        stop_error = SSHCommandError("Container not running", 1, "", "No such container")
         mock_ssh.execute = Mock(
             side_effect=[
                 stop_error,  # stop

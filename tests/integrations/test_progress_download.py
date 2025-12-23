@@ -9,12 +9,11 @@ from nodetool.integrations.huggingface import progress_download
 
 
 class TestProgressDownload(unittest.TestCase):
-
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.test_dir)
 
-    @patch('nodetool.integrations.huggingface.progress_download._fd.http_get')
+    @patch("nodetool.integrations.huggingface.progress_download._fd.http_get")
     def test_download_to_tmp_and_move_with_progress_http(self, mock_http_get):
         # Setup
         incomplete_path = Path(self.test_dir) / "incomplete"
@@ -38,18 +37,18 @@ class TestProgressDownload(unittest.TestCase):
             force_download=False,
             etag="etag",
             xet_file_data=None,
-            progress_callback=callback
+            progress_callback=callback,
         )
 
         # Verify http_get called with correct args including _tqdm_bar
         mock_http_get.assert_called_once()
         call_kwargs = mock_http_get.call_args[1]
-        self.assertEqual(call_kwargs['url'], url)
-        self.assertIn('_tqdm_bar', call_kwargs)
+        self.assertEqual(call_kwargs["url"], url)
+        self.assertIn("_tqdm_bar", call_kwargs)
 
         # Verify callback wrapper logic
         # _tqdm_bar is the class
-        TqdmClass = call_kwargs['_tqdm_bar']
+        TqdmClass = call_kwargs["_tqdm_bar"]
         self.assertEqual(TqdmClass, progress_download._CallbackTqdm)
 
         # Instantiate and update
@@ -63,15 +62,15 @@ class TestProgressDownload(unittest.TestCase):
 
         callback.assert_called_with(10, expected_size)
 
-    @patch('nodetool.integrations.huggingface.progress_download._fd.xet_get')
-    @patch('nodetool.integrations.huggingface.progress_download._fd.is_xet_available', return_value=True)
+    @patch("nodetool.integrations.huggingface.progress_download._fd.xet_get")
+    @patch("nodetool.integrations.huggingface.progress_download._fd.is_xet_available", return_value=True)
     def test_download_to_tmp_and_move_with_progress_xet(self, mock_is_xet, mock_xet_get):
         # Setup
         incomplete_path = Path(self.test_dir) / "incomplete"
         destination_path = Path(self.test_dir) / "dest"
 
         callback = MagicMock()
-        xet_data = {'some': 'data'}
+        xet_data = {"some": "data"}
 
         # Execute
         progress_download._download_to_tmp_and_move_with_progress(
@@ -85,54 +84,43 @@ class TestProgressDownload(unittest.TestCase):
             force_download=False,
             etag="etag",
             xet_file_data=xet_data,
-            progress_callback=callback
+            progress_callback=callback,
         )
 
         # Verify xet_get called
         mock_xet_get.assert_called_once()
         call_kwargs = mock_xet_get.call_args[1]
-        self.assertIn('_tqdm_bar', call_kwargs)
+        self.assertIn("_tqdm_bar", call_kwargs)
 
-    @patch('huggingface_hub.hf_hub_download')
+    @patch("huggingface_hub.hf_hub_download")
     def test_hf_hub_download_with_progress_no_callback(self, mock_orig_download):
         # Execute
-        progress_download.hf_hub_download_with_progress(
-            repo_id="repo",
-            filename="file",
-            progress_callback=None
-        )
+        progress_download.hf_hub_download_with_progress(repo_id="repo", filename="file", progress_callback=None)
 
         # Verify original function called
         mock_orig_download.assert_called_once()
 
-    @patch('nodetool.integrations.huggingface.progress_download._hf_hub_download_to_cache_dir_with_progress')
+    @patch("nodetool.integrations.huggingface.progress_download._hf_hub_download_to_cache_dir_with_progress")
     def test_hf_hub_download_with_progress_cache(self, mock_download_cache):
         # Execute
         callback = MagicMock()
-        progress_download.hf_hub_download_with_progress(
-            repo_id="repo",
-            filename="file",
-            progress_callback=callback
-        )
+        progress_download.hf_hub_download_with_progress(repo_id="repo", filename="file", progress_callback=callback)
 
         # Verify custom cache download called
         mock_download_cache.assert_called_once()
-        self.assertEqual(mock_download_cache.call_args[1]['progress_callback'], callback)
+        self.assertEqual(mock_download_cache.call_args[1]["progress_callback"], callback)
 
-    @patch('nodetool.integrations.huggingface.progress_download._hf_hub_download_to_local_dir_with_progress')
+    @patch("nodetool.integrations.huggingface.progress_download._hf_hub_download_to_local_dir_with_progress")
     def test_hf_hub_download_with_progress_local(self, mock_download_local):
         # Execute
         callback = MagicMock()
         progress_download.hf_hub_download_with_progress(
-            repo_id="repo",
-            filename="file",
-            local_dir="/tmp/local",
-            progress_callback=callback
+            repo_id="repo", filename="file", local_dir="/tmp/local", progress_callback=callback
         )
 
         # Verify custom local download called
         mock_download_local.assert_called_once()
-        self.assertEqual(mock_download_local.call_args[1]['progress_callback'], callback)
+        self.assertEqual(mock_download_local.call_args[1]["progress_callback"], callback)
 
     def test_callback_tqdm_initial(self):
         # Test that initial bytes are reported
@@ -149,5 +137,6 @@ class TestProgressDownload(unittest.TestCase):
         # Re-using the setup from test_download_to_tmp_and_move_with_progress_http
         pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

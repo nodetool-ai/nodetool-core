@@ -24,12 +24,7 @@ class TestSecretModel:
         value = "sk-test-12345"
         description = "API key for OpenAI"
 
-        secret = await Secret.create(
-            user_id=user_id,
-            key=key,
-            value=value,
-            description=description
-        )
+        secret = await Secret.create(user_id=user_id, key=key, value=value, description=description)
 
         assert secret.id is not None
         assert secret.user_id == user_id
@@ -238,12 +233,7 @@ class TestSecretModel:
         new_desc = "New description"
 
         # Create with description
-        secret = await Secret.create(
-            user_id=user_id,
-            key=key,
-            value=value,
-            description=old_desc
-        )
+        secret = await Secret.create(user_id=user_id, key=key, value=value, description=old_desc)
 
         assert secret.description == old_desc
 
@@ -262,11 +252,7 @@ class TestSecretModel:
 
         # Create multiple secrets
         for i in range(5):
-            await Secret.create(
-                user_id=user_id,
-                key=f"PAGINATED_SECRET_{i}",
-                value=f"value_{i}"
-            )
+            await Secret.create(user_id=user_id, key=f"PAGINATED_SECRET_{i}", value=f"value_{i}")
 
         # Get first page
         secrets_page1, next_key = await Secret.list_for_user(user_id, limit=2)
@@ -275,9 +261,7 @@ class TestSecretModel:
         assert next_key is not None
 
         # Get second page
-        secrets_page2, _next_key2 = await Secret.list_for_user(
-            user_id, limit=2, start_key=next_key
-        )
+        secrets_page2, _next_key2 = await Secret.list_for_user(user_id, limit=2, start_key=next_key)
 
         assert len(secrets_page2) == 2
 

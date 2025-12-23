@@ -5,9 +5,7 @@ from nodetool.ui.console import AgentConsole
 
 
 class FakeLive:
-    def __init__(
-        self, content, console=None, refresh_per_second=4, vertical_overflow="visible"
-    ):
+    def __init__(self, content, console=None, refresh_per_second=4, vertical_overflow="visible"):
         self.content = content
         self.started = False
 

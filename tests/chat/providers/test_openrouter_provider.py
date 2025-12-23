@@ -48,6 +48,7 @@ class TestOpenRouterProvider:
         provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
 
         import httpx
+
         with patch("nodetool.runtime.resources.require_scope") as mock_scope:
             # Create a real httpx.AsyncClient instead of a mock
             mock_http_client = httpx.AsyncClient()
@@ -142,19 +143,14 @@ class TestOpenRouterProvider:
                 Choice(
                     finish_reason="stop",
                     index=0,
-                    message=ChatCompletionMessage(
-                        role="assistant",
-                        content="Test response"
-                    ),
+                    message=ChatCompletionMessage(role="assistant", content="Test response"),
                     logprobs=None,
                 )
             ],
             created=1677652288,
             model="openai/gpt-4",
             object="chat.completion",
-            usage=CompletionUsage(
-                completion_tokens=12, prompt_tokens=9, total_tokens=21
-            ),
+            usage=CompletionUsage(completion_tokens=12, prompt_tokens=9, total_tokens=21),
         )
 
         with patch.object(provider, "get_client") as mock_get_client:
@@ -163,6 +159,7 @@ class TestOpenRouterProvider:
             mock_client.chat.completions.create = MagicMock(return_value=mock_response)
 
             from nodetool.metadata.types import Message
+
             messages = [Message(role="user", content="Test message")]
 
             result = await provider.generate_message(
@@ -196,10 +193,7 @@ class TestOpenRouterProvider:
                 Choice(
                     finish_reason="stop",
                     index=0,
-                    message=ChatCompletionMessage(
-                        role="assistant",
-                        content="Test response with cost tracking"
-                    ),
+                    message=ChatCompletionMessage(role="assistant", content="Test response with cost tracking"),
                     logprobs=None,
                 )
             ],
@@ -215,6 +209,7 @@ class TestOpenRouterProvider:
             mock_client.chat.completions.create = MagicMock(return_value=mock_response)
 
             from nodetool.metadata.types import Message
+
             messages = [Message(role="user", content="Test message")]
 
             # Reset provider cost tracking
@@ -359,5 +354,3 @@ class TestOpenRouterProvider:
             assert "black-forest-labs/flux-pro" in model_ids
             # GPT-4 should not be in the list
             assert "openai/gpt-4" not in model_ids
-
-

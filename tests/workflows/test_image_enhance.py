@@ -49,9 +49,7 @@ async def test_image_enhance():
         graph=graph,
     )
 
-    ctx = ProcessingContext(
-        user_id=req.user_id, job_id="job", auth_token=req.auth_token
-    )
+    ctx = ProcessingContext(user_id=req.user_id, job_id="job", auth_token=req.auth_token)
 
     found_enhanced_image = False
     async for msg in run_workflow(req, context=ctx, use_thread=False):
@@ -60,6 +58,4 @@ async def test_image_enhance():
                 found_enhanced_image = True
                 break
 
-    assert (
-        found_enhanced_image
-    ), "Expected ImageOutput node to produce an enhanced image"
+    assert found_enhanced_image, "Expected ImageOutput node to produce an enhanced image"

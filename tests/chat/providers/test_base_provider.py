@@ -76,9 +76,7 @@ class ResponseFixtures:
         }
 
     @staticmethod
-    def streaming_response_chunks(
-        text: str = "Hello world!", chunk_size: int = 5
-    ) -> List[Dict[str, Any]]:
+    def streaming_response_chunks(text: str = "Hello world!", chunk_size: int = 5) -> List[Dict[str, Any]]:
         """Generate streaming response chunks."""
         chunks = []
         for i in range(0, len(text), chunk_size):
@@ -88,9 +86,7 @@ class ResponseFixtures:
         return chunks
 
     @staticmethod
-    def tool_call_response(
-        tool_name: str = "search", args: Dict[str, Any] | None = None
-    ) -> Dict[str, Any]:
+    def tool_call_response(tool_name: str = "search", args: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """Tool call response fixture."""
         if args is None:
             args = {"query": "test query"}
@@ -113,9 +109,7 @@ class ResponseFixtures:
         }
 
     @staticmethod
-    def error_response(
-        error_type: str = "rate_limit", message: str = "Rate limit exceeded"
-    ) -> Dict[str, Any]:
+    def error_response(error_type: str = "rate_limit", message: str = "Rate limit exceeded") -> Dict[str, Any]:
         """Error response fixtures."""
         error_templates = {
             "rate_limit": {
@@ -256,6 +250,7 @@ class BaseProviderTest(ABC):
         """
         # Import providers to ensure they're registered
         from nodetool.providers import import_providers
+
         import_providers()
 
         # Find the provider in the registry by comparing classes
@@ -307,11 +302,7 @@ class BaseProviderTest(ABC):
             ),
             Message(
                 role="assistant",
-                instructions=[
-                    MessageTextContent(
-                        text="I don't have access to current weather data."
-                    )
-                ],
+                instructions=[MessageTextContent(text="I don't have access to current weather data.")],
             ),
             Message(
                 role="user",
@@ -324,11 +315,7 @@ class BaseProviderTest(ABC):
         return [
             Message(
                 role="user",
-                instructions=[
-                    MessageTextContent(
-                        text="Search for information about Python testing"
-                    )
-                ],
+                instructions=[MessageTextContent(text="Search for information about Python testing")],
             )
         ]
 
@@ -364,9 +351,7 @@ class BaseProviderTest(ABC):
 
         # Last chunk should be marked as done
         if collected_chunks:
-            last_chunk = next(
-                (c for c in reversed(collected_chunks) if isinstance(c, Chunk)), None
-            )
+            last_chunk = next((c for c in reversed(collected_chunks) if isinstance(c, Chunk)), None)
             if last_chunk:
                 assert last_chunk.done
 
@@ -377,14 +362,10 @@ class BaseProviderTest(ABC):
         messages = self.create_tool_messages()
         tools = [MockTool()]
 
-        tool_response = ResponseFixtures.tool_call_response(
-            "mock_tool", {"query": "test"}
-        )
+        tool_response = ResponseFixtures.tool_call_response("mock_tool", {"query": "test"})
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(
-                messages, "test-model", tools=tools
-            )
+            response = await provider.generate_message(messages, "test-model", tools=tools)
 
         if hasattr(response, "tool_calls") and response.tool_calls:
             assert len(response.tool_calls) > 0
@@ -398,14 +379,10 @@ class BaseProviderTest(ABC):
         tools = [MockTool()]
 
         # First response with tool call
-        tool_response = ResponseFixtures.tool_call_response(
-            "mock_tool", {"query": "test"}
-        )
+        tool_response = ResponseFixtures.tool_call_response("mock_tool", {"query": "test"})
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(
-                messages, "test-model", tools=tools
-            )
+            response = await provider.generate_message(messages, "test-model", tools=tools)
 
         if hasattr(response, "tool_calls") and response.tool_calls:
             # Add tool result to conversation
@@ -427,14 +404,10 @@ class BaseProviderTest(ABC):
             )
 
             # Test continuation
-            continuation_response = ResponseFixtures.tool_result_response(
-                "Task completed"
-            )
+            continuation_response = ResponseFixtures.tool_result_response("Task completed")
 
             with self.mock_api_call(continuation_response):
-                final_response = await provider.generate_message(
-                    messages, "test-model", tools=tools
-                )
+                final_response = await provider.generate_message(messages, "test-model", tools=tools)
 
             assert final_response.role == "assistant"
 
@@ -475,9 +448,7 @@ class BaseProviderTest(ABC):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        with self.mock_error_response("rate_limit"), pytest.raises(
-            httpx.HTTPStatusError
-        ):
+        with self.mock_error_response("rate_limit"), pytest.raises(httpx.HTTPStatusError):
             await provider.generate_message(messages, "test-model")
 
     @pytest.mark.asyncio
@@ -486,9 +457,7 @@ class BaseProviderTest(ABC):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        with self.mock_error_response("invalid_api_key"), pytest.raises(
-            httpx.HTTPStatusError
-        ):
+        with self.mock_error_response("invalid_api_key"), pytest.raises(httpx.HTTPStatusError):
             await provider.generate_message(messages, "test-model")
 
     @pytest.mark.asyncio
@@ -498,9 +467,7 @@ class BaseProviderTest(ABC):
         messages = self.create_simple_messages()
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()) as mock_call:
-            await provider.generate_message(
-                messages, "test-model", max_tokens=100, temperature=0.7
-            )
+            await provider.generate_message(messages, "test-model", max_tokens=100, temperature=0.7)
 
         # Verify model parameters were passed (implementation specific)
         mock_call.assert_called()
@@ -515,9 +482,7 @@ class BaseProviderTest(ABC):
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()):
             # Create multiple concurrent requests
-            tasks = [
-                provider.generate_message(messages, f"model-{i}") for i in range(3)
-            ]
+            tasks = [provider.generate_message(messages, f"model-{i}") for i in range(3)]
 
             responses = await asyncio.gather(*tasks)
 
@@ -583,14 +548,14 @@ def create_test_conversation(turns: int = 3) -> List[Message]:
             messages.append(
                 Message(
                     role="user",
-                    content=[MessageTextContent(text=f"User message {i//2 + 1}")],
+                    content=[MessageTextContent(text=f"User message {i // 2 + 1}")],
                 )
             )
         else:
             messages.append(
                 Message(
                     role="assistant",
-                    content=[MessageTextContent(text=f"Assistant response {i//2 + 1}")],
+                    content=[MessageTextContent(text=f"Assistant response {i // 2 + 1}")],
                 )
             )
     return messages
@@ -603,9 +568,7 @@ def create_tool_calling_scenario() -> Dict[str, Any]:
             role="user",
             content=[MessageTextContent(text="Calculate the square root of 16")],
         ),
-        "tool_call": ToolCall(
-            id="call_123", name="calculator", args={"operation": "sqrt", "value": 16}
-        ),
+        "tool_call": ToolCall(id="call_123", name="calculator", args={"operation": "sqrt", "value": 16}),
         "tool_result": {"result": 4.0, "operation": "sqrt"},
         "final_response": "The square root of 16 is 4.0",
     }

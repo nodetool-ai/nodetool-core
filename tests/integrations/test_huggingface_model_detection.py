@@ -80,11 +80,7 @@ def test_all_node_types_have_search_config():
         pytest.skip("nodetool-huggingface package not available in workspace")
 
     node_types = _load_node_types_from_package(project_root / "src" / "nodetool")
-    missing = {
-        node_type
-        for node_type in node_types
-        if _build_search_config_for_type(node_type) is None
-    }
+    missing = {node_type for node_type in node_types if _build_search_config_for_type(node_type) is None}
     assert not missing, f"Missing search config for: {sorted(missing)}"
 
 
@@ -135,7 +131,9 @@ async def test_get_models_by_hf_type_with_fake_cache(monkeypatch, tmp_path):
 
     for spec in specs:
         models = await get_models_by_hf_type(spec.hf_type)
-        assert any(model.repo_id == spec.repo_id for model in models), f"Missing repo {spec.repo_id} for type {spec.hf_type}"
+        assert any(model.repo_id == spec.repo_id for model in models), (
+            f"Missing repo {spec.repo_id} for type {spec.hf_type}"
+        )
 
 
 @pytest.mark.asyncio
@@ -172,10 +170,7 @@ async def test_model_detection_with_safetensors_headers(tmp_path):
     llama_repo = tmp_path / "models--user--llama" / "snapshots" / "fake-sha2"
     llama_repo.mkdir(parents=True)
 
-    llama_config = {
-        "model_type": "llama",
-        "architectures": ["LlamaForCausalLM"]
-    }
+    llama_config = {"model_type": "llama", "architectures": ["LlamaForCausalLM"]}
     (llama_repo / "config.json").write_text(json.dumps(llama_config), encoding="utf-8")
     (llama_repo / "model.safetensors").write_bytes(b"weights")
 

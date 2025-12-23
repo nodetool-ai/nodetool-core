@@ -37,14 +37,10 @@ async def test_paginate_assets(user_id: str):
             content_type="image/jpeg",
         )
 
-    assets, _last_key = await Asset.paginate(
-        user_id=user_id, content_type="image", limit=3
-    )
+    assets, _last_key = await Asset.paginate(user_id=user_id, content_type="image", limit=3)
     assert len(assets) > 0
 
-    assets, _last_key = await Asset.paginate(
-        user_id=user_id, content_type="image", limit=3
-    )
+    assets, _last_key = await Asset.paginate(user_id=user_id, content_type="image", limit=3)
     assert len(assets) > 0
 
 
@@ -59,15 +55,11 @@ async def test_paginate_assets_by_parent(user_id: str):
         # Pass user_id to make_image
         await make_image(user_id, parent_id=parent_id_to_use if i == 0 else None)
 
-    assets, _last_key = await Asset.paginate(
-        user_id=user_id, parent_id=parent_id_to_use, limit=4
-    )
+    assets, _last_key = await Asset.paginate(user_id=user_id, parent_id=parent_id_to_use, limit=4)
     assert len(assets) > 0
 
     # This paginate call seems unrelated to the parent_id logic above, keeping as is with user_id
-    assets, _last_key = await Asset.paginate(
-        user_id=user_id, content_type="image", limit=3
-    )
+    assets, _last_key = await Asset.paginate(user_id=user_id, content_type="image", limit=3)
     assert len(assets) > 0
 
 
@@ -101,15 +93,11 @@ async def test_search_assets_global_basic(user_id: str):
     """Test basic search functionality in the model layer."""
     # Create test assets
     await Asset.create(user_id=user_id, name="sunset_photo", content_type="image/jpeg")
-    await Asset.create(
-        user_id=user_id, name="beach_vacation", content_type="image/jpeg"
-    )
+    await Asset.create(user_id=user_id, name="beach_vacation", content_type="image/jpeg")
     await Asset.create(user_id=user_id, name="document.txt", content_type="text/plain")
 
     # Test search
-    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
-        user_id=user_id, query="photo"
-    )
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(user_id=user_id, query="photo")
 
     assert len(assets) == 1
     assert assets[0].name == "sunset_photo"
@@ -122,12 +110,8 @@ async def test_search_assets_global_contains_search(user_id: str):
     """Test that search finds matches anywhere in filename."""
     # Create assets with query in different positions
     await Asset.create(user_id=user_id, name="photo_sunset", content_type="image/jpeg")
-    await Asset.create(
-        user_id=user_id, name="beautiful_photo_vacation", content_type="image/jpeg"
-    )
-    await Asset.create(
-        user_id=user_id, name="vacation_photo", content_type="image/jpeg"
-    )
+    await Asset.create(user_id=user_id, name="beautiful_photo_vacation", content_type="image/jpeg")
+    await Asset.create(user_id=user_id, name="vacation_photo", content_type="image/jpeg")
 
     assets, _, _ = await Asset.search_assets_global(user_id=user_id, query="photo")
 
@@ -146,9 +130,7 @@ async def test_search_assets_global_content_type_filter(user_id: str):
     await Asset.create(user_id=user_id, name="test_document", content_type="text/plain")
 
     # Search for images only
-    assets, _, _ = await Asset.search_assets_global(
-        user_id=user_id, query="test", content_type="image"
-    )
+    assets, _, _ = await Asset.search_assets_global(user_id=user_id, query="test", content_type="image")
 
     assert len(assets) == 1
     assert assets[0].content_type == "image/jpeg"
@@ -162,9 +144,7 @@ async def test_search_assets_global_user_isolation(user_id: str):
 
     # Create asset for different user
     other_user_id = "other_user"
-    await Asset.create(
-        user_id=other_user_id, name="other_photo", content_type="image/jpeg"
-    )
+    await Asset.create(user_id=other_user_id, name="other_photo", content_type="image/jpeg")
 
     assets, _, _ = await Asset.search_assets_global(user_id=user_id, query="photo")
 
@@ -183,9 +163,7 @@ async def test_search_assets_global_sql_injection_protection(user_id: str):
 
     for query in malicious_queries:
         # Should not crash
-        assets, _next_cursor, folder_paths = await Asset.search_assets_global(
-            user_id=user_id, query=query
-        )
+        assets, _next_cursor, folder_paths = await Asset.search_assets_global(user_id=user_id, query=query)
         # Should return well-formed results
         assert isinstance(assets, list)
         assert isinstance(folder_paths, list)
@@ -196,9 +174,7 @@ async def test_search_assets_global_empty_results(user_id: str):
     """Test search with no matching results."""
     await Asset.create(user_id=user_id, name="sunset", content_type="image/jpeg")
 
-    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
-        user_id=user_id, query="nonexistent"
-    )
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(user_id=user_id, query="nonexistent")
 
     assert len(assets) == 0
     assert len(folder_paths) == 0
@@ -209,14 +185,10 @@ async def test_search_assets_global_pagination(user_id: str):
     """Test search pagination."""
     # Create multiple matching assets
     for i in range(5):
-        await Asset.create(
-            user_id=user_id, name=f"photo_{i}", content_type="image/jpeg"
-        )
+        await Asset.create(user_id=user_id, name=f"photo_{i}", content_type="image/jpeg")
 
     # Test limited results
-    assets, _next_cursor, folder_paths = await Asset.search_assets_global(
-        user_id=user_id, query="photo", limit=2
-    )
+    assets, _next_cursor, folder_paths = await Asset.search_assets_global(user_id=user_id, query="photo", limit=2)
 
     assert len(assets) == 2
     assert len(folder_paths) == 2
@@ -226,17 +198,11 @@ async def test_search_assets_global_pagination(user_id: str):
 async def test_get_asset_path_info_batch_performance(user_id: str):
     """Test that get_asset_path_info handles multiple assets efficiently."""
     # Create folder structure
-    folder = await Asset.create(
-        user_id=user_id, name="My Folder", content_type="folder"
-    )
-    subfolder = await Asset.create(
-        user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id
-    )
+    folder = await Asset.create(user_id=user_id, name="My Folder", content_type="folder")
+    subfolder = await Asset.create(user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id)
 
     # Create assets in different locations
-    asset1 = await Asset.create(
-        user_id=user_id, name="root_asset", content_type="image/jpeg"
-    )
+    asset1 = await Asset.create(user_id=user_id, name="root_asset", content_type="image/jpeg")
     asset2 = await Asset.create(
         user_id=user_id,
         name="folder_asset",
@@ -286,12 +252,8 @@ async def test_get_asset_path_info_nested_folders(user_id: str):
     """Test path info for deeply nested folder structures."""
     # Create deep folder structure
     folder1 = await Asset.create(user_id=user_id, name="Folder1", content_type="folder")
-    folder2 = await Asset.create(
-        user_id=user_id, name="Folder2", content_type="folder", parent_id=folder1.id
-    )
-    folder3 = await Asset.create(
-        user_id=user_id, name="Folder3", content_type="folder", parent_id=folder2.id
-    )
+    folder2 = await Asset.create(user_id=user_id, name="Folder2", content_type="folder", parent_id=folder1.id)
+    folder3 = await Asset.create(user_id=user_id, name="Folder3", content_type="folder", parent_id=folder2.id)
 
     # Create asset in deeply nested folder
     asset = await Asset.create(

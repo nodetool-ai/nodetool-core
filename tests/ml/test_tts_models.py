@@ -24,12 +24,8 @@ async def test_get_all_tts_models_returns_only_tts_models():
 
     # All returned models must be TTSModel instances
     for model in models:
-        assert isinstance(
-            model, TTSModel
-        ), f"Expected TTSModel, got {type(model).__name__}: {model}"
-        assert (
-            model.type == "tts_model"
-        ), f"Expected type='tts_model', got type='{model.type}'"
+        assert isinstance(model, TTSModel), f"Expected TTSModel, got {type(model).__name__}: {model}"
+        assert model.type == "tts_model", f"Expected type='tts_model', got type='{model.type}'"
 
 
 @pytest.mark.asyncio

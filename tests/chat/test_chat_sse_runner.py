@@ -49,9 +49,10 @@ class TestChatSSERunner:
 
     async def test_connect_with_valid_auth(self):
         """Test connection with valid authentication"""
-        with patch.object(Environment, "enforce_auth", return_value=True), patch.object(
-            self.runner, "validate_token", return_value=True
-        ) as mock_validate:
+        with (
+            patch.object(Environment, "enforce_auth", return_value=True),
+            patch.object(self.runner, "validate_token", return_value=True) as mock_validate,
+        ):
             await self.runner.connect()
 
             # Verify token was validated
@@ -62,16 +63,19 @@ class TestChatSSERunner:
         """Test connection with missing authentication"""
         runner = ChatSSERunner()  # No auth token
 
-        with patch.object(Environment, "enforce_auth", return_value=True), pytest.raises(
-            ValueError, match="Missing authentication token"
+        with (
+            patch.object(Environment, "enforce_auth", return_value=True),
+            pytest.raises(ValueError, match="Missing authentication token"),
         ):
             await runner.connect()
 
     async def test_connect_invalid_auth(self):
         """Test connection with invalid authentication"""
-        with patch.object(Environment, "enforce_auth", return_value=True), patch.object(
-            self.runner, "validate_token", return_value=False
-        ), pytest.raises(ValueError, match="Invalid authentication token"):
+        with (
+            patch.object(Environment, "enforce_auth", return_value=True),
+            patch.object(self.runner, "validate_token", return_value=False),
+            pytest.raises(ValueError, match="Invalid authentication token"),
+        ):
             await self.runner.connect()
 
     async def test_disconnect(self):
@@ -177,9 +181,10 @@ class TestChatSSERunner:
             await self.runner.message_queue.put(None)  # End of stream
 
         self.runner.is_connected = True
-        with patch.object(
-            self.runner, "handle_message", side_effect=mock_handle_message
-        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "handle_message", side_effect=mock_handle_message),
+            patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+        ):
             # Collect streamed events
             events = []
             async for event in self.runner.stream_response(request_data):
@@ -204,9 +209,10 @@ class TestChatSSERunner:
         async def mock_handle_message(data):
             raise Exception("Processing error")
 
-        with patch.object(
-            self.runner, "handle_message", side_effect=mock_handle_message
-        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "handle_message", side_effect=mock_handle_message),
+            patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+        ):
             # Collect streamed events
             events = []
             async for event in self.runner.stream_response(request_data):
@@ -229,9 +235,10 @@ class TestChatSSERunner:
         async def mock_handle_message(data):
             await asyncio.sleep(10)  # Long running task
 
-        with patch.object(
-            self.runner, "handle_message", side_effect=mock_handle_message
-        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "handle_message", side_effect=mock_handle_message),
+            patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+        ):
             # Create a task that we'll cancel
             async def run_stream():
                 events = []
@@ -259,17 +266,16 @@ class TestChatSSERunner:
         }
 
         # Mock connect and stream_response
-        with patch.object(
-            self.runner, "connect", new_callable=AsyncMock
-        ) as mock_connect:
+        with patch.object(self.runner, "connect", new_callable=AsyncMock) as mock_connect:
             # Mock stream_response to yield OpenAI format events
             async def mock_stream():
                 yield 'data: {"id": "chatcmpl-123", "object": "chat.completion.chunk", "choices": [{"delta": {"content": "Response"}}]}\n\n'
                 yield "data: [DONE]\n\n"
 
-            with patch.object(
-                self.runner, "stream_response", return_value=mock_stream()
-            ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+            with (
+                patch.object(self.runner, "stream_response", return_value=mock_stream()),
+                patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+            ):
                 # Process request
                 events = []
                 async for event in self.runner.process_single_request(request_data):
@@ -294,9 +300,10 @@ class TestChatSSERunner:
         }
 
         # Mock connect to raise error
-        with patch.object(
-            self.runner, "connect", side_effect=Exception("Connection failed")
-        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "connect", side_effect=Exception("Connection failed")),
+            patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+        ):
             # Process request
             events = []
             async for event in self.runner.process_single_request(request_data):
@@ -319,9 +326,10 @@ class TestChatSSERunner:
             pass
 
         self.runner.is_connected = True
-        with patch.object(
-            self.runner, "handle_message", side_effect=mock_handle_message
-        ), patch.object(self.runner, "disconnect", new_callable=AsyncMock):
+        with (
+            patch.object(self.runner, "handle_message", side_effect=mock_handle_message),
+            patch.object(self.runner, "disconnect", new_callable=AsyncMock),
+        ):
             # Collect streamed events
             events = []
             async for event in self.runner.stream_response(request_data):

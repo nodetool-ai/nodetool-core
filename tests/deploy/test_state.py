@@ -129,9 +129,7 @@ class TestStateManager:
         assert state["last_deployed"] is not None
 
         # Check timestamp is recent
-        last_deployed = datetime.fromisoformat(
-            state["last_deployed"].replace("Z", "+00:00")
-        )
+        last_deployed = datetime.fromisoformat(state["last_deployed"].replace("Z", "+00:00"))
         assert before <= last_deployed <= after
 
     def test_write_state_nonexistent_deployment(self, sample_config):
@@ -158,12 +156,8 @@ class TestStateManager:
         manager = StateManager(config_path=config_path)
 
         # Update some states
-        manager.write_state(
-            "test-server", {"status": "running"}, update_timestamp=False
-        )
-        manager.write_state(
-            "test-server-2", {"status": "stopped"}, update_timestamp=False
-        )
+        manager.write_state("test-server", {"status": "running"}, update_timestamp=False)
+        manager.write_state("test-server-2", {"status": "stopped"}, update_timestamp=False)
 
         all_states = manager.get_all_states()
 
@@ -244,9 +238,7 @@ class TestStateLocking:
         manager1 = StateManager(config_path=config_path)
         manager2 = StateManager(config_path=config_path)
 
-        with manager1.lock(), pytest.raises(
-            TimeoutError, match="Could not acquire lock"
-        ), manager2.lock(timeout=1):
+        with manager1.lock(), pytest.raises(TimeoutError, match="Could not acquire lock"), manager2.lock(timeout=1):
             pass
 
     def test_concurrent_read_safety(self, sample_config):
@@ -255,9 +247,7 @@ class TestStateLocking:
         manager = StateManager(config_path=config_path)
 
         # Write initial state
-        manager.write_state(
-            "test-server", {"status": "running"}, update_timestamp=False
-        )
+        manager.write_state("test-server", {"status": "running"}, update_timestamp=False)
 
         results = []
         errors = []
@@ -296,17 +286,12 @@ class TestStateLocking:
 
         def update_state(value):
             try:
-                manager.write_state(
-                    "test-server", {"status": value}, update_timestamp=False
-                )
+                manager.write_state("test-server", {"status": value}, update_timestamp=False)
             except Exception as e:
                 errors.append(e)
 
         # Create multiple threads writing concurrently
-        threads = [
-            threading.Thread(target=update_state, args=(valid_statuses[i],))
-            for i in range(5)
-        ]
+        threads = [threading.Thread(target=update_state, args=(valid_statuses[i],)) for i in range(5)]
 
         for t in threads:
             t.start()
@@ -331,12 +316,8 @@ class TestStateSnapshot:
         manager = StateManager(config_path=config_path)
 
         # Update some states
-        manager.write_state(
-            "test-server", {"status": "running"}, update_timestamp=False
-        )
-        manager.write_state(
-            "test-server-2", {"status": "stopped"}, update_timestamp=False
-        )
+        manager.write_state("test-server", {"status": "running"}, update_timestamp=False)
+        manager.write_state("test-server-2", {"status": "stopped"}, update_timestamp=False)
 
         # Create snapshot
 
@@ -364,12 +345,8 @@ class TestStateSnapshot:
             assert "version" in snapshot
             assert "deployments" in snapshot
             assert len(snapshot["deployments"]) == 2
-            assert (
-                snapshot["deployments"]["test-server"]["state"]["status"] == "running"
-            )
-            assert (
-                snapshot["deployments"]["test-server-2"]["state"]["status"] == "stopped"
-            )
+            assert snapshot["deployments"]["test-server"]["state"]["status"] == "running"
+            assert snapshot["deployments"]["test-server-2"]["state"]["status"] == "stopped"
         finally:
             state_module.load_deployment_config = original_load
 
@@ -379,9 +356,7 @@ class TestStateSnapshot:
         manager = StateManager(config_path=config_path)
 
         # Set initial state
-        manager.write_state(
-            "test-server", {"status": "running"}, update_timestamp=False
-        )
+        manager.write_state("test-server", {"status": "running"}, update_timestamp=False)
 
         # Create snapshot
 
@@ -414,9 +389,7 @@ class TestStateSnapshot:
             snapshot = create_state_snapshot(current_config, config_path=config_path)
 
             # Change state
-            manager.write_state(
-                "test-server", {"status": "error"}, update_timestamp=False
-            )
+            manager.write_state("test-server", {"status": "error"}, update_timestamp=False)
 
             # Verify changed
             state = manager.read_state("test-server")
@@ -439,12 +412,8 @@ class TestStateSnapshot:
         manager = StateManager(config_path=config_path)
 
         # Set states
-        manager.write_state(
-            "test-server", {"status": "running"}, update_timestamp=False
-        )
-        manager.write_state(
-            "test-server-2", {"status": "stopped"}, update_timestamp=False
-        )
+        manager.write_state("test-server", {"status": "running"}, update_timestamp=False)
+        manager.write_state("test-server-2", {"status": "stopped"}, update_timestamp=False)
 
         import nodetool.deploy.state as state_module
 
@@ -475,17 +444,11 @@ class TestStateSnapshot:
             snapshot = create_state_snapshot(current_config, config_path=config_path)
 
             # Change both states
-            manager.write_state(
-                "test-server", {"status": "error"}, update_timestamp=False
-            )
-            manager.write_state(
-                "test-server-2", {"status": "error"}, update_timestamp=False
-            )
+            manager.write_state("test-server", {"status": "error"}, update_timestamp=False)
+            manager.write_state("test-server-2", {"status": "error"}, update_timestamp=False)
 
             # Restore only test-server
-            restore_state_from_snapshot(
-                snapshot, deployment_name="test-server", config_path=config_path
-            )
+            restore_state_from_snapshot(snapshot, deployment_name="test-server", config_path=config_path)
 
             # test-server should be restored, test-server-2 should still be error
             state1 = manager.read_state("test-server")

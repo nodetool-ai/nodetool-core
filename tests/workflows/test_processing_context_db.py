@@ -24,25 +24,19 @@ from nodetool.workflows.processing_context import ProcessingContext
 @pytest.fixture
 def context():
     """Create a test ProcessingContext instance."""
-    return ProcessingContext(
-        user_id="test_user", auth_token="test_token", workflow_id="test_workflow"
-    )
+    return ProcessingContext(user_id="test_user", auth_token="test_token", workflow_id="test_workflow")
 
 
 @pytest_asyncio.fixture
 async def sample_asset():
     """Create a sample Asset for testing."""
-    return await Asset.create(
-        user_id="test_user", name="test_image.png", content_type="image/png", size=1024
-    )
+    return await Asset.create(user_id="test_user", name="test_image.png", content_type="image/png", size=1024)
 
 
 @pytest_asyncio.fixture
 async def sample_workflow():
     """Create a sample Workflow for testing."""
-    return await Workflow.create(
-        user_id="test_user", name="Test Workflow", graph={"nodes": [], "edges": []}
-    )
+    return await Workflow.create(user_id="test_user", name="Test Workflow", graph={"nodes": [], "edges": []})
 
 
 @pytest_asyncio.fixture
@@ -91,9 +85,7 @@ class TestAssetMethods:
     """Test asset-related methods in ProcessingContext."""
 
     @pytest.mark.asyncio
-    async def test_find_asset_success(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_find_asset_success(self, context: ProcessingContext, sample_asset: Asset):
         """Test successful asset finding."""
         result = await context.find_asset(sample_asset.id)
         assert result is not None
@@ -114,9 +106,7 @@ class TestAssetMethods:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_find_asset_by_filename_success(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_find_asset_by_filename_success(self, context: ProcessingContext, sample_asset: Asset):
         """Test successful asset finding by filename."""
         result = await context.find_asset_by_filename(sample_asset.name)
         assert result is not None
@@ -129,27 +119,21 @@ class TestAssetMethods:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_list_assets_non_recursive(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_list_assets_non_recursive(self, context: ProcessingContext, sample_asset: Asset):
         """Test listing assets without recursion."""
         assets, _next_token = await context.list_assets(parent_id=context.user_id)
         assert isinstance(assets, list)
         assert any(asset.id == sample_asset.id for asset in assets)
 
     @pytest.mark.asyncio
-    async def test_list_assets_recursive(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_list_assets_recursive(self, context: ProcessingContext, sample_asset: Asset):
         """Test listing assets with recursion."""
         assets, next_token = await context.list_assets(recursive=True)
         assert isinstance(assets, list)
         assert next_token is None
 
     @pytest.mark.asyncio
-    async def test_list_assets_with_content_type_filter(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_list_assets_with_content_type_filter(self, context: ProcessingContext, sample_asset: Asset):
         """Test listing assets with content type filter."""
         assets, _next_token = await context.list_assets(content_type="image/")
         assert isinstance(assets, list)
@@ -158,13 +142,9 @@ class TestAssetMethods:
         assert sample_asset.id in asset_ids
 
     @pytest.mark.asyncio
-    async def test_get_asset_url_success(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_get_asset_url_success(self, context: ProcessingContext, sample_asset: Asset):
         """Test getting asset URL for existing asset."""
-        with patch.object(
-            context, "asset_storage_url", return_value="http://test.com/file.png"
-        ):
+        with patch.object(context, "asset_storage_url", return_value="http://test.com/file.png"):
             url = await context.get_asset_url(sample_asset.id)
             assert url == "http://test.com/file.png"
 
@@ -186,9 +166,7 @@ class TestAssetMethods:
             mock_scope.get_asset_storage.return_value = mock_storage_instance
             mock_require_scope.return_value = mock_scope
 
-            result = await context.create_asset(
-                name="test.txt", content_type="text/plain", instructions=content
-            )
+            result = await context.create_asset(name="test.txt", content_type="text/plain", instructions=content)
 
             assert result is not None
             assert result.name == "test.txt"
@@ -198,9 +176,7 @@ class TestAssetMethods:
             mock_storage_instance.upload.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_download_asset_success(
-        self, context: ProcessingContext, sample_asset: Asset
-    ):
+    async def test_download_asset_success(self, context: ProcessingContext, sample_asset: Asset):
         """Test successful asset download."""
         test_content = b"test file content"
 
@@ -232,9 +208,7 @@ class TestAssetMethods:
         """Test refreshing asset URI."""
         asset_ref = AssetRef(asset_id="test_id")
 
-        with patch.object(
-            context, "get_asset_url", return_value="http://test.com/file.png"
-        ) as mock_get_url:
+        with patch.object(context, "get_asset_url", return_value="http://test.com/file.png") as mock_get_url:
             await context.refresh_uri(asset_ref)
             mock_get_url.assert_called_once_with("test_id")
             assert asset_ref.uri == "http://test.com/file.png"
@@ -244,9 +218,7 @@ class TestWorkflowMethods:
     """Test workflow-related methods in ProcessingContext."""
 
     @pytest.mark.asyncio
-    async def test_get_workflow_success(
-        self, context: ProcessingContext, sample_workflow
-    ):
+    async def test_get_workflow_success(self, context: ProcessingContext, sample_workflow):
         """Test successful workflow retrieval."""
         result = await context.get_workflow(sample_workflow.id)
         assert result is not None
@@ -273,9 +245,7 @@ class TestMessageMethods:
     @pytest.mark.asyncio
     async def test_create_message_success(self, context: ProcessingContext):
         """Test successful message creation."""
-        request = MessageCreateRequest(
-            thread_id="test_thread", role="user", content="Hello world", tool_calls=[]
-        )
+        request = MessageCreateRequest(thread_id="test_thread", role="user", content="Hello world", tool_calls=[])
 
         result = await context.create_message(request)
         assert result is not None
@@ -297,9 +267,7 @@ class TestMessageMethods:
             await context.create_message(request)
 
     @pytest.mark.asyncio
-    async def test_get_messages_success(
-        self, context: ProcessingContext, sample_message
-    ):
+    async def test_get_messages_success(self, context: ProcessingContext, sample_message):
         """Test successful message retrieval."""
         result = await context.get_messages(sample_message.thread_id)
         assert isinstance(result, dict)
@@ -312,13 +280,9 @@ class TestMessageMethods:
         assert sample_message.id in message_ids
 
     @pytest.mark.asyncio
-    async def test_get_messages_with_pagination(
-        self, context: ProcessingContext, sample_message
-    ):
+    async def test_get_messages_with_pagination(self, context: ProcessingContext, sample_message):
         """Test message retrieval with pagination parameters."""
-        result = await context.get_messages(
-            sample_message.thread_id, limit=5, reverse=True
-        )
+        result = await context.get_messages(sample_message.thread_id, limit=5, reverse=True)
         assert isinstance(result, dict)
         assert "messages" in result
         assert "next" in result
@@ -361,9 +325,7 @@ class TestErrorCases:
 
         from nodetool.workflows.types import NodeProgress
 
-        message = NodeProgress(
-            node_id="test", progress=50, total=100, type="node_progress"
-        )
+        message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)
 
         assert context.has_messages()
@@ -373,9 +335,7 @@ class TestErrorCases:
         """Test async message popping."""
         from nodetool.workflows.types import NodeProgress
 
-        message = NodeProgress(
-            node_id="test", progress=50, total=100, type="node_progress"
-        )
+        message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)
 
         # Use asyncio.wait_for to prevent hanging
@@ -435,9 +395,7 @@ class TestUtilityMethods:
         """Test asset storage URL generation."""
         with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
-            mock_storage_instance.get_url = AsyncMock(
-                return_value="http://test.com/file.png"
-            )
+            mock_storage_instance.get_url = AsyncMock(return_value="http://test.com/file.png")
             mock_scope = Mock()
             mock_scope.get_asset_storage.return_value = mock_storage_instance
             mock_require_scope.return_value = mock_scope

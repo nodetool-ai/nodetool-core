@@ -42,6 +42,7 @@ class TestSecretHelper:
 
         # Clear cache first to avoid interference
         from nodetool.security.secret_helper import _SECRET_CACHE
+
         _SECRET_CACHE.clear()
 
         # Create secret in database
@@ -147,6 +148,7 @@ class TestSecretHelper:
 
         # Clear cache first
         from nodetool.security.secret_helper import _SECRET_CACHE
+
         _SECRET_CACHE.clear()
 
         # Create secret in database
@@ -212,6 +214,7 @@ class TestSecretHelper:
 
         # Clear cache
         from nodetool.security.secret_helper import _SECRET_CACHE
+
         _SECRET_CACHE.clear()
 
         # Create in database
@@ -225,6 +228,7 @@ class TestSecretHelper:
         os.environ[key] = env_value
         try:
             from nodetool.security.secret_helper import clear_secret_cache
+
             # Clear cache to force re-check of priorities
             clear_secret_cache(user_id, key)
 
@@ -248,6 +252,7 @@ class TestSecretHelper:
 
         # Clear cache
         from nodetool.security.secret_helper import _SECRET_CACHE
+
         _SECRET_CACHE.clear()
 
         # Create in database

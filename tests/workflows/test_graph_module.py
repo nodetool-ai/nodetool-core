@@ -59,9 +59,7 @@ def build_graph():
     n3 = OutNode(id="3", name="out")  # type: ignore[call-arg]
     edges = [
         Edge(id="e1", source="1", sourceHandle="output", target="2", targetHandle="a"),
-        Edge(
-            id="e2", source="2", sourceHandle="output", target="3", targetHandle="value"
-        ),
+        Edge(id="e2", source="2", sourceHandle="output", target="3", targetHandle="value"),
     ]
     return Graph(nodes=[n1, n2, n3], edges=edges)
 

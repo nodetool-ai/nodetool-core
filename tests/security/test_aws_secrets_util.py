@@ -48,16 +48,12 @@ class TestAWSSecretsUtil:
 
         master_key = SecretCrypto.generate_master_key()
         success = AWSSecretsUtil.store_master_key(
-            secret_name="test-master-key",
-            master_key=master_key,
-            region="us-east-1"
+            secret_name="test-master-key", master_key=master_key, region="us-east-1"
         )
 
         assert success is True
         mock_client.create_secret.assert_called_once_with(
-            Name="test-master-key",
-            SecretString=master_key,
-            Description="NodeTool master encryption key for secrets"
+            Name="test-master-key", SecretString=master_key, Description="NodeTool master encryption key for secrets"
         )
 
     @patch("nodetool.security.aws_secrets_util.AWSSecretsUtil.get_aws_client")
@@ -71,22 +67,15 @@ class TestAWSSecretsUtil:
 
         # Mock ResourceExistsException
         error_response = {"Error": {"Code": "ResourceExistsException"}}
-        mock_client.create_secret.side_effect = ClientError(
-            error_response, "CreateSecret"
-        )
+        mock_client.create_secret.side_effect = ClientError(error_response, "CreateSecret")
 
         master_key = SecretCrypto.generate_master_key()
         success = AWSSecretsUtil.store_master_key(
-            secret_name="test-master-key",
-            master_key=master_key,
-            region="us-east-1"
+            secret_name="test-master-key", master_key=master_key, region="us-east-1"
         )
 
         assert success is True
-        mock_client.put_secret_value.assert_called_once_with(
-            SecretId="test-master-key",
-            SecretString=master_key
-        )
+        mock_client.put_secret_value.assert_called_once_with(SecretId="test-master-key", SecretString=master_key)
 
     @patch("nodetool.security.aws_secrets_util.AWSSecretsUtil.get_aws_client")
     def test_store_master_key_error(self, mock_get_client):
@@ -99,15 +88,10 @@ class TestAWSSecretsUtil:
 
         # Mock a generic error
         error_response = {"Error": {"Code": "InternalServerError"}}
-        mock_client.create_secret.side_effect = ClientError(
-            error_response, "CreateSecret"
-        )
+        mock_client.create_secret.side_effect = ClientError(error_response, "CreateSecret")
 
         master_key = SecretCrypto.generate_master_key()
-        success = AWSSecretsUtil.store_master_key(
-            secret_name="test-master-key",
-            master_key=master_key
-        )
+        success = AWSSecretsUtil.store_master_key(secret_name="test-master-key", master_key=master_key)
 
         assert success is False
 
@@ -121,19 +105,12 @@ class TestAWSSecretsUtil:
         mock_get_client.return_value = mock_client
 
         master_key = SecretCrypto.generate_master_key()
-        mock_client.get_secret_value.return_value = {
-            "SecretString": master_key
-        }
+        mock_client.get_secret_value.return_value = {"SecretString": master_key}
 
-        retrieved_key = AWSSecretsUtil.retrieve_master_key(
-            secret_name="test-master-key",
-            region="us-east-1"
-        )
+        retrieved_key = AWSSecretsUtil.retrieve_master_key(secret_name="test-master-key", region="us-east-1")
 
         assert retrieved_key == master_key
-        mock_client.get_secret_value.assert_called_once_with(
-            SecretId="test-master-key"
-        )
+        mock_client.get_secret_value.assert_called_once_with(SecretId="test-master-key")
 
     @patch("nodetool.security.aws_secrets_util.AWSSecretsUtil.get_aws_client")
     def test_retrieve_master_key_binary_secret(self, mock_get_client):
@@ -150,13 +127,9 @@ class TestAWSSecretsUtil:
         master_key_bytes = master_key.encode()
         base64_encoded = base64.b64encode(master_key_bytes).decode()
 
-        mock_client.get_secret_value.return_value = {
-            "SecretBinary": base64_encoded
-        }
+        mock_client.get_secret_value.return_value = {"SecretBinary": base64_encoded}
 
-        retrieved_key = AWSSecretsUtil.retrieve_master_key(
-            secret_name="test-master-key"
-        )
+        retrieved_key = AWSSecretsUtil.retrieve_master_key(secret_name="test-master-key")
 
         assert retrieved_key == master_key
 
@@ -170,13 +143,9 @@ class TestAWSSecretsUtil:
         mock_get_client.return_value = mock_client
 
         error_response = {"Error": {"Code": "ResourceNotFoundException"}}
-        mock_client.get_secret_value.side_effect = ClientError(
-            error_response, "GetSecretValue"
-        )
+        mock_client.get_secret_value.side_effect = ClientError(error_response, "GetSecretValue")
 
-        retrieved_key = AWSSecretsUtil.retrieve_master_key(
-            secret_name="nonexistent"
-        )
+        retrieved_key = AWSSecretsUtil.retrieve_master_key(secret_name="nonexistent")
 
         assert retrieved_key is None
 
@@ -189,17 +158,10 @@ class TestAWSSecretsUtil:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        success = AWSSecretsUtil.delete_master_key(
-            secret_name="test-master-key",
-            region="us-east-1",
-            force=False
-        )
+        success = AWSSecretsUtil.delete_master_key(secret_name="test-master-key", region="us-east-1", force=False)
 
         assert success is True
-        mock_client.delete_secret.assert_called_once_with(
-            SecretId="test-master-key",
-            RecoveryWindowInDays=30
-        )
+        mock_client.delete_secret.assert_called_once_with(SecretId="test-master-key", RecoveryWindowInDays=30)
 
     @patch("nodetool.security.aws_secrets_util.AWSSecretsUtil.get_aws_client")
     def test_delete_master_key_force(self, mock_get_client):
@@ -210,16 +172,10 @@ class TestAWSSecretsUtil:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        success = AWSSecretsUtil.delete_master_key(
-            secret_name="test-master-key",
-            force=True
-        )
+        success = AWSSecretsUtil.delete_master_key(secret_name="test-master-key", force=True)
 
         assert success is True
-        mock_client.delete_secret.assert_called_once_with(
-            SecretId="test-master-key",
-            ForceDeleteWithoutRecovery=True
-        )
+        mock_client.delete_secret.assert_called_once_with(SecretId="test-master-key", ForceDeleteWithoutRecovery=True)
 
     @patch("nodetool.security.aws_secrets_util.AWSSecretsUtil.get_aws_client")
     def test_delete_master_key_error(self, mock_get_client):
@@ -232,9 +188,7 @@ class TestAWSSecretsUtil:
 
         mock_client.delete_secret.side_effect = Exception("AWS Error")
 
-        success = AWSSecretsUtil.delete_master_key(
-            secret_name="test-master-key"
-        )
+        success = AWSSecretsUtil.delete_master_key(secret_name="test-master-key")
 
         assert success is False
 
@@ -243,18 +197,15 @@ class TestAWSSecretsUtil:
         Test generating and storing a new master key.
         Verifies that generate_master_key and store_master_key are called.
         """
-        with patch(
-            "nodetool.security.crypto.SecretCrypto.generate_master_key"
-        ) as mock_generate, patch.object(
-            AWSSecretsUtil, "store_master_key"
-        ) as mock_store:
+        with (
+            patch("nodetool.security.crypto.SecretCrypto.generate_master_key") as mock_generate,
+            patch.object(AWSSecretsUtil, "store_master_key") as mock_store,
+        ):
             mock_key = "test_generated_key"
             mock_generate.return_value = mock_key
             mock_store.return_value = True
 
-            result = AWSSecretsUtil.generate_and_store(
-                secret_name="test-master-key", region="us-east-1"
-            )
+            result = AWSSecretsUtil.generate_and_store(secret_name="test-master-key", region="us-east-1")
 
             assert result == mock_key
             mock_generate.assert_called_once()
@@ -268,11 +219,10 @@ class TestAWSSecretsUtil:
         Test failure when storing generated key.
         Verifies that None is returned if storage fails.
         """
-        with patch(
-            "nodetool.security.crypto.SecretCrypto.generate_master_key"
-        ) as mock_generate, patch.object(
-            AWSSecretsUtil, "store_master_key"
-        ) as mock_store:
+        with (
+            patch("nodetool.security.crypto.SecretCrypto.generate_master_key") as mock_generate,
+            patch.object(AWSSecretsUtil, "store_master_key") as mock_store,
+        ):
             mock_key = "test_generated_key"
             mock_generate.return_value = mock_key
             mock_store.return_value = False  # Storage fails
@@ -297,10 +247,7 @@ class TestAWSSecretsUtilIntegration:
             # Store
             test_key = "test_stored_key"
             mock_client.create_secret.return_value = {}
-            store_result = AWSSecretsUtil.store_master_key(
-                secret_name="test-key",
-                master_key=test_key
-            )
+            store_result = AWSSecretsUtil.store_master_key(secret_name="test-key", master_key=test_key)
             assert store_result is True
 
             # Retrieve
@@ -317,10 +264,7 @@ class TestAWSSecretsUtilIntegration:
             mock_client = MagicMock()
             mock_get_client.return_value = mock_client
 
-            AWSSecretsUtil.delete_master_key(
-                secret_name="test-key",
-                force=False
-            )
+            AWSSecretsUtil.delete_master_key(secret_name="test-key", force=False)
 
             # Verify recovery window was set
             mock_client.delete_secret.assert_called_once()

@@ -102,9 +102,7 @@ class TestOpenAIProvider(BaseProviderTest):
                 ChatCompletionMessageToolCall(
                     id=tc["id"],
                     type="function",
-                    function=ToolCallFunction(
-                        name=tc["name"], arguments=json.dumps(tc["args"])
-                    ),
+                    function=ToolCallFunction(name=tc["name"], arguments=json.dumps(tc["args"])),
                 )
                 for tc in tool_calls
             ]
@@ -123,9 +121,7 @@ class TestOpenAIProvider(BaseProviderTest):
             created=1677652288,
             model="gpt-3.5-turbo-0613",
             object="chat.completion",
-            usage=CompletionUsage(
-                completion_tokens=12, prompt_tokens=9, total_tokens=21
-            ),
+            usage=CompletionUsage(completion_tokens=12, prompt_tokens=9, total_tokens=21),
         )
 
     def create_openai_streaming_responses(
@@ -202,9 +198,7 @@ class TestOpenAIProvider(BaseProviderTest):
                 body={"error": {"type": "authentication_error"}},
             )
         else:
-            return openai.APIError(
-                message="Unknown error", request=MagicMock(), body={}
-            )
+            return openai.APIError(message="Unknown error", request=MagicMock(), body={})
 
     def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock OpenAI API call with structured response."""
@@ -216,9 +210,7 @@ class TestOpenAIProvider(BaseProviderTest):
             )
         else:
             # Regular text response
-            openai_response = self.create_openai_completion_response(
-                content=response_data.get("text", "Hello, world!")
-            )
+            openai_response = self.create_openai_completion_response(content=response_data.get("text", "Hello, world!"))
 
         # Mock the async create method
         async def mock_create(*args, **kwargs):
@@ -265,9 +257,7 @@ class TestOpenAIProvider(BaseProviderTest):
         provider = self.create_provider()
         messages = self.create_simple_messages("Test OpenAI features")
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("OpenAI response")
-        ) as mock_call:
+        with self.mock_api_call(ResponseFixtures.simple_text_response("OpenAI response")) as mock_call:
             await provider.generate_message(
                 messages,
                 "gpt-3.5-turbo",
@@ -303,9 +293,7 @@ class TestOpenAIProvider(BaseProviderTest):
         }
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(
-                messages, "gpt-3.5-turbo", tools=tools
-            )
+            response = await provider.generate_message(messages, "gpt-3.5-turbo", tools=tools)
 
         assert hasattr(response, "tool_calls")
         assert response.tool_calls is not None
@@ -369,12 +357,8 @@ class TestOpenAIProvider(BaseProviderTest):
 
         response_format = {"type": "json_object"}
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response('{"result": "success"}')
-        ) as mock_call:
-            await provider.generate_message(
-                messages, "gpt-3.5-turbo", response_format=response_format
-            )
+        with self.mock_api_call(ResponseFixtures.simple_text_response('{"result": "success"}')) as mock_call:
+            await provider.generate_message(messages, "gpt-3.5-turbo", response_format=response_format)
 
         # Verify response_format was passed
         call_kwargs = mock_call.call_args[1]
@@ -397,9 +381,7 @@ class TestOpenAIProvider(BaseProviderTest):
         # Create streaming response with tool calls
 
         # Note: This is a simplified version - actual OpenAI streaming tool calls are more complex
-        with patch.object(
-            openai.resources.chat.completions.AsyncCompletions, "create"
-        ) as mock_create:
+        with patch.object(openai.resources.chat.completions.AsyncCompletions, "create") as mock_create:
             # Mock the streaming response
             async def mock_stream():
                 # Simplified tool call streaming
@@ -434,9 +416,7 @@ class TestOpenAIProvider(BaseProviderTest):
             mock_create.return_value = mock_stream()
 
             results = []
-            async for result in provider.generate_messages(
-                messages, "gpt-3.5-turbo", tools=tools
-            ):
+            async for result in provider.generate_messages(messages, "gpt-3.5-turbo", tools=tools):
                 results.append(result)
 
             # Should receive tool calls

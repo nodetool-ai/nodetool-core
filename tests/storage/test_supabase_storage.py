@@ -76,9 +76,7 @@ class _FakeBucket:
 
     async def create_signed_url(self, path: str, expires_in: int):
         """Create a signed URL for the given path."""
-        return {
-            "signedURL": f"{self.base_url}/storage/v1/object/sign/{self.name}/{path}?token=fake_token"
-        }
+        return {"signedURL": f"{self.base_url}/storage/v1/object/sign/{self.name}/{path}?token=fake_token"}
 
 
 class _FakeStorage:
@@ -108,7 +106,7 @@ def storage() -> SupabaseStorage:
     return SupabaseStorage(
         bucket_name="assets",
         supabase_url="https://example.supabase.co",
-        client=client, # type: ignore
+        client=client,  # type: ignore
     )
 
 
@@ -164,4 +162,3 @@ async def test_get_url(storage: SupabaseStorage):
     key = "images/photo.png"
     url = await storage.get_url(key)
     assert url == f"https://example.supabase.co/storage/v1/object/public/assets/{key}"
-

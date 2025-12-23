@@ -28,12 +28,8 @@ def pytest_configure(config):
         "integration: mark test as integration test requiring external services",
     )
     config.addinivalue_line("markers", "slow: mark test as slow running")
-    config.addinivalue_line(
-        "markers", "requires_api_key: mark test as requiring API key configuration"
-    )
-    config.addinivalue_line(
-        "markers", "requires_server: mark test as requiring local server"
-    )
+    config.addinivalue_line("markers", "requires_api_key: mark test as requiring API key configuration")
+    config.addinivalue_line("markers", "requires_server: mark test as requiring local server")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -44,10 +40,7 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.integration)
 
         # Mark slow tests
-        if any(
-            keyword in item.name
-            for keyword in ["comprehensive", "stress", "performance"]
-        ):
+        if any(keyword in item.name for keyword in ["comprehensive", "stress", "performance"]):
             item.add_marker(pytest.mark.slow)
 
         # Mark tests requiring API keys
@@ -70,27 +63,19 @@ def event_loop():
 @pytest.fixture
 def simple_messages() -> List[Message]:
     """Fixture providing simple test messages."""
-    return [
-        Message(role="user", content=[MessageTextContent(text="Hello, how are you?")])
-    ]
+    return [Message(role="user", content=[MessageTextContent(text="Hello, how are you?")])]
 
 
 @pytest.fixture
 def conversation_messages() -> List[Message]:
     """Fixture providing a multi-turn conversation."""
     return [
-        Message(
-            role="user", content=[MessageTextContent(text="What's the weather like?")]
-        ),
+        Message(role="user", content=[MessageTextContent(text="What's the weather like?")]),
         Message(
             role="assistant",
-            instructions=[
-                MessageTextContent(text="I don't have access to current weather data.")
-            ],
+            instructions=[MessageTextContent(text="I don't have access to current weather data.")],
         ),
-        Message(
-            role="user", content=[MessageTextContent(text="What should I wear then?")]
-        ),
+        Message(role="user", content=[MessageTextContent(text="What should I wear then?")]),
     ]
 
 
@@ -100,9 +85,7 @@ def tool_messages() -> List[Message]:
     return [
         Message(
             role="user",
-            instructions=[
-                MessageTextContent(text="Search for information about machine learning")
-            ],
+            instructions=[MessageTextContent(text="Search for information about machine learning")],
         )
     ]
 
@@ -123,9 +106,7 @@ def mock_tool():
             "required": ["query"],
         }
 
-        async def process(
-            self, context: ProcessingContext, params: Dict[str, Any]
-        ) -> Any:
+        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
             return {
                 "results": [
                     {
@@ -158,9 +139,7 @@ def calculator_tool():
             "required": ["expression"],
         }
 
-        async def process(
-            self, context: ProcessingContext, params: Dict[str, Any]
-        ) -> Any:
+        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
             expression = params.get("expression", "")
             try:
                 # Simple evaluation for testing (in real implementation, use safe evaluation)
@@ -185,9 +164,7 @@ def processing_context():
 @pytest.fixture
 def sample_tool_call() -> ToolCall:
     """Fixture providing a sample tool call."""
-    return ToolCall(
-        id="call_test_123", name="test_search", args={"query": "test query", "limit": 3}
-    )
+    return ToolCall(id="call_test_123", name="test_search", args={"query": "test query", "limit": 3})
 
 
 @pytest.fixture(scope="session")
@@ -320,15 +297,11 @@ def performance_metrics():
 
     def start_monitoring():
         metrics["start_time"] = time.time()
-        metrics["memory_usage"].append(
-            psutil.Process().memory_info().rss / 1024 / 1024
-        )  # MB
+        metrics["memory_usage"].append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
 
     def stop_monitoring():
         metrics["end_time"] = time.time()
-        metrics["memory_usage"].append(
-            psutil.Process().memory_info().rss / 1024 / 1024
-        )  # MB
+        metrics["memory_usage"].append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
 
     def record_response_time(duration: float):
         metrics["response_times"].append(duration)

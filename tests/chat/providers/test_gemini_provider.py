@@ -183,9 +183,7 @@ class TestGeminiProvider(BaseProviderTest):
             },
         }
 
-    def create_gemini_streaming_responses(
-        self, text: str = "Hello world!"
-    ) -> List[Dict[str, Any]]:
+    def create_gemini_streaming_responses(self, text: str = "Hello world!") -> List[Dict[str, Any]]:
         """Create realistic Gemini streaming response chunks."""
         chunks = []
         words = text.split()
@@ -236,19 +234,13 @@ class TestGeminiProvider(BaseProviderTest):
             )
         else:
             # Regular text response
-            self.create_gemini_response(
-                content=response_data.get("text", "Hello, world!")
-            )
+            self.create_gemini_response(content=response_data.get("text", "Hello, world!"))
 
         # Mock the Google GenerativeAI client
         mock_response = MagicMock()
         mock_response.text = response_data.get("text", "Hello, world!")
         mock_response.candidates = [
-            MagicMock(
-                content=MagicMock(
-                    parts=[MagicMock(text=response_data.get("text", "Hello, world!"))]
-                )
-            )
+            MagicMock(content=MagicMock(parts=[MagicMock(text=response_data.get("text", "Hello, world!"))]))
         ]
 
         # Mock the provider's get_client method instead
@@ -308,9 +300,7 @@ class TestGeminiProvider(BaseProviderTest):
         provider = self.create_provider()
 
         # Mock image processing
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("I can see an image")
-        ):
+        with self.mock_api_call(ResponseFixtures.simple_text_response("I can see an image")):
             response = await provider.generate_message(
                 self.create_simple_messages("Describe this image"), "gemini-1.5-pro"
             )
@@ -337,14 +327,10 @@ class TestGeminiProvider(BaseProviderTest):
         messages = self.create_tool_messages()
         tools = [self.create_mock_tool()]
 
-        function_response = {
-            "tool_calls": [{"name": "mock_tool", "args": {"query": "test search"}}]
-        }
+        function_response = {"tool_calls": [{"name": "mock_tool", "args": {"query": "test search"}}]}
 
         with self.mock_api_call(function_response):
-            response = await provider.generate_message(
-                messages, "gemini-1.5-pro", tools=tools
-            )
+            response = await provider.generate_message(messages, "gemini-1.5-pro", tools=tools)
 
         # Gemini might handle tools differently
         assert response.role == "assistant"
@@ -356,13 +342,9 @@ class TestGeminiProvider(BaseProviderTest):
 
         # Test with very long context
         long_context = "This is a very long context. " * 1000
-        messages = [
-            Message(role="user", content=[MessageTextContent(text=long_context)])
-        ]
+        messages = [Message(role="user", content=[MessageTextContent(text=long_context)])]
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Processed long context")
-        ):
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Processed long context")):
             response = await provider.generate_message(messages, "gemini-1.5-pro")
 
         assert response.role == "assistant"
@@ -372,12 +354,8 @@ class TestGeminiProvider(BaseProviderTest):
         """Test custom generation configuration."""
         provider = self.create_provider()
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Creative response")
-        ) as mock_call:
-            await provider.generate_message(
-                self.create_simple_messages(), "gemini-1.5-pro"
-            )
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Creative response")) as mock_call:
+            await provider.generate_message(self.create_simple_messages(), "gemini-1.5-pro")
 
         mock_call.assert_called_once()
 
@@ -389,10 +367,6 @@ class TestGeminiProvider(BaseProviderTest):
         models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro"]
 
         for model in models:
-            with self.mock_api_call(
-                ResponseFixtures.simple_text_response(f"Response from {model}")
-            ):
-                response = await provider.generate_message(
-                    self.create_simple_messages(f"Test {model}"), model
-                )
+            with self.mock_api_call(ResponseFixtures.simple_text_response(f"Response from {model}")):
+                response = await provider.generate_message(self.create_simple_messages(f"Test {model}"), model)
             assert response.role == "assistant"

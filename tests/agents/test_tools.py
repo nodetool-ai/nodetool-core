@@ -61,9 +61,7 @@ async def test_save_and_read_asset(monkeypatch):
 
     async def find_asset_by_filename(name):
         if name in saved:
-            return SimpleNamespace(
-                id="asset123", file_name=name, content_type="text/plain"
-            )
+            return SimpleNamespace(id="asset123", file_name=name, content_type="text/plain")
         return None
 
     async def download_asset(asset_id):

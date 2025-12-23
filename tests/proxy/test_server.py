@@ -78,9 +78,7 @@ class TestACMEEndpoint:
             challenge_path.write_text("test-challenge-content")
 
             # Patch the acme_webroot to use our temp directory
-            with patch(
-                "nodetool.proxy.server.AsyncReverseProxy.handle_acme_challenge"
-            ) as mock_acme:
+            with patch("nodetool.proxy.server.AsyncReverseProxy.handle_acme_challenge") as mock_acme:
                 mock_acme.return_value = "mock-response"
                 response = client.get("/.well-known/acme-challenge/test-token")
                 # Should not get 401 Unauthorized
@@ -120,9 +118,7 @@ class TestAuthenticationDependency:
 
     def test_proxy_endpoint_with_valid_token(self, client: TestClient):
         """Test that proxy endpoint accepts valid token."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request"
-        ) as mock:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request") as mock:
             mock.return_value = {"status": "ok"}
             response = client.get(
                 "/app1/test",
@@ -170,9 +166,7 @@ class TestPathMatching:
 
     def test_longest_prefix_matching(self, matching_app):
         """Test that longest path prefix is matched."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.match_service"
-        ):
+        with patch("nodetool.proxy.server.AsyncReverseProxy.match_service"):
 
             async def route_test():
                 proxy = matching_app.state.state
@@ -242,9 +236,7 @@ class TestErrorHandling:
 
     def test_upstream_error_returns_502(self, client: TestClient):
         """Test that upstream connection error returns 502."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request"
-        ) as mock_request:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request") as mock_request:
             from fastapi import HTTPException
 
             mock_request.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
@@ -260,9 +252,7 @@ class TestProxyRequestHandling:
 
     def test_proxy_forwards_method(self, client: TestClient):
         """Test that proxy forwards HTTP method."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request"
-        ) as mock:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request") as mock:
             mock.return_value = {"status": "ok"}
             for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
                 response = client.request(
@@ -274,9 +264,7 @@ class TestProxyRequestHandling:
 
     def test_proxy_forwards_query_string(self, client: TestClient):
         """Test that query string is forwarded."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request"
-        ) as mock:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_proxy_request") as mock:
             mock.return_value = {"status": "ok"}
             response = client.get(
                 "/app1/test?param1=value1&param2=value2",
@@ -290,9 +278,7 @@ class TestStatusEndpoint:
 
     def test_status_returns_json(self, client: TestClient):
         """Test that /status returns valid JSON."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_status"
-        ) as mock:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_status") as mock:
             mock.return_value = MagicMock(
                 media_type="application/json",
                 status_code=200,
@@ -305,9 +291,7 @@ class TestStatusEndpoint:
 
     def test_status_includes_all_services(self, client: TestClient):
         """Test that /status reports all services."""
-        with patch(
-            "nodetool.proxy.server.AsyncReverseProxy.handle_status"
-        ) as mock_status:
+        with patch("nodetool.proxy.server.AsyncReverseProxy.handle_status") as mock_status:
             status_data = [
                 {
                     "name": "app1",

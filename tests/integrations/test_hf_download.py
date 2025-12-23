@@ -7,14 +7,13 @@ from nodetool.integrations.huggingface.hf_download import DownloadManager, Downl
 
 
 class TestHfDownload(unittest.IsolatedAsyncioTestCase):
-
     async def asyncSetUp(self):
         # Reset singleton for each test
         hf_download._download_managers = {}
         self.mock_ws = AsyncMock()
         self.manager = DownloadManager(token="fake_token")
 
-    @patch('nodetool.integrations.huggingface.hf_download.hf_auth.get_hf_token', new_callable=AsyncMock)
+    @patch("nodetool.integrations.huggingface.hf_download.hf_auth.get_hf_token", new_callable=AsyncMock)
     async def test_get_download_manager_singleton(self, mock_get_token):
         mock_get_token.return_value = "token"
 
@@ -45,8 +44,8 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(ws1, self.manager.active_websockets)
         self.assertIn(ws2, self.manager.active_websockets)
 
-    @patch('nodetool.integrations.huggingface.hf_download.async_hf_download')
-    @patch('nodetool.integrations.huggingface.hf_download.HfApi')
+    @patch("nodetool.integrations.huggingface.hf_download.async_hf_download")
+    @patch("nodetool.integrations.huggingface.hf_download.HfApi")
     async def test_start_download_non_blocking(self, mock_hf_api, mock_async_download):
         # Setup
         mock_api_instance = mock_hf_api.return_value
@@ -62,18 +61,15 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
         async def delayed_download(*args, **kwargs):
             await asyncio.sleep(0.1)
             return "/local/path"
+
         mock_async_download.side_effect = delayed_download
 
-        with patch('nodetool.integrations.huggingface.hf_download.try_to_load_from_cache', return_value=None):
+        with patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None):
             # Add a websocket to receive updates
             self.manager.add_websocket(self.mock_ws)
 
             # Execute start_download
-            await self.manager.start_download(
-                repo_id="repo",
-                path=None,
-                user_id="user"
-            )
+            await self.manager.start_download(repo_id="repo", path=None, user_id="user")
 
             # It should return immediately, but task should be running
             self.assertIn("repo", self.manager.downloads)
@@ -88,8 +84,8 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state.status, "completed")
             self.assertTrue(self.mock_ws.send_json.called)
 
-    @patch('nodetool.integrations.huggingface.hf_download.async_hf_download')
-    @patch('nodetool.integrations.huggingface.hf_download.HfApi')
+    @patch("nodetool.integrations.huggingface.hf_download.async_hf_download")
+    @patch("nodetool.integrations.huggingface.hf_download.HfApi")
     async def test_cancel_download(self, mock_hf_api, mock_async_download):
         # Setup
         mock_api_instance = mock_hf_api.return_value
@@ -101,14 +97,14 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
 
         # Mock download that waits for cancellation
         async def cancellable_download(*args, **kwargs):
-            cancel_event = kwargs.get('cancel_event')
+            cancel_event = kwargs.get("cancel_event")
             while not cancel_event.is_set():
                 await asyncio.sleep(0.01)
             raise asyncio.CancelledError()
 
         mock_async_download.side_effect = cancellable_download
 
-        with patch('nodetool.integrations.huggingface.hf_download.try_to_load_from_cache', return_value=None):
+        with patch("nodetool.integrations.huggingface.hf_download.try_to_load_from_cache", return_value=None):
             self.manager.add_websocket(self.mock_ws)
 
             await self.manager.start_download(repo_id="repo", path=None, user_id="user")
@@ -133,7 +129,7 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
             # Verify update sent
             # We expect multiple calls: initial, progress (maybe), cancelled
             calls = [c[0][0] for c in self.mock_ws.send_json.call_args_list]
-            statuses = [c['status'] for c in calls]
+            statuses = [c["status"] for c in calls]
             self.assertIn("cancelled", statuses)
 
     async def test_sync_state(self):
@@ -152,9 +148,10 @@ class TestHfDownload(unittest.IsolatedAsyncioTestCase):
         # Verify
         new_ws.send_json.assert_called_once()
         call_args = new_ws.send_json.call_args[0][0]
-        self.assertEqual(call_args['repo_id'], "repo1")
-        self.assertEqual(call_args['status'], "progress")
-        self.assertEqual(call_args['downloaded_bytes'], 50)
+        self.assertEqual(call_args["repo_id"], "repo1")
+        self.assertEqual(call_args["status"], "progress")
+        self.assertEqual(call_args["downloaded_bytes"], 50)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

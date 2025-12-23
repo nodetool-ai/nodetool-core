@@ -101,10 +101,7 @@ def test_completion_json_success(tmp_path):
     assert completed is True
     assert normalized["summary"] == "done"
     assert ctx.step.completed is True
-    assert (
-        ctx.processing_context.load_step_result(ctx.step.id)["summary"]
-        == "done"
-    )
+    assert ctx.processing_context.load_step_result(ctx.step.id)["summary"] == "done"
 
 
 def test_completion_json_missing_result_adds_feedback(tmp_path):
@@ -213,11 +210,8 @@ def test_finish_step_tool_schema_generation():
 
     result_schema = {
         "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "count": {"type": "integer"}
-        },
-        "required": ["summary"]
+        "properties": {"summary": {"type": "string"}, "count": {"type": "integer"}},
+        "required": ["summary"],
     }
 
     tool = FinishStepTool(result_schema)
