@@ -27,6 +27,7 @@ def get_all_models() -> list[Type]:
     from nodetool.models.job import Job
     from nodetool.models.message import Message
     from nodetool.models.prediction import Prediction
+    from nodetool.models.provider_call import ProviderCall
     from nodetool.models.secret import Secret
     from nodetool.models.thread import Thread
     from nodetool.models.workflow import Workflow
@@ -40,6 +41,7 @@ def get_all_models() -> list[Type]:
         Job,
         Prediction,
         Secret,
+        ProviderCall,
     ]
 
 
