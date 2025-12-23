@@ -139,18 +139,10 @@ class AnthropicProvider(BaseProvider):
         """Initialize the Anthropic provider with client credentials."""
         assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
         self.api_key = secrets["ANTHROPIC_API_KEY"]
-
-        # Get optional base URL from environment
-        base_url = Environment.get("ANTHROPIC_BASE_URL")
-        self._base_url: str | None = base_url if base_url else None
-
         log.debug("Creating Anthropic AsyncClient")
-        client_kwargs: dict[str, Any] = {"api_key": self.api_key}
-        if self._base_url:
-            client_kwargs["base_url"] = self._base_url
-            log.debug(f"Using custom Anthropic base URL: {self._base_url}")
-
-        self.client = anthropic.AsyncAnthropic(**client_kwargs)
+        self.client = anthropic.AsyncAnthropic(
+            api_key=self.api_key,
+        )
         log.debug("Anthropic AsyncClient created successfully")
         # Initialize usage tracking
         self.usage = {
@@ -163,12 +155,7 @@ class AnthropicProvider(BaseProvider):
         log.debug("AnthropicProvider initialized with usage tracking")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
-        env_vars: dict[str, str] = {}
-        if self.api_key:
-            env_vars["ANTHROPIC_API_KEY"] = self.api_key
-        if self._base_url:
-            env_vars["ANTHROPIC_BASE_URL"] = self._base_url
-        return env_vars
+        return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
@@ -209,12 +196,9 @@ class AnthropicProvider(BaseProvider):
                 "x-api-key": self.api_key,
                 "anthropic-version": "2023-06-01",
             }
-            # Use custom base URL if set, otherwise use default Anthropic API
-            base_url = self._base_url.rstrip("/") if self._base_url else "https://api.anthropic.com"
-            models_url = f"{base_url}/v1/models"
             async with (
                 aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get(models_url) as response,
+                session.get("https://api.anthropic.com/v1/models") as response,
             ):
                 if response.status != 200:
                     log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")

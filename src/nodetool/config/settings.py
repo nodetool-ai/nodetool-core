@@ -140,11 +140,11 @@ register_secret(
     group="Anthropic",
     description="Anthropic API key for accessing Claude models and other Anthropic services",
 )
-register_setting(
+register_secret(
     package_name="nodetool",
-    env_var="ANTHROPIC_BASE_URL",
-    group="Anthropic",
-    description="Custom base URL for Anthropic API. When set, overrides the default Anthropic API endpoint.",
+    env_var="MINIMAX_API_KEY",
+    group="MiniMax",
+    description="MiniMax API key for accessing MiniMax AI models via their Anthropic-compatible API",
 )
 register_secret(
     package_name="nodetool",

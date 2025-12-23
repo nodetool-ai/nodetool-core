@@ -1,0 +1,146 @@
+"""
+MiniMax provider implementation for chat completions.
+
+This module implements the ChatProvider interface for MiniMax models,
+using their Anthropic-compatible API endpoint.
+
+MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, List
+
+import aiohttp
+import anthropic
+
+if TYPE_CHECKING:
+    from nodetool.workflows.processing_context import ProcessingContext
+
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import (
+    LanguageModel,
+    Provider,
+)
+from nodetool.providers.anthropic_provider import AnthropicProvider
+from nodetool.providers.base import register_provider
+
+log = get_logger(__name__)
+
+# MiniMax Anthropic-compatible API base URL
+MINIMAX_BASE_URL = "https://api.minimaxi.chat/v1"
+
+
+@register_provider(Provider.MiniMax)
+class MiniMaxProvider(AnthropicProvider):
+    """MiniMax implementation of the ChatProvider interface.
+
+    MiniMax provides an Anthropic-compatible API for their models.
+    This provider extends AnthropicProvider with MiniMax-specific configuration.
+
+    Key differences from Anthropic:
+    1. Base URL: https://api.minimaxi.chat/v1
+    2. API key: MINIMAX_API_KEY instead of ANTHROPIC_API_KEY
+    3. Model listing via MiniMax's models endpoint
+
+    For details, see: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
+    """
+
+    provider_name: str = "minimax"
+
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["MINIMAX_API_KEY"]
+
+    def __init__(self, secrets: dict[str, str]):
+        """Initialize the MiniMax provider with client credentials.
+
+        Reads ``MINIMAX_API_KEY`` from secrets and configures the Anthropic client
+        with MiniMax's base URL.
+        """
+        assert "MINIMAX_API_KEY" in secrets, "MINIMAX_API_KEY is required"
+        self.api_key = secrets["MINIMAX_API_KEY"]
+
+        log.debug("Creating MiniMax AsyncClient (Anthropic-compatible)")
+        self.client = anthropic.AsyncAnthropic(
+            api_key=self.api_key,
+            base_url=MINIMAX_BASE_URL,
+        )
+        log.debug("MiniMax AsyncClient created successfully")
+
+        # Initialize usage tracking
+        self.usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        }
+        self.cost = 0.0
+        log.debug("MiniMaxProvider initialized with usage tracking")
+
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
+        """Return environment variables required for containerized execution.
+
+        Returns:
+            A mapping containing ``MINIMAX_API_KEY`` if available; otherwise empty.
+        """
+        return {"MINIMAX_API_KEY": self.api_key} if self.api_key else {}
+
+    def get_context_length(self, model: str) -> int:
+        """Get the maximum token limit for a given MiniMax model.
+
+        MiniMax models typically support large context windows.
+        Returns a conservative default.
+        """
+        log.debug(f"Getting context length for MiniMax model: {model}")
+        # MiniMax models generally support 200k context like Claude
+        return 200000
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available MiniMax models.
+
+        Fetches models dynamically from the MiniMax API if an API key is available.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of LanguageModel instances for MiniMax
+        """
+        if not self.api_key:
+            log.debug("No MiniMax API key configured, returning empty model list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+            }
+            models_url = f"{MINIMAX_BASE_URL}/models"
+            async with (
+                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+                session.get(models_url) as response,
+            ):
+                if response.status != 200:
+                    log.warning(f"Failed to fetch MiniMax models: HTTP {response.status}")
+                    return []
+                payload: dict[str, Any] = await response.json()
+                data = payload.get("data", [])
+
+                models: List[LanguageModel] = []
+                for item in data:
+                    model_id = item.get("id") or item.get("name")
+                    if not model_id:
+                        continue
+                    models.append(
+                        LanguageModel(
+                            id=model_id,
+                            name=model_id,
+                            provider=Provider.MiniMax,
+                        )
+                    )
+                log.debug(f"Fetched {len(models)} MiniMax models")
+                return models
+        except Exception as e:
+            log.error(f"Error fetching MiniMax models: {e}")
+            return []
