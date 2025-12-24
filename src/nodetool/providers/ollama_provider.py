@@ -132,6 +132,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.api_url = api_url or Environment.get("OLLAMA_API_URL")
         if self.api_url:
             os.environ.setdefault("OLLAMA_API_URL", self.api_url)
+        
+        # Get context length from settings, with fallback to None (will use model default)
+        context_length_str = Environment.get("OLLAMA_CONTEXT_LENGTH")
+        self.default_context_length = int(context_length_str) if context_length_str else None
+        
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -140,7 +145,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
         self._model_info_cache: Dict[str, Any] = {}
-        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}")
+        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
@@ -407,7 +412,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
-        context_window: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -424,8 +428,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """
         log.debug(f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools")
 
+        # Use configured context length if available, otherwise query the model
+        context_window = self.default_context_length
         if context_window is None:
             context_window = self.get_context_length(model)
+        
         # Check if model supports native tool calling
         use_tool_emulation = False
         if len(tools) > 0 and not self.has_tool_support(model):
@@ -533,7 +540,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -565,7 +571,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 model,
                 tools,
                 max_tokens=max_tokens,
-                context_window=context_window,
                 **kwargs,
             )
             params["stream"] = True
@@ -627,7 +632,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:

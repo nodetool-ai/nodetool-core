@@ -68,10 +68,17 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Environment:
             LLAMA_CPP_URL: Required. URL of the external llama-server
                 (e.g., http://127.0.0.1:8080).
+            LLAMA_CPP_CONTEXT_LENGTH: Optional. Context window size in tokens.
+                If not set, defaults to 128000.
         """
         super().__init__()
         self._base_url = Environment.get("LLAMA_CPP_URL", "")
         self._server_manager = LlamaServerManager(ttl_seconds=ttl_seconds)
+        
+        # Get context length from settings, with fallback to 128000
+        context_length_str = Environment.get("LLAMA_CPP_CONTEXT_LENGTH")
+        self.default_context_length = int(context_length_str) if context_length_str else 128000
+        
         if self._base_url:
             log.info(f"Using llama-server at: {self._base_url}")
         else:
@@ -90,6 +97,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         except Exception as e:
             log.warning(f"Failed to load tiktoken encoding: {e}. Token counting may be inaccurate.")
             self._encoding = None
+        
+        log.debug(f"LlamaProvider initialized with default_context_length: {self.default_context_length}")
 
     def _normalize_messages_for_llama(
         self,
@@ -336,16 +345,15 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         )
 
     def get_context_length(self, model: str) -> int:
-        """Return an approximate context window for the provided model.
+        """Return the configured context window for the provider.
 
         Args:
             model: Model identifier passed to llama.cpp.
 
         Returns:
-            A conservative default context size; server may support more.
+            The configured context size from settings, or 128000 by default.
         """
-        # Defer to server; commonly 4k-128k. Return a safe default.
-        return 128000
+        return self.default_context_length
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
@@ -403,7 +411,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 1024,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -414,7 +421,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             model: Model spec (GGUF path or HF repo/tag) to run.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Unused hint; present for interface parity.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 
@@ -541,7 +547,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 1024,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -552,7 +557,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             model: Model spec (GGUF path or HF repo/tag) to run.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Unused hint; present for interface parity.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 

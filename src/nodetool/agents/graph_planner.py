@@ -1031,7 +1031,6 @@ class GraphPlanner:
                     model=self.model,
                     tools=[search_tool, SubmitWorkflowDesignTool()],
                     max_tokens=self.max_tokens,
-                    context_window=8192,
                 ):
                     if isinstance(chunk, Chunk):
                         if chunk.content:

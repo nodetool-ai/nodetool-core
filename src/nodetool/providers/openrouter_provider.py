@@ -444,7 +444,6 @@ class OpenRouterProvider(OpenAIProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 128000,
         json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
@@ -463,7 +462,6 @@ class OpenRouterProvider(OpenAIProvider):
             model: The model to use
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
-            context_window: The maximum number of tokens to consider for the context
             json_schema: Optional JSON schema for structured output
             temperature: Optional sampling temperature
             top_p: Optional nucleus sampling parameter
@@ -623,7 +621,6 @@ class OpenRouterProvider(OpenAIProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 128000,
         json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -637,7 +634,6 @@ class OpenRouterProvider(OpenAIProvider):
             model: Target model.
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
-            context_window: Maximum tokens considered for context.
             json_schema: Optional response schema.
             **kwargs: Additional parameters such as temperature.
 

@@ -433,7 +433,6 @@ class GeminiProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -543,7 +542,6 @@ class GeminiProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         audio: dict | None = None,
         **kwargs,

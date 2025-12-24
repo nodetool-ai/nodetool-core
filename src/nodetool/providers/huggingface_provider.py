@@ -707,7 +707,6 @@ class HuggingFaceProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -719,7 +718,6 @@ class HuggingFaceProvider(BaseProvider):
             model: Model identifier (can be repo_id like "microsoft/Phi-4-mini-flash-reasoning")
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
@@ -902,7 +900,6 @@ class HuggingFaceProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -916,7 +913,6 @@ class HuggingFaceProvider(BaseProvider):
             model: Model identifier
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 

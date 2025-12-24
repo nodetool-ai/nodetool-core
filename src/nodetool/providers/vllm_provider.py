@@ -202,7 +202,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -213,7 +212,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
             model: Model identifier to use for generation.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Maximum context window size.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 

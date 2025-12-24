@@ -376,7 +376,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -511,7 +510,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
