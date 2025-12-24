@@ -21,7 +21,6 @@ class UnifiedModel(BaseModel):
     readme: str | None = None
     downloaded: bool | None = None
     size_on_disk: int | None = None
-    downloaded: bool = False
     pipeline_tag: str | None = None
     tags: list[str] | None = None
     has_model_index: bool | None = None
