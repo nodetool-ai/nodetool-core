@@ -205,9 +205,7 @@ class TestProgressManager:
             manager.add_task("op1", "Test", total=100)
             manager.update_task("op1", completed=50, description="Half done")
 
-            mock_progress.update.assert_called_with(
-                1, advance=50, description="Half done"
-            )
+            mock_progress.update.assert_called_with(1, advance=50, description="Half done")
 
     def test_update_task_nonexistent(self, manager):
         """Test updating nonexistent task doesn't raise error."""
@@ -227,11 +225,7 @@ class TestProgressManager:
 
             # Should not call update for the lower value
             # Only the first update should have advance
-            calls = [
-                call
-                for call in mock_progress.update.call_args_list
-                if "advance" in call[1]
-            ]
+            calls = [call for call in mock_progress.update.call_args_list if "advance" in call[1]]
             assert len(calls) == 1
 
     def test_complete_task(self, manager):
@@ -262,11 +256,7 @@ class TestProgressManager:
             manager.complete_task("op1")
 
             # Should not try to update with completed
-            update_calls = [
-                call
-                for call in mock_progress.update.call_args_list
-                if "completed" in call[1]
-            ]
+            update_calls = [call for call in mock_progress.update.call_args_list if "completed" in call[1]]
             assert len(update_calls) == 0
             # Should still remove task
             mock_progress.remove_task.assert_called_with(1)
@@ -518,11 +508,7 @@ class TestProgressManagerEdgeCases:
             manager.update_task("op1", completed=0)
 
             # Should not try to advance
-            update_calls = [
-                call
-                for call in mock_progress.update.call_args_list
-                if "advance" in call[1]
-            ]
+            update_calls = [call for call in mock_progress.update.call_args_list if "advance" in call[1]]
             assert len(update_calls) == 0
 
     def test_display_progress_update_with_missing_fields(self, manager):
@@ -576,7 +562,4 @@ class TestProgressManagerEdgeCases:
 
             manager.add_task("op1", "📦 Downloading model 🚀", total=100)
 
-            assert (
-                manager.current_operations["op1"]["description"]
-                == "📦 Downloading model 🚀"
-            )
+            assert manager.current_operations["op1"]["description"] == "📦 Downloading model 🚀"

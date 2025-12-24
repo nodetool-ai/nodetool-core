@@ -64,9 +64,7 @@ class FinishTool(Tool):
     """Tool for completing a task with a direct value result."""
 
     name: str = "finish_task"
-    description: str = (
-        "Finish the task by providing the final result value and metadata."
-    )
+    description: str = "Finish the task by providing the final result value and metadata."
 
     def __init__(self, output_type: str, output_schema: Any):
         super().__init__()
@@ -85,9 +83,7 @@ class FinishTool(Tool):
             "additionalProperties": False,
         }
 
-    async def process(
-        self, _context: ProcessingContext, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def process(self, _context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         return params
 
 
@@ -176,17 +172,10 @@ Safety and privacy:
         ]
 
         if self.input_values:
-            input_str = "\n".join(
-                [
-                    f"- {key}: {self._format_value(val)}"
-                    for key, val in self.input_values.items()
-                ]
-            )
+            input_str = "\n".join([f"- {key}: {self._format_value(val)}" for key, val in self.input_values.items()])
             prompt_parts.append(f"**Input Values:**\n{input_str}\n")
 
-        prompt_parts.append(
-            "Please complete the objective using the provided input values."
-        )
+        prompt_parts.append("Please complete the objective using the provided input values.")
         task_prompt = "\n".join(prompt_parts)
 
         # Add to history
@@ -234,15 +223,9 @@ Safety and privacy:
 
                     # Add tool result to history (safe serialization)
                     try:
-                        serialized = (
-                            "Tool returned no output."
-                            if result is None
-                            else json.dumps(result)
-                        )
+                        serialized = "Tool returned no output." if result is None else json.dumps(result)
                     except TypeError as e:
-                        logger.error(
-                            f"Failed to serialize tool result for history: {e}. Result: {result}"
-                        )
+                        logger.error(f"Failed to serialize tool result for history: {e}. Result: {result}")
                         serialized = json.dumps(
                             {
                                 "error": f"Failed to serialize tool result: {e}",

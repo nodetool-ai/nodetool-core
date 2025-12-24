@@ -296,9 +296,7 @@ class TestDockerContainerLifecycle:
                 "nginx:alpine",
                 name=container_name,
                 detach=True,
-                volumes={
-                    str(temp_workspace): {"bind": "/data", "mode": "ro"}
-                },
+                volumes={str(temp_workspace): {"bind": "/data", "mode": "ro"}},
                 remove=False,
             )
 
@@ -380,10 +378,7 @@ class TestDockerCommandExecution:
         executor = LocalExecutor()
         container_name = "nodetool-nonexistent-12345"
 
-        exit_code, stdout, _stderr = executor.execute(
-            f"docker ps -aq --filter name=^{container_name}$",
-            check=False
-        )
+        exit_code, stdout, _stderr = executor.execute(f"docker ps -aq --filter name=^{container_name}$", check=False)
 
         assert exit_code == 0
         assert stdout.strip() == ""  # Should be empty
@@ -413,8 +408,7 @@ class TestHealthCheckWithDocker:
             # Use LocalExecutor to check status (simulates what deployer does)
             executor = LocalExecutor()
             exit_code, stdout, _stderr = executor.execute(
-                f"docker ps --filter name={container_name} --format '{{{{.Status}}}}'",
-                check=True
+                f"docker ps --filter name={container_name} --format '{{{{.Status}}}}'", check=True
             )
 
             assert exit_code == 0
@@ -449,10 +443,7 @@ class TestDockerCleanup:
         time.sleep(1)
 
         # Verify it exists
-        containers = docker_client.containers.list(
-            all=True,
-            filters={"name": container_name}
-        )
+        containers = docker_client.containers.list(all=True, filters={"name": container_name})
         assert len(containers) == 1
 
         # Remove it
@@ -460,10 +451,7 @@ class TestDockerCleanup:
         container.remove()
 
         # Verify it's gone
-        containers = docker_client.containers.list(
-            all=True,
-            filters={"name": container_name}
-        )
+        containers = docker_client.containers.list(all=True, filters={"name": container_name})
         assert len(containers) == 0
 
 

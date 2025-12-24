@@ -55,9 +55,7 @@ class ProxyRunGenerator:
             mount_root = os.path.commonpath([str(cert_parent), str(key_parent)])
             parts.append(f"-v {mount_root}:{mount_root}:ro")
 
-        parts.append(
-            "--group-add $(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo 0)"
-        )
+        parts.append("--group-add $(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo 0)")
         parts.append(f"--network {self.proxy.docker_network}")
 
         health_cmd = (

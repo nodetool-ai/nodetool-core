@@ -76,15 +76,11 @@ def convert_from_supabase_format(value: Any, py_type: Type | None) -> Any:
     return value
 
 
-def convert_from_supabase_attributes(
-    attributes: dict[str, Any], fields: Dict[str, FieldInfo]
-) -> dict[str, Any]:
+def convert_from_supabase_attributes(attributes: dict[str, Any], fields: Dict[str, FieldInfo]) -> dict[str, Any]:
     """Converts a dictionary of attributes from Supabase types."""
     return {
         key: (
-            convert_from_supabase_format(attributes[key], fields[key].annotation)
-            if key in fields
-            else attributes[key]
+            convert_from_supabase_format(attributes[key], fields[key].annotation) if key in fields else attributes[key]
         )
         for key in attributes
     }
@@ -132,26 +128,18 @@ class SupabaseAdapter(DatabaseAdapter):
         Implementing this via the client is less common and might require executing raw SQL.
         This implementation will raise a NotImplementedError.
         """
-        log.warning(
-            f"Table creation for '{self.table_name}' should ideally be handled by Supabase migrations."
-        )
+        log.warning(f"Table creation for '{self.table_name}' should ideally be handled by Supabase migrations.")
         # If direct creation is absolutely needed, implement using execute_sql with CREATE TABLE DDL.
         # Need to translate Python types to PostgreSQL types (similar to PostgresAdapter).
-        raise NotImplementedError(
-            "Table creation via adapter is not standard practice for Supabase."
-        )
+        raise NotImplementedError("Table creation via adapter is not standard practice for Supabase.")
 
     async def drop_table(self) -> None:
         """Drops the database table.
         NOTE: Like creation, dropping tables is usually done via Supabase UI/CLI or migrations.
         """
-        log.warning(
-            f"Table dropping for '{self.table_name}' should ideally be handled by Supabase migrations/UI."
-        )
+        log.warning(f"Table dropping for '{self.table_name}' should ideally be handled by Supabase migrations/UI.")
         # If needed, implement using execute_sql: f"DROP TABLE IF EXISTS {self.table_name}"
-        raise NotImplementedError(
-            "Table dropping via adapter is not standard practice for Supabase."
-        )
+        raise NotImplementedError("Table dropping via adapter is not standard practice for Supabase.")
 
     async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the Supabase table using upsert."""
@@ -175,9 +163,7 @@ class SupabaseAdapter(DatabaseAdapter):
             if not response.data:  # type: ignore
                 # Handle potential errors if needed, PostgREST errors might be in response directly
                 # or raise exceptions depending on the client version/config.
-                log.error(
-                    f"Supabase upsert failed for table {self.table_name}. Response: {response}"
-                )
+                log.error(f"Supabase upsert failed for table {self.table_name}. Response: {response}")
                 # Attempt to parse PostgrestError if available
                 # raise Exception(f"Supabase upsert failed: {getattr(response, 'error', 'Unknown error')}")
 
@@ -191,13 +177,7 @@ class SupabaseAdapter(DatabaseAdapter):
         select_columns = ", ".join(self.fields.keys())
 
         try:
-            response = await (
-                self.client.table(self.table_name)
-                .select(select_columns)
-                .eq(pk, key)
-                .limit(1)
-                .execute()
-            )
+            response = await self.client.table(self.table_name).select(select_columns).eq(pk, key).limit(1).execute()
 
             if response.data:  # type: ignore
                 return convert_from_supabase_attributes(dict(response.data[0]), self.fields)  # type: ignore[reportArgumentType]
@@ -205,36 +185,23 @@ class SupabaseAdapter(DatabaseAdapter):
                 # Check for errors in response if necessary
                 return None
         except Exception as e:
-            log.exception(
-                f"Error getting item {key} from Supabase table {self.table_name}: {e}"
-            )
+            log.exception(f"Error getting item {key} from Supabase table {self.table_name}: {e}")
             raise
 
     async def delete(self, primary_key: Any) -> None:
         """Deletes an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         try:
-            response = await (
-                self.client.table(self.table_name)
-                .delete()
-                .eq(pk, primary_key)
-                .execute()
-            )
+            response = await self.client.table(self.table_name).delete().eq(pk, primary_key).execute()
             # Check response for errors if needed
             if not response.data:  # type: ignore
-                log.warning(
-                    f"Potential issue deleting item {primary_key} from {self.table_name}. Response: {response}"
-                )
+                log.warning(f"Potential issue deleting item {primary_key} from {self.table_name}. Response: {response}")
 
         except Exception as e:
-            log.exception(
-                f"Error deleting item {primary_key} from Supabase table {self.table_name}: {e}"
-            )
+            log.exception(f"Error deleting item {primary_key} from Supabase table {self.table_name}: {e}")
             raise
 
-    def _apply_conditions(
-        self, query_builder, condition: Condition | ConditionGroup
-    ):
+    def _apply_conditions(self, query_builder, condition: Condition | ConditionGroup):
         """Applies conditions recursively to the Supabase query builder."""
         if isinstance(condition, Condition):
             field = condition.field
@@ -261,9 +228,7 @@ class SupabaseAdapter(DatabaseAdapter):
             elif op == Operator.CONTAINS:
                 query_builder = query_builder.contains(field, value)
             else:
-                raise NotImplementedError(
-                    f"Supabase adapter does not support operator: {op}"
-                )
+                raise NotImplementedError(f"Supabase adapter does not support operator: {op}")
 
         elif isinstance(condition, ConditionGroup):
             # Supabase client uses .or_() and .and_() for grouping, requiring specific syntax.
@@ -272,25 +237,19 @@ class SupabaseAdapter(DatabaseAdapter):
             # Example (may need refinement based on supabase-py version):
             filters = []
             for sub_condition in condition.conditions:
-                query_builder = self._apply_conditions(
-                    query_builder, sub_condition
-                )  # Apply sequentially
+                query_builder = self._apply_conditions(query_builder, sub_condition)  # Apply sequentially
 
             if condition.operator == LogicalOperator.AND:
                 # Chaining typically handles AND implicitly, but explicit might be needed
                 # query_builder = query_builder.filter(field, "and", f"({','.join(filters)})") # Check syntax
                 # Or simply chain the filters if supabase-py allows:
                 for sub_condition in condition.conditions:
-                    query_builder = self._apply_conditions(
-                        query_builder, sub_condition
-                    )  # Apply sequentially
+                    query_builder = self._apply_conditions(query_builder, sub_condition)  # Apply sequentially
             elif condition.operator == LogicalOperator.OR:
                 or_filter = f"or({','.join(filters)})"
                 query_builder = query_builder.or_(or_filter)  # Pass combined OR filter
             else:
-                raise ValueError(
-                    f"Unsupported ConditionGroup operator: {condition.operator}"
-                )
+                raise ValueError(f"Unsupported ConditionGroup operator: {condition.operator}")
 
         return query_builder
 
@@ -319,9 +278,7 @@ class SupabaseAdapter(DatabaseAdapter):
                 log.error(f"Query failed due to unsupported operator/condition: {e}")
                 raise  # Or return empty result?
 
-        query = query.order(order_by, desc=reverse) if order_by else query.order(
-            pk, desc=reverse
-        )
+        query = query.order(order_by, desc=reverse) if order_by else query.order(pk, desc=reverse)
 
         fetch_limit = limit + 1
         query = query.limit(fetch_limit)
@@ -352,9 +309,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
     # --- Index Management (Likely requires raw SQL via execute_sql) ---
 
-    async def create_index(
-        self, index_name: str, columns: List[str], unique: bool = False
-    ) -> None:
+    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
         """Creates an index using raw SQL."""
         raise NotImplementedError("Index creation is not supported for Supabase.")
 
@@ -365,7 +320,6 @@ class SupabaseAdapter(DatabaseAdapter):
     async def list_indexes(self) -> List[Dict[str, Any]]:
         """Lists indexes using raw SQL querying pg_catalog."""
         raise NotImplementedError("Index listing is not supported for Supabase.")
-
 
     async def auto_migrate(self):
         """

@@ -171,6 +171,4 @@ CONTENT_TYPE_TO_EXTENSION = {
     "application/x-fsharp": "fs",
 }
 
-EXTENSION_TO_CONTENT_TYPE = {
-    value: key for key, value in CONTENT_TYPE_TO_EXTENSION.items()
-}
+EXTENSION_TO_CONTENT_TYPE = {value: key for key, value in CONTENT_TYPE_TO_EXTENSION.items()}

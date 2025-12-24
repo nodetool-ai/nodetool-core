@@ -41,6 +41,7 @@ class MasterKeyManager:
         """Get or initialize the logger lazily to avoid circular imports."""
         if cls._logger is None:
             from nodetool.config.logging_config import get_logger
+
             cls._logger = get_logger(__name__)
         return cls._logger
 
@@ -61,10 +62,7 @@ class MasterKeyManager:
 
             # Create Secrets Manager client
             session = boto3.session.Session()
-            client = session.client(
-                service_name="secretsmanager",
-                region_name=region
-            )
+            client = session.client(service_name="secretsmanager", region_name=region)
 
             # Retrieve secret
             try:
@@ -76,6 +74,7 @@ class MasterKeyManager:
                 else:
                     # Binary secrets are base64-encoded
                     import base64
+
                     return base64.b64decode(response["SecretBinary"]).decode()
 
             except ClientError as e:
@@ -126,7 +125,9 @@ class MasterKeyManager:
                 cls._cached_master_key = aws_key
                 return aws_key
             else:
-                cls._get_logger().warning("Failed to retrieve master key from AWS Secrets Manager, falling back to keychain")
+                cls._get_logger().warning(
+                    "Failed to retrieve master key from AWS Secrets Manager, falling back to keychain"
+                )
 
         # 3. Try to get from system keychain (using asyncio.to_thread to avoid blocking event loop)
         try:
@@ -177,9 +178,7 @@ class MasterKeyManager:
             cls._get_logger().info("Master key updated successfully in system keychain")
         except KeyringError as e:
             cls._get_logger().error(f"Failed to update master key in system keychain: {e}")
-            raise RuntimeError(
-                "Failed to update master key in system keychain"
-            ) from e
+            raise RuntimeError("Failed to update master key in system keychain") from e
 
     @classmethod
     def delete_master_key(cls) -> None:
@@ -200,9 +199,7 @@ class MasterKeyManager:
             cls._get_logger().warning("Master key deleted from system keychain")
         except KeyringError as e:
             cls._get_logger().error(f"Failed to delete master key from system keychain: {e}")
-            raise RuntimeError(
-                "Failed to delete master key from system keychain"
-            ) from e
+            raise RuntimeError("Failed to delete master key from system keychain") from e
 
     @classmethod
     def clear_cache(cls) -> None:

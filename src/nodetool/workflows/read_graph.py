@@ -67,9 +67,7 @@ def create_node(node_id: str, node_data: Dict[str, Any]) -> Node:
     if CLASS_TYPE_KEY in node_data:
         node_class = get_comfy_class_by_name(node_data[CLASS_TYPE_KEY])
         if not node_class:
-            raise GraphParsingError(
-                f"Could not find node {node_data[CLASS_TYPE_KEY]} in comfy namespace"
-            )
+            raise GraphParsingError(f"Could not find node {node_data[CLASS_TYPE_KEY]} in comfy namespace")
         node_type = node_class.get_node_type()
     elif TYPE_KEY in node_data:
         node_class = get_node_class(node_data[TYPE_KEY])
@@ -80,17 +78,9 @@ def create_node(node_id: str, node_data: Dict[str, Any]) -> Node:
         raise GraphParsingError(f"Node {node_id} does not have a type")
 
     node_inputs = node_data.get(DATA_KEY, node_data.get(INPUTS_KEY, {}))
-    data = {
-        name: value
-        for name, value in node_inputs.items()
-        if not (isinstance(value, list) and len(value) == 2)
-    }
+    data = {name: value for name, value in node_inputs.items() if not (isinstance(value, list) and len(value) == 2)}
 
-    ui_properties = {
-        key: node_data[key]
-        for key in [POSITION_KEY, WIDTH_KEY, HEIGHT_KEY]
-        if key in node_data
-    }
+    ui_properties = {key: node_data[key] for key in [POSITION_KEY, WIDTH_KEY, HEIGHT_KEY] if key in node_data}
 
     return Node(
         id=node_id,
@@ -126,18 +116,14 @@ def create_edges(
             source_id, source_handle = input_value
             source_node = node_by_id.get(source_id)
             if source_node is None:
-                raise GraphParsingError(
-                    f"Could not find source node {source_id} referenced by {node_id}"
-                )
+                raise GraphParsingError(f"Could not find source node {source_id} referenced by {node_id}")
 
             # supporting comfy workflow format, which uses index instead of handle
             # the index will be resolved in the workflow runner
             if isinstance(source_handle, int):
                 source_node_class = get_node_class(source_node.type)
                 assert source_node_class
-                source_handle = str(
-                    source_node_class.find_output_by_index(source_handle).name
-                )
+                source_handle = str(source_node_class.find_output_by_index(source_handle).name)
 
             edge = Edge(
                 id=generate_edge_id(edges),
@@ -175,12 +161,7 @@ def get_edge_names(comfy_class: type) -> List[str]:
         List[str]: A list of input names for the node class.
     """
     if comfy_class:
-        inputs = list(
-            comfy_class.INPUT_TYPES
-            .__func__(comfy_class)
-            .get("required", {})
-            .items()
-        )
+        inputs = list(comfy_class.INPUT_TYPES.__func__(comfy_class).get("required", {}).items())
         return [name for name, value in inputs if not is_comfy_widget(value[0])]
     return []
 
@@ -199,12 +180,7 @@ def get_widget_names(class_name: str) -> List[str]:
 
     node_class = resolve_comfy_class(class_name)
     if node_class:
-        inputs = list(
-            node_class.INPUT_TYPES
-            .__func__(node_class)
-            .get("required", {})
-            .items()
-        )
+        inputs = list(node_class.INPUT_TYPES.__func__(node_class).get("required", {}).items())
         inputs = [name for name, value in inputs if is_comfy_widget(value[0])]
 
         # add seed_control_mode after seed for all samplers
@@ -252,9 +228,7 @@ def convert_graph(input_graph: dict[str, Any]) -> dict[str, Any]:
         # Add widget values if present
         if "widgets_values" in node:
             if node["type"] == "Note":
-                output_graph[node_id]["data"]["comment"] = [
-                    {"text": node["widgets_values"][0]}
-                ]
+                output_graph[node_id]["data"]["comment"] = [{"text": node["widgets_values"][0]}]
                 if "size" in node and isinstance(node["size"], dict):
                     output_graph[node_id][WIDTH_KEY] = node["size"]["0"]
                     output_graph[node_id][HEIGHT_KEY] = node["size"]["1"]
@@ -357,18 +331,14 @@ def read_graph(json: Dict[str, Any]) -> Tuple[List[Edge], List[Node]]:
             nodes.append(node)
             node_by_id[node_id] = node
         except GraphParsingError as e:
-            raise GraphParsingError(
-                f"Error creating node {node_id}: {str(e)}"
-            ) from e
+            raise GraphParsingError(f"Error creating node {node_id}: {str(e)}") from e
 
     # Second pass: create all edges
     for node_id, node_data in json.items():
         try:
             create_edges(edges, node_id, node_data, node_by_id)
         except GraphParsingError as e:
-            raise GraphParsingError(
-                f"Error creating edges for node {node_id}: {str(e)}"
-            ) from e
+            raise GraphParsingError(f"Error creating edges for node {node_id}: {str(e)}") from e
 
     return edges, nodes
 

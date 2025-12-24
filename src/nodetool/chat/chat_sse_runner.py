@@ -254,19 +254,11 @@ class ChatSSERunner(BaseChatRunner):
                 if isinstance(part, dict):
                     part_type = part.get("type")
                     if part_type == "text":
-                        message_contents.append(
-                            MessageTextContent(text=part.get("text", ""))
-                        )
+                        message_contents.append(MessageTextContent(text=part.get("text", "")))
                     elif part_type == "image_url":
                         image_url = part.get("image_url", {})
-                        url = (
-                            image_url.get("url", "")
-                            if isinstance(image_url, dict)
-                            else str(image_url)
-                        )
-                        message_contents.append(
-                            MessageImageContent(image=ImageRef(uri=url))
-                        )
+                        url = image_url.get("url", "") if isinstance(image_url, dict) else str(image_url)
+                        message_contents.append(MessageImageContent(image=ImageRef(uri=url)))
                     elif part_type == "input_audio":
                         # Handle audio input
                         message_contents.append(MessageAudioContent(audio=AudioRef()))
@@ -276,18 +268,10 @@ class ChatSSERunner(BaseChatRunner):
                         if part.type == "text" and hasattr(part, "text"):
                             message_contents.append(MessageTextContent(text=part.text))
                         elif part.type == "image_url" and hasattr(part, "image_url"):
-                            url = (
-                                part.image_url.url
-                                if hasattr(part.image_url, "url")
-                                else str(part.image_url)
-                            )
-                            message_contents.append(
-                                MessageImageContent(image=ImageRef(uri=url))
-                            )
+                            url = part.image_url.url if hasattr(part.image_url, "url") else str(part.image_url)
+                            message_contents.append(MessageImageContent(image=ImageRef(uri=url)))
                         elif part.type == "input_audio":
-                            message_contents.append(
-                                MessageAudioContent(audio=AudioRef())
-                            )
+                            message_contents.append(MessageAudioContent(audio=AudioRef()))
             return message_contents
         else:
             # Fallback to text
@@ -321,9 +305,7 @@ class ChatSSERunner(BaseChatRunner):
 
             # Convert tool calls if present
             if msg.get("tool_calls"):
-                api_message.tool_calls = self._convert_openai_tool_calls(
-                    msg["tool_calls"]
-                )
+                api_message.tool_calls = self._convert_openai_tool_calls(msg["tool_calls"])
 
             history.append(api_message)
 
@@ -361,9 +343,7 @@ class ChatSSERunner(BaseChatRunner):
                 tool_calls.append(tool_call)
         return tool_calls
 
-    def _convert_openai_tools(
-        self, openai_tools: List[ChatCompletionToolParam]
-    ) -> List[str]:
+    def _convert_openai_tools(self, openai_tools: List[ChatCompletionToolParam]) -> List[str]:
         """
         Convert OpenAI tool definitions to internal tool name list.
 
@@ -384,9 +364,7 @@ class ChatSSERunner(BaseChatRunner):
                     tool_names.append(function.name)
         return tool_names
 
-    def _convert_internal_to_openai_chunk(
-        self, chunk: Chunk, model: str
-    ) -> ChatCompletionChunk:
+    def _convert_internal_to_openai_chunk(self, chunk: Chunk, model: str) -> ChatCompletionChunk:
         """
         Convert internal chunk format to OpenAI streaming chunk format.
 
@@ -416,9 +394,7 @@ class ChatSSERunner(BaseChatRunner):
             ],
         )
 
-    def _create_openai_error_chunk(
-        self, error_message: str, model: str
-    ) -> ChatCompletionChunk:
+    def _create_openai_error_chunk(self, error_message: str, model: str) -> ChatCompletionChunk:
         """
         Create an OpenAI format error chunk.
 
@@ -467,9 +443,7 @@ class ChatSSERunner(BaseChatRunner):
 
             # Convert to internal format
             log.debug("Converting validated OpenAI request to internal format")
-            messages = self._convert_openai_messages(
-                validated_request["messages"], validated_request["model"]
-            )
+            messages = self._convert_openai_messages(validated_request["messages"], validated_request["model"])
 
             # Process the message in a background task using internal format
             self.current_task = asyncio.create_task(self.handle_message(messages))
@@ -478,9 +452,7 @@ class ChatSSERunner(BaseChatRunner):
             while True:
                 try:
                     # Wait for messages with a timeout to check if processing is done
-                    message = await asyncio.wait_for(
-                        self.message_queue.get(), timeout=0.1
-                    )
+                    message = await asyncio.wait_for(self.message_queue.get(), timeout=0.1)
 
                     if message is None:
                         # End of stream
@@ -490,18 +462,14 @@ class ChatSSERunner(BaseChatRunner):
                         chunk = Chunk(**message)
 
                         # Convert internal message to OpenAI chunk format and yield as SSE
-                        openai_chunk: ChatCompletionChunk = (
-                            self._convert_internal_to_openai_chunk(
-                                chunk, validated_request["model"]
-                            )
+                        openai_chunk: ChatCompletionChunk = self._convert_internal_to_openai_chunk(
+                            chunk, validated_request["model"]
                         )
                         yield f"data: {openai_chunk.model_dump_json()}\n\n"
                     elif message.get("type") == "error":
                         # Stream provider/internal errors as OpenAI-compatible chunks
                         error_text = str(message.get("message", "Unknown error"))
-                        openai_error = self._create_openai_error_chunk(
-                            error_text, validated_request["model"]
-                        )
+                        openai_error = self._create_openai_error_chunk(error_text, validated_request["model"])
                         yield f"data: {openai_error.model_dump_json()}\n\n"
 
                 except TimeoutError:
@@ -512,14 +480,8 @@ class ChatSSERunner(BaseChatRunner):
                             await self.current_task
                         except Exception as e:
                             # Send error and break
-                            model_name = (
-                                validated_request["model"]
-                                if validated_request
-                                else "unknown"
-                            )
-                            error_chunk = self._create_openai_error_chunk(
-                                str(e), model_name
-                            )
+                            model_name = validated_request["model"] if validated_request else "unknown"
+                            error_chunk = self._create_openai_error_chunk(str(e), model_name)
                             yield f"data: {error_chunk.model_dump_json()}\n\n"
                         break
                     continue
@@ -528,9 +490,7 @@ class ChatSSERunner(BaseChatRunner):
             log.info("SSE streaming cancelled")
             # Send cancellation message in OpenAI format
             model_name = validated_request["model"] if validated_request else "unknown"
-            cancel_chunk = self._create_openai_error_chunk(
-                "Generation stopped", model_name
-            )
+            cancel_chunk = self._create_openai_error_chunk("Generation stopped", model_name)
             yield f"data: {cancel_chunk.model_dump_json()}\n\n"
         except Exception as e:
             log.error(f"Error in SSE streaming: {str(e)}", exc_info=True)
@@ -543,9 +503,7 @@ class ChatSSERunner(BaseChatRunner):
             # Ensure cleanup
             await self.disconnect()
 
-    async def process_single_request(
-        self, request_data: dict
-    ) -> AsyncGenerator[str, None]:
+    async def process_single_request(self, request_data: dict) -> AsyncGenerator[str, None]:
         """
         Convenience method to process a single chat request with SSE.
 

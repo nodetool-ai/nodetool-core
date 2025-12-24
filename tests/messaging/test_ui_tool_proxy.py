@@ -56,4 +56,3 @@ async def test_ui_tool_proxy_error_payload_returns_error_dict(monkeypatch):
     result = await task
 
     assert result == {"error": "Frontend tool execution failed: boom"}
-

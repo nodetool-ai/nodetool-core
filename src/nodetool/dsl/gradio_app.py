@@ -103,6 +103,7 @@ def _runner_factory(
             return _collect_outputs(specs_out, namespace)
         except RuntimeError:
             import traceback
+
             error_payload = {
                 "error": "NodeTool runtime not available. Install nodetool and retry.",
                 "traceback": traceback.format_exc(),

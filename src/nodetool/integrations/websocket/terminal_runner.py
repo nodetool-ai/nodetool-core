@@ -81,9 +81,7 @@ class TerminalWebSocketRunner:
             except Exception as exc:
                 log.error("Failed to start Windows terminal session", exc_info=exc)
                 return False
-            log.info(
-                "Started Windows terminal session", extra={"pid": self.process.pid}
-            )
+            log.info("Started Windows terminal session", extra={"pid": self.process.pid})
             return True
 
         import pty
@@ -236,7 +234,7 @@ class TerminalWebSocketRunner:
 
             msg_type = data.get("type")
             if msg_type == "input":
-                log.debug("Terminal received input", extra={"length": len(str(data.get('data', '')))})
+                log.debug("Terminal received input", extra={"length": len(str(data.get("data", "")))})
                 await self._handle_input(str(data.get("data", "")))
             elif msg_type == "resize":
                 cols = int(data.get("cols", 0) or 0)

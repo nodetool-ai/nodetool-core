@@ -26,9 +26,7 @@ from .database_adapter import DatabaseAdapter
 log = get_logger(__name__)
 
 
-def convert_to_postgres_format(
-    value: Any, py_type: Type | None
-) -> int | float | str | bytes | Jsonb | None:
+def convert_to_postgres_format(value: Any, py_type: Type | None) -> int | float | str | bytes | Jsonb | None:
     """
     Convert a Python value to a format suitable for PostgreSQL based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -96,34 +94,24 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
         raise TypeError(f"Unsupported type for PostgreSQL: {py_type}")
 
 
-def convert_from_postgres_attributes(
-    attributes: Dict[str, Any], fields: Dict[str, FieldInfo]
-) -> Dict[str, Any]:
+def convert_from_postgres_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
     """
     Convert a dictionary of attributes from PostgreSQL to a dictionary of Python types based on the provided fields.
     """
     return {
         key: (
-            convert_from_postgres_format(attributes[key], fields[key].annotation)
-            if key in fields
-            else attributes[key]
+            convert_from_postgres_format(attributes[key], fields[key].annotation) if key in fields else attributes[key]
         )
         for key in attributes
     }
 
 
-def convert_to_postgres_attributes(
-    attributes: Dict[str, Any], fields: Dict[str, FieldInfo]
-) -> Dict[str, Any]:
+def convert_to_postgres_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
     """
     Convert a dictionary of attributes from PostgreSQL to a dictionary of Python types based on the provided fields.
     """
     return {
-        key: (
-            convert_to_postgres_format(attributes[key], fields[key].annotation)
-            if key in fields
-            else attributes[key]
-        )
+        key: (convert_to_postgres_format(attributes[key], fields[key].annotation) if key in fields else attributes[key])
         for key in attributes
     }
 
@@ -189,9 +177,7 @@ def translate_condition_to_sql(condition: str) -> str:
     return translated_condition
 
 
-def translate_postgres_params(
-    query: str, params: Dict[str, Any]
-) -> tuple[str, Dict[str, Any]]:
+def translate_postgres_params(query: str, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
     """
     Translate SQLite-style named parameters to PostgreSQL-style parameters.
     """
@@ -239,15 +225,11 @@ class PostgresAdapter(DatabaseAdapter):
         if await self.table_exists():
             await self.migrate_table()
             for index in self.indexes:
-                await self.create_index(
-                    index["name"], index["columns"], index["unique"]
-                )
+                await self.create_index(index["name"], index["columns"], index["unique"])
         else:
             await self.create_table()
             for index in self.indexes:
-                await self.create_index(
-                    index["name"], index["columns"], index["unique"]
-                )
+                await self.create_index(index["name"], index["columns"], index["unique"])
 
     async def _get_pool(self) -> AsyncConnectionPool:
         """Provides a lazy-loaded PostgreSQL connection pool using psycopg."""
@@ -348,15 +330,11 @@ class PostgresAdapter(DatabaseAdapter):
                 # Alter table to add new fields
                 for field_name in fields_to_add:
                     field_type = get_postgres_type(self.fields[field_name].annotation)
-                    await cursor.execute(
-                        f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}"
-                    )
+                    await cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")
 
                 # Alter table to remove fields
                 for field_name in fields_to_remove:
-                    await cursor.execute(
-                        f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}"
-                    )
+                    await cursor.execute(f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}")
 
             await conn.commit()
 
@@ -364,9 +342,7 @@ class PostgresAdapter(DatabaseAdapter):
         for field_name in fields_to_add:
             for index in self.indexes:
                 if field_name in index["columns"]:
-                    await self.create_index(
-                        index["name"], index["columns"], index["unique"]
-                    )
+                    await self.create_index(index["name"], index["columns"], index["unique"])
 
     async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item into the database table.
@@ -380,10 +356,7 @@ class PostgresAdapter(DatabaseAdapter):
         valid_keys = [key for key in item if key in self.fields]
         columns = ", ".join(valid_keys)
         placeholders = ", ".join([f"%({key})s" for key in valid_keys])
-        values = {
-            key: convert_to_postgres_format(item[key], self.fields[key].annotation)
-            for key in valid_keys
-        }
+        values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
         query = (
             f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders}) ON CONFLICT ({self.get_primary_key()}) DO UPDATE SET "
             + ", ".join([f"{key} = EXCLUDED.{key}" for key in valid_keys])
@@ -429,9 +402,7 @@ class PostgresAdapter(DatabaseAdapter):
                 await cursor.execute(query, (primary_key,))
             await conn.commit()
 
-    def _build_condition(
-        self, condition: Condition | ConditionGroup
-    ) -> tuple[Composed, list[Any]]:
+    def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[Composed, list[Any]]:
         """Recursively builds a psycopg2 SQL Composed object and parameters for a WHERE clause.
 
         Args:
@@ -443,9 +414,7 @@ class PostgresAdapter(DatabaseAdapter):
         if isinstance(condition, Condition):
             if condition.operator == Operator.IN:
                 placeholders = SQL(", ").join([Placeholder()] * len(condition.value))
-                sql = SQL("{} IN ({})").format(
-                    Identifier(condition.field), placeholders
-                )
+                sql = SQL("{} IN ({})").format(Identifier(condition.field), placeholders)
                 params = condition.value
             else:
                 sql = SQL("{} {} {}").format(
@@ -466,9 +435,7 @@ class PostgresAdapter(DatabaseAdapter):
                 return sub_conditions[0], params
             else:
                 return (
-                    SQL("({})").format(
-                        SQL(f" {condition.operator.value} ").join(sub_conditions)
-                    ),
+                    SQL("({})").format(SQL(f" {condition.operator.value} ").join(sub_conditions)),
                     params,
                 )
 
@@ -480,25 +447,17 @@ class PostgresAdapter(DatabaseAdapter):
         columns: List[str] | None = None,
     ) -> tuple[List[Dict[str, Any]], str]:
         pk = self.get_primary_key()
-        order_by = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(
-            Identifier(self.table_name), Identifier(pk)
-        )
+        order_by = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(Identifier(self.table_name), Identifier(pk))
 
         where_clause, params = self._build_condition(condition.build())
 
         if columns:
             cols = SQL(", ").join(
-                [
-                    SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
-                    for col in columns
-                ]
+                [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in columns]
             )
         else:
             cols = SQL(", ").join(
-                [
-                    SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
-                    for col in self.fields
-                ]
+                [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in self.fields]
             )
 
         fetch_limit = limit + 1
@@ -514,10 +473,7 @@ class PostgresAdapter(DatabaseAdapter):
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(query, params)
             rows = await cursor.fetchall()
-            res = [
-                convert_from_postgres_attributes(dict(row), self.fields)
-                for row in rows
-            ]
+            res = [convert_from_postgres_attributes(dict(row), self.fields) for row in rows]
 
         if len(res) <= limit:
             return res, ""
@@ -535,9 +491,7 @@ class PostgresAdapter(DatabaseAdapter):
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
             yield cursor
 
-    async def execute_sql(
-        self, sql: str, params: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+    async def execute_sql(self, sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
         Uses a RealDictCursor to return rows as dictionaries.
@@ -556,15 +510,10 @@ class PostgresAdapter(DatabaseAdapter):
             await cursor.execute(translated_sql, translated_params)
             if cursor.description:
                 rows = await cursor.fetchall()
-                return [
-                    convert_from_postgres_attributes(dict(row), self.fields)
-                    for row in rows
-                ]
+                return [convert_from_postgres_attributes(dict(row), self.fields) for row in rows]
             return []
 
-    async def create_index(
-        self, index_name: str, columns: List[str], unique: bool = False
-    ) -> None:
+    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
         unique_str = "UNIQUE" if unique else ""
         columns_str = ", ".join(columns)
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"

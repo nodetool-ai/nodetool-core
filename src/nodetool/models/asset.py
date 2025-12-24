@@ -58,9 +58,7 @@ class Asset(DBModel):
         """
         Returns True if the asset type supports thumbnails.
         """
-        return self.content_type.startswith("image/") or self.content_type.startswith(
-            "video/"
-        )
+        return self.content_type.startswith("image/") or self.content_type.startswith("video/")
 
     @property
     def file_name(self) -> str:
@@ -162,9 +160,7 @@ class Asset(DBModel):
         if start_key:
             condition = condition.and_(Field("id").greater_than(start_key))
         if content_type:
-            condition = condition.and_(
-                Field("content_type").like((content_type or "") + "%")
-            )
+            condition = condition.and_(Field("content_type").like((content_type or "") + "%"))
 
         return await cls.query(condition, limit, reverse)
 
@@ -191,9 +187,7 @@ class Asset(DBModel):
         """
 
         async def recursive_fetch(current_folder_id):
-            assets, _ = await cls.paginate(
-                user_id=user_id, parent_id=current_folder_id, limit=10000
-            )
+            assets, _ = await cls.paginate(user_id=user_id, parent_id=current_folder_id, limit=10000)
             result = []
             for asset in assets:
                 if asset.user_id != user_id:
@@ -257,17 +251,11 @@ class Asset(DBModel):
         sanitized_query = query.strip()
 
         # Build base condition for user and name search (consistent contains search for better UX)
-        condition = (
-            Field("user_id")
-            .equals(user_id)
-            .and_(Field("name").like(f"%{sanitized_query}%"))
-        )
+        condition = Field("user_id").equals(user_id).and_(Field("name").like(f"%{sanitized_query}%"))
 
         # Add content_type filter if specified
         if content_type:
-            condition = condition.and_(
-                Field("content_type").like((content_type or "") + "%")
-            )
+            condition = condition.and_(Field("content_type").like((content_type or "") + "%"))
 
         # Add pagination
         if start_key:
@@ -277,9 +265,7 @@ class Asset(DBModel):
         assets, next_cursor = await cls.query(condition, limit)
 
         # Get folder path information for each asset
-        folder_paths = await cls.get_asset_path_info(
-            user_id, [asset.id for asset in assets]
-        )
+        folder_paths = await cls.get_asset_path_info(user_id, [asset.id for asset in assets])
 
         # Convert folder_paths dict to list in same order as assets
         folder_path_list = []
@@ -298,9 +284,7 @@ class Asset(DBModel):
         return assets, next_cursor, folder_path_list
 
     @classmethod
-    async def get_asset_path_info(
-        cls, user_id: str, asset_ids: list[str]
-    ) -> Dict[str, Dict[str, str]]:
+    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
         """
         Get folder path information for given asset IDs using batch queries to avoid N+1 problem.
 
@@ -334,9 +318,7 @@ class Asset(DBModel):
         try:
             assets, _ = await cls.query(asset_condition, limit=len(asset_ids) * 2)
         except Exception:
-            log.warning(
-                f"Batch asset query failed, falling back to individual queries for user {user_id}"
-            )
+            log.warning(f"Batch asset query failed, falling back to individual queries for user {user_id}")
             return await cls._get_asset_path_info_fallback(user_id, asset_ids)
 
         # Create a map of assets by ID for quick lookup
@@ -356,22 +338,16 @@ class Asset(DBModel):
         if all_parent_ids:
             parent_condition = Field("user_id").equals(user_id)
             if len(all_parent_ids) == 1:
-                parent_condition = parent_condition.and_(
-                    Field("id").equals(next(iter(all_parent_ids)))
-                )
+                parent_condition = parent_condition.and_(Field("id").equals(next(iter(all_parent_ids))))
             else:
-                parent_id_conditions = [
-                    Field("id").equals(parent_id) for parent_id in all_parent_ids
-                ]
+                parent_id_conditions = [Field("id").equals(parent_id) for parent_id in all_parent_ids]
                 combined_parent_condition = parent_id_conditions[0]
                 for condition in parent_id_conditions[1:]:
                     combined_parent_condition = combined_parent_condition.or_(condition)
                 parent_condition = parent_condition.and_(combined_parent_condition)
 
             try:
-                parent_results, _ = await cls.query(
-                    parent_condition, limit=len(all_parent_ids) * 2
-                )
+                parent_results, _ = await cls.query(parent_condition, limit=len(all_parent_ids) * 2)
                 parent_assets = {asset.id: asset for asset in parent_results}
             except Exception:
                 log.warning(f"Batch parent query failed for user {user_id}")
@@ -423,9 +399,7 @@ class Asset(DBModel):
             folder_ids.reverse()
 
             # Get immediate parent info
-            immediate_parent_name = (
-                folder_path_parts[-1] if folder_path_parts else "Home"
-            )
+            immediate_parent_name = folder_path_parts[-1] if folder_path_parts else "Home"
             immediate_parent_id = folder_ids[-1] if folder_ids else user_id
 
             result[asset_id] = {
@@ -437,9 +411,7 @@ class Asset(DBModel):
         return result
 
     @classmethod
-    async def _get_asset_path_info_fallback(
-        cls, user_id: str, asset_ids: list[str]
-    ) -> Dict[str, Dict[str, str]]:
+    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
         """
         Fallback method for get_asset_path_info when batch queries fail.
         Uses individual queries but with better error handling.
@@ -485,9 +457,7 @@ class Asset(DBModel):
                 folder_ids.reverse()
 
                 # Get immediate parent info
-                immediate_parent_name = (
-                    folder_path_parts[-1] if folder_path_parts else "Home"
-                )
+                immediate_parent_name = folder_path_parts[-1] if folder_path_parts else "Home"
                 immediate_parent_id = folder_ids[-1] if folder_ids else user_id
 
                 result[asset_id] = {

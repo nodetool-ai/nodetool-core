@@ -110,9 +110,7 @@ class TestDynamicLanguageModels:
         """Test that errors from one provider don't prevent getting models from others."""
         mock_provider1 = MagicMock(spec=BaseProvider)
         mock_provider1.provider_name = "failing_provider"
-        mock_provider1.get_available_language_models = AsyncMock(
-            side_effect=Exception("API Error")
-        )
+        mock_provider1.get_available_language_models = AsyncMock(side_effect=Exception("API Error"))
 
         mock_provider2 = MagicMock(spec=BaseProvider)
         mock_provider2.provider_name = "working_provider"

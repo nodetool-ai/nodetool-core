@@ -45,9 +45,7 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     if type1.type == "union" and type2.type == "union":
         # For union subtyping: type1 is a subtype of type2 if every member of type1
         # is a subtype of at least one member of type2
-        return all(
-            any(typecheck(t1, t2) for t2 in type2.type_args) for t1 in type1.type_args
-        )
+        return all(any(typecheck(t1, t2) for t2 in type2.type_args) for t1 in type1.type_args)
 
     # Handle union types in type2 - type1 is a subtype if it's a subtype of any member
     if type2.type == "union":
@@ -71,16 +69,8 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
             return True
         if len(type1.type_args) == 0 or len(type2.type_args) == 0:
             # If one has no type args, treat it as list[any]
-            element_type1 = (
-                type1.type_args[0]
-                if len(type1.type_args) > 0
-                else TypeMetadata(type="any")
-            )
-            element_type2 = (
-                type2.type_args[0]
-                if len(type2.type_args) > 0
-                else TypeMetadata(type="any")
-            )
+            element_type1 = type1.type_args[0] if len(type1.type_args) > 0 else TypeMetadata(type="any")
+            element_type2 = type2.type_args[0] if len(type2.type_args) > 0 else TypeMetadata(type="any")
             return typecheck(element_type1, element_type2)
         return typecheck(type1.type_args[0], type2.type_args[0])
 
@@ -88,9 +78,7 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     if type1.type == "dict" and type2.type == "dict":
         if len(type1.type_args) != 2 or len(type2.type_args) != 2:
             return True  # If type args aren't fully specified, assume compatible
-        return typecheck(type1.type_args[0], type2.type_args[0]) and typecheck(
-            type1.type_args[1], type2.type_args[1]
-        )
+        return typecheck(type1.type_args[0], type2.type_args[0]) and typecheck(type1.type_args[1], type2.type_args[1])
 
     # Enum types - type1 values must be equal to type2 values for exact compatibility
     if type1.type == "enum" and type2.type == "enum":
@@ -160,11 +148,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     # Handle list types.
     if type_meta.type == "list":
         if python_type is list:
-            t = (
-                type_meta.type_args[0]
-                if len(type_meta.type_args) > 0
-                else TypeMetadata(type="any")
-            )
+            t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else TypeMetadata(type="any")
             return all(is_assignable(t, v) for v in value)
         # Handle ImageRef containing a list.
         if python_type == ImageRef:
@@ -177,20 +161,14 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             return True
         t = type_meta.type_args[0]  # Should handle potential Any type here if needed
         u = type_meta.type_args[1]  # Should handle potential Any type here if needed
-        return all(
-            is_assignable(t, k) and is_assignable(u, v) for k, v in value.items()
-        )
+        return all(is_assignable(t, k) and is_assignable(u, v) for k, v in value.items())
     # Handle float types, allowing integers as well.
     if type_meta.type == "float" and isinstance(value, (float, int)):
         return True
     # Handle tensor types (NPArray) - must come before asset type check
-    if (
-        type_meta.type == "tensor" or type_meta.type == "np_array"
-    ) and python_type == NPArray:
+    if (type_meta.type == "tensor" or type_meta.type == "np_array") and python_type == NPArray:
         t = (
-            type_meta.type_args[0]
-            if len(type_meta.type_args) > 0
-            else TypeMetadata(type="any")
+            type_meta.type_args[0] if len(type_meta.type_args) > 0 else TypeMetadata(type="any")
         )  # Use TypeMetadata for consistency
         # Convert NPArray to list to check element types
         data = value.to_list() if hasattr(value, "to_list") else list(value)
@@ -219,11 +197,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         else:
             # Check if the value is an instance of the expected asset class.
             # Special case for ModelRef which has type "model_ref" but maps to "model"
-            if (
-                hasattr(value, "type")
-                and type_meta.type == "model"
-                and value.type == "model_ref"
-            ):
+            if hasattr(value, "type") and type_meta.type == "model" and value.type == "model_ref":
                 return isinstance(value, python_class)
             return isinstance(value, python_class)
     # Handle union types.

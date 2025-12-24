@@ -8,9 +8,7 @@ from nodetool.types.chat import MessageList
 
 
 @pytest.mark.asyncio
-async def test_create_message(
-    client: TestClient, thread: Thread, headers: dict[str, str], user_id: str
-):
+async def test_create_message(client: TestClient, thread: Thread, headers: dict[str, str], user_id: str):
     message = APIMessage(thread_id=thread.id, role="user", content="Hello")
     json = message.model_dump()
     response = client.post("/api/messages/", json=json, headers=headers)
@@ -22,9 +20,7 @@ async def test_create_message(
 
 
 @pytest.mark.asyncio
-async def test_create_message_no_thread(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
+async def test_create_message_no_thread(client: TestClient, headers: dict[str, str], user_id: str):
     message = APIMessage(role="user", content="Hello")
     json = message.model_dump()
     response = client.post("/api/messages/", json=json, headers=headers)
@@ -37,9 +33,7 @@ async def test_create_message_no_thread(
 
 
 @pytest.mark.asyncio
-async def test_get_messages(
-    client: TestClient, message: Message, thread: Thread, headers: dict[str, str]
-):
+async def test_get_messages(client: TestClient, message: Message, thread: Thread, headers: dict[str, str]):
     response = client.get(
         "/api/messages/",
         headers=headers,
@@ -52,9 +46,7 @@ async def test_get_messages(
 
 
 @pytest.mark.asyncio
-async def test_get_messages_reverse(
-    client: TestClient, message: Message, thread: Thread, headers: dict[str, str]
-):
+async def test_get_messages_reverse(client: TestClient, message: Message, thread: Thread, headers: dict[str, str]):
     # create second message
     last_message = await Message.create(
         user_id=message.user_id,

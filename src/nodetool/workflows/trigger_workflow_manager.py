@@ -278,15 +278,12 @@ class TriggerWorkflowManager:
                     if not job.is_running() and not job.is_completed():
                         # Job died unexpectedly
                         log.warning(
-                            f"Trigger workflow {workflow_id} (job {job.job_id}) died unexpectedly, "
-                            f"status: {job.status}"
+                            f"Trigger workflow {workflow_id} (job {job.job_id}) died unexpectedly, status: {job.status}"
                         )
                         workflows_to_restart.append(workflow_id)
                     elif job.is_completed():
                         # Job completed (shouldn't happen for trigger workflows)
-                        log.warning(
-                            f"Trigger workflow {workflow_id} (job {job.job_id}) completed unexpectedly"
-                        )
+                        log.warning(f"Trigger workflow {workflow_id} (job {job.job_id}) completed unexpectedly")
                         workflows_to_restart.append(workflow_id)
 
                 # Restart dead workflows
@@ -356,7 +353,7 @@ class TriggerWorkflowManager:
                         # Start workflow under the owner's user_id
                         job = await self.start_trigger_workflow(
                             workflow,
-                            user_id=workflow.user_id  # Use workflow owner's user_id
+                            user_id=workflow.user_id,  # Use workflow owner's user_id
                         )
                         if job:
                             started += 1

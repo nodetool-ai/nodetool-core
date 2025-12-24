@@ -69,6 +69,30 @@ register_setting(
     description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:7777)",
 )
 
+# Ollama settings
+register_setting(
+    package_name="nodetool",
+    env_var="OLLAMA_CONTEXT_LENGTH",
+    group="Ollama",
+    description=(
+        "Context window size (in tokens) for Ollama models. "
+        "If not set, the provider will query the model for its default context length. "
+        "Common values: 2048, 4096, 8192, 16384, 32768, 128000"
+    ),
+)
+
+# Llama.cpp settings
+register_setting(
+    package_name="nodetool",
+    env_var="LLAMA_CPP_CONTEXT_LENGTH",
+    group="LlamaCpp",
+    description=(
+        "Context window size (in tokens) for llama.cpp models. "
+        "If not set, defaults to 128000. "
+        "Common values: 2048, 4096, 8192, 16384, 32768, 128000"
+    ),
+)
+
 # Node-specific Supabase settings (kept separate from core SUPABASE_* credentials)
 register_setting(
     package_name="nodetool",
@@ -116,10 +140,7 @@ register_secret(
     description="Gemini API key for accessing Google's Gemini AI models",
 )
 register_secret(
-    package_name="nodetool",
-    env_var="HF_TOKEN",
-    group="HF",
-    description="Token for HuggingFace Inference Providers"
+    package_name="nodetool", env_var="HF_TOKEN", group="HF", description="Token for HuggingFace Inference Providers"
 )
 register_secret(
     package_name="nodetool",
@@ -204,6 +225,12 @@ register_secret(
     env_var="DATA_FOR_SEO_PASSWORD",
     group="DataForSEO",
     description="DataForSEO password for accessing DataForSEO's API",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="KIE_API_KEY",
+    group="KIE",
+    description="KIE API key for accessing kie.ai"
 )
 register_secret(
     package_name="nodetool",
@@ -306,6 +333,7 @@ def save_settings(settings: Dict[str, Any]) -> None:
 
     with open(settings_file, "w") as f:
         yaml.dump(settings, f)
+
 
 def get_value(
     key: str,

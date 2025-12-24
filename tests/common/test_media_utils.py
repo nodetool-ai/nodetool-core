@@ -50,10 +50,9 @@ async def test_video_thumbnail():
 
         assert thumbnail is not None, "Thumbnail should not be None"
         assert isinstance(thumbnail, BytesIO), "Thumbnail should be a BytesIO object"
-        assert (
-            cv2.imdecode(np.frombuffer(thumbnail.read(), np.uint8), cv2.IMREAD_COLOR)
-            is not None
-        ), "Thumbnail should be a valid image"
+        assert cv2.imdecode(np.frombuffer(thumbnail.read(), np.uint8), cv2.IMREAD_COLOR) is not None, (
+            "Thumbnail should be a valid image"
+        )
 
 
 @pytest.mark.asyncio
@@ -66,7 +65,6 @@ async def test_image_thumbnail():
 
         assert thumbnail is not None, "Thumbnail should not be None"
         assert isinstance(thumbnail, BytesIO), "Thumbnail should be a BytesIO object"
-        assert (
-            cv2.imdecode(np.frombuffer(thumbnail.read(), np.uint8), cv2.IMREAD_COLOR)
-            is not None
-        ), "Thumbnail should be a valid image"
+        assert cv2.imdecode(np.frombuffer(thumbnail.read(), np.uint8), cv2.IMREAD_COLOR) is not None, (
+            "Thumbnail should be a valid image"
+        )

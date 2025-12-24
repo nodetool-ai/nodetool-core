@@ -199,9 +199,7 @@ class TestGetWorkerAuthToken:
         config_data = {"worker_auth_token": "config-token-456"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             token = get_worker_auth_token()
 
         assert token == "config-token-456"
@@ -210,9 +208,7 @@ class TestGetWorkerAuthToken:
         """Test token is auto-generated when not found."""
         config_file = tmp_path / "deployment.yaml"
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             token = get_worker_auth_token()
 
         # Should generate a token
@@ -232,9 +228,10 @@ class TestGetWorkerAuthToken:
         config_data = {"worker_auth_token": "config-token"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {"WORKER_AUTH_TOKEN": "env-token"}):
+        with (
+            patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file),
+            patch.dict(os.environ, {"WORKER_AUTH_TOKEN": "env-token"}),
+        ):
             token = get_worker_auth_token()
 
         assert token == "env-token"
@@ -243,9 +240,7 @@ class TestGetWorkerAuthToken:
         """Test that multiple calls return the same token."""
         config_file = tmp_path / "deployment.yaml"
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             token1 = get_worker_auth_token()
             token2 = get_worker_auth_token()
 
@@ -286,9 +281,7 @@ class TestGetTokenSource:
         config_data = {"worker_auth_token": "config-token"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             source = get_token_source()
 
         assert source == "config"
@@ -297,9 +290,7 @@ class TestGetTokenSource:
         """Test token source is generated."""
         config_file = tmp_path / "nonexistent.yaml"
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             source = get_token_source()
 
         assert source == "generated"
@@ -311,9 +302,10 @@ class TestGetTokenSource:
         config_file.write_text(yaml.dump(config_data))
 
         # With environment variable
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {"WORKER_AUTH_TOKEN": "env-token"}):
+        with (
+            patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file),
+            patch.dict(os.environ, {"WORKER_AUTH_TOKEN": "env-token"}),
+        ):
             assert get_token_source() == "environment"
 
 
@@ -327,9 +319,7 @@ class TestVerifyWorkerToken:
         config_data = {"worker_auth_token": "valid-token-123"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             result = await verify_worker_token("Bearer valid-token-123")
 
         assert result == "authenticated"
@@ -368,11 +358,11 @@ class TestVerifyWorkerToken:
         config_data = {"worker_auth_token": "correct-token"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file),
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await verify_worker_token("Bearer wrong-token")
 
         assert exc_info.value.status_code == 401
@@ -385,9 +375,7 @@ class TestVerifyWorkerToken:
         config_data = {"worker_auth_token": "token123"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             # Should work with lowercase
             result = await verify_worker_token("bearer token123")
             assert result == "authenticated"
@@ -403,11 +391,11 @@ class TestVerifyWorkerToken:
         config_data = {"worker_auth_token": "token123"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file),
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await verify_worker_token("Bearer  token123  extra")
 
         assert exc_info.value.status_code == 401
@@ -503,11 +491,11 @@ class TestAuthEdgeCases:
         config_data = {"worker_auth_token": "real-token"}
         config_file.write_text(yaml.dump(config_data))
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file),
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await verify_worker_token("Bearer ")
 
         assert exc_info.value.status_code == 401
@@ -516,9 +504,7 @@ class TestAuthEdgeCases:
         """Test that auto-generated token persists across calls."""
         config_file = tmp_path / "deployment.yaml"
 
-        with patch(
-            "nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file
-        ), patch.dict(os.environ, {}, clear=True):
+        with patch("nodetool.deploy.auth.DEPLOYMENT_CONFIG_FILE", config_file), patch.dict(os.environ, {}, clear=True):
             # First call generates and saves token
             token1 = get_worker_auth_token()
 

@@ -172,9 +172,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
             kwargs["inference_provider"] = "hf-inference"
         return kwargs
 
-    def create_huggingface_response(
-        self, content: str = "Hello, world!"
-    ) -> Dict[str, Any]:
+    def create_huggingface_response(self, content: str = "Hello, world!") -> Dict[str, Any]:
         """Create a realistic HuggingFace TGI API response."""
         return {
             "id": "chatcmpl-123",
@@ -191,9 +189,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
             "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
         }
 
-    def create_huggingface_streaming_responses(
-        self, text: str = "Hello world!"
-    ) -> List[str]:
+    def create_huggingface_streaming_responses(self, text: str = "Hello world!") -> List[str]:
         """Create realistic HuggingFace TGI streaming response chunks."""
         chunks = []
         words = text.split()
@@ -285,9 +281,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         async def mock_chat_completion(*args, **kwargs):
             return _Completion(content)
 
-        return patch.object(
-            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion
-        )  # type: ignore[return-value]
+        return patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion)  # type: ignore[return-value]
 
     def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
         """Mock HuggingFace TGI streaming API call."""
@@ -329,9 +323,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         async def mock_chat_completion(*args, **kwargs):
             return mock_stream()
 
-        return patch.object(
-            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion
-        )
+        return patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion)
 
     def mock_error_response(self, error_type: str):
         """Mock HuggingFace API error response."""
@@ -354,24 +346,20 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 response=MagicMock(status_code=status_code, text=f"Error {status_code}"),
             )
 
-            with patch.object(
-                AsyncInferenceClient, "chat_completion", side_effect=error
-            ), patch(
-                "nodetool.providers.huggingface_provider.asyncio.sleep"
-            ) as mock_sleep, pytest.raises(
-                Exception
-            ) as exc_info:
-                await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+            with (
+                patch.object(AsyncInferenceClient, "chat_completion", side_effect=error),
+                patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep,
+                pytest.raises(Exception) as exc_info,
+            ):
+                await provider.generate_message(self.create_simple_messages(), "test-model")
 
             # Verify the error was raised
             assert f"{status_code}" in str(exc_info.value)
 
             # Verify asyncio.sleep was NOT called (no retries)
-            assert (
-                mock_sleep.call_count == 0
-            ), f"4xx error {status_code} should not be retried, but sleep was called {mock_sleep.call_count} times"
+            assert mock_sleep.call_count == 0, (
+                f"4xx error {status_code} should not be retried, but sleep was called {mock_sleep.call_count} times"
+            )
 
     @pytest.mark.asyncio
     async def test_5xx_errors_retried_with_exponential_backoff(self):
@@ -385,26 +373,23 @@ class TestHuggingFaceProvider(BaseProviderTest):
             response=MagicMock(status_code=500, text="Internal Server Error"),
         )
 
-        with patch.object(
-            AsyncInferenceClient, "chat_completion", side_effect=error
-        ), patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+        with (
+            patch.object(AsyncInferenceClient, "chat_completion", side_effect=error),
+            patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep,
+        ):
             with pytest.raises(Exception) as exc_info:
-                await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+                await provider.generate_message(self.create_simple_messages(), "test-model")
 
             # Verify the error was raised after all retries
             assert "500" in str(exc_info.value)
 
             # Verify exponential backoff: 3 retries with delays of 1s, 2s, 4s
-            assert mock_sleep.call_count == 3, \
-                    f"Expected 3 sleep calls (retries), got {mock_sleep.call_count}"
+            assert mock_sleep.call_count == 3, f"Expected 3 sleep calls (retries), got {mock_sleep.call_count}"
 
             # Verify the delays match exponential backoff
             expected_delays = [1.0, 2.0, 4.0]
             actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
-            assert actual_delays == expected_delays, \
-                    f"Expected delays {expected_delays}, got {actual_delays}"
+            assert actual_delays == expected_delays, f"Expected delays {expected_delays}, got {actual_delays}"
 
     @pytest.mark.asyncio
     async def test_retry_succeeds_on_second_attempt(self):
@@ -450,12 +435,11 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 # Second call succeeds
                 return _Completion("Success after retry")
 
-        with patch.object(
-            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion_with_retry
-        ), patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
-            response = await provider.generate_message(
-                self.create_simple_messages(), "test-model"
-            )
+        with (
+            patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion_with_retry),
+            patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep,
+        ):
+            response = await provider.generate_message(self.create_simple_messages(), "test-model")
 
             # Verify we got a successful response
             assert response.role == "assistant"
@@ -470,12 +454,8 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Test integration with Text Generation Inference server."""
         provider = self.create_provider()
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("TGI server response")
-        ):
-            response = await provider.generate_message(
-                self.create_simple_messages(), "microsoft/DialoGPT-medium"
-            )
+        with self.mock_api_call(ResponseFixtures.simple_text_response("TGI server response")):
+            response = await provider.generate_message(self.create_simple_messages(), "microsoft/DialoGPT-medium")
 
         assert response.role == "assistant"
 
@@ -492,12 +472,8 @@ class TestHuggingFaceProvider(BaseProviderTest):
         ]
 
         for model in models:
-            with self.mock_api_call(
-                ResponseFixtures.simple_text_response(f"Response from {model}")
-            ):
-                response = await provider.generate_message(
-                    self.create_simple_messages(f"Test {model}"), model
-                )
+            with self.mock_api_call(ResponseFixtures.simple_text_response(f"Response from {model}")):
+                response = await provider.generate_message(self.create_simple_messages(f"Test {model}"), model)
             assert response.role == "assistant"
 
     @pytest.mark.asyncio
@@ -505,9 +481,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Test custom generation parameters."""
         provider = self.create_provider()
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Custom response")
-        ) as mock_call:
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Custom response")) as mock_call:
             await provider.generate_message(self.create_simple_messages(), "test-model")
 
         # Verify parameters were passed
@@ -530,9 +504,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
                     ],
                     "test-model",
                 )
-            assert (
-                "413" in str(exc_info.value) or "context" in str(exc_info.value).lower()
-            )
+            assert "413" in str(exc_info.value) or "context" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_rate_limiting(self):
@@ -541,9 +513,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
         with self.mock_error_response("rate_limit"):
             with pytest.raises(Exception) as exc_info:
-                await provider.generate_message(
-                    self.create_simple_messages(), "test-model"
-                )
+                await provider.generate_message(self.create_simple_messages(), "test-model")
             assert "429" in str(exc_info.value) or "rate" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
@@ -552,21 +522,15 @@ class TestHuggingFaceProvider(BaseProviderTest):
         provider = self.create_provider()
 
         # Test model not found
-        with self.mock_error_response("model_not_found"), pytest.raises(
-            httpx.HTTPStatusError
-        ):
-            await provider.generate_message(
-                self.create_simple_messages(), "nonexistent/model"
-            )
+        with self.mock_error_response("model_not_found"), pytest.raises(httpx.HTTPStatusError):
+            await provider.generate_message(self.create_simple_messages(), "nonexistent/model")
 
     @pytest.mark.asyncio
     async def test_custom_stopping_criteria(self):
         """Test custom stopping sequences."""
         provider = self.create_provider()
 
-        with self.mock_api_call(
-            ResponseFixtures.simple_text_response("Response with stop")
-        ) as mock_call:
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Response with stop")) as mock_call:
             await provider.generate_message(self.create_simple_messages(), "test-model")
 
         mock_call.assert_called_once()

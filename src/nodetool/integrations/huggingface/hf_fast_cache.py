@@ -179,9 +179,7 @@ class HfFastCache:
             return str(resolved)
         return str(candidate)
 
-    async def exists(
-        self, repo_id: str, relpath: str, repo_type: Optional[str] = None
-    ) -> bool:
+    async def exists(self, repo_id: str, relpath: str, repo_type: Optional[str] = None) -> bool:
         """Return whether a repo-relative path exists in the cache.
 
         Args:
@@ -197,9 +195,7 @@ class HfFastCache:
         """
         return (await self.resolve(repo_id, relpath, repo_type=repo_type)) is not None
 
-    async def list_files(
-        self, repo_id: str, repo_type: Optional[str] = None
-    ) -> List[str]:
+    async def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> List[str]:
         """List files in the active snapshot for a repo.
 
         The first call for a given repo walks only that repo's active snapshot
@@ -216,11 +212,7 @@ class HfFastCache:
                 Returns an empty list if the repo is not cached locally.
         """
         state = await self._ensure_repo_state(repo_id, repo_type)
-        if (
-            state is None
-            or state.snapshot_dir is None
-            or not await _exists(state.snapshot_dir)
-        ):
+        if state is None or state.snapshot_dir is None or not await _exists(state.snapshot_dir):
             return []
 
         if state.file_index is not None:
@@ -235,9 +227,7 @@ class HfFastCache:
         state.snapshot_file_count = len(files)
         return files
 
-    async def invalidate(
-        self, repo_id: Optional[str] = None, repo_type: Optional[str] = None
-    ) -> None:
+    async def invalidate(self, repo_id: Optional[str] = None, repo_type: Optional[str] = None) -> None:
         """Forget cached state for one repo or all repos.
 
         Args:
@@ -254,9 +244,7 @@ class HfFastCache:
             for key in key_candidates:
                 self._repos.pop(key, None)
 
-    async def repo_root(
-        self, repo_id: str, repo_type: Optional[str] = None
-    ) -> Optional[str]:
+    async def repo_root(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
         """Return the cache directory for a given repo.
 
         Args:
@@ -268,14 +256,10 @@ class HfFastCache:
             Optional[str]: Absolute path to the repo directory under the cache
             root, or ``None`` if the repo is not present.
         """
-        state = await self._ensure_repo_state(
-            repo_id, repo_type, create_if_missing=False
-        )
+        state = await self._ensure_repo_state(repo_id, repo_type, create_if_missing=False)
         return str(state.repo_dir) if state is not None else None
 
-    async def active_snapshot_dir(
-        self, repo_id: str, repo_type: Optional[str] = None
-    ) -> Optional[str]:
+    async def active_snapshot_dir(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
         """Return the active snapshot directory for a given repo.
 
         Args:
@@ -366,9 +350,7 @@ class HfFastCache:
 
             for key in key_candidates:
                 repo_type_normalized, norm_repo_id = key.split(":", 1)
-                repo_dir = await _find_repo_dir_async(
-                    self.cache_dir, norm_repo_id, repo_type_normalized
-                )
+                repo_dir = await _find_repo_dir_async(self.cache_dir, norm_repo_id, repo_type_normalized)
                 if repo_dir is None:
                     continue
                 state = _RepoState(
@@ -385,9 +367,7 @@ class HfFastCache:
     async def _maybe_refresh_state(self, state: _RepoState) -> None:
         """Refresh a repo state if refs or snapshot mtimes changed."""
         refs_mtime_now, commit_now = await _read_current_ref_async(state.repo_dir)
-        snapshot_dir_now = await _snapshot_dir_for_commit_async(
-            state.repo_dir, commit_now
-        )
+        snapshot_dir_now = await _snapshot_dir_for_commit_async(state.repo_dir, commit_now)
 
         if _changed(refs_mtime_now, state.refs_mtime) or commit_now != state.commit:
             state.commit = commit_now
@@ -406,16 +386,11 @@ class HfFastCache:
             state.snapshot_file_count = None
         elif state.file_index is not None and snapshot_dir_now is not None:
             current_count = await _count_files_async(snapshot_dir_now)
-            if (
-                state.snapshot_file_count is None
-                or current_count != state.snapshot_file_count
-            ):
+            if state.snapshot_file_count is None or current_count != state.snapshot_file_count:
                 state.file_index = None
             state.snapshot_file_count = current_count
 
-        if state.commit is None and (
-            state.snapshot_dir is None or not await _exists(state.snapshot_dir)
-        ):
+        if state.commit is None and (state.snapshot_dir is None or not await _exists(state.snapshot_dir)):
             state.snapshot_dir = await _pick_latest_snapshot_async(state.repo_dir)
             state.snapshot_mtime = await _mtime_or_none_async(state.snapshot_dir)
             state.file_index = None
@@ -428,9 +403,7 @@ class HfFastCache:
         state.refs_mtime = refs_mtime
 
         if commit:
-            state.snapshot_dir = await _snapshot_dir_for_commit_async(
-                state.repo_dir, commit
-            )
+            state.snapshot_dir = await _snapshot_dir_for_commit_async(state.repo_dir, commit)
         else:
             state.snapshot_dir = await _pick_latest_snapshot_async(state.repo_dir)
 
@@ -468,9 +441,7 @@ def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
     return keys
 
 
-def _normalize_repo_id_and_type(
-    repo_id: str, repo_type: Optional[str]
-) -> Tuple[Optional[str], str]:
+def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple[Optional[str], str]:
     """Normalize repo ID and type into a canonical pair."""
     repo_id = repo_id.strip().strip("/")
     parts = repo_id.split("/")
@@ -505,9 +476,7 @@ def _normalize_repo_type(repo_type: Optional[str]) -> Optional[str]:
     raise ValueError(f"Unknown repo_type: {repo_type}")
 
 
-async def _find_repo_dir_async(
-    cache_dir: Path, repo_id: str, repo_type: str
-) -> Optional[Path]:
+async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) -> Optional[Path]:
     """Translate a repo ID into an on-disk directory under the cache."""
     assert repo_type in {"models", "datasets", "spaces"}
     repo_bits = [bit for bit in repo_id.split("/") if bit]
@@ -554,18 +523,12 @@ async def _read_current_ref_async(
         return None, None
 
     return (
-        (
-            newest_mtime
-            if newest_mtime is not None
-            else await _mtime_or_none_async(refs_dir)
-        ),
+        (newest_mtime if newest_mtime is not None else await _mtime_or_none_async(refs_dir)),
         newest_commit,
     )
 
 
-async def _snapshot_dir_for_commit_async(
-    repo_dir: Path, commit: Optional[str]
-) -> Optional[Path]:
+async def _snapshot_dir_for_commit_async(repo_dir: Path, commit: Optional[str]) -> Optional[Path]:
     """Return the snapshot directory for a given commit hash."""
     if not commit:
         return None

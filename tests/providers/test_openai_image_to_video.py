@@ -171,9 +171,7 @@ class TestOpenAIImageToVideoDimensions:
         )
 
         # Mock the API calls
-        with patch.object(
-            provider, "_create_video_job_with_image", new_callable=AsyncMock
-        ) as mock_create:
+        with patch.object(provider, "_create_video_job_with_image", new_callable=AsyncMock) as mock_create:
             # Create a mock video response
             mock_video = MagicMock()
             mock_video.id = "test-video-id"
@@ -182,9 +180,7 @@ class TestOpenAIImageToVideoDimensions:
             mock_video.error = None
             mock_create.return_value = mock_video
 
-            with patch.object(
-                provider, "_download_video_content", new_callable=AsyncMock
-            ) as mock_download:
+            with patch.object(provider, "_download_video_content", new_callable=AsyncMock) as mock_download:
                 mock_download.return_value = b"fake video content"
 
                 # Call image_to_video
@@ -226,9 +222,7 @@ class TestOpenAIImageToVideoDimensions:
                 prompt="Test",
             )
 
-            with patch.object(
-                provider, "_create_video_job_with_image", new_callable=AsyncMock
-            ) as mock_create:
+            with patch.object(provider, "_create_video_job_with_image", new_callable=AsyncMock) as mock_create:
                 mock_video = MagicMock()
                 mock_video.id = "test-id"
                 mock_video.status = "completed"
@@ -236,9 +230,7 @@ class TestOpenAIImageToVideoDimensions:
                 mock_video.error = None
                 mock_create.return_value = mock_video
 
-                with patch.object(
-                    provider, "_download_video_content", new_callable=AsyncMock
-                ) as mock_download:
+                with patch.object(provider, "_download_video_content", new_callable=AsyncMock) as mock_download:
                     mock_download.return_value = b"fake video"
 
                     try:
@@ -247,9 +239,9 @@ class TestOpenAIImageToVideoDimensions:
                         pass
 
                     call_kwargs = mock_create.call_args[1]
-                    assert (
-                        call_kwargs["size"] == expected_size
-                    ), f"Expected {expected_size} for {width}x{height}, got {call_kwargs['size']}"
+                    assert call_kwargs["size"] == expected_size, (
+                        f"Expected {expected_size} for {width}x{height}, got {call_kwargs['size']}"
+                    )
 
     @pytest.mark.asyncio
     async def test_image_to_video_invalid_image_raises_error(self):
@@ -263,7 +255,5 @@ class TestOpenAIImageToVideoDimensions:
             prompt="Test",
         )
 
-        with pytest.raises(
-            ValueError, match="Could not prepare image for video generation"
-        ):
+        with pytest.raises(ValueError, match="Could not prepare image for video generation"):
             await provider.image_to_video(invalid_image, params, timeout_s=60)

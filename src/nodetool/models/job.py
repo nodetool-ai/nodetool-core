@@ -50,17 +50,13 @@ class Job(DBModel):
     ):
         if workflow_id:
             items, key = await cls.query(
-                Field("workflow_id")
-                .equals(workflow_id)
-                .and_(Field("id").greater_than(start_key or "")),
+                Field("workflow_id").equals(workflow_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
             return items, key
         elif user_id:
             items, key = await cls.query(
-                Field("user_id")
-                .equals(user_id)
-                .and_(Field("id").greater_than(start_key or "")),
+                Field("user_id").equals(user_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
             return items, key

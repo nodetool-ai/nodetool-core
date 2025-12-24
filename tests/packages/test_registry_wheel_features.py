@@ -53,9 +53,7 @@ class TestPackageIndexAvailability:
 
     def test_check_package_index_available_exception(self, mock_registry):
         """Test package index availability check with network exception."""
-        with patch(
-            "requests.get", side_effect=requests.RequestException("Network error")
-        ):
+        with patch("requests.get", side_effect=requests.RequestException("Network error")):
             result = mock_registry.check_package_index_available()
 
             assert result is False
@@ -90,9 +88,7 @@ class TestInstallationInfoMethods:
         """Test install command when wheels are available."""
         repo_id = "nodetool-ai/nodetool-base"
 
-        with patch.object(
-            mock_registry, "check_package_index_available", return_value=True
-        ):
+        with patch.object(mock_registry, "check_package_index_available", return_value=True):
             command = mock_registry.get_install_command_for_package(repo_id)
 
             expected = f"pip install --index-url {PACKAGE_INDEX_URL} nodetool-base"
@@ -102,9 +98,7 @@ class TestInstallationInfoMethods:
         """Test install command when wheels are not available."""
         repo_id = "nodetool-ai/nodetool-base"
 
-        with patch.object(
-            mock_registry, "check_package_index_available", return_value=False
-        ):
+        with patch.object(mock_registry, "check_package_index_available", return_value=False):
             command = mock_registry.get_install_command_for_package(repo_id)
 
             expected = f"pip install git+https://github.com/{repo_id}"
@@ -114,9 +108,7 @@ class TestInstallationInfoMethods:
         """Test comprehensive package installation information."""
         repo_id = "nodetool-ai/nodetool-base"
 
-        with patch.object(
-            mock_registry, "check_package_index_available", return_value=True
-        ):
+        with patch.object(mock_registry, "check_package_index_available", return_value=True):
             info = mock_registry.get_package_installation_info(repo_id)
 
             expected = {
@@ -134,16 +126,11 @@ class TestInstallationInfoMethods:
         """Test package installation info when wheels unavailable."""
         repo_id = "nodetool-ai/nodetool-base"
 
-        with patch.object(
-            mock_registry, "check_package_index_available", return_value=False
-        ):
+        with patch.object(mock_registry, "check_package_index_available", return_value=False):
             info = mock_registry.get_package_installation_info(repo_id)
 
             assert info["wheel_available"] is False
-            assert (
-                info["recommended_command"]
-                == f"pip install git+https://github.com/{repo_id}"
-            )
+            assert info["recommended_command"] == f"pip install git+https://github.com/{repo_id}"
 
 
 class TestCacheManagement:

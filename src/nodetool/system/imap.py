@@ -36,9 +36,7 @@ def create_gmail_connection(email_address: str, app_password: str) -> IMAPConnec
     )
 
 
-def decode_bytes_with_fallback(
-    byte_string: bytes, encodings=("utf-8", "latin-1", "ascii")
-) -> str:
+def decode_bytes_with_fallback(byte_string: bytes, encodings=("utf-8", "latin-1", "ascii")) -> str:
     """
     Attempts to decode bytes using multiple encodings with fallback to empty string.
 
@@ -79,18 +77,10 @@ def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
     email_message = email.message_from_bytes(email_body)
 
     subject = decode_header(email_message["Subject"])[0][0]
-    subject = (
-        decode_bytes_with_fallback(subject)
-        if isinstance(subject, bytes)
-        else str(subject)
-    )
+    subject = decode_bytes_with_fallback(subject) if isinstance(subject, bytes) else str(subject)
 
     from_addr = decode_header(email_message["From"])[0][0]
-    from_addr = (
-        decode_bytes_with_fallback(from_addr)
-        if isinstance(from_addr, bytes)
-        else str(from_addr)
-    )
+    from_addr = decode_bytes_with_fallback(from_addr) if isinstance(from_addr, bytes) else str(from_addr)
 
     date_str = email_message["Date"]
     date = parsedate_to_datetime(date_str) if date_str else None
@@ -212,9 +202,7 @@ def build_imap_query(criteria: EmailSearchCriteria) -> str:
     return " ".join(query_parts)
 
 
-def search_emails(
-    imap: imaplib.IMAP4_SSL, criteria: EmailSearchCriteria, max_results: int = 50
-) -> List[str]:
+def search_emails(imap: imaplib.IMAP4_SSL, criteria: EmailSearchCriteria, max_results: int = 50) -> List[str]:
     """
     Searches emails using IMAP search criteria.
 

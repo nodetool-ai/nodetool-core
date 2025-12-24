@@ -41,6 +41,9 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
+# Default context length for Ollama models when not configured
+DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096
+
 # Only register the provider if OLLAMA_API_URL is explicitly set
 _ollama_api_url = Environment.get("OLLAMA_API_URL")
 
@@ -132,6 +135,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.api_url = api_url or Environment.get("OLLAMA_API_URL")
         if self.api_url:
             os.environ.setdefault("OLLAMA_API_URL", self.api_url)
+        
+        # Get context length from settings, with fallback to None (will use model default)
+        context_length_str = Environment.get("OLLAMA_CONTEXT_LENGTH")
+        self.default_context_length = int(context_length_str) if context_length_str else None
+        
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -140,9 +148,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
         self._model_info_cache: Dict[str, Any] = {}
-        log.debug(
-            f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}"
-        )
+        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
@@ -177,45 +183,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Model info: {model_info}")
         return model_info
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        try:
-            # Use cached model info
-            model_response = self._get_model_info(model)
-            model_info = model_response.modelinfo
-            log.debug(f"Model info: {model_info}")
-            if model_info is None:
-                log.debug("Model info is None, using default context length: 4096")
-                return 4096
-
-            log.debug(f"Model info keys: {list(model_info.keys())}")
-
-            for key, value in model_info.items():
-                if ".context_length" in key:
-                    log.debug(f"Found context length in model info: {key} = {value}")
-                    return int(value)
-
-            # Otherwise, try to extract from modelfile parameters
-            if model_info["modelfile"]:
-                modelfile = model_info["modelfile"]
-                param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
-                if param_match:
-                    context_length = int(param_match.group(1))
-                    log.debug(f"Found context length in modelfile: {context_length}")
-                    return context_length
-                else:
-                    log.debug("No num_ctx parameter found in modelfile")
-
-            # Default fallback if we can't determine the context length
-            log.warning("Using default context length: 4096")
-            return 4096
-        except Exception as e:
-            log.error(f"Error determining model context length: {e}")
-            print(f"Error determining model context length: {e}")
-            # Fallback to a reasonable default
-            return 4096
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
@@ -236,9 +203,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             # Check if capabilities field exists and contains "tools"
             if hasattr(model_info, "capabilities") and model_info.capabilities:
                 has_tools = "tools" in model_info.capabilities
-                log.debug(
-                    f"Model {model} capabilities: {model_info.capabilities}, tools support: {has_tools}"
-                )
+                log.debug(f"Model {model} capabilities: {model_info.capabilities}, tools support: {has_tools}")
                 return has_tools
 
             # If capabilities field doesn't exist, assume tools are supported for backward compatibility
@@ -288,9 +253,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(
-        self, message: Message, use_tool_emulation: bool = False
-    ) -> Dict[str, Any]:
+    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -333,11 +296,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 content = message.content
             else:
                 # Handle list content by extracting text from MessageTextContent objects
-                text_parts = [
-                    part.text
-                    for part in message.content
-                    if isinstance(part, MessageTextContent)
-                ]
+                text_parts = [part.text for part in message.content if isinstance(part, MessageTextContent)]
                 content = "\n".join(text_parts)
                 log.debug(f"Extracted {len(text_parts)} text parts from system message")
             return {"role": "system", "content": content}
@@ -351,11 +310,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 log.debug("User message has string content")
             else:
                 # Handle text content
-                text_parts = [
-                    part.text
-                    for part in message.content
-                    if isinstance(part, MessageTextContent)
-                ]
+                text_parts = [part.text for part in message.content if isinstance(part, MessageTextContent)]
                 message_dict["content"] = "\n".join(text_parts)
                 log.debug(f"User message has {len(text_parts)} text parts")
 
@@ -398,11 +353,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 message_dict["content"] = message.content
                 log.debug("Assistant message has string content")
             else:
-                text_parts = [
-                    part.text
-                    for part in message.content
-                    if isinstance(part, MessageTextContent)
-                ]
+                text_parts = [part.text for part in message.content if isinstance(part, MessageTextContent)]
                 message_dict["content"] = "\n".join(text_parts)
                 log.debug(f"Assistant message has {len(text_parts)} text parts")
 
@@ -415,9 +366,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """Convert tools to Ollama's format."""
         log.debug(f"Formatting {len(tools)} tools for Ollama API")
         formatted_tools = [tool.tool_param() for tool in tools]
-        log.debug(
-            f"Formatted tools: {[tool.get('function', {}).get('name', 'unknown') for tool in formatted_tools]}"
-        )
+        log.debug(f"Formatted tools: {[tool.get('function', {}).get('name', 'unknown') for tool in formatted_tools]}")
         return formatted_tools
 
     def _prepare_request_params(
@@ -427,7 +376,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
-        context_window: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -442,18 +390,15 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         Returns:
             Dict[str, Any]: Parameters ready for Ollama API request
         """
-        log.debug(
-            f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools"
-        )
+        log.debug(f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools")
 
-        if context_window is None:
-            context_window = self.get_context_length(model)
+        # Use configured context length, default to DEFAULT_OLLAMA_CONTEXT_LENGTH if not set
+        context_window = self.default_context_length or DEFAULT_OLLAMA_CONTEXT_LENGTH
+        
         # Check if model supports native tool calling
         use_tool_emulation = False
         if len(tools) > 0 and not self.has_tool_support(model):
-            log.info(
-                f"Model {model} does not support native tool calling, using emulation"
-            )
+            log.info(f"Model {model} does not support native tool calling, using emulation")
             use_tool_emulation = True
 
         # Prepare messages
@@ -489,14 +434,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 # Append to existing system message
                 for i, msg in enumerate(modified_messages):
                     if msg.role == "system":
-                        existing_content = (
-                            msg.content
-                            if isinstance(msg.content, str)
-                            else str(msg.content)
-                        )
-                        modified_messages[i] = Message(
-                            role="system", content=existing_content + tool_instruction
-                        )
+                        existing_content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                        modified_messages[i] = Message(role="system", content=existing_content + tool_instruction)
                         break
             else:
                 # Prepend new system message
@@ -505,16 +444,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     *modified_messages,
                 ]
 
-            ollama_messages = [
-                self.convert_message(m, use_tool_emulation=True)
-                for m in modified_messages
-            ]
+            ollama_messages = [self.convert_message(m, use_tool_emulation=True) for m in modified_messages]
             log.debug("Using tool emulation: added tool definitions to system message")
         else:
             # Regular message conversion
-            ollama_messages = [
-                self.convert_message(m, use_tool_emulation=False) for m in messages
-            ]
+            ollama_messages = [self.convert_message(m, use_tool_emulation=False) for m in messages]
 
         log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
@@ -535,16 +469,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
         if response_format:
             log.debug(f"Processing response format: {response_format.get('type')}")
-            if (
-                response_format.get("type") == "json_schema"
-                and "json_schema" in response_format
-            ):
+            if response_format.get("type") == "json_schema" and "json_schema" in response_format:
                 schema = response_format["json_schema"]
                 if "schema" not in schema:
                     log.error("schema is required in json_schema response format")
-                    raise ValueError(
-                        "schema is required in json_schema response format"
-                    )
+                    raise ValueError("schema is required in json_schema response format")
                 params["format"] = schema["schema"]
                 log.debug("Added JSON schema format to request")
             else:
@@ -561,9 +490,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         prompt_tokens = 0 if prompt_tokens is None else int(prompt_tokens)
         completion_tokens = 0 if completion_tokens is None else int(completion_tokens)
 
-        log.debug(
-            f"Updating usage stats - prompt: {prompt_tokens}, completion: {completion_tokens}"
-        )
+        log.debug(f"Updating usage stats - prompt: {prompt_tokens}, completion: {completion_tokens}")
         self.usage["prompt_tokens"] += prompt_tokens
         self.usage["completion_tokens"] += completion_tokens
         self.usage["total_tokens"] += prompt_tokens + completion_tokens
@@ -575,7 +502,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -594,9 +520,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """
         log.debug(f"Starting streaming generation for model: {model}")
         log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
-        self._log_api_request(
-            "chat_stream", messages, model=model, tools=tools, **kwargs
-        )
+        self._log_api_request("chat_stream", messages, model=model, tools=tools, **kwargs)
 
         # Determine if we're using tool emulation
         use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
@@ -609,7 +533,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 model,
                 tools,
                 max_tokens=max_tokens,
-                context_window=context_window,
                 **kwargs,
             )
             params["stream"] = True
@@ -632,14 +555,10 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
                 # Handle native tool calls
                 if response.message.tool_calls is not None:
-                    log.debug(
-                        f"Chunk contains {len(response.message.tool_calls)} tool calls"
-                    )
+                    log.debug(f"Chunk contains {len(response.message.tool_calls)} tool calls")
                     for tool_call in response.message.tool_calls:
                         tool_call_count += 1
-                        log.debug(
-                            f"Yielding tool call {tool_call_count}: {tool_call.function.name}"
-                        )
+                        log.debug(f"Yielding tool call {tool_call_count}: {tool_call.function.name}")
                         yield ToolCall(
                             name=tool_call.function.name,
                             args=dict(tool_call.function.arguments),
@@ -660,17 +579,13 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from response")
-                        emulated_calls, _ = self._parse_function_calls(
-                            accumulated_content, tools
-                        )
+                        emulated_calls, _ = self._parse_function_calls(accumulated_content, tools)
                         for tool_call in emulated_calls:
                             tool_call_count += 1
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
                             yield tool_call
 
-                    log.debug(
-                        f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}"
-                    )
+                    log.debug(f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}")
                     break
 
     async def generate_message(
@@ -679,7 +594,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -742,9 +656,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 if emulated_calls:
                     tool_calls = emulated_calls
                     content = cleaned_content
-                    log.debug(
-                        f"Response contains {len(tool_calls)} emulated tool calls"
-                    )
+                    log.debug(f"Response contains {len(tool_calls)} emulated tool calls")
                 else:
                     log.debug("Response contains no tool calls")
             else:
@@ -830,24 +742,20 @@ async def main():
 
     # Check if model supports native tool calling
     has_native_tools = provider.has_tool_support(model_name)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Model: {model_name}")
     print(f"Native tool support: {has_native_tools}")
     print(f"Using tool emulation: {not has_native_tools}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     messages: list[Message] = [
         Message(
             role="system",
-            content=(
-                "You are a helpful assistant. Use tools when calculations are needed."
-            ),
+            content=("You are a helpful assistant. Use tools when calculations are needed."),
         ),
         Message(
             role="user",
-            content=(
-                "Please compute 12.3 * (7 - 5) + 10 / 2 and provide the numeric result."
-            ),
+            content=("Please compute 12.3 * (7 - 5) + 10 / 2 and provide the numeric result."),
         ),
     ]
 
@@ -897,14 +805,14 @@ async def main():
     if iteration > max_iterations:
         print(f"\n⚠️  WARNING: Reached max iterations ({max_iterations}). Stopping.\n")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Final Answer: {response.content}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Test 2: Response format (structured output)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("TEST 2: Response Format (Structured Output)")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Define a JSON schema for structured output
     response_format = {
@@ -948,11 +856,7 @@ async def main():
 
     # Try to parse the JSON
     try:
-        content_str = (
-            response_json.content
-            if isinstance(response_json.content, str)
-            else str(response_json.content)
-        )
+        content_str = response_json.content if isinstance(response_json.content, str) else str(response_json.content)
         parsed = json.loads(content_str)
         print("✅ Valid JSON!")
         print(f"Calculation: {parsed.get('calculation')}")
@@ -961,7 +865,7 @@ async def main():
     except json.JSONDecodeError as e:
         print(f"❌ JSON parsing failed: {e}")
 
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
 
 # Conditionally register the provider only if OLLAMA_API_URL is set

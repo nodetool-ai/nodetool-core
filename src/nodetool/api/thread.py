@@ -118,9 +118,7 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
 
 
 @router.post("/{thread_id}/summarize")
-async def summarize_thread(
-    thread_id: str, req: ThreadSummarizeRequest, user: str = Depends(current_user)
-) -> Thread:
+async def summarize_thread(thread_id: str, req: ThreadSummarizeRequest, user: str = Depends(current_user)) -> Thread:
     """Summarize thread content and update the thread title."""
     thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:

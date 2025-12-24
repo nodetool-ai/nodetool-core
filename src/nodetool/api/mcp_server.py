@@ -98,7 +98,9 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     # 1. Check environment variable first (highest priority)
     token = os.environ.get("HF_TOKEN")
     if token:
-        log.debug(f"get_hf_token (mcp_server): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)")
+        log.debug(
+            f"get_hf_token (mcp_server): HF_TOKEN found in environment variables (user_id={user_id} was provided but env takes priority)"
+        )
         return token
 
     # 2. Try to get from database if user_id is available
@@ -127,6 +129,7 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
     log.debug(f"get_hf_token (mcp_server): HF_TOKEN not found in environment or database secrets (user_id={user_id})")
     return None
 
+
 # Initialize FastMCP server
 mcp = FastMCP("NodeTool API Server")
 
@@ -135,18 +138,14 @@ class WorkflowRunParams(BaseModel):
     """Parameters for running a workflow"""
 
     workflow_id: str = Field(..., description="The ID of the workflow to run")
-    params: dict[str, Any] = Field(
-        default_factory=dict, description="Input parameters for the workflow"
-    )
+    params: dict[str, Any] = Field(default_factory=dict, description="Input parameters for the workflow")
 
 
 class NodeSearchParams(BaseModel):
     """Parameters for searching nodes"""
 
     query: str = Field(..., description="Search query for nodes")
-    namespace: Optional[str] = Field(
-        None, description="Optional namespace to filter nodes"
-    )
+    namespace: Optional[str] = Field(None, description="Optional namespace to filter nodes")
 
 
 async def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
@@ -279,9 +278,7 @@ async def create_workflow(
 
 
 @mcp.tool()
-async def run_workflow_tool(
-    workflow_id: str, ctx: Context, params: dict[str, Any] | None = None
-) -> dict[str, Any]:
+async def run_workflow_tool(workflow_id: str, ctx: Context, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Execute a NodeTool workflow with given parameters.
 
@@ -348,9 +345,7 @@ async def run_workflow_tool(
 
 
 @mcp.tool()
-async def run_graph(
-    graph: dict[str, Any], params: dict[str, Any] | None = None
-) -> dict[str, Any]:
+async def run_graph(graph: dict[str, Any], params: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Execute a workflow graph directly without saving it as a workflow.
 
@@ -446,9 +441,7 @@ async def list_nodes(
 
     if namespace:
         namespace_prefix = namespace.lower()
-        nodes = [
-            node for node in nodes if node.node_type.lower().startswith(namespace_prefix)
-        ]
+        nodes = [node for node in nodes if node.node_type.lower().startswith(namespace_prefix)]
 
     nodes = nodes[: max(0, limit)]
     return [
@@ -650,9 +643,7 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
         return any(color[node_id] == WHITE and dfs(node_id) for node_id in node_ids)
 
     if has_cycle():
-        errors.append(
-            "Workflow contains circular dependencies - must be a DAG (Directed Acyclic Graph)"
-        )
+        errors.append("Workflow contains circular dependencies - must be a DAG (Directed Acyclic Graph)")
 
     # Validate node inputs and type compatibility
     for node in graph.nodes:
@@ -694,18 +685,13 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
 
     for node in graph.nodes:
         # Skip input/output/constant nodes from orphan check
-        if any(
-            keyword in node.type.lower()
-            for keyword in ["input", "output", "constant", "preview"]
-        ):
+        if any(keyword in node.type.lower() for keyword in ["input", "output", "constant", "preview"]):
             continue
 
         if node.id not in nodes_with_inputs and node.id not in nodes_with_outputs:
             warnings.append(f"Orphaned node (not connected): {node.id} ({node.type})")
         elif node.id not in nodes_with_outputs:
-            suggestions.append(
-                f"Node '{node.id}' has no outputs - consider adding Preview or Output node"
-            )
+            suggestions.append(f"Node '{node.id}' has no outputs - consider adding Preview or Output node")
 
     # Summary
     is_valid = len(errors) == 0
@@ -805,9 +791,7 @@ async def generate_dot_graph(
 
 
 @mcp.tool()
-async def export_workflow_digraph(
-    workflow_id: str, descriptive_names: bool = True
-) -> dict[str, Any]:
+async def export_workflow_digraph(workflow_id: str, descriptive_names: bool = True) -> dict[str, Any]:
     """
     Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing and visualization.
 
@@ -842,9 +826,7 @@ async def export_workflow_digraph(
                 break
 
         if not matching_example:
-            raise ValueError(
-                f"Workflow {workflow_id} not found in database or examples"
-            )
+            raise ValueError(f"Workflow {workflow_id} not found in database or examples")
 
         # Load the example workflow
         example_workflow = await asyncio.to_thread(
@@ -1017,9 +999,7 @@ async def list_workflows(
                     model_id = val.get("id")
                     if isinstance(model_id, str) and model_id:
                         models.add(model_id)
-                elif isinstance(t, str) and (
-                    t.startswith("hf.") or t.startswith("inference_provider_")
-                ):
+                elif isinstance(t, str) and (t.startswith("hf.") or t.startswith("inference_provider_")):
                     model_id = val.get("repo_id") or val.get("model_id")
                     if isinstance(model_id, str) and model_id:
                         models.add(model_id)
@@ -1036,11 +1016,7 @@ async def list_workflows(
         indices = []
         for i, ex in enumerate(examples):
             if ex.package_name and ex.name:
-                load_tasks.append(
-                    asyncio.to_thread(
-                        example_registry.load_example, ex.package_name, ex.name
-                    )
-                )
+                load_tasks.append(asyncio.to_thread(example_registry.load_example, ex.package_name, ex.name))
                 indices.append(i)
 
         loaded_map = {}
@@ -1060,9 +1036,7 @@ async def list_workflows(
                     ns = parse_namespace(node.type)
                     if ns in provider_namespaces:
                         required_providers.add(ns)
-                    collect_from_value(
-                        getattr(node, "data", {}), required_providers, required_models
-                    )
+                    collect_from_value(getattr(node, "data", {}), required_providers, required_models)
 
             enriched.append(
                 {
@@ -1073,21 +1047,15 @@ async def list_workflows(
                     "tags": ex.tags,
                     "thumbnail_url": ex.thumbnail_url,
                     "path": ex.path,
-                    "required_providers": sorted(required_providers)
-                    if required_providers
-                    else None,
-                    "required_models": sorted(required_models)
-                    if required_models
-                    else None,
+                    "required_providers": sorted(required_providers) if required_providers else None,
+                    "required_models": sorted(required_models) if required_models else None,
                 }
             )
         return enriched
 
     # Get user workflows
     if workflow_type in ("user", "all"):
-        workflows, next_key = await WorkflowModel.paginate(
-            user_id="1", limit=limit, start_key=start_key
-        )
+        workflows, next_key = await WorkflowModel.paginate(user_id="1", limit=limit, start_key=start_key)
         for workflow in workflows:
             wf_dict = {
                 "id": workflow.id,
@@ -1116,9 +1084,7 @@ async def list_workflows(
 
         if query:
             # Use search for query
-            matching_workflows = await asyncio.to_thread(
-                example_registry.search_example_workflows, query
-            )
+            matching_workflows = await asyncio.to_thread(example_registry.search_example_workflows, query)
             for workflow in matching_workflows:
                 result.append(
                     {
@@ -1170,9 +1136,7 @@ async def get_example_workflow(package_name: str, example_name: str) -> dict[str
     workflow = example_registry.load_example(package_name, example_name)
 
     if not workflow:
-        raise ValueError(
-            f"Example '{example_name}' not found in package '{package_name}'"
-        )
+        raise ValueError(f"Example '{example_name}' not found in package '{package_name}'")
 
     # Convert to dict format
     api_graph = workflow.graph
@@ -1342,6 +1306,7 @@ async def get_asset(asset_id: str) -> dict[str, Any]:
 
     return _asset_to_dict(asset)
 
+
 @mcp.tool()
 async def list_jobs(
     workflow_id: str | None = None,
@@ -1428,7 +1393,7 @@ async def get_job_logs(job_id: str, limit: int = 200) -> dict[str, Any]:
 
     manager = JobExecutionManager.get_instance()
     live = manager.get_job(job_id)
-    logs = live.get_live_logs(limit=limit) if live is not None else (job.logs or [])[:max(0, limit)]
+    logs = live.get_live_logs(limit=limit) if live is not None else (job.logs or [])[: max(0, limit)]
 
     return {"job_id": job_id, "logs": logs}
 
@@ -1598,16 +1563,9 @@ async def list_models(
                     pass
 
             # Fallback to checking id and repo_id if provider check didn't match
-            if (
-                not matched
-                and (
-                    provider.lower() in m.id.lower()
-                    or (
-                        hasattr(m, "repo_id")
-                        and m.repo_id
-                        and provider.lower() in m.repo_id.lower()
-                    )
-                )
+            if not matched and (
+                provider.lower() in m.id.lower()
+                or (hasattr(m, "repo_id") and m.repo_id and provider.lower() in m.repo_id.lower())
             ):
                 matched = True
 
@@ -1617,15 +1575,11 @@ async def list_models(
 
     # Filter by model type if specified and not already filtered
     if model_type and not recommended_only:
-        all_models = [
-            m for m in all_models if hasattr(m, "type") and m.type == model_type
-        ]
+        all_models = [m for m in all_models if hasattr(m, "type") and m.type == model_type]
 
     # Filter by downloaded status
     if downloaded_only:
-        all_models = [
-            m for m in all_models if hasattr(m, "downloaded") and m.downloaded
-        ]
+        all_models = [m for m in all_models if hasattr(m, "downloaded") and m.downloaded]
 
     # Apply limit
     all_models = all_models[:limit]
@@ -1688,9 +1642,7 @@ async def list_collections(
     collections = collections[:limit]
 
     counts = await asyncio.gather(*(col.count() for col in collections))
-    workflows = await asyncio.gather(
-        *(get_workflow_name(col.metadata) for col in collections)
-    )
+    workflows = await asyncio.gather(*(get_workflow_name(col.metadata) for col in collections))
 
     return {
         "collections": [
@@ -2099,9 +2051,7 @@ async def inspect_hf_cached_model(repo_id: str) -> dict[str, Any]:
         "type": model.type,
         "path": model.path,
         "size_on_disk": model.size_on_disk,
-        "size_on_disk_gb": round((model.size_on_disk or 0) / (1024**3), 2)
-        if model.size_on_disk
-        else None,
+        "size_on_disk_gb": round((model.size_on_disk or 0) / (1024**3), 2) if model.size_on_disk else None,
         "downloaded": model.downloaded,
     }
 
@@ -2134,14 +2084,16 @@ async def query_hf_model_files(
         # Use HF_TOKEN from secrets if available for gated model downloads
         token = await get_hf_token()
         if token:
-            log.debug(f"query_hf_model_files: Querying files for {repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+            log.debug(
+                f"query_hf_model_files: Querying files for {repo_id} with HF_TOKEN (token length: {len(token)} chars)"
+            )
             api = HfApi(token=token)
         else:
-            log.debug(f"query_hf_model_files: Querying files for {repo_id} without HF_TOKEN - gated models may not be accessible")
+            log.debug(
+                f"query_hf_model_files: Querying files for {repo_id} without HF_TOKEN - gated models may not be accessible"
+            )
             api = HfApi()
-        file_infos = api.list_repo_files(
-            repo_id=repo_id, repo_type=repo_type, revision=revision
-        )
+        file_infos = api.list_repo_files(repo_id=repo_id, repo_type=repo_type, revision=revision)
 
         # Filter by patterns if provided
         if patterns:
@@ -2204,10 +2156,14 @@ async def search_hf_hub_models(
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = await get_hf_token()
     if token:
-        log.debug(f"search_hf_hub_models: Searching with query '{query}' using HF_TOKEN (token length: {len(token)} chars)")
+        log.debug(
+            f"search_hf_hub_models: Searching with query '{query}' using HF_TOKEN (token length: {len(token)} chars)"
+        )
         api = HfApi(token=token)
     else:
-        log.debug(f"search_hf_hub_models: Searching with query '{query}' without HF_TOKEN - gated models may not be accessible")
+        log.debug(
+            f"search_hf_hub_models: Searching with query '{query}' without HF_TOKEN - gated models may not be accessible"
+        )
         api = HfApi()
 
     # Parse filter
@@ -2249,10 +2205,14 @@ async def get_hf_model_info(repo_id: str) -> dict[str, Any]:
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = await get_hf_token()
     if token:
-        log.debug(f"get_hf_model_info: Fetching model info for {repo_id} with HF_TOKEN (token length: {len(token)} chars)")
+        log.debug(
+            f"get_hf_model_info: Fetching model info for {repo_id} with HF_TOKEN (token length: {len(token)} chars)"
+        )
         api = HfApi(token=token)
     else:
-        log.debug(f"get_hf_model_info: Fetching model info for {repo_id} without HF_TOKEN - gated models may not be accessible")
+        log.debug(
+            f"get_hf_model_info: Fetching model info for {repo_id} without HF_TOKEN - gated models may not be accessible"
+        )
         api = HfApi()
     return asdict(api.model_info(repo_id))
 
@@ -2278,7 +2238,6 @@ async def _run_agent_impl(
     # This is required for providers (get_client) and tools that need access to resources
     async with ResourceScope():
         try:
-
             # Map tool names to tool instances
             tool_instances = []
             tool_map = {
@@ -2328,16 +2287,16 @@ async def _run_agent_impl(
                     events.append(event.model_dump())
 
                 elif isinstance(event, LogUpdate):
-                     if ctx:
+                    if ctx:
                         await ctx.info(f"Log: {event.content}")
-                     events.append(event.model_dump())
+                    events.append(event.model_dump())
 
                 else:
                     if hasattr(event, "model_dump"):
                         events.append(event.model_dump())
                     else:
-                         # Fallback for unexpected types
-                         pass
+                        # Fallback for unexpected types
+                        pass
 
             # Get final results
             results = agent.get_results()
@@ -3514,11 +3473,6 @@ Before running a workflow, verify:
 6. **Validate**: Check structure, connectivity, and types
 7. **Test**: Run the workflow and iterate based on results
 """
-
-
-
-
-
 
 
 @mcp.prompt()

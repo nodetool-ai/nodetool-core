@@ -70,15 +70,9 @@ def test_detect_sdxl_base_unet(tmp_path: Path) -> None:
     _write(
         path,
         {
-            "down_blocks.0.resnets.0.conv1.weight": np.zeros(
-                (4, 1280, 3, 3), dtype=np.float32
-            ),
-            "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q.weight": np.zeros(
-                (4, 4), dtype=np.float32
-            ),
-            "text_model.encoder.layers.0.self_attn.q_proj.weight": np.zeros(
-                (4, 4), dtype=np.float32
-            ),
+            "down_blocks.0.resnets.0.conv1.weight": np.zeros((4, 1280, 3, 3), dtype=np.float32),
+            "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q.weight": np.zeros((4, 4), dtype=np.float32),
+            "text_model.encoder.layers.0.self_attn.q_proj.weight": np.zeros((4, 4), dtype=np.float32),
             "up_blocks.0.resnets.0.conv1.weight": np.zeros((4, 4, 3, 3), dtype=np.float32),
         },
     )

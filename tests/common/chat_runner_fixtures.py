@@ -49,15 +49,11 @@ class MockMessageProcessor:
     async def process(self, chat_history, processing_context, tools, **kwargs):
         self.is_processing = True
         # Simulate processing
-        await self._message_queue.put(
-            {"type": "start", "message": "Processing started"}
-        )
+        await self._message_queue.put({"type": "start", "message": "Processing started"})
         await asyncio.sleep(0.01)
         await self._message_queue.put({"type": "content", "content": "Test response"})
         await asyncio.sleep(0.01)
-        await self._message_queue.put(
-            {"type": "message", "role": "assistant", "content": "Final response"}
-        )
+        await self._message_queue.put({"type": "message", "role": "assistant", "content": "Final response"})
         self.is_processing = False
 
 
@@ -176,14 +172,10 @@ class ChatHistoryBuilder:
         return self
 
     def add_assistant_message(self, content: str, **kwargs) -> "ChatHistoryBuilder":
-        self.messages.append(
-            create_api_message(role="assistant", content=content, **kwargs)
-        )
+        self.messages.append(create_api_message(role="assistant", content=content, **kwargs))
         return self
 
-    def add_tool_call(
-        self, tool_name: str, args: dict, call_id: str = "call_123"
-    ) -> "ChatHistoryBuilder":
+    def add_tool_call(self, tool_name: str, args: dict, call_id: str = "call_123") -> "ChatHistoryBuilder":
         self.messages.append(
             create_api_message(
                 role="assistant",
@@ -199,12 +191,8 @@ class ChatHistoryBuilder:
         )
         return self
 
-    def add_tool_result(
-        self, result: str, call_id: str = "call_123"
-    ) -> "ChatHistoryBuilder":
-        self.messages.append(
-            create_api_message(role="tool", instructions=result, tool_call_id=call_id)
-        )
+    def add_tool_result(self, result: str, call_id: str = "call_123") -> "ChatHistoryBuilder":
+        self.messages.append(create_api_message(role="tool", instructions=result, tool_call_id=call_id))
         return self
 
     def build(self) -> List[ApiMessage]:
@@ -248,9 +236,7 @@ def mock_supabase_client():
 # Helper functions for common test scenarios
 
 
-async def simulate_chat_interaction(
-    runner, messages: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+async def simulate_chat_interaction(runner, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Simulate a chat interaction and collect responses
 
@@ -275,16 +261,10 @@ async def simulate_chat_interaction(
     return responses
 
 
-def assert_message_contains(
-    message: dict, expected_type: str, expected_content: Optional[str] = None
-):
+def assert_message_contains(message: dict, expected_type: str, expected_content: Optional[str] = None):
     """Assert that a message has expected type and optionally content"""
-    assert (
-        message.get("type") == expected_type
-    ), f"Expected type {expected_type}, got {message.get('type')}"
+    assert message.get("type") == expected_type, f"Expected type {expected_type}, got {message.get('type')}"
 
     if expected_content is not None:
         content = message.get("content") or message.get("message", "")
-        assert (
-            expected_content in content
-        ), f"Expected '{expected_content}' in '{content}'"
+        assert expected_content in content, f"Expected '{expected_content}' in '{content}'"

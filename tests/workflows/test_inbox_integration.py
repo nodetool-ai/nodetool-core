@@ -31,9 +31,7 @@ async def test_streaming_producer_to_streaming_consumer():
         class OutputType(TypedDict):
             out: int
 
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[OutputType, None]:
+        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
             for i in range(3):
                 yield {"out": i}
                 await asyncio.sleep(0.01)
@@ -53,9 +51,7 @@ async def test_streaming_producer_to_streaming_consumer():
         class OutputType(TypedDict):
             out: str
 
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[OutputType, None]:
+        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
             async for item in self.iter_input("in_a"):
                 yield {"out": f"got:{item}"}
 
@@ -83,12 +79,8 @@ async def test_streaming_producer_to_streaming_consumer():
         },
     ]
 
-    graph = APIGraph(
-        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
-    )
-    req = RunJobRequest(
-        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
-    )
+    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_1")
 
@@ -128,9 +120,7 @@ async def test_streaming_multi_input_fanin_iter_any():
         class OutputType(TypedDict):
             out: str
 
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[OutputType, None]:
+        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
             for i in range(2):
                 yield {"out": f"{self.name}{i}"}
                 await asyncio.sleep(0.01)
@@ -150,9 +140,7 @@ async def test_streaming_multi_input_fanin_iter_any():
         class OutputType(TypedDict):
             out: str
 
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[OutputType, None]:
+        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[OutputType, None]:
             async for handle, item in self.iter_any_input():
                 yield {"out": f"{handle}:{item}"}
 
@@ -189,12 +177,8 @@ async def test_streaming_multi_input_fanin_iter_any():
         },
     ]
 
-    graph = APIGraph(
-        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
-    )
-    req = RunJobRequest(
-        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
-    )
+    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_2")
 
@@ -245,12 +229,8 @@ async def test_non_streaming_node_unchanged_edge_queue_path():
         },
     ]
 
-    graph = APIGraph(
-        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
-    )
-    req = RunJobRequest(
-        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
-    )
+    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_4")
 

@@ -13,9 +13,7 @@ class TestAssetUtils(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.asset_ref = MagicMock(spec=AssetRef)
-        self.asset_ref.encode_data_to_uri.return_value = (
-            "data:text/plain;base64,SGVsbG8="
-        )
+        self.asset_ref.encode_data_to_uri.return_value = "data:text/plain;base64,SGVsbG8="
 
     def test_encode_assets_as_uri_with_asset_ref(self):
         """Test encoding a single AssetRef."""

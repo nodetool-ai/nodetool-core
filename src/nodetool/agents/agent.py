@@ -197,9 +197,7 @@ def _should_use_sandbox() -> bool:
         return False
 
 
-def _wrap_command_with_sandbox(
-    cmd: list[str], workspace_dir: str | None = None
-) -> tuple[list[str], str | None]:
+def _wrap_command_with_sandbox(cmd: list[str], workspace_dir: str | None = None) -> tuple[list[str], str | None]:
     """
     Wrap a command with sandbox-exec on macOS.
 
@@ -236,9 +234,7 @@ def _wrap_command_with_sandbox(
         )
 
         # Write profile to temporary file
-        fd, profile_path = tempfile.mkstemp(
-            suffix=".sb", prefix="nodetool_agent_sandbox_"
-        )
+        fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="nodetool_agent_sandbox_")
         try:
             os.write(fd, profile.encode("utf-8"))
         finally:
@@ -250,9 +246,7 @@ def _wrap_command_with_sandbox(
         log.info(f"Wrapping agent command with sandbox-exec: {' '.join(wrapped_cmd)}")
         log.info(f"Sandbox profile path: {profile_path}")
         if enable_logging:
-            log.info(
-                "Sandbox debug logging ENABLED - violations will be logged to stderr"
-            )
+            log.info("Sandbox debug logging ENABLED - violations will be logged to stderr")
         log.debug(f"Sandbox profile:\n{profile}")
 
         return wrapped_cmd, profile_path
@@ -337,9 +331,7 @@ def _wrap_command_with_cpu_limit(
 
     # Only use taskpolicy on macOS
     if platform.system() != "Darwin":
-        log.warning(
-            f"CPU limit requested ({cpu_percent}%) but taskpolicy is only available on macOS"
-        )
+        log.warning(f"CPU limit requested ({cpu_percent}%) but taskpolicy is only available on macOS")
         return cmd, {"taskpolicy_warning": "taskpolicy not available (not macOS)"}
 
     # Check if taskpolicy is available
@@ -353,9 +345,7 @@ def _wrap_command_with_cpu_limit(
     # Wrap command with taskpolicy
     wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class, *cmd]
 
-    log.info(
-        f"Applying CPU limit to agent: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'"
-    )
+    log.info(f"Applying CPU limit to agent: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'")
     log.debug(f"CPU-limited command: {' '.join(wrapped_cmd)}")
 
     resource_info = {
@@ -406,9 +396,7 @@ class AgentRunner(StreamRunnerBase):
         )
         self.resource_limits = resource_limits
 
-    def build_container_command(
-        self, user_code: str, _env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, _env_locals: dict[str, Any]) -> list[str]:
         """
         Build the command to run the agent inside the container.
 
@@ -426,9 +414,7 @@ class AgentRunner(StreamRunnerBase):
             user_code,
         ]
 
-    def wrap_subprocess_command(
-        self, command: list[str], context: ProcessingContext
-    ) -> tuple[list[str], Any]:
+    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], Any]:
         """
         Wrap subprocess command with sandbox-exec and CPU limiting on macOS.
 
@@ -441,17 +427,13 @@ class AgentRunner(StreamRunnerBase):
             cleanup_data contains the sandbox profile path for cleanup
         """
         # Apply CPU limiting first (innermost wrapper)
-        command, resource_info = _wrap_command_with_cpu_limit(
-            command, self.resource_limits
-        )
+        command, resource_info = _wrap_command_with_cpu_limit(command, self.resource_limits)
         if resource_info:
             log.info(f"CPU limit applied to agent: {resource_info}")
 
         # Apply sandboxing (outermost wrapper)
         workspace_dir = getattr(context, "workspace_dir", None)
-        command, sandbox_profile_path = _wrap_command_with_sandbox(
-            command, workspace_dir
-        )
+        command, sandbox_profile_path = _wrap_command_with_sandbox(command, workspace_dir)
 
         return command, sandbox_profile_path
 
@@ -638,20 +620,13 @@ class Agent(BaseAgent):
                 display_manager=self.display_manager,
             )
 
-            async for chunk in task_planner_instance.create_task(
-                context, self.objective
-            ):
+            async for chunk in task_planner_instance.create_task(context, self.objective):
                 yield chunk
 
-            if (
-                task_planner_instance.task_plan
-                and task_planner_instance.task_plan.tasks
-            ):
+            if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
                 self.task = task_planner_instance.task_plan.tasks[0]
 
-            assert (
-                self.task is not None
-            ), "Task was not created by planner and was not provided initially."
+            assert self.task is not None, "Task was not created by planner and was not provided initially."
 
             yield TaskUpdate(
                 task=self.task,
@@ -666,9 +641,7 @@ class Agent(BaseAgent):
         # Start live display managed by AgentConsole
         if self.display_manager:
             self.display_manager.start_live(
-                self.display_manager.create_execution_tree(
-                    title=self.name, task=self.task, tool_calls=tool_calls
-                )
+                self.display_manager.create_execution_tree(title=self.name, task=self.task, tool_calls=tool_calls)
             )
 
         try:
@@ -713,7 +686,9 @@ class Agent(BaseAgent):
                 if isinstance(item, ToolCall):
                     yield item
                 elif isinstance(item, StepResult):
-                    log.debug(f"Agent: Received StepResult for step {item.step.id}. is_task_result={item.is_task_result}")
+                    log.debug(
+                        f"Agent: Received StepResult for step {item.step.id}. is_task_result={item.is_task_result}"
+                    )
                     if item.is_task_result:
                         log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
                         self.results = item.result

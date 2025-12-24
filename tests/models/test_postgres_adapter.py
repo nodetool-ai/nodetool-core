@@ -63,9 +63,7 @@ class TestModel(DBModel):
 
 @pytest_asyncio.fixture
 async def mock_db_adapter():
-    with patch(
-        "nodetool.models.postgres_adapter.AsyncConnectionPool"
-    ) as mock_pool_class:
+    with patch("nodetool.models.postgres_adapter.AsyncConnectionPool") as mock_pool_class:
         mock_pool = AsyncMock()
         mock_conn = AsyncMock()
         mock_cursor = AsyncMock()
@@ -165,15 +163,11 @@ async def test_query(mock_db_adapter):
     # Mock the query to return items 5-8 (indices 5, 6, 7, 8)
     mock_db_adapter.query = AsyncMock(return_value=(items[5:9], ""))
 
-    results, last_key = await mock_db_adapter.query(
-        Field("age").greater_than(25), limit=5
-    )
+    results, last_key = await mock_db_adapter.query(Field("age").greater_than(25), limit=5)
 
     assert len(results) == 4
     assert all(result["age"] > 25 for result in results)
-    assert (
-        min(result["age"] for result in results) == 30
-    )  # Youngest person should be 30
+    assert min(result["age"] for result in results) == 30  # Youngest person should be 30
     assert max(result["age"] for result in results) == 33  # Oldest person should be 33
     assert last_key == ""
 
@@ -210,9 +204,7 @@ def test_convert_from_postgres_format():
     assert convert_from_postgres_format(["a", "b"], List[str]) == ["a", "b"]
     assert convert_from_postgres_format({"a": 1}, Dict[str, int]) == {"a": 1}
 
-    assert convert_from_postgres_format(datetime(2023, 1, 1), datetime) == datetime(
-        2023, 1, 1
-    )
+    assert convert_from_postgres_format(datetime(2023, 1, 1), datetime) == datetime(2023, 1, 1)
     assert convert_from_postgres_format("value1", TestEnum) == TestEnum.VALUE1
 
 

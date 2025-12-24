@@ -226,9 +226,7 @@ def _legacy_export_to_video_bytes(
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     h, w, _c = video_frames[0].shape
-    video_writer = cv2.VideoWriter(
-        "/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h)
-    )
+    video_writer = cv2.VideoWriter("/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h))
 
     for i in range(len(video_frames)):
         img = cv2.cvtColor(video_frames[i], cv2.COLOR_RGB2BGR)
@@ -264,11 +262,12 @@ def extract_video_frames(
     """
     if not _is_imageio_available():
         if not _is_opencv_available():
-             raise ImportError(
+            raise ImportError(
                 "imageio or OpenCV is required for video reading. Please install imageio: `pip install imageio imageio-ffmpeg`"
             )
         # TODO: Implement cv2 fallback for reading
         import logging
+
         logging.warning("imageio not found, cv2 fallback for reading not fully implemented except for files")
         return _legacy_read_video_frames(input_video, fps)
 
@@ -278,13 +277,14 @@ def extract_video_frames(
     try:
         imageio.plugins.ffmpeg.get_exe()
     except (AttributeError, RuntimeError):
-         return _legacy_read_video_frames(input_video, fps)
+        return _legacy_read_video_frames(input_video, fps)
 
     frames = []
 
     # Handle bytes
     if isinstance(input_video, bytes):
         import io
+
         input_video = io.BytesIO(input_video)
 
     try:
@@ -302,6 +302,7 @@ def extract_video_frames(
         reader.close()
     except Exception as e:
         import logging
+
         logging.error(f"Error reading video with imageio: {e}")
         # Try fallback
         return _legacy_read_video_frames(input_video, fps)
@@ -332,9 +333,9 @@ def _legacy_read_video_frames(
                 tmp.write(input_video)
             elif hasattr(input_video, "read"):
                 if hasattr(input_video, "getvalue"):
-                     tmp.write(input_video.getvalue())
+                    tmp.write(input_video.getvalue())
                 else:
-                     tmp.write(input_video.read())
+                    tmp.write(input_video.read())
             temp_file = tmp.name
         video_path = temp_file
 
@@ -342,11 +343,11 @@ def _legacy_read_video_frames(
     try:
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
-             raise ValueError("Could not open video file")
+            raise ValueError("Could not open video file")
 
         video_fps = cap.get(cv2.CAP_PROP_FPS)
         if video_fps <= 0:
-             video_fps = 30 # Default if unknown
+            video_fps = 30  # Default if unknown
 
         step = max(1, int(video_fps / fps))
 

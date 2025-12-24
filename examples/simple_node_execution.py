@@ -18,9 +18,7 @@ async def simple_math_example():
     """Direct execution of math nodes"""
 
     with tempfile.TemporaryDirectory() as workspace:
-        context = ProcessingContext(
-            workspace_dir=workspace, user_id="test_user", auth_token="test_token"
-        )
+        context = ProcessingContext(workspace_dir=workspace, user_id="test_user", auth_token="test_token")
 
         # Create an Add node
         add_node = Add(a=5.0, b=3.0)
@@ -37,9 +35,7 @@ async def simple_text_example():
     """Direct execution of text nodes"""
 
     with tempfile.TemporaryDirectory() as workspace:
-        context = ProcessingContext(
-            workspace_dir=workspace, user_id="test_user", auth_token="test_token"
-        )
+        context = ProcessingContext(workspace_dir=workspace, user_id="test_user", auth_token="test_token")
 
         # Concatenate strings
         concat_node = Concat(a="Hello, ", b="World!")
@@ -59,9 +55,7 @@ async def calculation_chain_example():
     """Chain multiple calculations together"""
 
     with tempfile.TemporaryDirectory() as workspace:
-        context = ProcessingContext(
-            workspace_dir=workspace, user_id="test_user", auth_token="test_token"
-        )
+        context = ProcessingContext(workspace_dir=workspace, user_id="test_user", auth_token="test_token")
 
         # (10 + 5) * 3
         step1 = Add(a=10.0, b=5.0)

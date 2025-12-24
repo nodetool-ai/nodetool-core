@@ -126,9 +126,7 @@ class TestGraphUtils(unittest.TestCase):
         mock_subgraph.nodes = [self.node1, self.node2, node3]
         mock_graph_class.return_value = mock_subgraph
 
-        _initial_edges, subgraph = get_downstream_subgraph(
-            complex_graph, "node1", "output1"
-        )
+        _initial_edges, subgraph = get_downstream_subgraph(complex_graph, "node1", "output1")
 
         # Should have 2 edges in the subgraph
         self.assertEqual(len(subgraph.edges), 2)
@@ -157,9 +155,7 @@ class TestGraphUtils(unittest.TestCase):
             "node2": None,  # Simulate missing node
         }.get(node_id)
 
-        _initial_edges, subgraph = get_downstream_subgraph(
-            self.graph, "node1", "output1"
-        )
+        _initial_edges, subgraph = get_downstream_subgraph(self.graph, "node1", "output1")
 
         # Should still work but with fewer nodes
         self.assertEqual(len(subgraph.edges), 1)

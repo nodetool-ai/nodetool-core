@@ -56,8 +56,7 @@ def create_compact_graph_context(
                 compact_node["name"] = node.data["name"]
             # Include essential non-default data values (skip UI-only fields)
             essential_data = {
-                k: v for k, v in node.data.items()
-                if k not in ("name",) and v is not None and v != "" and v != {}
+                k: v for k, v in node.data.items() if k not in ("name",) and v is not None and v != "" and v != {}
             }
             if essential_data:
                 compact_node["data"] = essential_data
@@ -135,9 +134,6 @@ def get_node_neighborhood(
 
     # Filter nodes and edges to the neighborhood
     neighborhood_nodes = [n for n in graph.nodes if n.id in visited]
-    neighborhood_edges = [
-        e for e in graph.edges
-        if e.source in visited and e.target in visited
-    ]
+    neighborhood_edges = [e for e in graph.edges if e.source in visited and e.target in visited]
 
     return Graph(nodes=neighborhood_nodes, edges=neighborhood_edges)

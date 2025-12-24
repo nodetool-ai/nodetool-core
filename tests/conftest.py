@@ -39,9 +39,9 @@ def worker_id(request):
     Returns 'master' when not using xdist (sequential execution),
     or the actual worker id when using xdist (parallel execution).
     """
-    if hasattr(request.config, 'workerinput'):
-        return request.config.workerinput['workerid']
-    return 'master'
+    if hasattr(request.config, "workerinput"):
+        return request.config.workerinput["workerid"]
+    return "master"
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -86,9 +86,7 @@ async def test_db_pool(worker_id):
     # Use worker_id to ensure each xdist worker gets a unique database
     worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
     with tempfile.NamedTemporaryFile(
-        suffix=f'{worker_suffix}.sqlite3',
-        prefix='nodetool_test_session_',
-        delete=False
+        suffix=f"{worker_suffix}.sqlite3", prefix="nodetool_test_session_", delete=False
     ) as temp_db:
         db_path = temp_db.name
 
@@ -109,6 +107,7 @@ async def test_db_pool(worker_id):
                 SQLiteConnectionPool._pools.pop(db_path, None)
             except Exception as e:
                 import logging
+
                 logging.warning(f"Error cleaning up session connection pool: {e}")
 
         # Remove temporary database file
@@ -171,6 +170,7 @@ async def setup_and_teardown(request, test_db_pool):
         await _truncate_all_tables(test_db_pool)
     except Exception as e:
         import logging
+
         logging.warning(f"Error truncating tables: {e}")
 
 
@@ -189,9 +189,7 @@ def _set_dummy_api_keys(monkeypatch):
     prevents providers from raising ApiKeyMissingError during initialization.
     """
     monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
-    monkeypatch.setenv(
-        "ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
     monkeypatch.setenv("HF_TOKEN", os.getenv("HF_TOKEN", "test-hf-token"))
     monkeypatch.setenv("OLLAMA_API_URL", os.getenv("OLLAMA_API_URL", "http://localhost:11434"))
@@ -454,9 +452,7 @@ async def thread(user_id: str):
 
 @pytest_asyncio.fixture()
 async def message(user_id: str, thread: Thread):
-    msg = await Message.create(
-        user_id=user_id, thread_id=thread.id, role="user", content="Hello"
-    )
+    msg = await Message.create(user_id=user_id, thread_id=thread.id, role="user", content="Hello")
     return msg
 
 
@@ -508,6 +504,7 @@ async def workflow(user_id: str):
     )
     return wf
 
+
 def pytest_sessionfinish(session, exitstatus):
     """Clean up resources after all tests complete to prevent hanging."""
     import logging
@@ -529,16 +526,14 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Log any non-daemon threads that might prevent exit
     main_thread = threading.main_thread()
-    non_daemon_threads = [
-        t for t in threading.enumerate()
-        if t != main_thread and t.is_alive() and not t.daemon
-    ]
+    non_daemon_threads = [t for t in threading.enumerate() if t != main_thread and t.is_alive() and not t.daemon]
 
     if non_daemon_threads:
         logging.warning(
             f"Found {len(non_daemon_threads)} non-daemon threads that may prevent exit: "
             f"{[t.name for t in non_daemon_threads]}"
         )
+
         # Force exit if there are hanging threads
         # Give threads a brief moment to clean up, then force exit
         def force_exit_thread():

@@ -31,11 +31,11 @@ from nodetool.integrations.huggingface.huggingface_file import (
     get_huggingface_file_infos_async,
 )
 from nodetool.integrations.huggingface.huggingface_models import (
+    HF_FAST_CACHE,
     delete_cached_hf_model,
     get_models_by_hf_type,
     read_cached_hf_models,
     search_cached_hf_models,
-    HF_FAST_CACHE,
 )
 from nodetool.metadata.types import (
     ASRModel,
@@ -81,22 +81,15 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     return deduped_models
 
 
-
 # Exported functions for direct use (e.g., by MCP server)
 async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
-    reco_models = [
-        model
-        for model_list in get_recommended_models().values()
-        for model in model_list
-    ]
+    reco_models = [model for model_list in get_recommended_models().values() for model in model_list]
     # gguf_models = await load_gguf_models_from_file()
     # mlx_models = await load_mlx_models_from_file()
 
     # Run in parallel, catching exceptions to handle them specifically
-    results = await asyncio.gather(
-        read_cached_hf_models(), get_ollama_models_unified(), return_exceptions=True
-    )
+    results = await asyncio.gather(read_cached_hf_models(), get_ollama_models_unified(), return_exceptions=True)
     hf_models = results[0]
     ollama_models_unified = results[1]
 
@@ -107,10 +100,10 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
         e = ollama_models_unified
         # Check if it looks like a connection error
         if "connect" in str(e).lower() or "refused" in str(e).lower():
-             raise HTTPException(
+            raise HTTPException(
                 status_code=503,
-                detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download"
-             ) from e
+                detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download",
+            ) from e
         raise e
 
     # order matters: cached models should be first to have correct downloaded status
@@ -136,11 +129,7 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
 async def recommended_models(_user: str) -> list[UnifiedModel]:
     """Get recommended models."""
-    models = [
-        model
-        for model_list in get_recommended_models().values()
-        for model in model_list
-    ]
+    models = [model for model_list in get_recommended_models().values() for model in model_list]
     models = [model for model in models if model is not None]
     return models
 
@@ -203,9 +192,7 @@ async def get_providers_info(user: str) -> list[ProviderInfo]:
 
         # Skip provider if required secrets are missing
         if len(required_secrets) > 0 and len(provider_secrets) == 0:
-            log.debug(
-                f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}"
-            )
+            log.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
             continue
 
         # Initialize provider to get capabilities
@@ -400,10 +387,10 @@ async def get_ollama_models_endpoint(
         return await get_ollama_models()
     except Exception as e:
         if "connect" in str(e).lower() or "refused" in str(e).lower():
-             raise HTTPException(
+            raise HTTPException(
                 status_code=503,
-                detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download"
-             ) from e
+                detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download",
+            ) from e
         raise e
 
 
@@ -415,16 +402,12 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     return await _delete_ollama_model(model_name)
 
 
-async def get_language_models_by_provider(
-    provider: Provider, user: str
-) -> list[LanguageModel]:
+async def get_language_models_by_provider(provider: Provider, user: str) -> list[LanguageModel]:
     """Get language models for a specific provider."""
     try:
         provider_instance = await get_provider(provider, user)
         models = await provider_instance.get_available_language_models()
-        log.debug(
-            f"Successfully retrieved {len(models)} language models from provider {provider.value}"
-        )
+        log.debug(f"Successfully retrieved {len(models)} language models from provider {provider.value}")
         return models
     except ValueError as e:
         log.warning(
@@ -440,16 +423,12 @@ async def get_language_models_by_provider(
         return []
 
 
-async def get_image_models_by_provider(
-    provider: Provider, user: str
-) -> list[ImageModel]:
+async def get_image_models_by_provider(provider: Provider, user: str) -> list[ImageModel]:
     """Get image models for a specific provider."""
     try:
         provider_instance = await get_provider(provider, user)
         models = await provider_instance.get_available_image_models()
-        log.debug(
-            f"Successfully retrieved {len(models)} image models from provider {provider.value}"
-        )
+        log.debug(f"Successfully retrieved {len(models)} image models from provider {provider.value}")
         return models
     except ValueError as e:
         log.warning(
@@ -467,9 +446,7 @@ async def get_image_models_by_provider(
                     "MLX provider not available, attempting to discover MLX image models (mflux) from HF cache directly"
                 )
                 models = await get_mlx_image_models_from_hf_cache()
-                log.info(
-                    f"Discovered {len(models)} MLX image models from HuggingFace cache"
-                )
+                log.info(f"Discovered {len(models)} MLX image models from HuggingFace cache")
                 return models
             except Exception as cache_error:
                 log.debug(
@@ -493,9 +470,7 @@ async def get_image_models_by_provider(
                     "Error occurred with MLX provider, attempting to discover MLX image models (mflux) from HF cache as fallback"
                 )
                 models = await get_mlx_image_models_from_hf_cache()
-                log.info(
-                    f"Discovered {len(models)} MLX image models from HuggingFace cache"
-                )
+                log.info(f"Discovered {len(models)} MLX image models from HuggingFace cache")
                 return models
             except Exception as cache_error:
                 log.warning(
@@ -531,9 +506,7 @@ async def get_asr_models_by_provider(provider: Provider, user: str) -> list[ASRM
         return []
 
 
-async def get_video_models_by_provider(
-    provider: Provider, user: str
-) -> list[VideoModel]:
+async def get_video_models_by_provider(provider: Provider, user: str) -> list[VideoModel]:
     """Get video models for a specific provider."""
     try:
         provider_instance = await get_provider(provider, user)
@@ -602,9 +575,7 @@ async def get_video_models_endpoint(
 
 
 @router.get("/ollama_model_info")
-async def get_ollama_model_info_endpoint(
-    model_name: str, user: str = Depends(current_user)
-) -> dict | None:
+async def get_ollama_model_info_endpoint(model_name: str, user: str = Depends(current_user)) -> dict | None:
     return await get_ollama_model_info(model_name)
 
 
@@ -635,8 +606,7 @@ async def try_cache_repos(
     # Offload blocking cache checks to a thread
     results = await asyncio.gather(*(asyncio.to_thread(check_repo, r) for r in repos))
     return [
-        CachedRepo(repo_id=repo_id, downloaded=downloaded)
-        for repo_id, downloaded in zip(repos, results, strict=False)
+        CachedRepo(repo_id=repo_id, downloaded=downloaded) for repo_id, downloaded in zip(repos, results, strict=False)
     ]
 
 
@@ -697,10 +667,7 @@ def _is_downloaded_from_files(
 
     if allow_patterns:
         for pattern in allow_patterns:
-            if not any(
-                fnmatch(path, pattern) and not _is_ignored(path, ignore_patterns)
-                for path in files
-            ):
+            if not any(fnmatch(path, pattern) and not _is_ignored(path, ignore_patterns) for path in files):
                 return False
         return True
 
@@ -708,9 +675,7 @@ def _is_downloaded_from_files(
 
 
 @router.post("/huggingface/check_cache")
-async def check_huggingface_cache(
-    body: HFCacheCheckRequest, user: str = Depends(current_user)
-) -> HFCacheCheckResponse:
+async def check_huggingface_cache(body: HFCacheCheckRequest, user: str = Depends(current_user)) -> HFCacheCheckResponse:
     """
     Check if all files in a Hugging Face repo that match allow/ignore patterns
     exist in the local HF cache.
@@ -723,9 +688,7 @@ async def check_huggingface_cache(
     api = HfApi(token=token) if token else HfApi()
 
     # List repo files in a worker thread to avoid blocking the event loop
-    items = await asyncio.to_thread(
-        api.list_repo_tree, body.repo_id, recursive=True
-    )
+    items = await asyncio.to_thread(api.list_repo_tree, body.repo_id, recursive=True)
     files = [f for f in items if isinstance(f, RepoFile)]
     filtered_files = filter_repo_paths(files, body.allow_pattern, body.ignore_pattern)
 
@@ -737,13 +700,9 @@ async def check_huggingface_cache(
         except Exception:
             return False
 
-    results = await asyncio.gather(
-        *(asyncio.to_thread(is_cached, f) for f in filtered_files)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(is_cached, f) for f in filtered_files))
 
-    missing = [
-        f.path for f, ok in zip(filtered_files, results, strict=False) if not ok
-    ]
+    missing = [f.path for f, ok in zip(filtered_files, results, strict=False) if not ok]
     return HFCacheCheckResponse(
         repo_id=body.repo_id,
         all_present=len(missing) == 0,
@@ -796,9 +755,7 @@ if not Environment.is_production():
             ) from e
 
         # If reachable, start the streaming response
-        return StreamingResponse(
-            stream_ollama_model_pull(model_name), media_type="application/json"
-        )
+        return StreamingResponse(stream_ollama_model_pull(model_name), media_type="application/json")
 
     @router.post("/huggingface/file_info")
     async def get_huggingface_file_info(

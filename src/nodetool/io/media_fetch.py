@@ -48,9 +48,7 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
             with PIL.Image.open(BytesIO(raw)) as img:
                 return pil_to_png_bytes(img)
         except Exception as e:
-            raise ValueError(
-                f"File-like object could not be decoded as image: {e}"
-            ) from e
+            raise ValueError(f"File-like object could not be decoded as image: {e}") from e
 
     raise ValueError(f"Unsupported object type for image conversion: {type(obj)}")
 
@@ -67,9 +65,7 @@ def _parse_data_uri(uri: str) -> Tuple[str, bytes]:
                 mime_type = parts[0]
         import base64
 
-        raw = base64.b64decode(
-            b64data.encode("utf-8") if not isinstance(b64data, bytes) else b64data
-        )
+        raw = base64.b64decode(b64data.encode("utf-8") if not isinstance(b64data, bytes) else b64data)
         return mime_type, raw
     except Exception as e:
         # Tests expect the phrase "Invalid data URI" to appear
@@ -116,16 +112,18 @@ async def _fetch_http_uri_async(uri: str) -> Tuple[str, bytes]:
 def _is_local_storage_url(uri: str) -> bool:
     """Check if this is a local storage URL that should be read directly from storage."""
     import re
+
     # Match localhost or 127.0.0.1 with any port, accessing /api/storage/
-    pattern = r'^https?://(localhost|127\.0\.0\.1)(:\d+)?/api/storage/'
+    pattern = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/api/storage/"
     return bool(re.match(pattern, uri))
 
 
 def _extract_storage_key_from_url(uri: str) -> str:
     """Extract the storage key from a local storage URL."""
     import re
+
     # Extract the key from URLs like: http://localhost:7777/api/storage/828ae5ded94411f0884a000022ae8b15.png
-    match = re.search(r'/api/storage/(.+)$', uri)
+    match = re.search(r"/api/storage/(.+)$", uri)
     if match:
         return match.group(1)
     raise ValueError(f"Could not extract storage key from URL: {uri}")
@@ -174,6 +172,7 @@ def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
 async def _fetch_local_storage_async(uri: str) -> Tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request (async version)."""
     import mimetypes
+
     key = _extract_storage_key_from_url(uri)
 
     # Get storage from the current scope

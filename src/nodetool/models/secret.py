@@ -42,14 +42,7 @@ class Secret(DBModel):
         self.updated_at = datetime.now()
 
     @classmethod
-    async def create(
-        cls,
-        user_id: str,
-        key: str,
-        value: str,
-        description: Optional[str] = None,
-        **kwargs
-    ):
+    async def create(cls, user_id: str, key: str, value: str, description: Optional[str] = None, **kwargs):
         """
         Create a new encrypted secret.
 
@@ -78,7 +71,7 @@ class Secret(DBModel):
             description=description,
             created_at=datetime.now(),
             updated_at=datetime.now(),
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
@@ -99,10 +92,7 @@ class Secret(DBModel):
 
     @classmethod
     async def list_for_user(
-        cls,
-        user_id: str,
-        limit: int = 100,
-        start_key: Optional[str] = None
+        cls, user_id: str, limit: int = 100, start_key: Optional[str] = None
     ) -> tuple[list["Secret"], str]:
         """
         List all secrets for a user.
@@ -159,6 +149,7 @@ class Secret(DBModel):
 
         # Invalidate cache
         from nodetool.security.secret_helper import clear_secret_cache
+
         clear_secret_cache(self.user_id, self.key)
 
         await self.save()
@@ -193,6 +184,7 @@ class Secret(DBModel):
 
             # Invalidate cache
             from nodetool.security.secret_helper import clear_secret_cache
+
             clear_secret_cache(user_id, key)
 
             await existing.save()
@@ -209,13 +201,7 @@ class Secret(DBModel):
         )
 
     @classmethod
-    async def upsert(
-        cls,
-        user_id: str,
-        key: str,
-        value: str,
-        description: Optional[str] = None
-    ) -> "Secret":
+    async def upsert(cls, user_id: str, key: str, value: str, description: Optional[str] = None) -> "Secret":
         """
         Create or update a secret.
 
@@ -244,16 +230,12 @@ class Secret(DBModel):
 
             # Invalidate cache
             from nodetool.security.secret_helper import clear_secret_cache
+
             clear_secret_cache(user_id, key)
 
             return existing
         else:
-            return await cls.create(
-                user_id=user_id,
-                key=key,
-                value=value,
-                description=description
-            )
+            return await cls.create(user_id=user_id, key=key, value=value, description=description)
 
     @classmethod
     async def delete_secret(cls, user_id: str, key: str) -> bool:
@@ -273,6 +255,7 @@ class Secret(DBModel):
 
             # Invalidate cache
             from nodetool.security.secret_helper import clear_secret_cache
+
             clear_secret_cache(user_id, key)
 
             return True

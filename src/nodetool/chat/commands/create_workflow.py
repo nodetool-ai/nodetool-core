@@ -25,9 +25,7 @@ class CreateWorkflowCommand(Command):
             ["cw", "create_workflow"],
         )
 
-    async def _get_workflow_name_and_description(
-        self, cli: ChatCLI, objective: str
-    ) -> tuple[str, str]:
+    async def _get_workflow_name_and_description(self, cli: ChatCLI, objective: str) -> tuple[str, str]:
         """Get workflow name and description from user."""
         cli.console.print("\n[bold cyan]Workflow Details[/bold cyan]")
 
@@ -53,19 +51,13 @@ class CreateWorkflowCommand(Command):
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if not args:
-            cli.console.print(
-                "[bold red]Usage:[/bold red] /create-workflow <objective>"
-            )
-            cli.console.print(
-                'Example: /create-workflow "Process sales data and generate summary report"'
-            )
+            cli.console.print("[bold red]Usage:[/bold red] /create-workflow <objective>")
+            cli.console.print('Example: /create-workflow "Process sales data and generate summary report"')
             return False
 
         # Check if model is selected
         if not cli.selected_model:
-            cli.console.print(
-                "[bold red]Error:[/bold red] No model selected. Use /model to select one."
-            )
+            cli.console.print("[bold red]Error:[/bold red] No model selected. Use /model to select one.")
             return False
 
         objective = " ".join(args)
@@ -90,9 +82,7 @@ class CreateWorkflowCommand(Command):
                 verbose=True,
             )
 
-            cli.console.print(
-                "\n[bold green]Starting workflow creation...[/bold green]"
-            )
+            cli.console.print("\n[bold green]Starting workflow creation...[/bold green]")
 
             # Create the graph with progress updates
             streaming_output = ""
@@ -108,9 +98,7 @@ class CreateWorkflowCommand(Command):
                             if update.status == "Starting"
                             else "red"
                         )
-                        cli.console.print(
-                            f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}"
-                        )
+                        cli.console.print(f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}")
                         if update.content:
                             cli.console.print(f"  {update.content}")
                     elif isinstance(update, Chunk):
@@ -144,9 +132,7 @@ class CreateWorkflowCommand(Command):
 
             # Check if graph was created successfully
             if not planner.graph:
-                cli.console.print(
-                    "[bold red]Error:[/bold red] Failed to create workflow graph"
-                )
+                cli.console.print("[bold red]Error:[/bold red] Failed to create workflow graph")
                 return False
 
             # Display the visual graph
@@ -169,17 +155,11 @@ class CreateWorkflowCommand(Command):
                 )
                 workflow.save()
 
-                cli.console.print(
-                    "\n[bold green]✓ Workflow saved successfully![/bold green]"
-                )
+                cli.console.print("\n[bold green]✓ Workflow saved successfully![/bold green]")
                 cli.console.print(f"[bold cyan]Name:[/bold cyan] {workflow_name}")
-                cli.console.print(
-                    f"[bold cyan]Description:[/bold cyan] {workflow_description}"
-                )
+                cli.console.print(f"[bold cyan]Description:[/bold cyan] {workflow_description}")
                 cli.console.print(f"[bold cyan]ID:[/bold cyan] {workflow.id}")
-                cli.console.print(
-                    f'\nUse [bold]/workflow "{workflow_name}"[/bold] to run this workflow'
-                )
+                cli.console.print(f'\nUse [bold]/workflow "{workflow_name}"[/bold] to run this workflow')
 
             except Exception as e:
                 cli.console.print(f"[bold red]Error saving workflow:[/bold red] {e}")
@@ -194,15 +174,9 @@ class CreateWorkflowCommand(Command):
                 return False
 
         except KeyboardInterrupt:
-            cli.console.print(
-                "\n[bold yellow]Workflow creation cancelled[/bold yellow]"
-            )
+            cli.console.print("\n[bold yellow]Workflow creation cancelled[/bold yellow]")
         except Exception as e:
             cli.console.print(f"[bold red]Unexpected error:[/bold red] {e}")
-            cli.console.print(
-                Syntax(
-                    traceback.format_exc(), "python", theme="monokai", line_numbers=True
-                )
-            )
+            cli.console.print(Syntax(traceback.format_exc(), "python", theme="monokai", line_numbers=True))
 
         return False

@@ -13,11 +13,7 @@ class AgentCommand(Command):
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if not args:
-            status = (
-                "[bold green]ON[/bold green]"
-                if cli.agent_mode
-                else "[bold red]OFF[/bold red]"
-            )
+            status = "[bold green]ON[/bold green]" if cli.agent_mode else "[bold red]OFF[/bold red]"
             cli.console.print(f"Agent mode is currently: {status}")
             return False
 

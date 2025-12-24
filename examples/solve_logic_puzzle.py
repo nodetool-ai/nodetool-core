@@ -102,8 +102,7 @@ async def main():
     os.environ["OLLAMA_API_URL"] = "http://localhost:11434"
     async with ResourceScope():
         await test_logical_puzzle_task(
-            provider=await get_provider(Provider.HuggingFaceCerebras),
-            model="openai/gpt-oss-120b"
+            provider=await get_provider(Provider.HuggingFaceCerebras), model="openai/gpt-oss-120b"
         )
 
 

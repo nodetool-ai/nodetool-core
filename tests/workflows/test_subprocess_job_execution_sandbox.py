@@ -178,12 +178,8 @@ class TestWrapCommandWithSandbox:
                     profile_content = f.read()
 
                 # In the new model, only write paths need to be explicitly allowed
-                assert (
-                    '(allow file-write* (subpath "/custom/write"))' in profile_content
-                )
-                assert (
-                    '(allow file-write* (subpath "/another/write"))' in profile_content
-                )
+                assert '(allow file-write* (subpath "/custom/write"))' in profile_content
+                assert '(allow file-write* (subpath "/another/write"))' in profile_content
 
                 # Clean up
                 os.unlink(profile_path)
@@ -320,10 +316,7 @@ class TestSandboxFileAccess:
 
                     # Verify custom write path is included
                     # (read paths don't need to be explicitly allowed in the new model)
-                    assert (
-                        f'(allow file-write* (subpath "{custom_write}"))'
-                        in profile_content
-                    )
+                    assert f'(allow file-write* (subpath "{custom_write}"))' in profile_content
 
                     # Clean up
                     os.unlink(profile_path)

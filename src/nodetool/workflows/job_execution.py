@@ -126,9 +126,7 @@ class JobExecution(ABC):
                 JobLogHandler.uninstall_handler(self.job_id)
                 self._log_handler = None
 
-                log.info(
-                    f"Uninstalled log handler for job {self.job_id}, captured {len(captured_logs)} logs"
-                )
+                log.info(f"Uninstalled log handler for job {self.job_id}, captured {len(captured_logs)} logs")
 
                 # Return logs for persistence
                 return captured_logs

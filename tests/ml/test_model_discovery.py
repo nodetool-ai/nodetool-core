@@ -53,9 +53,7 @@ class MockLanguageOnlyProvider(BaseProvider):
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Return mock language models."""
         return [
-            LanguageModel(
-                id="lang-only-1", name="Language Only 1", provider=Provider.Empty
-            ),
+            LanguageModel(id="lang-only-1", name="Language Only 1", provider=Provider.Empty),
         ]
 
     async def generate_message(self, messages, model, tools=None, **kwargs):  # type: ignore
@@ -181,17 +179,13 @@ async def test_model_type_discriminator():
     language_models = await provider.get_available_language_models()
     for model in language_models:
         assert hasattr(model, "type")
-        assert (
-            model.type == "language_model"
-        ), f"LanguageModel should have type='language_model', got '{model.type}'"
+        assert model.type == "language_model", f"LanguageModel should have type='language_model', got '{model.type}'"
 
     # Test image models have correct type discriminator
     image_models = await provider.get_available_image_models()
     for model in image_models:
         assert hasattr(model, "type")
-        assert (
-            model.type == "image_model"
-        ), f"ImageModel should have type='image_model', got '{model.type}'"
+        assert model.type == "image_model", f"ImageModel should have type='image_model', got '{model.type}'"
 
 
 @pytest.mark.asyncio

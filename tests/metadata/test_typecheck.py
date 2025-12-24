@@ -78,15 +78,9 @@ class TestTypecheck:
 
     def test_dict_type_compatibility(self):
         """Test dict type compatibility."""
-        dict_str_int = TypeMetadata(
-            type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")]
-        )
-        dict_str_str = TypeMetadata(
-            type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="str")]
-        )
-        dict_any_any = TypeMetadata(
-            type="dict", type_args=[TypeMetadata(type="any"), TypeMetadata(type="any")]
-        )
+        dict_str_int = TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")])
+        dict_str_str = TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="str")])
+        dict_any_any = TypeMetadata(type="dict", type_args=[TypeMetadata(type="any"), TypeMetadata(type="any")])
         dict_no_args = TypeMetadata(type="dict", type_args=[])
 
         assert typecheck(dict_str_int, dict_str_int) is True
@@ -96,12 +90,8 @@ class TestTypecheck:
 
     def test_union_type_compatibility(self):
         """Test union type compatibility."""
-        union1 = TypeMetadata(
-            type="union", type_args=[TypeMetadata(type="int"), TypeMetadata(type="str")]
-        )
-        union2 = TypeMetadata(
-            type="union", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")]
-        )
+        union1 = TypeMetadata(type="union", type_args=[TypeMetadata(type="int"), TypeMetadata(type="str")])
+        union2 = TypeMetadata(type="union", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")])
         union3 = TypeMetadata(
             type="union",
             type_args=[TypeMetadata(type="int"), TypeMetadata(type="float")],
@@ -110,9 +100,7 @@ class TestTypecheck:
         # Unions with same types (order doesn't matter) should be compatible
         assert typecheck(union1, union2) is True
         # All types in union1 must be compatible with at least one type in union3
-        assert (
-            typecheck(union1, union3) is False
-        )  # str is not compatible with int or float
+        assert typecheck(union1, union3) is False  # str is not compatible with int or float
 
     def test_enum_type_compatibility(self):
         """Test enum type compatibility."""
@@ -181,9 +169,7 @@ class TestTypecheck:
         """Test edge cases in typecheck function."""
         # Dict with no type args should be compatible with any dict
         dict_no_args = TypeMetadata(type="dict", type_args=[])
-        dict_with_args = TypeMetadata(
-            type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")]
-        )
+        dict_with_args = TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")])
         assert typecheck(dict_no_args, dict_with_args) is True
         assert typecheck(dict_with_args, dict_no_args) is True
 
@@ -270,9 +256,7 @@ class TestIsAssignable:
 
     def test_dict_type_assignability(self):
         """Test dict type assignability."""
-        dict_str_int = TypeMetadata(
-            type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")]
-        )
+        dict_str_int = TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")])
         dict_no_args = TypeMetadata(type="dict", type_args=[])
 
         assert is_assignable(dict_str_int, {"a": 1, "b": 2}) is True
@@ -283,55 +267,26 @@ class TestIsAssignable:
     def test_asset_type_assignability(self):
         """Test asset type assignability."""
         # Test with dict representation
-        assert (
-            is_assignable(
-                TypeMetadata(type="image"), {"type": "image", "uri": "test.jpg"}
-            )
-            is True
-        )
-        assert (
-            is_assignable(
-                TypeMetadata(type="video"), {"type": "video", "uri": "test.mp4"}
-            )
-            is True
-        )
-        assert (
-            is_assignable(
-                TypeMetadata(type="audio"), {"type": "audio", "uri": "test.mp3"}
-            )
-            is True
-        )
+        assert is_assignable(TypeMetadata(type="image"), {"type": "image", "uri": "test.jpg"}) is True
+        assert is_assignable(TypeMetadata(type="video"), {"type": "video", "uri": "test.mp4"}) is True
+        assert is_assignable(TypeMetadata(type="audio"), {"type": "audio", "uri": "test.mp3"}) is True
 
         # Test with actual asset objects
-        assert (
-            is_assignable(TypeMetadata(type="image"), ImageRef(uri="test.jpg")) is True
-        )
-        assert (
-            is_assignable(TypeMetadata(type="video"), VideoRef(uri="test.mp4")) is True
-        )
-        assert (
-            is_assignable(TypeMetadata(type="audio"), AudioRef(uri="test.mp3")) is True
-        )
-        assert (
-            is_assignable(TypeMetadata(type="folder"), FolderRef(uri="/path")) is True
-        )
+        assert is_assignable(TypeMetadata(type="image"), ImageRef(uri="test.jpg")) is True
+        assert is_assignable(TypeMetadata(type="video"), VideoRef(uri="test.mp4")) is True
+        assert is_assignable(TypeMetadata(type="audio"), AudioRef(uri="test.mp3")) is True
+        assert is_assignable(TypeMetadata(type="folder"), FolderRef(uri="/path")) is True
         assert is_assignable(TypeMetadata(type="file"), TextRef(uri="test.txt")) is True
-        assert (
-            is_assignable(TypeMetadata(type="model"), ModelRef(uri="model.bin")) is True
-        )
+        assert is_assignable(TypeMetadata(type="model"), ModelRef(uri="model.bin")) is True
         assert is_assignable(TypeMetadata(type="dataframe"), DataframeRef()) is True
 
         # Test wrong asset type
-        assert (
-            is_assignable(TypeMetadata(type="image"), VideoRef(uri="test.mp4")) is False
-        )
+        assert is_assignable(TypeMetadata(type="image"), VideoRef(uri="test.mp4")) is False
 
     def test_tensor_type_assignability(self):
         """Test tensor (NPArray) type assignability."""
         tensor_int = TypeMetadata(type="tensor", type_args=[TypeMetadata(type="int")])
-        tensor_float = TypeMetadata(
-            type="tensor", type_args=[TypeMetadata(type="float")]
-        )
+        tensor_float = TypeMetadata(type="tensor", type_args=[TypeMetadata(type="float")])
         tensor_no_args = TypeMetadata(type="tensor", type_args=[])
 
         np_array_int = NPArray.from_list([1, 2, 3])
@@ -345,9 +300,7 @@ class TestIsAssignable:
 
     def test_union_type_assignability(self):
         """Test union type assignability."""
-        union_int_str = TypeMetadata(
-            type="union", type_args=[TypeMetadata(type="int"), TypeMetadata(type="str")]
-        )
+        union_int_str = TypeMetadata(type="union", type_args=[TypeMetadata(type="int"), TypeMetadata(type="str")])
 
         assert is_assignable(union_int_str, 42) is True
         assert is_assignable(union_int_str, "hello") is True

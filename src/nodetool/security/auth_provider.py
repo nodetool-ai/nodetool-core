@@ -39,9 +39,7 @@ class AuthProvider(ABC):
         token = parts[1].strip()
         return token or None
 
-    def extract_token_from_ws(
-        self, headers: Mapping[str, str], query_params: Mapping[str, str]
-    ) -> Optional[str]:
+    def extract_token_from_ws(self, headers: Mapping[str, str], query_params: Mapping[str, str]) -> Optional[str]:
         """
         Extract a bearer token for WebSocket connections.
 
@@ -63,4 +61,3 @@ class AuthProvider(ABC):
     def clear_caches(self) -> None:
         """Clear any internal caches held by the provider."""
         return None
-

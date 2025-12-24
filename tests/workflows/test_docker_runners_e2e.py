@@ -48,7 +48,7 @@ async def test_python_runner_e2e_with_args(tmp_path: Any) -> None:
         pytest.skip("Required Docker image not present; skipping to avoid long pulls")
     ctx = ProcessingContext()
     node = _Node("py")
-    code = "import sys\n" "print('PY_OK')\n" "print('ERR', file=sys.stderr)\n"
+    code = "import sys\nprint('PY_OK')\nprint('ERR', file=sys.stderr)\n"
 
     async def _collect() -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []
@@ -77,7 +77,7 @@ async def test_node_runner_e2e_with_args(tmp_path: Any) -> None:
         pytest.skip("Required Docker image not present; skipping to avoid long pulls")
     ctx = ProcessingContext()
     node = _Node("js")
-    code = "console.log('JS_OK');\n" "console.error('ERR');\n"
+    code = "console.log('JS_OK');\nconsole.error('ERR');\n"
 
     async def _collect() -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []
@@ -106,15 +106,7 @@ async def test_bash_runner_e2e_with_args(tmp_path: Any) -> None:
         pytest.skip("Required Docker image not present; skipping to avoid long pulls")
     ctx = ProcessingContext()
     node = _Node("sh")
-    code = (
-        "echo START; "
-        "echo OUT 1; "
-        "echo ERR 1 1>&2; "
-        "sleep 1; "
-        "echo OUT 2; "
-        "echo ERR 2 1>&2; "
-        "echo DONE"
-    )
+    code = "echo START; echo OUT 1; echo ERR 1 1>&2; sleep 1; echo OUT 2; echo ERR 2 1>&2; echo DONE"
 
     async def _collect() -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []
@@ -148,7 +140,7 @@ async def test_ruby_runner_e2e_with_args(tmp_path: Any) -> None:
         pytest.skip("Required Docker image not present; skipping to avoid long pulls")
     ctx = ProcessingContext()
     node = _Node("rb")
-    code = "puts 'RB_OK'\n" "STDERR.puts 'ERR'\n"
+    code = "puts 'RB_OK'\nSTDERR.puts 'ERR'\n"
 
     async def _collect() -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []

@@ -213,10 +213,9 @@ class SearchEmailTool(Tool):
                     search_criteria.append(f'BODY "{params["text"]}"')
 
                 # Add date filter
-                since_date = (
-                    datetime.now()
-                    - timedelta(hours=int(params.get("since_hours_ago", 6)))
-                ).strftime("%d-%b-%Y")
+                since_date = (datetime.now() - timedelta(hours=int(params.get("since_hours_ago", 6)))).strftime(
+                    "%d-%b-%Y"
+                )
                 search_criteria.append(f"SINCE {since_date}")
 
                 # Combine search criteria
@@ -319,9 +318,7 @@ class ArchiveEmailTool(Tool):
     def user_message(self, params: dict) -> str:
         ids = params.get("message_ids", [])
         count = len(ids)
-        msg = (
-            f"Archiving email {ids[0]}..." if count == 1 else f"Archiving {count} emails..."
-        )
+        msg = f"Archiving email {ids[0]}..." if count == 1 else f"Archiving {count} emails..."
         return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
@@ -387,9 +384,7 @@ class AddLabelToEmailTool(Tool):
             try:
                 imap.select("INBOX")
 
-                result = imap.store(
-                    params["message_id"], "+X-GM-LABELS", params["label"]
-                )
+                result = imap.store(params["message_id"], "+X-GM-LABELS", params["label"])
 
                 return {
                     "success": result[0] == "OK",

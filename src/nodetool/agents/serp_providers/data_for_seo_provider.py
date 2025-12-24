@@ -70,9 +70,7 @@ class DataForSEOProvider(SerpProvider):
             "Content-Type": "application/json",
         }
 
-    async def _make_request(
-        self, api_url: str, payload: list[dict]
-    ) -> dict[str, Any] | ErrorResponse:
+    async def _make_request(self, api_url: str, payload: list[dict]) -> dict[str, Any] | ErrorResponse:
         """
         Makes an asynchronous POST request to the DataForSEO API.
         """
@@ -81,9 +79,7 @@ class DataForSEOProvider(SerpProvider):
             return auth_headers  # Propagate error
 
         try:
-            response = await self._get_client().post(
-                api_url, headers=auth_headers, json=payload
-            )
+            response = await self._get_client().post(api_url, headers=auth_headers, json=payload)
             response.raise_for_status()
             return response.json()
         except HTTPStatusError as e:
@@ -101,9 +97,7 @@ class DataForSEOProvider(SerpProvider):
         except Exception as e:
             return {"error": f"Unexpected error during DataForSEO request: {e!s}"}
 
-    async def search(
-        self, keyword: str, num_results: int = 10
-    ) -> list[dict[str, Any]] | ErrorResponse:
+    async def search(self, keyword: str, num_results: int = 10) -> list[dict[str, Any]] | ErrorResponse:
         payload_dict = {
             "keyword": keyword,
             "location_code": self.location_code,
@@ -119,10 +113,7 @@ class DataForSEOProvider(SerpProvider):
         if "error" in result_data:
             return result_data
 
-        if (
-            result_data.get("status_code") != 20000
-            or result_data.get("status_message") != "Ok."
-        ):
+        if result_data.get("status_code") != 20000 or result_data.get("status_message") != "Ok.":
             return {
                 "error": f"DataForSEO API Error: {result_data.get('status_code')} - {result_data.get('status_message')}",
                 "details": result_data,
@@ -140,9 +131,7 @@ class DataForSEOProvider(SerpProvider):
                                 {
                                     "title": item.get("title"),
                                     "url": item.get("url"),
-                                    "snippet": item.get(
-                                        "description"
-                                    ),  # DataForSEO uses "description" for snippet
+                                    "snippet": item.get("description"),  # DataForSEO uses "description" for snippet
                                     "position": item.get("rank_absolute"),
                                     "type": "organic",
                                 }
@@ -174,10 +163,7 @@ class DataForSEOProvider(SerpProvider):
         if "error" in result_data:
             return result_data
 
-        if (
-            result_data.get("status_code") != 20000
-            or result_data.get("status_message") != "Ok."
-        ):
+        if result_data.get("status_code") != 20000 or result_data.get("status_message") != "Ok.":
             return {
                 "error": f"DataForSEO API Error: {result_data.get('status_code')} - {result_data.get('status_message')}",
                 "details": result_data,
@@ -195,12 +181,8 @@ class DataForSEOProvider(SerpProvider):
                             "top_stories",
                         ]:  # As per previous logic
                             # Map DataForSEO fields to our common dictionary structure
-                            timestamp_str = item.get(
-                                "timestamp"
-                            )  # e.g., "2023-10-26 14:30:00 +00:00"
-                            published_at = (
-                                timestamp_str.split(" ")[0] if timestamp_str else None
-                            )  # Extract YYYY-MM-DD
+                            timestamp_str = item.get("timestamp")  # e.g., "2023-10-26 14:30:00 +00:00"
+                            published_at = timestamp_str.split(" ")[0] if timestamp_str else None  # Extract YYYY-MM-DD
 
                             news_items_transformed.append(
                                 {
@@ -208,9 +190,7 @@ class DataForSEOProvider(SerpProvider):
                                     "url": item.get("url"),
                                     "source": item.get("source"),
                                     "published_at": published_at,
-                                    "snippet": item.get(
-                                        "description"
-                                    ),  # Assuming description is the snippet
+                                    "snippet": item.get("description"),  # Assuming description is the snippet
                                     "type": "news",
                                 }
                             )
@@ -229,9 +209,7 @@ class DataForSEOProvider(SerpProvider):
         num_results: int = 20,  # Default from old tool
     ) -> list[dict[str, Any]] | ErrorResponse:
         if not keyword and not image_url:
-            return {
-                "error": "One of 'keyword' or 'image_url' is required for image search."
-            }
+            return {"error": "One of 'keyword' or 'image_url' is required for image search."}
 
         payload_dict = {
             "keyword": keyword,
@@ -247,10 +225,7 @@ class DataForSEOProvider(SerpProvider):
         if "error" in result_data:
             return result_data
 
-        if (
-            result_data.get("status_code") != 20000
-            or result_data.get("status_message") != "Ok."
-        ):
+        if result_data.get("status_code") != 20000 or result_data.get("status_message") != "Ok.":
             return {
                 "error": f"DataForSEO API Error: {result_data.get('status_code')} - {result_data.get('status_message')}",
                 "details": result_data,
@@ -275,18 +250,12 @@ class DataForSEOProvider(SerpProvider):
                             )
                         elif item.get("type") == "carousel" and item.get("items"):
                             for carousel_item in item["items"]:
-                                if carousel_item.get(
-                                    "type"
-                                ) == "carousel_element" and carousel_item.get(
-                                    "image_url"
-                                ):
+                                if carousel_item.get("type") == "carousel_element" and carousel_item.get("image_url"):
                                     image_items_transformed.append(
                                         {
                                             "title": carousel_item.get("title"),
                                             "image_url": carousel_item.get("image_url"),
-                                            "source_url": carousel_item.get(
-                                                "url"
-                                            ),  # source of the image for carousel
+                                            "source_url": carousel_item.get("url"),  # source of the image for carousel
                                             "alt_text": carousel_item.get("title"),
                                             "type": "image_carousel_element",  # Distinguish if needed
                                         }
@@ -299,15 +268,11 @@ class DataForSEOProvider(SerpProvider):
 
         return _remove_base64_images(image_items_transformed)
 
-    async def search_finance(
-        self, _query: str, _window: str | None = None
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_finance(self, _query: str, _window: str | None = None) -> dict[str, Any] | ErrorResponse:
         """
         Retrieves financial data. Not currently supported by DataForSEOProvider.
         """
-        return {
-            "error": "Google Finance search is not supported by DataForSEOProvider."
-        }
+        return {"error": "Google Finance search is not supported by DataForSEOProvider."}
 
     async def search_jobs(
         self, _query: str, _location: str | None = None, _num_results: int = 10
@@ -352,9 +317,7 @@ class DataForSEOProvider(SerpProvider):
         """
         Searches for shopping results. Not currently supported by DataForSEOProvider.
         """
-        return {
-            "error": "Google Shopping search is not supported by DataForSEOProvider."
-        }
+        return {"error": "Google Shopping search is not supported by DataForSEOProvider."}
 
     async def close(self) -> None:
         """Closes the HTTP client."""

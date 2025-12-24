@@ -10,9 +10,7 @@ from nodetool.integrations.huggingface.hf_utils import is_model_cached
 
 class TestHFUtils(unittest.TestCase):
     @patch("nodetool.integrations.huggingface.hf_utils.try_to_load_from_cache")
-    def test_is_model_cached_returns_true_when_cache_path_exists(
-        self, mock_try_to_load
-    ):
+    def test_is_model_cached_returns_true_when_cache_path_exists(self, mock_try_to_load):
         """Test that is_model_cached returns True when model is cached."""
         mock_try_to_load.return_value = "/path/to/cached/model"
         result = is_model_cached("test/repo")

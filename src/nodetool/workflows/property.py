@@ -139,11 +139,7 @@ class Property(BaseModel):
         ge = metadata.get(annotated_types.Ge, None)
         le = metadata.get(annotated_types.Le, None)
 
-        title = (
-            name.replace("_", " ").title()
-            if field.title is None
-            else field.title
-        )
+        title = name.replace("_", " ").title() if field.title is None else field.title
         is_required = field.default is PydanticUndefined
 
         return Property(

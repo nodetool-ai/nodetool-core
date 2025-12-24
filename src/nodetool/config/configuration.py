@@ -22,17 +22,18 @@ class Secret:
 _registry: List[Setting] = []
 _secrets_registry: List[Setting] = []
 
+
 def register_secret(
     package_name: str,
     env_var: str,
     group: str,
     description: str,
 ) -> List[Setting]:
-    """Register a new secret.
-    """
+    """Register a new secret."""
     secret = Secret(package_name=package_name, env_var=env_var, group=group, description=description)
     _secrets_registry.append(secret)
     return list(_secrets_registry)
+
 
 def register_setting(
     package_name: str,
@@ -75,6 +76,7 @@ def register_setting(
 def get_settings_registry() -> List[Setting]:
     """Return the list of all registered settings."""
     return list(_registry)
+
 
 def get_secrets_registry() -> List[Secret]:
     """Return the list of all registered secrets."""

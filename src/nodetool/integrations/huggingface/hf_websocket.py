@@ -32,9 +32,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
             user_provider = get_user_auth_provider()
 
             # Authenticate websocket
-            token = static_provider.extract_token_from_ws(
-                websocket.headers, websocket.query_params
-            )
+            token = static_provider.extract_token_from_ws(websocket.headers, websocket.query_params)
             if not token:
                 await websocket.close(code=1008, reason="Missing authentication")
                 log.warning("HF download WebSocket connection rejected: Missing authentication header")
@@ -100,7 +98,9 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                 ignore_patterns = data.get("ignore_patterns")
 
                 if command == "start_download":
-                    log.info(f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})")
+                    log.info(
+                        f"huggingface_download_endpoint: Received start_download command for {repo_id}/{path} (user_id={user_id})"
+                    )
                     print(f"Starting download for {repo_id}/{path} (user_id={user_id})")
 
                     # Determine cache_dir based on model_type
@@ -108,6 +108,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     cache_dir = None
                     if model_type == "llama_cpp_model":
                         from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+
                         cache_dir = get_llama_cpp_cache_dir()
                         log.info(f"Using llama.cpp cache for model_type={model_type}: {cache_dir}")
 
@@ -150,9 +151,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     else:
                         log.warning("Received cancel_download without id or repo_id")
                 else:
-                    await websocket.send_json(
-                        {"status": "error", "message": "Unknown command"}
-                    )
+                    await websocket.send_json({"status": "error", "message": "Unknown command"})
         except Exception as e:
             log.error(f"WebSocket error: {e}", exc_info=True)
             try:

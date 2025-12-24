@@ -35,10 +35,7 @@ class OutputHandle(Generic[T]):
         else:
             type_repr = str(self.py_type)
 
-        return (
-            f"<OutputHandle {self.node.__class__.__name__}"
-            f".{self.name}:{type_repr}>"
-        )
+        return f"<OutputHandle {self.node.__class__.__name__}.{self.name}:{type_repr}>"
 
 
 class OutputsProxy(Generic[TOutput]):
@@ -57,9 +54,7 @@ class OutputsProxy(Generic[TOutput]):
         slot = self._node.find_output_instance(name)
         if slot is None:
             node_type = getattr(self._node, "get_node_type", lambda: "unknown")()
-            raise TypeError(
-                f"{self._node.__class__.__name__} (node type '{node_type}') has no output '{name}'"
-            )
+            raise TypeError(f"{self._node.__class__.__name__} (node type '{node_type}') has no output '{name}'")
 
         py_type = None
         if hasattr(slot.type, "get_python_type"):
@@ -82,6 +77,7 @@ class DynamicOutputsProxy(OutputsProxy[TOutput]):
             return super().__getattr__(name)
         except TypeError:
             return OutputHandle[Any](self._node, name, None)
+
 
 if TYPE_CHECKING:
     from typing_extensions import TypeAliasType

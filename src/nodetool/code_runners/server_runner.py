@@ -69,9 +69,7 @@ class ServerDockerRunner(StreamRunnerBase):
             endpoint_path = "/" + endpoint_path
         self.endpoint_path = endpoint_path
 
-    def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         # Default: run via bash -lc to support complex startup commands
         cmd = user_code.strip() or "sleep infinity"
         return ["bash", "-lc", cmd]
@@ -161,13 +159,9 @@ class ServerDockerRunner(StreamRunnerBase):
                     container=container,
                     timeout=self.ready_timeout_seconds,
                 ):
-                    raise RuntimeError(
-                        f"Server did not become ready on {self.host_ip}:{host_port}"
-                    )
+                    raise RuntimeError(f"Server did not become ready on {self.host_ip}:{host_port}")
 
-                endpoint = (
-                    f"{self.scheme}://{self.host_ip}:{host_port}{self.endpoint_path}"
-                )
+                endpoint = f"{self.scheme}://{self.host_ip}:{host_port}{self.endpoint_path}"
 
                 _asyncio.run_coroutine_threadsafe(
                     queue.put({"type": "yield", "slot": "endpoint", "value": endpoint}),
@@ -212,9 +206,7 @@ class ServerDockerRunner(StreamRunnerBase):
         while _time.time() < deadline:
             try:
                 container.reload()
-                ports_info = (
-                    (container.attrs or {}).get("NetworkSettings", {}).get("Ports", {})
-                )
+                ports_info = (container.attrs or {}).get("NetworkSettings", {}).get("Ports", {})
                 if container.attrs["State"]["Status"] == "exited":
                     raise RuntimeError("Container exited before port was published")
                 self._logger.debug("container attrs: %s", container.attrs)

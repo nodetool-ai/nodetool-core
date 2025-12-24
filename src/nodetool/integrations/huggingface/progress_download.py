@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 
 _thread_local = threading.local()
 
+
 class _CallbackTqdm(tqdm):
     def __init__(self, *args, **kwargs):
         # Force disable display so it doesn't print to stderr
@@ -37,6 +38,7 @@ class _CallbackTqdm(tqdm):
         # Forward to callback
         if n and self._progress_callback is not None:
             self._progress_callback(int(n), self.total)
+
 
 def _download_to_tmp_and_move_with_progress(
     incomplete_path: Path,
@@ -133,6 +135,7 @@ def _download_to_tmp_and_move_with_progress(
 
     logger.info(f"Download complete. Moving file to {destination_path}")
     _fd._chmod_and_move(incomplete_path, destination_path)
+
 
 def _hf_hub_download_to_cache_dir_with_progress(
     *,
@@ -289,6 +292,7 @@ def _hf_hub_download_to_cache_dir_with_progress(
 
     return pointer_path
 
+
 def _hf_hub_download_to_local_dir_with_progress(
     *,
     local_dir: str | Path,
@@ -385,9 +389,7 @@ def _hf_hub_download_to_local_dir_with_progress(
             with open(paths.file_path, "rb") as f:
                 file_hash = _fd.sha_fileobj(f).hex()
             if file_hash == etag:
-                _fd.write_download_metadata(
-                    local_dir=local_dir, filename=filename, commit_hash=commit_hash, etag=etag
-                )
+                _fd.write_download_metadata(local_dir=local_dir, filename=filename, commit_hash=commit_hash, etag=etag)
                 return str(paths.file_path)
 
     if not force_download:
@@ -423,6 +425,7 @@ def _hf_hub_download_to_local_dir_with_progress(
 
     _fd.write_download_metadata(local_dir=local_dir, filename=filename, commit_hash=commit_hash, etag=etag)
     return str(paths.file_path)
+
 
 @validate_hf_hub_args
 def hf_hub_download_with_progress(

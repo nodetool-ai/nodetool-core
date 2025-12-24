@@ -31,9 +31,7 @@ def test_get_system_font_path_env_directory_with_extension(tmp_path):
     assert os.path.basename(result).lower() == "arial.ttf"
 
 
-def test_get_system_font_path_env_directory_without_extension_linux(
-    tmp_path, monkeypatch
-):
+def test_get_system_font_path_env_directory_without_extension_linux(tmp_path, monkeypatch):
     font_dir = tmp_path / "fonts"
     font_dir.mkdir()
     # Create multiple allowed extensions for Linux (.ttf, .otf)

@@ -88,9 +88,7 @@ def configure_logging(
             if use_color:
                 levelname = record.levelname
                 color = self.COLORS.get(levelname, "")
-                record.levelname_color = (
-                    f"{color}{levelname}{self.RESET}" if color else levelname
-                )
+                record.levelname_color = f"{color}{levelname}{self.RESET}" if color else levelname
             else:
                 record.levelname_color = record.levelname
             return super().format(record)

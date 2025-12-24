@@ -49,9 +49,7 @@ class JobExecutionManager:
             cls._instance = JobExecutionManager()
         return cls._instance
 
-    async def start_job(
-        self, request: RunJobRequest, context: ProcessingContext
-    ) -> JobExecution:
+    async def start_job(self, request: RunJobRequest, context: ProcessingContext) -> JobExecution:
         """
         Start a new job execution using the requested execution strategy.
 
@@ -75,9 +73,7 @@ class JobExecutionManager:
         elif request.execution_strategy == ExecutionStrategy.DOCKER:
             job = await DockerJobExecution.create_and_start(request, context)
         else:
-            raise ValueError(
-                f"Unknown execution strategy: {request.execution_strategy}"
-            )
+            raise ValueError(f"Unknown execution strategy: {request.execution_strategy}")
 
         # Register the job in the manager
         self._jobs[job.job_id] = job

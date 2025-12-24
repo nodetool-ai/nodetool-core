@@ -158,15 +158,11 @@ class TypeMetadata(BaseModel):
 
         if self.is_enum_type():
             if self.type_name not in NameToType:
-                raise ValueError(
-                    f"Unknown enum type: {self.type_name}. Types must derive from BaseType"
-                )
+                raise ValueError(f"Unknown enum type: {self.type_name}. Types must derive from BaseType")
             return NameToType[self.type_name]
         else:
             if self.type not in NameToType:
-                raise ValueError(
-                    f"Unknown type: {self.type}. Types must derive from BaseType. Type metadata: {self}"
-                )
+                raise ValueError(f"Unknown type: {self.type}. Types must derive from BaseType. Type metadata: {self}")
             return NameToType[self.type]
 
     def get_json_schema(self) -> dict[str, Any]:
@@ -238,10 +234,7 @@ class TypeMetadata(BaseModel):
                 return {"type": "object"}
             return {
                 "type": "object",
-                "properties": {
-                    f"key_{i}": t.get_json_schema()
-                    for i, t in enumerate(self.type_args)
-                },
+                "properties": {f"key_{i}": t.get_json_schema() for i, t in enumerate(self.type_args)},
             }
         if self.type == "union":
             return {

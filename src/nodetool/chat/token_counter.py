@@ -74,9 +74,7 @@ def _count_tool_calls_tokens(tool_calls: Any, *, encoding=None) -> int:
     enc = encoding or get_default_encoding()
     for tool_call in tool_calls or []:
         try:
-            name = getattr(tool_call, "name", None) or (
-                tool_call.get("name") if isinstance(tool_call, dict) else None
-            )
+            name = getattr(tool_call, "name", None) or (tool_call.get("name") if isinstance(tool_call, dict) else None)
             if name:
                 token_count += len(enc.encode(str(name)))
 

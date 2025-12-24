@@ -24,6 +24,7 @@ class TestSecretCrypto:
 
         # Keys should be base64-encoded (should not raise)
         import base64
+
         base64.urlsafe_b64decode(key1)
         base64.urlsafe_b64decode(key2)
 

@@ -27,12 +27,8 @@ class RunWorkflowCommand(Command):
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
         if not args:
-            cli.console.print(
-                "[bold red]Usage:[/bold red] /workflow <workflow_name> [input_values_json]"
-            )
-            cli.console.print(
-                'Example: /workflow "My Workflow" \'{"input1": 5, "input2": 3}\''
-            )
+            cli.console.print("[bold red]Usage:[/bold red] /workflow <workflow_name> [input_values_json]")
+            cli.console.print('Example: /workflow "My Workflow" \'{"input1": 5, "input2": 3}\'')
             return False
 
         workflow_name = args[0]
@@ -58,9 +54,7 @@ class RunWorkflowCommand(Command):
                     break
 
             if not found_workflow:
-                cli.console.print(
-                    f"[bold red]Error:[/bold red] Workflow '{workflow_name}' not found"
-                )
+                cli.console.print(f"[bold red]Error:[/bold red] Workflow '{workflow_name}' not found")
                 cli.console.print("Available workflows:")
                 for wf in workflows[:10]:  # Show first 10 workflows
                     cli.console.print(f"  - {wf.name}")
@@ -68,13 +62,9 @@ class RunWorkflowCommand(Command):
                     cli.console.print(f"  ... and {len(workflows) - 10} more")
                 return False
 
-            cli.console.print(
-                f"[bold green]Found workflow:[/bold green] {found_workflow.name}"
-            )
+            cli.console.print(f"[bold green]Found workflow:[/bold green] {found_workflow.name}")
             if found_workflow.description:
-                cli.console.print(
-                    f"[bold cyan]Description:[/bold cyan] {found_workflow.description}"
-                )
+                cli.console.print(f"[bold cyan]Description:[/bold cyan] {found_workflow.description}")
 
         except Exception as e:
             cli.console.print(f"[bold red]Error loading workflow:[/bold red] {e}")
@@ -113,9 +103,7 @@ class RunWorkflowCommand(Command):
             )
 
         except Exception as e:
-            cli.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Could not generate schemas: {e}"
-            )
+            cli.console.print(f"[bold yellow]Warning:[/bold yellow] Could not generate schemas: {e}")
 
         # Update graph with input values if provided
         if input_values:
@@ -125,13 +113,9 @@ class RunWorkflowCommand(Command):
                         node_name = node.data.get("name", node.id)
                         if node_name in input_values:
                             node.data["value"] = input_values[node_name]
-                            cli.console.print(
-                                f"[bold green]Set {node_name} = {input_values[node_name]}[/bold green]"
-                            )
+                            cli.console.print(f"[bold green]Set {node_name} = {input_values[node_name]}[/bold green]")
             except Exception as e:
-                cli.console.print(
-                    f"[bold yellow]Warning:[/bold yellow] Error setting input values: {e}"
-                )
+                cli.console.print(f"[bold yellow]Warning:[/bold yellow] Error setting input values: {e}")
 
         # Create workflow request
         try:
@@ -142,9 +126,7 @@ class RunWorkflowCommand(Command):
                 graph=graph,
             )
 
-            cli.console.print(
-                f"\n[bold green]Running workflow '{workflow_name}'...[/bold green]"
-            )
+            cli.console.print(f"\n[bold green]Running workflow '{workflow_name}'...[/bold green]")
             cli.console.print("-" * 50)
 
             # Run the workflow

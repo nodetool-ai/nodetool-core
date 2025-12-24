@@ -66,9 +66,7 @@ class TestHttpMethods:
         mock_scope.get_http_client.return_value = mock_client_instance
 
         with patch("nodetool.workflows.processing_context.require_scope", return_value=mock_scope):
-            result = await context.http_post(
-                "http://example.com", json={"test": "data"}
-            )
+            result = await context.http_post("http://example.com", json={"test": "data"})
             assert result == mock_response
 
     @pytest.mark.asyncio
@@ -209,9 +207,7 @@ class TestPredictionAndGeneration:
         from nodetool.types.prediction import PredictionResult
 
         async def mock_prediction_function(prediction, env):
-            yield PredictionResult(
-                prediction=prediction, encoding="json", instructions="test result"
-            )
+            yield PredictionResult(prediction=prediction, encoding="json", instructions="test result")
 
         with patch("nodetool.models.prediction.Prediction.create"):
             result = await context.run_prediction(
@@ -244,12 +240,8 @@ class TestPredictionAndGeneration:
         from nodetool.types.prediction import PredictionResult
 
         async def mock_prediction_function(prediction, env):
-            yield PredictionResult(
-                prediction=prediction, encoding="json", instructions="chunk1"
-            )
-            yield PredictionResult(
-                prediction=prediction, encoding="json", instructions="chunk2"
-            )
+            yield PredictionResult(prediction=prediction, encoding="json", instructions="chunk1")
+            yield PredictionResult(prediction=prediction, encoding="json", instructions="chunk2")
 
         results = []
         async for result in context.stream_prediction(
@@ -293,8 +285,9 @@ class TestConversionMethods:
         test_image.save(buffer, format="PNG")
         image_ref = ImageRef(data=buffer.getvalue())
 
-        with patch("nodetool.workflows.processing_context.TORCH_AVAILABLE", False), pytest.raises(
-            ImportError, match="torch is required"
+        with (
+            patch("nodetool.workflows.processing_context.TORCH_AVAILABLE", False),
+            pytest.raises(ImportError, match="torch is required"),
         ):
             await context.image_to_tensor(image_ref)
 
@@ -343,9 +336,7 @@ class TestConversionMethods:
             assert not isinstance(result.data, list)  # Should be single image
 
     @pytest.mark.asyncio
-    async def test_convert_value_for_prediction_asset_ref(
-        self, context: ProcessingContext
-    ):
+    async def test_convert_value_for_prediction_asset_ref(self, context: ProcessingContext):
         """Test converting AssetRef for prediction."""
         from nodetool.metadata.type_metadata import TypeMetadata
         from nodetool.workflows.property import Property
@@ -358,9 +349,7 @@ class TestConversionMethods:
         assert result.startswith("data:image/png;base64,")
 
     @pytest.mark.asyncio
-    async def test_convert_value_for_prediction_text_ref(
-        self, context: ProcessingContext
-    ):
+    async def test_convert_value_for_prediction_text_ref(self, context: ProcessingContext):
         """Test converting TextRef for prediction."""
         from nodetool.metadata.type_metadata import TypeMetadata
         from nodetool.workflows.property import Property
@@ -372,9 +361,7 @@ class TestConversionMethods:
         assert result == "test text content"
 
     @pytest.mark.asyncio
-    async def test_convert_value_for_prediction_empty_asset(
-        self, context: ProcessingContext
-    ):
+    async def test_convert_value_for_prediction_empty_asset(self, context: ProcessingContext):
         """Test converting empty AssetRef for prediction."""
         from nodetool.metadata.type_metadata import TypeMetadata
         from nodetool.workflows.property import Property
@@ -411,13 +398,10 @@ class TestConversionMethods:
         result = await context.convert_value_for_prediction(property, None)
         assert result is None
 
-
     @pytest.mark.asyncio
     async def test_is_huggingface_model_cached(self, context: ProcessingContext):
         """Test checking if HuggingFace model is cached."""
-        with patch(
-            "nodetool.integrations.huggingface.hf_utils.try_to_load_from_cache"
-        ) as mock_cache:
+        with patch("nodetool.integrations.huggingface.hf_utils.try_to_load_from_cache") as mock_cache:
             mock_cache.return_value = "/path/to/cache"
 
             result = await context.is_huggingface_model_cached("bert-base-uncased")
@@ -441,9 +425,10 @@ class TestVideoMethods:
             mock_file.name = "/tmp/test_video.mp4"
             mock_temp.return_value.__enter__.return_value = mock_file
 
-            with patch(
-                "nodetool.media.video.video_utils.export_to_video"
-            ) as mock_export, patch("builtins.open", create=True) as mock_open:
+            with (
+                patch("nodetool.media.video.video_utils.export_to_video") as mock_export,
+                patch("builtins.open", create=True) as mock_open,
+            ):
                 mock_open.return_value = BytesIO(b"fake video data")
 
                 result = await context.video_from_frames(frames, fps=24)

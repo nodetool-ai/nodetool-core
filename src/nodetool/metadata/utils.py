@@ -103,9 +103,7 @@ def is_list_type(t):
     Returns:
         True if the type is a list, False otherwise.
     """
-    return (
-        t is list or get_origin(t) is list or t is Sequence or get_origin(t) is Sequence
-    )
+    return t is list or get_origin(t) is list or t is Sequence or get_origin(t) is Sequence
 
 
 def is_tuple_type(t):

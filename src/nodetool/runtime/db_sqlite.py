@@ -325,7 +325,7 @@ class SQLiteScopeResources(DBResources):
             # First, release all connections held by adapters back to the pool
             if self.pool is not None:
                 for adapter in self._adapters.values():
-                    if hasattr(adapter, 'connection') and adapter.connection is not None:
+                    if hasattr(adapter, "connection") and adapter.connection is not None:
                         await self.pool.release(adapter.connection)
 
                 # Now close all pooled connections

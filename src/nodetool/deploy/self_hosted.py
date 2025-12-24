@@ -41,9 +41,7 @@ class LocalExecutor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-    def execute(
-        self, command: str, check: bool = True, timeout: Optional[int] = None
-    ) -> Tuple[int, str, str]:
+    def execute(self, command: str, check: bool = True, timeout: Optional[int] = None) -> Tuple[int, str, str]:
         """Execute a command locally."""
         try:
             result = subprocess.run(
@@ -195,9 +193,7 @@ class SelfHostedDeployer:
 
         try:
             # Update state to deploying
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.DEPLOYING.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DEPLOYING.value)
 
             with self._get_executor() as executor:
                 # Step 1: Create directories
@@ -237,9 +233,7 @@ class SelfHostedDeployer:
             results["errors"].append(str(e))
 
             # Update state with error
-            self.state_manager.update_deployment_status(
-                self.deployment_name, DeploymentStatus.ERROR.value
-            )
+            self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.ERROR.value)
 
             raise
 
@@ -272,9 +266,7 @@ class SelfHostedDeployer:
         proxy = self.deployment.proxy
         token = proxy.bearer_token
         if not token:
-            token = self.state_manager.get_or_create_secret(
-                self.deployment_name, "proxy_bearer_token"
-            )
+            token = self.state_manager.get_or_create_secret(self.deployment_name, "proxy_bearer_token")
 
         # Build services list with auth tokens
         services = []
@@ -351,9 +343,7 @@ class SelfHostedDeployer:
         os.chmod(dest, 0o600)
         results["steps"].append(f"  Synced TLS {label}: {dest}")
 
-    def _copy_file_to_remote(
-        self, ssh, src: Path, dest: str, results: Dict[str, Any], label: str
-    ) -> None:
+    def _copy_file_to_remote(self, ssh, src: Path, dest: str, results: Dict[str, Any], label: str) -> None:
         ssh_config = self.deployment.ssh
         if not ssh_config:
             raise RuntimeError("SSH configuration required to copy TLS files to remote host")
@@ -370,9 +360,7 @@ class SelfHostedDeployer:
 
         result = subprocess.run(scp_cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to copy TLS {label} to remote host: {result.stderr.strip()}"
-            )
+            raise RuntimeError(f"Failed to copy TLS {label} to remote host: {result.stderr.strip()}")
 
         ssh.execute(f"chmod 600 {shlex.quote(dest)}", check=False, timeout=30)
         results["steps"].append(f"  Synced TLS {label}: {dest}")
@@ -383,9 +371,7 @@ class SelfHostedDeployer:
             return
 
         if not proxy.tls_certfile or not proxy.tls_keyfile:
-            raise RuntimeError(
-                "auto_certbot requires tls_certfile and tls_keyfile to be specified"
-            )
+            raise RuntimeError("auto_certbot requires tls_certfile and tls_keyfile to be specified")
         if not proxy.domain or not proxy.email:
             raise RuntimeError("auto_certbot requires domain and email to be set")
 
@@ -407,19 +393,13 @@ class SelfHostedDeployer:
         exit_code, stdout, stderr = ssh.execute(certbot_cmd, check=False, timeout=600)
         if exit_code != 0:
             raise RuntimeError(
-                "certbot failed to obtain certificate: "
-                f"{(stderr or stdout).strip() or 'see remote logs'}"
+                f"certbot failed to obtain certificate: {(stderr or stdout).strip() or 'see remote logs'}"
             )
 
-        check_cmd = (
-            f"test -f {shlex.quote(proxy.tls_certfile)} "
-            f"-a -f {shlex.quote(proxy.tls_keyfile)}"
-        )
+        check_cmd = f"test -f {shlex.quote(proxy.tls_certfile)} -a -f {shlex.quote(proxy.tls_keyfile)}"
         exit_code, _, _ = ssh.execute(check_cmd, check=False)
         if exit_code != 0:
-            raise RuntimeError(
-                "Certbot completed but certificate/key files were not found on host"
-            )
+            raise RuntimeError("Certbot completed but certificate/key files were not found on host")
 
         ssh.execute(f"chmod 600 {shlex.quote(proxy.tls_certfile)}", check=False)
         ssh.execute(f"chmod 600 {shlex.quote(proxy.tls_keyfile)}", check=False)
@@ -428,21 +408,13 @@ class SelfHostedDeployer:
     def _write_text_file(self, ssh, path: str, content: str, mode: str = "644") -> None:
         """Write text content to remote path using a here-doc."""
         sentinel = "__NODETOOL_PROXY_EOF__"
-        command = (
-            f"umask 077 && cat <<'{sentinel}' > \"{path}\"\n"
-            f"{content}\n"
-            f"{sentinel}\n"
-            f"chmod {mode} \"{path}\""
-        )
+        command = f'umask 077 && cat <<\'{sentinel}\' > "{path}"\n{content}\n{sentinel}\nchmod {mode} "{path}"'
         ssh.execute(command, check=True, timeout=30)
 
     def _ensure_network(self, ssh, results: Dict[str, Any]) -> None:
         """Ensure the proxy network exists."""
         network = self.deployment.proxy.docker_network
-        command = (
-            f"docker network inspect {network} >/dev/null 2>&1 "
-            f"|| docker network create {network}"
-        )
+        command = f"docker network inspect {network} >/dev/null 2>&1 || docker network create {network}"
         ssh.execute(command, check=False, timeout=30)
         results["steps"].append(f"  Ensured docker network: {network}")
 
@@ -460,9 +432,7 @@ class SelfHostedDeployer:
             return
 
         if self.is_localhost:
-            raise RuntimeError(
-                f"Proxy image '{image}' not found locally. Build or pull it before deploying."
-            )
+            raise RuntimeError(f"Proxy image '{image}' not found locally. Build or pull it before deploying.")
 
         results["steps"].append("  Proxy image missing on host; pushing from local Docker daemon...")
         self._push_image_to_remote(image)
@@ -481,13 +451,9 @@ class SelfHostedDeployer:
 
         # Verify image exists locally
         inspect_cmd = ["docker", "image", "inspect", image]
-        inspect_result = subprocess.run(
-            inspect_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
+        inspect_result = subprocess.run(inspect_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         if inspect_result.returncode != 0:
-            raise RuntimeError(
-                f"Proxy image '{image}' not found locally. Build or pull it before deploying."
-            )
+            raise RuntimeError(f"Proxy image '{image}' not found locally. Build or pull it before deploying.")
 
         ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no"]
         if ssh_config.key_path:
@@ -514,14 +480,10 @@ class SelfHostedDeployer:
         _save_stdout, save_stderr = save_proc.communicate()
 
         if save_proc.returncode != 0:
-            raise RuntimeError(
-                f"Failed to export proxy image '{image}': {save_stderr.decode().strip()}"
-            )
+            raise RuntimeError(f"Failed to export proxy image '{image}': {save_stderr.decode().strip()}")
 
         if load_proc.returncode != 0:
-            raise RuntimeError(
-                f"Failed to push proxy image to remote host: {stderr.decode().strip()}"
-            )
+            raise RuntimeError(f"Failed to push proxy image to remote host: {stderr.decode().strip()}")
 
     def _stop_existing_proxy(self, ssh, results: Dict[str, Any]) -> None:
         """Stop and remove the existing proxy container if present."""
@@ -555,9 +517,7 @@ class SelfHostedDeployer:
         try:
             _exit_code, stdout, _stderr = ssh.execute(command, check=True, timeout=300)
             container_id = stdout.strip() or "<unknown>"
-            results["steps"].append(
-                f"  Proxy container started: {container_id[:12]}"
-            )
+            results["steps"].append(f"  Proxy container started: {container_id[:12]}")
         except SSHCommandError as exc:
             results["errors"].append(f"Failed to start proxy container: {exc.stderr}")
             raise
@@ -605,9 +565,7 @@ class SelfHostedDeployer:
                 ssh.execute(curl_cmd, check=True, timeout=30)
                 results["steps"].append(f"  Status endpoint OK: {status_url}")
             except SSHCommandError as exc:
-                results["steps"].append(
-                    f"  Warning: HTTPS status check failed: {exc.stderr.strip()}"
-                )
+                results["steps"].append(f"  Warning: HTTPS status check failed: {exc.stderr.strip()}")
 
     def destroy(self) -> Dict[str, Any]:
         """
@@ -630,30 +588,22 @@ class SelfHostedDeployer:
                 # Stop container
                 stop_command = f"docker stop {container_name}"
                 try:
-                    _exit_code, _stdout, _stderr = ssh.execute(
-                        stop_command, check=False, timeout=30
-                    )
+                    _exit_code, _stdout, _stderr = ssh.execute(stop_command, check=False, timeout=30)
                     results["steps"].append(f"Container stopped: {container_name}")
                 except SSHCommandError as e:
-                    results["steps"].append(
-                        f"Warning: Failed to stop container: {e.stderr}"
-                    )
+                    results["steps"].append(f"Warning: Failed to stop container: {e.stderr}")
 
                 # Remove container
                 rm_command = f"docker rm {container_name}"
                 try:
-                    _exit_code, _stdout, _stderr = ssh.execute(
-                        rm_command, check=False, timeout=30
-                    )
+                    _exit_code, _stdout, _stderr = ssh.execute(rm_command, check=False, timeout=30)
                     results["steps"].append(f"Container removed: {container_name}")
                 except SSHCommandError as e:
                     results["errors"].append(f"Failed to remove container: {e.stderr}")
                     raise
 
                 # Update state
-                self.state_manager.update_deployment_status(
-                    self.deployment_name, DeploymentStatus.DESTROYED.value
-                )
+                self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DESTROYED.value)
 
         except Exception as e:
             results["status"] = "error"
@@ -688,13 +638,9 @@ class SelfHostedDeployer:
                 container_name = ProxyRunGenerator(self.deployment).get_container_name()
 
                 # Get container status
-                command = (
-                    f"docker ps -a -f name={container_name} --format '{{{{.Status}}}}'"
-                )
+                command = f"docker ps -a -f name={container_name} --format '{{{{.Status}}}}'"
                 _exit_code, stdout, _stderr = ssh.execute(command, check=False)
-                status_info["live_status"] = (
-                    stdout.strip() if stdout else "Container not found"
-                )
+                status_info["live_status"] = stdout.strip() if stdout else "Container not found"
 
                 # Get container ID
                 id_command = f"docker ps -a -q -f name={container_name}"
@@ -734,8 +680,6 @@ class SelfHostedDeployer:
 
             command += f" {container_name}"
 
-            _exit_code, stdout, _stderr = ssh.execute(
-                command, check=False, timeout=None if follow else 30
-            )
+            _exit_code, stdout, _stderr = ssh.execute(command, check=False, timeout=None if follow else 30)
 
             return stdout

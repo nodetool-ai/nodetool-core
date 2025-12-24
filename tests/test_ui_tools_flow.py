@@ -68,9 +68,7 @@ async def test_help_processor_ui_tool_flow():
         name="ui_add_node",
         args={"node": {"id": "n1", "position": {"x": 1, "y": 2}, "data": {}}},
     )
-    provider = MockProvider(
-        responses=[Message(role="assistant", tool_calls=[tool_call])]
-    )
+    provider = MockProvider(responses=[Message(role="assistant", tool_calls=[tool_call])])
 
     processor = HelpMessageProcessor(provider)
 
@@ -123,10 +121,7 @@ async def test_help_processor_ui_tool_flow():
     class ResolvingRunner(DummyRunner):
         async def send_message(self, message: dict):  # type: ignore[override]
             self.sent.append(message)
-            if (
-                message.get("type") == "tool_call"
-                and message.get("name") == "ui_add_node"
-            ):
+            if message.get("type") == "tool_call" and message.get("name") == "ui_add_node":
                 tool_bridge.resolve_result(
                     message["tool_call_id"],
                     {

@@ -59,9 +59,7 @@ class FakeProvider(BaseProvider):
         tool_calls: list[ToolCall] | None = None,
         should_stream: bool = True,
         chunk_size: int = 10,
-        custom_response_fn: (
-            Callable[[Sequence[Message], str], str | list[ToolCall]] | None
-        ) = None,
+        custom_response_fn: (Callable[[Sequence[Message], str], str | list[ToolCall]] | None) = None,
     ):
         """
         Initialize the FakeProvider.
@@ -86,9 +84,7 @@ class FakeProvider(BaseProvider):
         self.last_tools: Sequence[Any] = []
         self.last_kwargs: dict[str, Any] = {}
 
-    def get_response(
-        self, messages: Sequence[Message], model: str
-    ) -> str | list[ToolCall]:
+    def get_response(self, messages: Sequence[Message], model: str) -> str | list[ToolCall]:
         """Get the response to return (text or tool calls)."""
         if self.custom_response_fn:
             return self.custom_response_fn(messages, model)
@@ -111,7 +107,6 @@ class FakeProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -136,9 +131,7 @@ class FakeProvider(BaseProvider):
                 tool_calls=response,
             )
         else:  # Text response
-            return Message(
-                role="assistant", content=[MessageTextContent(text=response)]
-            )
+            return Message(role="assistant", content=[MessageTextContent(text=response)])
 
     async def generate_messages(
         self,
@@ -146,7 +139,6 @@ class FakeProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:

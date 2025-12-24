@@ -23,13 +23,9 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
 
     async def fake_execute_tasks(self, ctx):
         sub = self.task.steps[0]
-        yield TaskUpdate(
-            task=self.task, step=sub, event=TaskUpdateEvent.STEP_STARTED
-        )
+        yield TaskUpdate(task=self.task, step=sub, event=TaskUpdateEvent.STEP_STARTED)
         yield StepResult(step=sub, result="part", is_task_result=False)
-        yield TaskUpdate(
-            task=self.task, step=sub, event=TaskUpdateEvent.STEP_COMPLETED
-        )
+        yield TaskUpdate(task=self.task, step=sub, event=TaskUpdateEvent.STEP_COMPLETED)
         yield StepResult(step=sub, result="final", is_task_result=True)
 
     class DummyExecutor:
@@ -82,13 +78,9 @@ class DummyTaskExecutor:
 
     async def execute_tasks(self, context):
         step = self.task.steps[0]
-        yield TaskUpdate(
-            task=self.task, step=step, event=TaskUpdateEvent.STEP_STARTED
-        )
+        yield TaskUpdate(task=self.task, step=step, event=TaskUpdateEvent.STEP_STARTED)
         yield Chunk(content="work")
-        yield TaskUpdate(
-            task=self.task, step=step, event=TaskUpdateEvent.STEP_COMPLETED
-        )
+        yield TaskUpdate(task=self.task, step=step, event=TaskUpdateEvent.STEP_COMPLETED)
         yield StepResult(step=step, result="done", is_task_result=True)
 
 
@@ -139,8 +131,5 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
         items.append(item)
 
     assert any(isinstance(i, StepResult) for i in items)
-    assert any(
-        isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED
-        for i in items
-    )
+    assert any(isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED for i in items)
     assert agent.get_results() == "done"

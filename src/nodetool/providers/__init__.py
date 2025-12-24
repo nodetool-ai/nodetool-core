@@ -105,6 +105,7 @@ def import_providers():
     if _is_llama_server_available():
         try:
             from nodetool.providers import llama_provider  # type: ignore
+
             log.debug("Llama provider imported successfully (llama-server binary found)")
         except ImportError as e:
             log.warning(
@@ -112,10 +113,7 @@ def import_providers():
                 "Some llama.cpp features may be unavailable."
             )
         except Exception as e:
-            log.warning(
-                f"Unexpected error importing Llama provider: {e}. "
-                "Some llama.cpp features may be unavailable."
-            )
+            log.warning(f"Unexpected error importing Llama provider: {e}. Some llama.cpp features may be unavailable.")
     else:
         log.debug(
             "Llama provider skipped: llama-server binary not found in PATH or LLAMA_SERVER_BINARY. "
@@ -130,6 +128,7 @@ def import_providers():
     elif _safe_import_check(mlx_module):
         try:
             import nodetool.mlx.mlx_provider  # type: ignore
+
             log.debug("MLX provider imported successfully")
         except ImportError as e:
             log.warning(
@@ -143,12 +142,11 @@ def import_providers():
                 "MLX language models can still be discovered from the HuggingFace cache."
             )
     else:
-        log.warning(
-            "MLX provider import skipped: module failed a safe-import probe (likely missing native deps)."
-        )
+        log.warning("MLX provider import skipped: module failed a safe-import probe (likely missing native deps).")
 
     try:
         import nodetool.huggingface.huggingface_local_provider  # type: ignore
+
         log.debug("HuggingFace local provider imported successfully")
     except ImportError as e:
         log.debug(f"HuggingFace local provider could not be imported: {e}")
@@ -159,6 +157,7 @@ def import_providers():
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock = asyncio.Lock()
+
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
     """
@@ -209,6 +208,7 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
         List of initialized provider instances for this user
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     import_providers()

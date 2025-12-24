@@ -25,12 +25,12 @@ _CACHED_HF_TOKEN: Optional[str] = None
 @dataclass
 class HfFileMeta:
     # Metadata returned by HEAD
-    url: str                # final download URL (possibly CDN)
-    etag: str               # normalized without quotes
-    size: Optional[int]     # bytes, None if unknown
+    url: str  # final download URL (possibly CDN)
+    etag: str  # normalized without quotes
+    size: Optional[int]  # bytes, None if unknown
     commit_hash: Optional[str]
     accept_ranges: bool
-    original_url: str       # original /resolve url
+    original_url: str  # original /resolve url
 
 
 def _env_bool(name: str) -> bool:
@@ -255,6 +255,7 @@ async def hf_head_metadata(
     location = resp.headers.get("Location") or str(resp.url)
     if location and not location.startswith(("http://", "https://")):
         from urllib.parse import urljoin
+
         location = urljoin(str(resp.url), location)
 
     commit = resp.headers.get(HF_HEADER_X_REPO_COMMIT)
@@ -367,9 +368,7 @@ async def _download_with_resume(
             if expected_size is not None:
                 actual_size = tmp.stat().st_size
                 if actual_size != expected_size:
-                    raise RuntimeError(
-                        f"Size mismatch for {url}: expected {expected_size}, got {actual_size}"
-                    )
+                    raise RuntimeError(f"Size mismatch for {url}: expected {expected_size}, got {actual_size}")
 
             tmp.replace(dest)
             return
@@ -380,7 +379,7 @@ async def _download_with_resume(
             # loop again, resuming from whatever is on disk
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 416:
-                 # Should be handled above, but just in case raise_for_status catches it first
+                # Should be handled above, but just in case raise_for_status catches it first
                 log.warning("Range not satisfiable (caught via exception). Restarting download.")
                 if tmp.exists():
                     tmp.unlink()
@@ -393,7 +392,7 @@ async def async_hf_download(
     filename: str,
     *,
     revision: str = "main",
-    repo_type: str = "model",   # "model", "dataset", or "space"
+    repo_type: str = "model",  # "model", "dataset", or "space"
     token: str | bool | None = None,
     cache_dir: Optional[Path] = None,
     client: Optional[httpx.AsyncClient] = None,

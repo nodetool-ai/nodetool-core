@@ -41,9 +41,7 @@ class CalculatorTool(Tool):
         "required": ["expression"],
     }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         expression = params["expression"].strip()
 
         try:
@@ -112,9 +110,7 @@ class StatisticsTool(Tool):
         "required": ["data"],
     }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         data = params["data"]
         calculations = params.get("calculations", ["all"])
 
@@ -219,9 +215,7 @@ class GeometryTool(Tool):
         "required": ["shape", "dimensions"],
     }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         shape = params["shape"]
         dims = params["dimensions"]
 
@@ -275,9 +269,7 @@ class GeometryTool(Tool):
             elif shape == "distance_3d":
                 x1, y1, z1 = dims["x1"], dims["y1"], dims["z1"]
                 x2, y2, z2 = dims["x2"], dims["y2"], dims["z2"]
-                results["distance"] = math.sqrt(
-                    (x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2
-                )
+                results["distance"] = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2)
 
             return results
 
@@ -324,9 +316,7 @@ class TrigonometryTool(Tool):
         "required": ["function", "value"],
     }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         function = params["function"]
         value = params["value"]
         angle_unit = params.get("angle_unit", "degrees")
@@ -449,9 +439,7 @@ class ConversionTool(Tool):
             "fl_oz": 0.0295735,
         }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         value = params["value"]
         from_unit = params["from_unit"].lower()
         to_unit = params["to_unit"].lower()
@@ -467,9 +455,7 @@ class ConversionTool(Tool):
             else:
                 # Regular unit conversion
                 if from_unit not in self.conversions or to_unit not in self.conversions:
-                    return {
-                        "error": f"Unsupported unit conversion: {from_unit} to {to_unit}"
-                    }
+                    return {"error": f"Unsupported unit conversion: {from_unit} to {to_unit}"}
 
                 # Convert to base unit, then to target unit
                 base_value = value * self.conversions[from_unit]

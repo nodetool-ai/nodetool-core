@@ -18,14 +18,8 @@ router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
 @router.post("/")
-async def create(
-    req: MessageCreateRequest, user: str = Depends(current_user)
-) -> Message:
-    thread_id = (
-        (await Thread.create(user_id=user)).id
-        if req.thread_id is None
-        else req.thread_id
-    )
+async def create(req: MessageCreateRequest, user: str = Depends(current_user)) -> Message:
+    thread_id = (await Thread.create(user_id=user)).id if req.thread_id is None else req.thread_id
     return Message.from_model(
         await MessageModel.create(
             user_id=user,
@@ -73,13 +67,9 @@ async def index(
     cursor: Optional[str] = None,
     limit: int = 100,
 ) -> MessageList:
-    messages, cursor = await MessageModel.paginate(
-        thread_id=thread_id, reverse=reverse, limit=limit, start_key=cursor
-    )
+    messages, cursor = await MessageModel.paginate(thread_id=thread_id, reverse=reverse, limit=limit, start_key=cursor)
     for message in messages:
         if message.user_id != user:
             raise HTTPException(status_code=404, detail="Message not found")
 
-    return MessageList(
-        next=cursor, messages=[Message.from_model(message) for message in messages]
-    )
+    return MessageList(next=cursor, messages=[Message.from_model(message) for message in messages])

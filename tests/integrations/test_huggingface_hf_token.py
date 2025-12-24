@@ -126,8 +126,6 @@ class TestHFTokenFromDatabase:
             if "HF_TOKEN" in os.environ:
                 del os.environ["HF_TOKEN"]
 
-
-
     async def test_admin_download_manager_uses_hf_token(self):
         """Test that AdminDownloadManager uses HF_TOKEN when available."""
         test_token = "hf_test_token_for_admin"
@@ -155,16 +153,13 @@ class TestHFTokenFromDatabase:
         try:
             # Patch async_hf_download where it's imported in huggingface_models
             with patch(
-                "nodetool.integrations.huggingface.huggingface_models.async_hf_download",
-                new_callable=AsyncMock
+                "nodetool.integrations.huggingface.huggingface_models.async_hf_download", new_callable=AsyncMock
             ) as mock_download:
                 mock_download.return_value = "/tmp/README.md"
 
                 # Mock file reading
                 with patch("builtins.open", create=True) as mock_open:
-                    mock_open.return_value.__enter__.return_value.read.return_value = (
-                        "# Test README"
-                    )
+                    mock_open.return_value.__enter__.return_value.read.return_value = "# Test README"
 
                     # Mock try_to_load_from_cache to return None (not cached)
                     with patch(
@@ -192,9 +187,7 @@ class TestHFTokenFromDatabase:
             from huggingface_hub import ModelInfo
 
             # Mock HfApi and model_info
-            with patch(
-                "nodetool.integrations.huggingface.huggingface_models.HfApi"
-            ) as mock_hf_api_class:
+            with patch("nodetool.integrations.huggingface.huggingface_models.HfApi") as mock_hf_api_class:
                 mock_api = MagicMock()
                 mock_model_info = MagicMock(spec=ModelInfo)
                 mock_model_info.siblings = []

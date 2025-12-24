@@ -52,9 +52,7 @@ class GraphNodeConverter:
 
         node_cls = graph_node.get_node_class()
         if node_cls is None:
-            raise ValueError(
-                f"Node class {graph_node.get_node_type()} not found"
-            )
+            raise ValueError(f"Node class {graph_node.get_node_type()} not found")
 
         graph_node.id = self.get_next_node_id()
 
@@ -87,18 +85,11 @@ class GraphNodeConverter:
                 raise TypeError(
                     f"Cannot assign node '{value.__class__.__name__}' directly to "
                     f"'{graph_node.__class__.__name__}.{field_name}'. "
-                    "Use an explicit output handle (node.out.slot or node.out[\"slot\"])."
+                    'Use an explicit output handle (node.out.slot or node.out["slot"]).'
                 )
 
-            if (
-                isinstance(value, tuple)
-                and len(value) == 2
-                and isinstance(value[0], GraphNode)
-            ):
-                raise TypeError(
-                    "Tuple-based wiring is no longer supported. "
-                    "Use explicit output handles instead."
-                )
+            if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], GraphNode):
+                raise TypeError("Tuple-based wiring is no longer supported. Use explicit output handles instead.")
 
             node_data[field_name] = value
 
@@ -123,9 +114,7 @@ class GraphNodeConverter:
                 )
 
             if not node_is_dynamic:
-                raise ValueError(
-                    f"{node_cls.__name__} does not support dynamic property '{extra_name}'."
-                )
+                raise ValueError(f"{node_cls.__name__} does not support dynamic property '{extra_name}'.")
 
             dynamic_property_values[extra_name] = value
 
@@ -153,9 +142,7 @@ class GraphNodeConverter:
                             ) from exc
             dynamic_outputs_payload = outputs
         elif raw_dynamic_outputs not in (None, {}):
-            raise ValueError(
-                f"{node_cls.__name__} does not support dynamic outputs."
-            )
+            raise ValueError(f"{node_cls.__name__} does not support dynamic outputs.")
 
         if dynamic_outputs_payload is not None:
             init_kwargs["dynamic_outputs"] = dynamic_outputs_payload
@@ -193,9 +180,7 @@ class GraphNodeConverter:
         slot = src_cls.find_output(src_slot)
         if slot is None:
             if not getattr(src_cls, "_supports_dynamic_outputs", False):
-                raise ValueError(
-                    f"{src_cls.__name__} has no output '{src_slot}' and is not dynamic."
-                )
+                raise ValueError(f"{src_cls.__name__} has no output '{src_slot}' and is not dynamic.")
             slot_type = TypeMetadata(type="any")
         else:
             slot_type = slot.type
@@ -213,9 +198,7 @@ class GraphNodeConverter:
             dst_is_dynamic = bool(getattr(dst_cls, "_is_dynamic", False))
 
         if dst_prop is None and not dst_is_dynamic:
-            raise ValueError(
-                f"Target property '{dst_field}' not found on {dst_cls.__name__}"
-            )
+            raise ValueError(f"Target property '{dst_field}' not found on {dst_cls.__name__}")
 
         if dst_prop is not None:
             if (

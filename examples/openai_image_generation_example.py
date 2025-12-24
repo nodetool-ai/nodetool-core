@@ -79,9 +79,7 @@ async def test_openai_image_generation_agent(
 
 
 async def main():
-    IMAGE_PROMPT = (
-        "A photorealistic image of a red panda coding on a laptop in a forest"
-    )
+    IMAGE_PROMPT = "A photorealistic image of a red panda coding on a laptop in a forest"
 
     async with ResourceScope():
         await test_openai_image_generation_agent(

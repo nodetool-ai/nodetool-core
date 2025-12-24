@@ -70,9 +70,7 @@ class AWSSecretsUtil:
             # Try to create the secret
             try:
                 client.create_secret(
-                    Name=secret_name,
-                    SecretString=master_key,
-                    Description="NodeTool master encryption key for secrets"
+                    Name=secret_name, SecretString=master_key, Description="NodeTool master encryption key for secrets"
                 )
                 log.info(f"Master key successfully stored in AWS Secrets Manager: {secret_name}")
                 return True
@@ -80,10 +78,7 @@ class AWSSecretsUtil:
             except ClientError as e:
                 if e.response["Error"]["Code"] == "ResourceExistsException":
                     # Secret already exists, update it
-                    client.put_secret_value(
-                        SecretId=secret_name,
-                        SecretString=master_key
-                    )
+                    client.put_secret_value(SecretId=secret_name, SecretString=master_key)
                     log.info(f"Master key updated in AWS Secrets Manager: {secret_name}")
                     return True
                 else:
@@ -118,6 +113,7 @@ class AWSSecretsUtil:
                 return response["SecretString"]
             else:
                 import base64
+
                 return base64.b64decode(response["SecretBinary"]).decode()
 
         except Exception as e:
@@ -183,59 +179,28 @@ class AWSSecretsUtil:
 
 def main():
     """CLI entry point for AWS Secrets Manager utilities."""
-    parser = argparse.ArgumentParser(
-        description="Manage NodeTool master keys in AWS Secrets Manager"
-    )
-    parser.add_argument(
-        "--region",
-        help="AWS region (defaults to AWS_REGION env var or us-east-1)"
-    )
+    parser = argparse.ArgumentParser(description="Manage NodeTool master keys in AWS Secrets Manager")
+    parser.add_argument("--region", help="AWS region (defaults to AWS_REGION env var or us-east-1)")
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Store command
     store_parser = subparsers.add_parser("store", help="Store current master key to AWS")
-    store_parser.add_argument(
-        "--secret-name",
-        required=True,
-        help="Name for the secret in AWS Secrets Manager"
-    )
-    store_parser.add_argument(
-        "--key",
-        help="Master key to store (if not provided, uses current key from keychain)"
-    )
+    store_parser.add_argument("--secret-name", required=True, help="Name for the secret in AWS Secrets Manager")
+    store_parser.add_argument("--key", help="Master key to store (if not provided, uses current key from keychain)")
 
     # Retrieve command
     retrieve_parser = subparsers.add_parser("retrieve", help="Retrieve master key from AWS")
-    retrieve_parser.add_argument(
-        "--secret-name",
-        required=True,
-        help="Name of the secret in AWS Secrets Manager"
-    )
+    retrieve_parser.add_argument("--secret-name", required=True, help="Name of the secret in AWS Secrets Manager")
 
     # Generate command
-    generate_parser = subparsers.add_parser(
-        "generate",
-        help="Generate new master key and store in AWS"
-    )
-    generate_parser.add_argument(
-        "--secret-name",
-        required=True,
-        help="Name for the secret in AWS Secrets Manager"
-    )
+    generate_parser = subparsers.add_parser("generate", help="Generate new master key and store in AWS")
+    generate_parser.add_argument("--secret-name", required=True, help="Name for the secret in AWS Secrets Manager")
 
     # Delete command
     delete_parser = subparsers.add_parser("delete", help="Delete master key from AWS")
-    delete_parser.add_argument(
-        "--secret-name",
-        required=True,
-        help="Name of the secret to delete"
-    )
-    delete_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Permanently delete without 30-day recovery window"
-    )
+    delete_parser.add_argument("--secret-name", required=True, help="Name of the secret to delete")
+    delete_parser.add_argument("--force", action="store_true", help="Permanently delete without 30-day recovery window")
 
     args = parser.parse_args()
 
@@ -250,6 +215,7 @@ def main():
             master_key = args.key
         else:
             from nodetool.security.master_key import MasterKeyManager
+
             master_key = MasterKeyManager.export_master_key()
 
         success = util.store_master_key(args.secret_name, master_key, args.region)

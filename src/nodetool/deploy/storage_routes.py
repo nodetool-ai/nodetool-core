@@ -36,19 +36,13 @@ def validate_key(key: str) -> str:
 
     parts = [part for part in normalized.split("/") if part not in ("", ".")]
     if not parts:
-        raise HTTPException(
-            status_code=400, detail="Invalid key: key must not be empty"
-        )
+        raise HTTPException(status_code=400, detail="Invalid key: key must not be empty")
 
     if normalized.startswith("/"):
-        raise HTTPException(
-            status_code=400, detail="Invalid key: absolute paths are not allowed"
-        )
+        raise HTTPException(status_code=400, detail="Invalid key: absolute paths are not allowed")
 
     if any(part == ".." for part in parts):
-        raise HTTPException(
-            status_code=400, detail="Invalid key: path traversal is not allowed"
-        )
+        raise HTTPException(status_code=400, detail="Invalid key: path traversal is not allowed")
 
     return "/".join(parts)
 
@@ -146,9 +140,7 @@ async def _put_file(storage, key: str, request: Request):
     Common logic for uploading/updating files.
     """
     safe_key = validate_key(key)
-    with SpooledTemporaryFile(
-        max_size=10 * 1024 * 1024
-    ) as buffer:  # spools to disk if large
+    with SpooledTemporaryFile(max_size=10 * 1024 * 1024) as buffer:  # spools to disk if large
         async for chunk in request.stream():
             buffer.write(chunk)
         buffer.seek(0)

@@ -43,9 +43,7 @@ class NewsResult(BaseType):
     link: str | None = None
     thumbnail: str | None = None
     thumbnail_small: str | None = None
-    type_field: str | None = Field(
-        None, alias="type"
-    )  # e.g., 'Opinion', 'Local coverage'
+    type_field: str | None = Field(None, alias="type")  # e.g., 'Opinion', 'Local coverage'
     video: bool | None = None
     topic_token: str | None = None
     story_token: str | None = None

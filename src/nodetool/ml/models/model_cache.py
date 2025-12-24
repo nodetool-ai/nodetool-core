@@ -92,9 +92,7 @@ class ModelCache:
             with open(cache_path, "wb") as f:
                 # Store key along with value and expiry for pattern matching
                 pickle.dump((key, value, expiry_time), f)
-            log.debug(
-                f"✓ Successfully cached value for key: {key} (TTL: {ttl}s) at {cache_path}"
-            )
+            log.debug(f"✓ Successfully cached value for key: {key} (TTL: {ttl}s) at {cache_path}")
         except Exception as e:
             log.error(f"✗ Error writing cache for key {key}: {e}", exc_info=True)
             import traceback
@@ -139,9 +137,7 @@ class ModelCache:
                 cache_file.unlink(missing_ok=True)
 
         if deleted_count > 0:
-            log.info(
-                f"Deleted {deleted_count} cache entries matching pattern: {pattern}"
-            )
+            log.info(f"Deleted {deleted_count} cache entries matching pattern: {pattern}")
         else:
             log.debug(f"No cache entries found matching pattern: {pattern}")
 

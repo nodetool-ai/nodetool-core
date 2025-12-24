@@ -36,9 +36,7 @@ class S3Storage(AbstractStorage):
         Check if an asset exists in S3.
         """
         try:
-            await asyncio.to_thread(
-                self.s3.head_object, Bucket=self.bucket_name, Key=file_name
-            )
+            await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=file_name)
             return True
         except ClientError:
             return False
@@ -47,24 +45,18 @@ class S3Storage(AbstractStorage):
         """
         Get the last modified time of the file.
         """
-        response = await asyncio.to_thread(
-            self.s3.head_object, Bucket=self.bucket_name, Key=key
-        )
+        response = await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=key)
         return response["LastModified"]
 
     async def get_size(self, key: str) -> int:
-        response = await asyncio.to_thread(
-            self.s3.head_object, Bucket=self.bucket_name, Key=key
-        )
+        response = await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=key)
         return response["ContentLength"]
 
     async def download(self, key: str, stream: IO):
         """
         Downloads a blob from the bucket.
         """
-        response = await asyncio.to_thread(
-            self.s3.get_object, Bucket=self.bucket_name, Key=key
-        )
+        response = await asyncio.to_thread(self.s3.get_object, Bucket=self.bucket_name, Key=key)
         body = response["Body"]
         for chunk in body.iter_chunks(chunk_size=8192):
             stream.write(chunk)
@@ -87,9 +79,7 @@ class S3Storage(AbstractStorage):
         """
         Downloads a blob from the bucket as a stream.
         """
-        response = await asyncio.to_thread(
-            self.s3.get_object, Bucket=self.bucket_name, Key=key
-        )
+        response = await asyncio.to_thread(self.s3.get_object, Bucket=self.bucket_name, Key=key)
         body = response["Body"]
         for chunk in body.iter_chunks(chunk_size=8192):
             yield chunk
@@ -98,6 +88,4 @@ class S3Storage(AbstractStorage):
         """
         Deletes a blob from the bucket.
         """
-        await asyncio.to_thread(
-            self.s3.delete_object, Bucket=self.bucket_name, Key=file_name
-        )
+        await asyncio.to_thread(self.s3.delete_object, Bucket=self.bucket_name, Key=file_name)

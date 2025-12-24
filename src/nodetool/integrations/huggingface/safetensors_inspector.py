@@ -17,9 +17,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 try:
     from safetensors import safe_open  # type: ignore
 except Exception as exc:  # pragma: no cover
-    raise RuntimeError(
-        "safetensors is required. Install with `pip install safetensors`."
-    ) from exc
+    raise RuntimeError("safetensors is required. Install with `pip install safetensors`.") from exc
 
 PathLike = str | os.PathLike
 
@@ -172,9 +170,7 @@ def _infer_component(index: _Index) -> str:
     ):
         return "transformer_denoiser"
 
-    if _has_any(all_keys, "quant_conv.weight") or _has_regex(
-        all_keys, r"^(encoder|decoder)\."
-    ):
+    if _has_any(all_keys, "quant_conv.weight") or _has_regex(all_keys, r"^(encoder|decoder)\."):
         if _has_any(all_keys, "decoder.conv_out.weight"):
             return "vae"
 
@@ -185,8 +181,9 @@ def _infer_component(index: _Index) -> str:
         return "text_encoder"
 
     # Whisper ASR models
-    if _has_regex(all_keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and \
-       _has_regex(all_keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"):
+    if _has_regex(all_keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and _has_regex(
+        all_keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"
+    ):
         return "asr"
 
     # TTS/Audio generation models
@@ -195,9 +192,7 @@ def _infer_component(index: _Index) -> str:
             return "tts"
 
     if any(
-        key.startswith(
-            ("model.layers.", "transformer.h.", "gpt_neox.layers.", "model.decoder.layers.")
-        )
+        key.startswith(("model.layers.", "transformer.h.", "gpt_neox.layers.", "model.decoder.layers."))
         for key in all_keys
     ) or _has_regex(all_keys, r"(bert|roberta)\.encoder\.layer\.\d+"):
         return "llm"
@@ -227,16 +222,12 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
             confidence = 0.98
             evidence.append("Found transformer_blocks.* without UNet blocks")
             evidence.append("Found DiT style embedder keys such as x_embedder or pe_embedder")
-            return DetectionResult(
-                family=family, component=component, confidence=confidence, evidence=evidence
-            )
+            return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
         family = "flux-like"
         confidence = 0.75
         evidence.append("Transformer denoiser detected by top level transformer_blocks.*")
-        return DetectionResult(
-            family=family, component=component, confidence=confidence, evidence=evidence
-        )
+        return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
     if component == "unet":
         probe = _find_first(keys, r"^down_blocks\.0\.resnets\.0\.conv1\.weight$")
@@ -248,9 +239,7 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
                 family = "sdxl-refiner"
                 confidence = 0.97
                 evidence.append(f"{probe} second dim {shape[1]} suggests refiner input 1280")
-                return DetectionResult(
-                    family=family, component=component, confidence=confidence, evidence=evidence
-                )
+                return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
         if _has_regex(
             keys,
@@ -258,9 +247,7 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
         ):
             family = "sdxl-base"
             confidence = 0.93
-            evidence.append(
-                "UNet attentions include transformer_blocks.* which is characteristic of SDXL"
-            )
+            evidence.append("UNet attentions include transformer_blocks.* which is characteristic of SDXL")
         else:
             evidence.append("UNet present without top level transformer denoiser")
 
@@ -277,9 +264,7 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
                     confidence = 0.92
                 else:
                     confidence = max(confidence, 0.92)
-                evidence.append(
-                    "Found OpenCLIP naming: text_model.encoder.layers.0.self_attn.q_proj.weight"
-                )
+                evidence.append("Found OpenCLIP naming: text_model.encoder.layers.0.self_attn.q_proj.weight")
             if _has_regex(
                 keys,
                 r"(^|\.)(transformer\.text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
@@ -310,14 +295,10 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
                         evidence.append(f"{cross_k} cross_dim={cross_dim} → {pred}")
 
         if family == "sdxl-base":
-            return DetectionResult(
-                family=family, component=component, confidence=confidence, evidence=evidence
-            )
+            return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
         if family in ("sd1", "sd2"):
-            return DetectionResult(
-                family=family, component=component, confidence=confidence, evidence=evidence
-            )
+            return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
         return DetectionResult(
             family="sd-or-sdxl-unknown",
@@ -474,8 +455,9 @@ def _classify_asr(index: _Index) -> DetectionResult:
     keys = list(index.key_to_file.keys())
 
     # Whisper models have both encoder and decoder layers
-    if _has_regex(keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and \
-       _has_regex(keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"):
+    if _has_regex(keys, r"^model\.encoder\.layers\.\d+\.self_attn\.q_proj\.weight$") and _has_regex(
+        keys, r"^model\.decoder\.layers\.\d+\.self_attn\.q_proj\.weight$"
+    ):
         return DetectionResult(
             family="whisper",
             component="asr",
@@ -536,9 +518,7 @@ def _to_json(result: DetectionResult) -> str:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Detect model family from .safetensors using tensor names and shapes."
-    )
+    parser = argparse.ArgumentParser(description="Detect model family from .safetensors using tensor names and shapes.")
     parser.add_argument("path", nargs="+", help="File or directory path(s)")
     parser.add_argument(
         "--framework",

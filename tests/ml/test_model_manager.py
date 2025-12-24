@@ -11,6 +11,7 @@ from nodetool.ml.core.model_manager import ModelManager
 
 class FakePsutil:
     """Small stand-in for psutil so tests can deterministically control memory stats."""
+
     def __init__(self):
         self.percent = 42.0
         self.available = 8 * 1024**3

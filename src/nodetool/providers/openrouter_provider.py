@@ -110,61 +110,6 @@ class OpenRouterProvider(OpenAIProvider):
         log.debug("OpenRouter async client created successfully")
         return client
 
-    def get_context_length(self, model: str) -> int:
-        """Return an approximate maximum token limit for a given model.
-
-        OpenRouter supports many models with varying context lengths.
-        This provides reasonable defaults based on common model families.
-
-        Args:
-            model: Model identifier string (e.g., "openai/gpt-4", "anthropic/claude-3-opus")
-
-        Returns:
-            Approximate maximum number of tokens the model can handle.
-        """
-        log.debug(f"Getting context length for model: {model}")
-
-        # OpenRouter model IDs are in format "provider/model-name"
-        model_lower = model.lower()
-
-        # OpenAI models
-        if "gpt-4o" in model_lower or "chatgpt-4o" in model_lower:
-            return 128000
-        if "gpt-4-turbo" in model_lower:
-            return 128000
-        if "gpt-4" in model_lower:
-            if "32k" in model_lower:
-                return 32768
-            return 8192
-        if "gpt-3.5" in model_lower:
-            if "16k" in model_lower:
-                return 16384
-            return 4096
-
-        # Anthropic Claude models
-        if "claude" in model_lower:
-            return 200000
-
-        # Google Gemini models
-        if "gemini" in model_lower:
-            if "1.5" in model_lower:
-                return 1000000
-            return 32768
-
-        # Meta Llama models
-        if "llama" in model_lower:
-            if "3.1" in model_lower or "3.2" in model_lower:
-                return 128000
-            return 8192
-
-        # Mistral models
-        if "mistral" in model_lower or "mixtral" in model_lower:
-            return 32768
-
-        # Default fallback
-        log.debug("Unknown model; returning conservative default context length: 8192")
-        return 8192
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
@@ -221,9 +166,7 @@ class OpenRouterProvider(OpenAIProvider):
                 session.get("https://openrouter.ai/api/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenRouter models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch OpenRouter models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 data = payload.get("data", [])
@@ -278,9 +221,7 @@ class OpenRouterProvider(OpenAIProvider):
                 session.get("https://openrouter.ai/api/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenRouter models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch OpenRouter models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 data = payload.get("data", [])
@@ -363,9 +304,7 @@ class OpenRouterProvider(OpenAIProvider):
 
         model_id = params.model.id
         if not model_id:
-            raise ValueError(
-                "A text-to-image model with a valid id must be specified for image generation."
-            )
+            raise ValueError("A text-to-image model with a valid id must be specified for image generation.")
 
         prompt = params.prompt.strip()
         if params.negative_prompt:
@@ -438,14 +377,11 @@ class OpenRouterProvider(OpenAIProvider):
                 api_error.message,
             )
             raise RuntimeError(
-                f"OpenRouter text-to-image generation failed with status "
-                f"{api_error.status_code}: {api_error.message}"
+                f"OpenRouter text-to-image generation failed with status {api_error.status_code}: {api_error.message}"
             ) from api_error
         except Exception as exc:
             log.error(f"OpenRouter text-to-image generation failed: {exc}")
-            raise RuntimeError(
-                f"OpenRouter text-to-image generation failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"OpenRouter text-to-image generation failed: {exc}") from exc
 
     async def generate_message(
         self,
@@ -453,7 +389,6 @@ class OpenRouterProvider(OpenAIProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 128000,
         json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
@@ -472,7 +407,6 @@ class OpenRouterProvider(OpenAIProvider):
             model: The model to use
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
-            context_window: The maximum number of tokens to consider for the context
             json_schema: Optional JSON schema for structured output
             temperature: Optional sampling temperature
             top_p: Optional nucleus sampling parameter
@@ -539,9 +473,7 @@ class OpenRouterProvider(OpenAIProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request("chat", messages, **request_kwargs)
 
@@ -634,7 +566,6 @@ class OpenRouterProvider(OpenAIProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 128000,
         json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -648,7 +579,6 @@ class OpenRouterProvider(OpenAIProvider):
             model: Target model.
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
-            context_window: Maximum tokens considered for context.
             json_schema: Optional response schema.
             **kwargs: Additional parameters such as temperature.
 
@@ -708,9 +638,7 @@ class OpenRouterProvider(OpenAIProvider):
             converted_messages = []
             for msg in messages:
                 if msg.role == "system":
-                    log.debug(
-                        "Converting system message to user message for O-series model"
-                    )
+                    log.debug("Converting system message to user message for O-series model")
                     converted_messages.append(
                         Message(
                             role="user",
@@ -721,9 +649,7 @@ class OpenRouterProvider(OpenAIProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request(
             "chat_stream",
@@ -764,24 +690,12 @@ class OpenRouterProvider(OpenAIProvider):
                 if hasattr(chunk.usage, "cost") and chunk.usage.cost is not None:
                     message_cost = float(chunk.usage.cost)
                     self.cost += message_cost
-                    log.debug(
-                        f"OpenRouter streaming cost: ${message_cost:.6f} USD"
-                    )
+                    log.debug(f"OpenRouter streaming cost: ${message_cost:.6f} USD")
 
-                if (
-                    chunk.usage.prompt_tokens_details
-                    and chunk.usage.prompt_tokens_details.cached_tokens
-                ):
-                    self.usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
-                if (
-                    chunk.usage.completion_tokens_details
-                    and chunk.usage.completion_tokens_details.reasoning_tokens
-                ):
-                    self.usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
+                    self.usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens
+                if chunk.usage.completion_tokens_details and chunk.usage.completion_tokens_details.reasoning_tokens:
+                    self.usage["reasoning_tokens"] += chunk.usage.completion_tokens_details.reasoning_tokens
                 log.debug(f"Updated usage stats: {self.usage}")
 
             if not chunk.choices:
@@ -822,9 +736,7 @@ class OpenRouterProvider(OpenAIProvider):
             if delta.content or chunk.choices[0].finish_reason == "stop":
                 current_chunk += delta.content or ""
                 finish_reason = chunk.choices[0].finish_reason
-                log.debug(
-                    f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}"
-                )
+                log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
 
                 if finish_reason == "stop":
                     log.debug("Final chunk received, logging response")

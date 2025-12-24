@@ -11,9 +11,7 @@ from nodetool.types.graph import (
 def test_remove_connected_slots():
     node1 = Node(id="1", type="nodetool.input.IntegerInput", data={"value": 1})
     node2 = Node(id="2", type="custom", data={"slot1": "a", "slot2": "b"})
-    edge = Edge(
-        id="e1", source="1", sourceHandle="output", target="2", targetHandle="slot1"
-    )
+    edge = Edge(id="e1", source="1", sourceHandle="output", target="2", targetHandle="slot1")
     graph = Graph(nodes=[node1, node2], edges=[edge])
 
     result = remove_connected_slots(graph)
@@ -41,9 +39,7 @@ def test_get_input_schema_basic():
 
 
 def test_get_output_schema_basic():
-    list_node = Node(
-        id="list", type="nodetool.output.ListOutput", data={"name": "items"}
-    )
+    list_node = Node(id="list", type="nodetool.output.ListOutput", data={"name": "items"})
     img_node = Node(id="img", type="nodetool.output.ImageOutput", data={"name": "img"})
     schema = get_output_schema(Graph(nodes=[list_node, img_node], edges=[]))
 

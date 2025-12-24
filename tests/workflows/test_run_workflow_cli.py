@@ -93,11 +93,7 @@ def test_run_workflow_cli_subprocess_file(stdin_text, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [
-        json.loads(line)
-        for line in result.stdout.splitlines()
-        if line.strip().startswith("{")
-    ]
+    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -141,11 +137,7 @@ def test_run_workflow_cli_subprocess_stdin(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [
-        json.loads(line)
-        for line in result.stdout.splitlines()
-        if line.strip().startswith("{")
-    ]
+    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -188,11 +180,7 @@ def test_unified_run_command_stdin(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [
-        json.loads(line)
-        for line in result.stdout.splitlines()
-        if line.strip().startswith("{")
-    ]
+    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -234,11 +222,7 @@ def test_unified_run_command_file(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [
-        json.loads(line)
-        for line in result.stdout.splitlines()
-        if line.strip().startswith("{")
-    ]
+    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]

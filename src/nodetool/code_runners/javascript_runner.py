@@ -59,9 +59,7 @@ if __name__ == "__main__":
         ctx = ProcessingContext()
         node = _SmokeNode()
 
-        user_code = (
-            "console.log('stdout line 0');\n" "console.error('stderr line 1');\n"
-        )
+        user_code = "console.log('stdout line 0');\nconsole.error('stderr line 1');\n"
 
         print("[smoke-js] starting...")
         try:

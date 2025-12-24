@@ -42,11 +42,7 @@ def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     # Priority: safetensors → gguf → torch bin/pt/ckpt → config/model_index metadata
     safetensors = [p for p in paths if str(p).lower().endswith(".safetensors")]
     ggufs = [p for p in paths if str(p).lower().endswith(".gguf")]
-    torch_bins = [
-        p
-        for p in paths
-        if str(p).lower().endswith((".bin", ".pt", ".ckpt", ".pth"))
-    ]
+    torch_bins = [p for p in paths if str(p).lower().endswith((".bin", ".pt", ".ckpt", ".pth"))]
     config_files = [p for p in paths if str(p).lower().endswith("config.json")]
     model_index_files = [p for p in paths if str(p).lower().endswith("model_index.json")]
 
@@ -279,6 +275,7 @@ def detect_from_json(
 
 def _family_from_model_type(model_type: str, archs: Sequence[str]) -> ArtifactDetection | None:
     mt = model_type
+
     def has(target: str) -> bool:
         return target in mt or any(target in arch for arch in archs)
 

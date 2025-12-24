@@ -123,9 +123,7 @@ class ExtractPDFTablesTool(Tool):
                         "columns": table.col_count,
                         "header": {
                             "names": table.header.names if table.header else [],
-                            "external": (
-                                table.header.external if table.header else False
-                            ),
+                            "external": (table.header.external if table.header else False),
                         },
                         "content": table.extract(),
                     }

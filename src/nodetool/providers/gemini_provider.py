@@ -57,6 +57,7 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
+
 @register_provider(Provider.Gemini)
 class GeminiProvider(BaseProvider):
     provider_name: str = "gemini"
@@ -82,11 +83,6 @@ class GeminiProvider(BaseProvider):
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
-
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        return 1000000
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
@@ -120,18 +116,21 @@ class GeminiProvider(BaseProvider):
         try:
             timeout = aiohttp.ClientTimeout(total=3)
             # API permits key either as header or query parameter; use query to avoid header nuances
-            url = f"https://generativelanguage.googleapis.com/v1/models?key={self.api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
             async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch Gemini models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch Gemini models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 items = payload.get("models") or payload.get("data") or []
 
                 models: List[LanguageModel] = []
                 for item in items:
+                    # Filter for models that support generating content (exclude embeddings, etc.)
+                    methods = item.get("supportedGenerationMethods") or []
+                    if "generateContent" not in methods:
+                        continue
+
                     # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
                     raw_name: str | None = item.get("name")
                     if not raw_name:
@@ -219,9 +218,7 @@ class GeminiProvider(BaseProvider):
         result: list[Part] = []
 
         # Handle text content
-        contents = (
-            message.content if isinstance(message.content, list) else [message.content]
-        )
+        contents = message.content if isinstance(message.content, list) else [message.content]
         log.debug(f"Processing {len(contents)} content items")
 
         # Handle file inputs if present
@@ -248,9 +245,7 @@ class GeminiProvider(BaseProvider):
                 log.debug(f"Processing {len(message.tool_calls)} tool calls")
                 for tool_call in message.tool_calls:
                     if tool_call.result:
-                        log.debug(
-                            f"Adding function response for tool: {tool_call.name}"
-                        )
+                        log.debug(f"Adding function response for tool: {tool_call.name}")
                         part = Part(
                             function_response=FunctionResponse(
                                 id=tool_call.id,
@@ -260,11 +255,7 @@ class GeminiProvider(BaseProvider):
                         )
                     else:
                         log.debug(f"Adding function call for tool: {tool_call.name}")
-                        part = Part(
-                            function_call=FunctionCall(
-                                name=tool_call.name, args=tool_call.args
-                            )
-                        )
+                        part = Part(function_call=FunctionCall(name=tool_call.name, args=tool_call.args))
                     result.append(part)
             elif isinstance(content, str):
                 log.debug(f"Adding text content: {content[:50]}...")
@@ -308,12 +299,8 @@ class GeminiProvider(BaseProvider):
                     try:
                         blob = await self._uri_to_blob(image_input.uri)
                     except Exception as e:
-                        log.error(
-                            f"Error fetching image from URI {image_input.uri}: {e}. Skipping image."
-                        )
-                        print(
-                            f"Error fetching image from URI {image_input.uri}: {e}. Skipping image."
-                        )
+                        log.error(f"Error fetching image from URI {image_input.uri}: {e}. Skipping image.")
+                        print(f"Error fetching image from URI {image_input.uri}: {e}. Skipping image.")
 
                 if blob:
                     log.debug("Adding image blob to parts")
@@ -336,13 +323,11 @@ class GeminiProvider(BaseProvider):
         history = []
 
         for i, message in enumerate(messages):
-            log.debug(
-                f"Processing message {i+1}/{len(messages)} with role: {message.role}"
-            )
+            log.debug(f"Processing message {i + 1}/{len(messages)} with role: {message.role}")
             parts = await self._prepare_message_content(message)
             # Keep messages that have any parts (text or non-text like images)
             if not parts:
-                log.debug(f"Skipping message {i+1} - no valid parts")
+                log.debug(f"Skipping message {i + 1} - no valid parts")
                 continue
 
             role = "user" if message.role == "user" else "model"
@@ -393,7 +378,7 @@ class GeminiProvider(BaseProvider):
 
         if content_parts:
             for i, part in enumerate(content_parts):
-                log.debug(f"Processing part {i+1}/{len(content_parts)}")
+                log.debug(f"Processing part {i + 1}/{len(content_parts)}")
                 if part.text:
                     log.debug(f"Found text content: {part.text[:30]}...")
                     content.append(MessageTextContent(text=part.text))
@@ -409,18 +394,12 @@ class GeminiProvider(BaseProvider):
                     )
                 elif part.executable_code:
                     log.debug("Found executable code")
-                    content.append(
-                        MessageTextContent(text=part.executable_code.code or "")
-                    )
+                    content.append(MessageTextContent(text=part.executable_code.code or ""))
                 elif part.code_execution_result:
                     log.debug("Found code execution result")
-                    content.append(
-                        MessageTextContent(text=part.code_execution_result.output or "")
-                    )
+                    content.append(MessageTextContent(text=part.code_execution_result.output or ""))
                 elif part.inline_data:
-                    log.debug(
-                        f"Found inline data with mime type: {part.inline_data.mime_type}"
-                    )
+                    log.debug(f"Found inline data with mime type: {part.inline_data.mime_type}")
                     # Store as output file
                     output_files.append(
                         MessageFile(
@@ -433,18 +412,14 @@ class GeminiProvider(BaseProvider):
 
         # Multiple content parts can be merged into a single string
         if all(isinstance(c, MessageTextContent) for c in content):
-            merged_content = "".join(
-                [c.text for c in content if isinstance(c, MessageTextContent)]
-            )
+            merged_content = "".join([c.text for c in content if isinstance(c, MessageTextContent)])
             log.debug(f"Merged {len(content)} text parts into single string")
             content = merged_content
         else:
             log.debug(f"Keeping content as list with {len(content)} items")
             content = content
 
-        log.debug(
-            f"Extraction complete: {len(tool_calls)} tool calls, {len(output_files)} output files"
-        )
+        log.debug(f"Extraction complete: {len(tool_calls)} tool calls, {len(output_files)} output files")
         return content, tool_calls, output_files
 
     async def generate_message(
@@ -453,7 +428,6 @@ class GeminiProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -492,9 +466,7 @@ class GeminiProvider(BaseProvider):
             response_mime_type="application/json" if response_format else None,
             response_json_schema=response_format,
         )
-        log.debug(
-            f"Generated config with response format: {'json' if response_format else 'text'}"
-        )
+        log.debug(f"Generated config with response format: {'json' if response_format else 'text'}")
 
         contents = await self._prepare_messages(messages)
         log.debug(f"Making API call to model {model}")
@@ -516,12 +488,8 @@ class GeminiProvider(BaseProvider):
             candidate = response.candidates[0]
             if candidate.content:
                 content_parts = candidate.content.parts
-                log.debug(
-                    f"Extracting content from {len(content_parts) if content_parts else 0} parts"
-                )
-                content, tool_calls, output_files = self._extract_content_from_parts(
-                    content_parts or []
-                )
+                log.debug(f"Extracting content from {len(content_parts) if content_parts else 0} parts")
+                content, tool_calls, output_files = self._extract_content_from_parts(content_parts or [])
                 log.debug(
                     f"Extracted: {len(tool_calls)} tool calls, {len(output_files) if output_files else 0} output files"
                 )
@@ -569,7 +537,6 @@ class GeminiProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         audio: dict | None = None,
         **kwargs,
@@ -623,11 +590,7 @@ class GeminiProvider(BaseProvider):
                 if candidates:
                     candidate = candidates[0]
                     candidate_content = getattr(candidate, "content", None)
-                    parts = (
-                        getattr(candidate_content, "parts", None)
-                        if candidate_content is not None
-                        else None
-                    )
+                    parts = getattr(candidate_content, "parts", None) if candidate_content is not None else None
                     if parts:
                         log.debug(f"Processing {len(parts)} parts in chunk")
                         for part in parts:
@@ -654,9 +617,7 @@ class GeminiProvider(BaseProvider):
                                     )
                                 continue
 
-                            execution_result = getattr(
-                                part, "code_execution_result", None
-                            )
+                            execution_result = getattr(part, "code_execution_result", None)
                             if execution_result is not None:
                                 output_text = getattr(execution_result, "output", None)
                                 if isinstance(output_text, str):
@@ -670,8 +631,7 @@ class GeminiProvider(BaseProvider):
                             if inline_data is not None:
                                 yield MessageFile(
                                     content=getattr(inline_data, "data", None) or b"",
-                                    mime_type=getattr(inline_data, "mime_type", None)
-                                    or "",
+                                    mime_type=getattr(inline_data, "mime_type", None) or "",
                                 )
                 else:
                     log.debug("Chunk has no candidates")
@@ -747,11 +707,7 @@ class GeminiProvider(BaseProvider):
                     log.error("Prohibited content in the input prompt")
                     raise ValueError("Prohibited content in the input prompt")
 
-                if (
-                    not candidate
-                    or not candidate.content
-                    or not candidate.content.parts
-                ):
+                if not candidate or not candidate.content or not candidate.content.parts:
                     log.error("Invalid response format from Gemini API")
                     raise RuntimeError("Invalid response format from Gemini API")
 
@@ -800,9 +756,7 @@ class GeminiProvider(BaseProvider):
 
             traceback.print_exc()
             log.error(f"Gemini text-to-image generation failed: {e}")
-            raise RuntimeError(
-                f"Gemini text-to-image generation failed: {e}"
-            ) from e
+            raise RuntimeError(f"Gemini text-to-image generation failed: {e}") from e
 
     async def image_to_image(
         self,
@@ -895,9 +849,7 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini image-to-image generation failed: {e}")
-            raise RuntimeError(
-                f"Gemini image-to-image generation failed: {e}"
-            ) from e
+            raise RuntimeError(f"Gemini image-to-image generation failed: {e}") from e
 
     async def text_to_speech(
         self,
@@ -927,9 +879,7 @@ class GeminiProvider(BaseProvider):
             numpy.ndarray: Int16 audio chunks at 24kHz mono
         """
         if not self.api_key:
-            raise ApiKeyMissingError(
-                "GEMINI_API_KEY is required for text-to-speech generation"
-            )
+            raise ApiKeyMissingError("GEMINI_API_KEY is required for text-to-speech generation")
 
         try:
             client = self.get_client()
@@ -940,9 +890,7 @@ class GeminiProvider(BaseProvider):
 
             # Create speech config
             speech_config = SpeechConfig(
-                voice_config=VoiceConfig(
-                    prebuilt_voice_config=PrebuiltVoiceConfig(voice_name=voice)
-                )
+                voice_config=VoiceConfig(prebuilt_voice_config=PrebuiltVoiceConfig(voice_name=voice))
             )
 
             # Create generation config
@@ -964,23 +912,16 @@ class GeminiProvider(BaseProvider):
             if hasattr(response, "candidates") and response.candidates:
                 for candidate in response.candidates:
                     if hasattr(candidate, "content") and candidate.content:
-                        if (
-                            hasattr(candidate.content, "parts")
-                            and candidate.content.parts
-                        ):
+                        if hasattr(candidate.content, "parts") and candidate.content.parts:
                             for part in candidate.content.parts:
                                 if hasattr(part, "inline_data") and part.inline_data:
                                     if part.inline_data.data:
-                                        yield np.frombuffer(
-                                            part.inline_data.data, dtype=np.int16
-                                        )
+                                        yield np.frombuffer(part.inline_data.data, dtype=np.int16)
 
             log.debug("Gemini text-to-speech completed")
         except Exception as e:
             log.error(f"Gemini text-to-speech failed: {e}")
-            raise RuntimeError(
-                f"Gemini text-to-speech generation failed: {e}"
-            ) from e
+            raise RuntimeError(f"Gemini text-to-speech generation failed: {e}") from e
 
     async def get_available_tts_models(self) -> List[TTSModel]:
         """Get available Gemini TTS models.
@@ -1148,17 +1089,13 @@ class GeminiProvider(BaseProvider):
             ValueError: If required parameters are missing
             RuntimeError: If transcription fails
         """
-        log.debug(
-            f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}"
-        )
+        log.debug(f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}")
 
         if not audio:
             raise ValueError("audio must not be empty")
 
         if not self.api_key:
-            raise ApiKeyMissingError(
-                "GEMINI_API_KEY is required for audio transcription"
-            )
+            raise ApiKeyMissingError("GEMINI_API_KEY is required for audio transcription")
 
         try:
             client = self.get_client()
@@ -1168,11 +1105,7 @@ class GeminiProvider(BaseProvider):
             mime_type = "audio/wav"  # Default
             if audio[:4] == b"RIFF":
                 mime_type = "audio/wav"
-            elif (
-                audio[:3] == b"ID3"
-                or audio[:2] == b"\xff\xfb"
-                or audio[:2] == b"\xff\xf3"
-            ):
+            elif audio[:3] == b"ID3" or audio[:2] == b"\xff\xfb" or audio[:2] == b"\xff\xf3":
                 mime_type = "audio/mp3"
             elif audio[:4] == b"fLaC":
                 mime_type = "audio/flac"
@@ -1209,7 +1142,7 @@ class GeminiProvider(BaseProvider):
 
             response = await client.models.generate_content(
                 model=model,
-                contents=contents, # type: ignore
+                contents=contents,  # type: ignore
                 config=config,
             )
 
@@ -1241,9 +1174,7 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini ASR transcription failed: {e}")
-            raise RuntimeError(
-                f"Gemini ASR transcription failed: {str(e)}"
-            ) from e
+            raise RuntimeError(f"Gemini ASR transcription failed: {str(e)}") from e
 
     async def text_to_video(
         self,
@@ -1285,8 +1216,7 @@ class GeminiProvider(BaseProvider):
             # Ensure we're using a Veo model
             if not model_id.startswith("veo-"):
                 raise ValueError(
-                    f"Model {model_id} is not a Veo model. "
-                    "Only Veo models support text-to-video generation."
+                    f"Model {model_id} is not a Veo model. Only Veo models support text-to-video generation."
                 )
 
             log.info(f"Using Gemini Veo model for text-to-video: {model_id}")
@@ -1306,9 +1236,7 @@ class GeminiProvider(BaseProvider):
             client = self.get_client()
 
             # Use the generate_videos endpoint (returns an async operation)
-            log.debug(
-                f"Initiating video generation for prompt: {params.prompt[:50]}..."
-            )
+            log.debug(f"Initiating video generation for prompt: {params.prompt[:50]}...")
             operation = await client.models.generate_videos(
                 model=model_id,
                 prompt=params.prompt,
@@ -1324,9 +1252,7 @@ class GeminiProvider(BaseProvider):
 
             while not operation.done:
                 if elapsed_time >= max_wait_time:
-                    raise TimeoutError(
-                        f"Video generation timed out after {max_wait_time} seconds"
-                    )
+                    raise TimeoutError(f"Video generation timed out after {max_wait_time} seconds")
 
                 log.debug(f"Waiting for video generation... ({elapsed_time}s elapsed)")
                 await asyncio.sleep(poll_interval)
@@ -1338,9 +1264,7 @@ class GeminiProvider(BaseProvider):
             log.debug(f"Video generation completed after {elapsed_time}s")
 
             # Extract video from completed operation
-            if not operation.response or not hasattr(
-                operation.response, "generated_videos"
-            ):
+            if not operation.response or not hasattr(operation.response, "generated_videos"):
                 log.error("No video data in completed operation response")
                 raise RuntimeError("No video data returned from Gemini API")
 
@@ -1355,7 +1279,7 @@ class GeminiProvider(BaseProvider):
             if not hasattr(generated_video, "video") or not generated_video.video:
                 raise RuntimeError("No video file reference in generated video")
 
-            video_bytes = await client.files.download(file=generated_video.video) # type: ignore
+            video_bytes = await client.files.download(file=generated_video.video)  # type: ignore
 
             if not video_bytes:
                 raise RuntimeError("No video bytes returned after download")
@@ -1365,9 +1289,7 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini text-to-video generation failed: {e}")
-            raise RuntimeError(
-                f"Gemini text-to-video generation failed: {e}"
-            ) from e
+            raise RuntimeError(f"Gemini text-to-video generation failed: {e}") from e
 
     async def image_to_video(
         self,
@@ -1415,8 +1337,7 @@ class GeminiProvider(BaseProvider):
             # Ensure we're using a Veo model
             if not model_id.startswith("veo-"):
                 raise ValueError(
-                    f"Model {model_id} is not a Veo model. "
-                    "Only Veo models support image-to-video generation."
+                    f"Model {model_id} is not a Veo model. Only Veo models support image-to-video generation."
                 )
 
             log.info(f"Using Gemini Veo model for image-to-video: {model_id}")
@@ -1425,9 +1346,7 @@ class GeminiProvider(BaseProvider):
             from PIL import Image
 
             pil_image: PIL.Image.Image = Image.open(BytesIO(image))
-            log.debug(
-                f"Loaded input image: {pil_image.size}, format: {pil_image.format}"
-            )
+            log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
 
             # Build the generation config using GenerateVideosConfig
             config_kwargs = {}
@@ -1453,16 +1372,14 @@ class GeminiProvider(BaseProvider):
             prompt = params.prompt if params.prompt else "Animate this image"
 
             # Use the generate_videos endpoint with image parameter (returns an async operation)
-            log.debug(
-                f"Initiating image-to-video generation with prompt: {prompt[:50]}..."
-            )
+            log.debug(f"Initiating image-to-video generation with prompt: {prompt[:50]}...")
             operation = await client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
                 image={
-                "image_bytes": image,
-                "mime_type": "image/png",
-            },
+                    "image_bytes": image,
+                    "mime_type": "image/png",
+                },
                 config=config,
             )
 
@@ -1475,13 +1392,9 @@ class GeminiProvider(BaseProvider):
 
             while not operation.done:
                 if elapsed_time >= max_wait_time:
-                    raise TimeoutError(
-                        f"Image-to-video generation timed out after {max_wait_time} seconds"
-                    )
+                    raise TimeoutError(f"Image-to-video generation timed out after {max_wait_time} seconds")
 
-                log.debug(
-                    f"Waiting for image-to-video generation... ({elapsed_time}s elapsed)"
-                )
+                log.debug(f"Waiting for image-to-video generation... ({elapsed_time}s elapsed)")
                 await asyncio.sleep(poll_interval)
                 elapsed_time += poll_interval
 
@@ -1491,9 +1404,7 @@ class GeminiProvider(BaseProvider):
             log.debug(f"Image-to-video generation completed after {elapsed_time}s")
 
             # Extract video from completed operation
-            if not operation.response or not hasattr(
-                operation.response, "generated_videos"
-            ):
+            if not operation.response or not hasattr(operation.response, "generated_videos"):
                 log.error("No video data in completed operation response")
                 raise RuntimeError("No video data returned from Gemini API")
 
@@ -1508,7 +1419,7 @@ class GeminiProvider(BaseProvider):
             if not hasattr(generated_video, "video") or not generated_video.video:
                 raise RuntimeError("No video file reference in generated video")
 
-            video_bytes = await client.files.download(file=generated_video.video) # type: ignore
+            video_bytes = await client.files.download(file=generated_video.video)  # type: ignore
 
             if not video_bytes:
                 raise RuntimeError("No video bytes returned after download")
@@ -1520,9 +1431,7 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"Gemini image-to-video generation failed: {e}")
-            raise RuntimeError(
-                f"Gemini image-to-video generation failed: {e}"
-            ) from e
+            raise RuntimeError(f"Gemini image-to-video generation failed: {e}") from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

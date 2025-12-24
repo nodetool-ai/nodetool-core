@@ -67,9 +67,7 @@ class StreamingOutputNoInput(BaseNode):
 class SingleShotProducer(BaseNode):
     value: ClassVar[int | None] = None
 
-    async def process(
-        self, context
-    ) -> int | None:  # pragma: no cover - executed via runner
+    async def process(self, context) -> int | None:  # pragma: no cover - executed via runner
         return self.value
 
 
@@ -117,9 +115,7 @@ class CapturePairsNode(BaseNode):
         return {"output": self.a}
 
 
-def make_actor_for_target(
-    graph: Graph, target: BaseNode
-) -> tuple[NodeActor, WorkflowRunner, ProcessingContext]:
+def make_actor_for_target(graph: Graph, target: BaseNode) -> tuple[NodeActor, WorkflowRunner, ProcessingContext]:
     return asyncio.run(make_actor_for_target_async(graph, target))
 
 
@@ -140,9 +136,7 @@ def test_only_nonroutable_upstreams_true_when_all_non_routable():
     target = TargetNode(id="t2")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="nrt", target="t2", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="nrt", target="t2", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[non_routable, target], edges=edges)
 
@@ -157,12 +151,8 @@ def test_only_nonroutable_upstreams_false_when_any_routable():
     target = TargetNode(id="t3")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="r1", target="t3", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="nrt", target="t3", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="r1", target="t3", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="nrt", target="t3", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[routable, non_routable, target], edges=edges)
 
@@ -179,15 +169,9 @@ def test_inbound_and_outbound_helpers_sets():
     down = NonStreamingProducer(id="d1")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="t4", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="p2", target="t4", sourceHandle="output", targetHandle="b"
-        ),
-        Edge(
-            id="e3", source="t4", target="d1", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="t4", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="p2", target="t4", sourceHandle="output", targetHandle="b"),
+        Edge(id="e3", source="t4", target="d1", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod1, prod2, target, down], edges=edges)
     actor, _, _ = make_actor_for_target(graph, target)
@@ -202,12 +186,8 @@ def test_is_nonroutable_edge_respects_source_hook():
     non_routable = NonRoutableProducer(id="n1")  # type: ignore
     target = TargetNode(id="t5")  # type: ignore
 
-    e_r = Edge(
-        id="er", source="r1", target="t5", sourceHandle="output", targetHandle="a"
-    )
-    e_nr = Edge(
-        id="en", source="n1", target="t5", sourceHandle="output", targetHandle="a"
-    )
+    e_r = Edge(id="er", source="r1", target="t5", sourceHandle="output", targetHandle="a")
+    e_nr = Edge(id="en", source="n1", target="t5", sourceHandle="output", targetHandle="a")
     graph = Graph(nodes=[routable, non_routable, target], edges=[e_r, e_nr])
     actor, _, _ = make_actor_for_target(graph, target)
 
@@ -220,12 +200,8 @@ def test_effective_inbound_handles_mixed_and_all_suppressed():
     non_routable = NonRoutableProducer(id="n1")  # type: ignore
     target = TargetNode(id="t6a")  # type: ignore
     edges_mixed = [
-        Edge(
-            id="e1", source="r1", target="t6a", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="n1", target="t6a", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="r1", target="t6a", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="n1", target="t6a", sourceHandle="output", targetHandle="a"),
     ]
     graph_mixed = Graph(nodes=[routable, non_routable, target], edges=edges_mixed)
     actor_mixed, _, _ = asyncio.run(make_actor_for_target_async(graph_mixed, target))
@@ -233,14 +209,10 @@ def test_effective_inbound_handles_mixed_and_all_suppressed():
 
     target2 = TargetNode(id="t6b")  # type: ignore
     edges_all_suppressed = [
-        Edge(
-            id="e3", source="n1", target="t6b", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e3", source="n1", target="t6b", sourceHandle="output", targetHandle="a"),
     ]
     graph_suppressed = Graph(nodes=[non_routable, target2], edges=edges_all_suppressed)
-    actor_suppressed, _, _ = asyncio.run(
-        make_actor_for_target_async(graph_suppressed, target2)
-    )
+    actor_suppressed, _, _ = asyncio.run(make_actor_for_target_async(graph_suppressed, target2))
     assert actor_suppressed._effective_inbound_handles() == set()
 
 
@@ -249,9 +221,7 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
     prod = NonStreamingProducer(id="p1")  # type: ignore
     target = TargetNode(id="t6")  # type: ignore
     edges = [
-        Edge(
-            id="e1", source="p1", target="t6", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="t6", sourceHandle="output", targetHandle="a"),
         Edge(
             id="e2",
             source="p1",
@@ -269,9 +239,7 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
     await inbox.put("a", 42)
     inbox.mark_source_done("ghost")
 
-    res = await asyncio.wait_for(
-        actor._gather_initial_inputs({"a", "ghost"}), timeout=ASYNC_TEST_TIMEOUT
-    )
+    res = await asyncio.wait_for(actor._gather_initial_inputs({"a", "ghost"}), timeout=ASYNC_TEST_TIMEOUT)
     assert res == {"a": 42}
 
 
@@ -280,9 +248,7 @@ async def test_gather_initial_inputs_handles_no_handles():
     prod = NonStreamingProducer(id="p1")  # type: ignore
     target = TargetNode(id="t6")  # type: ignore
     edges = [
-        Edge(
-            id="e1", source="p1", target="t6", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="t6", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -292,9 +258,7 @@ async def test_gather_initial_inputs_handles_no_handles():
     await inbox.put("a", 42)
     inbox.mark_source_done("a")
 
-    res = await asyncio.wait_for(
-        actor._gather_initial_inputs({"a"}), timeout=ASYNC_TEST_TIMEOUT
-    )
+    res = await asyncio.wait_for(actor._gather_initial_inputs({"a"}), timeout=ASYNC_TEST_TIMEOUT)
     assert res == {"a": 42}
 
 
@@ -321,13 +285,9 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
     edges = [
         # Non-streaming upstream provides config 'a'
-        Edge(
-            id="e1", source="p1", target="s1", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="s1", sourceHandle="output", targetHandle="a"),
         # Downstream to receive routed output
-        Edge(
-            id="e2", source="s1", target="d1", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e2", source="s1", target="d1", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod_cfg, stream_node, down], edges=edges)
     actor, runner, ctx = await make_actor_for_target_async(graph, stream_node)
@@ -376,12 +336,8 @@ async def test_run_streaming_invalid_output_raises_error_and_raises():
     bad = BadStreamingNode(id="s1")  # type: ignore
     down = NonStreamingProducer(id="d1")  # type: ignore
     edges = [
-        Edge(
-            id="e1", source="p1", target="s1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="s1", target="d1", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="s1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="s1", target="d1", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, bad, down], edges=edges)
     actor, _runner, _ctx = await make_actor_for_target_async(graph, bad)
@@ -408,9 +364,7 @@ class BadFormatStreamingNode(BaseNode):
 async def test_run_streaming_invalid_format_raises_error_and_raises():
     bad = BadFormatStreamingNode(id="s1")  # type: ignore
     down = NonStreamingProducer(id="d1")  # type: ignore
-    edges = [
-        Edge(id="e1", source="s1", target="d1", sourceHandle="output", targetHandle="a")
-    ]
+    edges = [Edge(id="e1", source="s1", target="d1", sourceHandle="output", targetHandle="a")]
     graph = Graph(nodes=[bad, down], edges=edges)
     actor, _, _ctx = await make_actor_for_target_async(graph, bad)
 
@@ -456,9 +410,7 @@ async def test_should_route_output_suppresses_routing():
 
     await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
-    assert (
-        routed["count"] == 0
-    ), "send_messages should not be called when routing suppressed"
+    assert routed["count"] == 0, "send_messages should not be called when routing suppressed"
 
 
 class ConsumerNode(BaseNode):
@@ -478,12 +430,8 @@ async def test_run_non_streaming_calls_runner_with_inputs_and_marks_eos():
     target = TargetNode(id="tns")  # type: ignore
     consumer = ConsumerNode(id="c1")  # type: ignore
     edges = [
-        Edge(
-            id="e1", source="p1", target="tns", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="tns", target="c1", sourceHandle="output", targetHandle="x"
-        ),
+        Edge(id="e1", source="p1", target="tns", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="tns", target="c1", sourceHandle="output", targetHandle="x"),
     ]
     graph = Graph(nodes=[prod, target, consumer], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -557,9 +505,7 @@ async def test_fanout_single_inbound_handle_runs_per_item():
     prod = StreamingProducer(id="p1")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="c1", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="c1", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, consumer], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, consumer)
@@ -689,12 +635,8 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
     pa = SA(id="pa")  # type: ignore
     pb = SB(id="pb")  # type: ignore
     edges = [
-        Edge(
-            id="e1", source="pa", target="t1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="pb", target="t1", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="pa", target="t1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="pb", target="t1", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -786,12 +728,8 @@ async def test_zip_all_pairs_items_across_two_handles_in_order():
     target.set_sync_mode("zip_all")
 
     edges = [
-        Edge(
-            id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -830,12 +768,8 @@ async def test_zip_all_pairs_items_with_different_lengths():
     target.set_sync_mode("zip_all")
 
     edges = [
-        Edge(
-            id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -927,12 +861,8 @@ async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
     target.set_sync_mode("zip_all")
 
     edges = [
-        Edge(
-            id="e1", source="pa2", target="tz2", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="pb2", target="tz2", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="pa2", target="tz2", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="pb2", target="tz2", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -978,12 +908,8 @@ async def test_run_non_streaming_batches_zip_all():
     target = CapturePairsNode(id="tt1")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="tt1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="p2", target="tt1", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="p1", target="tt1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="p2", target="tt1", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[prod1, prod2, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -1010,12 +936,8 @@ async def test_run_non_streaming_batches_zip_all_with_single_shot():
     target = CapturePairsNode(id="tt2")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="tt2", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="p2", target="tt2", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="p1", target="tt2", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="p2", target="tt2", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[prod1, prod2, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -1041,12 +963,8 @@ async def test_run_non_streaming_batches_zip_all_with_streaming_upstream():
     target = CapturePairsNode(id="tt3")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="tt3", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="p2", target="tt3", sourceHandle="output", targetHandle="b"
-        ),
+        Edge(id="e1", source="p1", target="tt3", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="p2", target="tt3", sourceHandle="output", targetHandle="b"),
     ]
     graph = Graph(nodes=[prod1, prod2, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -1072,9 +990,7 @@ async def test_run_non_streaming_marks_handle_done_for_single_shot():
     target = CapturePairsNode(id="tt4")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="tt4", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="tt4", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -1095,9 +1011,7 @@ async def test_run_non_streaming_handles_cached_result():
     target.a = 100
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="tt5", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="tt5", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, target], edges=edges)
     actor, _runner, _ = await make_actor_for_target_async(graph, target)
@@ -1120,15 +1034,9 @@ async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
     capture = CaptureNode(id="cap")  # type: ignore
 
     edges = [
-        Edge(
-            id="e1", source="p1", target="so1", sourceHandle="output", targetHandle="a"
-        ),
-        Edge(
-            id="e2", source="p2", target="so1", sourceHandle="output", targetHandle="b"
-        ),
-        Edge(
-            id="e3", source="so1", target="cap", sourceHandle="output", targetHandle="a"
-        ),
+        Edge(id="e1", source="p1", target="so1", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="p2", target="so1", sourceHandle="output", targetHandle="b"),
+        Edge(id="e3", source="so1", target="cap", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod1, prod2, target, capture], edges=edges)
     actor, runner, _ctx = await make_actor_for_target_async(graph, target)

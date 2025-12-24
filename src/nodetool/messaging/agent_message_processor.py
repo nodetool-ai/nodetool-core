@@ -60,9 +60,7 @@ def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> N
     per_tool: list[tuple[int, str]] = []
     for tool in tools:
         try:
-            per_tool.append(
-                (count_json_tokens(tool.tool_param(), encoding=encoding), tool.name)
-            )
+            per_tool.append((count_json_tokens(tool.tool_param(), encoding=encoding), tool.name))
         except Exception:
             per_tool.append((0, getattr(tool, "name", "unknown")))
 
@@ -111,14 +109,9 @@ class AgentMessageProcessor(MessageProcessor):
         if last_message.tools:
             tool_names = set(last_message.tools)
             selected_tools = await asyncio.gather(
-                *[
-                    resolve_tool_by_name(name, processing_context.user_id)
-                    for name in tool_names
-                ]
+                *[resolve_tool_by_name(name, processing_context.user_id) for name in tool_names]
             )
-            log.debug(
-                f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
-            )
+            log.debug(f"Selected tools for agent: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
         # This mirrors HelpMessageProcessor behavior so the Agent can call frontend tools.
@@ -212,9 +205,7 @@ class AgentMessageProcessor(MessageProcessor):
                             "type": "task_update",
                             "event": item.event,
                             "task": item.task.model_dump() if item.task else None,
-                            "step": item.step.model_dump()
-                            if item.step
-                            else None,
+                            "step": item.step.model_dump() if item.step else None,
                         }
 
                         # Send as message via WebSocket (base_chat_runner will save to DB)
@@ -234,13 +225,15 @@ class AgentMessageProcessor(MessageProcessor):
                         )
                         log.info("Sent task_update message")
                     except Exception as e:
-                        log.error(
-                            f"Failed to send task_update message: {e}", exc_info=True
-                        )
+                        log.error(f"Failed to send task_update message: {e}", exc_info=True)
                 elif isinstance(item, PlanningUpdate):
                     # Send planning update as agent_execution message (will be saved by base_chat_runner)
                     try:
-                        content_preview = str(item.content)[:500] + "..." if item.content and len(str(item.content)) > 500 else str(item.content)
+                        content_preview = (
+                            str(item.content)[:500] + "..."
+                            if item.content and len(str(item.content)) > 500
+                            else str(item.content)
+                        )
                         log.info(
                             f"Processing PlanningUpdate: phase={item.phase}, status={item.status}, content={content_preview}"
                         )
@@ -303,7 +296,7 @@ class AgentMessageProcessor(MessageProcessor):
                             exc_info=True,
                         )
                 elif isinstance(item, LogUpdate):
-                     # Handle explicit LogUpdate items from agent
+                    # Handle explicit LogUpdate items from agent
                     try:
                         log_content = {
                             "type": "log_update",
@@ -361,9 +354,7 @@ class AgentMessageProcessor(MessageProcessor):
                         )
                         log.info("Sent step_result message")
                     except Exception as e:
-                        log.error(
-                            f"Failed to send step_result message: {e}", exc_info=True
-                        )
+                        log.error(f"Failed to send step_result message: {e}", exc_info=True)
 
             # Normalize final agent output to a markdown-friendly string
             content: str
@@ -395,9 +386,7 @@ class AgentMessageProcessor(MessageProcessor):
             error_msg = f"Agent execution error: {str(e)}"
 
             # Send error message to client
-            await self.send_message(
-                {"type": "error", "message": error_msg, "error_type": "agent_error"}
-            )
+            await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
 
             # Signal completion even on error
             await self.send_message({"type": "chunk", "content": "", "done": True})

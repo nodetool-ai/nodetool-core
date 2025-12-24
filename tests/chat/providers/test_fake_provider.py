@@ -35,9 +35,7 @@ class TestFakeProvider:
     @pytest.mark.asyncio
     async def test_streaming_text_response(self):
         """Test streaming text response functionality."""
-        provider = FakeProvider(
-            text_response="Hello there!", should_stream=True, chunk_size=5
-        )
+        provider = FakeProvider(text_response="Hello there!", should_stream=True, chunk_size=5)
 
         messages = [Message(role="user", content=[MessageTextContent(text="Hi")])]
 
@@ -113,9 +111,7 @@ class TestFakeProvider:
         provider = FakeProvider(custom_response_fn=custom_fn, should_stream=False)
 
         # Test with calculate query
-        calc_messages = [
-            Message(role="user", content=[MessageTextContent(text="calculate 2+2")])
-        ]
+        calc_messages = [Message(role="user", content=[MessageTextContent(text="calculate 2+2")])]
         response = await provider.generate_message(calc_messages, "test-model")
         assert response.content is not None
         assert len(response.content) == 1
@@ -123,9 +119,7 @@ class TestFakeProvider:
         assert response.content[0].text == "The answer is 42"
 
         # Test with other query
-        other_messages = [
-            Message(role="user", content=[MessageTextContent(text="hello")])
-        ]
+        other_messages = [Message(role="user", content=[MessageTextContent(text="hello")])]
         response = await provider.generate_message(other_messages, "test-model")
         assert response.content is not None
         assert len(response.content) == 1

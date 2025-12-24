@@ -183,21 +183,15 @@ async def process_regular_chat(
                 # Display tool result in debug mode
                 if debug_mode:
                     console.print("[Debug] Tool Result:")
-                    console.print(
-                        f"  {json.dumps(tool_result.result, indent=2, default=default_serializer)}\n"
-                    )
+                    console.print(f"  {json.dumps(tool_result.result, indent=2, default=default_serializer)}\n")
 
-                unprocessed_messages.append(
-                    Message(role="assistant", tool_calls=[chunk])
-                )
+                unprocessed_messages.append(Message(role="assistant", tool_calls=[chunk]))
                 unprocessed_messages.append(
                     Message(
                         role="tool",
                         tool_call_id=tool_result.id,
                         name=chunk.name,
-                        content=json.dumps(
-                            tool_result.result, default=default_serializer
-                        ),
+                        content=json.dumps(tool_result.result, default=default_serializer),
                     )
                 )
 

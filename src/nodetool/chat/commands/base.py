@@ -8,9 +8,7 @@ from nodetool.chat.chat_cli import ChatCLI
 class Command:
     """Base class for CLI commands with documentation and execution logic."""
 
-    def __init__(
-        self, name: str, description: str, aliases: Optional[List[str]] = None
-    ):
+    def __init__(self, name: str, description: str, aliases: Optional[List[str]] = None):
         self.name = name
         self.description = description
         self.aliases = aliases or []

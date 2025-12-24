@@ -86,9 +86,7 @@ async def list_collections(
         return None
 
     counts = await asyncio.gather(*(col.count() for col in collections))
-    workflows = await asyncio.gather(
-        *(get_workflow_name(col.metadata or {}) for col in collections)
-    )
+    workflows = await asyncio.gather(*(get_workflow_name(col.metadata or {}) for col in collections))
 
     return CollectionList(
         collections=[
@@ -134,9 +132,7 @@ async def update_collection(name: str, req: CollectionModify):
         graph = workflow.graph
         collection_input, file_input = find_input_nodes(graph)
         if not collection_input:
-            raise HTTPException(
-                status_code=400, detail="Workflow must have a CollectionInput node"
-            )
+            raise HTTPException(status_code=400, detail="Workflow must have a CollectionInput node")
         if not file_input:
             raise HTTPException(
                 status_code=400,
@@ -214,9 +210,7 @@ async def index(
         log = get_logger(__name__)
         log.error(f"Error indexing file {file.filename}: {e}")
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         # Ensure temporary directory is cleaned up without blocking
         await asyncio.to_thread(shutil.rmtree, tmp_dir)

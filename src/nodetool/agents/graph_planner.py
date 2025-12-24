@@ -149,9 +149,7 @@ logger.setLevel(logging.DEBUG)
 class NodeSpecification(BaseModel):
     """Model for node specification in workflow design."""
 
-    node_id: str = Field(
-        description="Unique identifier for the node (e.g., 'input_1', 'agent_1')"
-    )
+    node_id: str = Field(description="Unique identifier for the node (e.g., 'input_1', 'agent_1')")
     node_type: str = Field(
         default="",
         description="The exact node type from search_nodes results (e.g., 'nodetool.agents.Agent')",
@@ -160,9 +158,7 @@ class NodeSpecification(BaseModel):
         default=None,
         description="What this node does in the workflow and why it's needed",
     )
-    properties: str = Field(
-        default="{}", description="JSON string of properties for the node"
-    )
+    properties: str = Field(default="{}", description="JSON string of properties for the node")
 
     @field_validator("properties", mode="before")
     @classmethod
@@ -197,13 +193,9 @@ class NodeSpecification(BaseModel):
                 props = json.loads(self.properties)
                 if "type" in props:
                     self.node_type = props["type"]
-                    logger.debug(
-                        f"Extracted node_type '{self.node_type}' from properties for node {self.node_id}"
-                    )
+                    logger.debug(f"Extracted node_type '{self.node_type}' from properties for node {self.node_id}")
                 else:
-                    raise ValueError(
-                        f"No node_type found for node {self.node_id}, properties: {self.properties}"
-                    )
+                    raise ValueError(f"No node_type found for node {self.node_id}, properties: {self.properties}")
             except (json.JSONDecodeError, TypeError):
                 raise ValueError(
                     f"Could not parse properties for node {self.node_id}, properties: {self.properties}"
@@ -243,9 +235,7 @@ def get_node_type_for_metadata(
     """Find the appropriate InputNode subclass for a given TypeMetadata."""
     from nodetool.packages.registry import Registry
 
-    logger.debug(
-        f"Finding node type for metadata: {type_metadata.type}, subclass_of: {is_subclass_of}"
-    )
+    logger.debug(f"Finding node type for metadata: {type_metadata.type}, subclass_of: {is_subclass_of}")
     registry = Registry()
     all_nodes = registry.get_all_installed_nodes()
     logger.debug(f"Registry has {len(all_nodes)} nodes to search")
@@ -254,9 +244,7 @@ def get_node_type_for_metadata(
     for node_meta in all_nodes:
         try:
             node_class = get_node_class(node_meta.node_type)
-            if node_class and (
-                is_subclass_of is None or issubclass(node_class, is_subclass_of)
-            ):
+            if node_class and (is_subclass_of is None or issubclass(node_class, is_subclass_of)):
                 # Check the output type of this input node
                 outputs = node_class.outputs()
                 if outputs and len(outputs) > 0:
@@ -267,16 +255,12 @@ def get_node_type_for_metadata(
 
                     # Check for exact type match
                     if output_type.type == type_metadata.type:
-                        logger.debug(
-                            f"Found exact type match: {node_class.get_node_type()}"
-                        )
+                        logger.debug(f"Found exact type match: {node_class.get_node_type()}")
                         return node_class.get_node_type()
 
                     # Also check for compatible types
                     elif _is_type_compatible(output_type, type_metadata):
-                        logger.debug(
-                            f"Found compatible type match: {node_class.get_node_type()}"
-                        )
+                        logger.debug(f"Found compatible type match: {node_class.get_node_type()}")
                         return node_class.get_node_type()
 
                     matches_found += 1
@@ -285,17 +269,13 @@ def get_node_type_for_metadata(
             logger.debug(f"Could not load node class for {node_meta.node_type}: {e}")
             continue
 
-    logger.debug(
-        f"Searched {matches_found} candidate nodes, no match found for type: {type_metadata.type}"
-    )
+    logger.debug(f"Searched {matches_found} candidate nodes, no match found for type: {type_metadata.type}")
     raise ValueError(f"No InputNode match found for type: {type_metadata.type}")
 
 
 def _is_type_compatible(source_type: TypeMetadata, target_type: TypeMetadata) -> bool:
     """Check if source type can be assigned to target type."""
-    logger.debug(
-        f"Checking type compatibility: {source_type.type} -> {target_type.type}"
-    )
+    logger.debug(f"Checking type compatibility: {source_type.type} -> {target_type.type}")
     # Handle any type
     if source_type.type == "any" or target_type.type == "any":
         logger.debug("Compatible: any type")
@@ -336,15 +316,11 @@ def print_visual_graph(graph: APIGraph) -> None:
     for edge in graph.edges:
         if edge.source not in adjacency:
             adjacency[edge.source] = []
-        adjacency[edge.source].append(
-            (edge.target, edge.sourceHandle, edge.targetHandle)
-        )
+        adjacency[edge.source].append((edge.target, edge.sourceHandle, edge.targetHandle))
 
         if edge.target not in reverse_adjacency:
             reverse_adjacency[edge.target] = []
-        reverse_adjacency[edge.target].append(
-            (edge.source, edge.sourceHandle, edge.targetHandle)
-        )
+        reverse_adjacency[edge.target].append((edge.source, edge.sourceHandle, edge.targetHandle))
 
     # Find root nodes (no incoming edges)
     root_nodes = [node_id for node_id in all_nodes if node_id not in reverse_adjacency]
@@ -355,13 +331,9 @@ def print_visual_graph(graph: APIGraph) -> None:
 
     visited = set()
 
-    def print_node_tree(
-        node_id: str, depth: int = 0, is_last: bool = True, prefix: str = ""
-    ):
+    def print_node_tree(node_id: str, depth: int = 0, is_last: bool = True, prefix: str = ""):
         if node_id in visited:
-            logger.info(
-                f"  {prefix}{'└── ' if is_last else '├── '}[{node_id}] (already shown)"
-            )
+            logger.info(f"  {prefix}{'└── ' if is_last else '├── '}[{node_id}] (already shown)")
             return
 
         visited.add(node_id)
@@ -377,14 +349,10 @@ def print_visual_graph(graph: APIGraph) -> None:
             key_props = []
             for key, value in node.data.items():
                 if key in ["objective", "template", "text", "name", "provider"]:
-                    val_str = (
-                        str(value)[:30] + "..." if len(str(value)) > 30 else str(value)
-                    )
+                    val_str = str(value)[:30] + "..." if len(str(value)) > 30 else str(value)
                     key_props.append(f"{key}: {val_str}")
             if key_props:
-                logger.info(
-                    f"  {prefix}{'    ' if is_last else '│   '}│  Props: {', '.join(key_props[:2])}"
-                )
+                logger.info(f"  {prefix}{'    ' if is_last else '│   '}│  Props: {', '.join(key_props[:2])}")
 
         logger.info(f"  {prefix}{'    ' if is_last else '│   '}└─")
 
@@ -396,9 +364,7 @@ def print_visual_graph(graph: APIGraph) -> None:
 
             # Print connection info
             conn_info = f"--[{source_handle}→{target_handle}]-->"
-            logger.info(
-                f"  {child_prefix}{'└── ' if is_last_child else '├── '}{conn_info}"
-            )
+            logger.info(f"  {child_prefix}{'└── ' if is_last_child else '├── '}{conn_info}")
 
             # Print child node
             print_node_tree(
@@ -731,9 +697,7 @@ class GraphPlanner:
             max_tokens: Token limit for LLM
             verbose: Enable detailed logging
         """
-        logger.debug(
-            f"GraphPlanner.__init__ called with provider={type(provider).__name__}, model={model}"
-        )
+        logger.debug(f"GraphPlanner.__init__ called with provider={type(provider).__name__}, model={model}")
         logger.debug(
             "Objective length: %d chars, input_schema: %d items, output_schema: %d items",
             len(objective),
@@ -755,14 +719,10 @@ class GraphPlanner:
 
         logger.debug(f"Using existing graph: {existing_graph is not None}")
         if existing_graph:
-            logger.debug(
-                f"Existing graph has {len(existing_graph.nodes)} nodes and {len(existing_graph.edges)} edges"
-            )
+            logger.debug(f"Existing graph has {len(existing_graph.nodes)} nodes and {len(existing_graph.edges)} edges")
 
         self.system_prompt = system_prompt or DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT
-        logger.debug(
-            f"System prompt length: {len(self.system_prompt)} chars (custom: {system_prompt is not None})"
-        )
+        logger.debug(f"System prompt length: {len(self.system_prompt)} chars (custom: {system_prompt is not None})")
 
         self.verbose = verbose
         self.registry = Registry()
@@ -791,36 +751,26 @@ class GraphPlanner:
 
     def _get_node_metadata(self) -> list:
         """Get node metadata with caching."""
-        logger.debug(
-            f"_get_node_metadata called, cached: {self._cached_node_metadata is not None}"
-        )
+        logger.debug(f"_get_node_metadata called, cached: {self._cached_node_metadata is not None}")
         if self._cached_node_metadata is None:
             logger.debug("Loading node metadata from registry...")
             self._cached_node_metadata = self.registry.get_all_installed_nodes()
-            logger.debug(
-                f"Loaded {len(self._cached_node_metadata)} node metadata entries"
-            )
+            logger.debug(f"Loaded {len(self._cached_node_metadata)} node metadata entries")
         return self._cached_node_metadata
 
     def _get_namespaces(self) -> set[str]:
         """Get namespaces with caching."""
-        logger.debug(
-            f"_get_namespaces called, cached: {self._cached_namespaces is not None}"
-        )
+        logger.debug(f"_get_namespaces called, cached: {self._cached_namespaces is not None}")
         if self._cached_namespaces is None:
             logger.debug("Computing namespaces from node metadata...")
             node_metadata_list = self._get_node_metadata()
             self._cached_namespaces = {node.namespace for node in node_metadata_list}
-            logger.debug(
-                f"Found {len(self._cached_namespaces)} unique namespaces: {sorted(self._cached_namespaces)}"
-            )
+            logger.debug(f"Found {len(self._cached_namespaces)} unique namespaces: {sorted(self._cached_namespaces)}")
         return self._cached_namespaces
 
     def _convert_graph_to_specifications(self, graph: APIGraph) -> list[dict[str, Any]]:
         """Converts an APIGraph object into the node_specifications format."""
-        logger.debug(
-            f"Converting APIGraph to specifications: {len(graph.nodes)} nodes, {len(graph.edges)} edges"
-        )
+        logger.debug(f"Converting APIGraph to specifications: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
         node_specs = []
         # Create a lookup for edges by their target node ID
         edges_by_target: dict[str, list[Any]] = {}
@@ -870,9 +820,7 @@ class GraphPlanner:
         Returns:
             Tuple of (nodes, edges) lists
         """
-        logger.debug(
-            f"Building nodes and edges from {len(node_specifications)} specifications"
-        )
+        logger.debug(f"Building nodes and edges from {len(node_specifications)} specifications")
         nodes = []
         edges = []
 
@@ -885,36 +833,24 @@ class GraphPlanner:
 
             # Process properties and extract edges
             properties_string = spec.properties
-            logger.debug(
-                f"Parsing properties JSON for {node_id}: {len(properties_string)} chars"
-            )
+            logger.debug(f"Parsing properties JSON for {node_id}: {len(properties_string)} chars")
             properties = json.loads(properties_string)
-            logger.debug(
-                f"Parsed {len(properties)} properties for {node_id}: {list(properties.keys())}"
-            )
+            logger.debug(f"Parsed {len(properties)} properties for {node_id}: {list(properties.keys())}")
 
             # Check if this is a dynamic node type
             logger.debug(f"Looking up node class for {node_type}")
             node_class = get_node_class(node_type)
             is_dynamic_node = node_class.is_dynamic() if node_class else False
-            logger.debug(
-                f"Node {node_id} is_dynamic: {is_dynamic_node}, has_class: {node_class is not None}"
-            )
+            logger.debug(f"Node {node_id} is_dynamic: {is_dynamic_node}, has_class: {node_class is not None}")
             standard_prop_names = (
-                {prop.name for prop in node_class.properties()}
-                if is_dynamic_node and node_class
-                else set()
+                {prop.name for prop in node_class.properties()} if is_dynamic_node and node_class else set()
             )
             if is_dynamic_node:
-                logger.debug(
-                    f"Dynamic node {node_id} standard properties: {standard_prop_names}"
-                )
+                logger.debug(f"Dynamic node {node_id} standard properties: {standard_prop_names}")
 
             edge_count = 0
             for prop_name, prop_value in properties.items():
-                logger.debug(
-                    f"Processing property {prop_name} for {node_id}: {type(prop_value)}"
-                )
+                logger.debug(f"Processing property {prop_name} for {node_id}: {type(prop_value)}")
 
                 # Check if this is an edge definition
                 if isinstance(prop_value, dict) and prop_value.get("type") == "edge":
@@ -939,9 +875,7 @@ class GraphPlanner:
                     else:
                         # This is a standard property
                         node_data[prop_name] = prop_value
-                        logger.debug(
-                            f"Added standard property {prop_name} to {node_id}"
-                        )
+                        logger.debug(f"Added standard property {prop_name} to {node_id}")
 
             logger.debug(
                 f"Node {node_id} processed: {edge_count} edges, {len(node_data)} standard props, {len(dynamic_properties)} dynamic props"
@@ -970,46 +904,32 @@ class GraphPlanner:
         context = {
             **kwargs,
             "objective": self.objective,
-            "input_schema": json.dumps(
-                [inp.model_dump() for inp in self.input_schema], indent=2
-            ),
-            "output_schema": json.dumps(
-                [out.model_dump() for out in self.output_schema], indent=2
-            ),
+            "input_schema": json.dumps([inp.model_dump() for inp in self.input_schema], indent=2),
+            "output_schema": json.dumps([out.model_dump() for out in self.output_schema], indent=2),
             "existing_graph_spec": None,
         }
-        logger.debug(
-            f"Base context created with objective length {len(self.objective)}"
-        )
+        logger.debug(f"Base context created with objective length {len(self.objective)}")
 
         if self.existing_graph:
             logger.debug("Converting existing graph to specifications for context")
             specs = self._convert_graph_to_specifications(self.existing_graph)
             context["existing_graph_spec"] = json.dumps(specs, indent=2)
-            logger.debug(
-                f"Added existing graph spec to context: {len(specs)} specifications"
-            )
+            logger.debug(f"Added existing graph spec to context: {len(specs)} specifications")
 
         logger.debug(f"Final prompt context has {len(context)} keys")
         return context
 
     def _render_prompt(self, template_string: str, **kwargs: Any) -> str:
         """Render a Jinja2 template with context."""
-        logger.debug(
-            f"Rendering prompt template: {len(template_string)} chars, {len(kwargs)} extra kwargs"
-        )
+        logger.debug(f"Rendering prompt template: {len(template_string)} chars, {len(kwargs)} extra kwargs")
         template = self.jinja_env.from_string(template_string)
         rendered = template.render(self._get_prompt_context(**kwargs))
         logger.debug(f"Rendered prompt: {len(rendered)} chars")
         return rendered
 
-
-
     def _validate_workflow_design(self, result: WorkflowDesignResult) -> str:
         """Validate the complete workflow design (nodes + edges)."""
-        logger.debug(
-            f"Validating workflow design with {len(result.node_specifications)} node specifications"
-        )
+        logger.debug(f"Validating workflow design with {len(result.node_specifications)} node specifications")
         error_messages = []
 
         # Check for metadata_info properties in node specifications and remove them
@@ -1034,15 +954,11 @@ class GraphPlanner:
                 logger.debug(f"Successfully cleaned spec for {spec.node_id}")
             except (json.JSONDecodeError, TypeError) as e:
                 # If properties are malformed, keep original
-                logger.debug(
-                    f"Failed to parse properties for {spec.node_id}: {e}, keeping original"
-                )
+                logger.debug(f"Failed to parse properties for {spec.node_id}: {e}, keeping original")
                 cleaned_specs.append(spec)
 
         # Create cleaned result
-        logger.debug(
-            f"Creating cleaned workflow result with {len(cleaned_specs)} specs"
-        )
+        logger.debug(f"Creating cleaned workflow result with {len(cleaned_specs)} specs")
         cleaned_result = WorkflowDesignResult(node_specifications=cleaned_specs)
 
         # Validate dataflow analysis using the cleaned result
@@ -1059,17 +975,13 @@ class GraphPlanner:
             logger.debug("Running graph validation")
             graph_validation_errors = self._validate_graph_edge_types(cleaned_result)
             if graph_validation_errors:
-                logger.debug(
-                    f"Graph validation found errors: {graph_validation_errors}"
-                )
+                logger.debug(f"Graph validation found errors: {graph_validation_errors}")
                 error_messages.append(graph_validation_errors)
             else:
                 logger.debug("Graph validation passed")
 
         final_errors = " ".join(error_messages)
-        logger.debug(
-            f"Workflow design validation complete. Errors: {bool(final_errors)}"
-        )
+        logger.debug(f"Workflow design validation complete. Errors: {bool(final_errors)}")
         return final_errors
 
     async def _run_workflow_design_phase(
@@ -1077,17 +989,13 @@ class GraphPlanner:
         context: ProcessingContext,
         history: list[Message],
     ) -> AsyncGenerator[
-        Chunk
-        | ToolCall
-        | tuple[list[Message], WorkflowDesignResult, PlanningUpdate | None],
+        Chunk | ToolCall | tuple[list[Message], WorkflowDesignResult, PlanningUpdate | None],
         None,
     ]:
         """Run the workflow design phase with SearchNodesTool, using JSON output for final result."""
         logger.debug("Starting workflow design phase")
         workflow_design_prompt = self._render_prompt(WORKFLOW_DESIGN_PROMPT)
-        logger.debug(
-            f"Rendered workflow design prompt: {len(workflow_design_prompt)} chars"
-        )
+        logger.debug(f"Rendered workflow design prompt: {len(workflow_design_prompt)} chars")
 
         logger.debug("Setting up tools for workflow design phase")
         search_tool = SearchNodesTool(
@@ -1095,9 +1003,7 @@ class GraphPlanner:
                 "nodetool.agents",
             ]
         )
-        logger.debug(
-            f"Created SearchNodesTool with excluded namespaces: {search_tool.exclude_namespaces}"
-        )
+        logger.debug(f"Created SearchNodesTool with excluded namespaces: {search_tool.exclude_namespaces}")
 
         # Add the initial prompt
         history.append(Message(role="user", content=workflow_design_prompt))
@@ -1109,16 +1015,12 @@ class GraphPlanner:
         # Validation retry loop
         for validation_attempt in range(max_validation_attempts):
             if self.verbose:
-                logger.info(
-                    f"[Workflow Design] Validation attempt {validation_attempt + 1}/{max_validation_attempts}"
-                )
+                logger.info(f"[Workflow Design] Validation attempt {validation_attempt + 1}/{max_validation_attempts}")
 
             # Tool calling loop - allow LLM to use search_nodes tool
             for tool_iteration in range(max_tool_iterations):
                 if self.verbose:
-                    logger.info(
-                        f"[Workflow Design] Tool iteration {tool_iteration + 1}/{max_tool_iterations}"
-                    )
+                    logger.info(f"[Workflow Design] Tool iteration {tool_iteration + 1}/{max_tool_iterations}")
 
                 # Generate response with tools available
                 response_content = ""
@@ -1129,7 +1031,6 @@ class GraphPlanner:
                     model=self.model,
                     tools=[search_tool, SubmitWorkflowDesignTool()],
                     max_tokens=self.max_tokens,
-                    context_window=8192,
                 ):
                     if isinstance(chunk, Chunk):
                         if chunk.content:
@@ -1196,7 +1097,9 @@ class GraphPlanner:
                                 params = tc.args if isinstance(tc.args, dict) else {}
                                 logger.debug(f"Executing search_nodes with params: {params}")
                                 tool_output = await search_tool.process(context, params)
-                                tool_output_str = json.dumps(tool_output) if tool_output is not None else "No results found"
+                                tool_output_str = (
+                                    json.dumps(tool_output) if tool_output is not None else "No results found"
+                                )
                             except Exception as e:
                                 logger.error(f"Error executing search_nodes: {e}")
                                 tool_output_str = str(e)
@@ -1260,9 +1163,7 @@ class GraphPlanner:
 
     def _validate_graph_edge_types(self, result: WorkflowDesignResult) -> str:
         """Create a real Graph object and validate edge types using Graph.validate_edge_types()."""
-        logger.debug(
-            f"Starting graph edge type validation for {len(result.node_specifications)} nodes"
-        )
+        logger.debug(f"Starting graph edge type validation for {len(result.node_specifications)} nodes")
         try:
             # Enrich node specifications with metadata
             logger.debug("Enriching node specifications with metadata")
@@ -1273,9 +1174,7 @@ class GraphPlanner:
             nodes, edges = self._build_nodes_and_edges_from_specifications(
                 enriched_result.node_specifications,
             )
-            logger.debug(
-                f"Built {len(nodes)} nodes and {len(edges)} edges for validation"
-            )
+            logger.debug(f"Built {len(nodes)} nodes and {len(edges)} edges for validation")
 
             # Create graph dict
             graph_dict = {"nodes": nodes, "edges": edges}
@@ -1285,14 +1184,10 @@ class GraphPlanner:
             graph = Graph.from_dict(graph_dict, skip_errors=False)
             logger.debug("Graph object created, running edge type validation")
             validation_errors = graph.validate_edge_types()
-            logger.debug(
-                f"Edge type validation returned {len(validation_errors) if validation_errors else 0} errors"
-            )
+            logger.debug(f"Edge type validation returned {len(validation_errors) if validation_errors else 0} errors")
 
             if validation_errors:
-                error_msg = "Graph edge type validation errors: " + " ".join(
-                    validation_errors
-                )
+                error_msg = "Graph edge type validation errors: " + " ".join(validation_errors)
                 logger.debug(f"Edge validation failed: {error_msg}")
                 return error_msg
 
@@ -1312,14 +1207,10 @@ class GraphPlanner:
         # Find InputNode and OutputNode instances
         input_nodes = [node for node in graph.nodes if isinstance(node, InputNode)]
         output_nodes = [node for node in graph.nodes if isinstance(node, OutputNode)]
-        logger.debug(
-            f"Found {len(input_nodes)} InputNodes and {len(output_nodes)} OutputNodes"
-        )
+        logger.debug(f"Found {len(input_nodes)} InputNodes and {len(output_nodes)} OutputNodes")
 
         # Check for missing required input nodes
-        logger.debug(
-            f"Checking {len(input_nodes)} input nodes against {len(self.input_schema)} schema entries"
-        )
+        logger.debug(f"Checking {len(input_nodes)} input nodes against {len(self.input_schema)} schema entries")
         found_input_names = set()
 
         # Check InputNodes
@@ -1332,9 +1223,7 @@ class GraphPlanner:
             for schema_input in self.input_schema:
                 if schema_input.name == node_name:
                     found_input_names.add(node_name)
-                    logger.debug(
-                        f"Found matching schema input '{node_name}' with type '{schema_input.type}'"
-                    )
+                    logger.debug(f"Found matching schema input '{node_name}' with type '{schema_input.type}'")
                     if not typecheck(schema_input.type, node_type):
                         error_msg = f"InputNode '{node_name}' has type '{node_type}' which cannot be converted from the schema type '{schema_input.type}'."
                         logger.debug(f"Type check failed: {error_msg}")
@@ -1343,9 +1232,7 @@ class GraphPlanner:
                         logger.debug(f"Type check passed for InputNode '{node_name}'")
                     break
 
-        logger.debug(
-            f"Checking {len(output_nodes)} output nodes against {len(self.output_schema)} schema entries"
-        )
+        logger.debug(f"Checking {len(output_nodes)} output nodes against {len(self.output_schema)} schema entries")
         found_output_names = set()
         for output_node in output_nodes:
             node_name = output_node.name
@@ -1355,9 +1242,7 @@ class GraphPlanner:
             for schema_output in self.output_schema:
                 if schema_output.name == node_name:
                     found_output_names.add(node_name)
-                    logger.debug(
-                        f"Found matching schema output '{node_name}' with type '{schema_output.type}'"
-                    )
+                    logger.debug(f"Found matching schema output '{node_name}' with type '{schema_output.type}'")
                     if not typecheck(node_type, schema_output.type):
                         error_msg = f"OutputNode '{node_name}' has type '{node_type}' which cannot be converted to the schema type '{schema_output.type}'."
                         logger.debug(f"Type check failed: {error_msg}")
@@ -1378,9 +1263,7 @@ class GraphPlanner:
             error_messages.append(error_msg)
 
         # Check for missing output nodes
-        required_output_names = {
-            schema_output.name for schema_output in self.output_schema
-        }
+        required_output_names = {schema_output.name for schema_output in self.output_schema}
         missing_output_names = required_output_names - found_output_names
         logger.debug(
             f"Required outputs: {required_output_names}, Found: {found_output_names}, Missing: {missing_output_names}"
@@ -1391,26 +1274,18 @@ class GraphPlanner:
             error_messages.append(error_msg)
 
         final_errors = " ".join(error_messages)
-        logger.debug(
-            f"Input/output node validation complete. Errors: {bool(final_errors)}"
-        )
+        logger.debug(f"Input/output node validation complete. Errors: {bool(final_errors)}")
         return final_errors
 
-    def _enrich_analysis_with_metadata(
-        self, analysis_result: WorkflowDesignResult
-    ) -> WorkflowDesignResult:
+    def _enrich_analysis_with_metadata(self, analysis_result: WorkflowDesignResult) -> WorkflowDesignResult:
         """Enrich the analysis result with actual node metadata from the registry."""
-        logger.debug(
-            f"Enriching analysis result with {len(analysis_result.node_specifications)} node specifications"
-        )
+        logger.debug(f"Enriching analysis result with {len(analysis_result.node_specifications)} node specifications")
         # Create a copy of the result with enriched node specifications
         enriched_specs = []
 
         for node_spec in analysis_result.node_specifications:
             node_type = node_spec.node_type
-            logger.debug(
-                f"Enriching node spec {node_spec.node_id} with type {node_type}"
-            )
+            logger.debug(f"Enriching node spec {node_spec.node_id} with type {node_type}")
             if node_type:
                 # Get the node class from registry
                 if "." in node_type:
@@ -1442,15 +1317,11 @@ class GraphPlanner:
                     # Keep original spec if we can't enrich it
                     enriched_specs.append(node_spec)
             else:
-                logger.debug(
-                    f"No node type specified for {node_spec.node_id}, keeping original"
-                )
+                logger.debug(f"No node type specified for {node_spec.node_id}, keeping original")
                 # Keep original spec if no node type
                 enriched_specs.append(node_spec)
 
-        logger.debug(
-            f"Enrichment complete: {len(enriched_specs)} specifications processed"
-        )
+        logger.debug(f"Enrichment complete: {len(enriched_specs)} specifications processed")
         return WorkflowDesignResult(node_specifications=enriched_specs)
 
     def log_graph_summary(self) -> None:
@@ -1460,18 +1331,14 @@ class GraphPlanner:
             logger.warning("No graph has been generated yet.")
             return
 
-        logger.debug(
-            f"Logging summary for graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
-        )
+        logger.debug(f"Logging summary for graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
 
         logger.info("\n" + "=" * 80)
         logger.info("GRAPH PLANNER SUMMARY")
         logger.info("=" * 80)
         logger.info(f"Objective: {self.objective}")
         logger.info(f"Input Schema: {[inp.model_dump() for inp in self.input_schema]}")
-        logger.info(
-            f"Output Schema: {[out.model_dump() for out in self.output_schema]}"
-        )
+        logger.info(f"Output Schema: {[out.model_dump() for out in self.output_schema]}")
         logger.info("\nGraph Statistics:")
         logger.info(f"  - Total Nodes: {len(self.graph.nodes)}")
         logger.info(f"  - Total Edges: {len(self.graph.edges)}")
@@ -1503,22 +1370,16 @@ class GraphPlanner:
                 if hasattr(node, "data") and "name" in node.data:
                     logger.info(f"    Schema Name: {node.data['name']}")
 
-        logger.debug(
-            f"Graph summary complete: {input_count} inputs, {output_count} outputs"
-        )
+        logger.debug(f"Graph summary complete: {input_count} inputs, {output_count} outputs")
 
         logger.info("=" * 80 + "\n")
 
-    async def create_graph(
-        self, context: ProcessingContext
-    ) -> AsyncGenerator[Chunk | PlanningUpdate, None]:
+    async def create_graph(self, context: ProcessingContext) -> AsyncGenerator[Chunk | PlanningUpdate, None]:
         """Create a workflow graph from the objective.
 
         Yields PlanningUpdate events during the process.
         """
-        logger.info(
-            f"Starting graph creation for objective: '{self.objective[:100]}...'"
-        )
+        logger.info(f"Starting graph creation for objective: '{self.objective[:100]}...'")
         logger.debug(f"Full objective: {self.objective}")
         logger.debug(f"Context type: {type(context).__name__}")
 
@@ -1526,9 +1387,7 @@ class GraphPlanner:
         if self.verbose:
             logger.info("Starting Graph Planner")
 
-        logger.debug(
-            f"Initializing history with system prompt: {len(self.system_prompt)} chars"
-        )
+        logger.debug(f"Initializing history with system prompt: {len(self.system_prompt)} chars")
         history: list[Message] = [
             Message(role="system", content=self.system_prompt),
         ]
@@ -1551,9 +1410,7 @@ class GraphPlanner:
                     f"Got final result tuple: history={len(history)} messages, result={workflow_result is not None}, update={planning_update is not None}"
                 )
                 if planning_update:
-                    logger.debug(
-                        f"Yielding planning update: {planning_update.phase} - {planning_update.status}"
-                    )
+                    logger.debug(f"Yielding planning update: {planning_update.phase} - {planning_update.status}")
                     yield planning_update
             else:
                 # Stream chunk or tool call to frontend
@@ -1575,13 +1432,9 @@ class GraphPlanner:
         # Enrich node specifications with actual metadata
         logger.info("Enriching node specifications with metadata from registry...")
         assert workflow_result is not None
-        logger.debug(
-            f"Workflow result has {len(workflow_result.node_specifications)} node specifications"
-        )
+        logger.debug(f"Workflow result has {len(workflow_result.node_specifications)} node specifications")
         enriched_workflow = self._enrich_analysis_with_metadata(workflow_result)
-        logger.debug(
-            f"Enriched workflow has {len(enriched_workflow.node_specifications)} node specifications"
-        )
+        logger.debug(f"Enriched workflow has {len(enriched_workflow.node_specifications)} node specifications")
 
         yield PlanningUpdate(
             phase="Metadata Enrichment",
@@ -1608,9 +1461,7 @@ class GraphPlanner:
             nodes=nodes,  # type: ignore
             edges=edges,  # type: ignore
         )
-        logger.info(
-            f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
-        )
+        logger.info(f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
         logger.debug(f"Graph object created: {type(self.graph)}")
 
         # Log the generated graph structure
@@ -1628,9 +1479,7 @@ class GraphPlanner:
         # Log edges
         logger.info(f"\nEdges ({len(self.graph.edges)}):")
         for edge in self.graph.edges:
-            logger.info(
-                f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
-            )
+            logger.info(f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})")
 
         # Log the summary
         self.log_graph_summary()

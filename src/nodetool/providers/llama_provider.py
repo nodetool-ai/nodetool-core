@@ -68,10 +68,17 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Environment:
             LLAMA_CPP_URL: Required. URL of the external llama-server
                 (e.g., http://127.0.0.1:8080).
+            LLAMA_CPP_CONTEXT_LENGTH: Optional. Context window size in tokens.
+                If not set, defaults to 128000.
         """
         super().__init__()
         self._base_url = Environment.get("LLAMA_CPP_URL", "")
         self._server_manager = LlamaServerManager(ttl_seconds=ttl_seconds)
+        
+        # Get context length from settings, with fallback to 128000
+        context_length_str = Environment.get("LLAMA_CPP_CONTEXT_LENGTH")
+        self.default_context_length = int(context_length_str) if context_length_str else 128000
+        
         if self._base_url:
             log.info(f"Using llama-server at: {self._base_url}")
         else:
@@ -90,6 +97,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         except Exception as e:
             log.warning(f"Failed to load tiktoken encoding: {e}. Token counting may be inaccurate.")
             self._encoding = None
+        
+        log.debug(f"LlamaProvider initialized with default_context_length: {self.default_context_length}")
 
     def _normalize_messages_for_llama(
         self,
@@ -162,11 +171,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
                 # For Gemma models, avoid adding empty assistant messages as they break the chat template
                 # Only add empty assistant message if the normalized list is empty or the last message was a system message
-                if (
-                    normalized
-                    and normalized[-1].role != "assistant"
-                    and normalized[-1].role != "system"
-                ):
+                if normalized and normalized[-1].role != "assistant" and normalized[-1].role != "system":
                     # Skip adding empty assistant message - let Gemma handle it naturally
                     pass
 
@@ -178,25 +183,15 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                         f"Use this result to answer the user's question. Do NOT call the function again."
                     )
                     # Explicitly create a message with string content only
-                    normalized.append(
-                        Message(role="user", content=str(emulated_content))
-                    )
+                    normalized.append(Message(role="user", content=str(emulated_content)))
                 else:
-                    prefix = (
-                        f"Tool {msg.name or ''} result:\n"
-                        if msg.name
-                        else "Tool result:\n"
-                    )
-                    normalized.append(
-                        Message(role="user", content=str(f"{prefix}{content_str}"))
-                    )
+                    prefix = f"Tool {msg.name or ''} result:\n" if msg.name else "Tool result:\n"
+                    normalized.append(Message(role="user", content=str(f"{prefix}{content_str}")))
                 continue
             normalized.append(msg)
 
         if system_parts:
-            system = Message(
-                role="system", content="\n".join(p for p in system_parts if p)
-            )
+            system = Message(role="system", content="\n".join(p for p in system_parts if p))
             normalized = [system, *normalized]
 
         # Enforce strict alternation after optional system: user, assistant, user, ...
@@ -215,18 +210,12 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
             # Insert blanks until this message fits the expected parity
             while (role == "user") != expected_user_turn:
-                fixed.append(
-                    Message(
-                        role=("user" if expected_user_turn else "assistant"), content=""
-                    )
-                )
+                fixed.append(Message(role=("user" if expected_user_turn else "assistant"), content=""))
                 expected_user_turn = not expected_user_turn
 
             # Append the actual message (preserve original content)
             if role != msg.role:
-                fixed.append(
-                    Message(role=role, content=msg.content, tool_calls=msg.tool_calls)
-                )
+                fixed.append(Message(role=role, content=msg.content, tool_calls=msg.tool_calls))
             else:
                 fixed.append(msg)
 
@@ -337,9 +326,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         except RuntimeError:
             # Fallback if no scope is bound (shouldn't happen in normal operation)
             log.warning("No ResourceScope bound, creating fallback HTTP client for Llama")
-            http_client = httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
-            )
+            http_client = httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False)
 
         # llama-server accepts any API key; None is fine when auth is disabled
         return openai.AsyncClient(
@@ -348,9 +335,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             http_client=http_client,
         )
 
-    def _as_service_unavailable(
-        self, error: Exception, base_url: str
-    ) -> httpx.HTTPStatusError:
+    def _as_service_unavailable(self, error: Exception, base_url: str) -> httpx.HTTPStatusError:
         request = httpx.Request("POST", f"{base_url}/v1/chat/completions")
         response = httpx.Response(status_code=503, request=request, text=str(error))
         return httpx.HTTPStatusError(
@@ -358,18 +343,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             request=request,
             response=response,
         )
-
-    def get_context_length(self, model: str) -> int:
-        """Return an approximate context window for the provided model.
-
-        Args:
-            model: Model identifier passed to llama.cpp.
-
-        Returns:
-            A conservative default context size; server may support more.
-        """
-        # Defer to server; commonly 4k-128k. Return a safe default.
-        return 128000
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
@@ -408,11 +381,13 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
                 for model_data in data.get("data", []):
                     model_id = model_data.get("id", "")
-                    models.append(LanguageModel(
-                        id=model_id,
-                        name=model_id,
-                        provider=Provider.LlamaCpp,
-                    ))
+                    models.append(
+                        LanguageModel(
+                            id=model_id,
+                            name=model_id,
+                            provider=Provider.LlamaCpp,
+                        )
+                    )
                 log.debug(f"Found {len(models)} models from llama.cpp server")
         except Exception as e:
             log.warning(f"Error querying llama.cpp server: {e}")
@@ -425,7 +400,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 1024,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -436,7 +410,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             model: Model spec (GGUF path or HF repo/tag) to run.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Unused hint; present for interface parity.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 
@@ -462,9 +435,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             _kwargs["tools"] = self.format_tools(tools)
 
         # Normalize messages to satisfy llama.cpp alternation constraints
-        messages_normalized = self._normalize_messages_for_llama(
-            messages, tools, use_tool_emulation
-        )
+        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
         # llama.cpp is sensitive to unsupported fields; pass only necessary ones
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
@@ -475,9 +446,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         client = self.get_client(base_url)
         try:
-            completion = await client.chat.completions.create(
-                messages=openai_messages, **_kwargs
-            )
+            completion = await client.chat.completions.create(messages=openai_messages, **_kwargs)
         except httpx.ConnectError as e:
             raise self._as_service_unavailable(e, base_url) from e
 
@@ -493,10 +462,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
             delta = chunk.choices[0].delta
 
-            if (
-                getattr(delta, "content", None)
-                or chunk.choices[0].finish_reason == "stop"
-            ):
+            if getattr(delta, "content", None) or chunk.choices[0].finish_reason == "stop":
                 content = delta.content or ""
                 current_chunk += content
                 completion_text += content  # Accumulate for token counting
@@ -513,9 +479,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from streaming response")
-                        emulated_calls, _ = self._parse_function_calls(
-                            accumulated_content, tools
-                        )
+                        emulated_calls, _ = self._parse_function_calls(accumulated_content, tools)
                         for tool_call in emulated_calls:
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
                             yield tool_call
@@ -523,7 +487,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     # Count completion tokens and update usage
                     completion_tokens = self._count_tokens_in_text(completion_text)
                     self._update_usage(prompt_tokens, completion_tokens)
-                    log.debug(f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
+                    log.debug(
+                        f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
+                    )
 
                 yield Chunk(content=content, done=finish_reason == "stop")
 
@@ -545,7 +511,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                         if "function" in tc and "arguments" in tc["function"]:
                             completion_tokens += self._count_tokens_in_text(tc["function"]["arguments"])
                     self._update_usage(prompt_tokens, completion_tokens)
-                    log.debug(f"Token usage (tool calls) - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
+                    log.debug(
+                        f"Token usage (tool calls) - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
+                    )
 
             if delta.tool_calls:
                 for tool_call in delta.tool_calls:
@@ -568,7 +536,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 1024,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -579,7 +546,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             model: Model spec (GGUF path or HF repo/tag) to run.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Unused hint; present for interface parity.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 
@@ -605,9 +571,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if kwargs:
             _kwargs.update(kwargs)
 
-        messages_normalized = self._normalize_messages_for_llama(
-            messages, tools, use_tool_emulation
-        )
+        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
         # Count prompt tokens before sending
@@ -622,9 +586,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         client = self.get_client(base_url)
         try:
-            completion = await client.chat.completions.create(
-                model=model, messages=openai_messages, **_kwargs
-            )
+            completion = await client.chat.completions.create(model=model, messages=openai_messages, **_kwargs)
         except httpx.ConnectError as e:
             raise self._as_service_unavailable(e, base_url) from e
 
@@ -678,11 +640,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         # Update usage statistics
         self._update_usage(prompt_tokens, completion_tokens)
-        log.debug(f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
-
-        message = Message(
-            role="assistant", content=final_content, tool_calls=tool_calls
+        log.debug(
+            f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
         )
+
+        message = Message(role="assistant", content=final_content, tool_calls=tool_calls)
         self._log_api_response("chat", message)
         return message
 
@@ -725,9 +687,7 @@ if __name__ == "__main__":
                 "required": ["text"],
             }
 
-            async def process(
-                self, context: ProcessingContext, params: dict[str, Any]
-            ) -> Any:  # type: ignore[override]
+            async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:  # type: ignore[override]
                 return {"echo": params.get("text", "")}
 
         model = "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF"
@@ -740,9 +700,7 @@ if __name__ == "__main__":
             Message(role="user", content="Just say 'Hello World'"),
         ]
         print("\nTesting without tools first...")
-        resp = await provider.generate_message(
-            messages=messages, model=model, max_tokens=64
-        )
+        resp = await provider.generate_message(messages=messages, model=model, max_tokens=64)
         print("Basic test successful:", resp.content)
 
         # Now try with tools
@@ -755,15 +713,11 @@ if __name__ == "__main__":
         try:
             # Now test with tools only
             print("\nTesting with tools...")
-            resp = await provider.generate_message(
-                messages=messages, model=model, tools=tools, max_tokens=64
-            )
+            resp = await provider.generate_message(messages=messages, model=model, tools=tools, max_tokens=64)
             print("First response successful:", resp.content)
 
             if resp.tool_calls:
-                print(
-                    f"✅ Tool call test PASSED! Got {len(resp.tool_calls)} tool calls:"
-                )
+                print(f"✅ Tool call test PASSED! Got {len(resp.tool_calls)} tool calls:")
                 for tc in resp.tool_calls:
                     print(f"  - {tc.name}: {tc.args}")
                     selected_tool = next((t for t in tools if t.name == tc.name), None)
@@ -787,15 +741,11 @@ if __name__ == "__main__":
                         final = await provider.generate_message(
                             messages=messages, model=model, tools=tools, max_tokens=64
                         )
-                        content_str = (
-                            final.content if isinstance(final.content, str) else ""
-                        )
+                        content_str = final.content if isinstance(final.content, str) else ""
                         print("✅ OpenAI approach: SUCCESS -", content_str.strip())
                     except Exception as e:
                         print("❌ OpenAI approach failed:", e)
-                        print(
-                            "Tool execution successful but conversation continuation failed."
-                        )
+                        print("Tool execution successful but conversation continuation failed.")
             else:
                 content_str = resp.content if isinstance(resp.content, str) else ""
                 print("❌ No tool call returned. Model said:", content_str.strip())
@@ -811,9 +761,7 @@ if __name__ == "__main__":
 
         # Download Gemma model - use HF_TOKEN from secrets if available for gated model downloads
         token = get_secret_sync("HF_TOKEN") or os.environ.get("HF_TOKEN")
-        hf_hub_download(
-            "ggml-org/gemma-3-1b-it-GGUF", filename="gemma-3-1b-it-Q4_K_M.gguf", token=token
-        )
+        hf_hub_download("ggml-org/gemma-3-1b-it-GGUF", filename="gemma-3-1b-it-Q4_K_M.gguf", token=token)
         gemma_model = "ggml-org/gemma-3-1b-it-GGUF"
         calculator_tools: list[Tool] = [CalculatorTool()]
 
@@ -849,9 +797,7 @@ if __name__ == "__main__":
                 print(f"Tool: {tool_call.name}")
                 print(f"Args: {tool_call.args}")
 
-                matching_tool = next(
-                    (t for t in calculator_tools if t.name == tool_call.name), None
-                )
+                matching_tool = next((t for t in calculator_tools if t.name == tool_call.name), None)
                 if matching_tool is None:
                     print(f"Warning: Tool {tool_call.name} not found")
                     continue
@@ -879,13 +825,11 @@ if __name__ == "__main__":
             iteration += 1
 
         if iteration > max_iterations:
-            print(
-                f"\n⚠️  WARNING: Reached max iterations ({max_iterations}). Stopping.\n"
-            )
+            print(f"\n⚠️  WARNING: Reached max iterations ({max_iterations}). Stopping.\n")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Final Answer: {response.content}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     asyncio.run(_run_all())
 

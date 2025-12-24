@@ -20,29 +20,21 @@ class FileStorage(AbstractStorage):
     async def get_url(self, key: str) -> str:
         return f"{self.base_url}/{key}"
 
-    def generate_presigned_url(
-        self, client_method: str, object_name: str, expiration=3600 * 24 * 7
-    ):
+    def generate_presigned_url(self, client_method: str, object_name: str, expiration=3600 * 24 * 7):
         return f"{self.base_url}/{object_name}"
 
     async def file_exists(self, file_name: str) -> bool:
-        return await asyncio.to_thread(
-            os.path.isfile, os.path.join(self.base_path, file_name)
-        )
+        return await asyncio.to_thread(os.path.isfile, os.path.join(self.base_path, file_name))
 
     async def get_mtime(self, key: str):
         try:
-            mtime = await asyncio.to_thread(
-                os.path.getmtime, os.path.join(self.base_path, key)
-            )
+            mtime = await asyncio.to_thread(os.path.getmtime, os.path.join(self.base_path, key))
             return datetime.fromtimestamp(mtime, tz=datetime.now().astimezone().tzinfo)
         except FileNotFoundError:
             return None
 
     async def get_size(self, key: str) -> int:
-        return await asyncio.to_thread(
-            os.path.getsize, os.path.join(self.base_path, key)
-        )
+        return await asyncio.to_thread(os.path.getsize, os.path.join(self.base_path, key))
 
     async def download_stream(self, key: str) -> AsyncIterator[bytes]:
         async with aiofiles.open(os.path.join(self.base_path, key), "rb") as f:

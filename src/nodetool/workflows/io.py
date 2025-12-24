@@ -145,9 +145,7 @@ class NodeOutputs:
         if not self.node.should_route_output(slot):
             return
         if self.node.find_output_instance(slot) is None:
-            raise ValueError(
-                f"Node {self.node.get_title()} ({self.node._id}) tried to emit to unknown output '{slot}'"
-            )
+            raise ValueError(f"Node {self.node.get_title()} ({self.node._id}) tried to emit to unknown output '{slot}'")
         # Always collect the last value per slot
         self._collected[slot] = value
 
@@ -155,10 +153,7 @@ class NodeOutputs:
         if isinstance(self.node, OutputNode):
             node_name = self.node.name
             if node_name in self.runner.outputs:
-                if (
-                    not self.runner.outputs[node_name]
-                    or self.runner.outputs[node_name][-1] != value
-                ):
+                if not self.runner.outputs[node_name] or self.runner.outputs[node_name][-1] != value:
                     self.runner.outputs[node_name].append(value)
             else:
                 self.runner.outputs[node_name] = [value]
@@ -196,9 +191,7 @@ class NodeOutputs:
                     inbox.mark_source_done(edge.targetHandle)
                 # Notify that this specific edge has been drained
                 with suppress(Exception):
-                    self.context.post_message(
-                        EdgeUpdate(edge_id=edge.id or "", status="drained")
-                    )
+                    self.context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
 
     async def default(self, value: Any) -> None:
         """Convenience for emitting to the default slot.

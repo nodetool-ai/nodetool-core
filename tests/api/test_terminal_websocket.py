@@ -40,7 +40,10 @@ def test_terminal_ws_rejects_when_disabled(monkeypatch):
 
 
 def test_terminal_ws_rejects_in_production(monkeypatch):
-    with _make_client(monkeypatch, env="production", enable_flag="1") as client, client.websocket_connect("/terminal") as ws:
+    with (
+        _make_client(monkeypatch, env="production", enable_flag="1") as client,
+        client.websocket_connect("/terminal") as ws,
+    ):
         msg = ws.receive()
         assert msg["type"] == "websocket.close"
         assert msg["code"] == 1008

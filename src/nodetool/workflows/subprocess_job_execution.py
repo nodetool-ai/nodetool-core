@@ -32,6 +32,7 @@ from nodetool.workflows.types import (
 
 log = get_logger(__name__)
 
+
 def type_to_name(type: type[ProcessingMessage]) -> str:
     return type.__annotations__["type"].__args__[0]
 
@@ -139,11 +140,8 @@ def _create_macos_sandbox_profile(
     # self-documenting and forward compatible if stricter read rules are added.
     if allowed_read_paths:
         profile_lines.extend(
-            [';; Additional allowed read paths (explicitly requested)']
-            + [
-                f'(allow file-read* (subpath "{path}"))'
-                for path in allowed_read_paths
-            ]
+            [";; Additional allowed read paths (explicitly requested)"]
+            + [f'(allow file-read* (subpath "{path}"))' for path in allowed_read_paths]
         )
 
     # Network access control - only apply if explicitly disabled
@@ -272,9 +270,7 @@ def _extract_workflow_write_paths(graph: Any) -> list[str]:
             expanded = os.path.expanduser(folder.strip())
             if expanded not in write_paths:
                 write_paths.append(expanded)
-                log.info(
-                    f"Allowing sandbox write access to workflow output: {expanded}"
-                )
+                log.info(f"Allowing sandbox write access to workflow output: {expanded}")
 
     return write_paths
 
@@ -298,9 +294,7 @@ def _wrap_command_with_sandbox(
 
     try:
         # Get configuration from environment
-        allow_network = os.environ.get(
-            "NODETOOL_SANDBOX_ALLOW_NETWORK", "1"
-        ).lower() not in ("0", "false", "no")
+        allow_network = os.environ.get("NODETOOL_SANDBOX_ALLOW_NETWORK", "1").lower() not in ("0", "false", "no")
 
         # Check if debug logging is enabled
         enable_logging = os.environ.get("NODETOOL_SANDBOX_DEBUG", "1").lower() not in (
@@ -316,9 +310,7 @@ def _wrap_command_with_sandbox(
 
         allowed_write_paths = []
         if write_paths := os.environ.get("NODETOOL_SANDBOX_WRITE_PATHS"):
-            allowed_write_paths = [
-                p.strip() for p in write_paths.split(":") if p.strip()
-            ]
+            allowed_write_paths = [p.strip() for p in write_paths.split(":") if p.strip()]
 
         # Add workflow-specific write paths (from Save*File nodes)
         if workflow_write_paths:
@@ -346,9 +338,7 @@ def _wrap_command_with_sandbox(
         log.info(f"Wrapping command with sandbox-exec: {' '.join(wrapped_cmd)}")
         log.info(f"Sandbox profile path: {profile_path}")
         if enable_logging:
-            log.info(
-                "Sandbox debug logging ENABLED - violations will be logged to stderr"
-            )
+            log.info("Sandbox debug logging ENABLED - violations will be logged to stderr")
         log.debug(f"Sandbox profile:\n{profile}")
 
         return wrapped_cmd, profile_path
@@ -369,11 +359,7 @@ def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
         CPU limit percentage or None if not configured
     """
     # Check per-job limit first
-    if (
-        resource_limits
-        and hasattr(resource_limits, "cpu_percent")
-        and resource_limits.cpu_percent
-    ):
+    if resource_limits and hasattr(resource_limits, "cpu_percent") and resource_limits.cpu_percent:
         return resource_limits.cpu_percent
 
     # Fall back to environment variable
@@ -437,9 +423,7 @@ def _wrap_command_with_cpu_limit(
 
     # Only use taskpolicy on macOS
     if platform.system() != "Darwin":
-        log.warning(
-            f"CPU limit requested ({cpu_percent}%) but taskpolicy is only available on macOS"
-        )
+        log.warning(f"CPU limit requested ({cpu_percent}%) but taskpolicy is only available on macOS")
         return cmd, {"taskpolicy_warning": "taskpolicy not available (not macOS)"}
 
     # Check if taskpolicy is available
@@ -453,9 +437,7 @@ def _wrap_command_with_cpu_limit(
     # Wrap command with taskpolicy
     wrapped_cmd = ["taskpolicy", "-c", taskpolicy_class, *cmd]
 
-    log.info(
-        f"Applying CPU limit: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'"
-    )
+    log.info(f"Applying CPU limit: {cpu_percent}% -> taskpolicy class '{taskpolicy_class}'")
     log.debug(f"CPU-limited command: {' '.join(wrapped_cmd)}")
 
     resource_info = {
@@ -480,9 +462,7 @@ def _deserialize_processing_message(payload: dict[str, Any]) -> Any:
             return cls.model_validate(payload)  # type: ignore[attr-defined]
         return cls(**payload)
     except Exception:
-        log.exception(
-            "Failed to deserialize message from subprocess", extra={"payload": payload}
-        )
+        log.exception("Failed to deserialize message from subprocess", extra={"payload": payload})
         return None
 
 
@@ -524,9 +504,7 @@ class SubprocessJobExecution(JobExecution):
 
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
-        raise NotImplementedError(
-            "SubprocessJobExecution does not support push_input_value"
-        )
+        raise NotImplementedError("SubprocessJobExecution does not support push_input_value")
 
     def is_running(self) -> bool:
         """Check if the subprocess is still running."""
@@ -597,9 +575,7 @@ class SubprocessJobExecution(JobExecution):
                         # Forward message to context
                         self.context.post_message(msg)
                 except json.JSONDecodeError:
-                    log.warning(
-                        f"Failed to parse JSON from subprocess stdout: {line[:100]}"
-                    )
+                    log.warning(f"Failed to parse JSON from subprocess stdout: {line[:100]}")
                 except Exception:
                     log.exception("Error processing subprocess message")
 
@@ -636,9 +612,7 @@ class SubprocessJobExecution(JobExecution):
             if returncode == 0:
                 # Successful completion - update both internal status and database
                 self._status = "completed"
-                await self.job_model.update(
-                    status="completed", finished_at=datetime.now()
-                )
+                await self.job_model.update(status="completed", finished_at=datetime.now())
                 log.info(f"Subprocess job {self.job_id} completed successfully")
             else:
                 # Failed completion - the subprocess may not have sent a proper update
@@ -658,9 +632,7 @@ class SubprocessJobExecution(JobExecution):
                 elif returncode == -9:
                     error_msg = "Subprocess killed (exit code -9) - likely out of memory or exceeded resource limits"
                 elif returncode == -11:
-                    error_msg = (
-                        "Subprocess crashed (exit code -11) - segmentation fault"
-                    )
+                    error_msg = "Subprocess crashed (exit code -11) - segmentation fault"
                 elif returncode < 0:
                     error_msg = f"Subprocess terminated by signal {-returncode}"
                 else:
@@ -668,15 +640,9 @@ class SubprocessJobExecution(JobExecution):
 
                 # Track error locally for fallback reporters
                 self._error = error_msg
-                await self.job_model.update(
-                    status="failed", error=error_msg, finished_at=datetime.now()
-                )
-                self.context.post_message(
-                    JobUpdate(job_id=self.job_id, status="failed", error=error_msg)
-                )
-                log.error(
-                    f"Subprocess job {self.job_id} failed with code {returncode}: {error_msg}"
-                )
+                await self.job_model.update(status="failed", error=error_msg, finished_at=datetime.now())
+                self.context.post_message(JobUpdate(job_id=self.job_id, status="failed", error=error_msg))
+                log.error(f"Subprocess job {self.job_id} failed with code {returncode}: {error_msg}")
 
             self._completed_event.set()
 
@@ -688,13 +654,12 @@ class SubprocessJobExecution(JobExecution):
         except Exception as e:
             self._status = "failed"
             import traceback
+
             error_msg = f"Error monitoring subprocess: {str(e)}"
             tb_text = traceback.format_exc()
             # Track error locally for fallback reporters
             self._error = error_msg
-            await self.job_model.update(
-                status="failed", error=error_msg, finished_at=datetime.now()
-            )
+            await self.job_model.update(status="failed", error=error_msg, finished_at=datetime.now())
             self._completed_event.set()
             log.error(f"Error monitoring subprocess job {self.job_id}: {e}")
             # Provide a final update with traceback for better visibility
@@ -709,9 +674,7 @@ class SubprocessJobExecution(JobExecution):
                 )
 
     @classmethod
-    async def create_and_start(
-        cls, request: RunJobRequest, context: ProcessingContext
-    ) -> "SubprocessJobExecution":
+    async def create_and_start(cls, request: RunJobRequest, context: ProcessingContext) -> "SubprocessJobExecution":
         """
         Create and start a new subprocess-based job.
 
@@ -772,9 +735,7 @@ class SubprocessJobExecution(JobExecution):
             workflow_write_paths = _extract_workflow_write_paths(request.graph)
 
         # Wrap command with sandbox-exec on macOS if enabled
-        cmd, sandbox_profile_path = _wrap_command_with_sandbox(
-            cmd, workflow_write_paths
-        )
+        cmd, sandbox_profile_path = _wrap_command_with_sandbox(cmd, workflow_write_paths)
 
         process = await aio_subprocess.create_subprocess_exec(
             *cmd,
@@ -804,9 +765,7 @@ class SubprocessJobExecution(JobExecution):
         job_instance._stderr_task = asyncio.create_task(job_instance._stream_stderr())
 
         # Start monitoring completion
-        job_instance._monitor_task = asyncio.create_task(
-            job_instance._monitor_completion()
-        )
+        job_instance._monitor_task = asyncio.create_task(job_instance._monitor_completion())
 
         log.info(f"Subprocess job {job_id} started with PID {process.pid}")
 
@@ -912,9 +871,7 @@ async def _test_subprocess_execution():
     # Check sandbox status
     if _should_use_sandbox():
         print("\nSandbox: ENABLED (macOS sandbox-exec)")
-        print(
-            f"  Network: {'ALLOWED' if os.environ.get('NODETOOL_SANDBOX_ALLOW_NETWORK', '1') != '0' else 'DENIED'}"
-        )
+        print(f"  Network: {'ALLOWED' if os.environ.get('NODETOOL_SANDBOX_ALLOW_NETWORK', '1') != '0' else 'DENIED'}")
         debug_enabled = os.environ.get("NODETOOL_SANDBOX_DEBUG", "1") != "0"
         print(f"  Debug Logging: {'ENABLED' if debug_enabled else 'DISABLED'}")
         if debug_enabled:

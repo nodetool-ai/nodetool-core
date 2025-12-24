@@ -45,10 +45,9 @@ class DBResources(Protocol):
         """Clean up resources and return connections to pool."""
         ...
 
+
 # ContextVar to store the current scope
-_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar(
-    "_current_scope", default=None
-)
+_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar("_current_scope", default=None)
 
 
 def require_scope() -> ResourceScope:
@@ -93,9 +92,7 @@ def get_static_auth_provider() -> Any:
     if ResourceScope._class_static_auth_provider is None:
         token = get_worker_auth_token()
         if not token:
-            raise ValueError(
-                "WORKER_AUTH_TOKEN is required for static authentication."
-            )
+            raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
         ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
     return ResourceScope._class_static_auth_provider
 
@@ -299,6 +296,7 @@ class ResourceScope:
         if self._asset_storage is None:
             # Check environment dynamically to support pytest-xdist workers
             import os
+
             is_pytest = "PYTEST_CURRENT_TEST" in os.environ or RUNNING_PYTEST
             if is_pytest:
                 from nodetool.storage.memory_storage import MemoryStorage
@@ -395,9 +393,7 @@ class ResourceScope:
                             client=client,
                         )
                     except Exception as e:
-                        log.error(
-                            f"Failed to initialize Supabase temp storage, using memory. Error: {e}"
-                        )
+                        log.error(f"Failed to initialize Supabase temp storage, using memory. Error: {e}")
                         from nodetool.storage.memory_storage import MemoryStorage
 
                         log.info("Using memory storage for temp storage")
@@ -428,33 +424,19 @@ class ResourceScope:
                             client=client,
                         )
                     except Exception as e:
-                        log.error(
-                            f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}"
-                        )
-                        assert (
-                            Environment.get_s3_access_key_id() is not None or use_s3
-                        ), "S3 access key ID is required"
-                        assert (
-                            Environment.get_asset_temp_bucket() is not None
-                        ), "Asset temp bucket is required"
-                        assert (
-                            Environment.get_asset_temp_domain() is not None
-                        ), "Asset temp domain is required"
+                        log.error(f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}")
+                        assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
+                        assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
+                        assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
                         log.info("Using S3 storage for temp asset storage")
                         self._temp_storage = self.get_s3_storage(
                             Environment.get_asset_temp_bucket(),
                             Environment.get_asset_temp_domain(),
                         )
                 else:
-                    assert (
-                        Environment.get_s3_access_key_id() is not None or use_s3
-                    ), "S3 access key ID is required"
-                    assert (
-                        Environment.get_asset_temp_bucket() is not None
-                    ), "Asset temp bucket is required"
-                    assert (
-                        Environment.get_asset_temp_domain() is not None
-                    ), "Asset temp domain is required"
+                    assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
+                    assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
+                    assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
                     log.info("Using S3 storage for temp asset storage")
                     self._temp_storage = self.get_s3_storage(
                         Environment.get_asset_temp_bucket(),
@@ -480,9 +462,7 @@ class ResourceScope:
                 from nodetool.storage.memcache_node_cache import MemcachedNodeCache
 
                 log.info("Using memcache for node cache")
-                self._node_cache = MemcachedNodeCache(
-                    host=memcache_host, port=int(memcache_port)
-                )
+                self._node_cache = MemcachedNodeCache(host=memcache_host, port=int(memcache_port))
             else:
                 from nodetool.storage.memory_node_cache import MemoryNodeCache
 
@@ -552,9 +532,7 @@ class ResourceScope:
         if ResourceScope._class_static_auth_provider is None:
             token = get_worker_auth_token()
             if not token:
-                raise ValueError(
-                    "WORKER_AUTH_TOKEN is required for static authentication."
-                )
+                raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
             ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
         return ResourceScope._class_static_auth_provider
 

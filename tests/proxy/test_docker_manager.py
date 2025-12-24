@@ -26,9 +26,7 @@ def is_docker_available():
 
 
 # Skip all tests in this module if Docker is not available
-pytestmark = pytest.mark.skipif(
-    not is_docker_available(), reason="Docker is not available"
-)
+pytestmark = pytest.mark.skipif(not is_docker_available(), reason="Docker is not available")
 
 
 @pytest.fixture
@@ -325,12 +323,8 @@ class TestDockerManagerIntegration:
         docker_manager: DockerManager,
     ):
         """Test that concurrent service starts are properly serialized."""
-        service1 = ServiceConfig(
-            name="app1", path="/", image="nginx:alpine"
-        )
-        service2 = ServiceConfig(
-            name="app2", path="/", image="nginx:alpine"
-        )
+        service1 = ServiceConfig(name="app1", path="/", image="nginx:alpine")
+        service2 = ServiceConfig(name="app2", path="/", image="nginx:alpine")
 
         # Start both containers concurrently
         results = await asyncio.gather(

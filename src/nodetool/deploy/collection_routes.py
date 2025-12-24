@@ -44,9 +44,7 @@ def create_collection_router() -> APIRouter:
             return {"path": file.filename or "unknown", "error": None}
         except Exception as e:
             log.error(f"Error indexing file {file.filename}: {e}")
-            raise HTTPException(
-                status_code=500, detail=str(e)
-            ) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
         finally:
             shutil.rmtree(tmp_dir)
             await file.close()

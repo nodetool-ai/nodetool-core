@@ -27,8 +27,10 @@ def test_export_with_connection_and_props():
     code = graph_to_dsl_py(g)
 
     # Two imports grouped by module
-    assert "from nodetool.dsl.apple.notes import CreateNote, ReadNotes" in code or \
-           "from nodetool.dsl.apple.notes import ReadNotes, CreateNote" in code
+    assert (
+        "from nodetool.dsl.apple.notes import CreateNote, ReadNotes" in code
+        or "from nodetool.dsl.apple.notes import ReadNotes, CreateNote" in code
+    )
 
     # ReadNotes defined before CreateNote (topological)
     first_idx = code.find("read_notes_1 = ReadNotes(")

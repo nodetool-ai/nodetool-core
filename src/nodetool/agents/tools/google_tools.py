@@ -46,9 +46,7 @@ class GoogleGroundedSearchTool(Tool):
         key = Environment.get_environment().get("GEMINI_API_KEY")
         return {"GEMINI_API_KEY": key} if key else {}
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a web search using Gemini API with grounding.
 
@@ -101,20 +99,13 @@ class GoogleGroundedSearchTool(Tool):
                     results.append(part.text)
 
         # Extract source information if available
-        if (
-            candidate.grounding_metadata
-            and candidate.grounding_metadata.grounding_chunks
-        ):
+        if candidate.grounding_metadata and candidate.grounding_metadata.grounding_chunks:
             # Extract sources from grounding chunks
             chunks = candidate.grounding_metadata.grounding_chunks
             for chunk in chunks:
                 if hasattr(chunk, "web") and chunk.web:
                     source = {
-                        "title": (
-                            chunk.web.title
-                            if hasattr(chunk.web, "title")
-                            else "Unknown Source"
-                        ),
+                        "title": (chunk.web.title if hasattr(chunk.web, "title") else "Unknown Source"),
                         "url": chunk.web.uri if hasattr(chunk.web, "uri") else None,
                     }
                     if source not in sources and source["url"]:
@@ -122,10 +113,7 @@ class GoogleGroundedSearchTool(Tool):
 
         # Extract grounding supports if available
         grounding_supports = []
-        if (
-            candidate.grounding_metadata
-            and candidate.grounding_metadata.grounding_supports
-        ):
+        if candidate.grounding_metadata and candidate.grounding_metadata.grounding_supports:
             supports = candidate.grounding_metadata.grounding_supports
             for support in supports:
                 if support.segment:
@@ -143,6 +131,7 @@ class GoogleGroundedSearchTool(Tool):
 
         # Resolve redirect URLs
         import aiohttp
+
         try:
             async with aiohttp.ClientSession() as session:
                 for source in sources:
@@ -156,7 +145,7 @@ class GoogleGroundedSearchTool(Tool):
                             pass
                     formatted_sources.append(source)
         except Exception:
-             # If session creation fails, keep original sources
+            # If session creation fails, keep original sources
             formatted_sources = sources
 
         formatted_results = {
@@ -206,9 +195,7 @@ class GoogleImageGenerationTool(Tool):
             "required": ["prompt", "output_file"],
         }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate an image using the Gemini API based on the provided prompt.
 

@@ -212,9 +212,7 @@ def get_all_collections() -> List[chromadb.Collection]:
             try:
                 embedding_function(["test"])
             except Exception as e:
-                log.error(
-                    f"Failed to connect or use Ollama model '{model}' for collection '{collection.name}': {e}"
-                )
+                log.error(f"Failed to connect or use Ollama model '{model}' for collection '{collection.name}': {e}")
                 raise ValueError(
                     f"Ollama model '{model}' for collection '{collection.name}' not available at {ollama_url}. Error: {e}"
                 ) from e
@@ -224,9 +222,7 @@ def get_all_collections() -> List[chromadb.Collection]:
             )
 
         result.append(
-            client.get_collection(
-                name=collection.name, embedding_function=embedding_function
-            )  # type: ignore
+            client.get_collection(name=collection.name, embedding_function=embedding_function)  # type: ignore
         )
 
     return result

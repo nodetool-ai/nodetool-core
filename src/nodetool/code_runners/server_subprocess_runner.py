@@ -93,9 +93,7 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
             os.fsync(dst.fileno())
 
 
-def _cache_remote_binary(
-    url: str, name: str, archive_inner_path: str | None = None
-) -> Path:
+def _cache_remote_binary(url: str, name: str, archive_inner_path: str | None = None) -> Path:
     """Return a cached path for the remote binary, downloading if needed.
 
     When ``archive_inner_path`` is provided, ``url`` is expected to point to a
@@ -160,9 +158,7 @@ def _cache_remote_binary(
     # Otherwise treat the URL/path as a direct executable
     # Guard against accidentally passing a .zip without specifying inner path
     if archive_inner_path is None and str(parsed.path).lower().endswith(".zip"):
-        raise ValueError(
-            "ZIP archive URL provided but no 'archive_inner_path' was specified"
-        )
+        raise ValueError("ZIP archive URL provided but no 'archive_inner_path' was specified")
     if parsed.scheme in ("", "file"):
         src = Path(parsed.path)
         if not src.exists():
@@ -312,9 +308,7 @@ class ServerSubprocessRunner:
         cancel_timer: threading.Timer | None = None
         try:
             # 1) Resolve binary path (download if necessary)
-            binaryPath = _cache_remote_binary(
-                self.binary_url, "server", self.archive_executable_path
-            )
+            binaryPath = _cache_remote_binary(self.binary_url, "server", self.archive_executable_path)
 
             # 2) Resolve port
             port = self._requested_port or _find_free_port()
@@ -361,17 +355,11 @@ class ServerSubprocessRunner:
 
             # 6) Forward stdin if provided
             if stdin_stream is not None and proc.stdin is not None:
-                asyncio.run_coroutine_threadsafe(
-                    self._feed_stdin(proc.stdin, stdin_stream), loop
-                )
+                asyncio.run_coroutine_threadsafe(self._feed_stdin(proc.stdin, stdin_stream), loop)
 
             # 7) Wait until server is ready, then emit endpoint
-            if not _wait_for_server_ready(
-                self.host_ip, port, proc, self.ready_timeout_seconds
-            ):
-                raise RuntimeError(
-                    f"Server did not become ready on {self.host_ip}:{port}"
-                )
+            if not _wait_for_server_ready(self.host_ip, port, proc, self.ready_timeout_seconds):
+                raise RuntimeError(f"Server did not become ready on {self.host_ip}:{port}")
             endpoint = f"{self.scheme}://{self.host_ip}:{port}{self.endpointPath}"
             asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "yield", "slot": "endpoint", "value": endpoint}),
@@ -380,9 +368,7 @@ class ServerSubprocessRunner:
 
             # 8) Optional timeout watchdog
             if self.timeout_seconds and self.timeout_seconds > 0:
-                cancel_timer = threading.Timer(
-                    self.timeout_seconds, lambda: _kill(proc)
-                )
+                cancel_timer = threading.Timer(self.timeout_seconds, lambda: _kill(proc))
                 cancel_timer.daemon = True
                 cancel_timer.start()
 
@@ -392,17 +378,11 @@ class ServerSubprocessRunner:
             if rc != 0 and not self._stopped:
                 raise RuntimeError(f"Process exited with code {rc}")
 
-            asyncio.run_coroutine_threadsafe(
-                queue.put({"type": "final", "ok": True}), loop
-            )
+            asyncio.run_coroutine_threadsafe(queue.put({"type": "final", "ok": True}), loop)
         except Exception as e:
             with suppress(Exception):
-                self._logger.exception(
-                    "subprocess runner error for cmd=%s: %s", command_vec, e
-                )
-            asyncio.run_coroutine_threadsafe(
-                queue.put({"type": "final", "ok": False, "error": str(e)}), loop
-            )
+                self._logger.exception("subprocess runner error for cmd=%s: %s", command_vec, e)
+            asyncio.run_coroutine_threadsafe(queue.put({"type": "final", "ok": False, "error": str(e)}), loop)
         finally:
             with suppress(Exception):
                 if cancel_timer is not None:
@@ -438,9 +418,7 @@ class ServerSubprocessRunner:
         except Exception as e:
             self._logger.debug("reader(%s) ended: %s", slot, e)
 
-    async def _feed_stdin(
-        self, w, stdin_stream: AsyncIterator[str]
-    ) -> None:  # IO[bytes]
+    async def _feed_stdin(self, w, stdin_stream: AsyncIterator[str]) -> None:  # IO[bytes]
         try:
             async for data in stdin_stream:
                 if not data.endswith("\n"):
@@ -464,9 +442,7 @@ class ServerSubprocessRunner:
     ) -> None:
         if not line.endswith("\n"):
             line = line + "\n"
-        asyncio.run_coroutine_threadsafe(
-            queue.put({"type": "yield", "slot": slot, "value": line}), loop
-        )
+        asyncio.run_coroutine_threadsafe(queue.put({"type": "yield", "slot": slot, "value": line}), loop)
         try:
             sev = "info" if slot == "stdout" else "error"
             context.post_message(
@@ -487,9 +463,7 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _wait_for_server_ready(
-    host: str, port: int, proc: subprocess.Popen[bytes], timeout: float
-) -> bool:
+def _wait_for_server_ready(host: str, port: int, proc: subprocess.Popen[bytes], timeout: float) -> bool:
     deadline = time.time() + max(0.0, float(timeout))
     while time.time() < deadline:
         # If the process already died, abort early
@@ -530,9 +504,7 @@ if __name__ == "__main__":
 
         def post_message(self, msg: Any) -> None:  # pragma: no cover - manual demo
             try:
-                print(
-                    f"[log:{getattr(msg, 'severity', 'info')}] {getattr(msg, 'content', msg)}"
-                )
+                print(f"[log:{getattr(msg, 'severity', 'info')}] {getattr(msg, 'content', msg)}")
             except Exception:
                 print(f"[log] {msg}")
 
@@ -543,9 +515,7 @@ if __name__ == "__main__":
             return "ServerSubprocessRunnerTest"
 
     def _parse_args():  # pragma: no cover - manual demo
-        p = _argparse.ArgumentParser(
-            description="Test ServerSubprocessRunner with llama.cpp zip"
-        )
+        p = _argparse.ArgumentParser(description="Test ServerSubprocessRunner with llama.cpp zip")
         p.add_argument(
             "--url",
             default="https://github.com/ggml-org/llama.cpp/releases/download/b6348/llama-b6348-bin-macos-arm64.zip",

@@ -61,9 +61,7 @@ class SerpProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def search_jobs(
-        self, query: str, location: Optional[str] = None, num_results: int = 10
-    ) -> Any:
+    async def search_jobs(self, query: str, location: Optional[str] = None, num_results: int = 10) -> Any:
         """
         Perform a job search.
         """

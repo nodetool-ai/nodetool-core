@@ -106,7 +106,7 @@ class DummyAsyncBuilder:
         # Apply limit if set
         data = self._response_data
         if self.last_limit is not None:
-            data = data[:self.last_limit]
+            data = data[: self.last_limit]
         return SimpleNamespace(data=data)
 
 
@@ -116,7 +116,7 @@ def build_adapter_with_mocked_client(response_data):
         mock_client = MockClient.return_value
         mock_client.table.return_value = builder
         adapter = SupabaseAdapter(
-            client=mock_client, # type: ignore
+            client=mock_client,  # type: ignore
             fields=TestModel.db_fields(),
             table_schema=TestModel.get_table_schema(),
         )

@@ -57,9 +57,7 @@ class ThreadedJobExecution(JobExecution):
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
         assert self.runner, "Runner is not set"
-        self.runner.push_input_value(
-            input_name=input_name, value=value, source_handle=source_handle
-        )
+        self.runner.push_input_value(input_name=input_name, value=value, source_handle=source_handle)
 
     def is_running(self) -> bool:
         """Check if the job is still running."""
@@ -104,13 +102,9 @@ class ThreadedJobExecution(JobExecution):
                 # Load workflow graph if not already loaded
                 if self.request.graph is None:
                     log.info(f"Loading workflow graph for {self.request.workflow_id}")
-                    workflow = await self.context.get_workflow(
-                        self.request.workflow_id
-                    )
+                    workflow = await self.context.get_workflow(self.request.workflow_id)
                     if workflow is None:
-                        raise ValueError(
-                            f"Workflow {self.request.workflow_id} not found"
-                        )
+                        raise ValueError(f"Workflow {self.request.workflow_id} not found")
                     self.request.graph = workflow.get_api_graph()
 
                 self._set_status("running")
@@ -118,16 +112,12 @@ class ThreadedJobExecution(JobExecution):
 
                 # Update job status on completion
                 self._set_status("completed")
-                await self.job_model.update(
-                    status="completed", finished_at=datetime.now()
-                )
+                await self.job_model.update(status="completed", finished_at=datetime.now())
                 log.info(f"Background job {self.job_id} completed successfully")
 
             except asyncio.CancelledError:
                 self._set_status("cancelled")
-                await self.job_model.update(
-                    status="cancelled", finished_at=datetime.now()
-                )
+                await self.job_model.update(status="cancelled", finished_at=datetime.now())
                 log.info(f"Background job {self.job_id} cancelled")
                 raise
             except Exception as e:
@@ -135,15 +125,11 @@ class ThreadedJobExecution(JobExecution):
                 import traceback
 
                 error_text = str(e).strip()
-                error_msg = (
-                    f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
-                )
+                error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
                 tb_text = traceback.format_exc()
                 # Track error locally for fallback reporters
                 self._error = error_msg
-                await self.job_model.update(
-                    status="failed", error=error_msg, finished_at=datetime.now()
-                )
+                await self.job_model.update(status="failed", error=error_msg, finished_at=datetime.now())
                 log.exception("Background job %s failed: %s", self.job_id, error_msg)
                 self.context.post_message(
                     JobUpdate(
@@ -159,9 +145,7 @@ class ThreadedJobExecution(JobExecution):
                 await self.finalize_state()
 
     @classmethod
-    async def create_and_start(
-        cls, request: RunJobRequest, context: ProcessingContext
-    ) -> "ThreadedJobExecution":
+    async def create_and_start(cls, request: RunJobRequest, context: ProcessingContext) -> "ThreadedJobExecution":
         """
         Create and start a new background job.
 

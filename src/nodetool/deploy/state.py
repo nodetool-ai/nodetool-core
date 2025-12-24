@@ -77,9 +77,7 @@ class StateManager:
                         time.sleep(0.1)
 
                 if not acquired:
-                    raise TimeoutError(
-                        f"Could not acquire lock on {self.lock_path} within {timeout} seconds"
-                    )
+                    raise TimeoutError(f"Could not acquire lock on {self.lock_path} within {timeout} seconds")
 
                 yield
 
@@ -179,9 +177,7 @@ class StateManager:
                 )
             temp_path.replace(self.config_path)
 
-    def update_deployment_status(
-        self, deployment_name: str, status: str, update_timestamp: bool = True
-    ) -> None:
+    def update_deployment_status(self, deployment_name: str, status: str, update_timestamp: bool = True) -> None:
         """
         Update the status of a deployment.
 
@@ -190,9 +186,7 @@ class StateManager:
             status: New status value
             update_timestamp: Whether to update last_deployed timestamp (default: True)
         """
-        self.write_state(
-            deployment_name, {"status": status}, update_timestamp=update_timestamp
-        )
+        self.write_state(deployment_name, {"status": status}, update_timestamp=update_timestamp)
 
     def get_all_states(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -337,9 +331,7 @@ class StateManager:
         return self.get_last_deployed(deployment_name) is not None
 
 
-def create_state_snapshot(
-    config: DeploymentConfig, config_path: Optional[Path | str] = None
-) -> Dict[str, Any]:
+def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> Dict[str, Any]:
     """
     Create a snapshot of the current state of all deployments.
 
@@ -397,15 +389,11 @@ def restore_state_from_snapshot(
 
             with open(resolved_config_path) as f:
                 data = yaml.safe_load(f)
-            config = (
-                DeploymentConfig.model_validate(data) if data else DeploymentConfig()
-            )
+            config = DeploymentConfig.model_validate(data) if data else DeploymentConfig()
         else:
             config = load_deployment_config()
 
-        deployments_to_restore = (
-            [deployment_name] if deployment_name else snapshot["deployments"].keys()
-        )
+        deployments_to_restore = [deployment_name] if deployment_name else snapshot["deployments"].keys()
 
         for name in deployments_to_restore:
             if name not in snapshot["deployments"]:

@@ -62,9 +62,7 @@ class TestContainerConfig:
 
     def test_container_config_basic(self):
         """Test basic container configuration."""
-        config = ContainerConfig(
-            name="workflow1", port=8001, gpu="0", workflows=["wf1", "wf2"]
-        )
+        config = ContainerConfig(name="workflow1", port=8001, gpu="0", workflows=["wf1", "wf2"])
         assert config.name == "workflow1"
         assert config.port == 8001
         assert config.gpu == "0"
@@ -103,9 +101,7 @@ class TestSelfHostedDeployment:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(
-                name="wf1", port=8001, gpu="0", workflows=["abc123"]
-            ),
+            container=ContainerConfig(name="wf1", port=8001, gpu="0", workflows=["abc123"]),
         )
         assert deployment.container.name == "wf1"
         assert deployment.container.port == 8001

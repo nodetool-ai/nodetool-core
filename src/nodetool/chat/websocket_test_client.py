@@ -141,16 +141,12 @@ class ChatWebSocketClient:
 
         if self.websocket:
             await self.websocket.close()
-            self.print_message(
-                datetime.now().strftime("%H:%M:%S"), "system", "Disconnected"
-            )
+            self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Disconnected")
 
     async def send_message(self, content: str):
         """Send a message to the WebSocket server."""
         if not self.websocket:
-            self.print_message(
-                datetime.now().strftime("%H:%M:%S"), "system", "Not connected"
-            )
+            self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
             return
 
         # Construct message
@@ -190,11 +186,7 @@ class ChatWebSocketClient:
             assert self.websocket, "WebSocket not connected"
             async for message in self.websocket:
                 # Parse message based on format
-                data = (
-                    msgpack.unpackb(message, raw=False)
-                    if isinstance(message, bytes)
-                    else json.loads(message)
-                )
+                data = msgpack.unpackb(message, raw=False) if isinstance(message, bytes) else json.loads(message)
 
                 # Process based on message type
                 await self.process_message(data)
@@ -237,9 +229,7 @@ class ChatWebSocketClient:
                         "\r" + " " * (len(self.current_assistant_message) + 1) + "\r",
                         end="",
                     )  # Clear line
-                    self.print_message(
-                        timestamp, "assistant", self.current_assistant_message
-                    )
+                    self.print_message(timestamp, "assistant", self.current_assistant_message)
                     self.current_assistant_message = ""
 
         elif msg_type == "tool_call":
@@ -267,15 +257,11 @@ class ChatWebSocketClient:
 
         elif msg_type == "error":
             # Error message
-            self.print_message(
-                timestamp, "system", f"Error: {data.get('message', 'Unknown error')}"
-            )
+            self.print_message(timestamp, "system", f"Error: {data.get('message', 'Unknown error')}")
 
         else:
             # Unknown message type
-            self.print_message(
-                timestamp, "system", f"Received {msg_type}: {json.dumps(data)}"
-            )
+            self.print_message(timestamp, "system", f"Received {msg_type}: {json.dumps(data)}")
 
     async def handle_command(self, command: str):
         """Handle slash commands."""
@@ -287,9 +273,7 @@ class ChatWebSocketClient:
         if cmd == "/help":
             print("\nCommands:")
             print("  /help              - Show this help")
-            print(
-                f"  /model <name>      - Change model (current: {self.current_model})"
-            )
+            print(f"  /model <name>      - Change model (current: {self.current_model})")
             print("  /tools <t1,t2>     - Set tools (comma-separated)")
             print("  /workflow <id>     - Set workflow ID")
             print("  /clear             - Clear screen")
@@ -298,35 +282,23 @@ class ChatWebSocketClient:
         elif cmd == "/model":
             if args:
                 self.current_model = args
-                self.print_message(
-                    timestamp, "system", f"Model set to: {self.current_model}"
-                )
+                self.print_message(timestamp, "system", f"Model set to: {self.current_model}")
             else:
-                self.print_message(
-                    timestamp, "system", f"Current model: {self.current_model}"
-                )
+                self.print_message(timestamp, "system", f"Current model: {self.current_model}")
 
         elif cmd == "/tools":
             if args:
                 self.current_tools = [t.strip() for t in args.split(",")]
-                self.print_message(
-                    timestamp, "system", f"Tools set to: {self.current_tools}"
-                )
+                self.print_message(timestamp, "system", f"Tools set to: {self.current_tools}")
             else:
-                self.print_message(
-                    timestamp, "system", f"Current tools: {self.current_tools}"
-                )
+                self.print_message(timestamp, "system", f"Current tools: {self.current_tools}")
 
         elif cmd == "/workflow":
             if args:
                 self.current_workflow = args
-                self.print_message(
-                    timestamp, "system", f"Workflow ID set to: {self.current_workflow}"
-                )
+                self.print_message(timestamp, "system", f"Workflow ID set to: {self.current_workflow}")
             else:
-                self.print_message(
-                    timestamp, "system", f"Current workflow: {self.current_workflow}"
-                )
+                self.print_message(timestamp, "system", f"Current workflow: {self.current_workflow}")
 
         elif cmd == "/clear":
             print("\033[2J\033[H")  # Clear screen and move cursor to top
@@ -375,9 +347,7 @@ class ChatWebSocketClient:
                         await self.handle_command(user_input)
                     else:
                         # Display user message and send it
-                        self.print_message(
-                            datetime.now().strftime("%H:%M:%S"), "user", user_input
-                        )
+                        self.print_message(datetime.now().strftime("%H:%M:%S"), "user", user_input)
                         await self.send_message(user_input)
 
                 except KeyboardInterrupt:
@@ -400,9 +370,7 @@ async def main():
         help="WebSocket URL (default: ws://localhost:8000/chat)",
     )
     parser.add_argument("--token", help="Authentication token (JWT)")
-    parser.add_argument(
-        "--binary", action="store_true", help="Use binary message format (MessagePack)"
-    )
+    parser.add_argument("--binary", action="store_true", help="Use binary message format (MessagePack)")
 
     args = parser.parse_args()
 
@@ -410,9 +378,7 @@ async def main():
     message_format = MessageFormat.BINARY if args.binary else MessageFormat.TEXT
 
     # Create and run client
-    client = ChatWebSocketClient(
-        url=args.url, auth_token=args.token, message_format=message_format
-    )
+    client = ChatWebSocketClient(url=args.url, auth_token=args.token, message_format=message_format)
 
     try:
         await client.run_interactive_session()

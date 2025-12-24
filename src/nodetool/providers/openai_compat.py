@@ -61,11 +61,7 @@ class OpenAICompat:
         mime_type, data_bytes = await fetch_uri_bytes_and_mime(uri)
 
         # Convert audio to mp3 if possible and needed
-        if (
-            AudioSegment is not None
-            and mime_type.startswith("audio/")
-            and mime_type != "audio/mpeg"
-        ):
+        if AudioSegment is not None and mime_type.startswith("audio/") and mime_type != "audio/mpeg":
             try:
                 audio = AudioSegment.from_file(io.BytesIO(data_bytes))
                 with io.BytesIO() as buffer:
@@ -100,11 +96,7 @@ class OpenAICompat:
 
             raw_bytes = unquote_to_bytes(data_part)
 
-        if (
-            AudioSegment is not None
-            and mime_type.startswith("audio/")
-            and mime_type != "audio/mpeg"
-        ):
+        if AudioSegment is not None and mime_type.startswith("audio/") and mime_type != "audio/mpeg":
             try:
                 audio = AudioSegment.from_file(io.BytesIO(raw_bytes))
                 with io.BytesIO() as buffer:
@@ -119,9 +111,7 @@ class OpenAICompat:
 
         return f"data:{mime_type};base64,{content_b64}"
 
-    async def message_content_to_openai_content_part(
-        self, content: MessageContent
-    ) -> ChatCompletionContentPartParam:
+    async def message_content_to_openai_content_part(self, content: MessageContent) -> ChatCompletionContentPartParam:
         if isinstance(content, MessageTextContent):
             return {"type": "text", "text": content.text}
         elif isinstance(content, MessageAudioContent):
@@ -166,22 +156,15 @@ class OpenAICompat:
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
-            return ChatCompletionSystemMessageParam(
-                role=message.role, content=str(message.content)
-            )
+            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
         elif message.role == "user":
             assert message.content is not None, "User message content must not be None"
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [
-                    await self.message_content_to_openai_content_part(c)
-                    for c in message.content
-                ]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
             else:
-                raise ValueError(
-                    f"Unknown message content type {type(message.content)}"
-                )
+                raise ValueError(f"Unknown message content type {type(message.content)}")
             return ChatCompletionUserMessageParam(role=message.role, content=content)
         elif message.role == "ipython":
             # Handle ipython role used by Llama models for tool results
@@ -213,10 +196,7 @@ class OpenAICompat:
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [
-                    await self.message_content_to_openai_content_part(c)
-                    for c in message.content
-                ]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
             else:
                 content = None
 
@@ -288,11 +268,7 @@ class OpenAICompat:
                     param_examples.append(f"{param_name}={example}")
 
             param_str = ", ".join(params) if params else ""
-            example_call = (
-                f"{name}({', '.join(param_examples)})"
-                if param_examples
-                else f"{name}()"
-            )
+            example_call = f"{name}({', '.join(param_examples)})" if param_examples else f"{name}()"
 
             func_def = f"# {name}({param_str})\n"
             func_def += f"# {description}\n"
@@ -303,9 +279,7 @@ class OpenAICompat:
         log.debug(f"Generated Python function definitions:\n{result}")
         return result
 
-    def _parse_function_calls(
-        self, text: str, tools: Sequence[Tool] | None = None
-    ) -> tuple[list[ToolCall], str]:
+    def _parse_function_calls(self, text: str, tools: Sequence[Tool] | None = None) -> tuple[list[ToolCall], str]:
         """Parse Python function calls from text using AST parsing.
 
         Removes the function call lines from the text.
@@ -391,17 +365,10 @@ class OpenAICompat:
                             if tools:
                                 for tool in tools:
                                     tool_param = tool.tool_param()
-                                    if (
-                                        tool_param.get("function", {}).get("name")
-                                        == func_name
-                                    ):
-                                        params = tool_param.get("function", {}).get(
-                                            "parameters", {}
-                                        )
+                                    if tool_param.get("function", {}).get("name") == func_name:
+                                        params = tool_param.get("function", {}).get("parameters", {})
                                         if "properties" in params:
-                                            param_names = list(
-                                                params["properties"].keys()
-                                            )
+                                            param_names = list(params["properties"].keys())
                                         break
 
                             for i, arg in enumerate(node.args):
@@ -409,17 +376,13 @@ class OpenAICompat:
                                 # Use parameter name from schema if available
                                 if i < len(param_names):
                                     arg_name = param_names[i]
-                                    log.debug(
-                                        f"  Positional arg {i} mapped to {arg_name}: {arg_value}"
-                                    )
+                                    log.debug(f"  Positional arg {i} mapped to {arg_name}: {arg_value}")
                                 else:
                                     arg_name = f"arg{i}"
                                     log.debug(f"  Positional arg {i}: {arg_value}")
                                 args[arg_name] = arg_value
 
-                        tool_call = ToolCall(
-                            id=f"call_{len(tool_calls)}", name=func_name, args=args
-                        )
+                        tool_call = ToolCall(id=f"call_{len(tool_calls)}", name=func_name, args=args)
                         tool_calls.append(tool_call)
                         log.debug(f"Parsed tool call: {tool_call}")
                         found_call_in_line = True
@@ -469,10 +432,7 @@ class OpenAICompat:
             return tuple(self._ast_to_value(elem) for elem in node.elts)
         # Handle dicts
         elif isinstance(node, ast.Dict):
-            return {
-                self._ast_to_value(k): self._ast_to_value(v)
-                for k, v in zip(node.keys, node.values, strict=False)
-            }
+            return {self._ast_to_value(k): self._ast_to_value(v) for k, v in zip(node.keys, node.values, strict=False)}
         # Handle sets
         elif isinstance(node, ast.Set):
             return {self._ast_to_value(elem) for elem in node.elts}

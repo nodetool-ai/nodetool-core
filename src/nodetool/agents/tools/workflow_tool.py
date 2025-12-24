@@ -97,9 +97,7 @@ class GraphTool(Tool):
                     schema = prop.type.get_json_schema()
                     schema["description"] = prop.description or ""
                     return schema
-            raise ValueError(
-                f"Property {handle} not found on node {node.get_node_type()} {node.id}"
-            )
+            raise ValueError(f"Property {handle} not found on node {node.get_node_type()} {node.id}")
 
         self.input_schema: ClassVar[dict[str, Any]] = {
             "type": "object",
@@ -151,14 +149,12 @@ class GraphTool(Tool):
                 ui_properties=edge.ui_properties,
             )
             for edge in self.graph.edges
-            if edge.source not in excluded_source_ids
-            and edge.target not in excluded_source_ids
+            if edge.source not in excluded_source_ids and edge.target not in excluded_source_ids
         ]
 
         # Check if there's already a ToolResultNode in the graph
         has_tool_result_node = any(
-            isinstance(node, ToolResultNode) for node in self.graph.nodes
-            if node.id not in excluded_source_ids
+            isinstance(node, ToolResultNode) for node in self.graph.nodes if node.id not in excluded_source_ids
         )
 
         # If there is only one node in the graph and no ToolResult node,
@@ -217,9 +213,7 @@ class GraphTool(Tool):
                 message_queue=isolated_queue,
                 device=context.device,
                 workspace_dir=context.workspace_dir,
-                asset_output_mode=getattr(
-                    context, "asset_output_mode", AssetOutputMode.TEMP_URL
-                ),
+                asset_output_mode=getattr(context, "asset_output_mode", AssetOutputMode.TEMP_URL),
             )
 
             # Collect all messages from workflow execution
@@ -239,9 +233,9 @@ class GraphTool(Tool):
                 # Find nodes that are in the graph but have no outgoing edges
                 # (these are the leaf/terminal nodes)
                 leaf_nodes = [
-                    node for node in self.graph.nodes
-                    if node.id not in excluded_source_ids
-                    and node.id not in nodes_with_outgoing
+                    node
+                    for node in self.graph.nodes
+                    if node.id not in excluded_source_ids and node.id not in nodes_with_outgoing
                 ]
 
                 if len(leaf_nodes) == 1:
@@ -412,9 +406,7 @@ async def create_workflow_tools(user_id: str, limit: int = 1000) -> list[Workflo
     return [WorkflowTool(from_model(workflow)) for workflow in workflows]
 
 
-async def create_workflow_tool_by_name(
-    user_id: str, workflow_name: str
-) -> WorkflowTool | None:
+async def create_workflow_tool_by_name(user_id: str, workflow_name: str) -> WorkflowTool | None:
     """
     Create a WorkflowTool instance for a specific workflow by name.
 
@@ -431,7 +423,5 @@ async def create_workflow_tool_by_name(
             return None
         return WorkflowTool(from_model(workflow))
     except Exception as e:
-        print(
-            f"Warning: Could not load workflow '{workflow_name}' for user {user_id}: {e}"
-        )
+        print(f"Warning: Could not load workflow '{workflow_name}' for user {user_id}: {e}")
         return None

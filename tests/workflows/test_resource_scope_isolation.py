@@ -28,11 +28,7 @@ async def test_pool():
     import tempfile
 
     # Create temporary database
-    with tempfile.NamedTemporaryFile(
-        suffix='.sqlite3',
-        prefix='test_resource_scope_',
-        delete=False
-    ) as temp_db:
+    with tempfile.NamedTemporaryFile(suffix=".sqlite3", prefix="test_resource_scope_", delete=False) as temp_db:
         db_path = temp_db.name
 
     # Create pool

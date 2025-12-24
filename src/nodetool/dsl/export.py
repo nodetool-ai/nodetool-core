@@ -55,11 +55,7 @@ def _topo_order(nodes: Iterable[ApiNode], edges: Iterable[ApiEdge]) -> list[str]
         for edge in edges:
             if edge.source == nid and edge.target in indeg:
                 indeg[edge.target] -= 1
-                if (
-                    indeg[edge.target] == 0
-                    and edge.target not in order
-                    and edge.target not in queue
-                ):
+                if indeg[edge.target] == 0 and edge.target not in order and edge.target not in queue:
                     queue.append(edge.target)
 
     if len(order) != len(node_ids):
@@ -219,18 +215,14 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
         for key, value in data.items():
             if key in used_keys:
                 continue
-            kwargs.append(
-                f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}"
-            )
+            kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}")
 
         dyn_props_attr = node.dynamic_properties or {}
         dyn_props = dyn_props_attr if isinstance(dyn_props_attr, Mapping) else {}
         for key, value in dyn_props.items():
             if key in used_keys:
                 continue
-            kwargs.append(
-                f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}"
-            )
+            kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}")
 
         for handle, edge in sorted(incoming_edges.items()):
             src_var = var_names.get(edge.source)
@@ -240,9 +232,7 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
                 src_expr = f"{src_var}.output"
             else:
                 src_expr = f"{src_var}.out[{_literal(edge.sourceHandle)}]"
-            kwargs.append(
-                f"{_sanitize_ident(_map_api_key_to_dsl_arg(handle))}={src_expr}"
-            )
+            kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(handle))}={src_expr}")
 
         joined = ", ".join(kwargs)
         module = f"nodetool.dsl.{namespace}" if namespace else "nodetool.dsl"
@@ -318,19 +308,11 @@ def graph_to_gradio_py(
 
     def is_input_like(node: ApiNode) -> bool:
         _, cls_name = _split_type(node.type)
-        return (
-            node.id not in incoming
-            or cls_name.endswith("Input")
-            or ".input." in node.type
-        )
+        return node.id not in incoming or cls_name.endswith("Input") or ".input." in node.type
 
     def is_output_like(node: ApiNode) -> bool:
         _, cls_name = _split_type(node.type)
-        return (
-            outgoing_count.get(node.id, 0) == 0
-            or cls_name.endswith("Output")
-            or ".output." in node.type
-        )
+        return outgoing_count.get(node.id, 0) == 0 or cls_name.endswith("Output") or ".output." in node.type
 
     def free_fields(node: ApiNode) -> list[tuple[str, object]]:
         """
@@ -360,19 +342,37 @@ def graph_to_gradio_py(
         _, cls_name = _split_type(node_type)
         cls_lower = cls_name.lower()
         field_lower = field_name.lower()
-        if any(key in cls_lower for key in ["imageinput", "imageoutput", "imageref", "image"]) or field_lower in {"image", "img"}:
+        if any(key in cls_lower for key in ["imageinput", "imageoutput", "imageref", "image"]) or field_lower in {
+            "image",
+            "img",
+        }:
             return "image"
-        if any(key in cls_lower for key in ["audioinput", "audiooutput", "audioref", "audio"]) or field_lower == "audio":
+        if (
+            any(key in cls_lower for key in ["audioinput", "audiooutput", "audioref", "audio"])
+            or field_lower == "audio"
+        ):
             return "audio"
-        if any(key in cls_lower for key in ["videoinput", "videooutput", "videoref", "video"]) or field_lower == "video":
+        if (
+            any(key in cls_lower for key in ["videoinput", "videooutput", "videoref", "video"])
+            or field_lower == "video"
+        ):
             return "video"
         if any(key in cls_lower for key in ["dataframe", "table", "csv"]):
             return "dataframe"
-        if any(key in cls_lower for key in ["document", "file", "filepath"]) or field_lower in {"path", "file", "filename"}:
+        if any(key in cls_lower for key in ["document", "file", "filepath"]) or field_lower in {
+            "path",
+            "file",
+            "filename",
+        }:
             return "file"
         if isinstance(default, bool) or "booleaninput" in cls_lower or "booleanoutput" in cls_lower:
             return "checkbox"
-        if isinstance(default, (int, float)) or "integerinput" in cls_lower or "floatinput" in cls_lower or field_lower in {"number", "count"}:
+        if (
+            isinstance(default, (int, float))
+            or "integerinput" in cls_lower
+            or "floatinput" in cls_lower
+            or field_lower in {"number", "count"}
+        ):
             return "number"
         if isinstance(default, (list, dict)):
             return "json"
@@ -418,15 +418,13 @@ def graph_to_gradio_py(
 
     def output_spec_literal(spec: dict[str, object]) -> str:
         return (
-            "OutputSpec("
-            f"var={_literal(spec['var'])}, "
-            f"label={_literal(spec['label'])}, "
-            f"kind={_literal(spec['kind'])}"
-            ")"
+            f"OutputSpec(var={_literal(spec['var'])}, label={_literal(spec['label'])}, kind={_literal(spec['kind'])})"
         )
 
     input_specs_py = "[" + ", ".join(input_spec_literal(spec) for spec in input_specs) + "]" if input_specs else "[]"
-    output_specs_py = "[" + ", ".join(output_spec_literal(spec) for spec in output_specs) + "]" if output_specs else "[]"
+    output_specs_py = (
+        "[" + ", ".join(output_spec_literal(spec) for spec in output_specs) + "]" if output_specs else "[]"
+    )
 
     lines: list[str] = []
     lines.append("# This file was generated from an API graph using nodetool.dsl.export.graph_to_gradio_py")

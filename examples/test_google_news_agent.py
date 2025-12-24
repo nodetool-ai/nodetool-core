@@ -43,9 +43,7 @@ async def test_google_news_agent(provider: BaseProvider, model: str):
     news_tool = GoogleNewsTool()
 
     # Define the search parameters within the objective or let the agent decide
-    search_keyword = (
-        "AI, OpenAI, ChatGPT, Anthropic, Gemini, Agents, LLMs, RAG, Vector Databases"
-    )
+    search_keyword = "AI, OpenAI, ChatGPT, Anthropic, Gemini, Agents, LLMs, RAG, Vector Databases"
     search_location = "United States"
 
     agent = Agent(
@@ -97,9 +95,7 @@ async def test_google_news_agent(provider: BaseProvider, model: str):
         # Check if results conform to the expected structure
         if isinstance(agent.results, dict) and "results" in agent.results:
             print(json.dumps(agent.results, indent=2))
-            print(
-                f"Successfully retrieved {len(agent.results.get('results', []))} news items."
-            )
+            print(f"Successfully retrieved {len(agent.results.get('results', []))} news items.")
         else:
             print("Results structure might not match the expected schema:")
             print(json.dumps(agent.results, indent=2))

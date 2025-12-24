@@ -209,24 +209,20 @@ async def fetch_image_models_from_hf_provider(
                     model_id = model_data.get("id", "")
                     if model_id:
                         # Use the model name from the API if available, otherwise use the ID
-                        model_name = (
-                            model_data.get("name") or model_id.split("/")[-1]
-                            if "/" in model_id
-                            else model_id
-                        )
+                        model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
 
                         # Get the appropriate provider enum value
                         provider_enum = HF_PROVIDER_MAPPING.get(provider)
                         if provider_enum is None:
-                            log.warning(
-                                f"Unknown image provider: {provider}, skipping model: {model_id}"
-                            )
+                            log.warning(f"Unknown image provider: {provider}, skipping model: {model_id}")
                             continue
 
                         task = (
                             "text_to_image"
                             if pipeline_tag == "text-to-image"
-                            else "image_to_image" if pipeline_tag == "image-to-image" else None
+                            else "image_to_image"
+                            if pipeline_tag == "image-to-image"
+                            else None
                         )
                         supported = [task] if task else []
                         models.append(
@@ -238,14 +234,10 @@ async def fetch_image_models_from_hf_provider(
                             )
                         )
 
-                log.debug(
-                    f"Fetched {len(models)} image models from HF provider: {provider}"
-                )
+                log.debug(f"Fetched {len(models)} image models from HF provider: {provider}")
                 return models
             else:
-                log.warning(
-                    f"Failed to fetch image models for provider {provider}: HTTP {response.status}"
-                )
+                log.warning(f"Failed to fetch image models for provider {provider}: HTTP {response.status}")
                 return []
 
     except Exception as e:
@@ -253,9 +245,7 @@ async def fetch_image_models_from_hf_provider(
         return []
 
 
-async def fetch_tts_models_from_hf_provider(
-    provider: str, pipeline_tag: str
-) -> List[TTSModel]:
+async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[TTSModel]:
     """
     Fetch TTS models from HuggingFace Hub API for a specific provider.
 
@@ -279,18 +269,12 @@ async def fetch_tts_models_from_hf_provider(
                     model_id = model_data.get("id", "")
                     if model_id:
                         # Use the model name from the API if available, otherwise use the ID
-                        model_name = (
-                            model_data.get("name") or model_id.split("/")[-1]
-                            if "/" in model_id
-                            else model_id
-                        )
+                        model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
 
                         # Get the appropriate provider enum value
                         provider_enum = HF_PROVIDER_MAPPING.get(provider)
                         if provider_enum is None:
-                            log.warning(
-                                f"Unknown TTS provider: {provider}, skipping model: {model_id}"
-                            )
+                            log.warning(f"Unknown TTS provider: {provider}, skipping model: {model_id}")
                             continue
 
                         models.append(
@@ -302,14 +286,10 @@ async def fetch_tts_models_from_hf_provider(
                             )
                         )
 
-                log.debug(
-                    f"Fetched {len(models)} TTS models from HF provider: {provider}"
-                )
+                log.debug(f"Fetched {len(models)} TTS models from HF provider: {provider}")
                 return models
             else:
-                log.warning(
-                    f"Failed to fetch TTS models for provider {provider}: HTTP {response.status}"
-                )
+                log.warning(f"Failed to fetch TTS models for provider {provider}: HTTP {response.status}")
                 return []
 
     except Exception as e:
@@ -317,9 +297,7 @@ async def fetch_tts_models_from_hf_provider(
         return []
 
 
-async def fetch_video_models_from_hf_provider(
-    provider: str, pipeline_tag: str
-) -> List[VideoModel]:
+async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[VideoModel]:
     """
     Fetch video models from HuggingFace Hub API for a specific provider.
 
@@ -343,24 +321,20 @@ async def fetch_video_models_from_hf_provider(
                     model_id = model_data.get("id", "")
                     if model_id:
                         # Use the model name from the API if available, otherwise use the ID
-                        model_name = (
-                            model_data.get("name") or model_id.split("/")[-1]
-                            if "/" in model_id
-                            else model_id
-                        )
+                        model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
 
                         # Get the appropriate provider enum value
                         provider_enum = HF_PROVIDER_MAPPING.get(provider)
                         if provider_enum is None:
-                            log.warning(
-                                f"Unknown video provider: {provider}, skipping model: {model_id}"
-                            )
+                            log.warning(f"Unknown video provider: {provider}, skipping model: {model_id}")
                             continue
 
                         task = (
                             "text_to_video"
                             if pipeline_tag == "text-to-video"
-                            else "image_to_video" if pipeline_tag == "image-to-video" else None
+                            else "image_to_video"
+                            if pipeline_tag == "image-to-video"
+                            else None
                         )
                         supported = [task] if task else []
                         models.append(
@@ -372,14 +346,10 @@ async def fetch_video_models_from_hf_provider(
                             )
                         )
 
-                log.debug(
-                    f"Fetched {len(models)} video models from HF provider: {provider}"
-                )
+                log.debug(f"Fetched {len(models)} video models from HF provider: {provider}")
                 return models
             else:
-                log.warning(
-                    f"Failed to fetch video models for provider {provider}: HTTP {response.status}"
-                )
+                log.warning(f"Failed to fetch video models for provider {provider}: HTTP {response.status}")
                 return []
 
     except Exception as e:
@@ -387,9 +357,7 @@ async def fetch_video_models_from_hf_provider(
         return []
 
 
-async def fetch_models_from_hf_provider(
-    provider: str, pipeline_tag: str
-) -> List[LanguageModel]:
+async def fetch_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[LanguageModel]:
     """
     Fetch language models from HuggingFace Hub API for a specific provider.
 
@@ -413,18 +381,12 @@ async def fetch_models_from_hf_provider(
                     model_id = model_data.get("id", "")
                     if model_id:
                         # Use the model name from the API if available, otherwise use the ID
-                        model_name = (
-                            model_data.get("name") or model_id.split("/")[-1]
-                            if "/" in model_id
-                            else model_id
-                        )
+                        model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
 
                         # Get the appropriate provider enum value
                         provider_enum = HF_PROVIDER_MAPPING.get(provider)
                         if provider_enum is None:
-                            log.warning(
-                                f"Unknown provider: {provider}, skipping model: {model_id}"
-                            )
+                            log.warning(f"Unknown provider: {provider}, skipping model: {model_id}")
                             continue
 
                         models.append(
@@ -436,14 +398,10 @@ async def fetch_models_from_hf_provider(
                         )
 
                 # Preserve API order to match test expectations
-                log.debug(
-                    f"Fetched {len(models)} language models from HF provider: {provider}"
-                )
+                log.debug(f"Fetched {len(models)} language models from HF provider: {provider}")
                 return models
             else:
-                log.warning(
-                    f"Failed to fetch models for provider {provider}: HTTP {response.status}"
-                )
+                log.warning(f"Failed to fetch models for provider {provider}: HTTP {response.status}")
                 return []
 
     except Exception as e:
@@ -455,9 +413,7 @@ async def fetch_models_from_hf_provider(
 @register_provider(Provider.HuggingFaceCerebras, inference_provider="cerebras")
 @register_provider(Provider.HuggingFaceCohere, inference_provider="cohere")
 @register_provider(Provider.HuggingFaceFalAI, inference_provider="fal-ai")
-@register_provider(
-    Provider.HuggingFaceFeatherlessAI, inference_provider="featherless-ai"
-)
+@register_provider(Provider.HuggingFaceFeatherlessAI, inference_provider="featherless-ai")
 @register_provider(Provider.HuggingFaceFireworksAI, inference_provider="fireworks-ai")
 @register_provider(Provider.HuggingFaceHFInference, inference_provider="hf-inference")
 @register_provider(Provider.HuggingFaceHyperbolic, inference_provider="hyperbolic")
@@ -517,9 +473,7 @@ class HuggingFaceProvider(BaseProvider):
         self.provider_name = f"huggingface_{inference_provider}"
 
         # Initialize the AsyncInferenceClient
-        log.debug(
-            f"Creating AsyncInferenceClient with provider: {self.inference_provider}"
-        )
+        log.debug(f"Creating AsyncInferenceClient with provider: {self.inference_provider}")
         self.client = AsyncInferenceClient(
             api_key=self.api_key,
             provider=self.inference_provider,
@@ -531,9 +485,7 @@ class HuggingFaceProvider(BaseProvider):
             "completion_tokens": 0,
             "total_tokens": 0,
         }
-        log.debug(
-            f"HuggingFaceProvider initialized with provider: {inference_provider or 'default'}"
-        )
+        log.debug(f"HuggingFaceProvider initialized with provider: {inference_provider or 'default'}")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -563,46 +515,6 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-
-        # Use HF_TOKEN from secrets if available for gated models
-        remote_context = get_remote_context_window(model, token=self.api_key)
-        if remote_context:
-            log.debug(
-                "Using remote config context length: %s tokens (model=%s)",
-                remote_context,
-                model,
-            )
-            return remote_context
-
-        # Common HuggingFace model limits - this can be expanded based on specific models
-        if "llama" in model.lower():
-            log.debug("Using context length: 32768 (Llama)")
-            return 32768  # Many Llama models support 32k context
-        elif "qwen" in model.lower():
-            log.debug("Using context length: 32768 (Qwen)")
-            return 32768  # Qwen models often support large context
-        elif "phi" in model.lower():
-            log.debug("Using context length: 128000 (Phi)")
-            return 128000  # Phi-4 supports 128k context
-        elif "smol" in model.lower():
-            log.debug("Using context length: 8192 (SmolLM)")
-            return 8192  # SmolLM models typically have smaller context
-        elif "gemma" in model.lower():
-            log.debug("Using context length: 8192 (Gemma)")
-            return 8192  # Gemma models typically support 8k context
-        elif "deepseek" in model.lower():
-            log.debug("Using context length: 32768 (DeepSeek)")
-            return 32768  # DeepSeek models often support large context
-        elif "mistral" in model.lower():
-            log.debug("Using context length: 32768 (Mistral)")
-            return 32768  # Mistral models support 32k context
-        else:
-            log.debug("Using default context length: 8192")
-            return 8192  # Conservative default
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
         Get available HuggingFace models for this inference provider.
@@ -619,17 +531,11 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
-            models = await fetch_models_from_hf_provider(
-                self.inference_provider, "text-generation"
-            )
-            log.debug(
-                f"Fetched {len(models)} models for HF inference provider: {self.inference_provider}"
-            )
+            models = await fetch_models_from_hf_provider(self.inference_provider, "text-generation")
+            log.debug(f"Fetched {len(models)} models for HF inference provider: {self.inference_provider}")
             return models
         except Exception as e:
-            log.error(
-                f"Error fetching HuggingFace models for provider {self.inference_provider}: {e}"
-            )
+            log.error(f"Error fetching HuggingFace models for provider {self.inference_provider}: {e}")
             return []
 
     def convert_message(self, message: Message) -> dict:
@@ -683,25 +589,19 @@ class HuggingFaceProvider(BaseProvider):
                             content.append(
                                 {
                                     "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{b64}"
-                                    },
+                                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
                                 }
                             )
                         elif part.image.uri:
                             # Fetch image and convert to data URI
                             uri = part.image.uri
-                            log.debug(
-                                f"Fetching image and converting to base64: {uri[:50]}..."
-                            )
+                            log.debug(f"Fetching image and converting to base64: {uri[:50]}...")
                             mime, data = fetch_uri_bytes_and_mime_sync(uri)
                             b64 = base64.b64encode(data).decode("utf-8")
                             content.append(
                                 {
                                     "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{mime};base64,{b64}"
-                                    },
+                                    "image_url": {"url": f"data:{mime};base64,{b64}"},
                                 }
                             )
                 log.debug(f"Converted to {len(content)} content parts")
@@ -728,9 +628,7 @@ class HuggingFaceProvider(BaseProvider):
                         "function": {
                             "name": tool_call.name,
                             "arguments": (
-                                json.dumps(tool_call.args)
-                                if isinstance(tool_call.args, dict)
-                                else str(tool_call.args)
+                                json.dumps(tool_call.args) if isinstance(tool_call.args, dict) else str(tool_call.args)
                             ),
                         },
                     }
@@ -769,7 +667,6 @@ class HuggingFaceProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -781,7 +678,6 @@ class HuggingFaceProvider(BaseProvider):
             model: Model identifier (can be repo_id like "microsoft/Phi-4-mini-flash-reasoning")
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
@@ -789,9 +685,7 @@ class HuggingFaceProvider(BaseProvider):
             A message returned by the provider.
         """
         log.debug(f"Generating message for model: {model}")
-        log.debug(
-            f"Input: {len(messages)} messages, {len(tools)} tools, max_tokens: {max_tokens}"
-        )
+        log.debug(f"Input: {len(messages)} messages, {len(tools)} tools, max_tokens: {max_tokens}")
 
         if len(messages) == 0:
             raise ValueError("Empty messsages")
@@ -833,9 +727,7 @@ class HuggingFaceProvider(BaseProvider):
         for attempt in range(max_retries + 1):
             try:
                 log.debug(f"API call attempt {attempt + 1}/{max_retries + 1}")
-                completion = await self.client.chat_completion(
-                    model=model, **request_params
-                )
+                completion = await self.client.chat_completion(model=model, **request_params)
                 log.debug("API call successful")
                 break
             except httpx.HTTPStatusError as e:
@@ -851,9 +743,7 @@ class HuggingFaceProvider(BaseProvider):
                         has_media = any(_message_contains_media(msg)[0] for msg in messages)
                         if has_media:
                             media_types = [
-                                _message_contains_media(msg)[1]
-                                for msg in messages
-                                if _message_contains_media(msg)[0]
+                                _message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]
                             ]
                             media_str = ", ".join(set(media_types))
                             raise httpx.HTTPStatusError(
@@ -946,9 +836,7 @@ class HuggingFaceProvider(BaseProvider):
                     else:
                         log.debug(f"Using dict arguments for tool: {function.name}")
                 except (json.JSONDecodeError, AttributeError) as e:
-                    log.warning(
-                        f"Failed to parse arguments for tool {function.name}: {e}"
-                    )
+                    log.warning(f"Failed to parse arguments for tool {function.name}: {e}")
                     args = {}
 
                 tool_calls.append(
@@ -972,7 +860,6 @@ class HuggingFaceProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -986,7 +873,6 @@ class HuggingFaceProvider(BaseProvider):
             model: Model identifier
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
@@ -1039,12 +925,8 @@ class HuggingFaceProvider(BaseProvider):
                 if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
                     log.debug("Updating usage stats from streaming chunk")
                     usage = chunk.usage  # type: ignore[attr-defined]
-                    self.usage["prompt_tokens"] = (
-                        getattr(usage, "prompt_tokens", 0) or 0
-                    )
-                    self.usage["completion_tokens"] = (
-                        getattr(usage, "completion_tokens", 0) or 0
-                    )
+                    self.usage["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
+                    self.usage["completion_tokens"] = getattr(usage, "completion_tokens", 0) or 0
                     self.usage["total_tokens"] = getattr(usage, "total_tokens", 0) or 0
                     log.debug(f"Updated usage: {self.usage}")
 
@@ -1055,9 +937,7 @@ class HuggingFaceProvider(BaseProvider):
 
                 choice = choices[0]
                 delta = getattr(choice, "delta", None)
-                log.debug(
-                    f"Processing delta with finish_reason: {choice.finish_reason}"
-                )
+                log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
 
                 # Only yield content if we are not currently accumulating tool calls
                 # This prevents "noise" (garbage tokens) that some providers emit during tool calling
@@ -1086,24 +966,16 @@ class HuggingFaceProvider(BaseProvider):
                         function_delta = getattr(tool_call_delta, "function", None)
                         if function_delta:
                             if getattr(function_delta, "name", None):
-                                accumulated_tool_calls[index]["name"] = (
-                                    function_delta.name or ""
-                                )
+                                accumulated_tool_calls[index]["name"] = function_delta.name or ""
                                 log.debug(f"Set tool call name: {function_delta.name}")
                             if getattr(function_delta, "arguments", None):
-                                accumulated_tool_calls[index]["arguments"] += (
-                                    function_delta.arguments or ""
-                                )
+                                accumulated_tool_calls[index]["arguments"] += function_delta.arguments or ""
                                 log.debug(
                                     "Added arguments to tool call: %s chars",
                                     len(function_delta.arguments or ""),
                                 )
 
-                if (
-                    choices
-                    and choice.finish_reason == "tool_calls"
-                    and accumulated_tool_calls
-                ):
+                if choices and choice.finish_reason == "tool_calls" and accumulated_tool_calls:
                     log.debug(
                         "Streaming complete with %d tool calls",
                         len(accumulated_tool_calls),
@@ -1143,9 +1015,7 @@ class HuggingFaceProvider(BaseProvider):
                     has_media = any(_message_contains_media(msg)[0] for msg in messages)
                     if has_media:
                         media_types = [
-                            _message_contains_media(msg)[1]
-                            for msg in messages
-                            if _message_contains_media(msg)[0]
+                            _message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]
                         ]
                         media_str = ", ".join(set(media_types))
                         raise Exception(
@@ -1250,9 +1120,7 @@ class HuggingFaceProvider(BaseProvider):
                 convert_audio_to_standard_format,
             )
 
-            audio_array = convert_audio_to_standard_format(
-                audio_bytes, target_sample_rate=24000
-            )
+            audio_array = convert_audio_to_standard_format(audio_bytes, target_sample_rate=24000)
 
             yield audio_array
 
@@ -1260,9 +1128,7 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace TTS generation failed: {e}")
-            raise RuntimeError(
-                f"HuggingFace TTS generation failed: {str(e)}"
-            ) from e
+            raise RuntimeError(f"HuggingFace TTS generation failed: {str(e)}") from e
 
     async def get_available_tts_models(self) -> List[TTSModel]:
         """
@@ -1275,24 +1141,16 @@ class HuggingFaceProvider(BaseProvider):
             List of TTSModel instances for HuggingFace TTS
         """
         if not self.api_key:
-            log.debug(
-                "No HuggingFace API key configured, returning empty TTS model list"
-            )
+            log.debug("No HuggingFace API key configured, returning empty TTS model list")
             return []
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
-            models = await fetch_tts_models_from_hf_provider(
-                self.inference_provider, "text-to-speech"
-            )
-            log.debug(
-                f"Fetched {len(models)} TTS models for HF inference provider: {self.inference_provider}"
-            )
+            models = await fetch_tts_models_from_hf_provider(self.inference_provider, "text-to-speech")
+            log.debug(f"Fetched {len(models)} TTS models for HF inference provider: {self.inference_provider}")
             return models
         except Exception as e:
-            log.error(
-                f"Error fetching HuggingFace TTS models for provider {self.inference_provider}: {e}"
-            )
+            log.error(f"Error fetching HuggingFace TTS models for provider {self.inference_provider}: {e}")
             return []
 
     async def text_to_image(
@@ -1332,9 +1190,7 @@ class HuggingFaceProvider(BaseProvider):
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
                 seed=params.seed if params.seed and params.seed >= 0 else None,
-                scheduler=params.scheduler
-                if hasattr(params, "scheduler") and params.scheduler
-                else None,
+                scheduler=params.scheduler if hasattr(params, "scheduler") and params.scheduler else None,
             )
 
             log.debug("HuggingFace text-to-image API call successful")
@@ -1353,9 +1209,7 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace text-to-image generation failed: {e}")
-            raise RuntimeError(
-                f"HuggingFace text-to-image generation failed: {str(e)}"
-            ) from e
+            raise RuntimeError(f"HuggingFace text-to-image generation failed: {str(e)}") from e
 
     async def image_to_image(
         self,
@@ -1404,7 +1258,9 @@ class HuggingFaceProvider(BaseProvider):
                 target_size={  # pyright: ignore[reportArgumentType]
                     "width": params.target_width,
                     "height": params.target_height,
-                } if params.target_width and params.target_height else None
+                }
+                if params.target_width and params.target_height
+                else None,
             )
 
             log.debug("HuggingFace image-to-image API call successful")
@@ -1421,9 +1277,7 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace image-to-image generation failed: {e}")
-            raise RuntimeError(
-                f"HuggingFace image-to-image generation failed: {str(e)}"
-            ) from e
+            raise RuntimeError(f"HuggingFace image-to-image generation failed: {str(e)}") from e
 
     async def get_available_image_models(self) -> List[ImageModel]:
         """
@@ -1436,20 +1290,14 @@ class HuggingFaceProvider(BaseProvider):
             List of ImageModel instances for HuggingFace
         """
         if not self.api_key:
-            log.debug(
-                "No HuggingFace API key configured, returning empty image model list"
-            )
+            log.debug("No HuggingFace API key configured, returning empty image model list")
             return []
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
             # Fetch both text-to-image and image-to-image and union tasks by model id
-            t2i = await fetch_image_models_from_hf_provider(
-                self.inference_provider, "text-to-image", self.api_key
-            )
-            i2i = await fetch_image_models_from_hf_provider(
-                self.inference_provider, "image-to-image", self.api_key
-            )
+            t2i = await fetch_image_models_from_hf_provider(self.inference_provider, "text-to-image", self.api_key)
+            i2i = await fetch_image_models_from_hf_provider(self.inference_provider, "image-to-image", self.api_key)
             by_id: dict[str, ImageModel] = {}
             for m in t2i + i2i:
                 if m.id not in by_id:
@@ -1458,18 +1306,14 @@ class HuggingFaceProvider(BaseProvider):
                     # Union supported tasks
                     existing = by_id[m.id]
                     tasks = set(existing.supported_tasks or [])
-                    for t in (m.supported_tasks or []):
+                    for t in m.supported_tasks or []:
                         tasks.add(t)
                     existing.supported_tasks = list(tasks)
             models = list(by_id.values())
-            log.debug(
-                f"Fetched {len(models)} image models for HF inference provider: {self.inference_provider}"
-            )
+            log.debug(f"Fetched {len(models)} image models for HF inference provider: {self.inference_provider}")
             return models
         except Exception as e:
-            log.error(
-                f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}"
-            )
+            log.error(f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}")
             return []
 
     async def get_available_video_models(self) -> List[VideoModel]:
@@ -1483,20 +1327,14 @@ class HuggingFaceProvider(BaseProvider):
             List of VideoModel instances for HuggingFace
         """
         if not self.api_key:
-            log.debug(
-                "No HuggingFace API key configured, returning empty video model list"
-            )
+            log.debug("No HuggingFace API key configured, returning empty video model list")
             return []
 
         try:
             assert self.inference_provider is not None, "Inference provider is not set"
             # Fetch both text-to-video and image-to-video and union tasks by model id
-            t2v = await fetch_video_models_from_hf_provider(
-                self.inference_provider, "text-to-video"
-            )
-            i2v = await fetch_video_models_from_hf_provider(
-                self.inference_provider, "image-to-video"
-            )
+            t2v = await fetch_video_models_from_hf_provider(self.inference_provider, "text-to-video")
+            i2v = await fetch_video_models_from_hf_provider(self.inference_provider, "image-to-video")
             by_id: dict[str, VideoModel] = {}
             for m in t2v + i2v:
                 if m.id not in by_id:
@@ -1504,18 +1342,14 @@ class HuggingFaceProvider(BaseProvider):
                 else:
                     existing = by_id[m.id]
                     tasks = set(existing.supported_tasks or [])
-                    for t in (m.supported_tasks or []):
+                    for t in m.supported_tasks or []:
                         tasks.add(t)
                     existing.supported_tasks = list(tasks)
             models = list(by_id.values())
-            log.debug(
-                f"Fetched {len(models)} video models for HF inference provider: {self.inference_provider}"
-            )
+            log.debug(f"Fetched {len(models)} video models for HF inference provider: {self.inference_provider}")
             return models
         except Exception as e:
-            log.error(
-                f"Error fetching HuggingFace video models for provider {self.inference_provider}: {e}"
-            )
+            log.error(f"Error fetching HuggingFace video models for provider {self.inference_provider}: {e}")
             return []
 
     async def text_to_video(
@@ -1586,6 +1420,4 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace text-to-video generation failed: {e}")
-            raise RuntimeError(
-                f"HuggingFace text-to-video generation failed: {str(e)}"
-            ) from e
+            raise RuntimeError(f"HuggingFace text-to-video generation failed: {str(e)}") from e

@@ -110,9 +110,7 @@ def remove_silence(
     Returns:
         AudioSegment: The processed audio.
     """
-    nonsilent_ranges = detect_nonsilent(
-        audio, min_silence_len=min_length, silence_thresh=threshold
-    )
+    nonsilent_ranges = detect_nonsilent(audio, min_silence_len=min_length, silence_thresh=threshold)
 
     if not isinstance(nonsilent_ranges, list):
         nonsilent_ranges = list(nonsilent_ranges)
@@ -127,16 +125,12 @@ def remove_silence(
         # Process the silent part before this non-silent range
         silence_duration = start - prev_end
         if silence_duration > 0:
-            reduced_silence = max(
-                silence_duration * (1 - reduction_factor), min_silence_between_parts
-            )
+            reduced_silence = max(silence_duration * (1 - reduction_factor), min_silence_between_parts)
             silence_segment = audio[prev_end : prev_end + int(reduced_silence)]
             silence_segment = cast("AudioSegment", silence_segment)
 
             if len(result) > 0:
-                result = result.append(
-                    silence_segment, crossfade=min(crossfade, len(silence_segment))
-                )
+                result = result.append(silence_segment, crossfade=min(crossfade, len(silence_segment)))
             else:
                 result += silence_segment
 
@@ -144,9 +138,7 @@ def remove_silence(
         non_silent_segment = audio[start:end]
         non_silent_segment = cast("AudioSegment", non_silent_segment)
         if len(result) > 0:
-            result = result.append(
-                non_silent_segment, crossfade=min(crossfade, len(non_silent_segment))
-            )
+            result = result.append(non_silent_segment, crossfade=min(crossfade, len(non_silent_segment)))
         else:
             result += non_silent_segment
 
@@ -155,14 +147,10 @@ def remove_silence(
     # Process any silence at the end
     if prev_end < len(audio):
         silence_duration = len(audio) - prev_end
-        reduced_silence = max(
-            silence_duration * (1 - reduction_factor), min_silence_between_parts
-        )
+        reduced_silence = max(silence_duration * (1 - reduction_factor), min_silence_between_parts)
         final_silence = audio[prev_end : prev_end + int(reduced_silence)]
         final_silence = cast("AudioSegment", final_silence)
-        result = result.append(
-            final_silence, crossfade=min(crossfade, len(final_silence))
-        )
+        result = result.append(final_silence, crossfade=min(crossfade, len(final_silence)))
 
     return result
 
@@ -177,9 +165,7 @@ def segment_audio(audio: AudioSegment) -> List[AudioSegment]:
     Returns:
         List[AudioSegment]: A list of segmented audio segments.
     """
-    res = split_on_silence(
-        audio, min_silence_len=500, silence_thresh=-32, keep_silence=100
-    )
+    res = split_on_silence(audio, min_silence_len=500, silence_thresh=-32, keep_silence=100)
     return [cast("AudioSegment", segment) for segment in res]
 
 
@@ -215,9 +201,7 @@ def get_audio_metadata(audio: AudioSegment) -> dict:
     }
 
 
-def export_audio(
-    audio: AudioSegment, file_path: str, format: str, codec: str, bitrate: str
-) -> None:
+def export_audio(audio: AudioSegment, file_path: str, format: str, codec: str, bitrate: str) -> None:
     """
     Export the audio to a file.
 
@@ -262,9 +246,7 @@ def numpy_to_audio_segment(arr: np.ndarray, sample_rate=44100) -> AudioSegment:
     return AudioSegment(arr_int16, sample_width=2, frame_rate=sample_rate, channels=1)
 
 
-def convert_audio_to_standard_format(
-    audio_bytes: bytes, target_sample_rate: int = 24000
-) -> np.ndarray:
+def convert_audio_to_standard_format(audio_bytes: bytes, target_sample_rate: int = 24000) -> np.ndarray:
     """
     Convert audio bytes to standardized 24kHz mono 16-bit numpy array.
 

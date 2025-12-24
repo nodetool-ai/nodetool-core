@@ -54,9 +54,7 @@ class TestGraphPlanner:
     @pytest.fixture
     def processing_context(self, temp_workspace):
         """Create a processing context for tests"""
-        return ProcessingContext(
-            user_id="test_user", auth_token="test_token", workspace_dir=temp_workspace
-        )
+        return ProcessingContext(user_id="test_user", auth_token="test_token", workspace_dir=temp_workspace)
 
     def test_initialization(self, mock_provider, temp_workspace):
         """Test GraphPlanner initialization"""
@@ -102,20 +100,14 @@ class TestGraphPlanner:
         """Test that GraphPlanner can work with explicit input schema"""
         # Create explicit schema
         input_schema = [
-            GraphInput(
-                name="text", type=TypeMetadata(type="str"), description="Text input"
-            ),
-            GraphInput(
-                name="number", type=TypeMetadata(type="int"), description="Number input"
-            ),
+            GraphInput(name="text", type=TypeMetadata(type="str"), description="Text input"),
+            GraphInput(name="number", type=TypeMetadata(type="int"), description="Number input"),
             GraphInput(
                 name="float_num",
                 type=TypeMetadata(type="float"),
                 description="Float input",
             ),
-            GraphInput(
-                name="flag", type=TypeMetadata(type="bool"), description="Boolean flag"
-            ),
+            GraphInput(name="flag", type=TypeMetadata(type="bool"), description="Boolean flag"),
             GraphInput(
                 name="items",
                 type=TypeMetadata(type="list", type_args=[TypeMetadata(type="str")]),
@@ -163,9 +155,7 @@ class TestGraphPlanner:
         """Test that GraphPlanner handles output schema correctly"""
         # Create explicit output schema
         output_schema = [
-            GraphOutput(
-                name="result", type=TypeMetadata(type="str"), description="Result text"
-            ),
+            GraphOutput(name="result", type=TypeMetadata(type="str"), description="Result text"),
             GraphOutput(
                 name="score",
                 type=TypeMetadata(type="float"),

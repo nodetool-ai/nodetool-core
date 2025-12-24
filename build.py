@@ -75,9 +75,7 @@ def _read_pyproject_version(pyproject_path: Path = Path("pyproject.toml")) -> st
     try:
         return str(data["project"]["version"])  # raises if missing
     except Exception as e:
-        raise SystemExit(
-            f"Failed to read project.version from pyproject.toml: {e}"
-        ) from e
+        raise SystemExit(f"Failed to read project.version from pyproject.toml: {e}") from e
 
 
 def _generate_sidecar(wheel_path: Path) -> Path:
@@ -108,9 +106,7 @@ def cmd_build_wheel(args: argparse.Namespace) -> None:
     if expected_version:
         actual = _read_pyproject_version()
         if actual != expected_version:
-            raise SystemExit(
-                f"Version mismatch: pyproject.toml has {actual}, expected {expected_version}"
-            )
+            raise SystemExit(f"Version mismatch: pyproject.toml has {actual}, expected {expected_version}")
 
     # Run PEP 517 build in a safe CWD to avoid importing this script as 'build'
     safe_cwd = project_dir.parent if project_dir.parent != project_dir else Path("/")
@@ -253,23 +249,17 @@ def cmd_summary(args: argparse.Namespace) -> None:
         f.write(f"**Release URL**: {server_url}/{repository}/releases/tag/{tag}\n\n")
         f.write("### 📦 Installation\n")
         f.write("```bash\n")
-        f.write(
-            "pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ "
-        )
+        f.write("pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ ")
         f.write(f"{package_name}\n")
         f.write("```\n")
     _echo(f"📝 Wrote summary to {summary_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Self-contained build/release helper for Python packages"
-    )
+    parser = argparse.ArgumentParser(description="Self-contained build/release helper for Python packages")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_build = sub.add_parser(
-        "build-wheel", help="Build wheel, optionally validate and create sidecar"
-    )
+    p_build = sub.add_parser("build-wheel", help="Build wheel, optionally validate and create sidecar")
     p_build.add_argument("--expected-version", help="Expected version to enforce")
     p_build.add_argument(
         "--skip-sidecar",
@@ -278,9 +268,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_build.set_defaults(func=cmd_build_wheel)
 
-    p_validate = sub.add_parser(
-        "validate-wheel", help="Validate latest dist/*.whl with twine"
-    )
+    p_validate = sub.add_parser("validate-wheel", help="Validate latest dist/*.whl with twine")
     p_validate.set_defaults(func=cmd_validate_wheel)
 
     p_sidecar = sub.add_parser(
@@ -289,16 +277,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_sidecar.set_defaults(func=cmd_sidecar)
 
-    p_notes = sub.add_parser(
-        "release-notes", help="Generate release_notes.md for current project"
-    )
+    p_notes = sub.add_parser("release-notes", help="Generate release_notes.md for current project")
     p_notes.add_argument("--package", required=True, dest="package")
     p_notes.add_argument("--version", required=True)
     p_notes.add_argument("--tag", required=True)
     p_notes.add_argument("--repository", required=True, help="owner/repo")
-    p_notes.add_argument(
-        "--server-url", default="https://github.com", help="Server URL for links"
-    )
+    p_notes.add_argument("--server-url", default="https://github.com", help="Server URL for links")
     p_notes.set_defaults(func=cmd_release_notes)
 
     p_notify = sub.add_parser(
@@ -309,9 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_notify.add_argument("--version", required=True)
     p_notify.add_argument("--tag", required=True)
     p_notify.add_argument("--repository", required=True, help="owner/repo")
-    p_notify.add_argument(
-        "--server-url", default="https://github.com", help="Server URL for links"
-    )
+    p_notify.add_argument("--server-url", default="https://github.com", help="Server URL for links")
     p_notify.add_argument(
         "--registry-repo",
         default="nodetool-ai/nodetool-registry",
@@ -319,16 +301,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_notify.set_defaults(func=cmd_notify_registry)
 
-    p_summary = sub.add_parser(
-        "summary", help="Append a success summary to GITHUB_STEP_SUMMARY"
-    )
+    p_summary = sub.add_parser("summary", help="Append a success summary to GITHUB_STEP_SUMMARY")
     p_summary.add_argument("--package", required=True, dest="package")
     p_summary.add_argument("--version", required=True)
     p_summary.add_argument("--tag", required=True)
     p_summary.add_argument("--repository", required=True, help="owner/repo")
-    p_summary.add_argument(
-        "--server-url", default="https://github.com", help="Server URL for links"
-    )
+    p_summary.add_argument("--server-url", default="https://github.com", help="Server URL for links")
     p_summary.set_defaults(func=cmd_summary)
 
     return parser

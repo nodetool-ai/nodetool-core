@@ -104,9 +104,7 @@ async def test_product_hunt_ai_extractor_agent(
     print(ai_product_extractor_agent.get_results())
 
     print("\n\n--- Agent execution finished ---")
-    print(
-        f"Workspace Directory for any artifacts (logs, intermediate files): {context.workspace_dir}"
-    )
+    print(f"Workspace Directory for any artifacts (logs, intermediate files): {context.workspace_dir}")
     # The full report should have been printed to stdout.
     # If the agent saves the final report to a file, it would typically be in the workspace_dir.
 

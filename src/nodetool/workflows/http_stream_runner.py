@@ -73,18 +73,11 @@ class HTTPStreamRunner:
                     yield json.dumps({"error": str(e)}) + "\n"
 
             total_time = time.time() - start_time
-            log.info(
-                f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
-            )
+            log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
             yield json.dumps({"type": "job_completed", "job_id": self.job_id}) + "\n"
         except Exception as e:
             log.exception(f"Error in job {self.job_id}: {e}")
-            yield (
-                json.dumps(
-                    {"type": "job_failed", "job_id": self.job_id, "error": str(e)}
-                )
-                + "\n"
-            )
+            yield (json.dumps({"type": "job_failed", "job_id": self.job_id, "error": str(e)}) + "\n")
 
         self.job_id = None
         self.runner = None

@@ -136,8 +136,7 @@ class TestBaseChatRunner:
 
         # Mock database messages
         mock_messages = [
-            Mock(spec=DBMessage, id=f"msg_{i}", instructions=f"Message {i}", role="user")
-            for i in range(3)
+            Mock(spec=DBMessage, id=f"msg_{i}", instructions=f"Message {i}", role="user") for i in range(3)
         ]
 
         # Set attributes for proper conversion
@@ -203,18 +202,14 @@ class TestBaseChatRunner:
 
             # Verify existing thread was found
             assert thread_id == "existing_thread_123"
-            mock_find.assert_called_once_with(
-                user_id="user_123", id="existing_thread_123"
-            )
+            mock_find.assert_called_once_with(user_id="user_123", id="existing_thread_123")
 
     async def test_ensure_thread_exists_create_with_client_id(self):
         """Test thread creation with client-provided ID when thread doesn't exist"""
         self.runner.user_id = "user_123"
 
         # Mock Thread.find to return None (thread doesn't exist)
-        with patch.object(Thread, "find", return_value=None), patch.object(
-            Thread, "create"
-        ) as mock_create:
+        with patch.object(Thread, "find", return_value=None), patch.object(Thread, "create") as mock_create:
             mock_thread = Mock()
             mock_thread.id = "client_thread_456"
             mock_create.return_value = mock_thread
@@ -224,9 +219,7 @@ class TestBaseChatRunner:
 
             # Verify new thread was created with the client-provided ID
             assert thread_id == "client_thread_456"
-            mock_create.assert_called_once_with(
-                user_id="user_123", id="client_thread_456"
-            )
+            mock_create.assert_called_once_with(user_id="user_123", id="client_thread_456")
 
     async def test_validate_token_success(self):
         """Test successful token validation"""
@@ -262,13 +255,12 @@ class TestBaseChatRunner:
         }
 
         # Mock dependencies
-        with patch.object(
-            self.runner, "ensure_thread_exists", return_value="thread_123"
-        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
-            self.runner, "get_chat_history_from_db"
-        ) as mock_history, patch.object(
-            self.runner, "handle_message_impl"
-        ) as mock_handle_impl:
+        with (
+            patch.object(self.runner, "ensure_thread_exists", return_value="thread_123"),
+            patch.object(self.runner, "_save_message_to_db_async") as mock_save,
+            patch.object(self.runner, "get_chat_history_from_db") as mock_history,
+            patch.object(self.runner, "handle_message_impl") as mock_handle_impl,
+        ):
             # Create properly configured mock DB message
             mock_db_message = Mock(spec=DBMessage)
             mock_db_message.id = "msg_123"
@@ -315,13 +307,12 @@ class TestBaseChatRunner:
         }
 
         # Mock dependencies
-        with patch.object(
-            self.runner, "ensure_thread_exists", return_value="thread_123"
-        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
-            self.runner, "get_chat_history_from_db"
-        ) as mock_history, patch.object(
-            self.runner, "handle_message_impl"
-        ) as mock_handle_impl:
+        with (
+            patch.object(self.runner, "ensure_thread_exists", return_value="thread_123"),
+            patch.object(self.runner, "_save_message_to_db_async") as mock_save,
+            patch.object(self.runner, "get_chat_history_from_db") as mock_history,
+            patch.object(self.runner, "handle_message_impl") as mock_handle_impl,
+        ):
             # Create properly configured mock DB message
             mock_db_message = Mock(spec=DBMessage)
             mock_db_message.id = "msg_123"
@@ -366,13 +357,12 @@ class TestBaseChatRunner:
         }
 
         # Mock dependencies
-        with patch.object(
-            self.runner, "ensure_thread_exists", return_value="thread_123"
-        ), patch.object(self.runner, "_save_message_to_db_async") as mock_save, patch.object(
-            self.runner, "get_chat_history_from_db"
-        ) as mock_history, patch.object(
-            self.runner, "handle_message_impl"
-        ) as mock_handle_impl:
+        with (
+            patch.object(self.runner, "ensure_thread_exists", return_value="thread_123"),
+            patch.object(self.runner, "_save_message_to_db_async") as mock_save,
+            patch.object(self.runner, "get_chat_history_from_db") as mock_history,
+            patch.object(self.runner, "handle_message_impl") as mock_handle_impl,
+        ):
             # Create properly configured mock DB message
             mock_db_message = Mock(spec=DBMessage)
             mock_db_message.id = "msg_123"

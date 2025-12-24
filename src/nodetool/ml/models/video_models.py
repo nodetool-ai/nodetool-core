@@ -35,12 +35,8 @@ async def get_all_video_models(user_id: str) -> List[VideoModel]:
         print(f"Getting video models from provider: {provider.provider_name}")
         provider_models = await provider.get_available_video_models()
         models.extend(provider_models)
-        log.debug(
-            f"Provider '{provider.provider_name}' returned {len(provider_models)} video models"
-        )
+        log.debug(f"Provider '{provider.provider_name}' returned {len(provider_models)} video models")
 
-    log.info(
-        f"Discovered {len(models)} total video models from {len(providers)} providers"
-    )
+    log.info(f"Discovered {len(models)} total video models from {len(providers)} providers")
 
     return models

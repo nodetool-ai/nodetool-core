@@ -95,10 +95,7 @@ class NodeInbox:
         # Wait if buffer is full (backpressure)
         if self._buffer_limit is not None:
             async with self._cond:
-                while (
-                    not self._closed
-                    and len(self._buffers.get(handle, [])) >= self._buffer_limit
-                ):
+                while not self._closed and len(self._buffers.get(handle, [])) >= self._buffer_limit:
                     # Block producer until consumer drains the buffer
                     await self._cond.wait()
 
@@ -262,9 +259,7 @@ class NodeInbox:
                         async with self._cond:
                             self._cond.notify_all()
 
-                    self._loop.call_soon_threadsafe(
-                        lambda: asyncio.create_task(_notify())
-                    )
+                    self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
                 except Exception:
                     pass
             return handle, item

@@ -93,9 +93,7 @@ async def get_openai_models():
 async def create_embedding(prediction: Prediction, client: openai.AsyncClient):
     model_id = prediction.model
     assert model_id is not None, "Model is not set"
-    res = await client.embeddings.create(
-        input=prediction.params["input"], model=model_id
-    )
+    res = await client.embeddings.create(input=prediction.params["input"], model=model_id)
 
     prediction.cost = 0.0  # Default cost in credits
     model_id_lower = model_id.lower()
@@ -155,9 +153,7 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
     )
 
 
-async def create_chat_completion(
-    prediction: Prediction, client: openai.AsyncClient
-) -> Any:
+async def create_chat_completion(prediction: Prediction, client: openai.AsyncClient) -> Any:
     """Creates a chat completion and calculates cost in credits."""
     model_id = prediction.model
     assert model_id is not None, "Model is not set"
@@ -173,15 +169,9 @@ async def create_chat_completion(
 
     if tier_name and tier_name in CREDIT_PRICING_TIERS:
         tier_pricing = CREDIT_PRICING_TIERS[tier_name]
-        if (
-            "input_1k_tokens" in tier_pricing
-            and "output_1k_tokens" in tier_pricing
-            and res.usage
-        ):
+        if "input_1k_tokens" in tier_pricing and "output_1k_tokens" in tier_pricing and res.usage:
             input_tokens = res.usage.prompt_tokens if res.usage.prompt_tokens else 0
-            output_tokens = (
-                res.usage.completion_tokens if res.usage.completion_tokens else 0
-            )
+            output_tokens = res.usage.completion_tokens if res.usage.completion_tokens else 0
 
             cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
@@ -207,12 +197,8 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
     model_id = prediction.model
     assert model_id is not None, "Model is not set"
     params = prediction.params
-    file_content = base64.b64decode(
-        params["file"]
-    )  # Renamed from 'file' to 'file_content'
-    audio_segment: pydub.AudioSegment = pydub.AudioSegment.from_file(
-        BytesIO(file_content)
-    )
+    file_content = base64.b64decode(params["file"])  # Renamed from 'file' to 'file_content'
+    audio_segment: pydub.AudioSegment = pydub.AudioSegment.from_file(BytesIO(file_content))
 
     # Determine API call based on translate flag
     if params.get("translate", False):
@@ -229,9 +215,7 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
             response_format=params.get("response_format", "text"),
             language=params.get("language", openai.NotGiven),
             prompt=params.get("prompt", openai.NotGiven),
-            timestamp_granularities=params.get(
-                "timestamp_granularities", openai.NotGiven
-            ),
+            timestamp_granularities=params.get("timestamp_granularities", openai.NotGiven),
         )
 
     prediction.cost = 0.0  # Default cost in credits
@@ -245,9 +229,7 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
             cost_per_minute = tier_pricing["per_minute"]
             prediction.cost = duration_minutes * cost_per_minute
         else:
-            print(
-                f"Warning: Pricing rule 'per_minute' missing for tier {tier_name} (model {model_id})."
-            )
+            print(f"Warning: Pricing rule 'per_minute' missing for tier {tier_name} (model {model_id}).")
     else:
         print(f"Warning: Tier or pricing not found for Whisper model {model_id}.")
 
@@ -267,9 +249,7 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
 
 async def create_image(prediction: Prediction, client: openai.AsyncClient):
     """Creates an image using the OpenAI API and calculates cost in credits."""
-    model_id = (
-        prediction.model
-    )  # This model_id (e.g., "gpt-image-1") is used for the API call.
+    model_id = prediction.model  # This model_id (e.g., "gpt-image-1") is used for the API call.
     assert model_id is not None, "Model is not set"
     params = prediction.params
 
@@ -280,9 +260,7 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
 
     prediction.cost = 0.0  # Default cost in credits
     # quality parameter from params should map to low, medium, high
-    quality = params.get(
-        "quality", "medium"
-    ).lower()  # Default to medium if not specified
+    quality = params.get("quality", "medium").lower()  # Default to medium if not specified
     num_images = params.get("n", 1)
 
     selected_tier_name = None
@@ -293,21 +271,15 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
     elif quality == "high":
         selected_tier_name = "image_gpt_high"
     else:
-        print(
-            f"Warning: Unknown image quality '{quality}'. Defaulting to medium pricing."
-        )
-        selected_tier_name = (
-            "image_gpt_medium"  # Fallback to medium for unknown quality values
-        )
+        print(f"Warning: Unknown image quality '{quality}'. Defaulting to medium pricing.")
+        selected_tier_name = "image_gpt_medium"  # Fallback to medium for unknown quality values
 
     if selected_tier_name and selected_tier_name in CREDIT_PRICING_TIERS:
         tier_pricing = CREDIT_PRICING_TIERS[selected_tier_name]
         if "per_image" in tier_pricing:
             prediction.cost = tier_pricing["per_image"] * num_images
         else:
-            print(
-                f"Warning: Pricing rule 'per_image' missing for image tier {selected_tier_name}."
-            )
+            print(f"Warning: Pricing rule 'per_image' missing for image tier {selected_tier_name}.")
     else:
         print(f"Warning: Image pricing tier '{selected_tier_name}' not found.")
 
@@ -326,17 +298,13 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
     )
 
 
-async def run_openai(
-    prediction: Prediction, env: dict[str, str]
-) -> AsyncGenerator[PredictionResult, None]:
+async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenerator[PredictionResult, None]:
     model_id = prediction.model  # Rename for clarity
     assert model_id is not None, "Model is not set"
 
     api_key = env.get("OPENAI_API_KEY")
     if not api_key:
-        raise ApiKeyMissingError(
-            "OPENAI_API_KEY is not configured in the nodetool settings"
-        )
+        raise ApiKeyMissingError("OPENAI_API_KEY is not configured in the nodetool settings")
 
     client = openai.AsyncClient(api_key=api_key)
 
@@ -358,9 +326,7 @@ async def run_openai(
 # --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
 
 
-async def calculate_chat_cost(
-    model_id: str, input_tokens: int, output_tokens: int
-) -> float:
+async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int) -> float:
     """Calculates cost in CREDITS for chat models."""
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
@@ -398,9 +364,7 @@ async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
                 f"Warning (test helper): Pricing rule 'per_1k_tokens' missing for embedding tier {tier_name} (model {model_id})."
             )
     else:
-        print(
-            f"Warning (test helper): Tier or pricing not found for embedding model {model_id}."
-        )
+        print(f"Warning (test helper): Tier or pricing not found for embedding model {model_id}.")
     return cost
 
 
@@ -419,9 +383,7 @@ async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
                 f"Warning (test helper): Pricing rule 'per_1k_chars' missing for TTS tier {tier_name} (model {model_id})."
             )
     else:
-        print(
-            f"Warning (test helper): Tier or pricing not found for TTS model {model_id}."
-        )
+        print(f"Warning (test helper): Tier or pricing not found for TTS model {model_id}.")
     return cost
 
 
@@ -441,16 +403,12 @@ async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> floa
                 f"Warning (test helper): Pricing rule 'per_minute' missing for Whisper tier {tier_name} (model {model_id})."
             )
     else:
-        print(
-            f"Warning (test helper): Tier or pricing not found for Whisper model {model_id}."
-        )
+        print(f"Warning (test helper): Tier or pricing not found for Whisper model {model_id}.")
     return cost
 
 
 async def calculate_image_cost(  # Changed signature
-    model_params: Dict[
-        str, Any
-    ],  # model_id is in params or implicit, params has quality & n
+    model_params: Dict[str, Any],  # model_id is in params or implicit, params has quality & n
 ) -> float:
     """Calculates cost in CREDITS for image generation."""
     cost = 0.0
@@ -473,13 +431,9 @@ async def calculate_image_cost(  # Changed signature
         if "per_image" in tier_pricing:
             cost = tier_pricing["per_image"] * num_images
         else:
-            print(
-                f"Warning (test helper): Pricing rule 'per_image' missing for image tier {selected_tier_name}."
-            )
+            print(f"Warning (test helper): Pricing rule 'per_image' missing for image tier {selected_tier_name}.")
     else:
-        print(
-            f"Warning (test helper): Image pricing tier '{selected_tier_name}' not found."
-        )
+        print(f"Warning (test helper): Image pricing tier '{selected_tier_name}' not found.")
     return cost
 
 
@@ -494,9 +448,7 @@ if __name__ == "__main__":
 
         if not api_key:
             print("Error: OPENAI_API_KEY not found in environment or .env file.")
-            print(
-                "Please create a .env file in the root directory with OPENAI_API_KEY=your_key"
-            )
+            print("Please create a .env file in the root directory with OPENAI_API_KEY=your_key")
             return
         else:
             print("OPENAI_API_KEY loaded.")
@@ -550,9 +502,7 @@ if __name__ == "__main__":
         print("\nGenerating silent audio for Whisper test...")
         try:
             # Create 1 second of silence
-            silent_segment = pydub.AudioSegment.silent(
-                duration=1000
-            )  # duration in milliseconds
+            silent_segment = pydub.AudioSegment.silent(duration=1000)  # duration in milliseconds
             buffer = BytesIO()
             silent_segment.export(buffer, format="mp3")
             silent_audio_bytes = buffer.getvalue()
@@ -684,44 +634,32 @@ if __name__ == "__main__":
                     print(f"  Cost: {cost_display}")
 
                     # Print relevant part of the result content
-                    if (
-                        result.encoding == "json" and model_name
-                    ):  # ensure model_name is not None
+                    if result.encoding == "json" and model_name:  # ensure model_name is not None
                         content_dict = result.content
-                        if model_name.lower().startswith(
-                            "gpt-"
-                        ):  # Chat (ensure model_name is not None for lower())
+                        if model_name.lower().startswith("gpt-"):  # Chat (ensure model_name is not None for lower())
                             choice = content_dict.get("choices", [{}])[0]
                             message = choice.get("message", {}).get("content", "N/A")
                             usage = content_dict.get("usage", {})
                             print(f"  Response Snippet: {message[:100]}...")
                             print(f"  Usage: {usage}")
-                        elif model_name.lower().startswith(
-                            "text-embedding-"
-                        ):  # Embedding
+                        elif model_name.lower().startswith("text-embedding-"):  # Embedding
                             embedding_info = content_dict.get("data", [{}])[0]
                             object_type = embedding_info.get("object", "N/A")
                             embedding_len = len(embedding_info.get("embedding", []))
                             usage = content_dict.get("usage", {})
-                            print(
-                                f"  Result Type: {object_type}, Embedding Dim: {embedding_len}"
-                            )
+                            print(f"  Result Type: {object_type}, Embedding Dim: {embedding_len}")
                             print(f"  Usage: {usage}")
                         elif model_name.lower().startswith("whisper-"):  # Whisper
                             text = content_dict.get("text", "N/A")
                             print(f"  Transcription: {text}")
-                        elif model_name.lower().startswith(
-                            "gpt-image-1"
-                        ) or model_name.lower().startswith(
+                        elif model_name.lower().startswith("gpt-image-1") or model_name.lower().startswith(
                             "dall-e"
                         ):  # Image Generation
                             created = content_dict.get("created", "N/A")
                             print(f"  Created timestamp: {created}")
                             # Usage data is not typically returned or used for DALL-E cost calculation with this new model
                             data = content_dict.get("data", [{}])[0]
-                            content_url = data.get(
-                                "url", "N/A"
-                            )  # DALL-E 3 provides URLs
+                            content_url = data.get("url", "N/A")  # DALL-E 3 provides URLs
                             b64_preview = data.get("b64_json", "N/A")
 
                             if b64_preview != "N/A" and b64_preview is not None:
@@ -729,20 +667,12 @@ if __name__ == "__main__":
                             elif content_url != "N/A":
                                 print(f"  Image URL: {content_url}")
                             else:
-                                print(
-                                    "  No image content (b64 or URL) found in response."
-                                )
+                                print("  No image content (b64 or URL) found in response.")
                         else:
-                            print(
-                                f"  Encoding: {result.encoding}, Content: {str(result.content)[:100]}..."
-                            )
-                    elif (
-                        result.encoding == "base64"
-                    ):  # TTS or potentially other b64 image content
+                            print(f"  Encoding: {result.encoding}, Content: {str(result.content)[:100]}...")
+                    elif result.encoding == "base64":  # TTS or potentially other b64 image content
                         print(f"  Encoding: {result.encoding}")
-                        print(
-                            f"  Content Length (bytes): {len(base64.b64decode(result.content))}"
-                        )
+                        print(f"  Content Length (bytes): {len(base64.b64decode(result.content))}")
 
             except openai.APIError as e:
                 print("  Status: FAILED (OpenAI API Error)")

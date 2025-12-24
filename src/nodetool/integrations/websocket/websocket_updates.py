@@ -52,9 +52,7 @@ class WebSocketUpdates:
         await websocket.accept()
         async with self._lock:
             self.active_connections.add(websocket)
-            self.log.info(
-                f"WebSocketUpdates: New connection accepted. Total: {len(self.active_connections)}"
-            )
+            self.log.info(f"WebSocketUpdates: New connection accepted. Total: {len(self.active_connections)}")
             # Start stats broadcasting if this is the first connection
             if len(self.active_connections) == 1:
                 await self._start_stats_broadcast()
@@ -70,9 +68,7 @@ class WebSocketUpdates:
         """
         async with self._lock:
             self.active_connections.remove(websocket)
-            self.log.info(
-                f"WebSocketUpdates: disconnected. Remaining: {len(self.active_connections)}"
-            )
+            self.log.info(f"WebSocketUpdates: disconnected. Remaining: {len(self.active_connections)}")
             # Stop stats broadcasting if no connections remain
             if len(self.active_connections) == 0:
                 await self._stop_stats_broadcast()
@@ -135,21 +131,15 @@ class WebSocketUpdates:
             websocket: The WebSocket connection object for the client.
         """
         client_id = id(websocket)  # Use websocket id for tracking
-        self.log.info(
-            f"WebSocketUpdates: New client connection handler started (ID: {client_id})"
-        )
+        self.log.info(f"WebSocketUpdates: New client connection handler started (ID: {client_id})")
 
         await self.connect(websocket)
         try:
             while True:
                 message = await websocket.receive_text()
-                self.log.debug(
-                    f"WebSocketUpdates: Received message from client {client_id}: {message[:100]}..."
-                )
+                self.log.debug(f"WebSocketUpdates: Received message from client {client_id}: {message[:100]}...")
         except Exception as e:
-            self.log.error(
-                f"WebSocketUpdates: Client connection error (ID: {client_id}): {str(e)}"
-            )
+            self.log.error(f"WebSocketUpdates: Client connection error (ID: {client_id}): {str(e)}")
             await self.disconnect(websocket)
 
     async def shutdown(self):

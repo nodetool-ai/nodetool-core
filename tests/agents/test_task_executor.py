@@ -66,9 +66,7 @@ def test_all_tasks_complete(tmp_path):
     s1 = Step(instructions="a")
     s2 = Step(instructions="b", completed=True)
     task = Task(title="t", steps=[s1, s2])
-    executor = TaskExecutor(
-        MagicMock(), "m", ProcessingContext(workspace_dir=str(tmp_path)), [], task
-    )
+    executor = TaskExecutor(MagicMock(), "m", ProcessingContext(workspace_dir=str(tmp_path)), [], task)
 
     assert not executor._all_tasks_complete()
     s1.completed = True
@@ -81,9 +79,7 @@ async def test_execute_tasks_sequential(monkeypatch, tmp_path):
     sub2 = Step(instructions="b")
     task = Task(title="t", steps=[sub1, sub2])
     context = ProcessingContext(workspace_dir=str(tmp_path))
-    executor = TaskExecutor(
-        MagicMock(), "m", context, [], task, parallel_execution=False
-    )
+    executor = TaskExecutor(MagicMock(), "m", context, [], task, parallel_execution=False)
 
     monkeypatch.setattr(task_executor, "StepExecutor", DummyStepExecutor)
 
@@ -101,14 +97,10 @@ async def test_execute_tasks_parallel(monkeypatch, tmp_path):
     sub2 = Step(instructions="b")
     task = Task(title="t", steps=[sub1, sub2])
     context = ProcessingContext(workspace_dir=str(tmp_path))
-    executor = TaskExecutor(
-        MagicMock(), "m", context, [], task, parallel_execution=True
-    )
+    executor = TaskExecutor(MagicMock(), "m", context, [], task, parallel_execution=True)
 
     monkeypatch.setattr(task_executor, "StepExecutor", DummyStepExecutor)
-    monkeypatch.setattr(
-        task_executor, "wrap_generators_parallel", dummy_wrap_generators_parallel
-    )
+    monkeypatch.setattr(task_executor, "wrap_generators_parallel", dummy_wrap_generators_parallel)
 
     called = []
 

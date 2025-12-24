@@ -76,9 +76,7 @@ class TestAdminDownloadManager:
             mock_download.return_value = "/path/to/file.json"
 
             results = []
-            async for chunk in manager.download_with_progress(
-                repo_id="test/repo", file_path="config.json"
-            ):
+            async for chunk in manager.download_with_progress(repo_id="test/repo", file_path="config.json"):
                 results.append(chunk)
 
             # Should have starting, progress, and completed messages
@@ -98,9 +96,7 @@ class TestAdminDownloadManager:
             mock_download.side_effect = Exception("Download failed")
 
             results = []
-            async for chunk in manager.download_with_progress(
-                repo_id="test/repo", file_path="config.json"
-            ):
+            async for chunk in manager.download_with_progress(repo_id="test/repo", file_path="config.json"):
                 results.append(chunk)
 
             # Should have starting and error messages
@@ -117,9 +113,7 @@ class TestAdminDownloadManager:
 
         with (
             patch("nodetool.deploy.admin_operations.hf_hub_download") as mock_download,
-            patch(
-                "nodetool.deploy.admin_operations.try_to_load_from_cache"
-            ) as mock_cache,
+            patch("nodetool.deploy.admin_operations.try_to_load_from_cache") as mock_cache,
             patch("nodetool.deploy.admin_operations.filter_repo_paths") as mock_filter,
         ):
             # Mock cache check - no cached files
@@ -151,9 +145,7 @@ class TestAdminDownloadManager:
         manager.api = mock_hf_api
 
         with (
-            patch(
-                "nodetool.deploy.admin_operations.try_to_load_from_cache"
-            ) as mock_cache,
+            patch("nodetool.deploy.admin_operations.try_to_load_from_cache") as mock_cache,
             patch("nodetool.deploy.admin_operations.filter_repo_paths") as mock_filter,
             patch("os.path.exists") as mock_exists,
         ):
@@ -268,9 +260,7 @@ class TestOllamaOperations:
     @pytest.mark.asyncio
     async def test_stream_ollama_model_pull_success(self, mock_ollama_client):
         """Test successful Ollama model pull."""
-        with patch(
-            "nodetool.deploy.admin_operations.get_ollama_client"
-        ) as mock_get_client:
+        with patch("nodetool.deploy.admin_operations.get_ollama_client") as mock_get_client:
             mock_get_client.return_value = mock_ollama_client
 
             results = []
@@ -289,9 +279,7 @@ class TestOllamaOperations:
     @pytest.mark.asyncio
     async def test_stream_ollama_model_pull_error(self):
         """Test Ollama model pull error."""
-        with patch(
-            "nodetool.deploy.admin_operations.get_ollama_client"
-        ) as mock_get_client:
+        with patch("nodetool.deploy.admin_operations.get_ollama_client") as mock_get_client:
             mock_client = MagicMock()
             mock_client.pull.side_effect = Exception("Pull failed")
             mock_get_client.return_value = mock_client
@@ -313,15 +301,11 @@ class TestHuggingFaceOperations:
     @pytest.mark.asyncio
     async def test_stream_hf_model_download_success(self):
         """Test successful HF model download stream."""
-        with patch(
-            "nodetool.deploy.admin_operations.AdminDownloadManager"
-        ) as mock_manager_class:
+        with patch("nodetool.deploy.admin_operations.AdminDownloadManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
 
-            async def mock_download(
-                repo_id, cache_dir, file_path, ignore_patterns, allow_patterns
-            ):
+            async def mock_download(repo_id, cache_dir, file_path, ignore_patterns, allow_patterns):
                 yield {"status": "starting", "repo_id": repo_id}
                 yield {"status": "completed", "repo_id": repo_id}
 
@@ -342,13 +326,9 @@ class TestIndividualAdminOperations:
     @pytest.mark.asyncio
     async def test_download_hf_model_streaming(self):
         """Test HF download with streaming."""
-        with patch(
-            "nodetool.deploy.admin_operations.stream_hf_model_download"
-        ) as mock_stream:
+        with patch("nodetool.deploy.admin_operations.stream_hf_model_download") as mock_stream:
 
-            async def mock_download(
-                repo_id, cache_dir, file_path, ignore_patterns, allow_patterns
-            ):
+            async def mock_download(repo_id, cache_dir, file_path, ignore_patterns, allow_patterns):
                 yield {"status": "starting", "repo_id": repo_id}
                 yield {"status": "completed", "repo_id": repo_id}
 
@@ -365,9 +345,7 @@ class TestIndividualAdminOperations:
     @pytest.mark.asyncio
     async def test_download_hf_model_non_streaming(self):
         """Test HF download without streaming."""
-        with patch(
-            "nodetool.deploy.admin_operations.AdminDownloadManager"
-        ) as mock_manager_class:
+        with patch("nodetool.deploy.admin_operations.AdminDownloadManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
 
@@ -395,9 +373,7 @@ class TestIndividualAdminOperations:
     @pytest.mark.asyncio
     async def test_download_ollama_model_streaming(self):
         """Test Ollama download with streaming."""
-        with patch(
-            "nodetool.deploy.admin_operations.stream_ollama_model_pull"
-        ) as mock_stream:
+        with patch("nodetool.deploy.admin_operations.stream_ollama_model_pull") as mock_stream:
 
             async def mock_pull(model_name):
                 yield {"status": "starting", "model": model_name}
@@ -406,9 +382,7 @@ class TestIndividualAdminOperations:
             mock_stream.side_effect = mock_pull
 
             results = []
-            async for chunk in download_ollama_model(
-                model_name="test-model", stream=True
-            ):
+            async for chunk in download_ollama_model(model_name="test-model", stream=True):
                 results.append(chunk)
 
             assert len(results) == 2
@@ -418,16 +392,12 @@ class TestIndividualAdminOperations:
     @pytest.mark.asyncio
     async def test_download_ollama_model_non_streaming(self):
         """Test Ollama download without streaming."""
-        with patch(
-            "nodetool.deploy.admin_operations.get_ollama_client"
-        ) as mock_get_client:
+        with patch("nodetool.deploy.admin_operations.get_ollama_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_get_client.return_value = mock_client
 
             results = []
-            async for chunk in download_ollama_model(
-                model_name="test-model", stream=False
-            ):
+            async for chunk in download_ollama_model(model_name="test-model", stream=False):
                 results.append(chunk)
 
             assert len(results) == 1

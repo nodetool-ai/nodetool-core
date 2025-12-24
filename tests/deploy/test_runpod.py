@@ -250,9 +250,7 @@ class TestRunPodDeployer:
             call_kwargs = mock_deploy.call_args[1]
             assert call_kwargs["env"] == {}
 
-    def test_apply_with_default_template_name(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_apply_with_default_template_name(self, basic_deployment, mock_state_manager):
         """Test deployment uses deployment_name when template_name is None."""
         basic_deployment.template_name = None
 
@@ -283,9 +281,7 @@ class TestRunPodDeployer:
                 deployer.apply(dry_run=False)
 
             # Should update state to error
-            mock_state_manager.update_deployment_status.assert_any_call(
-                "test-deployment", DeploymentStatus.ERROR.value
-            )
+            mock_state_manager.update_deployment_status.assert_any_call("test-deployment", DeploymentStatus.ERROR.value)
 
     def test_apply_skip_flags(self, basic_deployment, mock_state_manager):
         """Test that apply passes correct skip flags."""
@@ -413,9 +409,7 @@ class TestRunPodDeployer:
 
     def test_destroy_failure(self, basic_deployment, mock_state_manager):
         """Test destroy with state manager failure."""
-        mock_state_manager.update_deployment_status.side_effect = Exception(
-            "State update failed"
-        )
+        mock_state_manager.update_deployment_status.side_effect = Exception("State update failed")
 
         deployer = RunPodDeployer(
             deployment_name="test-deployment",
@@ -446,9 +440,10 @@ class TestRunPodDeployerEdgeCases:
 
     def test_minimal_deployment_config(self, minimal_deployment):
         """Test deployment with minimal configuration."""
-        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy, patch(
-            "nodetool.deploy.runpod.StateManager"
-        ) as mock_state_cls:
+        with (
+            patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy,
+            patch("nodetool.deploy.runpod.StateManager") as mock_state_cls,
+        ):
             mock_state_manager = Mock()
             mock_state_manager.read_state = Mock(return_value=None)
             mock_state_manager.write_state = Mock()
@@ -473,8 +468,9 @@ class TestRunPodDeployerEdgeCases:
             gpu_types=[],
         )
 
-        with patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy, patch(
-            "nodetool.deploy.runpod.StateManager"
+        with (
+            patch("nodetool.deploy.runpod.deploy_to_runpod") as mock_deploy,
+            patch("nodetool.deploy.runpod.StateManager"),
         ):
             deployer = RunPodDeployer(
                 deployment_name="test",
@@ -704,5 +700,7 @@ class TestRunPodDeployerEdgeCases:
                 call_kwargs = mock_deploy.call_args[1]
                 deployment = call_kwargs["deployment"]
                 assert deployment.data_centers == ["US-CA-1", "US-TX-1", "EU-NL-1"]
+
+
 #!/usr/bin/env python3
 # ruff: noqa: SIM117

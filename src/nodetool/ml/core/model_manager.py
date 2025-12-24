@@ -95,16 +95,10 @@ class ModelManager:
         model = cls._models.get(cache_key)
         if model is not None:
             cls._update_model_metadata(cache_key, model)
-            logger.info(
-                f"✓ Cache HIT: Retrieved cached model for {cache_key}"
-            )
+            logger.info(f"✓ Cache HIT: Retrieved cached model for {cache_key}")
         else:
-            logger.info(
-                f"✗ Cache MISS: No cached model found for {cache_key}"
-            )
-        logger.debug(
-            f"Model cache status - Total models: {len(cls._models)}, Key searched: {cache_key}"
-        )
+            logger.info(f"✗ Cache MISS: No cached model found for {cache_key}")
+        logger.debug(f"Model cache status - Total models: {len(cls._models)}, Key searched: {cache_key}")
         return model
 
     @classmethod
@@ -131,9 +125,7 @@ class ModelManager:
             cache_key = f"{model_id_or_cache_key}_{task}" if task else model_id_or_cache_key
             model_instance = model
 
-        cls._ensure_memory_capacity(
-            reason=f"Preparing to cache model {cache_key}"
-        )
+        cls._ensure_memory_capacity(reason=f"Preparing to cache model {cache_key}")
 
         was_existing = cache_key in cls._models
         cls._models[cache_key] = model_instance
@@ -141,22 +133,16 @@ class ModelManager:
         cls._update_model_metadata(cache_key, model_instance, node_id=node_id)
 
         if was_existing:
-            logger.info(
-                f"↻ Cache UPDATE: Replaced cached model for {cache_key} - Node: {node_id}"
-            )
+            logger.info(f"↻ Cache UPDATE: Replaced cached model for {cache_key} - Node: {node_id}")
         else:
-            logger.info(
-                f"+ Cache STORE: Cached new model for {cache_key} - Node: {node_id}"
-            )
+            logger.info(f"+ Cache STORE: Cached new model for {cache_key} - Node: {node_id}")
 
         logger.debug(
             f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}"
         )
 
     @classmethod
-    async def get_model_lock(
-        cls, cache_key: str
-    ) -> asyncio.Lock:
+    async def get_model_lock(cls, cache_key: str) -> asyncio.Lock:
         """Gets or creates a lock for a specific model.
 
         This method ensures thread-safe access to individual models by providing
@@ -185,16 +171,12 @@ class ModelManager:
             # Double-check after acquiring lock (another coroutine might have created it)
             if cache_key not in cls._locks:
                 cls._locks[cache_key] = asyncio.Lock()
-                logger.debug(
-                    f"🔒 Created new lock for model: {cache_key}"
-                )
+                logger.debug(f"🔒 Created new lock for model: {cache_key}")
             return cls._locks[cache_key]
 
     @classmethod
     @asynccontextmanager
-    async def lock_model(
-        cls, cache_key: str
-    ) -> AsyncIterator[None]:
+    async def lock_model(cls, cache_key: str) -> AsyncIterator[None]:
         """Context manager for acquiring exclusive access to a model.
 
         This provides a convenient way to ensure thread-safe access to models
@@ -214,9 +196,7 @@ class ModelManager:
                 # Lock is automatically released when exiting the context
         """
         lock = await cls.get_model_lock(cache_key)
-        logger.debug(
-            f"🔐 Acquiring lock for model: {cache_key}"
-        )
+        logger.debug(f"🔐 Acquiring lock for model: {cache_key}")
         async with lock:
             logger.debug(f"✓ Lock acquired for model: {cache_key}")
             try:
@@ -244,9 +224,7 @@ class ModelManager:
                 cls._node_last_used[mapped_node_id] = now
 
     @classmethod
-    def _update_model_metadata(
-        cls, key: str, model: Any, node_id: str | None = None
-    ) -> None:
+    def _update_model_metadata(cls, key: str, model: Any, node_id: str | None = None) -> None:
         """Refresh usage and device metadata for a cached model."""
 
         cls._mark_model_used(key, node_id=node_id)
@@ -356,9 +334,7 @@ class ModelManager:
                     path = parts[2] if len(parts) > 2 else None
                     cleared_count += 1
                     cleared_models.append(f"{model_id} (task: {task}, path: {path})")
-                    logger.debug(
-                        f"- Cleared cached model for node {node_id}: {model_id}"
-                    )
+                    logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
 
                     # Clean up associated lock
                     if key in cls._locks:
@@ -373,9 +349,7 @@ class ModelManager:
                 cls._node_last_used.pop(node_id, None)
 
         if cleared_count > 0:
-            logger.info(
-                f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}"
-            )
+            logger.info(f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}")
             if cleared_locks > 0:
                 logger.debug(f"🔒 Removed {cleared_locks} associated locks")
             logger.debug(
@@ -511,11 +485,7 @@ class ModelManager:
 
         cooldown = cls._get_memory_cleanup_cooldown()
         now = time.monotonic()
-        if (
-            not aggressive
-            and cooldown > 0
-            and (now - cls._last_memory_cleanup) < cooldown
-        ):
+        if not aggressive and cooldown > 0 and (now - cls._last_memory_cleanup) < cooldown:
             remaining = cooldown - (now - cls._last_memory_cleanup)
             logger.debug(
                 "Memory pressure detected but cleanup throttled for %.2fs (usage %.2f%%, %.2f GB free)",
@@ -651,18 +621,12 @@ class ModelManager:
                 cls._last_vram_cleanup = time.monotonic()
             return
 
-        if not aggressive and not cls._needs_vram_cleanup(
-            snapshot, required_free_gb
-        ):
+        if not aggressive and not cls._needs_vram_cleanup(snapshot, required_free_gb):
             return
 
         cooldown = cls._get_vram_cleanup_cooldown()
         now = time.monotonic()
-        if (
-            not aggressive
-            and cooldown > 0
-            and (now - cls._last_vram_cleanup) < cooldown
-        ):
+        if not aggressive and cooldown > 0 and (now - cls._last_vram_cleanup) < cooldown:
             remaining = cooldown - (now - cls._last_vram_cleanup)
             logger.debug(
                 "VRAM pressure detected but cleanup throttled for %.2fs (usage %.2f%%, %.2f GB free)",
@@ -719,9 +683,7 @@ class ModelManager:
             if model is None:
                 continue
 
-            detected_device, size_bytes = cls._detect_torch_model_device_and_size(
-                model
-            )
+            detected_device, size_bytes = cls._detect_torch_model_device_and_size(model)
             device = detected_device if detected_device != "unknown" else cls._model_device.get(key)
 
             if detected_device != "unknown":
@@ -803,9 +765,7 @@ class ModelManager:
             if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
                 fallback = cls._capture_vram_snapshot_via_system_stats()
                 if fallback is None:
-                    logger.debug(
-                        "Torch available but CUDA unavailable and NVML fallback failed to provide stats."
-                    )
+                    logger.debug("Torch available but CUDA unavailable and NVML fallback failed to provide stats.")
                 return fallback
 
             torch.cuda.synchronize()
@@ -824,9 +784,7 @@ class ModelManager:
                 available_gb = max(total_gb - allocated_bytes / (1024**3), 0.0)
 
             allocated_gb = float(torch.cuda.memory_allocated(0)) / (1024**3)  # type: ignore[attr-defined]
-            used_percent = (
-                ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
-            )
+            used_percent = ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
 
             snapshot = VramSnapshot(
                 percent=used_percent,
@@ -856,11 +814,7 @@ class ModelManager:
 
         try:
             stats = get_system_stats()
-            if (
-                stats.vram_total_gb is None
-                or stats.vram_used_gb is None
-                or stats.vram_percent is None
-            ):
+            if stats.vram_total_gb is None or stats.vram_used_gb is None or stats.vram_percent is None:
                 return None
 
             available_gb = max(float(stats.vram_total_gb - stats.vram_used_gb), 0.0)
@@ -881,18 +835,14 @@ class ModelManager:
             return None
 
     @classmethod
-    def _needs_vram_cleanup(
-        cls, snapshot: VramSnapshot, required_free_gb: float | None
-    ) -> bool:
+    def _needs_vram_cleanup(cls, snapshot: VramSnapshot, required_free_gb: float | None) -> bool:
         max_percent, min_available = cls._get_vram_thresholds()
         if snapshot.percent >= max_percent or snapshot.available_gb <= min_available:
             return True
         return bool(required_free_gb is not None and snapshot.available_gb < required_free_gb)
 
     @classmethod
-    def _target_vram_available_gb(
-        cls, snapshot: VramSnapshot, required_free_gb: float | None
-    ) -> float:
+    def _target_vram_available_gb(cls, snapshot: VramSnapshot, required_free_gb: float | None) -> float:
         max_percent, min_available = cls._get_vram_thresholds()
         target_from_percent = snapshot.total_gb * (1 - max_percent / 100.0)
         target = max(min_available, target_from_percent)

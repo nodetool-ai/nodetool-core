@@ -43,11 +43,11 @@ REDACTED = "[REDACTED]"
 def _redact_secrets(data: Any, parent_key: str = "") -> Any:
     """
     Recursively redact potential secrets from data structures.
-    
+
     Redacts values when:
     - The key name suggests it's a secret (api_key, password, etc.)
     - The value looks like a known secret pattern (OpenAI key, JWT, etc.)
-    
+
     Does NOT redact:
     - Keys that are known safe (id, name, type, timestamps, etc.)
     """
@@ -84,15 +84,18 @@ def _redact_log_secrets(log_content: str) -> str:
     """
     # Patterns to redact in logs
     patterns = [
-        (r'(api[_-]?key|token|secret|password|bearer|authorization)["\s:=]+["\']?([a-zA-Z0-9_-]{20,})["\']?', r'\1: ' + REDACTED),
-        (r'(sk-[a-zA-Z0-9]{20,})', REDACTED),  # OpenAI
-        (r'(sk-ant-[a-zA-Z0-9-]{20,})', REDACTED),  # Anthropic
-        (r'(hf_[a-zA-Z0-9]{20,})', REDACTED),  # HuggingFace
-        (r'(r8_[a-zA-Z0-9]{20,})', REDACTED),  # Replicate
-        (r'(fal_[a-zA-Z0-9]{20,})', REDACTED),  # FAL
-        (r'(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)', REDACTED),  # JWT
+        (
+            r'(api[_-]?key|token|secret|password|bearer|authorization)["\s:=]+["\']?([a-zA-Z0-9_-]{20,})["\']?',
+            r"\1: " + REDACTED,
+        ),
+        (r"(sk-[a-zA-Z0-9]{20,})", REDACTED),  # OpenAI
+        (r"(sk-ant-[a-zA-Z0-9-]{20,})", REDACTED),  # Anthropic
+        (r"(hf_[a-zA-Z0-9]{20,})", REDACTED),  # HuggingFace
+        (r"(r8_[a-zA-Z0-9]{20,})", REDACTED),  # Replicate
+        (r"(fal_[a-zA-Z0-9]{20,})", REDACTED),  # FAL
+        (r"(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)", REDACTED),  # JWT
     ]
-    
+
     result = log_content
     for pattern, replacement in patterns:
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
@@ -106,9 +109,7 @@ class DebugBundleRequest(BaseModel):
     workflow_id: Optional[str] = Field(default=None)
     graph: Optional[Dict[str, Any]] = Field(default=None)
     errors: Optional[List[str]] = Field(default=None)
-    preferred_save: Optional[str] = Field(
-        default=None, description="desktop or downloads preference"
-    )
+    preferred_save: Optional[str] = Field(default=None, description="desktop or downloads preference")
 
 
 class DebugBundleResponse(BaseModel):
@@ -283,17 +284,11 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
                 redacted_log = _redact_log_secrets(log_content)
                 (staging_logs_dir / "nodetool.log").write_text(redacted_log, encoding="utf-8")
             else:
-                (staging_logs_dir / "nodetool.log").write_text(
-                    "Log file exists but is empty.", encoding="utf-8"
-                )
+                (staging_logs_dir / "nodetool.log").write_text("Log file exists but is empty.", encoding="utf-8")
         except Exception as e:
-            (staging_logs_dir / "nodetool.log").write_text(
-                f"Could not read log file: {e}", encoding="utf-8"
-            )
+            (staging_logs_dir / "nodetool.log").write_text(f"Could not read log file: {e}", encoding="utf-8")
     else:
-        (staging_logs_dir / "nodetool.log").write_text(
-            f"Log file not found at {log_file_path}", encoding="utf-8"
-        )
+        (staging_logs_dir / "nodetool.log").write_text(f"Log file not found at {log_file_path}", encoding="utf-8")
 
     # Workflow info -> workflow/last-template.json
     workflow_payload: Dict[str, Any] = {}
@@ -306,11 +301,9 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
                 {
                     "id": wf.id,
                     "name": wf.name,
-                    "updated_at": (
-                        wf.updated_at.isoformat() if hasattr(wf, "updated_at") else None
-                    ),
+                    "updated_at": (wf.updated_at.isoformat() if hasattr(wf, "updated_at") else None),
                     "settings": wf.settings,
-                      "graph": workflow_payload.get("graph", wf.graph),
+                    "graph": workflow_payload.get("graph", wf.graph),
                 }
             )
     if payload.errors:
@@ -319,19 +312,13 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
         workflow_payload = {"note": "No workflow context provided"}
     # Redact any secrets from workflow data before saving
     redacted_workflow = _redact_secrets(workflow_payload)
-    (workflow_dir / "last-template.json").write_text(
-        json.dumps(redacted_workflow, indent=2), encoding="utf-8"
-    )
+    (workflow_dir / "last-template.json").write_text(json.dumps(redacted_workflow, indent=2), encoding="utf-8")
 
     # Env info -> env/system.json and env/config.json
     system_info = _collect_env_info()
     config_info = _collect_config_info()
-    (env_dir / "system.json").write_text(
-        json.dumps(system_info, indent=2), encoding="utf-8"
-    )
-    (env_dir / "config.json").write_text(
-        json.dumps(config_info, indent=2), encoding="utf-8"
-    )
+    (env_dir / "system.json").write_text(json.dumps(system_info, indent=2), encoding="utf-8")
+    (env_dir / "config.json").write_text(json.dumps(config_info, indent=2), encoding="utf-8")
 
     # README
     _write_readme(staging_dir)

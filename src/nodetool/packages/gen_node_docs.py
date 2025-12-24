@@ -105,11 +105,7 @@ namespace: "{namespace}"
             prop_name = prop.name
             prop_type = format_type_info(prop.type)
             prop_desc = prop.description or ""
-            prop_default = (
-                f"`{prop.default}`"
-                if hasattr(prop, "default") and prop.default is not None
-                else "-"
-            )
+            prop_default = f"`{prop.default}`" if hasattr(prop, "default") and prop.default is not None else "-"
 
             content += f"| {prop_name} | {prop_type} | {prop_desc} | {prop_default} |\n"
 
@@ -122,9 +118,7 @@ namespace: "{namespace}"
         content += "|-------|------|-------------|\n"
 
         for input_item in node.inputs:
-            input_name = (
-                input_item.name if hasattr(input_item, "name") else str(input_item)
-            )
+            input_name = input_item.name if hasattr(input_item, "name") else str(input_item)
             input_type = format_type_info(getattr(input_item, "type", "any"))
             input_desc = getattr(input_item, "description", "")
 
@@ -139,9 +133,7 @@ namespace: "{namespace}"
         content += "|--------|------|-------------|\n"
 
         for output_item in node.outputs:
-            output_name = (
-                output_item.name if hasattr(output_item, "name") else str(output_item)
-            )
+            output_name = output_item.name if hasattr(output_item, "name") else str(output_item)
             output_type = format_type_info(getattr(output_item, "type", "any"))
             output_desc = getattr(output_item, "description", "")
 
@@ -179,9 +171,7 @@ def get_namespace_path(node_type: str) -> List[str]:
     return parts[:-1]
 
 
-def create_namespace_index(
-    namespace_path: Path, namespace_name: str, nodes: List[NodeMetadata]
-) -> None:
+def create_namespace_index(namespace_path: Path, namespace_name: str, nodes: List[NodeMetadata]) -> None:
     """Create an index page for a namespace.
 
     Args:
@@ -316,9 +306,7 @@ def generate_node_docs(
     return len(all_nodes), created_files
 
 
-def create_root_index(
-    output_path: Path, namespace_nodes: Dict[str, List[NodeMetadata]]
-) -> None:
+def create_root_index(output_path: Path, namespace_nodes: Dict[str, List[NodeMetadata]]) -> None:
     """Create the root index page for all node documentation.
 
     Args:

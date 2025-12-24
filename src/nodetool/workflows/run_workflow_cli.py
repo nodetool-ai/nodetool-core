@@ -119,9 +119,7 @@ async def _run(req_dict: dict[str, Any]) -> int:
             initialize_graph=True,
             validate_graph=True,
         ):
-            line = json.dumps(
-                msg if isinstance(msg, dict) else _default(msg), default=_default
-            )
+            line = json.dumps(msg if isinstance(msg, dict) else _default(msg), default=_default)
             sys.stdout.write(line + "\n")
             sys.stdout.flush()
         return 0
@@ -160,9 +158,7 @@ def main() -> int:
         # No argument provided, read full request from stdin
         stdin_data = sys.stdin.read()
         if not stdin_data.strip():
-            print(
-                "Error: No request JSON provided via stdin or argument", file=sys.stderr
-            )
+            print("Error: No request JSON provided via stdin or argument", file=sys.stderr)
             return 1
         try:
             req_dict = json.loads(stdin_data)

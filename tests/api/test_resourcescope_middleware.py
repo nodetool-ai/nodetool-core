@@ -111,4 +111,3 @@ async def test_resourcescope_middleware_does_not_rerun_handler_on_error():
     response = client.get("/boom")
     assert response.status_code == 500
     assert call_count["count"] == 1
-

@@ -40,11 +40,7 @@ def filter_headers(headers: Dict[str, str], exclude: Set[str] | None = None) -> 
     if exclude is None:
         exclude = EXCLUDED_HEADERS
 
-    return {
-        k: v
-        for k, v in headers.items()
-        if k.lower() not in exclude
-    }
+    return {k: v for k, v in headers.items() if k.lower() not in exclude}
 
 
 def filter_request_headers(headers: Dict[str, str]) -> Dict[str, str]:

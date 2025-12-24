@@ -39,7 +39,9 @@ class Message(DBModel):
 
     @classmethod
     async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
-        if ("instructions" in kwargs and "content" not in kwargs) or ("instructions" in kwargs and kwargs.get("content") is None):
+        if ("instructions" in kwargs and "content" not in kwargs) or (
+            "instructions" in kwargs and kwargs.get("content") is None
+        ):
             kwargs["content"] = kwargs.pop("instructions")
         return await super().create(
             id=kwargs.get("id") is None and create_time_ordered_uuid(),
@@ -57,9 +59,7 @@ class Message(DBModel):
         reverse: bool = False,
     ):
         return await cls.query(
-            condition=Field("thread_id")
-            .equals(thread_id)
-            .and_(Field("id").greater_than(start_key or "")),
+            condition=Field("thread_id").equals(thread_id).and_(Field("id").greater_than(start_key or "")),
             limit=limit,
             reverse=reverse,
         )

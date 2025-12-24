@@ -60,9 +60,7 @@ class JobLogHandler(logging.Handler):
             # Add exception info if present
             if record.exc_info:
                 log_entry["exc_info"] = (
-                    self.formatter.formatException(record.exc_info)
-                    if self.formatter
-                    else str(record.exc_info)
+                    self.formatter.formatException(record.exc_info) if self.formatter else str(record.exc_info)
                 )
 
             self.logs.append(log_entry)
@@ -127,9 +125,7 @@ class JobLogHandler(logging.Handler):
         handler = cls(job_id, max_logs, level)
 
         # Set a formatter
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
 
         # Add to root logger to capture all logs

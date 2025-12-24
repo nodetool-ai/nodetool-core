@@ -80,15 +80,11 @@ def filter_repo_paths(
     for file in items:
         path = file.path
         # Skip if there's an allowlist and path doesn't match any
-        if allow_patterns is not None and not any(
-            fnmatch(path, r) for r in allow_patterns
-        ):
+        if allow_patterns is not None and not any(fnmatch(path, r) for r in allow_patterns):
             continue
 
         # Skip if there's a denylist and path matches any
-        if ignore_patterns is not None and any(
-            fnmatch(path, r) for r in ignore_patterns
-        ):
+        if ignore_patterns is not None and any(fnmatch(path, r) for r in ignore_patterns):
             continue
 
         filtered_paths.append(file)
@@ -118,10 +114,14 @@ async def get_repo_size(
     # Use HF_TOKEN from secrets if available for gated model downloads
     token = await get_hf_token(user_id)
     if token:
-        log.debug(f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars, user_id={user_id})")
+        log.debug(
+            f"get_repo_size: Using HF_TOKEN for repo {repo_id} (token length: {len(token)} chars, user_id={user_id})"
+        )
         api = HfApi(token=token)
     else:
-        log.debug(f"get_repo_size: No HF_TOKEN available for repo {repo_id} - gated models may not be accessible (user_id={user_id})")
+        log.debug(
+            f"get_repo_size: No HF_TOKEN available for repo {repo_id} - gated models may not be accessible (user_id={user_id})"
+        )
         api = HfApi()
     files = api.list_repo_tree(repo_id, recursive=True)
     files = [file for file in files if isinstance(file, RepoFile)]
@@ -129,4 +129,3 @@ async def get_repo_size(
 
     total_size = sum(file.size for file in filtered_files)
     return total_size
-

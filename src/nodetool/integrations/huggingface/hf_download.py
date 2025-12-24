@@ -42,15 +42,14 @@ async def async_hf_download(*args, **kwargs):
 @dataclass
 class DownloadState:
     """Tracks the state of an individual download."""
+
     repo_id: str
     task: asyncio.Task | None = None
     monitor_task: asyncio.Task | None = None
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     downloaded_bytes: int = 0
     total_bytes: int = 0
-    status: Literal["idle", "progress", "start", "error", "completed", "cancelled"] = (
-        "idle"
-    )
+    status: Literal["idle", "progress", "start", "error", "completed", "cancelled"] = "idle"
     downloaded_files: list[str] = field(default_factory=list)
     current_files: list[str] = field(default_factory=list)
     total_files: int = 0
@@ -138,16 +137,12 @@ class DownloadManager:
 
         # Create background task for the download
         task = asyncio.create_task(
-            self._download_task(
-                repo_id, path, allow_patterns, ignore_patterns, user_id, cache_dir
-            )
+            self._download_task(repo_id, path, allow_patterns, ignore_patterns, user_id, cache_dir)
         )
         download_state.task = task
 
         # Start monitoring task
-        download_state.monitor_task = asyncio.create_task(
-            self.monitor_progress(repo_id, path)
-        )
+        download_state.monitor_task = asyncio.create_task(self.monitor_progress(repo_id, path))
 
     async def _download_task(
         self,
@@ -200,7 +195,7 @@ class DownloadManager:
         self.downloads[id].cancel.set()
         self.logger.debug(f"Set cancel event for {id}")
         self.downloads[id].status = "cancelled"
-        await self.send_update(self.downloads[id].repo_id, None) # Force update
+        await self.send_update(self.downloads[id].repo_id, None)  # Force update
 
     async def monitor_progress(self, repo_id: str, path: str | None):
         """Monitor progress and send updates periodically."""
@@ -214,7 +209,7 @@ class DownloadManager:
 
             # If we have bytes, we are in progress
             if state.downloaded_bytes > 0 and state.status == "idle":
-                 state.status = "progress"
+                state.status = "progress"
 
             await self.send_update(repo_id, path)
             await asyncio.sleep(0.1)
@@ -280,15 +275,13 @@ class DownloadManager:
                     self.api = HfApi(token=self.token)
                 self._token_initialized = True
             else:
-                self.logger.warning(f"No token found for user_id={user_id} after initialization attempt. Gated models will fail.")
+                self.logger.warning(
+                    f"No token found for user_id={user_id} after initialization attempt. Gated models will fail."
+                )
 
         self.logger.info(f"Fetching file list for repo: {repo_id}")
         raw_files = self.api.list_repo_tree(repo_id, recursive=True)
-        files = [
-            file
-            for file in raw_files
-            if isinstance(file, RepoFile) or getattr(file, "type", None) == "file"
-        ]
+        files = [file for file in raw_files if isinstance(file, RepoFile) or getattr(file, "type", None) == "file"]
         files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
         # Filter out files that already exist in the cache
@@ -301,9 +294,7 @@ class DownloadManager:
                 continue
 
             if not isinstance(cache_path, (str, os.PathLike)):
-                self.logger.warning(
-                    "Unexpected cache entry type for %s: %s", file.path, type(cache_path)
-                )
+                self.logger.warning("Unexpected cache entry type for %s: %s", file.path, type(cache_path))
                 files_to_download.append(file)
                 continue
 
@@ -325,7 +316,9 @@ class DownloadManager:
 
         asyncio.get_running_loop()
         tasks = []
-        self.logger.debug(f"download_huggingface_repo: Starting download of {len(files_to_download)} files for {repo_id} (user_id={user_id})")
+        self.logger.debug(
+            f"download_huggingface_repo: Starting download of {len(files_to_download)} files for {repo_id} (user_id={user_id})"
+        )
 
         def on_progress(delta: int, total: int | None):
             with state.lock:
@@ -339,6 +332,7 @@ class DownloadManager:
                 from nodetool.integrations.huggingface.llama_cpp_download import (
                     download_llama_cpp_model,
                 )
+
                 log.info(f"Downloading {repo_id}/{file_path} to {cache_dir}")
                 local_path = await download_llama_cpp_model(
                     repo_id=repo_id,
@@ -363,7 +357,9 @@ class DownloadManager:
                 self.logger.info("Download cancelled before queuing task")
                 break
             state.current_files.append(file.path)
-            self.logger.debug(f"download_huggingface_repo: Queuing download of {file.path} for {repo_id} (user_id={user_id})")
+            self.logger.debug(
+                f"download_huggingface_repo: Queuing download of {file.path} for {repo_id} (user_id={user_id})"
+            )
             tasks.append(run_single_download(file.path))
 
         # Use return_exceptions=True to catch exceptions from individual tasks
@@ -405,15 +401,14 @@ class DownloadManager:
         self.logger.info(f"Download {state.status} for repo: {repo_id}")
 
         if state.status == "completed":
-            self.logger.info(
-                "Purging HuggingFace model caches after successful download"
-            )
+            self.logger.info("Purging HuggingFace model caches after successful download")
             self.model_cache.delete_pattern("cached_hf_*")
 
 
 # Singleton management
 _download_managers: dict[str, DownloadManager] = {}
 _manager_lock = asyncio.Lock()
+
 
 async def get_download_manager(user_id: str) -> DownloadManager:
     """Get or create a singleton DownloadManager for a specific user."""

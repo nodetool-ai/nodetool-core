@@ -70,11 +70,7 @@ class Graph(BaseModel):
         """
         Find edges by their source and source_handle.
         """
-        return [
-            edge
-            for edge in self.edges
-            if edge.source == source and edge.sourceHandle == source_handle
-        ]
+        return [edge for edge in self.edges if edge.source == source and edge.sourceHandle == source_handle]
 
     @classmethod
     def from_dict(
@@ -137,9 +133,7 @@ class Graph(BaseModel):
                 if node_id in properties_with_edges:
                     data = filtered_node_data.get("data", {})
                     connected_properties = properties_with_edges[node_id]
-                    filtered_data = {
-                        k: v for k, v in data.items() if k not in connected_properties
-                    }
+                    filtered_data = {k: v for k, v in data.items() if k not in connected_properties}
                     filtered_node_data["data"] = filtered_data
 
                 result = BaseNode.from_dict(
@@ -151,23 +145,15 @@ class Graph(BaseModel):
                     valid_nodes.append(result[0])
                     valid_node_ids.add(result[0].id)
                 elif skip_errors:
-                    log.warning(
-                        f"Skipping node {node_id} (type: {node_type}) - failed to instantiate"
-                    )
+                    log.warning(f"Skipping node {node_id} (type: {node_type}) - failed to instantiate")
             except ValueError as e:
                 if not skip_errors:
-                    raise ValueError(
-                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
-                    ) from e
+                    raise ValueError(f"Failed to load node {node_id} (type: {node_type}): {str(e)}") from e
                 # If skip_errors is True, log and skip this node
-                log.warning(
-                    f"Skipping node {node_id} (type: {node_type}) due to error: {str(e)}"
-                )
+                log.warning(f"Skipping node {node_id} (type: {node_type}) due to error: {str(e)}")
             except Exception as e:
                 if not skip_errors:
-                    raise RuntimeError(
-                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
-                    ) from e
+                    raise RuntimeError(f"Failed to load node {node_id} (type: {node_type}): {str(e)}") from e
                 # If skip_errors is True, log and skip this node
                 log.error(
                     f"Skipping node {node_id} (type: {node_type}) due to unexpected error: {str(e)}",
@@ -241,9 +227,7 @@ class Graph(BaseModel):
         """
         return {
             "type": "object",
-            "properties": {
-                node.name: node.get_json_schema() for node in self.outputs()
-            },
+            "properties": {node.name: node.get_json_schema() for node in self.outputs()},
         }
 
     def topological_sort(self, parent_id: str | None = None) -> List[List[str]]:
@@ -267,26 +251,14 @@ class Graph(BaseModel):
         - If a cycle exists, some nodes may be omitted from the result.
         """
         # child nodes of regular groups (no loops) can be executed like top level nodes
-        group_nodes = (
-            {node.id for node in self.nodes if type(node) is GroupNode}
-            if parent_id is None
-            else set()
-        )
+        group_nodes = {node.id for node in self.nodes if type(node) is GroupNode} if parent_id is None else set()
 
         # Filter nodes with given parent_id
-        nodes = [
-            node
-            for node in self.nodes
-            if node.parent_id == parent_id or node.parent_id in group_nodes
-        ]
+        nodes = [node for node in self.nodes if node.parent_id == parent_id or node.parent_id in group_nodes]
         node_ids = {node.id for node in nodes}
 
         # Filter edges to only include those connected to the filtered nodes
-        edges = [
-            edge
-            for edge in self.edges
-            if edge.source in node_ids and edge.target in node_ids
-        ]
+        edges = [edge for edge in self.edges if edge.source in node_ids and edge.target in node_ids]
 
         indegree: dict[str, int] = {node.id: 0 for node in nodes}
 
@@ -332,15 +304,11 @@ class Graph(BaseModel):
                 target_node = self.find_node(edge.target)
 
                 if not source_node:
-                    validation_errors.append(
-                        f"Source node '{edge.source}' not found for edge"
-                    )
+                    validation_errors.append(f"Source node '{edge.source}' not found for edge")
                     continue
 
                 if not target_node:
-                    validation_errors.append(
-                        f"Target node '{edge.target}' not found for edge"
-                    )
+                    validation_errors.append(f"Target node '{edge.target}' not found for edge")
                     continue
 
                 # Get node classes to access type metadata
@@ -381,9 +349,7 @@ class Graph(BaseModel):
                     )
 
             except Exception as e:
-                validation_errors.append(
-                    f"Error validating edge {edge.source}->{edge.target}: {str(e)}"
-                )
+                validation_errors.append(f"Error validating edge {edge.source}->{edge.target}: {str(e)}")
 
         return validation_errors
 

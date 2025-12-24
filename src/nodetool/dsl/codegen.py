@@ -183,9 +183,9 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
     if isinstance(field_type, typing._UnionGenericAlias):  # type: ignore
         return f"{type_to_string(field_type.__args__[0])} | None"
 
-    assert isinstance(
-        field_type, type
-    ), f"Field type is not a type: {field_type}, generic aliases like List[str] are not supported, use list[str] instead"
+    assert isinstance(field_type, type), (
+        f"Field type is not a type: {field_type}, generic aliases like List[str] are not supported, use list[str] instead"
+    )
 
     if issubclass(field_type, BaseType):
         return f"types.{field_type.__name__}"
@@ -349,9 +349,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
         return_type = node_cls.return_type()
         if return_type is not None:
             annotations = getattr(return_type, "__annotations__", None)
-            if annotations and not (
-                isinstance(return_type, type) and issubclass(return_type, BaseModel)
-            ):
+            if annotations and not (isinstance(return_type, type) and issubclass(return_type, BaseModel)):
                 for field_name, field_type in annotations.items():
                     try:
                         typed_output_annotations[field_name] = type_to_string(field_type)
@@ -502,9 +500,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
         doc_lines.extend(["", "Args:"])
 
         if supports_dynamic_outputs:
-            doc_lines.append(
-                "    dynamic_outputs: Optional mapping from output names to Python types."
-            )
+            doc_lines.append("    dynamic_outputs: Optional mapping from output names to Python types.")
 
         if supports_dynamic_properties:
             doc_lines.append("    **kwargs: Field values and dynamic properties.")
@@ -522,7 +518,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     out_property: dict[str, Any] | None = None
     if typed_output_annotations:
         out_property = {
-            "return_annotation": f"\"{node_cls.__name__}Outputs\"",
+            "return_annotation": f'"{node_cls.__name__}Outputs"',
             "body_lines": [f"return {node_cls.__name__}Outputs(self)"],
         }
     elif supports_dynamic_outputs:

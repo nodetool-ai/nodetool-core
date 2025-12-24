@@ -18,28 +18,18 @@ ImageBytes = bytes
 class TextToImageParams(BaseModel):
     """Parameters for text-to-image generation."""
 
-    model: ImageModel = Field(
-        description="Provider and model ID for the text-to-image model"
-    )
+    model: ImageModel = Field(description="Provider and model ID for the text-to-image model")
     prompt: str = Field(description="Text prompt describing the desired image")
-    negative_prompt: str | None = Field(
-        default=None, description="Text prompt describing what to avoid in the image"
-    )
+    negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid in the image")
     width: int = Field(default=512, description="Width of the generated image")
     height: int = Field(default=512, description="Height of the generated image")
     guidance_scale: float | None = Field(
         default=None,
         description="Classifier-free guidance scale (higher values = closer to prompt)",
     )
-    num_inference_steps: int | None = Field(
-        default=None, description="Number of denoising steps"
-    )
-    seed: int | None = Field(
-        default=None, description="Random seed for reproducibility (None for random)"
-    )
-    scheduler: str | None = Field(
-        default=None, description="Scheduler to use for generation"
-    )
+    num_inference_steps: int | None = Field(default=None, description="Number of denoising steps")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")
+    scheduler: str | None = Field(default=None, description="Scheduler to use for generation")
     safety_check: bool | None = Field(
         default=None,
         description="Whether to enable safety checking (provider-specific)",
@@ -49,35 +39,19 @@ class TextToImageParams(BaseModel):
 class ImageToImageParams(BaseModel):
     """Parameters for image-to-image generation."""
 
-    model: ImageModel = Field(
-        description="Provider and model ID for the image-to-image model"
-    )
+    model: ImageModel = Field(description="Provider and model ID for the image-to-image model")
     prompt: str = Field(description="Text prompt describing the desired transformation")
-    negative_prompt: str | None = Field(
-        default=None, description="Text prompt describing what to avoid"
-    )
-    guidance_scale: float | None = Field(
-        default=None, description="Classifier-free guidance scale"
-    )
-    num_inference_steps: int | None = Field(
-        default=None, description="Number of denoising steps"
-    )
+    negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid")
+    guidance_scale: float | None = Field(default=None, description="Classifier-free guidance scale")
+    num_inference_steps: int | None = Field(default=None, description="Number of denoising steps")
     strength: float | None = Field(
         default=None,
         description="Transformation strength (0.0 = original, 1.0 = completely new)",
     )
-    target_width: int | None = Field(
-        default=None, description="Target width of the output image"
-    )
-    target_height: int | None = Field(
-        default=None, description="Target height of the output image"
-    )
-    seed: int | None = Field(
-        default=None, description="Random seed for reproducibility (None for random)"
-    )
-    scheduler: str | None = Field(
-        default=None, description="Scheduler to use for generation"
-    )
+    target_width: int | None = Field(default=None, description="Target width of the output image")
+    target_height: int | None = Field(default=None, description="Target height of the output image")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")
+    scheduler: str | None = Field(default=None, description="Scheduler to use for generation")
 
 
 VideoBytes = bytes
@@ -86,62 +60,32 @@ VideoBytes = bytes
 class TextToVideoParams(BaseModel):
     """Parameters for text-to-video generation."""
 
-    model: VideoModel = Field(
-        description="Provider and model ID for the text-to-video model"
-    )
+    model: VideoModel = Field(description="Provider and model ID for the text-to-video model")
     prompt: str = Field(description="Text prompt describing the desired video")
-    negative_prompt: str | None = Field(
-        default=None, description="Text prompt describing what to avoid in the video"
-    )
-    num_frames: int | None = Field(
-        default=None, description="Number of frames to generate (provider-specific)"
-    )
-    aspect_ratio: str | None = Field(
-        default=None, description="Aspect ratio (e.g., '16:9', '9:16')"
-    )
-    resolution: str | None = Field(
-        default=None, description="Video resolution (e.g., '720p', '1080p')"
-    )
+    negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid in the video")
+    num_frames: int | None = Field(default=None, description="Number of frames to generate (provider-specific)")
+    aspect_ratio: str | None = Field(default=None, description="Aspect ratio (e.g., '16:9', '9:16')")
+    resolution: str | None = Field(default=None, description="Video resolution (e.g., '720p', '1080p')")
     guidance_scale: float | None = Field(
         default=None,
         description="Classifier-free guidance scale (higher values = closer to prompt)",
     )
-    num_inference_steps: int | None = Field(
-        default=None, description="Number of denoising steps"
-    )
-    seed: int | None = Field(
-        default=None, description="Random seed for reproducibility (None for random)"
-    )
+    num_inference_steps: int | None = Field(default=None, description="Number of denoising steps")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")
 
 
 class ImageToVideoParams(BaseModel):
     """Parameters for image-to-video generation."""
 
-    model: VideoModel = Field(
-        description="Provider and model ID for the image-to-video model"
-    )
-    prompt: str | None = Field(
-        default=None, description="Optional text prompt to guide video generation"
-    )
-    negative_prompt: str | None = Field(
-        default=None, description="Text prompt describing what to avoid in the video"
-    )
-    num_frames: int | None = Field(
-        default=None, description="Number of frames to generate (provider-specific)"
-    )
-    aspect_ratio: str | None = Field(
-        default=None, description="Aspect ratio (e.g., '16:9', '9:16')"
-    )
-    resolution: str | None = Field(
-        default=None, description="Video resolution (e.g., '720p', '1080p')"
-    )
+    model: VideoModel = Field(description="Provider and model ID for the image-to-video model")
+    prompt: str | None = Field(default=None, description="Optional text prompt to guide video generation")
+    negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid in the video")
+    num_frames: int | None = Field(default=None, description="Number of frames to generate (provider-specific)")
+    aspect_ratio: str | None = Field(default=None, description="Aspect ratio (e.g., '16:9', '9:16')")
+    resolution: str | None = Field(default=None, description="Video resolution (e.g., '720p', '1080p')")
     guidance_scale: float | None = Field(
         default=None,
         description="Classifier-free guidance scale (higher values = closer to prompt)",
     )
-    num_inference_steps: int | None = Field(
-        default=None, description="Number of denoising steps"
-    )
-    seed: int | None = Field(
-        default=None, description="Random seed for reproducibility (None for random)"
-    )
+    num_inference_steps: int | None = Field(default=None, description="Number of denoising steps")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")

@@ -23,7 +23,6 @@ def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
     return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
 
-
 def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
     """Try to parse JSON, falling back to Python literal eval for single quotes."""
     text = text.strip()
@@ -45,9 +44,9 @@ def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
         # Note: This is heuristic and perfectly valid strings like "dict contain true" will get mapped.
         # But this is a fallback for broken JSON.
         py_text = text
-        py_text = re.sub(r'\btrue\b', 'True', py_text)
-        py_text = re.sub(r'\bfalse\b', 'False', py_text)
-        py_text = re.sub(r'\bnull\b', 'None', py_text)
+        py_text = re.sub(r"\btrue\b", "True", py_text)
+        py_text = re.sub(r"\bfalse\b", "False", py_text)
+        py_text = re.sub(r"\bnull\b", "None", py_text)
 
         parsed = ast.literal_eval(py_text)
         if isinstance(parsed, dict):

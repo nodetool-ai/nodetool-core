@@ -517,19 +517,19 @@ async def test_docker_job_preview_update_messages():
         assert len(messages) > 0, "Should have received some messages"
 
         # Should have received at least one PreviewUpdate message
-        assert (
-            len(preview_messages) > 0
-        ), f"Should have received PreviewUpdate messages. Got message types: {[type(m).__name__ for m in messages]}"
+        assert len(preview_messages) > 0, (
+            f"Should have received PreviewUpdate messages. Got message types: {[type(m).__name__ for m in messages]}"
+        )
 
         # Verify the PreviewUpdate has the correct node_id
-        assert any(
-            pm.node_id == "preview_node" for pm in preview_messages
-        ), f"PreviewUpdate should have correct node_id. Got: {[pm.node_id for pm in preview_messages]}"
+        assert any(pm.node_id == "preview_node" for pm in preview_messages), (
+            f"PreviewUpdate should have correct node_id. Got: {[pm.node_id for pm in preview_messages]}"
+        )
 
         # Verify the preview value contains our text
-        assert any(
-            "Preview test: Hello Preview!" in str(pm.value) for pm in preview_messages
-        ), f"PreviewUpdate should contain our text. Got values: {[pm.value for pm in preview_messages]}"
+        assert any("Preview test: Hello Preview!" in str(pm.value) for pm in preview_messages), (
+            f"PreviewUpdate should contain our text. Got values: {[pm.value for pm in preview_messages]}"
+        )
 
     finally:
         await job.cleanup_resources()

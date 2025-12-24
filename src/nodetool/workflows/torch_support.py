@@ -71,9 +71,7 @@ class BaseTorchSupport:
         return None
 
     @contextmanager
-    def torch_context(
-        self, runner: WorkflowRunner, context: ProcessingContext
-    ) -> Generator[None, None, None]:
+    def torch_context(self, runner: WorkflowRunner, context: ProcessingContext) -> Generator[None, None, None]:
         yield
 
     async def process_with_gpu(
@@ -116,9 +114,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
             pass
 
     @contextmanager
-    def torch_context(
-        self, runner: WorkflowRunner, context: ProcessingContext
-    ) -> Generator[None, None, None]:
+    def torch_context(self, runner: WorkflowRunner, context: ProcessingContext) -> Generator[None, None, None]:
         self.log_vram_usage(runner, "Before workflow")
 
         try:
@@ -173,9 +169,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
                         target_free = max(4.0, snapshot.total_gb * 0.3)
 
                     ModelManager.free_vram_if_needed(
-                        reason=(
-                            f"CUDA OOM for node {node.get_title()} ({node._id})"
-                        ),
+                        reason=(f"CUDA OOM for node {node.get_title()} ({node._id})"),
                         required_free_gb=target_free,
                         aggressive=retries >= self.max_retries,
                     )
@@ -238,23 +232,15 @@ class NoopTorchSupport(BaseTorchSupport):
     # Inherits no-op behaviour from BaseTorchSupport.
 
 
-def build_torch_support(
-    *, base_delay: int, max_delay: int, max_retries: int
-) -> BaseTorchSupport:
+def build_torch_support(*, base_delay: int, max_delay: int, max_retries: int) -> BaseTorchSupport:
     if TORCH_AVAILABLE:
-        return TorchWorkflowSupport(
-            base_delay=base_delay, max_delay=max_delay, max_retries=max_retries
-        )
-    return NoopTorchSupport(
-        base_delay=base_delay, max_delay=max_delay, max_retries=max_retries
-    )
+        return TorchWorkflowSupport(base_delay=base_delay, max_delay=max_delay, max_retries=max_retries)
+    return NoopTorchSupport(base_delay=base_delay, max_delay=max_delay, max_retries=max_retries)
 
 
 def is_torch_tensor(value: Any) -> bool:
     """Return True when value is a torch tensor and torch is installed."""
-    return bool(
-        TORCH_AVAILABLE and torch is not None and isinstance(value, torch.Tensor)
-    )
+    return bool(TORCH_AVAILABLE and torch is not None and isinstance(value, torch.Tensor))
 
 
 def detach_tensor(value: Any) -> Any:

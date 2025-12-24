@@ -393,9 +393,7 @@ class TestComposeEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(
-                name="multi", port=8001, workflows=["wf-1", "wf-2", "wf-3"]
-            ),
+            container=ContainerConfig(name="multi", port=8001, workflows=["wf-1", "wf-2", "wf-3"]),
         )
 
         generator = ComposeGenerator(deployment)
@@ -415,9 +413,7 @@ class TestComposeEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(
-                name="custom", port=8001, environment={"CUSTOM_VAR": "custom_value"}
-            ),
+            container=ContainerConfig(name="custom", port=8001, environment={"CUSTOM_VAR": "custom_value"}),
         )
 
         generator = ComposeGenerator(deployment)

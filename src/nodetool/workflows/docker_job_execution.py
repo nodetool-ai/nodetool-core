@@ -128,9 +128,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
                     )
 
                 device_requests = [device_request]
-                log.info(
-                    f"Allocating GPUs {device_ids_str} with {self.gpu_memory_reservation or 'no'} memory limit"
-                )
+                log.info(f"Allocating GPUs {device_ids_str} with {self.gpu_memory_reservation or 'no'} memory limit")
             # else: gpu_device_ids is empty list, meaning no GPUs (device_requests stays None)
         # else: gpu_device_ids is None, meaning all available GPUs (handled by not specifying device_requests)
 
@@ -167,7 +165,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
 
         log.debug(
             f"container created: id={getattr(container, 'id', None)} "
-            f"mem={self.mem_limit} cpus={self.nano_cpus/1e9:.1f} "
+            f"mem={self.mem_limit} cpus={self.nano_cpus / 1e9:.1f} "
             f"gpus={device_requests is not None}"
         )
         return container
@@ -183,9 +181,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
             # Assume bytes, convert to MB
             return int(float(mem_str) / (1024 * 1024))
 
-    def build_container_command(
-        self, user_code: str, env_locals: dict[str, Any]
-    ) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         """Build command to run nodetool CLI inside container.
 
         Args:
@@ -228,6 +224,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
 
             # Merge secrets from environment variables (using registered secret keys)
             from nodetool.config.configuration import get_secrets_registry
+
             for secret in get_secrets_registry():
                 value = os.getenv(secret.env_var)
                 if value is not None and str(value).strip():
@@ -274,9 +271,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
 
         log.debug("Docker PYTHONPATH=%s", result["PYTHONPATH"])
 
-        log.debug(
-            f"Loaded {len(result)} environment variables for Docker container"
-        )
+        log.debug(f"Loaded {len(result)} environment variables for Docker container")
 
         return result
 
@@ -355,9 +350,7 @@ class DockerJobExecution(JobExecution):
 
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
-        raise NotImplementedError(
-            "DockerJobExecution does not support push_input_value"
-        )
+        raise NotImplementedError("DockerJobExecution does not support push_input_value")
 
     async def _execute_workflow(self, request_json: str) -> None:
         """
@@ -388,9 +381,7 @@ class DockerJobExecution(JobExecution):
             # The container already sent JobUpdate messages which updated the status
             # Only update if still in running state (container didn't send completion update)
             if self._status == "running":
-                log.warning(
-                    "Container finished but status still 'running' - marking as completed"
-                )
+                log.warning("Container finished but status still 'running' - marking as completed")
                 self._status = "completed"
                 if self._job_model:
                     self._job_model.status = "completed"
@@ -409,9 +400,7 @@ class DockerJobExecution(JobExecution):
             self._status = "error"
             self._error = str(e)
             if self._should_fallback_to_local():
-                log.warning(
-                    "Docker execution failed in test mode; falling back to local workflow execution"
-                )
+                log.warning("Docker execution failed in test mode; falling back to local workflow execution")
                 await self._execute_fallback()
                 return
             if self._job_model:
@@ -573,9 +562,7 @@ class DockerJobExecution(JobExecution):
             gpu_devices_env = os.getenv("DOCKER_GPU_DEVICES", "")
             if gpu_devices_env:
                 try:
-                    gpu_device_ids = [
-                        int(x.strip()) for x in gpu_devices_env.split(",") if x.strip()
-                    ]
+                    gpu_device_ids = [int(x.strip()) for x in gpu_devices_env.split(",") if x.strip()]
                 except ValueError:
                     log.warning(f"Invalid DOCKER_GPU_DEVICES value: {gpu_devices_env}")
                     gpu_device_ids = None
@@ -602,6 +589,7 @@ class DockerJobExecution(JobExecution):
 
         # In test mode, inherit db_path from current scope if available
         from nodetool.runtime.resources import ResourceScope, maybe_scope
+
         async with ResourceScope():
             await job_model.save()
 
@@ -635,9 +623,7 @@ class DockerJobExecution(JobExecution):
         job_instance._status = "running"
 
         # Start execution task
-        job_instance._execution_task = asyncio.create_task(
-            job_instance._execute_workflow(request_json)
-        )
+        job_instance._execution_task = asyncio.create_task(job_instance._execute_workflow(request_json))
 
         log.info(f"Started Docker job {job_id}")
 
@@ -736,9 +722,7 @@ if __name__ == "__main__":
                     type="nodetool.text.FormatText",
                     data={
                         "template": "Docker test: {{ text }}",
-                        "inputs": {
-                            "text": {"node_id": "input_text", "output": "value"}
-                        },
+                        "inputs": {"text": {"node_id": "input_text", "output": "value"}},
                     },
                 ),
                 Node(
@@ -747,9 +731,7 @@ if __name__ == "__main__":
                     data={
                         "name": "result",
                         "value": "",
-                        "inputs": {
-                            "value": {"node_id": "format_text", "output": "value"}
-                        },
+                        "inputs": {"value": {"node_id": "format_text", "output": "value"}},
                     },
                 ),
             ],
@@ -774,9 +756,7 @@ if __name__ == "__main__":
     async def _main() -> None:
         import logging
 
-        parser = argparse.ArgumentParser(
-            description="Smoke-test DockerJobExecution with a simple workflow"
-        )
+        parser = argparse.ArgumentParser(description="Smoke-test DockerJobExecution with a simple workflow")
         parser.add_argument(
             "--text",
             default="Hello from Docker!",
@@ -850,9 +830,7 @@ if __name__ == "__main__":
 
                 await asyncio.sleep(1)
             else:
-                print(
-                    f"\n⚠ Timeout after {args.timeout} seconds - final status: {job.status}"
-                )
+                print(f"\n⚠ Timeout after {args.timeout} seconds - final status: {job.status}")
 
             # Print final status
             print("-" * 60)
