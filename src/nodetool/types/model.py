@@ -19,9 +19,8 @@ class UnifiedModel(BaseModel):
     ignore_patterns: list[str] | None = None
     description: str | None = None
     readme: str | None = None
-    downloaded: bool | None = None
-    size_on_disk: int | None = None
     downloaded: bool = False
+    size_on_disk: int | None = None
     pipeline_tag: str | None = None
     tags: list[str] | None = None
     has_model_index: bool | None = None

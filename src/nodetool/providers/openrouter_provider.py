@@ -793,27 +793,27 @@ class OpenRouterProvider(OpenAIProvider):
             return 16384
         elif "gpt-3.5-turbo" in model:
             return 4096
-        
+
         # Anthropic models
         elif "claude-3" in model or "claude-2" in model:
             return 200000
-        
-        # Google models
+
+        # Google models - check more specific patterns first
         elif "gemini-1.5-pro" in model:
             return 1000000
         elif "gemini-pro" in model:
             return 32768
-        
-        # Meta Llama models
+
+        # Meta Llama models - check more specific patterns first
         elif "llama-3.1" in model:
             return 128000
         elif "llama-2" in model:
             return 8192
-        
+
         # Mistral models
         elif "mistral" in model or "mixtral" in model:
             return 32768
-        
+
         # Default fallback
         else:
             return 8192
