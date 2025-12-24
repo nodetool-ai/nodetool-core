@@ -28,7 +28,7 @@ from nodetool.providers.base import register_provider
 log = get_logger(__name__)
 
 # MiniMax Anthropic-compatible API base URL
-MINIMAX_BASE_URL = "https://api.minimaxi.chat/v1"
+MINIMAX_BASE_URL = "https://api.minimax.io/anthropic"
 
 
 @register_provider(Provider.MiniMax)
@@ -100,8 +100,13 @@ class MiniMaxProvider(AnthropicProvider):
         """
         Get available MiniMax models.
 
-        Fetches models dynamically from the MiniMax API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        MiniMax doesn't provide a models discovery endpoint, so we return
+        a hardcoded list of known MiniMax models.
+
+        Known models:
+        - MiniMax-M2.1
+        - MiniMax-M2.1-lightning
+        - MiniMax-M2
 
         Returns:
             List of LanguageModel instances for MiniMax
@@ -110,36 +115,22 @@ class MiniMaxProvider(AnthropicProvider):
             log.debug("No MiniMax API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            headers = {
-                "x-api-key": self.api_key,
-            }
-            models_url = f"{MINIMAX_BASE_URL}/models"
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get(models_url) as response,
-            ):
-                if response.status != 200:
-                    log.warning(f"Failed to fetch MiniMax models: HTTP {response.status}")
-                    return []
-                payload: dict[str, Any] = await response.json()
-                data = payload.get("data", [])
+        # MiniMax doesn't have a models discovery endpoint
+        # Return known models based on API documentation
+        known_models = [
+            "MiniMax-M2.1",
+            "MiniMax-M2.1-lightning",
+            "MiniMax-M2",
+        ]
 
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id") or item.get("name")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.MiniMax,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} MiniMax models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching MiniMax models: {e}")
-            return []
+        models = [
+            LanguageModel(
+                id=model_id,
+                name=model_id,
+                provider=Provider.MiniMax,
+            )
+            for model_id in known_models
+        ]
+
+        log.debug(f"Returning {len(models)} known MiniMax models")
+        return models
