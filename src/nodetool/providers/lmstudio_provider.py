@@ -76,15 +76,22 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
 
     @classmethod
     def required_secrets(cls) -> list[str]:
+        # LM Studio doesn't require any secrets - API key is optional
         return []
 
     def __init__(self, secrets: dict[str, str]) -> None:
-        """Initialize the LM Studio provider with environment configuration."""
+        """Initialize the LM Studio provider with environment configuration.
+        
+        Args:
+            secrets: Optional secrets dictionary. LMSTUDIO_API_KEY is optional
+                    and only needed if the LM Studio server requires authentication.
+        """
         super().__init__(secrets)
         env = Environment.get_environment()
         # Default URL for LM Studio
         base_url = env.get("LMSTUDIO_API_URL", "http://127.0.0.1:1234")
         self._base_url: str = base_url.rstrip("/")
+        # API key is optional - LM Studio doesn't require it by default
         self._api_key: str | None = secrets.get("LMSTUDIO_API_KEY")
         timeout_raw = env.get("LMSTUDIO_HTTP_TIMEOUT", 600)
         try:
@@ -92,7 +99,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         except (TypeError, ValueError):
             self._timeout = 600.0
         verify_env = env.get("LMSTUDIO_VERIFY_TLS")
-        self._verify_tls = _parse_bool(verify_env if verify_env is None else str(verify_env), False)
+        self._verify_tls = _parse_bool(verify_env if verify_env is not None else None, False)
         ctx_window_raw = env.get("LMSTUDIO_CONTEXT_WINDOW", 32768)
         try:
             self._default_context_window = int(ctx_window_raw)
