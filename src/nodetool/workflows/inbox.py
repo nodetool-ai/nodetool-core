@@ -128,11 +128,21 @@ class NodeInbox:
         #     f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
         # )
 
-        async def _notify() -> None:
-            async with self._cond:
-                self._cond.notify_all()
+        def _schedule_notify() -> None:
+            """Schedule notification on the inbox's event loop.
 
-        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+            This function is called via call_soon_threadsafe and runs in the
+            target loop's thread. We create the coroutine and task here to
+            ensure they are bound to the correct event loop, avoiding
+            cross-loop issues on Windows.
+            """
+            async def _notify() -> None:
+                async with self._cond:
+                    self._cond.notify_all()
+
+            self._loop.create_task(_notify())
+
+        self._loop.call_soon_threadsafe(_schedule_notify)
 
     def has_any(self) -> bool:
         """Return True if any handle currently has buffered items.
@@ -255,11 +265,21 @@ class NodeInbox:
             if self._loop is not None:
                 try:
 
-                    async def _notify() -> None:
-                        async with self._cond:
-                            self._cond.notify_all()
+                    def _schedule_notify() -> None:
+                        """Schedule notification on the inbox's event loop.
 
-                    self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+                        This function is called via call_soon_threadsafe and runs in the
+                        target loop's thread. We create the coroutine and task here to
+                        ensure they are bound to the correct event loop, avoiding
+                        cross-loop issues on Windows.
+                        """
+                        async def _notify() -> None:
+                            async with self._cond:
+                                self._cond.notify_all()
+
+                        self._loop.create_task(_notify())
+
+                    self._loop.call_soon_threadsafe(_schedule_notify)
                 except Exception:
                     pass
             return handle, item
