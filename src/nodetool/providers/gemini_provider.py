@@ -116,7 +116,6 @@ class GeminiProvider(BaseProvider):
             return []
 
         return get_gemini_models()
-            return []
 
     async def get_available_image_models(self) -> List[ImageModel]:
         """
