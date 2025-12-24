@@ -37,7 +37,15 @@ class BaseAgent(ABC):
         self.tools = tools or []
         self.inputs = inputs or {}
         self.system_prompt = system_prompt or ""  # Ensure system_prompt is a string
-        self.max_token_limit = max_token_limit or DEFAULT_TOKEN_LIMIT
+        # If max_token_limit is not provided, try to get it from provider
+        if max_token_limit is None:
+            # Try to get context length from provider if method exists
+            if hasattr(provider, "get_context_length"):
+                self.max_token_limit = provider.get_context_length(model)
+            else:
+                self.max_token_limit = DEFAULT_TOKEN_LIMIT
+        else:
+            self.max_token_limit = max_token_limit
         self.results: Any = None  # To store results, consistent with both agent types
         self.task: Task | None = None  # Common attribute to store the task
 
