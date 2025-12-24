@@ -31,6 +31,11 @@ def create_http_auth_middleware(
         if path in exempt_paths:
             return await call_next(request)
 
+        # Allow CORS preflight requests to pass through
+        # These are handled by CORSMiddleware
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if not enforce_auth:
             return await call_next(request)
 
