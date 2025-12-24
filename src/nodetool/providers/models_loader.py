@@ -24,10 +24,10 @@ def load_models_data() -> Dict[str, Any]:
     Returns:
         Dictionary containing all provider and model data from models.json
     """
-    # Get the path to models.json (in the root of the repository)
+    # Get the path to models.json (in the package_metadata directory)
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
-    models_json_path = os.path.join(repo_root, "models.json")
+    package_metadata_dir = os.path.abspath(os.path.join(current_dir, "..", "package_metadata"))
+    models_json_path = os.path.join(package_metadata_dir, "models.json")
     
     try:
         with open(models_json_path, "r", encoding="utf-8") as f:
