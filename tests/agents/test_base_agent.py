@@ -52,10 +52,10 @@ def test_initialization_defaults():
     assert agent.tools == []
     assert agent.inputs == {}
     assert agent.system_prompt == ""
-    assert agent.max_token_limit == 42
+    assert agent.max_token_limit == 128000  # DEFAULT_TOKEN_LIMIT
     assert agent.results is None
     assert agent.task is None
-    assert provider.calls == 1
+    assert provider.calls == 0  # get_context_length is no longer called during init
 
 
 def test_initialization_custom_values():
