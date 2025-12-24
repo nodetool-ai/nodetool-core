@@ -41,6 +41,9 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
+# Default context length for Ollama models when not configured
+DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096
+
 # Only register the provider if OLLAMA_API_URL is explicitly set
 _ollama_api_url = Environment.get("OLLAMA_API_URL")
 
@@ -389,8 +392,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """
         log.debug(f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools")
 
-        # Use configured context length, default to 4096 if not set
-        context_window = self.default_context_length or 4096
+        # Use configured context length, default to DEFAULT_OLLAMA_CONTEXT_LENGTH if not set
+        context_window = self.default_context_length or DEFAULT_OLLAMA_CONTEXT_LENGTH
         
         # Check if model supports native tool calling
         use_tool_emulation = False

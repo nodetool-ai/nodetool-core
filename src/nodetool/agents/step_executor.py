@@ -180,6 +180,7 @@ from jsonschema import validate as jsonschema_validate
 
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.finish_step_tool import FinishStepTool
+from nodetool.agents.base_agent import DEFAULT_TOKEN_LIMIT
 from nodetool.chat.token_counter import (
     count_message_tokens,
     count_messages_tokens,
@@ -480,7 +481,7 @@ class StepExecutor:
         self.processing_context = processing_context
         self.model = model
         self.provider = provider
-        self.max_token_limit = max_token_limit or 128000  # Default to 128k tokens
+        self.max_token_limit = max_token_limit or DEFAULT_TOKEN_LIMIT
         self.use_finish_task = use_finish_task
         self.message_compression_threshold = max(
             self.max_token_limit // 4,

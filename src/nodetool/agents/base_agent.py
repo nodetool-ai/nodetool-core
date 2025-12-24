@@ -9,6 +9,9 @@ from nodetool.workflows.processing_context import ProcessingContext
 if TYPE_CHECKING:
     from nodetool.metadata.types import Task
 
+# Default maximum token limit for agents when not explicitly specified
+DEFAULT_TOKEN_LIMIT = 128000
+
 
 class BaseAgent(ABC):
     """
@@ -34,7 +37,7 @@ class BaseAgent(ABC):
         self.tools = tools or []
         self.inputs = inputs or {}
         self.system_prompt = system_prompt or ""  # Ensure system_prompt is a string
-        self.max_token_limit = max_token_limit or 128000  # Default to 128k tokens
+        self.max_token_limit = max_token_limit or DEFAULT_TOKEN_LIMIT
         self.results: Any = None  # To store results, consistent with both agent types
         self.task: Task | None = None  # Common attribute to store the task
 
