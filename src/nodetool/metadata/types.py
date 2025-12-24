@@ -325,6 +325,7 @@ class Provider(str, enum.Enum):
     Anthropic = "anthropic"
     Replicate = "replicate"
     Ollama = "ollama"
+    LMStudio = "lmstudio"
     # Comfy providers (two explicit entries)
     ComfyLocal = "comfy_local"
     ComfyRunpod = "comfy_runpod"
