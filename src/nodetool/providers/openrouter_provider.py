@@ -770,3 +770,50 @@ class OpenRouterProvider(OpenAIProvider):
                 else:
                     log.error("No tool call found in delta_tool_calls")
                     raise ValueError("No tool call found")
+
+    def get_context_length(self, model: str) -> int:
+        """Get the context length for a given model.
+
+        Args:
+            model: The model identifier (e.g., "openai/gpt-4o", "anthropic/claude-3-opus")
+
+        Returns:
+            The maximum context length in tokens for the model
+        """
+        # OpenAI models
+        if "gpt-4o" in model:
+            return 128000
+        elif "gpt-4-turbo" in model:
+            return 128000
+        elif "gpt-4-32k" in model:
+            return 32768
+        elif "gpt-4" in model:
+            return 8192
+        elif "gpt-3.5-turbo-16k" in model:
+            return 16384
+        elif "gpt-3.5-turbo" in model:
+            return 4096
+        
+        # Anthropic models
+        elif "claude-3" in model or "claude-2" in model:
+            return 200000
+        
+        # Google models
+        elif "gemini-1.5-pro" in model:
+            return 1000000
+        elif "gemini-pro" in model:
+            return 32768
+        
+        # Meta Llama models
+        elif "llama-3.1" in model:
+            return 128000
+        elif "llama-2" in model:
+            return 8192
+        
+        # Mistral models
+        elif "mistral" in model or "mixtral" in model:
+            return 32768
+        
+        # Default fallback
+        else:
+            return 8192

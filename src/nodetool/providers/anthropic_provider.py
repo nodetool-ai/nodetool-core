@@ -719,3 +719,19 @@ class AnthropicProvider(BaseProvider):
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error
+
+    def get_context_length(self, model: str) -> int:
+        """Get the context length for a given model.
+
+        Args:
+            model: The model identifier (e.g., "claude-3-opus-20240229")
+
+        Returns:
+            The maximum context length in tokens for the model
+        """
+        # All Claude 3 and Claude 2 models support 200k context
+        if "claude-3" in model or "claude-2" in model:
+            return 200000
+        # Fallback for other models
+        else:
+            return 200000
