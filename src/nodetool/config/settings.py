@@ -204,6 +204,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="KIE_API_KEY",
+    group="KIE",
+    description="KIE API key for accessing kie.ai"
+)
+register_secret(
+    package_name="nodetool",
     env_var="WORKER_AUTH_TOKEN",
     group="Deployment",
     description=(
