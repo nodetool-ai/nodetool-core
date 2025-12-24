@@ -727,41 +727,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             "total_tokens": 0,
         }
 
-    def get_context_length(self, model: str) -> int:
-        """Get the context length for a given model.
-
-        Parses the model's modelfile to extract the num_ctx parameter.
-
-        Args:
-            model: The model identifier (e.g., "llama3.2:latest")
-
-        Returns:
-            The maximum context length in tokens for the model
-        """
-        try:
-            # Get model info from Ollama
-            client = get_ollama_sync_client(self.api_url)
-            response = client.show(model)
-            modelinfo = response.modelinfo
-
-            # Parse modelfile for num_ctx parameter
-            modelfile = modelinfo.get("modelfile", "")
-            match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-
-            # If not found in modelfile, check parameters
-            parameters = modelinfo.get("parameters", "")
-            match = re.search(r"num_ctx\s+(\d+)", parameters, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-
-            # Default fallback
-            return self.default_context_length if self.default_context_length else 8192
-        except Exception as e:
-            log.warning(f"Failed to get context length for model {model}: {e}")
-            return self.default_context_length if self.default_context_length else 8192
-
 
 async def main():
     from nodetool.agents.tools.math_tools import CalculatorTool

@@ -2070,37 +2070,3 @@ class OpenAIProvider(BaseProvider):
         is_context_error = "context length" in msg or "maximum context" in msg
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error
-
-    def get_context_length(self, model: str) -> int:
-        """Get the context length for a given model.
-
-        Args:
-            model: The model identifier (e.g., "gpt-4o", "gpt-4-turbo")
-
-        Returns:
-            The maximum context length in tokens for the model
-        """
-        # GPT-4o and newer models
-        if "gpt-4o" in model:
-            return 128000
-        # GPT-4 Turbo
-        elif "gpt-4-turbo" in model or "gpt-4-1106" in model or "gpt-4-0125" in model:
-            return 128000
-        # GPT-4 32k
-        elif "gpt-4-32k" in model:
-            return 32768
-        # GPT-4 standard
-        elif "gpt-4" in model:
-            return 8192
-        # GPT-3.5 Turbo 16k
-        elif "gpt-3.5-turbo-16k" in model:
-            return 16384
-        # GPT-3.5 Turbo standard
-        elif "gpt-3.5-turbo" in model:
-            return 4096
-        # O1 models
-        elif "o1" in model:
-            return 128000
-        # Default fallback
-        else:
-            return 8192
