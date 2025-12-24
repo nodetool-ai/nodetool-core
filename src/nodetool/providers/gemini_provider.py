@@ -84,11 +84,6 @@ class GeminiProvider(BaseProvider):
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        return 1000000
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 

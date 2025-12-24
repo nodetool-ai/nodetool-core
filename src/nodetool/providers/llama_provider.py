@@ -344,17 +344,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             response=response,
         )
 
-    def get_context_length(self, model: str) -> int:
-        """Return the configured context window for the provider.
-
-        Args:
-            model: Model identifier passed to llama.cpp.
-
-        Returns:
-            The configured context size from settings, or 128000 by default.
-        """
-        return self.default_context_length
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 

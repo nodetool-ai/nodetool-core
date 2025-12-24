@@ -515,46 +515,6 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-
-        # Use HF_TOKEN from secrets if available for gated models
-        remote_context = get_remote_context_window(model, token=self.api_key)
-        if remote_context:
-            log.debug(
-                "Using remote config context length: %s tokens (model=%s)",
-                remote_context,
-                model,
-            )
-            return remote_context
-
-        # Common HuggingFace model limits - this can be expanded based on specific models
-        if "llama" in model.lower():
-            log.debug("Using context length: 32768 (Llama)")
-            return 32768  # Many Llama models support 32k context
-        elif "qwen" in model.lower():
-            log.debug("Using context length: 32768 (Qwen)")
-            return 32768  # Qwen models often support large context
-        elif "phi" in model.lower():
-            log.debug("Using context length: 128000 (Phi)")
-            return 128000  # Phi-4 supports 128k context
-        elif "smol" in model.lower():
-            log.debug("Using context length: 8192 (SmolLM)")
-            return 8192  # SmolLM models typically have smaller context
-        elif "gemma" in model.lower():
-            log.debug("Using context length: 8192 (Gemma)")
-            return 8192  # Gemma models typically support 8k context
-        elif "deepseek" in model.lower():
-            log.debug("Using context length: 32768 (DeepSeek)")
-            return 32768  # DeepSeek models often support large context
-        elif "mistral" in model.lower():
-            log.debug("Using context length: 32768 (Mistral)")
-            return 32768  # Mistral models support 32k context
-        else:
-            log.debug("Using default context length: 8192")
-            return 8192  # Conservative default
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
         Get available HuggingFace models for this inference provider.

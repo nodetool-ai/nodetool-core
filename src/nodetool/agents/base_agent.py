@@ -34,7 +34,7 @@ class BaseAgent(ABC):
         self.tools = tools or []
         self.inputs = inputs or {}
         self.system_prompt = system_prompt or ""  # Ensure system_prompt is a string
-        self.max_token_limit = max_token_limit or provider.get_context_length(model)
+        self.max_token_limit = max_token_limit or 128000  # Default to 128k tokens
         self.results: Any = None  # To store results, consistent with both agent types
         self.task: Task | None = None  # Common attribute to store the task
 

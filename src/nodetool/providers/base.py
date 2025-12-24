@@ -182,13 +182,6 @@ class BaseProvider:
         """Return environment variables needed when running inside Docker."""
         return {}
 
-    def get_context_length(self, model: str) -> int:
-        """Get the context length for a given model.
-
-        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
-        """
-        return 4096
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Get a list of available language models for this provider.
 

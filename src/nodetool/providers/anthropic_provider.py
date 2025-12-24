@@ -157,12 +157,6 @@ class AnthropicProvider(BaseProvider):
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        log.debug("Using context length: 200000 (Anthropic default)")
-        return 200000
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 

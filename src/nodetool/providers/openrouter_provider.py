@@ -110,61 +110,6 @@ class OpenRouterProvider(OpenAIProvider):
         log.debug("OpenRouter async client created successfully")
         return client
 
-    def get_context_length(self, model: str) -> int:
-        """Return an approximate maximum token limit for a given model.
-
-        OpenRouter supports many models with varying context lengths.
-        This provides reasonable defaults based on common model families.
-
-        Args:
-            model: Model identifier string (e.g., "openai/gpt-4", "anthropic/claude-3-opus")
-
-        Returns:
-            Approximate maximum number of tokens the model can handle.
-        """
-        log.debug(f"Getting context length for model: {model}")
-
-        # OpenRouter model IDs are in format "provider/model-name"
-        model_lower = model.lower()
-
-        # OpenAI models
-        if "gpt-4o" in model_lower or "chatgpt-4o" in model_lower:
-            return 128000
-        if "gpt-4-turbo" in model_lower:
-            return 128000
-        if "gpt-4" in model_lower:
-            if "32k" in model_lower:
-                return 32768
-            return 8192
-        if "gpt-3.5" in model_lower:
-            if "16k" in model_lower:
-                return 16384
-            return 4096
-
-        # Anthropic Claude models
-        if "claude" in model_lower:
-            return 200000
-
-        # Google Gemini models
-        if "gemini" in model_lower:
-            if "1.5" in model_lower:
-                return 1000000
-            return 32768
-
-        # Meta Llama models
-        if "llama" in model_lower:
-            if "3.1" in model_lower or "3.2" in model_lower:
-                return 128000
-            return 8192
-
-        # Mistral models
-        if "mistral" in model_lower or "mixtral" in model_lower:
-            return 32768
-
-        # Default fallback
-        log.debug("Unknown model; returning conservative default context length: 8192")
-        return 8192
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 

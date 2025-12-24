@@ -180,45 +180,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Model info: {model_info}")
         return model_info
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        try:
-            # Use cached model info
-            model_response = self._get_model_info(model)
-            model_info = model_response.modelinfo
-            log.debug(f"Model info: {model_info}")
-            if model_info is None:
-                log.debug("Model info is None, using default context length: 4096")
-                return 4096
-
-            log.debug(f"Model info keys: {list(model_info.keys())}")
-
-            for key, value in model_info.items():
-                if ".context_length" in key:
-                    log.debug(f"Found context length in model info: {key} = {value}")
-                    return int(value)
-
-            # Otherwise, try to extract from modelfile parameters
-            if model_info["modelfile"]:
-                modelfile = model_info["modelfile"]
-                param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
-                if param_match:
-                    context_length = int(param_match.group(1))
-                    log.debug(f"Found context length in modelfile: {context_length}")
-                    return context_length
-                else:
-                    log.debug("No num_ctx parameter found in modelfile")
-
-            # Default fallback if we can't determine the context length
-            log.warning("Using default context length: 4096")
-            return 4096
-        except Exception as e:
-            log.error(f"Error determining model context length: {e}")
-            print(f"Error determining model context length: {e}")
-            # Fallback to a reasonable default
-            return 4096
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
@@ -428,10 +389,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """
         log.debug(f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools")
 
-        # Use configured context length if available, otherwise query the model
-        context_window = self.default_context_length
-        if context_window is None:
-            context_window = self.get_context_length(model)
+        # Use configured context length, default to 4096 if not set
+        context_window = self.default_context_length or 4096
         
         # Check if model supports native tool calling
         use_tool_emulation = False

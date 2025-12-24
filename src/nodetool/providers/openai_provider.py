@@ -164,46 +164,6 @@ class OpenAIProvider(BaseProvider):
         log.debug("OpenAI async client created successfully")
         return client
 
-    def get_context_length(self, model: str) -> int:
-        """Return an approximate maximum token limit for a given model.
-
-        Provides reasonable defaults for common OpenAI model names and a
-        conservative fallback for unknown models.
-
-        Args:
-            model: Model identifier string.
-
-        Returns:
-            Approximate maximum number of tokens the model can handle.
-        """
-        log.debug(f"Getting context length for model: {model}")
-
-        # Explicit mappings for tests and common models
-        mapping: dict[str, int] = {
-            # Classic GPT-3.5/4 families
-            "gpt-3.5-turbo": 4096,
-            "gpt-4": 8192,
-            "gpt-4-32k": 32768,
-            "gpt-4-turbo": 128000,
-        }
-
-        if model in mapping:
-            return mapping[model]
-
-        # Broader families/prefixes
-        if model.startswith("gpt-4o") or model.startswith("chatgpt-4o") or model.startswith("o3"):
-            return 128000
-        if model.startswith("gpt-4.1"):
-            return 1_000_000
-        if model.startswith("gpt-5"):
-            return 400_000
-        if model.startswith("o4-mini"):
-            return 200_000
-
-        # Fallback for unknown models
-        log.debug("Unknown model; returning conservative default context length: 4096")
-        return 4096
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 

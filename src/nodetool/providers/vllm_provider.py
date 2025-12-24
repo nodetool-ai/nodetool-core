@@ -145,17 +145,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
             http_client=self._fallback_http_client,
         )
 
-    def get_context_length(self, model: str) -> int:
-        """Return the context window size for the given model.
-
-        Args:
-            model: Model identifier (unused, returns default)
-
-        Returns:
-            Default context window size from configuration.
-        """
-        return self._default_context_window
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Get available vLLM models.
 
