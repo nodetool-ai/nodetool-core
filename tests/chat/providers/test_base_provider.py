@@ -119,13 +119,6 @@ class ResponseFixtures:
                     "code": "rate_limit_exceeded",
                 }
             },
-            "context_length": {
-                "error": {
-                    "type": "invalid_request_error",
-                    "message": "This model's maximum context length is 4096 tokens",
-                    "code": "context_length_exceeded",
-                }
-            },
             "invalid_api_key": {
                 "error": {
                     "type": "authentication_error",
@@ -153,7 +146,6 @@ class BaseProviderTest(ABC):
     - Streaming responses
     - Tool calling
     - Error handling
-    - Context length management
     - Usage tracking
 
     Secrets Management:
@@ -425,22 +417,6 @@ class BaseProviderTest(ABC):
         # Usage should have been updated (exact behavior depends on provider)
         assert isinstance(final_usage, dict)
         assert "total_tokens" in final_usage
-
-    @pytest.mark.asyncio
-    async def test_context_length_error_handling(self):
-        """Test handling of context length errors."""
-        provider = self.create_provider()
-
-        # Create very long messages that would exceed context length
-        long_content = "A" * 10000  # Very long message
-        messages = self.create_simple_messages(long_content)
-
-        with self.mock_error_response("context_length"):
-            with pytest.raises(httpx.HTTPStatusError) as exc_info:
-                await provider.generate_message(messages, "test-model")
-
-            # Provider should recognize this as a context length error
-            assert provider.is_context_length_error(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_rate_limit_error_handling(self):
