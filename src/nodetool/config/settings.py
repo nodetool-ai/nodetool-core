@@ -99,7 +99,6 @@ register_setting(
     group="LMStudio",
     description="Base URL for the LM Studio OpenAI-compatible server (e.g., http://localhost:1234)",
 )
-)
 
 # Node-specific Supabase settings (kept separate from core SUPABASE_* credentials)
 register_setting(

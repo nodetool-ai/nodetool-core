@@ -29,9 +29,6 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# Only register the provider if LMSTUDIO_API_URL is explicitly set
-_lmstudio_api_url = Environment.get_environment().get("LMSTUDIO_API_URL")
-
 
 def _parse_bool(value: str | None, default: bool) -> bool:
     """Parse a string value to boolean.
@@ -400,8 +397,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         }
 
 
-# Conditionally register the provider only if LMSTUDIO_API_URL is set
-if _lmstudio_api_url:
-    register_provider(Provider.LMStudio)(LMStudioProvider)
-else:
-    log.debug("LM Studio provider not registered: LMSTUDIO_API_URL not set")
+# Always register the provider (like other providers do)
+# Users can configure it via LMSTUDIO_API_URL environment variable
+register_provider(Provider.LMStudio)(LMStudioProvider)
