@@ -142,6 +142,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="MINIMAX_API_KEY",
+    group="MiniMax",
+    description="MiniMax API key for accessing MiniMax AI models via their Anthropic-compatible API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="GEMINI_API_KEY",
     group="Gemini",
     description="Gemini API key for accessing Google's Gemini AI models",

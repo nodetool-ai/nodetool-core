@@ -100,7 +100,10 @@ class AnthropicProvider(BaseProvider):
 
         # Recursively process properties
         if "properties" in new_schema and isinstance(new_schema["properties"], dict):
-            new_schema["properties"] = {k: self._prepare_json_schema(v) for k, v in new_schema["properties"].items()}
+            new_schema["properties"] = {
+                k: self._prepare_json_schema(v)
+                for k, v in new_schema["properties"].items()
+            }
 
         # Recursively process array items
         if "items" in new_schema and isinstance(new_schema["items"], dict):
@@ -109,7 +112,9 @@ class AnthropicProvider(BaseProvider):
         # Process definitions/$defs if present
         for key in ["definitions", "$defs"]:
             if key in new_schema and isinstance(new_schema[key], dict):
-                new_schema[key] = {k: self._prepare_json_schema(v) for k, v in new_schema[key].items()}
+                new_schema[key] = {
+                    k: self._prepare_json_schema(v) for k, v in new_schema[key].items()
+                }
 
         # Remove unsupported keys
         # "Not supported: ... Numerical constraints (minimum, maximum...), String constraints (minLength...)"
@@ -172,10 +177,6 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling (all Claude models do)")
         return True
 
-    def structured_output(self) -> bool:
-        """Check if provider supports structured JSON output natively."""
-        return True
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
         Get available Anthropic models.
@@ -201,7 +202,9 @@ class AnthropicProvider(BaseProvider):
                 session.get("https://api.anthropic.com/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
+                    log.warning(
+                        f"Failed to fetch Anthropic models: HTTP {response.status}"
+                    )
                     return []
                 payload: Dict[str, Any] = await response.json()
                 data = payload.get("data", [])
@@ -282,9 +285,13 @@ class AnthropicProvider(BaseProvider):
                             media_type = "image/png"
                         elif uri:
                             # Fetch image from URI and convert to base64
-                            log.debug(f"Fetching image and converting to base64: {uri[:50]}...")
+                            log.debug(
+                                f"Fetching image and converting to base64: {uri[:50]}..."
+                            )
                             try:
-                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(uri)
+                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(
+                                    uri
+                                )
                                 data = base64.b64encode(data_bytes).decode("utf-8")
                                 media_type = mime_type or "image/png"
                             except Exception as e:
@@ -292,7 +299,9 @@ class AnthropicProvider(BaseProvider):
                                 raise
                         else:
                             log.error("Invalid image reference with no uri or data")
-                            raise ValueError("Invalid image reference with no uri or data")
+                            raise ValueError(
+                                "Invalid image reference with no uri or data"
+                            )
                         image_source = Base64ImageSourceParam(
                             type="base64",
                             media_type=media_type,  # type: ignore
@@ -311,7 +320,9 @@ class AnthropicProvider(BaseProvider):
             log.debug("Converting assistant message")
             # Skip assistant messages with empty content
             if not message.content and not message.tool_calls:
-                log.debug("Skipping assistant message with no content and no tool calls")
+                log.debug(
+                    "Skipping assistant message with no content and no tool calls"
+                )
                 return None  # Will be filtered out later
 
             if message.tool_calls:
@@ -334,14 +345,18 @@ class AnthropicProvider(BaseProvider):
             elif isinstance(message.content, list):
                 log.debug(f"Assistant message has {len(message.content)} content parts")
                 content = []
-                assert message.content is not None, "Assistant message content must not be None"
+                assert (
+                    message.content is not None
+                ), "Assistant message content must not be None"
                 for part in message.content:
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                 return {"role": "assistant", "content": content}
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
-                raise ValueError(f"Unknown message content type {type(message.content)}")
+                raise ValueError(
+                    f"Unknown message content type {type(message.content)}"
+                )
         else:
             log.error(f"Unknown message role: {message.role}")
             raise ValueError(f"Unknown message role {message.role}")
@@ -370,7 +385,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Generate streaming completions from Anthropic."""
@@ -380,7 +394,6 @@ class AnthropicProvider(BaseProvider):
         # Handle response_format parameter
         local_tools = list(tools)  # Make a mutable copy
         output_format = None
-        betas = []
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -393,34 +406,23 @@ class AnthropicProvider(BaseProvider):
                 for part in raw:
                     if isinstance(part, MessageTextContent):
                         text_parts.append(part.text)
-                system_message = " ".join(text_parts) if len(text_parts) > 0 else str(raw)
+                system_message = (
+                    " ".join(text_parts) if len(text_parts) > 0 else str(raw)
+                )
             else:
                 system_message = str(raw)
         else:
             system_message = "You are a helpful assistant."
         log.debug(f"System message: {system_message[:50]}...")
 
-        if json_schema:
-            log.debug("Processing JSON schema response format")
-            if "schema" not in json_schema:
-                log.error("schema is required in json_schema response format")
-                raise ValueError("schema is required in json_schema response format")
-
-            schema = json_schema["schema"]
-            # Clean/prepare schema for Anthropic
-            cleaned_schema = self._prepare_json_schema(schema)
-
-            output_format = {
-                "type": "json_schema",
-                "schema": cleaned_schema,
-            }
-            betas.append("structured-outputs-2025-11-13")
-            log.debug("Configured structured output format")
-
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
         anthropic_messages = [
-            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
+            msg
+            for msg in [
+                self.convert_message(msg) for msg in messages if msg.role != "system"
+            ]
+            if msg is not None
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
@@ -444,16 +446,7 @@ class AnthropicProvider(BaseProvider):
                 request_kwargs[key] = kwargs[key]
 
         if output_format:
-            request_kwargs["output_format"] = output_format
-            if "structured-outputs-2025-11-13" not in betas:
-                betas.append("structured-outputs-2025-11-13")
-
-        # Strict tools also require the structured-outputs beta
-        if anthropic_tools and "structured-outputs-2025-11-13" not in betas:
-            betas.append("structured-outputs-2025-11-13")
-
-        if betas:
-            request_kwargs["betas"] = betas
+            raise ValueError("Output format is not supported for Anthropic")
 
         log.debug("Streaming response initialized")
         async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
@@ -476,19 +469,28 @@ class AnthropicProvider(BaseProvider):
                     msg = getattr(event, "message", None)
                     usage = getattr(msg, "usage", None)
                     if usage is not None:
-                        self.usage["input_tokens"] += getattr(usage, "input_tokens", 0) or 0
-                        self.usage["output_tokens"] += getattr(usage, "output_tokens", 0) or 0
+                        self.usage["input_tokens"] += (
+                            getattr(usage, "input_tokens", 0) or 0
+                        )
+                        self.usage["output_tokens"] += (
+                            getattr(usage, "output_tokens", 0) or 0
+                        )
                         self.usage["cache_creation_input_tokens"] += (
                             getattr(usage, "cache_creation_input_tokens", 0) or 0
                         )
-                        self.usage["cache_read_input_tokens"] += getattr(usage, "cache_read_input_tokens", 0) or 0
-                        self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get(
-                            "output_tokens", 0
+                        self.usage["cache_read_input_tokens"] += (
+                            getattr(usage, "cache_read_input_tokens", 0) or 0
                         )
+                        self.usage["total_tokens"] = self.usage.get(
+                            "input_tokens", 0
+                        ) + self.usage.get("output_tokens", 0)
                 elif etype == "content_block_stop":
                     # Tool use may appear here in real SDK; tests often omit attributes
                     content_block = getattr(event, "content_block", None)
-                    if content_block is not None and getattr(content_block, "type", "") == "tool_use":
+                    if (
+                        content_block is not None
+                        and getattr(content_block, "type", "") == "tool_use"
+                    ):
                         tool_call = ToolCall(
                             id=str(getattr(content_block, "id", "")),
                             name=getattr(content_block, "name", ""),
@@ -504,7 +506,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -528,7 +529,6 @@ class AnthropicProvider(BaseProvider):
         # Handle response_format parameter
         local_tools = list(tools)  # Make a mutable copy
         output_format = None
-        betas = []
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -540,33 +540,23 @@ class AnthropicProvider(BaseProvider):
                 for part in raw:
                     if isinstance(part, MessageTextContent):
                         text_parts.append(part.text)
-                system_message = " ".join(text_parts) if len(text_parts) > 0 else str(raw)
+                system_message = (
+                    " ".join(text_parts) if len(text_parts) > 0 else str(raw)
+                )
             else:
                 system_message = str(raw)
         else:
             system_message = "You are a helpful assistant."
         log.debug(f"System message: {system_message[:50]}...")
 
-        if isinstance(json_schema, dict):
-            log.debug("Processing JSON schema response format")
-            if "schema" not in json_schema:
-                log.error("schema is required in json_schema response format")
-                raise ValueError("schema is required in json_schema response format")
-
-            schema = json_schema["schema"]
-            cleaned_schema = self._prepare_json_schema(schema)
-
-            output_format = {
-                "type": "json_schema",
-                "schema": cleaned_schema,
-            }
-            betas.append("structured-outputs-2025-11-13")
-            log.debug("Configured structured output format")
-
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
         anthropic_messages = [
-            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
+            msg
+            for msg in [
+                self.convert_message(msg) for msg in messages if msg.role != "system"
+            ]
+            if msg is not None
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
@@ -591,19 +581,12 @@ class AnthropicProvider(BaseProvider):
             create_kwargs["top_k"] = top_k
 
         if output_format:
-            create_kwargs["output_format"] = output_format
-            if "structured-outputs-2025-11-13" not in betas:
-                betas.append("structured-outputs-2025-11-13")
-
-        # Strict tools also require the structured-outputs beta
-        if anthropic_tools and "structured-outputs-2025-11-13" not in betas:
-            betas.append("structured-outputs-2025-11-13")
-
-        if betas:
-            create_kwargs["betas"] = betas
+            raise ValueError("Output format is not supported for Anthropic")
 
         try:
-            response: anthropic.types.message.Message = await self.client.messages.create(**create_kwargs)
+            response: anthropic.types.message.Message = (
+                await self.client.messages.create(**create_kwargs)
+            )
         except anthropic.AnthropicError as exc:
             raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from Anthropic API")
@@ -615,10 +598,14 @@ class AnthropicProvider(BaseProvider):
             self.usage["input_tokens"] += usage.input_tokens
             self.usage["output_tokens"] += usage.output_tokens
             if usage.cache_creation_input_tokens:
-                self.usage["cache_creation_input_tokens"] += usage.cache_creation_input_tokens
+                self.usage[
+                    "cache_creation_input_tokens"
+                ] += usage.cache_creation_input_tokens
             if usage.cache_read_input_tokens:
                 self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
-            self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get("output_tokens", 0)
+            self.usage["total_tokens"] = self.usage.get(
+                "input_tokens", 0
+            ) + self.usage.get("output_tokens", 0)
             cost = await calculate_chat_cost(
                 model,
                 usage.input_tokens,
@@ -644,7 +631,9 @@ class AnthropicProvider(BaseProvider):
             elif block.type == "text":
                 content.append(block.text)
 
-        log.debug(f"Response has {len(content)} text parts and {len(tool_calls)} tool calls")
+        log.debug(
+            f"Response has {len(content)} text parts and {len(tool_calls)} tool calls"
+        )
         message = Message(
             role="assistant",
             content="\n".join(content),
@@ -657,12 +646,16 @@ class AnthropicProvider(BaseProvider):
         return message
 
     @staticmethod
-    def _as_httpx_status_error(exc: anthropic.AnthropicError) -> "httpx.HTTPStatusError":
+    def _as_httpx_status_error(
+        exc: anthropic.AnthropicError,
+    ) -> "httpx.HTTPStatusError":
         """Normalize Anthropic SDK exceptions to `httpx.HTTPStatusError`."""
         import httpx
 
         maybe_response = getattr(exc, "response", None)
-        status_code = getattr(maybe_response, "status_code", None) or getattr(exc, "status_code", 500)
+        status_code = getattr(maybe_response, "status_code", None) or getattr(
+            exc, "status_code", 500
+        )
 
         request = getattr(maybe_response, "request", None)
         if not isinstance(request, httpx.Request):
@@ -671,7 +664,9 @@ class AnthropicProvider(BaseProvider):
                 "https://api.anthropic.com/v1/messages",
             )
 
-        response = maybe_response if isinstance(maybe_response, httpx.Response) else None
+        response = (
+            maybe_response if isinstance(maybe_response, httpx.Response) else None
+        )
         if response is None:
             response = httpx.Response(status_code=int(status_code), request=request)
 
@@ -715,7 +710,10 @@ class AnthropicProvider(BaseProvider):
             pass
 
         is_context_error = (
-            "context length" in msg or "context window" in msg or "token limit" in msg or "too long" in msg
+            "context length" in msg
+            or "context window" in msg
+            or "token limit" in msg
+            or "too long" in msg
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error

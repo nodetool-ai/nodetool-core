@@ -96,6 +96,7 @@ def import_providers():
         gemini_provider,
         huggingface_provider,
         lmstudio_provider,
+        minimax_provider,
         ollama_provider,
         openai_provider,
         openrouter_provider,
