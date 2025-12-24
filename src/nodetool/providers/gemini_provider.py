@@ -101,53 +101,21 @@ class GeminiProvider(BaseProvider):
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
-        Get available Gemini language models.
+        Get available Gemini language models from models.json.
 
-        Fetches models dynamically from the Gemini API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Returns models from the static models.json file instead of making API calls.
+        This ensures consistent model availability and pricing information.
 
         Returns:
             List of LanguageModel instances for Gemini
         """
+        from nodetool.providers.models_loader import get_gemini_models
+
         if not self.api_key:
             log.debug("No Gemini API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            # API permits key either as header or query parameter; use query to avoid header nuances
-            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-            async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
-                if response.status != 200:
-                    log.warning(f"Failed to fetch Gemini models: HTTP {response.status}")
-                    return []
-                payload = await response.json()
-                items = payload.get("models") or payload.get("data") or []
-
-                models: List[LanguageModel] = []
-                for item in items:
-                    # Filter for models that support generating content (exclude embeddings, etc.)
-                    methods = item.get("supportedGenerationMethods") or []
-                    if "generateContent" not in methods:
-                        continue
-
-                    # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
-                    raw_name: str | None = item.get("name")
-                    if not raw_name:
-                        continue
-                    model_id = raw_name.split("/")[-1]
-                    display_name = item.get("displayName") or model_id
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=display_name,
-                            provider=Provider.Gemini,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Gemini models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching Gemini models: {e}")
+        return get_gemini_models()
             return []
 
     async def get_available_image_models(self) -> List[ImageModel]:

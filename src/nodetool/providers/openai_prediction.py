@@ -404,15 +404,18 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 
 
 async def calculate_chat_cost(
-    model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0
+    model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0, provider_id: str | None = None
 ) -> float:
     """Calculates cost in CREDITS for chat models.
+
+    First tries to use the hardcoded pricing tiers, then falls back to models.json.
 
     Args:
         model_id: Model identifier
         input_tokens: Number of input/prompt tokens
         output_tokens: Number of output/completion tokens
         cached_tokens: Number of cached input tokens (for models that support caching)
+        provider_id: Provider identifier for models.json fallback (e.g., "openai", "anthropic", "google")
 
     Returns:
         Cost in credits
@@ -438,14 +441,25 @@ async def calculate_chat_cost(
 
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             cost = cost_input + cost_output
-        # else:
-        #     print(
-        #         f"Warning (test helper): Pricing rules missing for chat tier {tier_name} (model {model_id})."
-        #     )
-    # else:
-    #     print(
-    #         f"Warning (test helper): Tier or pricing not found for chat model {model_id}."
-    #     )
+    else:
+        # Fallback to models.json
+        from nodetool.providers.models_loader import calculate_cost_from_models_json
+        
+        # Auto-detect provider from model name if not specified
+        if provider_id is None:
+            if "gpt" in model_id_lower or "o1" in model_id_lower or "o3" in model_id_lower or "o4" in model_id_lower or "chatgpt" in model_id_lower or "dall" in model_id_lower:
+                provider_id = "openai"
+            elif "claude" in model_id_lower:
+                provider_id = "anthropic"
+            elif "gemini" in model_id_lower or "imagen" in model_id_lower or "veo" in model_id_lower:
+                provider_id = "google"
+            else:
+                provider_id = "openai"  # default
+        
+        cost = calculate_cost_from_models_json(
+            provider_id, model_id, input_tokens, output_tokens, cached_tokens
+        )
+        
     return cost
 
 
