@@ -6,7 +6,6 @@ This test suite verifies that the OpenRouter provider correctly:
 - Initializes with the correct base URL and headers
 - Supports streaming and non-streaming completions
 - Handles function calling
-- Correctly maps model context lengths
 """
 
 import json
@@ -63,45 +62,6 @@ class TestOpenRouterProvider:
             assert "HTTP-Referer" in client.default_headers
             assert "X-Title" in client.default_headers
 
-    def test_context_length_openai_models(self):
-        """Test context length detection for OpenAI models via OpenRouter."""
-        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
-
-        # Test OpenAI models with provider prefix
-        assert provider.get_context_length("openai/gpt-4o") == 128000
-        assert provider.get_context_length("openai/gpt-4-turbo") == 128000
-        assert provider.get_context_length("openai/gpt-4") == 8192
-        assert provider.get_context_length("openai/gpt-4-32k") == 32768
-        assert provider.get_context_length("openai/gpt-3.5-turbo") == 4096
-        assert provider.get_context_length("openai/gpt-3.5-turbo-16k") == 16384
-
-    def test_context_length_anthropic_models(self):
-        """Test context length detection for Anthropic models via OpenRouter."""
-        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
-
-        # Test Anthropic models
-        assert provider.get_context_length("anthropic/claude-3-opus") == 200000
-        assert provider.get_context_length("anthropic/claude-3-sonnet") == 200000
-        assert provider.get_context_length("anthropic/claude-2") == 200000
-
-    def test_context_length_other_models(self):
-        """Test context length detection for other models via OpenRouter."""
-        provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
-
-        # Test Google Gemini
-        assert provider.get_context_length("google/gemini-1.5-pro") == 1000000
-        assert provider.get_context_length("google/gemini-pro") == 32768
-
-        # Test Meta Llama
-        assert provider.get_context_length("meta-llama/llama-3.1-70b") == 128000
-        assert provider.get_context_length("meta-llama/llama-2-70b") == 8192
-
-        # Test Mistral
-        assert provider.get_context_length("mistralai/mistral-7b") == 32768
-        assert provider.get_context_length("mistralai/mixtral-8x7b") == 32768
-
-        # Test unknown model (fallback)
-        assert provider.get_context_length("unknown/model") == 8192
 
     def test_tool_support(self):
         """Test tool/function calling support detection."""

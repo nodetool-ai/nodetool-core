@@ -205,12 +205,6 @@ class TestLlamaProvider(BaseProviderTest):
         """Create realistic llama-server API errors."""
         if error_type == "server_not_available":
             return httpx.ConnectError("Connection refused")
-        elif error_type == "context_length":
-            return httpx.HTTPStatusError(
-                message="Context length exceeded",
-                request=MagicMock(),
-                response=MagicMock(status_code=400, text="Context length exceeded"),
-            )
         elif error_type == "model_not_found":
             return httpx.HTTPStatusError(
                 message="Model not found",

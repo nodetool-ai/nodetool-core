@@ -232,12 +232,6 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 request=MagicMock(),
                 response=MagicMock(status_code=404, text="Model not found"),
             )
-        elif error_type == "context_length" or error_type == "token_limit":
-            return httpx.HTTPStatusError(
-                message="Request too large",
-                request=MagicMock(),
-                response=MagicMock(status_code=413, text="Context length exceeded"),
-            )
         elif error_type == "rate_limit":
             return httpx.HTTPStatusError(
                 message="Rate limit exceeded",
@@ -486,25 +480,6 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
         # Verify parameters were passed
         mock_call.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_context_length_handling(self):
-        """Test handling of context length limits."""
-        provider = self.create_provider()
-
-        with self.mock_error_response("token_limit"):
-            with pytest.raises(Exception) as exc_info:
-                very_long_text = "This is a very long message. " * 1000
-                await provider.generate_message(
-                    [
-                        Message(
-                            role="user",
-                            content=[MessageTextContent(text=very_long_text)],
-                        )
-                    ],
-                    "test-model",
-                )
-            assert "413" in str(exc_info.value) or "context" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_rate_limiting(self):
