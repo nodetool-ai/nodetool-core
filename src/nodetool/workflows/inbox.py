@@ -66,6 +66,27 @@ class NodeInbox:
         self._buffer_limit: int | None = buffer_limit
         assert self._loop is not None, "Event loop is not running"
 
+    def _notify_waiters_threadsafe(self) -> None:
+        """Schedule notification of waiters in a thread-safe manner.
+
+        This method is safe to call from any thread. It schedules the
+        notification to run on the inbox's event loop, ensuring that
+        the coroutine and task are created in the correct loop context.
+        This avoids "Future attached to a different loop" errors on Windows.
+        """
+        def _schedule_notify() -> None:
+            """Create and schedule the notification task on the target loop.
+
+            This runs in the target loop's thread via call_soon_threadsafe.
+            """
+            async def _notify() -> None:
+                async with self._cond:
+                    self._cond.notify_all()
+
+            self._loop.create_task(_notify())
+
+        self._loop.call_soon_threadsafe(_schedule_notify)
+
     def add_upstream(self, handle: str, count: int = 1) -> None:
         """Declare upstream producers for a given handle.
 
@@ -128,21 +149,7 @@ class NodeInbox:
         #     f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
         # )
 
-        def _schedule_notify() -> None:
-            """Schedule notification on the inbox's event loop.
-
-            This function is called via call_soon_threadsafe and runs in the
-            target loop's thread. We create the coroutine and task here to
-            ensure they are bound to the correct event loop, avoiding
-            cross-loop issues on Windows.
-            """
-            async def _notify() -> None:
-                async with self._cond:
-                    self._cond.notify_all()
-
-            self._loop.create_task(_notify())
-
-        self._loop.call_soon_threadsafe(_schedule_notify)
+        self._notify_waiters_threadsafe()
 
     def has_any(self) -> bool:
         """Return True if any handle currently has buffered items.
@@ -264,22 +271,7 @@ class NodeInbox:
             # Note: This is synchronous, so we schedule notification without blocking
             if self._loop is not None:
                 try:
-
-                    def _schedule_notify() -> None:
-                        """Schedule notification on the inbox's event loop.
-
-                        This function is called via call_soon_threadsafe and runs in the
-                        target loop's thread. We create the coroutine and task here to
-                        ensure they are bound to the correct event loop, avoiding
-                        cross-loop issues on Windows.
-                        """
-                        async def _notify() -> None:
-                            async with self._cond:
-                                self._cond.notify_all()
-
-                        self._loop.create_task(_notify())
-
-                    self._loop.call_soon_threadsafe(_schedule_notify)
+                    self._notify_waiters_threadsafe()
                 except Exception:
                     pass
             return handle, item
