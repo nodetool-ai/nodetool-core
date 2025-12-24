@@ -499,15 +499,6 @@ class BaseProviderTest(ABC):
         with pytest.raises((ValueError, Exception)):
             await provider.generate_message([], "test-model")
 
-    def test_context_length_detection(self):
-        """Test context length detection for different models."""
-        provider = self.create_provider()
-
-        # Test with common model names
-        context_length = provider.get_context_length("test-model")
-        assert isinstance(context_length, int)
-        assert context_length > 0
-
     def test_container_environment(self):
         """Test container environment variable configuration."""
         provider = self.create_provider()

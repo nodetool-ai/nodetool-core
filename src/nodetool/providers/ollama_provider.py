@@ -41,6 +41,9 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
+# Default context length for Ollama models when not configured
+DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096
+
 # Only register the provider if OLLAMA_API_URL is explicitly set
 _ollama_api_url = Environment.get("OLLAMA_API_URL")
 
@@ -132,6 +135,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.api_url = api_url or Environment.get("OLLAMA_API_URL")
         if self.api_url:
             os.environ.setdefault("OLLAMA_API_URL", self.api_url)
+        
+        # Get context length from settings, with fallback to None (will use model default)
+        context_length_str = Environment.get("OLLAMA_CONTEXT_LENGTH")
+        self.default_context_length = int(context_length_str) if context_length_str else None
+        
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -140,7 +148,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
         self._model_info_cache: Dict[str, Any] = {}
-        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}")
+        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
@@ -174,45 +182,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Cached model info for: {model}")
         log.debug(f"Model info: {model_info}")
         return model_info
-
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        try:
-            # Use cached model info
-            model_response = self._get_model_info(model)
-            model_info = model_response.modelinfo
-            log.debug(f"Model info: {model_info}")
-            if model_info is None:
-                log.debug("Model info is None, using default context length: 4096")
-                return 4096
-
-            log.debug(f"Model info keys: {list(model_info.keys())}")
-
-            for key, value in model_info.items():
-                if ".context_length" in key:
-                    log.debug(f"Found context length in model info: {key} = {value}")
-                    return int(value)
-
-            # Otherwise, try to extract from modelfile parameters
-            if model_info["modelfile"]:
-                modelfile = model_info["modelfile"]
-                param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
-                if param_match:
-                    context_length = int(param_match.group(1))
-                    log.debug(f"Found context length in modelfile: {context_length}")
-                    return context_length
-                else:
-                    log.debug("No num_ctx parameter found in modelfile")
-
-            # Default fallback if we can't determine the context length
-            log.warning("Using default context length: 4096")
-            return 4096
-        except Exception as e:
-            log.error(f"Error determining model context length: {e}")
-            print(f"Error determining model context length: {e}")
-            # Fallback to a reasonable default
-            return 4096
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
@@ -407,7 +376,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
-        context_window: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -424,8 +392,9 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         """
         log.debug(f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools")
 
-        if context_window is None:
-            context_window = self.get_context_length(model)
+        # Use configured context length, default to DEFAULT_OLLAMA_CONTEXT_LENGTH if not set
+        context_window = self.default_context_length or DEFAULT_OLLAMA_CONTEXT_LENGTH
+        
         # Check if model supports native tool calling
         use_tool_emulation = False
         if len(tools) > 0 and not self.has_tool_support(model):
@@ -533,7 +502,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -565,7 +533,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 model,
                 tools,
                 max_tokens=max_tokens,
-                context_window=context_window,
                 **kwargs,
             )
             params["stream"] = True
@@ -627,7 +594,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:

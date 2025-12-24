@@ -157,12 +157,6 @@ class AnthropicProvider(BaseProvider):
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        log.debug(f"Getting context length for model: {model}")
-        log.debug("Using context length: 200000 (Anthropic default)")
-        return 200000
-
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
@@ -376,7 +370,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         json_schema: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -511,7 +504,6 @@ class AnthropicProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,

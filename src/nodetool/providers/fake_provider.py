@@ -107,7 +107,6 @@ class FakeProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -140,7 +139,6 @@ class FakeProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:

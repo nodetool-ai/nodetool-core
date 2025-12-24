@@ -182,13 +182,6 @@ class BaseProvider:
         """Return environment variables needed when running inside Docker."""
         return {}
 
-    def get_context_length(self, model: str) -> int:
-        """Get the context length for a given model.
-
-        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
-        """
-        return 4096
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Get a list of available language models for this provider.
 
@@ -455,7 +448,6 @@ class BaseProvider:
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs: Any,
     ) -> Message:
@@ -468,7 +460,6 @@ class BaseProvider:
             model: str containing model information
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
@@ -486,7 +477,6 @@ class BaseProvider:
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[Chunk | ToolCall | MessageFile]:
@@ -500,7 +490,6 @@ class BaseProvider:
             model: str containing model information
             tools: Available tools for the model to use
             max_tokens: Maximum number of tokens to generate
-            context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
@@ -761,7 +750,6 @@ class MockProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs: Any,
     ) -> Message:
@@ -798,7 +786,6 @@ class MockProvider(BaseProvider):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
