@@ -115,9 +115,9 @@ async def test_get_available_language_models_error(provider):
 
 @pytest.mark.asyncio
 async def test_context_length_default(provider):
-    """Test that context length returns default value."""
+    """Test that context length returns base class default value."""
     context_length = provider.get_context_length("test-model")
-    assert context_length == 32768  # Default value
+    assert context_length == 4096  # Base class default
 
 
 @pytest.mark.asyncio

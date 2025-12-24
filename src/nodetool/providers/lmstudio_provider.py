@@ -66,7 +66,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
     - LMSTUDIO_API_KEY: Optional API key to include in requests
     - LMSTUDIO_HTTP_TIMEOUT: Request timeout in seconds (default 600)
     - LMSTUDIO_VERIFY_TLS: 1 to enable TLS verification (default disabled)
-    - LMSTUDIO_CONTEXT_WINDOW: Default context window hint (default 32768)
 
     Attributes:
         provider_name: Provider identifier used by the application.
@@ -100,11 +99,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             self._timeout = 600.0
         verify_env = env.get("LMSTUDIO_VERIFY_TLS")
         self._verify_tls = _parse_bool(verify_env if verify_env is not None else None, False)
-        ctx_window_raw = env.get("LMSTUDIO_CONTEXT_WINDOW", 32768)
-        try:
-            self._default_context_window = int(ctx_window_raw)
-        except (TypeError, ValueError):
-            self._default_context_window = 32768
 
         self._usage = {
             "prompt_tokens": 0,
@@ -114,8 +108,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
 
         log.info(
             f"LMStudioProvider initialized. base_url={self._base_url}, "
-            f"timeout={self._timeout}s, verify_tls={self._verify_tls}, "
-            f"default_context_window={self._default_context_window}"
+            f"timeout={self._timeout}s, verify_tls={self._verify_tls}"
         )
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
@@ -168,12 +161,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         except Exception as e:
             log.error(f"Error fetching LM Studio models: {e}")
             return []
-
-    def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        # LM Studio doesn't provide a direct way to query context length
-        # Return the configured default
-        return self._default_context_window
 
     async def generate_message(
         self,
