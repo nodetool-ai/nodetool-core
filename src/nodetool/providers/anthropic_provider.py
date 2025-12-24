@@ -729,9 +729,5 @@ class AnthropicProvider(BaseProvider):
         Returns:
             The maximum context length in tokens for the model
         """
-        # All Claude 3 and Claude 2 models support 200k context
-        if "claude-3" in model or "claude-2" in model:
-            return 200000
-        # Fallback for other models
-        else:
-            return 200000
+        # All Claude models support 200k context
+        return 200000

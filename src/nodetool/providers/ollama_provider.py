@@ -738,26 +738,24 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         Returns:
             The maximum context length in tokens for the model
         """
-        import re
-        
         try:
             # Get model info from Ollama
             client = get_ollama_sync_client(self.api_url)
             response = client.show(model)
             modelinfo = response.modelinfo
-            
+
             # Parse modelfile for num_ctx parameter
             modelfile = modelinfo.get("modelfile", "")
             match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile, re.IGNORECASE)
             if match:
                 return int(match.group(1))
-            
+
             # If not found in modelfile, check parameters
             parameters = modelinfo.get("parameters", "")
             match = re.search(r"num_ctx\s+(\d+)", parameters, re.IGNORECASE)
             if match:
                 return int(match.group(1))
-            
+
             # Default fallback
             return self.default_context_length if self.default_context_length else 8192
         except Exception as e:

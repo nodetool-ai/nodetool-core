@@ -804,10 +804,10 @@ class OpenRouterProvider(OpenAIProvider):
         elif "gemini-pro" in model:
             return 32768
 
-        # Meta Llama models - check more specific patterns first
-        elif "llama-3.1" in model:
+        # Meta Llama models - check version numbers explicitly
+        elif "llama-3" in model or "llama3" in model:
             return 128000
-        elif "llama-2" in model:
+        elif "llama-2" in model or "llama2" in model:
             return 8192
 
         # Mistral models
