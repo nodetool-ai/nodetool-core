@@ -49,22 +49,31 @@ GOOGLE_DEFAULT_SCOPES = [
     "https://www.googleapis.com/auth/generative-language.retriever",
     "https://www.googleapis.com/auth/generative-language.tuning",
 ]
+# Default Google Client ID for desktop/native app (public client)
+# Can be overridden via GOOGLE_CLIENT_ID environment variable
 GOOGLE_CLIENT_ID = (
     "865599262139-tpi13jl3uq82mscgguupngkp9bcoe59s.apps.googleusercontent.com"
 )
-GOOGLE_CLIENT_SECRET = "GOCSPX-uC4_T51K15_31_11"
 
 
 def get_google_client_id() -> Optional[str]:
-    """Get Google OAuth client ID from environment."""
+    """Get Google OAuth client ID from environment or use default."""
     cid = os.environ.get("GOOGLE_CLIENT_ID", GOOGLE_CLIENT_ID)
     log.info(f"Using Google Client ID: {cid}")
     return cid
 
 
 def get_google_client_secret() -> Optional[str]:
-    """Get Google OAuth client secret from environment."""
-    return os.environ.get("GOOGLE_CLIENT_SECRET", GOOGLE_CLIENT_SECRET)
+    """
+    Get Google OAuth client secret from environment.
+    
+    For desktop/native apps using PKCE (public clients), client_secret is NOT required.
+    This function returns None if no secret is configured, which is the correct
+    behavior for public clients following Google's OAuth 2.0 for Installed Apps spec.
+    
+    See: https://developers.google.com/identity/protocols/oauth2/native-app
+    """
+    return os.environ.get("GOOGLE_CLIENT_SECRET")
 
 
 class OAuthStartResponse(BaseModel):

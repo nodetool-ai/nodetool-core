@@ -273,6 +273,9 @@ async def get_google_token(user_id: str, account_id: str) -> Optional[str]:
 async def refresh_google_token(user_id: str, account_id: str) -> bool:
     """
     Refresh a Google access token using the refresh token.
+    
+    For desktop/native apps (public clients) using PKCE, client_secret is NOT required.
+    See: https://developers.google.com/identity/protocols/oauth2/native-app
 
     Args:
         user_id: The user ID.
@@ -300,21 +303,27 @@ async def refresh_google_token(user_id: str, account_id: str) -> bool:
     client_id = get_google_client_id()
     client_secret = get_google_client_secret()
 
-    if not client_id or not client_secret:
-        log.error("Google OAuth credentials not configured")
+    if not client_id:
+        log.error("Google OAuth client ID not configured")
         return False
 
     # Exchange refresh token for new access token
     try:
         async with httpx.AsyncClient() as client:
+            # Build payload - client_secret is optional for public clients (PKCE)
+            refresh_data_payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+            }
+            
+            # Add client_secret only if available (for web clients)
+            if client_secret:
+                refresh_data_payload["client_secret"] = client_secret
+            
             token_response = await client.post(
                 GOOGLE_TOKEN_URL,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
+                data=refresh_data_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30.0,
             )
