@@ -184,7 +184,7 @@ async def test_get_huggingface_token_not_found(user_id):
 @pytest.mark.asyncio
 async def test_oauth_start_endpoint(client, headers):
     """Test the OAuth start endpoint."""
-    response = client.get("/oauth/hf/start", headers=headers)
+    response = client.get("/api/oauth/hf/start", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -197,7 +197,7 @@ async def test_oauth_start_endpoint(client, headers):
 @pytest.mark.asyncio
 async def test_oauth_callback_invalid_state(client):
     """Test OAuth callback with invalid state."""
-    response = client.get("/oauth/hf/callback?code=test_code&state=invalid_state")
+    response = client.get("/api/oauth/hf/callback?code=test_code&state=invalid_state")
 
     assert response.status_code == 200
     assert "invalid_state" in response.text
@@ -208,7 +208,7 @@ async def test_oauth_callback_invalid_state(client):
 async def test_oauth_callback_error(client):
     """Test OAuth callback with error from provider."""
     response = client.get(
-        "/oauth/hf/callback?error=access_denied&error_description=User+denied+access"
+        "/api/oauth/hf/callback?error=access_denied&error_description=User+denied+access"
     )
 
     assert response.status_code == 200
@@ -219,7 +219,7 @@ async def test_oauth_callback_error(client):
 @pytest.mark.asyncio
 async def test_oauth_tokens_list_empty(client, headers):
     """Test listing tokens when none exist."""
-    response = client.get("/oauth/hf/tokens", headers=headers)
+    response = client.get("/api/oauth/hf/tokens", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -240,7 +240,7 @@ async def test_oauth_tokens_list_with_data(client, headers, user_id):
         scope="read write",
     )
 
-    response = client.get("/oauth/hf/tokens", headers=headers)
+    response = client.get("/api/oauth/hf/tokens", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -253,7 +253,7 @@ async def test_oauth_tokens_list_with_data(client, headers, user_id):
 @pytest.mark.asyncio
 async def test_oauth_refresh_no_credential(client, headers):
     """Test refreshing a non-existent credential."""
-    response = client.post("/oauth/hf/refresh?account_id=nonexistent", headers=headers)
+    response = client.post("/api/oauth/hf/refresh?account_id=nonexistent", headers=headers)
 
     assert response.status_code == 404
 
@@ -269,7 +269,7 @@ async def test_oauth_refresh_no_refresh_token(client, headers, user_id):
         access_token="test_token",
     )
 
-    response = client.post("/oauth/hf/refresh?account_id=no_refresh_account", headers=headers)
+    response = client.post("/api/oauth/hf/refresh?account_id=no_refresh_account", headers=headers)
 
     assert response.status_code == 400
     assert "No refresh token available" in response.json()["detail"]
@@ -398,7 +398,7 @@ async def test_oauth_whoami_endpoint(client, headers, user_id):
             return_value=mock_response
         )
 
-        response = client.get(f"/oauth/hf/whoami?account_id={account_id}", headers=headers)
+        response = client.get(f"/api/oauth/hf/whoami?account_id={account_id}", headers=headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -409,6 +409,6 @@ async def test_oauth_whoami_endpoint(client, headers, user_id):
 @pytest.mark.asyncio
 async def test_oauth_whoami_endpoint_no_credential(client, headers):
     """Test the whoami endpoint with non-existent credential."""
-    response = client.get("/oauth/hf/whoami?account_id=nonexistent", headers=headers)
+    response = client.get("/api/oauth/hf/whoami?account_id=nonexistent", headers=headers)
 
     assert response.status_code == 404
