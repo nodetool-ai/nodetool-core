@@ -42,11 +42,12 @@ class LocalExecutor:
         pass
 
     def execute(self, command: str, check: bool = True, timeout: Optional[int] = None) -> Tuple[int, str, str]:
-        """Execute a command locally."""
+        """Execute a command locally using safe command parsing."""
         try:
+            # Parse command safely using shlex to avoid shell injection
+            cmd_list = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_list,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

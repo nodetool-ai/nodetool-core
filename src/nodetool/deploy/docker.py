@@ -22,11 +22,17 @@ from pathlib import Path
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
-    """Run a shell command with streaming output and return output if requested."""
+    """Run a shell command with streaming output and return output if requested.
+    
+    Uses shlex.split() for safe command parsing to avoid shell injection risks.
+    """
     try:
+        # Parse command safely using shlex
+        cmd_list = shlex.split(command)
+        
         if capture_output:
             # For commands that need to return output, capture but still stream
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd_list, capture_output=True, text=True, check=True)
             output = result.stdout.strip()
             if output:
                 print(output)
@@ -36,8 +42,7 @@ def run_command(command: str, capture_output: bool = False) -> str:
         else:
             # For commands that don't need return value, stream in real-time
             process = subprocess.Popen(
-                command,
-                shell=True,
+                cmd_list,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

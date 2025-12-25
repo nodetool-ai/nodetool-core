@@ -135,3 +135,9 @@ ffmpeg-release-amd64-static.tar.xz
 
 # Temporary local files
 tmp/
+
+# Backup files
+*.bak
+*.bak2
+*.backup
+*.old

@@ -3,19 +3,19 @@
     "date": "2025-12-25",
     "repository": "nodetool-ai/nodetool-core",
     "analysis_type": "release_risk_assessment",
-    "generated_by": "automated_codebase_scan"
+    "generated_by": "automated_codebase_scan",
+    "status": "CRITICAL_AND_HIGH_ISSUES_FIXED"
   },
   "executive_summary": {
-    "overall_risk_level": "MEDIUM",
-    "release_readiness": "CONDITIONAL",
-    "blocking_issues_count": 3,
-    "total_issues_count": 387,
-    "key_concerns": [
-      "Backup files committed to source tree",
-      "Shell injection risk with shell=True",
-      "eval() usage in user-facing tools",
-      "150+ broad exception handlers",
-      "17 skipped tests"
+    "overall_risk_level": "LOW",
+    "release_readiness": "READY",
+    "blocking_issues_count": 0,
+    "fixed_issues_count": 3,
+    "total_remaining_issues": 384,
+    "key_fixes_applied": [
+      "Deleted backup files (.bak) from source tree",
+      "Replaced shell=True with shlex.split() for safe command parsing",
+      "Replaced eval() with AST-based safe expression evaluator"
     ]
   },
   "statistics": {
@@ -28,74 +28,47 @@
     "not_implemented_errors": 25,
     "skipped_tests": 17,
     "deprecated_code_locations": 20,
-    "backup_files": 2,
-    "shell_true_usages": 3,
-    "eval_usages": 1,
+    "backup_files": 0,
+    "shell_true_usages": 0,
+    "eval_usages": 0,
     "pass_statements": 180
   },
-  "release_blocking_issues": [
+  "fixed_issues": [
     {
       "id": "BACKUP-001",
       "severity": "CRITICAL",
       "category": "tech-debt",
       "title": "Backup files in source tree",
-      "description": "Development backup files committed to repository",
-      "files": [
-        {
-          "path": "src/nodetool/agents/task_planner.py.bak",
-          "line": null
-        },
-        {
-          "path": "src/nodetool/agents/task_planner.py.bak2",
-          "line": null
-        }
-      ],
-      "risk_explanation": "Ships development artifacts, increases package size, may confuse tooling",
-      "suggested_fix": "Delete backup files and add *.bak* to .gitignore",
-      "effort_hours": 0.1,
-      "confidence": "HIGH"
+      "status": "FIXED",
+      "resolution": "Deleted backup files and added *.bak* patterns to .gitignore",
+      "files_affected": [
+        "src/nodetool/agents/task_planner.py.bak",
+        "src/nodetool/agents/task_planner.py.bak2",
+        ".gitignore"
+      ]
     },
     {
       "id": "SEC-001",
       "severity": "HIGH",
       "category": "security",
       "title": "Shell injection risk with shell=True",
-      "description": "subprocess calls using shell=True could be vulnerable to injection",
-      "files": [
-        {
-          "path": "src/nodetool/deploy/docker.py",
-          "line": 29
-        },
-        {
-          "path": "src/nodetool/deploy/docker.py",
-          "line": 40
-        },
-        {
-          "path": "src/nodetool/deploy/self_hosted.py",
-          "line": 49
-        }
-      ],
-      "risk_explanation": "If command includes user input, shell injection is possible",
-      "suggested_fix": "Refactor to use list-based commands without shell=True",
-      "effort_hours": 2,
-      "confidence": "MEDIUM"
+      "status": "FIXED",
+      "resolution": "Refactored to use shlex.split() for safe command parsing",
+      "files_affected": [
+        "src/nodetool/deploy/docker.py",
+        "src/nodetool/deploy/self_hosted.py"
+      ]
     },
     {
       "id": "SEC-002",
       "severity": "HIGH",
       "category": "security",
       "title": "eval() usage in math tools",
-      "description": "eval() used for mathematical expression evaluation",
-      "files": [
-        {
-          "path": "src/nodetool/agents/tools/math_tools.py",
-          "line": 61
-        }
-      ],
-      "risk_explanation": "Character-based filtering may be bypassable; eval() is inherently risky",
-      "suggested_fix": "Use proper expression parser like ast.literal_eval or numexpr library",
-      "effort_hours": 1,
-      "confidence": "MEDIUM"
+      "status": "FIXED",
+      "resolution": "Implemented SafeExpressionEvaluator class using AST parsing",
+      "files_affected": [
+        "src/nodetool/agents/tools/math_tools.py"
+      ]
     }
   ],
   "high_priority_issues": [
