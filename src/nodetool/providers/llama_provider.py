@@ -74,11 +74,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         super().__init__()
         self._base_url = Environment.get("LLAMA_CPP_URL", "")
         self._server_manager = LlamaServerManager(ttl_seconds=ttl_seconds)
-        
+
         # Get context length from settings, with fallback to 128000
         context_length_str = Environment.get("LLAMA_CPP_CONTEXT_LENGTH")
         self.default_context_length = int(context_length_str) if context_length_str else 128000
-        
+
         if self._base_url:
             log.info(f"Using llama-server at: {self._base_url}")
         else:
@@ -97,7 +97,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         except Exception as e:
             log.warning(f"Failed to load tiktoken encoding: {e}. Token counting may be inaccurate.")
             self._encoding = None
-        
+
         log.debug(f"LlamaProvider initialized with default_context_length: {self.default_context_length}")
 
     def _normalize_messages_for_llama(

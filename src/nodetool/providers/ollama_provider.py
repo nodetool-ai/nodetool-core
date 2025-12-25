@@ -135,11 +135,11 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self.api_url = api_url or Environment.get("OLLAMA_API_URL")
         if self.api_url:
             os.environ.setdefault("OLLAMA_API_URL", self.api_url)
-        
+
         # Get context length from settings, with fallback to None (will use model default)
         context_length_str = Environment.get("OLLAMA_CONTEXT_LENGTH")
         self.default_context_length = int(context_length_str) if context_length_str else None
-        
+
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -394,7 +394,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
         # Use configured context length, default to DEFAULT_OLLAMA_CONTEXT_LENGTH if not set
         context_window = self.default_context_length or DEFAULT_OLLAMA_CONTEXT_LENGTH
-        
+
         # Check if model supports native tool calling
         use_tool_emulation = False
         if len(tools) > 0 and not self.has_tool_support(model):

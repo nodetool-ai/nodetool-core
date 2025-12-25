@@ -17,11 +17,11 @@ from nodetool.workflows.property import Property
 class IntegerInput(InputNode):
     """Test integer input node."""
     value: int = 0
-    
+
     @classmethod
     def get_node_type(cls) -> str:
         return "nodetool.input.IntegerInput"
-    
+
     async def process(self, context: ProcessingContext) -> int:
         return self.value
 
@@ -29,11 +29,11 @@ class IntegerInput(InputNode):
 class IntegerOutput(BaseNode):
     """Test integer output node."""
     value: int = 0
-    
+
     @classmethod
     def get_node_type(cls) -> str:
         return "nodetool.output.IntegerOutput"
-    
+
     async def process(self, context: ProcessingContext) -> None:
         # Output nodes don't return values
         pass
@@ -43,11 +43,11 @@ class Concat(BaseNode):
     """Test text concatenation node."""
     a: str = ""
     b: str = ""
-    
+
     @classmethod
     def get_node_type(cls) -> str:
         return "nodetool.text.Concat"
-    
+
     async def process(self, context: ProcessingContext) -> str:
         return self.a + self.b
 
@@ -142,7 +142,7 @@ def mock_registry_with_test_nodes():
             ],
         ),
     ]
-    
+
     # Create a test package with these nodes
     test_package = PackageModel(
         name="nodetool-test-nodes",
@@ -153,16 +153,16 @@ def mock_registry_with_test_nodes():
         nodes=test_nodes,
         namespaces=["nodetool.input", "nodetool.output", "nodetool.text"],
     )
-    
+
     # Patch the Registry methods to return our test data
     original_get_all_installed_nodes = Registry.get_all_installed_nodes
     original_find_node_by_type = Registry.find_node_by_type
     original_list_installed_packages = Registry.list_installed_packages
-    
+
     def mock_get_all_installed_nodes(self):
         # Return test nodes
         return test_nodes
-    
+
     def mock_find_node_by_type(self, node_type: str):
         # Find node by type from test nodes
         for node in test_nodes:
@@ -172,11 +172,11 @@ def mock_registry_with_test_nodes():
                 node_dict["installed"] = True
                 return node_dict
         return None
-    
+
     def mock_list_installed_packages(self):
         # Return test package
         return [test_package]
-    
+
     with patch.object(
         Registry, "get_all_installed_nodes", mock_get_all_installed_nodes
     ), patch.object(

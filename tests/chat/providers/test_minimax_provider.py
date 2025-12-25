@@ -20,7 +20,7 @@ from anthropic.types import Message as AnthropicMessage
 from anthropic.types import TextBlock, ToolUseBlock, Usage
 
 from nodetool.metadata.types import Message, MessageTextContent
-from nodetool.providers.minimax_provider import MiniMaxProvider, MINIMAX_BASE_URL
+from nodetool.providers.minimax_provider import MINIMAX_BASE_URL, MiniMaxProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
