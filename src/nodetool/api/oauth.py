@@ -46,17 +46,25 @@ GOOGLE_DEFAULT_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/generative-language.retriever",
+    "https://www.googleapis.com/auth/generative-language.tuning",
 ]
+GOOGLE_CLIENT_ID = (
+    "865599262139-tpi13jl3uq82mscgguupngkp9bcoe59s.apps.googleusercontent.com"
+)
+GOOGLE_CLIENT_SECRET = "GOCSPX-uC4_T51K15_31_11"
 
 
 def get_google_client_id() -> Optional[str]:
     """Get Google OAuth client ID from environment."""
-    return os.environ.get("GOOGLE_CLIENT_ID")
+    cid = os.environ.get("GOOGLE_CLIENT_ID", GOOGLE_CLIENT_ID)
+    log.info(f"Using Google Client ID: {cid}")
+    return cid
 
 
 def get_google_client_secret() -> Optional[str]:
     """Get Google OAuth client secret from environment."""
-    return os.environ.get("GOOGLE_CLIENT_SECRET")
+    return os.environ.get("GOOGLE_CLIENT_SECRET", GOOGLE_CLIENT_SECRET)
 
 
 class OAuthStartResponse(BaseModel):
@@ -181,13 +189,13 @@ def oauth_html_response(
             "name": "Google",
         },
     }
-    
+
     config = provider_configs.get(provider, provider_configs["huggingface"])
     primary_color = config["primary_color"]
     provider_name = config["name"]
-    
+
     success_color = "#22C55E"  # Green
-    error_color = "#EF4444"    # Red
+    error_color = "#EF4444"  # Red
 
     # Icon (check or X)
     icon = "✓" if success else "✗"
@@ -197,7 +205,9 @@ def oauth_html_response(
     if success:
         heading = "Authentication Successful"
         message = f"Your {provider_name} account has been connected successfully."
-        details = f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
+        details = (
+            f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
+        )
     else:
         heading = "Authentication Failed"
         message = error_description or "An error occurred during authentication."
@@ -435,7 +445,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error=error,
-            error_description=error_description or "No description provided"
+            error_description=error_description or "No description provided",
         )
 
     # Validate required parameters
@@ -445,7 +455,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_request",
-            error_description="Missing required parameters (code or state)."
+            error_description="Missing required parameters (code or state).",
         )
 
     # Validate state
@@ -456,7 +466,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_state",
-            error_description="The authentication request has expired or is invalid. Please try again."
+            error_description="The authentication request has expired or is invalid. Please try again.",
         )
 
     # Check if state is expired (5 minutes)
@@ -467,7 +477,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_state",
-            error_description="The authentication request has expired. Please try again."
+            error_description="The authentication request has expired. Please try again.",
         )
 
     user_id = state_data["user_id"]
@@ -501,7 +511,7 @@ async def huggingface_oauth_callback(
                     title="OAuth Error",
                     success=False,
                     error="token_exchange_failed",
-                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}"
+                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}",
                 )
 
             token_data = token_response.json()
@@ -518,7 +528,7 @@ async def huggingface_oauth_callback(
                     title="OAuth Error",
                     success=False,
                     error="token_exchange_failed",
-                    error_description="No access token received from Hugging Face."
+                    error_description="No access token received from Hugging Face.",
                 )
 
             # Get user info from Hugging Face
@@ -559,10 +569,7 @@ async def huggingface_oauth_callback(
             log.info("Successfully stored Hugging Face credential")
 
             return oauth_html_response(
-                title="OAuth Success",
-                success=True,
-                username=username,
-                auto_close=True
+                title="OAuth Success", success=True, username=username, auto_close=True
             )
 
     except httpx.HTTPError as e:
@@ -571,7 +578,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="network_error",
-            error_description=f"Failed to communicate with Hugging Face: {str(e)}"
+            error_description=f"Failed to communicate with Hugging Face: {str(e)}",
         )
     except Exception as e:
         log.error(f"Unexpected error during OAuth callback: {e}", exc_info=True)
@@ -579,7 +586,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="internal_error",
-            error_description=f"An unexpected error occurred: {str(e)}"
+            error_description=f"An unexpected error occurred: {str(e)}",
         )
 
 
@@ -941,9 +948,7 @@ async def start_google_oauth(
 
 @router.get("/google/callback")
 async def google_oauth_callback(
-    code: Optional[str] = Query(
-        None, description="Authorization code from Google"
-    ),
+    code: Optional[str] = Query(None, description="Authorization code from Google"),
     state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
     error: Optional[str] = Query(None, description="Error from OAuth provider"),
     error_description: Optional[str] = Query(None, description="Error description"),
@@ -1019,8 +1024,8 @@ async def google_oauth_callback(
     client_id = get_google_client_id()
     client_secret = get_google_client_secret()
 
-    if not client_id or not client_secret:
-        log.error("Google OAuth credentials not configured")
+    if not client_id:
+        log.error("Google OAuth client ID not configured")
         return oauth_html_response(
             title="OAuth Error",
             success=False,
@@ -1032,16 +1037,22 @@ async def google_oauth_callback(
     # Exchange code for tokens
     try:
         async with httpx.AsyncClient() as client:
+            token_data_payload = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            }
+
+            # Add client_secret if available (required for Web Client IDs)
+            # For Desktop/PKCE, this should typically be omitted if not present
+            if client_secret:
+                token_data_payload["client_secret"] = client_secret
+
             token_response = await client.post(
                 GOOGLE_TOKEN_URL,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "code_verifier": code_verifier,
-                },
+                data=token_data_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30.0,
             )
@@ -1084,7 +1095,9 @@ async def google_oauth_callback(
             )
 
             if userinfo_response.status_code != 200:
-                log.error(f"Failed to get Google user info: {userinfo_response.status_code}")
+                log.error(
+                    f"Failed to get Google user info: {userinfo_response.status_code}"
+                )
                 username = None
                 account_id = access_token[:16]  # Fallback: use token prefix
                 email = None
@@ -1204,7 +1217,8 @@ async def refresh_google_token(
 
     if not credential:
         raise HTTPException(
-            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+            status_code=404,
+            detail=f"No Google credential found for account_id: {account_id}",
         )
 
     # Get the refresh token
@@ -1219,7 +1233,7 @@ async def refresh_google_token(
     client_id = get_google_client_id()
     client_secret = get_google_client_secret()
 
-    if not client_id or not client_secret:
+    if not client_id:
         raise HTTPException(
             status_code=503,
             detail="Google OAuth is not properly configured on the server.",
@@ -1228,14 +1242,19 @@ async def refresh_google_token(
     # Exchange refresh token for new access token
     try:
         async with httpx.AsyncClient() as client:
+            refresh_data_payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+            }
+
+            # Add client_secret if available
+            if client_secret:
+                refresh_data_payload["client_secret"] = client_secret
+
             token_response = await client.post(
                 GOOGLE_TOKEN_URL,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
+                data=refresh_data_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30.0,
             )
@@ -1341,7 +1360,8 @@ async def get_google_userinfo_endpoint(
 
     if not credential:
         raise HTTPException(
-            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+            status_code=404,
+            detail=f"No Google credential found for account_id: {account_id}",
         )
 
     # Get the access token
@@ -1399,7 +1419,9 @@ async def get_google_userinfo_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Unexpected error during Google userinfo request: {e}", exc_info=True)
+        log.error(
+            f"Unexpected error during Google userinfo request: {e}", exc_info=True
+        )
         raise HTTPException(
             status_code=500,
             detail={
@@ -1431,7 +1453,8 @@ async def revoke_google_token(
 
     if not credential:
         raise HTTPException(
-            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+            status_code=404,
+            detail=f"No Google credential found for account_id: {account_id}",
         )
 
     # Get the access token to revoke
@@ -1460,6 +1483,8 @@ async def revoke_google_token(
     # Delete the credential from the database
     await credential.delete()
 
-    log.info(f"Successfully revoked and deleted Google credential for account {account_id}")
+    log.info(
+        f"Successfully revoked and deleted Google credential for account {account_id}"
+    )
 
     return {"success": True, "message": "Google token revoked successfully"}
