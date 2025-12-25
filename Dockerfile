@@ -105,7 +105,7 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
             --index-url https://pypi.org/simple \
             --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
             --extra-index-url https://download.pytorch.org/whl/cu128 \
-            nodetool-base==0.6.2rc12 && \
+            nodetool-base nodetool-huggingface && \
         cd /tmp/nodetool-core && \
         uv pip install --no-cache-dir \
             --index-strategy unsafe-best-match \
@@ -119,8 +119,7 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
             --index-url https://pypi.org/simple \
             --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
             --extra-index-url https://download.pytorch.org/whl/cu128 \
-            nodetool-core==0.6.2rc12 \
-            nodetool-base==0.6.2rc12 ; \
+            nodetool-core nodetool-base nodetool-huggingface ; \
     fi && \
     # Clean up
     rm -rf /tmp/nodetool-core && \

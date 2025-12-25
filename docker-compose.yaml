@@ -21,9 +21,6 @@ services:
       - "7777"
     expose:
       - "7777"
-    depends_on:
-      vllm:
-        condition: service_healthy
     environment:
       ENV: ${ENV:-development}
       JOB_EXECUTION_STRATEGY: ${JOB_EXECUTION_STRATEGY:-threaded}
