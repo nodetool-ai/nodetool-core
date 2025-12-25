@@ -18,8 +18,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
-from nodetool.config.settings import get_setting
 from nodetool.models.oauth_credential import OAuthCredential
 
 log = get_logger(__name__)
@@ -826,7 +826,7 @@ async def start_github_oauth(
         OAuthStartResponse with auth_url.
     """
     # Get GitHub client ID
-    github_client_id = get_setting("nodetool", "GITHUB_CLIENT_ID")
+    github_client_id = get_system_env_value("GITHUB_CLIENT_ID")
     if not github_client_id:
         raise HTTPException(
             status_code=500,
@@ -940,8 +940,8 @@ async def github_oauth_callback(
     del _oauth_state_store[state]
 
     # Get GitHub credentials
-    github_client_id = get_setting("nodetool", "GITHUB_CLIENT_ID")
-    github_client_secret = get_setting("nodetool", "GITHUB_CLIENT_SECRET")
+    github_client_id = get_system_env_value("GITHUB_CLIENT_ID")
+    github_client_secret = get_system_env_value("GITHUB_CLIENT_SECRET")
     
     if not github_client_id or not github_client_secret:
         log.error("GitHub OAuth not configured")

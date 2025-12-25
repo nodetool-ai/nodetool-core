@@ -454,9 +454,9 @@ async def test_github_oauth_credential_create_and_find(user_id):
 @pytest.mark.asyncio
 async def test_github_oauth_start_endpoint(client, headers):
     """Test the GitHub OAuth start endpoint."""
-    # Mock the get_setting function
-    with patch("nodetool.api.oauth.get_setting") as mock_get_setting:
-        mock_get_setting.return_value = "test_github_client_id"
+    # Mock the get_system_env_value function
+    with patch("nodetool.api.oauth.get_system_env_value") as mock_get_env:
+        mock_get_env.return_value = "test_github_client_id"
         
         response = client.get("/api/oauth/github/start", headers=headers)
 
@@ -471,8 +471,8 @@ async def test_github_oauth_start_endpoint(client, headers):
 @pytest.mark.asyncio
 async def test_github_oauth_start_endpoint_no_client_id(client, headers):
     """Test the GitHub OAuth start endpoint without client ID configured."""
-    with patch("nodetool.api.oauth.get_setting") as mock_get_setting:
-        mock_get_setting.return_value = None
+    with patch("nodetool.api.oauth.get_system_env_value") as mock_get_env:
+        mock_get_env.return_value = None
         
         response = client.get("/api/oauth/github/start", headers=headers)
 
