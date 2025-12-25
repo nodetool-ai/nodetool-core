@@ -27,13 +27,13 @@ from nodetool.workflows.processing_context import ProcessingContext
 class SafeExpressionEvaluator(ast.NodeVisitor):
     """
     A safe mathematical expression evaluator using AST parsing.
-    
+
     Only allows basic arithmetic operations, safe math functions,
     and numeric literals. No arbitrary code execution is possible.
     """
-    
+
     # Allowed binary operators
-    OPERATORS = {
+    OPERATORS: ClassVar[Dict[type, Any]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -42,15 +42,15 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         ast.Mod: operator.mod,
         ast.Pow: operator.pow,
     }
-    
+
     # Allowed unary operators
-    UNARY_OPERATORS = {
+    UNARY_OPERATORS: ClassVar[Dict[type, Any]] = {
         ast.UAdd: operator.pos,
         ast.USub: operator.neg,
     }
-    
+
     # Safe math functions
-    SAFE_FUNCTIONS = {
+    SAFE_FUNCTIONS: ClassVar[Dict[str, Any]] = {
         "sqrt": math.sqrt,
         "abs": abs,
         "round": round,
@@ -66,14 +66,14 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         "min": min,
         "max": max,
     }
-    
+
     # Safe constants
-    SAFE_CONSTANTS = {
+    SAFE_CONSTANTS: ClassVar[Dict[str, float]] = {
         "pi": math.pi,
         "e": math.e,
         "tau": math.tau,
     }
-    
+
     def visit_BinOp(self, node: ast.BinOp) -> float:
         left = self.visit(node.left)
         right = self.visit(node.right)
@@ -81,39 +81,39 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         if op_type not in self.OPERATORS:
             raise ValueError(f"Unsupported operator: {op_type.__name__}")
         return self.OPERATORS[op_type](left, right)
-    
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> float:
         operand = self.visit(node.operand)
         op_type = type(node.op)
         if op_type not in self.UNARY_OPERATORS:
             raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
         return self.UNARY_OPERATORS[op_type](operand)
-    
+
     def visit_Constant(self, node: ast.Constant) -> float:
         if isinstance(node.value, (int, float)):
             return node.value
         raise ValueError(f"Unsupported constant type: {type(node.value)}")
-    
+
     def visit_Name(self, node: ast.Name) -> float:
         name = node.id.lower()
         if name in self.SAFE_CONSTANTS:
             return self.SAFE_CONSTANTS[name]
         raise ValueError(f"Unknown variable: {name}")
-    
+
     def visit_Call(self, node: ast.Call) -> float:
         if not isinstance(node.func, ast.Name):
             raise ValueError("Only simple function calls are supported")
-        
+
         func_name = node.func.id.lower()
         if func_name not in self.SAFE_FUNCTIONS:
             raise ValueError(f"Unknown function: {func_name}")
-        
+
         args = [self.visit(arg) for arg in node.args]
         return self.SAFE_FUNCTIONS[func_name](*args)
-    
+
     def visit_Expression(self, node: ast.Expression) -> float:
         return self.visit(node.body)
-    
+
     def generic_visit(self, node: ast.AST) -> float:
         raise ValueError(f"Unsupported expression type: {type(node).__name__}")
 
@@ -121,25 +121,25 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
 def safe_eval_expression(expression: str) -> float:
     """
     Safely evaluate a mathematical expression using AST parsing.
-    
+
     Args:
         expression: A mathematical expression string
-        
+
     Returns:
         The numeric result of the expression
-        
+
     Raises:
         ValueError: If the expression contains invalid syntax or operations
     """
     # Preprocess: convert ^ to ** for power notation
     expression = expression.replace("^", "**")
-    
+
     try:
         tree = ast.parse(expression, mode='eval')
         evaluator = SafeExpressionEvaluator()
         return evaluator.visit(tree)
     except SyntaxError as e:
-        raise ValueError(f"Invalid expression syntax: {e}")
+        raise ValueError(f"Invalid expression syntax: {e}") from e
 
 
 class CalculatorTool(Tool):

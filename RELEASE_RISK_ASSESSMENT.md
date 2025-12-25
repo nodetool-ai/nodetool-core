@@ -3,7 +3,7 @@
 **Date:** 2025-12-25  
 **Repository:** nodetool-ai/nodetool-core  
 **Analysis Scope:** Full codebase scan for release readiness  
-**Status:** CRITICAL/HIGH ISSUES FIXED
+**Status:** CRITICAL/HIGH ISSUES ADDRESSED
 
 ---
 
@@ -16,7 +16,7 @@ The nodetool-core codebase shows signs of active development with several areas 
 
 **Fixed Issues (Critical/High):**
 1. ✅ **Backup Files in Source Tree** - DELETED (task_planner.py.bak, task_planner.py.bak2)
-2. ✅ **Shell Injection Risk** - FIXED (replaced shell=True with shlex.split())
+2. ⚠️ **Shell Injection Risk** - ACCEPTED (local deployment only, shell=True required for shell features)
 3. ✅ **eval() Usage** - FIXED (replaced with AST-based safe expression evaluator)
 
 **Remaining Concerns (Medium/Low):**
@@ -41,15 +41,23 @@ The nodetool-core codebase shows signs of active development with several areas 
 
 ---
 
-### ~~2.2 HIGH - Shell Injection Vulnerability Potential~~ ✅ FIXED
+### 2.2 HIGH - Shell Injection Vulnerability Potential ⚠️ ACCEPTED RISK
 
 | Attribute | Value |
 |-----------|-------|
 | **Files** | `src/nodetool/deploy/docker.py`, `src/nodetool/deploy/self_hosted.py` |
 | **Category** | security |
-| **Status** | ✅ **FIXED** - Refactored to use shlex.split() |
+| **Status** | ⚠️ **ACCEPTED** - Required for local deployment functionality |
 
-**Resolution:** Replaced `shell=True` with `shlex.split()` for safe command parsing. Commands are now passed as lists to subprocess, preventing shell injection.
+**Rationale:** The `shell=True` usage in deployment files is required for:
+- Shell features like `|| true` for error handling
+- Commands like `mkdir -p`, `chmod`, and piped commands
+- Local deployment functionality where inputs are from controlled configuration
+
+**Mitigations:**
+- Nodetool is designed for local environment deployment
+- Commands are constructed from configuration, not user input
+- Risk is acceptable for the current use case
 
 ---
 

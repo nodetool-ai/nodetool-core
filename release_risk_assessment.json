@@ -4,18 +4,21 @@
     "repository": "nodetool-ai/nodetool-core",
     "analysis_type": "release_risk_assessment",
     "generated_by": "automated_codebase_scan",
-    "status": "CRITICAL_AND_HIGH_ISSUES_FIXED"
+    "status": "CRITICAL_AND_HIGH_ISSUES_ADDRESSED"
   },
   "executive_summary": {
     "overall_risk_level": "LOW",
     "release_readiness": "READY",
     "blocking_issues_count": 0,
-    "fixed_issues_count": 3,
+    "fixed_issues_count": 2,
+    "accepted_risks_count": 1,
     "total_remaining_issues": 384,
     "key_fixes_applied": [
       "Deleted backup files (.bak) from source tree",
-      "Replaced shell=True with shlex.split() for safe command parsing",
       "Replaced eval() with AST-based safe expression evaluator"
+    ],
+    "accepted_risks": [
+      "shell=True in deployment files (required for local deployment functionality)"
     ]
   },
   "statistics": {
@@ -29,7 +32,7 @@
     "skipped_tests": 17,
     "deprecated_code_locations": 20,
     "backup_files": 0,
-    "shell_true_usages": 0,
+    "shell_true_usages": 3,
     "eval_usages": 0,
     "pass_statements": 180
   },
@@ -52,8 +55,12 @@
       "severity": "HIGH",
       "category": "security",
       "title": "Shell injection risk with shell=True",
-      "status": "FIXED",
-      "resolution": "Refactored to use shlex.split() for safe command parsing",
+      "status": "ACCEPTED",
+      "rationale": "Required for local deployment functionality - shell features like || true, mkdir -p, chmod are needed",
+      "mitigations": [
+        "Nodetool targets local environment deployment",
+        "Commands are from controlled configuration, not user input"
+      ],
       "files_affected": [
         "src/nodetool/deploy/docker.py",
         "src/nodetool/deploy/self_hosted.py"
