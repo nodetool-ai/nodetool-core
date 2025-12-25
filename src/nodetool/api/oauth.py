@@ -864,17 +864,6 @@ async def start_github_oauth(
         "code_challenge_method": "S256",
     }
 
-    # Build authorization URL with PKCE parameters
-    params = {
-        "client_id": github_client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": " ".join(GITHUB_SCOPES),
-        "state": state,
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
-    }
-
     auth_url = f"{GITHUB_AUTHORIZATION_URL}?{urlencode(params)}"
 
     log.info(f"Starting GitHub OAuth with PKCE for user {user_id}, state={state}")
