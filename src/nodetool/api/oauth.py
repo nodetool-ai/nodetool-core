@@ -11,7 +11,7 @@ Provides endpoints for GitHub OAuth authentication with support for:
 import base64
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -28,8 +28,11 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 # In-memory store for OAuth state and PKCE verifiers
-# In production, consider using Redis or database with TTL
+# Note: This is suitable for single-instance deployments. For production
+# with multiple instances or high availability, consider using Redis with TTL
+# or a database-backed state store with automatic expiration.
 _oauth_state_store: Dict[str, Dict[str, Any]] = {}
+_last_cleanup_time = datetime.now(UTC)
 
 
 class OAuthStartResponse(BaseModel):
@@ -93,7 +96,7 @@ def store_oauth_state(state: str, data: Dict[str, Any], ttl_seconds: int = 600):
         data: Data to store (should include user_id, code_verifier, etc.).
         ttl_seconds: Time to live in seconds (default: 10 minutes).
     """
-    _oauth_state_store[state] = {"data": data, "expires_at": datetime.now() + timedelta(seconds=ttl_seconds)}
+    _oauth_state_store[state] = {"data": data, "expires_at": datetime.now(UTC) + timedelta(seconds=ttl_seconds)}
 
 
 def retrieve_oauth_state(state: str) -> Optional[Dict[str, Any]]:
@@ -110,15 +113,27 @@ def retrieve_oauth_state(state: str) -> Optional[Dict[str, Any]]:
     if not entry:
         return None
 
-    if datetime.now() >= entry["expires_at"]:
+    if datetime.now(UTC) >= entry["expires_at"]:
         return None
 
     return entry["data"]
 
 
 def cleanup_expired_states():
-    """Remove expired state entries."""
-    now = datetime.now()
+    """
+    Remove expired state entries.
+    
+    Uses a periodic cleanup strategy to avoid checking every entry on each request.
+    Cleanup runs at most once per minute to balance cleanup frequency with performance.
+    """
+    global _last_cleanup_time
+    now = datetime.now(UTC)
+    
+    # Only cleanup once per minute
+    if (now - _last_cleanup_time).total_seconds() < 60:
+        return
+        
+    _last_cleanup_time = now
     expired_keys = [k for k, v in _oauth_state_store.items() if now >= v["expires_at"]]
     for key in expired_keys:
         _oauth_state_store.pop(key, None)
@@ -194,9 +209,10 @@ async def github_oauth_start(request: Request, user: str = Depends(current_user)
         f"&response_type=code"
     )
 
-    # Note: GitHub OAuth does not support PKCE (code_challenge)
-    # We'll use client_secret in the token exchange instead
-    # PKCE is mainly for public clients; GitHub treats all OAuth apps as confidential
+    # Note: GitHub OAuth Apps do not currently support PKCE (code_challenge parameter).
+    # PKCE parameters are generated and stored for potential future support or for
+    # use with other OAuth providers. GitHub treats all OAuth apps as confidential
+    # clients requiring client_secret in the token exchange.
 
     log.info(f"Starting GitHub OAuth flow for user {user}")
 
@@ -312,7 +328,10 @@ async def github_oauth_callback(code: Optional[str] = None, state: Optional[str]
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "code": code,
-                    # GitHub doesn't support code_verifier, but we keep it for consistency
+                    # Note: code_verifier is not used here as GitHub OAuth Apps
+                    # do not support PKCE. It's generated for consistency with
+                    # OAuth best practices and for potential future use with
+                    # other providers or GitHub's future PKCE support.
                 },
                 headers={"Accept": "application/json"},
                 timeout=30.0,

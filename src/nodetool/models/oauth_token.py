@@ -34,14 +34,14 @@ class OAuthToken(DBModel):
     refresh_token: Optional[str] = DBField(default=None)
     token_type: str = DBField(default="bearer")
     scope: str = DBField(default="")
-    received_at: datetime = DBField(default_factory=datetime.now)
+    received_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
     expires_at: Optional[datetime] = DBField(default=None)
-    created_at: datetime = DBField(default_factory=datetime.now)
-    updated_at: datetime = DBField(default_factory=datetime.now)
+    created_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
 
     def before_save(self):
         """Updates the `updated_at` timestamp before saving."""
-        self.updated_at = datetime.now()
+        self.updated_at = datetime.now(UTC)
 
     @classmethod
     async def create_token(
@@ -73,7 +73,7 @@ class OAuthToken(DBModel):
         Returns:
             The newly created OAuthToken instance.
         """
-        received_at = datetime.now()
+        received_at = datetime.now(UTC)
         expires_at = None
         if expires_in is not None:
             from datetime import timedelta
@@ -182,11 +182,11 @@ class OAuthToken(DBModel):
             token.refresh_token = refresh_token
         if scope is not None:
             token.scope = scope
-        token.received_at = datetime.now()
+        token.received_at = datetime.now(UTC)
         if expires_in is not None:
             from datetime import timedelta
 
-            token.expires_at = datetime.now() + timedelta(seconds=expires_in)
+            token.expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
         else:
             token.expires_at = None
 
@@ -221,7 +221,7 @@ class OAuthToken(DBModel):
         """
         if self.expires_at is None:
             return False
-        return datetime.now() >= self.expires_at
+        return datetime.now(UTC) >= self.expires_at
 
     def to_dict_safe(self) -> dict:
         """
