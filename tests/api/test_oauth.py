@@ -10,6 +10,10 @@ from nodetool.security.oauth_helper import (
     get_huggingface_token,
     refresh_huggingface_token,
     get_huggingface_whoami,
+    list_google_accounts,
+    get_google_token,
+    refresh_google_token,
+    get_google_userinfo,
 )
 
 
@@ -412,3 +416,384 @@ async def test_oauth_whoami_endpoint_no_credential(client, headers):
     response = client.get("/api/oauth/hf/whoami?account_id=nonexistent", headers=headers)
 
     assert response.status_code == 404
+
+
+# =============================================================================
+# Google OAuth Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_credential_create_and_find(user_id):
+    """Test creating and finding a Google OAuth credential."""
+    credential = await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id="google_test_account_123",
+        access_token="google_test_access_token",
+        username="testuser@gmail.com",
+        refresh_token="google_test_refresh_token",
+        token_type="Bearer",
+        scope="openid email profile",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    assert credential is not None
+    assert credential.user_id == user_id
+    assert credential.provider == "google"
+    assert credential.account_id == "google_test_account_123"
+    assert credential.username == "testuser@gmail.com"
+
+    # Find the credential
+    found = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="google", account_id="google_test_account_123"
+    )
+
+    assert found is not None
+    assert found.id == credential.id
+    assert found.account_id == "google_test_account_123"
+
+
+@pytest.mark.asyncio
+async def test_list_google_accounts(user_id):
+    """Test listing Google accounts."""
+    # Create multiple Google credentials
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id="google_account_1",
+        access_token="google_token_1",
+        username="user1@gmail.com",
+    )
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id="google_account_2",
+        access_token="google_token_2",
+        username="user2@gmail.com",
+    )
+
+    accounts = await list_google_accounts(user_id)
+
+    assert len(accounts) == 2
+    assert any(acc["account_id"] == "google_account_1" for acc in accounts)
+    assert any(acc["account_id"] == "google_account_2" for acc in accounts)
+
+
+@pytest.mark.asyncio
+async def test_get_google_token(user_id):
+    """Test getting a Google token."""
+    account_id = "google_test_get_token"
+    access_token = "google_secret_access_token"
+
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id=account_id,
+        access_token=access_token,
+    )
+
+    retrieved_token = await get_google_token(user_id, account_id)
+
+    assert retrieved_token == access_token
+
+
+@pytest.mark.asyncio
+async def test_get_google_token_not_found(user_id):
+    """Test getting a Google token that doesn't exist."""
+    token = await get_google_token(user_id, "nonexistent_google_account")
+
+    assert token is None
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_start_endpoint_not_configured(client, headers):
+    """Test Google OAuth start endpoint when not configured."""
+    # When GOOGLE_CLIENT_ID is not set, should return 503
+    with patch.dict("os.environ", {}, clear=False):
+        # Remove GOOGLE_CLIENT_ID if it exists
+        with patch("nodetool.api.oauth.get_google_client_id", return_value=None):
+            response = client.get("/api/oauth/google/start", headers=headers)
+
+            assert response.status_code == 503
+            assert "not configured" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_start_endpoint_configured(client, headers):
+    """Test Google OAuth start endpoint when configured."""
+    with patch("nodetool.api.oauth.get_google_client_id", return_value="test_client_id"):
+        response = client.get("/api/oauth/google/start", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "auth_url" in data
+        assert "accounts.google.com/o/oauth2/v2/auth" in data["auth_url"]
+        assert "code_challenge" in data["auth_url"]
+        assert "state" in data["auth_url"]
+        assert "test_client_id" in data["auth_url"]
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_callback_invalid_state(client):
+    """Test Google OAuth callback with invalid state."""
+    response = client.get("/api/oauth/google/callback?code=test_code&state=invalid_state")
+
+    assert response.status_code == 200
+    assert "invalid_state" in response.text
+    assert "Authentication Failed" in response.text
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_callback_error(client):
+    """Test Google OAuth callback with error from provider."""
+    response = client.get(
+        "/api/oauth/google/callback?error=access_denied&error_description=User+denied+access"
+    )
+
+    assert response.status_code == 200
+    assert "access_denied" in response.text
+    assert "Authentication Failed" in response.text
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_tokens_list_empty(client, headers):
+    """Test listing Google tokens when none exist."""
+    response = client.get("/api/oauth/google/tokens", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "tokens" in data
+    assert len(data["tokens"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_tokens_list_with_data(client, headers, user_id):
+    """Test listing Google tokens with existing credentials."""
+    # Create a credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id="google_test_account",
+        access_token="google_test_token",
+        username="testuser@gmail.com",
+        scope="openid email profile",
+    )
+
+    response = client.get("/api/oauth/google/tokens", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "tokens" in data
+    assert len(data["tokens"]) == 1
+    assert data["tokens"][0]["account_id"] == "google_test_account"
+    assert data["tokens"][0]["username"] == "testuser@gmail.com"
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_refresh_no_credential(client, headers):
+    """Test refreshing a non-existent Google credential."""
+    response = client.post("/api/oauth/google/refresh?account_id=nonexistent", headers=headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_google_oauth_refresh_no_refresh_token(client, headers, user_id):
+    """Test refreshing Google credential when no refresh token is available."""
+    # Create credential without refresh token
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id="google_no_refresh_account",
+        access_token="google_test_token",
+    )
+
+    response = client.post("/api/oauth/google/refresh?account_id=google_no_refresh_account", headers=headers)
+
+    assert response.status_code == 400
+    assert "No refresh token available" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_google_token_success(user_id):
+    """Test successful Google token refresh."""
+    account_id = "google_refresh_test_account"
+
+    # Create credential with refresh token
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id=account_id,
+        access_token="old_google_access_token",
+        refresh_token="valid_google_refresh_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "access_token": "new_google_access_token",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=mock_response
+        )
+        with patch("nodetool.security.oauth_helper.get_google_client_id", return_value="test_client_id"):
+            with patch("nodetool.security.oauth_helper.get_google_client_secret", return_value="test_client_secret"):
+                success = await refresh_google_token(user_id, account_id)
+
+                assert success is True
+
+                # Verify token was updated
+                credential = await OAuthCredential.find_by_account(
+                    user_id=user_id, provider="google", account_id=account_id
+                )
+                new_token = await credential.get_decrypted_access_token()
+                assert new_token == "new_google_access_token"
+
+
+@pytest.mark.asyncio
+async def test_get_google_userinfo_success(user_id):
+    """Test getting Google userinfo."""
+    account_id = "google_userinfo_test_account"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id=account_id,
+        access_token="valid_google_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": account_id,
+        "name": "Test User",
+        "email": "test@gmail.com",
+        "picture": "https://example.com/photo.jpg",
+        "verified_email": True,
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            return_value=mock_response
+        )
+
+        userinfo_data = await get_google_userinfo(user_id, account_id)
+
+        assert userinfo_data is not None
+        assert userinfo_data["id"] == account_id
+        assert userinfo_data["name"] == "Test User"
+        assert userinfo_data["email"] == "test@gmail.com"
+
+
+@pytest.mark.asyncio
+async def test_google_userinfo_endpoint(client, headers, user_id):
+    """Test the Google userinfo endpoint."""
+    account_id = "google_userinfo_endpoint_test"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id=account_id,
+        access_token="valid_google_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": account_id,
+        "name": "Test User",
+        "email": "test@gmail.com",
+        "picture": "https://example.com/photo.jpg",
+        "verified_email": True,
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = client.get(f"/api/oauth/google/userinfo?account_id={account_id}", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == account_id
+        assert data["name"] == "Test User"
+        assert data["email"] == "test@gmail.com"
+
+
+@pytest.mark.asyncio
+async def test_google_userinfo_endpoint_no_credential(client, headers):
+    """Test the Google userinfo endpoint with non-existent credential."""
+    response = client.get("/api/oauth/google/userinfo?account_id=nonexistent", headers=headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_google_revoke_endpoint(client, headers, user_id):
+    """Test the Google revoke endpoint."""
+    account_id = "google_revoke_test"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="google",
+        account_id=account_id,
+        access_token="valid_google_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = client.delete(f"/api/oauth/google/revoke?account_id={account_id}", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+        # Verify credential was deleted
+        credential = await OAuthCredential.find_by_account(
+            user_id=user_id, provider="google", account_id=account_id
+        )
+        assert credential is None
+
+
+@pytest.mark.asyncio
+async def test_google_revoke_endpoint_no_credential(client, headers):
+    """Test the Google revoke endpoint with non-existent credential."""
+    response = client.delete("/api/oauth/google/revoke?account_id=nonexistent", headers=headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_oauth_html_response_google_provider():
+    """Test that HTML response correctly uses Google branding."""
+    from nodetool.api.oauth import oauth_html_response
+
+    response = oauth_html_response(
+        title="Test",
+        success=True,
+        username="testuser@gmail.com",
+        provider="google",
+    )
+
+    content = response.body.decode()
+    assert "Google" in content
+    assert "#4285F4" in content  # Google blue color
