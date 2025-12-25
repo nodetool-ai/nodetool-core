@@ -199,6 +199,42 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="GITHUB_CLIENT_ID",
+    group="GitHub",
+    description="GitHub OAuth 2.0 Client ID for authenticating with GitHub APIs",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="GITHUB_CLIENT_SECRET",
+    group="GitHub",
+    description="GitHub OAuth 2.0 Client Secret for authenticating with GitHub APIs",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="HF_OAUTH_CLIENT_ID",
+    group="HuggingFace",
+    description="Hugging Face OAuth 2.0 Client ID for authenticating with Hugging Face APIs",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="HF_OAUTH_CLIENT_SECRET",
+    group="HuggingFace",
+    description="Hugging Face OAuth 2.0 Client Secret for authenticating with Hugging Face APIs",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="OPENROUTER_CLIENT_ID",
+    group="OpenRouter",
+    description="OpenRouter OAuth 2.0 Client ID for authenticating with OpenRouter APIs",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="OPENROUTER_CLIENT_SECRET",
+    group="OpenRouter",
+    description="OpenRouter OAuth 2.0 Client Secret for authenticating with OpenRouter APIs",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ELEVENLABS_API_KEY",
     group="ElevenLabs",
     description="ElevenLabs API key for high-quality text-to-speech services",
