@@ -185,8 +185,8 @@ class TestOpenRouterProvider:
             assert result.role == "assistant"
             assert result.content == "Test response with cost tracking"
 
-            # Verify cost tracking
-            assert provider.cost == 0.0025
+            # Verify cost tracking (converted from USD to credits: 0.0025 USD * 100 = 0.25 credits)
+            assert provider.cost == 0.25
             assert provider.usage["prompt_tokens"] == 100
             assert provider.usage["completion_tokens"] == 50
             assert provider.usage["total_tokens"] == 150
