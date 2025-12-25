@@ -103,14 +103,17 @@ def generate_pkce_pair() -> tuple[str, str]:
     Returns:
         tuple: (code_verifier, code_challenge)
     """
+    import base64
+
     # Generate code_verifier: 43-128 characters, base64url-encoded
     code_verifier = secrets.token_urlsafe(96)  # 128 chars
 
     # Generate code_challenge: base64url(sha256(code_verifier))
+    # Per RFC 7636, use base64url encoding (not hex)
     challenge_bytes = hashlib.sha256(code_verifier.encode("utf-8")).digest()
     code_challenge = (
-        challenge_bytes.hex()
-    )  # Use hex instead of base64url for simplicity with HF
+        base64.urlsafe_b64encode(challenge_bytes).decode("utf-8").rstrip("=")
+    )
 
     return code_verifier, code_challenge
 

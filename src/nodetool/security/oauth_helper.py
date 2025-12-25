@@ -5,6 +5,7 @@ This module provides convenient functions for working with OAuth credentials,
 including listing accounts, getting tokens, and refreshing tokens.
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 import httpx
@@ -80,8 +81,6 @@ async def refresh_huggingface_token(user_id: str, account_id: str) -> bool:
     Returns:
         True if refresh was successful, False otherwise.
     """
-    from datetime import UTC, datetime, timedelta
-
     credential = await OAuthCredential.find_by_account(
         user_id=user_id, provider="huggingface", account_id=account_id
     )
