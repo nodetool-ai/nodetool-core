@@ -20,6 +20,19 @@ from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 
 
+# Mock tiktoken to avoid network calls during tests
+@pytest.fixture(scope="session", autouse=True)
+def mock_tiktoken():
+    """Mock tiktoken to prevent network calls for encoding downloads."""
+    mock_encoding = MagicMock()
+    mock_encoding.encode.return_value = [1, 2, 3, 4, 5]  # Mock token IDs
+    mock_encoding.decode.return_value = "mocked text"
+    
+    with patch("tiktoken.get_encoding", return_value=mock_encoding):
+        with patch("tiktoken.encoding_for_model", return_value=mock_encoding):
+            yield mock_encoding
+
+
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom markers."""
