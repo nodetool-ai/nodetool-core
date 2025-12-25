@@ -66,6 +66,21 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         log.debug(f"Secret '{key}' found in cache for user {user_id}")
         return _SECRET_CACHE[(user_id, key)]
 
+    # Special handling for HF_TOKEN via OAuth (Prioritize OAuth over stored secrets)
+    if key == "HF_TOKEN":
+        try:
+            from nodetool.models.oauth_credential import OAuthCredential
+            creds = await OAuthCredential.list_for_user_and_provider(
+                user_id=user_id, provider="huggingface", limit=1
+            )
+            if creds:
+                log.debug(f"Secret '{key}' found in OAuth credentials for user {user_id}")
+                value = await creds[0].get_decrypted_access_token()
+                _SECRET_CACHE[(user_id, key)] = value
+                return value
+        except Exception as e:
+            log.debug(f"Failed to lookup OAuth credential for {key}: {e}")
+
     # 2. Check database
     try:
         secret = await Secret.find(user_id, key)
@@ -110,16 +125,10 @@ async def get_secret_required(key: str, user_id: str) -> str:
     Raises:
         ValueError: If the secret is not found.
     """
-    # 1. Check database
-    secret = await Secret.find(user_id, key)
-    if secret:
-        log.debug(f"Secret '{key}' found in database for user {user_id}")
-        return await secret.get_decrypted_value()
-
-    # 2. Check environment variable
-    if os.environ.get(key):
-        log.debug(f"Secret '{key}' found in environment variable")
-        return os.environ.get(key)
+    # 1. Try get_secret first (handles OAuth, DB, Env, Cache)
+    value = await get_secret(key, user_id)
+    if value:
+        return value
 
     log.debug(f"Secret '{key}' not found for user {user_id}")
     raise ValueError(f"Required secret '{key}' not found, please set it in the settings menu.")
@@ -216,6 +225,23 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
         else:
             keys_not_in_cache.append(key)
             result[key] = None  # Initialize
+
+    # Special handling for HF_TOKEN via OAuth (Prioritize OAuth)
+    if "HF_TOKEN" in keys_not_in_cache:
+        try:
+            from nodetool.models.oauth_credential import OAuthCredential
+            creds = await OAuthCredential.list_for_user_and_provider(
+                user_id=user_id, provider="huggingface", limit=1
+            )
+            if creds:
+                log.debug(f"Secret 'HF_TOKEN' found in OAuth credentials for user {user_id}")
+                value = await creds[0].get_decrypted_access_token()
+                result["HF_TOKEN"] = value
+                _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
+                # Remove from keys to look up in DB
+                keys_not_in_cache.remove("HF_TOKEN")
+        except Exception as e:
+             log.debug(f"Failed to lookup OAuth credential for HF_TOKEN: {e}")
 
     if not keys_not_in_cache:
         return result

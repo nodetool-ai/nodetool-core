@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
@@ -22,7 +23,7 @@ from nodetool.models.oauth_credential import OAuthCredential
 
 log = get_logger(__name__)
 
-router = APIRouter(prefix="/oauth", tags=["oauth"])
+router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 # In-memory storage for OAuth state and PKCE verifiers
 # In production, this could be Redis or a database table with TTL
@@ -32,8 +33,8 @@ _oauth_state_store: dict[str, dict[str, Any]] = {}
 HF_AUTHORIZATION_URL = "https://huggingface.co/oauth/authorize"
 HF_TOKEN_URL = "https://huggingface.co/oauth/token"
 HF_WHOAMI_URL = "https://huggingface.co/api/whoami-v2"
-HF_CLIENT_ID = "nodetool-local"  # This would be configured per deployment
-HF_SCOPES = ["read", "write", "inference"]
+HF_CLIENT_ID = "54d170bb-b441-445b-a167-56935d718d4e"
+HF_SCOPES = ["openid", "read-repos", "inference-api"]
 
 
 class OAuthStartResponse(BaseModel):
@@ -123,6 +124,190 @@ def generate_state() -> str:
     return secrets.token_urlsafe(32)
 
 
+def oauth_html_response(
+    title: str,
+    success: bool,
+    username: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+    auto_close: bool = False
+) -> HTMLResponse:
+    """
+    Generate a styled HTML response for OAuth callback.
+
+    Args:
+        title: Page title
+        success: Whether authentication was successful
+        username: Username to display (for success)
+        error: Error type (for errors)
+        error_description: Detailed error message
+        auto_close: Whether to attempt auto-closing the window
+
+    Returns:
+        HTMLResponse with styled content
+    """
+    # Get HuggingFace brand colors
+    primary_color = "#FFD21E"  # HF yellow
+    success_color = "#22C55E"  # Green
+    error_color = "#EF4444"    # Red
+
+    # Icon (check or X)
+    icon = "✓" if success else "✗"
+    icon_color = success_color if success else error_color
+
+    # Status text
+    if success:
+        heading = "Authentication Successful"
+        message = "Your Hugging Face account has been connected successfully."
+        details = f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
+    else:
+        heading = "Authentication Failed"
+        message = error_description or "An error occurred during authentication."
+        details = f"<strong>Error:</strong> {error or 'Unknown error'}" if error else ""
+
+    # Auto-close script
+    auto_close_script = ""
+    if auto_close:
+        auto_close_script = """
+            <script>
+                setTimeout(function() {
+                    window.close();
+                }, 5000);
+            </script>
+        """
+
+    html_string = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+
+        .container {{
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 48px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }}
+
+        .icon {{
+            font-size: 64px;
+            color: {icon_color};
+            margin-bottom: 24px;
+        }}
+
+        h1 {{
+            font-size: 28px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+        }}
+
+        .message {{
+            font-size: 16px;
+            color: #4a4a4a;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }}
+
+        .details {{
+            background: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 24px 0;
+            font-size: 14px;
+            color: #666;
+        }}
+
+        .close-hint {{
+            margin-top: 24px;
+            font-size: 14px;
+            color: #888;
+        }}
+
+        .logo {{
+            margin-top: 32px;
+            font-size: 14px;
+            color: #999;
+        }}
+
+        .close-button {{
+            background: {primary_color};
+            color: #1a1a1a;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 24px;
+            transition: transform 0.2s;
+        }}
+
+        .close-button:hover {{
+            transform: translateY(-2px);
+        }}
+
+        .close-button:active {{
+            transform: translateY(0);
+        }}
+
+        @media (max-width: 480px) {{
+            .container {{
+                padding: 32px 24px;
+            }}
+
+            h1 {{
+                font-size: 24px;
+            }}
+
+            .icon {{
+                font-size: 48px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">{icon}</div>
+        <h1>{heading}</h1>
+        <p class="message">{message}</p>
+        {f'<div class="details">{details}</div>' if details else ''}
+        <button class="close-button" onclick="window.close()">Close Window</button>
+        <div class="close-hint">
+            You can also close this window manually
+        </div>
+        <div class="logo">
+            Powered by NodeTool
+        </div>
+    </div>
+    {auto_close_script}
+</body>
+</html>
+    """
+    return HTMLResponse(content=html_string)
+
+
 @router.get("/hf/start", response_model=OAuthStartResponse)
 async def start_huggingface_oauth(
     request: Request,
@@ -148,13 +333,13 @@ async def start_huggingface_oauth(
 
     # Determine redirect URI based on request
     # For local development, use 127.0.0.1
-    host = request.headers.get("host", "127.0.0.1:8000")
+    host = request.headers.get("host", "127.0.0.1:7777")
     # Extract just the host and port, handle both with and without scheme
     if "://" in host:
         host = host.split("://")[1]
     # Use http for local, https for production
     scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
-    redirect_uri = f"{scheme}://{host}/oauth/hf/callback"
+    redirect_uri = f"{scheme}://{host}/api/oauth/hf/callback"
 
     # Store state and verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
@@ -184,11 +369,13 @@ async def start_huggingface_oauth(
 
 @router.get("/hf/callback")
 async def huggingface_oauth_callback(
-    code: Optional[str] = Query(None, description="Authorization code from Hugging Face"),
+    code: Optional[str] = Query(
+        None, description="Authorization code from Hugging Face"
+    ),
     state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
     error: Optional[str] = Query(None, description="Error from OAuth provider"),
     error_description: Optional[str] = Query(None, description="Error description"),
-) -> str:
+) -> HTMLResponse:
     """
     Handle Hugging Face OAuth callback.
 
@@ -206,64 +393,44 @@ async def huggingface_oauth_callback(
     # Check for OAuth errors
     if error:
         log.error(f"OAuth error: {error}, description: {error_description}")
-        return f"""
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> {error}</p>
-                <p><strong>Description:</strong> {error_description or 'No description provided'}</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error=error,
+            error_description=error_description or "No description provided"
+        )
 
     # Validate required parameters
     if not code or not state:
         log.error("Missing required parameters: code and state")
-        return """
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> invalid_request</p>
-                <p>Missing required parameters (code or state).</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_request",
+            error_description="Missing required parameters (code or state)."
+        )
 
     # Validate state
     state_data = _oauth_state_store.get(state)
     if not state_data:
         log.error(f"Invalid or expired state: {state}")
-        return """
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> invalid_state</p>
-                <p>The authentication request has expired or is invalid. Please try again.</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired or is invalid. Please try again."
+        )
 
     # Check if state is expired (5 minutes)
     if datetime.now(UTC) - state_data["created_at"] > timedelta(minutes=5):
         del _oauth_state_store[state]
         log.error(f"Expired state: {state}")
-        return """
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> invalid_state</p>
-                <p>The authentication request has expired. Please try again.</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired. Please try again."
+        )
 
     user_id = state_data["user_id"]
     code_verifier = state_data["code_verifier"]
@@ -292,18 +459,12 @@ async def huggingface_oauth_callback(
                 log.error(
                     f"Token exchange failed: {token_response.status_code}, {token_response.text}"
                 )
-                return f"""
-                <html>
-                    <head><title>OAuth Error</title></head>
-                    <body>
-                        <h1>Authentication Failed</h1>
-                        <p><strong>Error:</strong> token_exchange_failed</p>
-                        <p>Failed to exchange authorization code for tokens.</p>
-                        <p><strong>Details:</strong> {token_response.text}</p>
-                        <p>You can close this window.</p>
-                    </body>
-                </html>
-                """
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}"
+                )
 
             token_data = token_response.json()
 
@@ -315,17 +476,12 @@ async def huggingface_oauth_callback(
 
             if not access_token:
                 log.error("No access_token in token response")
-                return """
-                <html>
-                    <head><title>OAuth Error</title></head>
-                    <body>
-                        <h1>Authentication Failed</h1>
-                        <p><strong>Error:</strong> token_exchange_failed</p>
-                        <p>No access token received from Hugging Face.</p>
-                        <p>You can close this window.</p>
-                    </body>
-                </html>
-                """
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description="No access token received from Hugging Face."
+                )
 
             # Get user info from Hugging Face
             whoami_response = await client.get(
@@ -364,50 +520,29 @@ async def huggingface_oauth_callback(
 
             log.info("Successfully stored Hugging Face credential")
 
-            return f"""
-            <html>
-                <head><title>OAuth Success</title></head>
-                <body>
-                    <h1>Authentication Successful</h1>
-                    <p>Your Hugging Face account has been connected successfully.</p>
-                    <p><strong>Username:</strong> {username or 'Unknown'}</p>
-                    <p>You can close this window.</p>
-                    <script>
-                        // Try to close the window after 3 seconds
-                        setTimeout(function() {{
-                            window.close();
-                        }}, 3000);
-                    </script>
-                </body>
-            </html>
-            """
+            return oauth_html_response(
+                title="OAuth Success",
+                success=True,
+                username=username,
+                auto_close=True
+            )
 
     except httpx.HTTPError as e:
         log.error(f"HTTP error during token exchange: {e}")
-        return f"""
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> network_error</p>
-                <p>Failed to communicate with Hugging Face: {str(e)}</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="network_error",
+            error_description=f"Failed to communicate with Hugging Face: {str(e)}"
+        )
     except Exception as e:
         log.error(f"Unexpected error during OAuth callback: {e}", exc_info=True)
-        return f"""
-        <html>
-            <head><title>OAuth Error</title></head>
-            <body>
-                <h1>Authentication Failed</h1>
-                <p><strong>Error:</strong> internal_error</p>
-                <p>An unexpected error occurred: {str(e)}</p>
-                <p>You can close this window.</p>
-            </body>
-        </html>
-        """
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="internal_error",
+            error_description=f"An unexpected error occurred: {str(e)}"
+        )
 
 
 @router.get("/hf/tokens", response_model=OAuthTokensResponse)
@@ -494,7 +629,9 @@ async def refresh_huggingface_token(
             )
 
             if token_response.status_code != 200:
-                log.error(f"Token refresh failed: {token_response.status_code}, {token_response.text}")
+                log.error(
+                    f"Token refresh failed: {token_response.status_code}, {token_response.text}"
+                )
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -616,7 +753,9 @@ async def get_huggingface_whoami_endpoint(
                 )
 
             if response.status_code != 200:
-                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
+                log.error(
+                    f"Failed to get whoami: {response.status_code}, {response.text}"
+                )
                 raise HTTPException(
                     status_code=response.status_code,
                     detail={
