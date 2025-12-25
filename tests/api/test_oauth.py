@@ -368,3 +368,47 @@ async def test_oauth_credential_to_dict_safe(user_id):
     assert "encrypted_refresh_token" not in safe_dict
     assert safe_dict["account_id"] == "test_safe_dict"
     assert safe_dict["provider"] == "huggingface"
+
+
+@pytest.mark.asyncio
+async def test_oauth_whoami_endpoint(client, headers, user_id):
+    """Test the whoami endpoint."""
+    account_id = "whoami_endpoint_test"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="huggingface",
+        account_id=account_id,
+        access_token="valid_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": account_id,
+        "name": "testuser",
+        "email": "test@example.com",
+        "type": "user",
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = client.get(f"/oauth/hf/whoami?account_id={account_id}", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == account_id
+        assert data["name"] == "testuser"
+
+
+@pytest.mark.asyncio
+async def test_oauth_whoami_endpoint_no_credential(client, headers):
+    """Test the whoami endpoint with non-existent credential."""
+    response = client.get("/oauth/hf/whoami?account_id=nonexistent", headers=headers)
+
+    assert response.status_code == 404
