@@ -48,7 +48,8 @@ class TestOAuthAPI:
         auth_url = json_response["auth_url"]
         assert "https://accounts.google.com/o/oauth2/v2/auth" in auth_url
         assert "client_id=test-client-id" in auth_url
-        assert "redirect_uri=http://127.0.0.1:8000/api/oauth/callback" in auth_url
+        # URL encoded version of http://127.0.0.1:8000/api/oauth/callback
+        assert "redirect_uri=http%3A%2F%2F127.0.0.1%3A8000%2Fapi%2Foauth%2Fcallback" in auth_url
         assert "response_type=code" in auth_url
         assert "code_challenge=" in auth_url
         assert "code_challenge_method=S256" in auth_url

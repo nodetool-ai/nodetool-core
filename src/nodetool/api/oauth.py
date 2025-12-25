@@ -21,8 +21,10 @@ The OAuth flow:
 import base64
 import hashlib
 import os
+import secrets
 import time
 from typing import Optional
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -63,7 +65,7 @@ def generate_pkce_pair() -> tuple[str, str]:
     Returns:
         Tuple of (code_verifier, code_challenge)
     """
-    code_verifier = b64url(os.urandom(32))
+    code_verifier = b64url(secrets.token_bytes(32))
     code_challenge = b64url(hashlib.sha256(code_verifier.encode()).digest())
     return code_verifier, code_challenge
 
@@ -107,7 +109,7 @@ async def oauth_start() -> OAuthStartResponse:
 
     # Generate PKCE parameters
     code_verifier, code_challenge = generate_pkce_pair()
-    state = b64url(os.urandom(16))
+    state = b64url(secrets.token_bytes(16))
 
     # Store code verifier for later use in callback
     state_store[state] = code_verifier
@@ -118,7 +120,7 @@ async def oauth_start() -> OAuthStartResponse:
     port = os.environ.get("PORT", "8000")
     redirect_uri = f"http://127.0.0.1:{port}/api/oauth/callback"
 
-    # Build authorization URL
+    # Build authorization URL with proper URL encoding
     scope = " ".join(DEFAULT_SCOPES)
     params = {
         "client_id": client_id,
@@ -132,9 +134,8 @@ async def oauth_start() -> OAuthStartResponse:
         "prompt": "consent",  # Force consent to ensure refresh token
     }
 
-    # Build query string manually to avoid URL encoding issues
-    query_parts = [f"{k}={v}" for k, v in params.items()]
-    auth_url = f"{AUTH_URL}?{'&'.join(query_parts)}"
+    # Use urlencode for proper URL encoding
+    auth_url = f"{AUTH_URL}?{urlencode(params)}"
 
     log.info(f"OAuth flow started with state: {state}")
     return OAuthStartResponse(auth_url=auth_url, state=state)
