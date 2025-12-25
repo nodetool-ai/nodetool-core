@@ -316,7 +316,7 @@ class TestOpenAIProvider(BaseProviderTest):
     @pytest.mark.asyncio
     async def test_openai_error_recognition(self):
         """Test that OpenAI-specific errors are properly recognized."""
-        provider = self.create_provider()
+        _ = self.create_provider()
 
         # Test rate limit error recognition
         rate_limit_error = self.create_openai_error("rate_limit")

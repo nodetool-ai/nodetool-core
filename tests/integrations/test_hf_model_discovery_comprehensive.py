@@ -86,7 +86,7 @@ async def test_search_config_consistency():
     )
 
     # Check that checkpoint variants inherit from base types correctly
-    checkpoint_types = [k for k in HF_SEARCH_TYPE_CONFIG.keys() if k.endswith("_checkpoint")]
+    checkpoint_types = [k for k in HF_SEARCH_TYPE_CONFIG if k.endswith("_checkpoint")]
 
     for ckpt_type in checkpoint_types:
         base_type = ckpt_type.replace("_checkpoint", "")

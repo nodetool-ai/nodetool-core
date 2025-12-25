@@ -62,7 +62,7 @@ add_node_type(Concat)
 def mock_registry_with_test_nodes():
     """
     Mock the Registry to return test node metadata for MCP server tests.
-    
+
     This fixture automatically patches the Registry to include test nodes
     that are referenced in the MCP server tests.
     """
@@ -155,10 +155,6 @@ def mock_registry_with_test_nodes():
     )
 
     # Patch the Registry methods to return our test data
-    original_get_all_installed_nodes = Registry.get_all_installed_nodes
-    original_find_node_by_type = Registry.find_node_by_type
-    original_list_installed_packages = Registry.list_installed_packages
-
     def mock_get_all_installed_nodes(self):
         # Return test nodes
         return test_nodes

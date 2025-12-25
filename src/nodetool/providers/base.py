@@ -145,7 +145,7 @@ class BaseProvider:
 
     log_file: str | None = None
     cost: float = 0.0
-    usage: dict[str, int] = {}
+    usage: ClassVar[dict[str, int]] = {}
     provider_name: str = ""
 
     @classmethod
