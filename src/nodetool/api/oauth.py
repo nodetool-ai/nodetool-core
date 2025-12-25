@@ -79,6 +79,16 @@ class OAuthRefreshResponse(BaseModel):
     message: str
 
 
+class OAuthWhoamiResponse(BaseModel):
+    """Response for Hugging Face whoami endpoint."""
+
+    id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    type: Optional[str] = None
+    orgs: Optional[list[dict]] = None
+
+
 class OAuthErrorResponse(BaseModel):
     """Standard error response for OAuth endpoints."""
 
@@ -543,6 +553,100 @@ async def refresh_huggingface_token(
         raise
     except Exception as e:
         log.error(f"Unexpected error during token refresh: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "error_description": f"An unexpected error occurred: {str(e)}",
+            },
+        ) from e
+
+
+@router.get("/hf/whoami", response_model=OAuthWhoamiResponse)
+async def get_huggingface_whoami_endpoint(
+    account_id: str = Query(..., description="Account ID to get information for"),
+    user_id: str = Depends(current_user),
+) -> OAuthWhoamiResponse:
+    """
+    Get Hugging Face account information using the stored OAuth token.
+
+    This endpoint demonstrates how to use the stored OAuth credentials
+    to make authenticated requests to the Hugging Face API.
+
+    Makes a request to https://huggingface.co/api/whoami-v2 and returns
+    parsed account metadata.
+
+    Args:
+        account_id: The account ID to get information for.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        OAuthWhoamiResponse with account information.
+    """
+    # Find the credential
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="huggingface", account_id=account_id
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=404, detail=f"No credential found for account_id: {account_id}"
+        )
+
+    # Get the access token
+    access_token = await credential.get_decrypted_access_token()
+
+    # Make request to Hugging Face API
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                HF_WHOAMI_URL,
+                headers={"Authorization": f"{credential.token_type} {access_token}"},
+                timeout=30.0,
+            )
+
+            if response.status_code == 401:
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "unauthorized",
+                        "error_description": "Token expired or invalid. Please refresh or re-authenticate.",
+                    },
+                )
+
+            if response.status_code != 200:
+                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail={
+                        "error": "api_error",
+                        "error_description": f"Hugging Face API error: {response.text}",
+                    },
+                )
+
+            data = response.json()
+
+            return OAuthWhoamiResponse(
+                id=data.get("id", ""),
+                name=data.get("name"),
+                email=data.get("email"),
+                type=data.get("type"),
+                orgs=data.get("orgs"),
+            )
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during whoami request: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "network_error",
+                "error_description": f"Failed to communicate with Hugging Face: {str(e)}",
+            },
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error during whoami request: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={
