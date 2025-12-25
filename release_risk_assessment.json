@@ -1,0 +1,322 @@
+{
+  "report_metadata": {
+    "date": "2025-12-25",
+    "repository": "nodetool-ai/nodetool-core",
+    "analysis_type": "release_risk_assessment",
+    "generated_by": "automated_codebase_scan",
+    "status": "CRITICAL_AND_HIGH_ISSUES_ADDRESSED"
+  },
+  "executive_summary": {
+    "overall_risk_level": "LOW",
+    "release_readiness": "READY",
+    "blocking_issues_count": 0,
+    "fixed_issues_count": 2,
+    "accepted_risks_count": 1,
+    "total_remaining_issues": 384,
+    "key_fixes_applied": [
+      "Deleted backup files (.bak) from source tree",
+      "Replaced eval() with AST-based safe expression evaluator"
+    ],
+    "accepted_risks": [
+      "shell=True in deployment files (required for local deployment functionality)"
+    ]
+  },
+  "statistics": {
+    "source_files": 327,
+    "test_files": 188,
+    "test_file_ratio": 0.57,
+    "broad_exception_handlers": 150,
+    "type_ignores": 130,
+    "todos_fixmes": 15,
+    "not_implemented_errors": 25,
+    "skipped_tests": 17,
+    "deprecated_code_locations": 20,
+    "backup_files": 0,
+    "shell_true_usages": 3,
+    "eval_usages": 0,
+    "pass_statements": 180
+  },
+  "fixed_issues": [
+    {
+      "id": "BACKUP-001",
+      "severity": "CRITICAL",
+      "category": "tech-debt",
+      "title": "Backup files in source tree",
+      "status": "FIXED",
+      "resolution": "Deleted backup files and added *.bak* patterns to .gitignore",
+      "files_affected": [
+        "src/nodetool/agents/task_planner.py.bak",
+        "src/nodetool/agents/task_planner.py.bak2",
+        ".gitignore"
+      ]
+    },
+    {
+      "id": "SEC-001",
+      "severity": "HIGH",
+      "category": "security",
+      "title": "Shell injection risk with shell=True",
+      "status": "ACCEPTED",
+      "rationale": "Required for local deployment functionality - shell features like || true, mkdir -p, chmod are needed",
+      "mitigations": [
+        "Nodetool targets local environment deployment",
+        "Commands are from controlled configuration, not user input"
+      ],
+      "files_affected": [
+        "src/nodetool/deploy/docker.py",
+        "src/nodetool/deploy/self_hosted.py"
+      ]
+    },
+    {
+      "id": "SEC-002",
+      "severity": "HIGH",
+      "category": "security",
+      "title": "eval() usage in math tools",
+      "status": "FIXED",
+      "resolution": "Implemented SafeExpressionEvaluator class using AST parsing",
+      "files_affected": [
+        "src/nodetool/agents/tools/math_tools.py"
+      ]
+    }
+  ],
+  "high_priority_issues": [
+    {
+      "id": "FRAG-001",
+      "severity": "MEDIUM",
+      "category": "fragile",
+      "title": "Excessive broad exception handling",
+      "count": 150,
+      "sample_files": [
+        "src/nodetool/chat/chat_cli.py",
+        "src/nodetool/messaging/help_message_processor.py",
+        "src/nodetool/workflows/processing_context.py",
+        "src/nodetool/providers/llama_server_manager.py"
+      ],
+      "risk_explanation": "Masks underlying bugs, makes debugging difficult, creates silent failures",
+      "suggested_fix": "Replace with specific exception types and add logging",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "INCMP-001",
+      "severity": "MEDIUM",
+      "category": "incomplete",
+      "title": "NotImplementedError instances",
+      "count": 25,
+      "sample_files": [
+        "src/nodetool/providers/base.py",
+        "src/nodetool/models/supabase_adapter.py",
+        "src/nodetool/models/postgres_adapter.py",
+        "src/nodetool/deploy/runpod.py"
+      ],
+      "risk_explanation": "Methods that will crash at runtime when called",
+      "suggested_fix": "Document limitations or implement graceful degradation",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "TEST-001",
+      "severity": "MEDIUM",
+      "category": "test-gap",
+      "title": "Skipped tests",
+      "count": 17,
+      "sample_files": [
+        "tests/agents/test_simple_agent.py",
+        "tests/agents/tools/test_chroma_tools.py",
+        "tests/workflows/test_processing_context_missing.py"
+      ],
+      "risk_explanation": "Untested code paths may contain bugs",
+      "suggested_fix": "Use mocking for network tests, create separate test profiles",
+      "confidence": "HIGH"
+    }
+  ],
+  "medium_priority_issues": [
+    {
+      "id": "TODO-001",
+      "severity": "LOW",
+      "category": "incomplete",
+      "title": "TODO/FIXME comments",
+      "count": 15,
+      "notable_items": [
+        {
+          "file": "src/nodetool/workflows/base_node.py",
+          "line": 1851,
+          "comment": "TODO: handle more comfy special nodes"
+        },
+        {
+          "file": "src/nodetool/media/video/video_utils.py",
+          "line": 268,
+          "comment": "TODO: Implement cv2 fallback for reading"
+        },
+        {
+          "file": "src/nodetool/deploy/deploy_to_gcp.py",
+          "line": 133,
+          "comment": "TODO: Add gpu support to GCPDeployment"
+        }
+      ],
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "DEPR-001",
+      "severity": "LOW",
+      "category": "tech-debt",
+      "title": "Deprecated/legacy code",
+      "count": 20,
+      "notable_items": [
+        {
+          "file": "src/nodetool/workflows/run_workflow_cli.py",
+          "description": "Entire module deprecated"
+        },
+        {
+          "file": "src/nodetool/providers/ollama_provider.py",
+          "description": "_process_image_content method deprecated"
+        },
+        {
+          "file": "src/nodetool/media/video/video_utils.py",
+          "description": "Multiple _legacy_* functions"
+        }
+      ],
+      "confidence": "HIGH"
+    },
+    {
+      "id": "TYPE-001",
+      "severity": "LOW",
+      "category": "tech-debt",
+      "title": "Type ignores",
+      "count": 130,
+      "risk_explanation": "May hide actual type errors, reduces static analysis effectiveness",
+      "confidence": "LOW"
+    }
+  ],
+  "issues_by_category": {
+    "incomplete": {
+      "count": 40,
+      "description": "NotImplementedError, TODO comments, placeholder code"
+    },
+    "broken": {
+      "count": 0,
+      "description": "Logic errors, runtime crashes"
+    },
+    "fragile": {
+      "count": 150,
+      "description": "Broad exception handling, missing edge cases"
+    },
+    "tech-debt": {
+      "count": 162,
+      "description": "Backup files, type ignores, deprecated code"
+    },
+    "security": {
+      "count": 4,
+      "description": "shell=True, eval(), potential injection points"
+    },
+    "test-gap": {
+      "count": 17,
+      "description": "Skipped tests, missing test coverage"
+    }
+  },
+  "remediation_plan": {
+    "immediate": {
+      "timeframe": "Before release",
+      "items": [
+        {
+          "action": "Delete backup files",
+          "effort": "5 minutes",
+          "issue_ids": ["BACKUP-001"]
+        },
+        {
+          "action": "Security audit shell commands",
+          "effort": "2 hours",
+          "issue_ids": ["SEC-001"]
+        },
+        {
+          "action": "Review eval() security",
+          "effort": "1 hour",
+          "issue_ids": ["SEC-002"]
+        }
+      ]
+    },
+    "short_term": {
+      "timeframe": "Next sprint",
+      "items": [
+        {
+          "action": "Address critical TODOs",
+          "effort": "1 day"
+        },
+        {
+          "action": "Enable skipped tests with mocking",
+          "effort": "2 days"
+        },
+        {
+          "action": "Improve exception handling in critical paths",
+          "effort": "3 days"
+        }
+      ]
+    },
+    "medium_term": {
+      "timeframe": "Next quarter",
+      "items": [
+        {
+          "action": "Remove deprecated code",
+          "effort": "1 week"
+        },
+        {
+          "action": "Complete NotImplementedError methods",
+          "effort": "2 weeks"
+        },
+        {
+          "action": "Reduce type ignores",
+          "effort": "Ongoing"
+        }
+      ]
+    }
+  },
+  "quick_wins": [
+    {
+      "action": "Delete .bak files",
+      "time": "5 minutes",
+      "files_affected": 2
+    },
+    {
+      "action": "Add *.bak* to .gitignore",
+      "time": "2 minutes",
+      "files_affected": 1
+    },
+    {
+      "action": "Add deprecation warnings to legacy code",
+      "time": "30 minutes",
+      "files_affected": 10
+    },
+    {
+      "action": "Document known limitations in README",
+      "time": "1 hour",
+      "files_affected": 1
+    }
+  ],
+  "deeper_refactors": [
+    {
+      "action": "Replace shell=True with list-based subprocess",
+      "time": "1-2 days",
+      "complexity": "Medium"
+    },
+    {
+      "action": "Replace eval() with safe expression parser",
+      "time": "1 day",
+      "complexity": "Medium"
+    },
+    {
+      "action": "Add specific exception handling",
+      "time": "1 week",
+      "complexity": "High",
+      "locations_affected": 150
+    },
+    {
+      "action": "Complete NotImplementedError methods",
+      "time": "2 weeks",
+      "complexity": "High"
+    }
+  ],
+  "clarification_questions": [
+    "Are the deployment modules (RunPod, GCP, Docker) actively used in production?",
+    "Is there a CI pipeline running all tests with full dependencies?",
+    "What is the target Python version for this release?",
+    "Is there a formal security review process in place?",
+    "Are the .bak files intentionally kept for rollback purposes?"
+  ]
+}

@@ -13,12 +13,133 @@ Tools included:
 - ConversionTool: Unit conversions
 """
 
+import ast
 import math
+import operator
 import statistics
 from typing import Any, ClassVar, Dict
 
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
+
+
+# Safe AST-based expression evaluator
+class SafeExpressionEvaluator(ast.NodeVisitor):
+    """
+    A safe mathematical expression evaluator using AST parsing.
+
+    Only allows basic arithmetic operations, safe math functions,
+    and numeric literals. No arbitrary code execution is possible.
+    """
+
+    # Allowed binary operators
+    OPERATORS: ClassVar[Dict[type, Any]] = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+    }
+
+    # Allowed unary operators
+    UNARY_OPERATORS: ClassVar[Dict[type, Any]] = {
+        ast.UAdd: operator.pos,
+        ast.USub: operator.neg,
+    }
+
+    # Safe math functions
+    SAFE_FUNCTIONS: ClassVar[Dict[str, Any]] = {
+        "sqrt": math.sqrt,
+        "abs": abs,
+        "round": round,
+        "sin": math.sin,
+        "cos": math.cos,
+        "tan": math.tan,
+        "log": math.log,
+        "log10": math.log10,
+        "exp": math.exp,
+        "floor": math.floor,
+        "ceil": math.ceil,
+        "pow": pow,
+        "min": min,
+        "max": max,
+    }
+
+    # Safe constants
+    SAFE_CONSTANTS: ClassVar[Dict[str, float]] = {
+        "pi": math.pi,
+        "e": math.e,
+        "tau": math.tau,
+    }
+
+    def visit_BinOp(self, node: ast.BinOp) -> float:
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        op_type = type(node.op)
+        if op_type not in self.OPERATORS:
+            raise ValueError(f"Unsupported operator: {op_type.__name__}")
+        return self.OPERATORS[op_type](left, right)
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> float:
+        operand = self.visit(node.operand)
+        op_type = type(node.op)
+        if op_type not in self.UNARY_OPERATORS:
+            raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
+        return self.UNARY_OPERATORS[op_type](operand)
+
+    def visit_Constant(self, node: ast.Constant) -> float:
+        if isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError(f"Unsupported constant type: {type(node.value)}")
+
+    def visit_Name(self, node: ast.Name) -> float:
+        name = node.id.lower()
+        if name in self.SAFE_CONSTANTS:
+            return self.SAFE_CONSTANTS[name]
+        raise ValueError(f"Unknown variable: {name}")
+
+    def visit_Call(self, node: ast.Call) -> float:
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("Only simple function calls are supported")
+
+        func_name = node.func.id.lower()
+        if func_name not in self.SAFE_FUNCTIONS:
+            raise ValueError(f"Unknown function: {func_name}")
+
+        args = [self.visit(arg) for arg in node.args]
+        return self.SAFE_FUNCTIONS[func_name](*args)
+
+    def visit_Expression(self, node: ast.Expression) -> float:
+        return self.visit(node.body)
+
+    def generic_visit(self, node: ast.AST) -> float:
+        raise ValueError(f"Unsupported expression type: {type(node).__name__}")
+
+
+def safe_eval_expression(expression: str) -> float:
+    """
+    Safely evaluate a mathematical expression using AST parsing.
+
+    Args:
+        expression: A mathematical expression string
+
+    Returns:
+        The numeric result of the expression
+
+    Raises:
+        ValueError: If the expression contains invalid syntax or operations
+    """
+    # Preprocess: convert ^ to ** for power notation
+    expression = expression.replace("^", "**")
+
+    try:
+        tree = ast.parse(expression, mode='eval')
+        evaluator = SafeExpressionEvaluator()
+        return evaluator.visit(tree)
+    except SyntaxError as e:
+        raise ValueError(f"Invalid expression syntax: {e}") from e
 
 
 class CalculatorTool(Tool):
@@ -45,20 +166,8 @@ class CalculatorTool(Tool):
         expression = params["expression"].strip()
 
         try:
-            # Replace common math functions
-            safe_expression = expression.lower()
-            safe_expression = safe_expression.replace("sqrt", "math.sqrt")
-            safe_expression = safe_expression.replace("abs", "abs")
-            safe_expression = safe_expression.replace("round", "round")
-            safe_expression = safe_expression.replace("^", "**")  # Convert ^ to **
-
-            # Only allow safe characters and functions
-            allowed_chars = set("0123456789+-*/.() mathsqrtabsround,")
-            if not all(c in allowed_chars for c in safe_expression.replace(" ", "")):
-                return {"error": "Expression contains invalid characters"}
-
-            # Evaluate the expression
-            result = eval(safe_expression, {"__builtins__": {}, "math": math}, {})
+            # Use safe AST-based expression evaluator
+            result = safe_eval_expression(expression)
 
             return {
                 "expression": expression,
@@ -66,8 +175,10 @@ class CalculatorTool(Tool):
                 "formatted_result": f"{expression} = {result}",
             }
 
-        except Exception as e:
+        except (ValueError, ZeroDivisionError, OverflowError) as e:
             return {"expression": expression, "error": f"Calculation error: {str(e)}"}
+        except Exception as e:
+            return {"expression": expression, "error": f"Unexpected error: {str(e)}"}
 
 
 class StatisticsTool(Tool):
