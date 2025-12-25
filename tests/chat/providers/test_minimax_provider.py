@@ -240,7 +240,7 @@ class TestMiniMaxProviderInit:
         provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-key"})
         assert provider.api_key == "test-key"
         # Verify client uses MiniMax base URL
-        assert provider.client.base_url.host == "api.minimaxi.chat"
+        assert provider.client.base_url.host == "api.minimax.io"
 
     def test_get_container_env(self):
         """Test get_container_env returns MINIMAX_API_KEY."""
@@ -265,4 +265,4 @@ class TestMiniMaxProviderInit:
 
     def test_base_url_constant(self):
         """Test MINIMAX_BASE_URL constant."""
-        assert MINIMAX_BASE_URL == "https://api.minimaxi.chat/v1"
+        assert MINIMAX_BASE_URL == "https://api.minimax.io/anthropic"
