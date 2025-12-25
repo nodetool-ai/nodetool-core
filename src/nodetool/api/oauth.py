@@ -362,9 +362,7 @@ async def huggingface_oauth_callback(
                 expires_at=expires_at,
             )
 
-            log.info(
-                f"Successfully stored Hugging Face credential for user {user_id}, account {account_id}"
-            )
+            log.info("Successfully stored Hugging Face credential")
 
             return f"""
             <html>
