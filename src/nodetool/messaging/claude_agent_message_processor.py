@@ -14,21 +14,27 @@ import os
 from typing import Any, List
 from uuid import uuid4
 
-# Try to import the Claude Agent SDK components at module level
-try:
-    from claude_agent_sdk import (
-        ClaudeAgentOptions,
-        ClaudeSDKClient,
-        SdkMcpTool,
-        create_sdk_mcp_server,
-    )
-    from claude_agent_sdk import (
-        tool as sdk_tool,
-    )
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    SdkMcpTool,
+    create_sdk_mcp_server,
+)
+from claude_agent_sdk import (
+    tool as sdk_tool,
+)
 
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    SystemMessage,
+    TextBlock,
+    ThinkingBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+)
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.config.logging_config import get_logger
@@ -107,17 +113,6 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             processing_context: Context for processing including user information
             **kwargs: Additional processor-specific parameters
         """
-        if not CLAUDE_SDK_AVAILABLE:
-            log.error("claude-agent-sdk is not installed. Install it with: pip install 'claude-agent-sdk>=0.1.18'")
-            await self.send_message(
-                {
-                    "type": "error",
-                    "message": "Claude Agent SDK is not installed. Install it with: pip install 'claude-agent-sdk>=0.1.18'",
-                    "error_type": "import_error",
-                }
-            )
-            self.is_processing = False
-            return
 
         last_message = chat_history[-1]
         assert last_message.model, "Model is required for agent mode"
@@ -128,7 +123,9 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
         # Generate a unique execution ID for this agent session
         agent_execution_id = str(uuid4())
 
-        log.info(f"Starting Claude Agent SDK execution with objective: {objective[:100]}...")
+        log.info(
+            f"Starting Claude Agent SDK execution with objective: {objective[:100]}..."
+        )
 
         # Get selected tools and convert to SDK format
         sdk_tools: list[Any] = []
@@ -146,9 +143,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
             # Create SDK MCP tools from nodetool tools
             for tool in selected_tools:
-                sdk_tools.append(
-                    self._create_sdk_tool(tool, processing_context)
-                )
+                sdk_tools.append(self._create_sdk_tool(tool, processing_context))
 
         # Include UI proxy tools if client provided a manifest via tool bridge
         try:
@@ -158,7 +153,10 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                 and hasattr(processing_context, "client_tools_manifest")
                 and processing_context.client_tools_manifest
             ):
-                for _tool_name, tool_manifest in processing_context.client_tools_manifest.items():
+                for (
+                    _tool_name,
+                    tool_manifest,
+                ) in processing_context.client_tools_manifest.items():
                     try:
                         sdk_tools.append(
                             self._create_ui_proxy_sdk_tool(
@@ -199,7 +197,6 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                 mcp_servers={"nodetool": mcp_server} if mcp_server else {},
                 permission_mode="bypassPermissions",  # Auto-allow tool use
                 max_turns=kwargs.get("max_turns", 50),
-                hooks=self._create_hooks(agent_execution_id, last_message),
             )
 
             # Environment variables for the agent
@@ -234,18 +231,30 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             step_count = 0
 
             try:
-                await client.connect(prompt=objective)
+                # Add a small delay to allow MCP server initialization
+                await asyncio.sleep(0.5)
+
+                # Retry connection logic to handle transient transport errors
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await client.connect(prompt=objective)
+                        break
+                    except Exception as e:
+                        if "ProcessTransport" in str(e) and attempt < max_retries - 1:
+                            log.warning(
+                                f"Transport error during connection (attempt {attempt + 1}/{max_retries}): {e}. Retrying..."
+                            )
+                            await asyncio.sleep(1)
+                        else:
+                            raise e
 
                 # Stream responses from the client
                 async for message in client.receive_messages():
-                    message_type = type(message).__name__
-
-                    if message_type == "AssistantMessage":
+                    if isinstance(message, AssistantMessage):
                         # Process content blocks from assistant
                         for block in message.content:
-                            block_type = type(block).__name__
-
-                            if block_type == "TextBlock":
+                            if isinstance(block, TextBlock):
                                 text = block.text
                                 accumulated_content += text
                                 await self.send_message(
@@ -256,7 +265,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                     }
                                 )
 
-                            elif block_type == "ToolUseBlock":
+                            elif isinstance(block, ToolUseBlock):
                                 step_count += 1
                                 tool_call = ToolCall(
                                     id=block.id,
@@ -288,7 +297,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                     last_message,
                                 )
 
-                            elif block_type == "ToolResultBlock":
+                            elif isinstance(block, ToolResultBlock):
                                 # Tool result received
                                 await self._send_log_update(
                                     LogUpdate(
@@ -301,7 +310,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                     last_message,
                                 )
 
-                            elif block_type == "ThinkingBlock":
+                            elif isinstance(block, ThinkingBlock):
                                 # Claude's thinking/reasoning
                                 thinking_text = getattr(block, "thinking", "")
                                 if thinking_text:
@@ -316,12 +325,14 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                         last_message,
                                     )
 
-                    elif message_type == "ResultMessage":
+                    elif isinstance(message, ResultMessage):
                         # Final result from the agent
-                        result = getattr(message, "result", None)
-                        structured_output = getattr(message, "structured_output", None)
+                        result = message.result
+                        structured_output = message.structured_output
 
-                        final_result = structured_output or result or accumulated_content
+                        final_result = (
+                            structured_output or result or accumulated_content
+                        )
 
                         await self._send_step_result(
                             StepResult(
@@ -343,7 +354,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                             last_message,
                         )
 
-                    elif message_type == "SystemMessage":
+                    elif isinstance(message, SystemMessage):
                         # System messages (e.g., status updates)
                         content = getattr(message, "content", [])
                         for block in content:
@@ -359,15 +370,17 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                     last_message,
                                 )
 
-                    elif message_type == "UserMessage":
+                    elif isinstance(message, UserMessage):
                         # User messages in the conversation
                         pass
 
             finally:
-                client.disconnect()
+                await client.disconnect()
 
             # Send the final assistant message
-            final_content = accumulated_content if accumulated_content else "Task completed."
+            final_content = (
+                accumulated_content if accumulated_content else "Task completed."
+            )
 
             await self.send_message(
                 Message(
@@ -450,7 +463,9 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                     "agent_mode": True,
                 }
             )
-            log.debug(f"Sent planning_update: phase={update.phase}, status={update.status}")
+            log.debug(
+                f"Sent planning_update: phase={update.phase}, status={update.status}"
+            )
         except Exception as e:
             log.error(f"Failed to send planning_update message: {e}", exc_info=True)
 
@@ -578,6 +593,7 @@ If a tool fails, try alternative approaches or ask for clarification."""
         Returns:
             An SDK MCP tool wrapper
         """
+
         # Create a wrapper function that calls the nodetool tool
         @sdk_tool(tool.name, tool.description, tool.input_schema)
         async def tool_wrapper(args: dict[str, Any]) -> dict[str, Any]:
@@ -624,7 +640,9 @@ If a tool fails, try alternative approaches or ask for clarification."""
         async def ui_tool_wrapper(args: dict[str, Any]) -> dict[str, Any]:
             if not context.tool_bridge:
                 return {
-                    "content": [{"type": "text", "text": "Error: Tool bridge not available"}],
+                    "content": [
+                        {"type": "text", "text": "Error: Tool bridge not available"}
+                    ],
                     "is_error": True,
                 }
 
@@ -662,33 +680,10 @@ If a tool fails, try alternative approaches or ask for clarification."""
 
             except TimeoutError:
                 return {
-                    "content": [{"type": "text", "text": f"Error: UI tool {name} timed out"}],
+                    "content": [
+                        {"type": "text", "text": f"Error: UI tool {name} timed out"}
+                    ],
                     "is_error": True,
                 }
 
         return ui_tool_wrapper
-
-    def _create_hooks(
-        self, agent_execution_id: str, last_message: Message
-    ) -> dict[str, list[dict[str, Any]]]:
-        """
-        Create hooks for the Claude Agent SDK.
-
-        Hooks allow intercepting tool calls before and after execution,
-        which is useful for logging, permission checks, and result processing.
-
-        Args:
-            agent_execution_id: Unique ID for this agent execution
-            last_message: The last message from the user
-
-        Returns:
-            Dictionary mapping hook types to hook configurations
-        """
-        # Create hook callbacks that send updates
-        hooks: dict[str, list[dict[str, Any]]] = {}
-
-        # Note: The actual hook implementation would require async callbacks
-        # which the SDK supports. For now, we'll rely on message streaming
-        # to capture tool calls and results.
-
-        return hooks

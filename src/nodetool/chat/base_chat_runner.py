@@ -27,6 +27,7 @@ from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.claude_agent_message_processor import ClaudeAgentMessageProcessor
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
@@ -409,7 +410,11 @@ class BaseChatRunner(ABC):
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
 
-            processor = HelpMessageProcessor(provider)
+            # Use Claude Agent SDK for Anthropic help requests
+            if last_message.provider.lower() == "anthropic":
+                processor = ClaudeAgentMessageProcessor()
+            else:
+                processor = HelpMessageProcessor(provider)
 
             await self._run_processor(
                 processor=processor,
@@ -445,7 +450,13 @@ class BaseChatRunner(ABC):
         assert last_message.provider, "Provider is required for agent mode"
 
         provider = await get_provider(last_message.provider)
-        processor = AgentMessageProcessor(provider)
+        
+        # Use Claude Agent SDK for Anthropic agent requests
+        if last_message.provider.lower() == "anthropic":
+            processor = ClaudeAgentMessageProcessor()
+        else:
+            processor = AgentMessageProcessor(provider)
+            
         processing_context = ProcessingContext(user_id=self.user_id)
 
         # Add UI tool support if available
