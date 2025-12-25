@@ -1,6 +1,6 @@
 services:
   api:
-    image: georgi/nodetool:latest
+    image: ghcr.io/nodetool-ai/nodetool:0.6.2-rc.14
     restart: unless-stopped
     build:
       context: .
