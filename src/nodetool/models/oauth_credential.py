@@ -12,6 +12,8 @@ from typing import Optional
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
+from nodetool.security.crypto import SecretCrypto
+from nodetool.security.master_key import MasterKeyManager
 
 log = get_logger(__name__)
 
@@ -79,9 +81,6 @@ class OAuthCredential(DBModel):
         Returns:
             The newly created OAuthCredential instance.
         """
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
-
         # Get master key and encrypt the tokens
         master_key = await MasterKeyManager.get_master_key()
         encrypted_access_token = SecretCrypto.encrypt(access_token, master_key, user_id)
@@ -162,9 +161,6 @@ class OAuthCredential(DBModel):
         Raises:
             Exception: If decryption fails (e.g., wrong master key).
         """
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
-
         master_key = await MasterKeyManager.get_master_key()
         return SecretCrypto.decrypt(self.encrypted_access_token, master_key, self.user_id)
 
@@ -180,9 +176,6 @@ class OAuthCredential(DBModel):
         """
         if not self.encrypted_refresh_token:
             return None
-
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
 
         master_key = await MasterKeyManager.get_master_key()
         return SecretCrypto.decrypt(self.encrypted_refresh_token, master_key, self.user_id)
@@ -207,9 +200,6 @@ class OAuthCredential(DBModel):
             received_at: Optional new received_at timestamp.
             expires_at: Optional new expires_at timestamp.
         """
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
-
         master_key = await MasterKeyManager.get_master_key()
         self.encrypted_access_token = SecretCrypto.encrypt(access_token, master_key, self.user_id)
 
