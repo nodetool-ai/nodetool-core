@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_setting
 from nodetool.models.oauth_credential import OAuthCredential
 
 log = get_logger(__name__)
@@ -35,6 +36,12 @@ HF_TOKEN_URL = "https://huggingface.co/oauth/token"
 HF_WHOAMI_URL = "https://huggingface.co/api/whoami-v2"
 HF_CLIENT_ID = "54d170bb-b441-445b-a167-56935d718d4e"
 HF_SCOPES = ["openid", "read-repos", "inference-api"]
+
+# GitHub OAuth configuration
+GITHUB_AUTHORIZATION_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_SCOPES = ["user:email", "read:user"]
 
 
 class OAuthStartResponse(BaseModel):
@@ -787,6 +794,402 @@ async def get_huggingface_whoami_endpoint(
         raise
     except Exception as e:
         log.error(f"Unexpected error during whoami request: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "error_description": f"An unexpected error occurred: {str(e)}",
+            },
+        ) from e
+
+
+# ============================================================================
+# GitHub OAuth Endpoints
+# ============================================================================
+
+
+@router.get("/github/start", response_model=OAuthStartResponse)
+async def start_github_oauth(
+    request: Request,
+    user_id: str = Depends(current_user),
+) -> OAuthStartResponse:
+    """
+    Start GitHub OAuth flow with PKCE.
+
+    Generates PKCE challenge, state, and returns the authorization URL.
+
+    Args:
+        request: FastAPI request object to get the server host.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        OAuthStartResponse with auth_url.
+    """
+    # Get GitHub client ID
+    github_client_id = get_setting("nodetool", "GITHUB_CLIENT_ID")
+    if not github_client_id:
+        raise HTTPException(
+            status_code=500,
+            detail="GitHub OAuth not configured. Please set GITHUB_CLIENT_ID.",
+        )
+
+    # Generate PKCE pair
+    code_verifier, code_challenge = generate_pkce_pair()
+
+    # Generate state
+    state = generate_state()
+
+    # Determine redirect URI based on request
+    host = request.headers.get("host", "127.0.0.1:7777")
+    if "://" in host:
+        host = host.split("://")[1]
+    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+    redirect_uri = f"{scheme}://{host}/api/oauth/github/callback"
+
+    # Store state and verifier temporarily (5 minutes TTL)
+    _oauth_state_store[state] = {
+        "user_id": user_id,
+        "code_verifier": code_verifier,
+        "created_at": datetime.now(UTC),
+        "redirect_uri": redirect_uri,
+    }
+
+    # Build authorization URL
+    params = {
+        "client_id": github_client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(GITHUB_SCOPES),
+        "state": state,
+    }
+
+    auth_url = f"{GITHUB_AUTHORIZATION_URL}?{urlencode(params)}"
+
+    log.info(f"Starting GitHub OAuth for user {user_id}, state={state}")
+
+    return OAuthStartResponse(auth_url=auth_url)
+
+
+@router.get("/github/callback")
+async def github_oauth_callback(
+    code: Optional[str] = Query(None, description="Authorization code from GitHub"),
+    state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
+    error: Optional[str] = Query(None, description="Error from OAuth provider"),
+    error_description: Optional[str] = Query(None, description="Error description"),
+) -> HTMLResponse:
+    """
+    Handle GitHub OAuth callback.
+
+    Validates state, exchanges code for tokens, and stores the credential.
+
+    Args:
+        code: Authorization code from GitHub.
+        state: State parameter to validate.
+        error: Optional error from OAuth provider.
+        error_description: Optional error description.
+
+    Returns:
+        HTML page with success/error message.
+    """
+    # Check for OAuth errors
+    if error:
+        log.error(f"OAuth error: {error}, description: {error_description}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error=error,
+            error_description=error_description or "No description provided",
+        )
+
+    # Validate required parameters
+    if not code or not state:
+        log.error("Missing required parameters: code and state")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_request",
+            error_description="Missing required parameters (code or state).",
+        )
+
+    # Validate state
+    state_data = _oauth_state_store.get(state)
+    if not state_data:
+        log.error(f"Invalid or expired state: {state}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired or is invalid. Please try again.",
+        )
+
+    # Check if state is expired (5 minutes)
+    if datetime.now(UTC) - state_data["created_at"] > timedelta(minutes=5):
+        del _oauth_state_store[state]
+        log.error(f"Expired state: {state}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired. Please try again.",
+        )
+
+    user_id = state_data["user_id"]
+    redirect_uri = state_data["redirect_uri"]
+
+    # Remove state from store
+    del _oauth_state_store[state]
+
+    # Get GitHub credentials
+    github_client_id = get_setting("nodetool", "GITHUB_CLIENT_ID")
+    github_client_secret = get_setting("nodetool", "GITHUB_CLIENT_SECRET")
+    
+    if not github_client_id or not github_client_secret:
+        log.error("GitHub OAuth not configured")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="configuration_error",
+            error_description="GitHub OAuth is not properly configured.",
+        )
+
+    # Exchange code for tokens
+    try:
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GITHUB_TOKEN_URL,
+                data={
+                    "client_id": github_client_id,
+                    "client_secret": github_client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                timeout=30.0,
+            )
+
+            if token_response.status_code != 200:
+                log.error(
+                    f"Token exchange failed: {token_response.status_code}, {token_response.text}"
+                )
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}",
+                )
+
+            token_data = token_response.json()
+
+            access_token = token_data.get("access_token")
+            token_type = token_data.get("token_type", "Bearer")
+            scope = token_data.get("scope")
+
+            if not access_token:
+                log.error("No access_token in token response")
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description="No access token received from GitHub.",
+                )
+
+            # Get user info from GitHub
+            user_response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Authorization": f"{token_type} {access_token}",
+                    "Accept": "application/json",
+                },
+                timeout=30.0,
+            )
+
+            if user_response.status_code != 200:
+                log.error(f"Failed to get user info: {user_response.status_code}")
+                username = None
+                account_id = str(hash(access_token[:16]))  # Fallback
+            else:
+                user_info = user_response.json()
+                username = user_info.get("login")
+                account_id = str(user_info.get("id"))
+
+            # Store credential (GitHub doesn't provide refresh tokens for OAuth Apps)
+            await OAuthCredential.upsert(
+                user_id=user_id,
+                provider="github",
+                account_id=account_id,
+                access_token=access_token,
+                username=username,
+                refresh_token=None,  # GitHub OAuth Apps don't provide refresh tokens
+                token_type=token_type,
+                scope=scope,
+                received_at=datetime.now(UTC),
+                expires_at=None,  # GitHub tokens don't expire
+            )
+
+            log.info("Successfully stored GitHub credential")
+
+            return oauth_html_response(
+                title="OAuth Success", success=True, username=username, auto_close=True
+            )
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during token exchange: {e}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="network_error",
+            error_description=f"Failed to communicate with GitHub: {str(e)}",
+        )
+    except Exception as e:
+        log.error(f"Unexpected error during OAuth callback: {e}", exc_info=True)
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="internal_error",
+            error_description=f"An unexpected error occurred: {str(e)}",
+        )
+
+
+@router.get("/github/tokens", response_model=OAuthTokensResponse)
+async def list_github_tokens(
+    user_id: str = Depends(current_user),
+) -> OAuthTokensResponse:
+    """
+    List all stored GitHub OAuth tokens for the current user.
+
+    Args:
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        OAuthTokensResponse with list of token metadata.
+    """
+    credentials = await OAuthCredential.list_for_user_and_provider(
+        user_id=user_id, provider="github"
+    )
+
+    tokens = [
+        OAuthTokenMetadata(
+            id=cred.id,
+            provider=cred.provider,
+            account_id=cred.account_id,
+            username=cred.username,
+            token_type=cred.token_type,
+            scope=cred.scope,
+            received_at=cred.received_at.isoformat() if cred.received_at else "",
+            expires_at=cred.expires_at.isoformat() if cred.expires_at else None,
+            created_at=cred.created_at.isoformat() if cred.created_at else "",
+            updated_at=cred.updated_at.isoformat() if cred.updated_at else "",
+        )
+        for cred in credentials
+    ]
+
+    return OAuthTokensResponse(tokens=tokens)
+
+
+class GitHubUserResponse(BaseModel):
+    """Response for GitHub user endpoint."""
+
+    login: str
+    id: int
+    node_id: str
+    avatar_url: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    company: Optional[str] = None
+    location: Optional[str] = None
+    blog: Optional[str] = None
+    public_repos: Optional[int] = None
+    public_gists: Optional[int] = None
+    followers: Optional[int] = None
+    following: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@router.get("/github/user", response_model=GitHubUserResponse)
+async def get_github_user(
+    account_id: str = Query(..., description="Account ID to get information for"),
+    user_id: str = Depends(current_user),
+) -> GitHubUserResponse:
+    """
+    Get GitHub account information using the stored OAuth token.
+
+    This endpoint demonstrates how to use the stored OAuth credentials
+    to make authenticated requests to the GitHub API.
+
+    Args:
+        account_id: The account ID to get information for.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        GitHubUserResponse with account information.
+    """
+    # Find the credential
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="github", account_id=account_id
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=404, detail=f"No credential found for account_id: {account_id}"
+        )
+
+    # Get the access token
+    access_token = await credential.get_decrypted_access_token()
+
+    # Make request to GitHub API
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Authorization": f"{credential.token_type} {access_token}",
+                    "Accept": "application/json",
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code == 401:
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "unauthorized",
+                        "error_description": "Token expired or invalid. Please re-authenticate.",
+                    },
+                )
+
+            if response.status_code != 200:
+                log.error(
+                    f"Failed to get user info: {response.status_code}, {response.text}"
+                )
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail={
+                        "error": "api_error",
+                        "error_description": f"GitHub API error: {response.text}",
+                    },
+                )
+
+            data = response.json()
+            return GitHubUserResponse(**data)
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during user info request: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "network_error",
+                "error_description": f"Failed to communicate with GitHub: {str(e)}",
+            },
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error during user info request: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={

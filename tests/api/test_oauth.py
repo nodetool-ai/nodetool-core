@@ -412,3 +412,322 @@ async def test_oauth_whoami_endpoint_no_credential(client, headers):
     response = client.get("/api/oauth/hf/whoami?account_id=nonexistent", headers=headers)
 
     assert response.status_code == 404
+
+
+# ============================================================================
+# GitHub OAuth Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_credential_create_and_find(user_id):
+    """Test creating and finding a GitHub OAuth credential."""
+    from nodetool.security.oauth_helper import list_github_accounts, get_github_token
+    
+    # Create a credential
+    credential = await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id="12345678",
+        access_token="gho_test_access_token",
+        username="testgithubuser",
+        token_type="Bearer",
+        scope="user:email read:user",
+    )
+
+    assert credential is not None
+    assert credential.user_id == user_id
+    assert credential.provider == "github"
+    assert credential.account_id == "12345678"
+    assert credential.username == "testgithubuser"
+
+    # Find the credential
+    found = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="github", account_id="12345678"
+    )
+
+    assert found is not None
+    assert found.id == credential.id
+    assert found.account_id == "12345678"
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_start_endpoint(client, headers):
+    """Test the GitHub OAuth start endpoint."""
+    # Mock the get_setting function
+    with patch("nodetool.api.oauth.get_setting") as mock_get_setting:
+        mock_get_setting.return_value = "test_github_client_id"
+        
+        response = client.get("/api/oauth/github/start", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "auth_url" in data
+        assert "github.com/login/oauth/authorize" in data["auth_url"]
+        assert "client_id=test_github_client_id" in data["auth_url"]
+        assert "state" in data["auth_url"]
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_start_endpoint_no_client_id(client, headers):
+    """Test the GitHub OAuth start endpoint without client ID configured."""
+    with patch("nodetool.api.oauth.get_setting") as mock_get_setting:
+        mock_get_setting.return_value = None
+        
+        response = client.get("/api/oauth/github/start", headers=headers)
+
+        assert response.status_code == 500
+        assert "not configured" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_callback_invalid_state(client):
+    """Test GitHub OAuth callback with invalid state."""
+    response = client.get("/api/oauth/github/callback?code=test_code&state=invalid_state")
+
+    assert response.status_code == 200
+    assert "invalid_state" in response.text
+    assert "Authentication Failed" in response.text
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_callback_error(client):
+    """Test GitHub OAuth callback with error from provider."""
+    response = client.get(
+        "/api/oauth/github/callback?error=access_denied&error_description=User+denied+access"
+    )
+
+    assert response.status_code == 200
+    assert "access_denied" in response.text
+    assert "Authentication Failed" in response.text
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_tokens_list_empty(client, headers):
+    """Test listing GitHub tokens when none exist."""
+    response = client.get("/api/oauth/github/tokens", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "tokens" in data
+    assert len(data["tokens"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_tokens_list_with_data(client, headers, user_id):
+    """Test listing GitHub tokens with existing credentials."""
+    # Create a credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id="87654321",
+        access_token="gho_test_token",
+        username="testgithubuser",
+        scope="user:email read:user",
+    )
+
+    response = client.get("/api/oauth/github/tokens", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "tokens" in data
+    assert len(data["tokens"]) == 1
+    assert data["tokens"][0]["account_id"] == "87654321"
+    assert data["tokens"][0]["username"] == "testgithubuser"
+    assert data["tokens"][0]["provider"] == "github"
+
+
+@pytest.mark.asyncio
+async def test_list_github_accounts(user_id):
+    """Test listing GitHub accounts."""
+    from nodetool.security.oauth_helper import list_github_accounts
+    
+    # Create multiple credentials
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id="account_1",
+        access_token="token_1",
+        username="user1",
+    )
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id="account_2",
+        access_token="token_2",
+        username="user2",
+    )
+
+    accounts = await list_github_accounts(user_id)
+
+    assert len(accounts) == 2
+    assert any(acc["account_id"] == "account_1" for acc in accounts)
+    assert any(acc["account_id"] == "account_2" for acc in accounts)
+
+
+@pytest.mark.asyncio
+async def test_get_github_token(user_id):
+    """Test getting a GitHub token."""
+    from nodetool.security.oauth_helper import get_github_token
+    
+    account_id = "test_get_github_token"
+    access_token = "gho_secret_access_token"
+
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id=account_id,
+        access_token=access_token,
+    )
+
+    retrieved_token = await get_github_token(user_id, account_id)
+
+    assert retrieved_token == access_token
+
+
+@pytest.mark.asyncio
+async def test_get_github_token_not_found(user_id):
+    """Test getting a GitHub token that doesn't exist."""
+    from nodetool.security.oauth_helper import get_github_token
+    
+    token = await get_github_token(user_id, "nonexistent_github_account")
+
+    assert token is None
+
+
+@pytest.mark.asyncio
+async def test_get_github_user_info_success(user_id):
+    """Test getting GitHub user information."""
+    from nodetool.security.oauth_helper import get_github_user_info
+    
+    account_id = "user_info_test_account"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id=account_id,
+        access_token="gho_valid_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": int(account_id) if account_id.isdigit() else 123456,
+        "login": "testuser",
+        "name": "Test User",
+        "email": "test@example.com",
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            return_value=mock_response
+        )
+
+        user_info = await get_github_user_info(user_id, account_id)
+
+        assert user_info is not None
+        assert user_info["login"] == "testuser"
+        assert user_info["name"] == "Test User"
+
+
+@pytest.mark.asyncio
+async def test_github_user_endpoint(client, headers, user_id):
+    """Test the GitHub user info endpoint."""
+    account_id = "github_user_endpoint_test"
+
+    # Create credential
+    await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id=account_id,
+        access_token="gho_valid_token",
+    )
+
+    # Mock the HTTP request
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": 123456,
+        "node_id": "MDQ6VXNlcjEyMzQ1Ng==",
+        "login": "testuser",
+        "name": "Test User",
+        "email": "test@example.com",
+        "avatar_url": "https://github.com/images/avatar.png",
+        "public_repos": 10,
+        "followers": 100,
+    }
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = client.get(f"/api/oauth/github/user?account_id={account_id}", headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["login"] == "testuser"
+        assert data["name"] == "Test User"
+        assert data["id"] == 123456
+
+
+@pytest.mark.asyncio
+async def test_github_user_endpoint_no_credential(client, headers):
+    """Test the GitHub user endpoint with non-existent credential."""
+    response = client.get("/api/oauth/github/user?account_id=nonexistent", headers=headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_credential_decrypt_tokens(user_id):
+    """Test decrypting GitHub OAuth tokens."""
+    access_token = "gho_test_access_token_secret"
+
+    credential = await OAuthCredential.create_encrypted(
+        user_id=user_id,
+        provider="github",
+        account_id="decrypt_test_456",
+        access_token=access_token,
+    )
+
+    # Decrypt and verify token
+    decrypted_access = await credential.get_decrypted_access_token()
+
+    assert decrypted_access == access_token
+
+
+@pytest.mark.asyncio
+async def test_github_oauth_credential_upsert(user_id):
+    """Test upserting GitHub OAuth credentials."""
+    account_id = "github_upsert_account"
+
+    # Create initial credential
+    cred1 = await OAuthCredential.upsert(
+        user_id=user_id,
+        provider="github",
+        account_id=account_id,
+        access_token="gho_token1",
+        username="github_user1",
+    )
+
+    assert cred1.username == "github_user1"
+    decrypted1 = await cred1.get_decrypted_access_token()
+    assert decrypted1 == "gho_token1"
+
+    # Upsert (update) with new data
+    cred2 = await OAuthCredential.upsert(
+        user_id=user_id,
+        provider="github",
+        account_id=account_id,
+        access_token="gho_token2",
+        username="github_user2",
+    )
+
+    # Should be the same credential (updated)
+    assert cred2.id == cred1.id
+    assert cred2.username == "github_user2"
+    decrypted2 = await cred2.get_decrypted_access_token()
+    assert decrypted2 == "gho_token2"
