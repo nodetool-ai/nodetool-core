@@ -137,7 +137,7 @@ def oauth_html_response(
     username: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
-    auto_close: bool = False
+    auto_close: bool = False,
 ) -> HTMLResponse:
     """
     Generate a styled HTML response for OAuth callback.
@@ -156,7 +156,7 @@ def oauth_html_response(
     # Get HuggingFace brand colors
     primary_color = "#FFD21E"  # HF yellow
     success_color = "#22C55E"  # Green
-    error_color = "#EF4444"    # Red
+    error_color = "#EF4444"  # Red
 
     # Icon (check or X)
     icon = "✓" if success else "✗"
@@ -166,7 +166,9 @@ def oauth_html_response(
     if success:
         heading = "Authentication Successful"
         message = "Your Hugging Face account has been connected successfully."
-        details = f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
+        details = (
+            f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
+        )
     else:
         heading = "Authentication Failed"
         message = error_description or "An error occurred during authentication."
@@ -404,7 +406,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error=error,
-            error_description=error_description or "No description provided"
+            error_description=error_description or "No description provided",
         )
 
     # Validate required parameters
@@ -414,7 +416,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_request",
-            error_description="Missing required parameters (code or state)."
+            error_description="Missing required parameters (code or state).",
         )
 
     # Validate state
@@ -425,7 +427,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_state",
-            error_description="The authentication request has expired or is invalid. Please try again."
+            error_description="The authentication request has expired or is invalid. Please try again.",
         )
 
     # Check if state is expired (5 minutes)
@@ -436,7 +438,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="invalid_state",
-            error_description="The authentication request has expired. Please try again."
+            error_description="The authentication request has expired. Please try again.",
         )
 
     user_id = state_data["user_id"]
@@ -470,7 +472,7 @@ async def huggingface_oauth_callback(
                     title="OAuth Error",
                     success=False,
                     error="token_exchange_failed",
-                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}"
+                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}",
                 )
 
             token_data = token_response.json()
@@ -487,7 +489,7 @@ async def huggingface_oauth_callback(
                     title="OAuth Error",
                     success=False,
                     error="token_exchange_failed",
-                    error_description="No access token received from Hugging Face."
+                    error_description="No access token received from Hugging Face.",
                 )
 
             # Get user info from Hugging Face
@@ -528,10 +530,7 @@ async def huggingface_oauth_callback(
             log.info("Successfully stored Hugging Face credential")
 
             return oauth_html_response(
-                title="OAuth Success",
-                success=True,
-                username=username,
-                auto_close=True
+                title="OAuth Success", success=True, username=username, auto_close=True
             )
 
     except httpx.HTTPError as e:
@@ -540,7 +539,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="network_error",
-            error_description=f"Failed to communicate with Hugging Face: {str(e)}"
+            error_description=f"Failed to communicate with Hugging Face: {str(e)}",
         )
     except Exception as e:
         log.error(f"Unexpected error during OAuth callback: {e}", exc_info=True)
@@ -548,7 +547,7 @@ async def huggingface_oauth_callback(
             title="OAuth Error",
             success=False,
             error="internal_error",
-            error_description=f"An unexpected error occurred: {str(e)}"
+            error_description=f"An unexpected error occurred: {str(e)}",
         )
 
 
@@ -833,10 +832,10 @@ async def start_github_oauth(
             detail="GitHub OAuth not configured. Please set GITHUB_CLIENT_ID.",
         )
 
-    # Generate PKCE pair
+    # Generate PKCE pair for enhanced security
     code_verifier, code_challenge = generate_pkce_pair()
 
-    # Generate state
+    # Generate state for CSRF protection
     state = generate_state()
 
     # Determine redirect URI based on request
@@ -846,7 +845,7 @@ async def start_github_oauth(
     scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/github/callback"
 
-    # Store state and verifier temporarily (5 minutes TTL)
+    # Store state and PKCE verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
         "user_id": user_id,
         "code_verifier": code_verifier,
@@ -854,18 +853,31 @@ async def start_github_oauth(
         "redirect_uri": redirect_uri,
     }
 
-    # Build authorization URL
+    # Build authorization URL with PKCE parameters
     params = {
         "client_id": github_client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(GITHUB_SCOPES),
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+
+    # Build authorization URL with PKCE parameters
+    params = {
+        "client_id": github_client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(GITHUB_SCOPES),
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
 
     auth_url = f"{GITHUB_AUTHORIZATION_URL}?{urlencode(params)}"
 
-    log.info(f"Starting GitHub OAuth for user {user_id}, state={state}")
+    log.info(f"Starting GitHub OAuth with PKCE for user {user_id}, state={state}")
 
     return OAuthStartResponse(auth_url=auth_url)
 
@@ -934,6 +946,7 @@ async def github_oauth_callback(
         )
 
     user_id = state_data["user_id"]
+    code_verifier = state_data["code_verifier"]
     redirect_uri = state_data["redirect_uri"]
 
     # Remove state from store
@@ -942,7 +955,7 @@ async def github_oauth_callback(
     # Get GitHub credentials
     github_client_id = get_system_env_value("GITHUB_CLIENT_ID")
     github_client_secret = get_system_env_value("GITHUB_CLIENT_SECRET")
-    
+
     if not github_client_id or not github_client_secret:
         log.error("GitHub OAuth not configured")
         return oauth_html_response(
@@ -952,7 +965,7 @@ async def github_oauth_callback(
             error_description="GitHub OAuth is not properly configured.",
         )
 
-    # Exchange code for tokens
+    # Exchange code for tokens with PKCE
     try:
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
@@ -961,6 +974,7 @@ async def github_oauth_callback(
                     "client_id": github_client_id,
                     "client_secret": github_client_secret,
                     "code": code,
+                    "code_verifier": code_verifier,
                     "redirect_uri": redirect_uri,
                 },
                 headers={

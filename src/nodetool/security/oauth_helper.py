@@ -185,7 +185,9 @@ async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict
             )
 
             if response.status_code != 200:
-                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
+                log.error(
+                    f"Failed to get whoami: {response.status_code}, {response.text}"
+                )
                 return None
 
             return response.json()
@@ -283,7 +285,9 @@ async def get_github_user_info(user_id: str, account_id: str) -> Optional[dict]:
             )
 
             if response.status_code != 200:
-                log.error(f"Failed to get user info: {response.status_code}, {response.text}")
+                log.error(
+                    f"Failed to get user info: {response.status_code}, {response.text}"
+                )
                 return None
 
             return response.json()
