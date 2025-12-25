@@ -36,15 +36,29 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
                 user_id = getattr(scope, "user_id", None)
 
     if user_id:
-        log.debug(f"get_hf_token: Attempting to retrieve HF_TOKEN from database for user_id={user_id}")
+        log.debug(f"get_hf_token: Attempting to retrieve token for user_id={user_id}")
+
+        # 1. Try to get from OAuth credentials (Prioritize OAuth)
+        try:
+            from nodetool.models.oauth_credential import OAuthCredential
+            creds = await OAuthCredential.list_for_user_and_provider(
+                user_id=user_id, provider="huggingface", limit=1
+            )
+            if creds:
+                log.debug(f"get_hf_token: OAuth credential found for user_id={user_id}")
+                return await creds[0].get_decrypted_access_token()
+        except Exception as e:
+            log.warning(f"get_hf_token: Error getting OAuth token for user_id={user_id}: {e}")
+
+        # 2. Try to get from database secrets (Prioritize Secrets over Env)
         try:
             # check_env=True is default, but get_secret now prioritizes DB > Env
             token = await get_secret("HF_TOKEN", user_id)
             if token:
-                log.debug(f"get_hf_token: HF_TOKEN found for user_id={user_id}")
+                log.debug(f"get_hf_token: HF_TOKEN found in secrets for user_id={user_id}")
                 return token
         except Exception as e:
-            log.debug(f"get_hf_token: Error getting HF_TOKEN for user_id={user_id}: {e}")
+            log.debug(f"get_hf_token: Error getting HF_TOKEN secret for user_id={user_id}: {e}")
 
     # Fallback to env var if no user_id (get_secret handles env var if user_id is provided,
     # but if user_id is None we need to check env manually because get_secret requires user_id)
