@@ -247,6 +247,18 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="GITHUB_CLIENT_ID",
+    group="GitHub",
+    description="GitHub OAuth Client ID for authenticating with GitHub API"
+)
+register_secret(
+    package_name="nodetool",
+    env_var="GITHUB_CLIENT_SECRET",
+    group="GitHub",
+    description="GitHub OAuth Client Secret for authenticating with GitHub API"
+)
+register_secret(
+    package_name="nodetool",
     env_var="WORKER_AUTH_TOKEN",
     group="Deployment",
     description=(
