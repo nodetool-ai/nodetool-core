@@ -27,10 +27,12 @@ def mock_tiktoken():
     mock_encoding = MagicMock()
     mock_encoding.encode.return_value = [1, 2, 3, 4, 5]  # Mock token IDs
     mock_encoding.decode.return_value = "mocked text"
-    
-    with patch("tiktoken.get_encoding", return_value=mock_encoding):
-        with patch("tiktoken.encoding_for_model", return_value=mock_encoding):
-            yield mock_encoding
+
+    with (
+        patch("tiktoken.get_encoding", return_value=mock_encoding),
+        patch("tiktoken.encoding_for_model", return_value=mock_encoding),
+    ):
+        yield mock_encoding
 
 
 # Pytest configuration
