@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/nodetool-ai/nodetool:0.6.2-rc.14
+    image: ghcr.io/nodetool-ai/nodetool:latest
     restart: unless-stopped
     build:
       context: .
@@ -40,7 +40,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_KEY: ${SUPABASE_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8888/}
+      VLLM_BASE_URL: ${VLLM_BASE_URL}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
       VLLM_HTTP_TIMEOUT: ${VLLM_HTTP_TIMEOUT:-600}
       VLLM_VERIFY_TLS: ${VLLM_VERIFY_TLS:-0}
@@ -70,43 +70,6 @@ services:
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
-
-  vllm:
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
-    restart: unless-stopped
-    ipc: host
-    environment:
-      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-    volumes:
-      - ${HF_HOME:-./.cache/huggingface}:/root/.cache/huggingface
-      - ${VLLM_CACHE_ROOT:-./.cache/vllm}:/root/.cache/vllm
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8888"
-      - --model
-      - ${VLLM_MODEL}
-      - --max-model-len
-      - ${VLLM_MAX_MODEL_LEN:-8192}
-      - --gpu-memory-utilization
-      - ${VLLM_GPU_MEMORY:-0.9}
-    ports:
-      - "${VLLM_PORT:-8888}:8888"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8888/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   nginx:
     image: nginx:1.27-alpine
