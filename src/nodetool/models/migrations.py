@@ -26,6 +26,7 @@ def get_all_models() -> list[Type]:
     from nodetool.models.asset import Asset
     from nodetool.models.job import Job
     from nodetool.models.message import Message
+    from nodetool.models.oauth_token import OAuthToken
     from nodetool.models.prediction import Prediction
     from nodetool.models.secret import Secret
     from nodetool.models.thread import Thread
@@ -40,6 +41,7 @@ def get_all_models() -> list[Type]:
         Job,
         Prediction,
         Secret,
+        OAuthToken,
     ]
 
 
