@@ -485,8 +485,8 @@ class BaseNode(BaseModel):
             if self._on_input_item is not None:
                 try:
                     self._on_input_item(handle)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
             yield item
 
     async def iter_any_input(self) -> AsyncIterator[tuple[str, Any]]:
@@ -502,8 +502,8 @@ class BaseNode(BaseModel):
             if self._on_input_item is not None:
                 try:
                     self._on_input_item(handle)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
             yield handle, item
 
     @classmethod
@@ -1821,8 +1821,8 @@ def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
                         # Check if it's now registered
                         if full_node_type in NODE_BY_TYPE:
                             return NODE_BY_TYPE[full_node_type]
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug(f"Failed to import module for {full_node_type}: {e}")
                 return None
     except Exception as e:
         log.debug(f"Could not check package registry: {e}")

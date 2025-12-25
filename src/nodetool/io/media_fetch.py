@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from typing import Tuple
 
@@ -14,6 +15,8 @@ from nodetool.media.image.image_utils import (
     pil_to_png_bytes,
 )
 from nodetool.runtime.resources import require_scope
+
+log = logging.getLogger(__name__)
 
 
 def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
@@ -226,8 +229,8 @@ def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
     obj = None
     try:
         obj = require_scope().get_memory_uri_cache().get(uri)
-    except Exception:
-        obj = None
+    except Exception as e:
+        log.debug(f"Failed to get from memory URI cache: {e}")
     if obj is None:
         raise ValueError(f"No cached object for memory URI: {uri}")
 
@@ -235,8 +238,8 @@ def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
     try:
         data = _normalize_image_like_to_png_bytes(obj)
         return "image/png", data
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug(f"Failed to normalize image: {e}")
 
     # Fallbacks
     if isinstance(obj, (bytes, bytearray)):

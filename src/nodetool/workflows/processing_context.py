@@ -569,8 +569,8 @@ class ProcessingContext:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w", encoding="utf-8") as fp:
                 json.dump(value, fp, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"Failed to persist variable '{key}': {e}")
 
     def _workspace_path(self, filename: str) -> Path:
         if not self.workspace_dir:
@@ -1174,8 +1174,8 @@ class ProcessingContext:
             cached = require_scope().get_memory_uri_cache().get(url)
             if isinstance(cached, (bytes, bytearray)):
                 return BytesIO(bytes(cached))
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"Failed to get from URI cache: {e}")
 
         response = await self.http_get(url)
         content = response.content

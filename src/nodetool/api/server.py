@@ -198,10 +198,11 @@ async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> 
                     response = await client.get(f"http://{host}:{port}/api/tags")
                     if response.status_code == 200:
                         return True
-                except Exception:
+                except Exception as e:
+                    log.debug(f"Ollama not available at {host}:{port}: {e}")
                     continue
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug(f"Failed to check Ollama availability: {e}")
     return False
 
 

@@ -36,6 +36,12 @@ _workflow_registry: dict[str, Workflow] = {}
 
 def get_workflow_by_id(workflow_id: str) -> Workflow:
     """Deprecated: Use WorkflowModel.get and from_model instead."""
+    import warnings
+    warnings.warn(
+        "get_workflow_by_id is deprecated. Use WorkflowModel.get and from_model instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     workflow_model = WorkflowModel.get(workflow_id)
     if not workflow_model:
         raise ValueError("not found")
