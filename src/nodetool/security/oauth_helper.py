@@ -5,7 +5,6 @@ This module provides convenient functions for working with OAuth credentials,
 including listing accounts, getting tokens, and refreshing tokens.
 """
 
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Optional
 
@@ -208,19 +207,13 @@ async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict
 # Google OAuth Helper Functions
 # =============================================================================
 
-# Google OAuth configuration
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
-
-
-def get_google_client_id() -> Optional[str]:
-    """Get Google OAuth client ID from environment."""
-    return os.environ.get("GOOGLE_CLIENT_ID")
-
-
-def get_google_client_secret() -> Optional[str]:
-    """Get Google OAuth client secret from environment."""
-    return os.environ.get("GOOGLE_CLIENT_SECRET")
+# Import Google OAuth configuration from the api module
+from nodetool.api.oauth import (
+    GOOGLE_TOKEN_URL,
+    GOOGLE_USERINFO_URL,
+    get_google_client_id,
+    get_google_client_secret,
+)
 
 
 async def list_google_accounts(user_id: str) -> list[dict]:
