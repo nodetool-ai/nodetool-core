@@ -187,6 +187,18 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="GOOGLE_CLIENT_ID",
+    group="GoogleOAuth",
+    description="Google OAuth 2.0 client ID for authenticating with Google services",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="GOOGLE_CLIENT_SECRET",
+    group="GoogleOAuth",
+    description="Google OAuth 2.0 client secret for authenticating with Google services",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ELEVENLABS_API_KEY",
     group="ElevenLabs",
     description="ElevenLabs API key for high-quality text-to-speech services",

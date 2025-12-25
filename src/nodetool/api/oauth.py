@@ -2,11 +2,12 @@
 OAuth API endpoints for third-party service authentication.
 
 This module provides OAuth 2.0 PKCE flow endpoints for connecting to
-services like Hugging Face. It handles authorization, token exchange,
+services like Hugging Face and Google. It handles authorization, token exchange,
 and token refresh.
 """
 
 import hashlib
+import os
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
@@ -35,6 +36,27 @@ HF_TOKEN_URL = "https://huggingface.co/oauth/token"
 HF_WHOAMI_URL = "https://huggingface.co/api/whoami-v2"
 HF_CLIENT_ID = "54d170bb-b441-445b-a167-56935d718d4e"
 HF_SCOPES = ["openid", "read-repos", "inference-api"]
+
+# Google OAuth configuration
+GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+# Default scopes for Google OAuth - includes basic profile and email
+GOOGLE_DEFAULT_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
+
+
+def get_google_client_id() -> Optional[str]:
+    """Get Google OAuth client ID from environment."""
+    return os.environ.get("GOOGLE_CLIENT_ID")
+
+
+def get_google_client_secret() -> Optional[str]:
+    """Get Google OAuth client secret from environment."""
+    return os.environ.get("GOOGLE_CLIENT_SECRET")
 
 
 class OAuthStartResponse(BaseModel):
@@ -130,7 +152,8 @@ def oauth_html_response(
     username: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
-    auto_close: bool = False
+    auto_close: bool = False,
+    provider: str = "huggingface",
 ) -> HTMLResponse:
     """
     Generate a styled HTML response for OAuth callback.
@@ -142,12 +165,27 @@ def oauth_html_response(
         error: Error type (for errors)
         error_description: Detailed error message
         auto_close: Whether to attempt auto-closing the window
+        provider: OAuth provider name for display purposes
 
     Returns:
         HTMLResponse with styled content
     """
-    # Get HuggingFace brand colors
-    primary_color = "#FFD21E"  # HF yellow
+    # Provider-specific configuration
+    provider_configs = {
+        "huggingface": {
+            "primary_color": "#FFD21E",  # HF yellow
+            "name": "Hugging Face",
+        },
+        "google": {
+            "primary_color": "#4285F4",  # Google blue
+            "name": "Google",
+        },
+    }
+    
+    config = provider_configs.get(provider, provider_configs["huggingface"])
+    primary_color = config["primary_color"]
+    provider_name = config["name"]
+    
     success_color = "#22C55E"  # Green
     error_color = "#EF4444"    # Red
 
@@ -158,7 +196,7 @@ def oauth_html_response(
     # Status text
     if success:
         heading = "Authentication Successful"
-        message = "Your Hugging Face account has been connected successfully."
+        message = f"Your {provider_name} account has been connected successfully."
         details = f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
     else:
         heading = "Authentication Failed"
@@ -794,3 +832,634 @@ async def get_huggingface_whoami_endpoint(
                 "error_description": f"An unexpected error occurred: {str(e)}",
             },
         ) from e
+
+
+# =============================================================================
+# Google OAuth Endpoints
+# =============================================================================
+
+
+class GoogleOAuthStartResponse(BaseModel):
+    """Response for Google OAuth start endpoint."""
+
+    auth_url: str
+
+
+class GoogleUserInfoResponse(BaseModel):
+    """Response for Google userinfo endpoint."""
+
+    id: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    verified_email: Optional[bool] = None
+
+
+@router.get("/google/start", response_model=GoogleOAuthStartResponse)
+async def start_google_oauth(
+    request: Request,
+    user_id: str = Depends(current_user),
+    scopes: Optional[str] = Query(
+        None,
+        description="Space-separated list of additional OAuth scopes to request",
+    ),
+) -> GoogleOAuthStartResponse:
+    """
+    Start Google OAuth flow.
+
+    Generates PKCE challenge, state, and returns the authorization URL.
+    Google OAuth requires a client ID and client secret configured via
+    GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
+
+    Args:
+        request: FastAPI request object to get the server host.
+        user_id: Current user ID from auth middleware.
+        scopes: Optional additional scopes to request (space-separated).
+
+    Returns:
+        GoogleOAuthStartResponse with auth_url.
+
+    Raises:
+        HTTPException: If Google OAuth is not configured.
+    """
+    client_id = get_google_client_id()
+    if not client_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not configured. Set GOOGLE_CLIENT_ID environment variable.",
+        )
+
+    # Generate PKCE pair
+    code_verifier, code_challenge = generate_pkce_pair()
+
+    # Generate state
+    state = generate_state()
+
+    # Determine redirect URI based on request
+    host = request.headers.get("host", "127.0.0.1:7777")
+    if "://" in host:
+        host = host.split("://")[1]
+    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+    redirect_uri = f"{scheme}://{host}/api/oauth/google/callback"
+
+    # Build scopes list
+    requested_scopes = list(GOOGLE_DEFAULT_SCOPES)
+    if scopes:
+        additional_scopes = scopes.split()
+        for scope in additional_scopes:
+            if scope not in requested_scopes:
+                requested_scopes.append(scope)
+
+    # Store state and verifier temporarily (5 minutes TTL)
+    _oauth_state_store[state] = {
+        "user_id": user_id,
+        "code_verifier": code_verifier,
+        "created_at": datetime.now(UTC),
+        "redirect_uri": redirect_uri,
+        "provider": "google",
+    }
+
+    # Build authorization URL
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(requested_scopes),
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "access_type": "offline",  # Request refresh token
+        "prompt": "consent",  # Force consent screen to get refresh token
+    }
+
+    auth_url = f"{GOOGLE_AUTHORIZATION_URL}?{urlencode(params)}"
+
+    log.info(f"Starting Google OAuth for user {user_id}, state={state}")
+
+    return GoogleOAuthStartResponse(auth_url=auth_url)
+
+
+@router.get("/google/callback")
+async def google_oauth_callback(
+    code: Optional[str] = Query(
+        None, description="Authorization code from Google"
+    ),
+    state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
+    error: Optional[str] = Query(None, description="Error from OAuth provider"),
+    error_description: Optional[str] = Query(None, description="Error description"),
+) -> HTMLResponse:
+    """
+    Handle Google OAuth callback.
+
+    Validates state, exchanges code for tokens, and stores the credential.
+
+    Args:
+        code: Authorization code from Google.
+        state: State parameter to validate.
+        error: Optional error from OAuth provider.
+        error_description: Optional error description.
+
+    Returns:
+        HTML page with success/error message.
+    """
+    # Check for OAuth errors
+    if error:
+        log.error(f"Google OAuth error: {error}, description: {error_description}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error=error,
+            error_description=error_description or "No description provided",
+            provider="google",
+        )
+
+    # Validate required parameters
+    if not code or not state:
+        log.error("Missing required parameters: code and state")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_request",
+            error_description="Missing required parameters (code or state).",
+            provider="google",
+        )
+
+    # Validate state
+    state_data = _oauth_state_store.get(state)
+    if not state_data:
+        log.error(f"Invalid or expired state: {state}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired or is invalid. Please try again.",
+            provider="google",
+        )
+
+    # Check if state is expired (5 minutes)
+    if datetime.now(UTC) - state_data["created_at"] > timedelta(minutes=5):
+        del _oauth_state_store[state]
+        log.error(f"Expired state: {state}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="invalid_state",
+            error_description="The authentication request has expired. Please try again.",
+            provider="google",
+        )
+
+    user_id = state_data["user_id"]
+    code_verifier = state_data["code_verifier"]
+    redirect_uri = state_data["redirect_uri"]
+
+    # Remove state from store
+    del _oauth_state_store[state]
+
+    # Get client credentials
+    client_id = get_google_client_id()
+    client_secret = get_google_client_secret()
+
+    if not client_id or not client_secret:
+        log.error("Google OAuth credentials not configured")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="configuration_error",
+            error_description="Google OAuth is not properly configured on the server.",
+            provider="google",
+        )
+
+    # Exchange code for tokens
+    try:
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code_verifier": code_verifier,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30.0,
+            )
+
+            if token_response.status_code != 200:
+                log.error(
+                    f"Google token exchange failed: {token_response.status_code}, {token_response.text}"
+                )
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description=f"Failed to exchange authorization code for tokens: {token_response.text}",
+                    provider="google",
+                )
+
+            token_data = token_response.json()
+
+            access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
+            token_type = token_data.get("token_type", "Bearer")
+            scope = token_data.get("scope")
+            expires_in = token_data.get("expires_in")
+
+            if not access_token:
+                log.error("No access_token in Google token response")
+                return oauth_html_response(
+                    title="OAuth Error",
+                    success=False,
+                    error="token_exchange_failed",
+                    error_description="No access token received from Google.",
+                    provider="google",
+                )
+
+            # Get user info from Google
+            userinfo_response = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"{token_type} {access_token}"},
+                timeout=30.0,
+            )
+
+            if userinfo_response.status_code != 200:
+                log.error(f"Failed to get Google user info: {userinfo_response.status_code}")
+                username = None
+                account_id = access_token[:16]  # Fallback: use token prefix
+                email = None
+            else:
+                user_info = userinfo_response.json()
+                username = user_info.get("name")
+                account_id = user_info.get("id", access_token[:16])
+                email = user_info.get("email")
+                # Use email as username if name is not available
+                if not username and email:
+                    username = email
+
+            # Calculate expires_at
+            expires_at = None
+            if expires_in:
+                expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+
+            # Store credential
+            await OAuthCredential.upsert(
+                user_id=user_id,
+                provider="google",
+                account_id=account_id,
+                access_token=access_token,
+                username=username,
+                refresh_token=refresh_token,
+                token_type=token_type,
+                scope=scope,
+                received_at=datetime.now(UTC),
+                expires_at=expires_at,
+            )
+
+            log.info(f"Successfully stored Google credential for account {account_id}")
+
+            return oauth_html_response(
+                title="OAuth Success",
+                success=True,
+                username=username or email,
+                auto_close=True,
+                provider="google",
+            )
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during Google token exchange: {e}")
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="network_error",
+            error_description=f"Failed to communicate with Google: {str(e)}",
+            provider="google",
+        )
+    except Exception as e:
+        log.error(f"Unexpected error during Google OAuth callback: {e}", exc_info=True)
+        return oauth_html_response(
+            title="OAuth Error",
+            success=False,
+            error="internal_error",
+            error_description=f"An unexpected error occurred: {str(e)}",
+            provider="google",
+        )
+
+
+@router.get("/google/tokens", response_model=OAuthTokensResponse)
+async def list_google_tokens(
+    user_id: str = Depends(current_user),
+) -> OAuthTokensResponse:
+    """
+    List all stored Google OAuth tokens for the current user.
+
+    Args:
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        OAuthTokensResponse with list of token metadata.
+    """
+    credentials = await OAuthCredential.list_for_user_and_provider(
+        user_id=user_id, provider="google"
+    )
+
+    tokens = [
+        OAuthTokenMetadata(
+            id=cred.id,
+            provider=cred.provider,
+            account_id=cred.account_id,
+            username=cred.username,
+            token_type=cred.token_type,
+            scope=cred.scope,
+            received_at=cred.received_at.isoformat() if cred.received_at else "",
+            expires_at=cred.expires_at.isoformat() if cred.expires_at else None,
+            created_at=cred.created_at.isoformat() if cred.created_at else "",
+            updated_at=cred.updated_at.isoformat() if cred.updated_at else "",
+        )
+        for cred in credentials
+    ]
+
+    return OAuthTokensResponse(tokens=tokens)
+
+
+@router.post("/google/refresh", response_model=OAuthRefreshResponse)
+async def refresh_google_token(
+    account_id: str = Query(..., description="Account ID to refresh token for"),
+    user_id: str = Depends(current_user),
+) -> OAuthRefreshResponse:
+    """
+    Refresh a Google OAuth token using the stored refresh token.
+
+    Args:
+        account_id: The account ID to refresh token for.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        OAuthRefreshResponse indicating success or failure.
+    """
+    # Find the credential
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="google", account_id=account_id
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+        )
+
+    # Get the refresh token
+    refresh_token = await credential.get_decrypted_refresh_token()
+    if not refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="No refresh token available. Please re-authenticate with Google.",
+        )
+
+    # Get client credentials
+    client_id = get_google_client_id()
+    client_secret = get_google_client_secret()
+
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not properly configured on the server.",
+        )
+
+    # Exchange refresh token for new access token
+    try:
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30.0,
+            )
+
+            if token_response.status_code != 200:
+                log.error(
+                    f"Google token refresh failed: {token_response.status_code}, {token_response.text}"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "refresh_failed",
+                        "error_description": f"Failed to refresh Google token: {token_response.text}",
+                    },
+                )
+
+            token_data = token_response.json()
+
+            access_token = token_data.get("access_token")
+            # Google may not return a new refresh token; keep the existing one
+            new_refresh_token = token_data.get("refresh_token", refresh_token)
+            token_type = token_data.get("token_type", credential.token_type)
+            scope = token_data.get("scope", credential.scope)
+            expires_in = token_data.get("expires_in")
+
+            if not access_token:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "refresh_failed",
+                        "error_description": "No access token in Google refresh response",
+                    },
+                )
+
+            # Calculate expires_at
+            expires_at = None
+            if expires_in:
+                expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+
+            # Update credential
+            await credential.update_tokens(
+                access_token=access_token,
+                refresh_token=new_refresh_token,
+                token_type=token_type,
+                scope=scope,
+                received_at=datetime.now(UTC),
+                expires_at=expires_at,
+            )
+
+            log.info(f"Successfully refreshed Google token for account {account_id}")
+
+            return OAuthRefreshResponse(
+                success=True, message="Google token refreshed successfully"
+            )
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during Google token refresh: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "network_error",
+                "error_description": f"Failed to communicate with Google: {str(e)}",
+            },
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error during Google token refresh: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "error_description": f"An unexpected error occurred: {str(e)}",
+            },
+        ) from e
+
+
+@router.get("/google/userinfo", response_model=GoogleUserInfoResponse)
+async def get_google_userinfo_endpoint(
+    account_id: str = Query(..., description="Account ID to get information for"),
+    user_id: str = Depends(current_user),
+) -> GoogleUserInfoResponse:
+    """
+    Get Google account information using the stored OAuth token.
+
+    This endpoint demonstrates how to use the stored OAuth credentials
+    to make authenticated requests to the Google API.
+
+    Makes a request to https://www.googleapis.com/oauth2/v2/userinfo and returns
+    parsed account metadata.
+
+    Args:
+        account_id: The account ID to get information for.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        GoogleUserInfoResponse with account information.
+    """
+    # Find the credential
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="google", account_id=account_id
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+        )
+
+    # Get the access token
+    access_token = await credential.get_decrypted_access_token()
+
+    # Make request to Google API
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"{credential.token_type} {access_token}"},
+                timeout=30.0,
+            )
+
+            if response.status_code == 401:
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "unauthorized",
+                        "error_description": "Token expired or invalid. Please refresh or re-authenticate.",
+                    },
+                )
+
+            if response.status_code != 200:
+                log.error(
+                    f"Failed to get Google userinfo: {response.status_code}, {response.text}"
+                )
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail={
+                        "error": "api_error",
+                        "error_description": f"Google API error: {response.text}",
+                    },
+                )
+
+            data = response.json()
+
+            return GoogleUserInfoResponse(
+                id=data.get("id", ""),
+                email=data.get("email"),
+                name=data.get("name"),
+                picture=data.get("picture"),
+                verified_email=data.get("verified_email"),
+            )
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during Google userinfo request: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "network_error",
+                "error_description": f"Failed to communicate with Google: {str(e)}",
+            },
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error during Google userinfo request: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "error_description": f"An unexpected error occurred: {str(e)}",
+            },
+        ) from e
+
+
+@router.delete("/google/revoke")
+async def revoke_google_token(
+    account_id: str = Query(..., description="Account ID to revoke token for"),
+    user_id: str = Depends(current_user),
+) -> dict:
+    """
+    Revoke a Google OAuth token and delete the stored credential.
+
+    Args:
+        account_id: The account ID to revoke token for.
+        user_id: Current user ID from auth middleware.
+
+    Returns:
+        Success message.
+    """
+    # Find the credential
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="google", account_id=account_id
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=404, detail=f"No Google credential found for account_id: {account_id}"
+        )
+
+    # Get the access token to revoke
+    access_token = await credential.get_decrypted_access_token()
+
+    # Revoke the token with Google
+    try:
+        async with httpx.AsyncClient() as client:
+            revoke_response = await client.post(
+                "https://oauth2.googleapis.com/revoke",
+                data={"token": access_token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30.0,
+            )
+
+            # Google returns 200 on success, but we'll delete the credential either way
+            if revoke_response.status_code != 200:
+                log.warning(
+                    f"Google token revocation returned status {revoke_response.status_code}: {revoke_response.text}"
+                )
+
+    except httpx.HTTPError as e:
+        log.warning(f"HTTP error during Google token revocation: {e}")
+        # Continue to delete the credential even if revocation fails
+
+    # Delete the credential from the database
+    await credential.delete()
+
+    log.info(f"Successfully revoked and deleted Google credential for account {account_id}")
+
+    return {"success": True, "message": "Google token revoked successfully"}
