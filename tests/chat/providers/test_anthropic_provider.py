@@ -339,7 +339,7 @@ class TestAnthropicProvider(BaseProviderTest):
     @pytest.mark.asyncio
     async def test_anthropic_error_recognition(self):
         """Test that Anthropic-specific errors are properly recognized."""
-        provider = self.create_provider()
+        _ = self.create_provider()
 
         # Test rate limit error recognition
         rate_limit_error = self.create_anthropic_error("rate_limit")

@@ -77,7 +77,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
 
     def __init__(self, secrets: dict[str, str]) -> None:
         """Initialize the LM Studio provider with environment configuration.
-        
+
         Args:
             secrets: Optional secrets dictionary. LMSTUDIO_API_KEY is optional
                     and only needed if the LM Studio server requires authentication.

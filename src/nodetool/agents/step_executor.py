@@ -178,9 +178,9 @@ from jinja2 import BaseLoader, Environment
 from jsonschema import ValidationError
 from jsonschema import validate as jsonschema_validate
 
+from nodetool.agents.base_agent import DEFAULT_TOKEN_LIMIT
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.finish_step_tool import FinishStepTool
-from nodetool.agents.base_agent import DEFAULT_TOKEN_LIMIT
 from nodetool.chat.token_counter import (
     count_message_tokens,
     count_messages_tokens,
