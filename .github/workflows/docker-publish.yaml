@@ -72,9 +72,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           no-cache-filters: |
             pip-deps
-          cache-from: |
-            type=registry,ref=georgi/nodetool:buildcache
-            type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache
-          cache-to: |
-            type=registry,ref=georgi/nodetool:buildcache,mode=max
-            type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache
+          cache-to: type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache,mode=max
