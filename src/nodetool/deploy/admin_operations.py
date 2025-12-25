@@ -25,14 +25,14 @@ import os
 from contextlib import suppress
 from typing import AsyncGenerator
 
+from huggingface_hub.hf_api import RepoFile
+
 from huggingface_hub import (
     HfApi,
     hf_hub_download,
     scan_cache_dir,
     try_to_load_from_cache,
 )
-from huggingface_hub.hf_api import RepoFile
-
 from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.hf_cache import filter_repo_paths

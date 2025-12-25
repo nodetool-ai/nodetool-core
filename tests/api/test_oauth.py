@@ -1,15 +1,16 @@
 """Tests for OAuth endpoints and credential management."""
 
-import pytest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from nodetool.models.oauth_credential import OAuthCredential
 from nodetool.security.oauth_helper import (
-    list_huggingface_accounts,
     get_huggingface_token,
-    refresh_huggingface_token,
     get_huggingface_whoami,
+    list_huggingface_accounts,
+    refresh_huggingface_token,
 )
 
 
@@ -422,8 +423,8 @@ async def test_oauth_whoami_endpoint_no_credential(client, headers):
 @pytest.mark.asyncio
 async def test_github_oauth_credential_create_and_find(user_id):
     """Test creating and finding a GitHub OAuth credential."""
-    from nodetool.security.oauth_helper import list_github_accounts, get_github_token
-    
+    from nodetool.security.oauth_helper import get_github_token, list_github_accounts
+
     # Create a credential
     credential = await OAuthCredential.create_encrypted(
         user_id=user_id,
@@ -457,7 +458,7 @@ async def test_github_oauth_start_endpoint(client, headers):
     # Mock the get_system_env_value function
     with patch("nodetool.api.oauth.get_system_env_value") as mock_get_env:
         mock_get_env.return_value = "test_github_client_id"
-        
+
         response = client.get("/api/oauth/github/start", headers=headers)
 
         assert response.status_code == 200
@@ -473,7 +474,7 @@ async def test_github_oauth_start_endpoint_no_client_id(client, headers):
     """Test the GitHub OAuth start endpoint without client ID configured."""
     with patch("nodetool.api.oauth.get_system_env_value") as mock_get_env:
         mock_get_env.return_value = None
-        
+
         response = client.get("/api/oauth/github/start", headers=headers)
 
         assert response.status_code == 500
@@ -541,7 +542,7 @@ async def test_github_oauth_tokens_list_with_data(client, headers, user_id):
 async def test_list_github_accounts(user_id):
     """Test listing GitHub accounts."""
     from nodetool.security.oauth_helper import list_github_accounts
-    
+
     # Create multiple credentials
     await OAuthCredential.create_encrypted(
         user_id=user_id,
@@ -569,7 +570,7 @@ async def test_list_github_accounts(user_id):
 async def test_get_github_token(user_id):
     """Test getting a GitHub token."""
     from nodetool.security.oauth_helper import get_github_token
-    
+
     account_id = "test_get_github_token"
     access_token = "gho_secret_access_token"
 
@@ -589,7 +590,7 @@ async def test_get_github_token(user_id):
 async def test_get_github_token_not_found(user_id):
     """Test getting a GitHub token that doesn't exist."""
     from nodetool.security.oauth_helper import get_github_token
-    
+
     token = await get_github_token(user_id, "nonexistent_github_account")
 
     assert token is None
@@ -599,7 +600,7 @@ async def test_get_github_token_not_found(user_id):
 async def test_get_github_user_info_success(user_id):
     """Test getting GitHub user information."""
     from nodetool.security.oauth_helper import get_github_user_info
-    
+
     account_id = "user_info_test_account"
 
     # Create credential

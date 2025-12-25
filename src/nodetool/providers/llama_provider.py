@@ -16,8 +16,8 @@ from typing import Any, AsyncIterator, ClassVar, List, Sequence
 import httpx
 import openai
 import tiktoken
-from huggingface_hub import hf_hub_download
 
+from huggingface_hub import hf_hub_download
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger

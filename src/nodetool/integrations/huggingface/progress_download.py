@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Union
 
 import huggingface_hub.file_download as _fd
-from huggingface_hub import constants
 from huggingface_hub.utils import build_hf_headers, validate_hf_hub_args
+
+from huggingface_hub import constants
 
 logger = _fd.logger
 

@@ -16,9 +16,9 @@ import aiohttp
 import httpx
 import numpy as np
 import requests
-from huggingface_hub import AsyncInferenceClient
 from pydantic import BaseModel
 
+from huggingface_hub import AsyncInferenceClient
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
