@@ -3,6 +3,64 @@ Base message processor module.
 
 This module provides the abstract base class for all message processors
 in the WebSocket chat system.
+
+Architecture Overview
+=====================
+
+Message processors are the core abstraction for handling chat messages.
+They receive chat history and context, process the request, and stream
+responses back to the client via a message queue.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Message Processing Pipeline                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────┐   │
+│  │   WebSocket  │───>│  BaseChatRunner  │───>│ MessageProcessor │   │
+│  │   Message    │    │                  │    │   (Abstract)     │   │
+│  └──────────────┘    └──────────────────┘    └────────┬─────────┘   │
+│                                                       │              │
+│                    ┌──────────────────────────────────┼──────────┐   │
+│                    │                                  │          │   │
+│                    ▼                                  ▼          ▼   │
+│  ┌─────────────────────┐  ┌────────────────────┐  ┌──────────────┐  │
+│  │ ClaudeAgentProcessor│  │ HelpMessageProc.   │  │ RegularChat  │  │
+│  │ (Agent Mode)        │  │ (Workflow Help)    │  │ Processor    │  │
+│  └─────────────────────┘  └────────────────────┘  └──────────────┘  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Processor Types
+===============
+
+1. **RegularChatProcessor**: Standard chat completion without tools
+2. **HelpMessageProcessor**: Workflow assistance with node/example search
+3. **ClaudeAgentMessageProcessor**: Full agent mode with Claude SDK
+4. **ClaudeAgentHelpMessageProcessor**: Help mode using Claude SDK
+
+Message Flow
+============
+
+```
+Client ──WebSocket──> Runner ──> Processor.process()
+                                      │
+                        ┌─────────────┴─────────────┐
+                        │                           │
+                        ▼                           ▼
+                  [AI Provider]              [Tool Execution]
+                        │                           │
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                              send_message()
+                                      │
+                                      ▼
+                              message_queue
+                                      │
+Client <──WebSocket──────────────────-┘
+```
 """
 
 import asyncio
@@ -20,10 +78,49 @@ class MessageProcessor(ABC):
 
     Each processor handles a specific type of message processing scenario
     and manages its own queue for sending messages back to the client.
+
+    Responsibilities
+    ----------------
+    - Process incoming chat messages with appropriate AI provider
+    - Manage tool execution and result handling
+    - Stream responses back to client via message queue
+    - Handle cancellation gracefully
+
+    Subclass Contract
+    -----------------
+    Subclasses must implement the `process()` method to handle messages.
+    They should:
+    - Call `send_message()` to stream chunks/updates to client
+    - Check `is_cancelled()` periodically for graceful shutdown
+    - Handle exceptions and send error messages to client
+
+    Attributes
+    ----------
+    message_queue : Queue[Dict[str, Any]]
+        Async queue for outgoing messages to the client
+    is_processing : bool
+        Flag indicating active processing state
+    _cancelled : bool
+        Internal cancellation flag
     """
 
     def __init__(self):
         self.message_queue: Queue[Dict[str, Any]] = Queue()
+        self.is_processing = True
+        self._cancelled = False
+
+    def cancel(self):
+        """Request cancellation of the current processing."""
+        self._cancelled = True
+        self.is_processing = False
+
+    def is_cancelled(self) -> bool:
+        """Check if processing has been cancelled."""
+        return self._cancelled
+
+    def reset_cancellation(self):
+        """Reset cancellation state for reuse."""
+        self._cancelled = False
         self.is_processing = True
 
     @abstractmethod

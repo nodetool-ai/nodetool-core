@@ -1,7 +1,105 @@
 """
-Help message processor module.
+Help Message Processor Module
+==============================
 
-This module provides the processor for help mode messages.
+This module provides the HelpMessageProcessor for workflow assistance mode.
+It uses a provider-agnostic approach to answer questions about Nodetool
+workflows, nodes, and best practices.
+
+Architecture Overview
+---------------------
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    HelpMessageProcessor Flow                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  User Question                                                       │
+│       │                                                              │
+│       ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                   HelpMessageProcessor                        │   │
+│  │                                                               │   │
+│  │  ┌─────────────────────────────────────────────────────────┐ │   │
+│  │  │              Built-in Help Tools                        │ │   │
+│  │  │                                                         │ │   │
+│  │  │  ┌─────────────────┐    ┌─────────────────────────┐    │ │   │
+│  │  │  │ SearchNodesTool │    │  SearchExamplesTool     │    │ │   │
+│  │  │  │ (find nodes by  │    │  (find example          │    │ │   │
+│  │  │  │  query/type)    │    │   workflows)            │    │ │   │
+│  │  │  └─────────────────┘    └─────────────────────────┘    │ │   │
+│  │  └─────────────────────────────────────────────────────────┘ │   │
+│  │                                                               │   │
+│  │  ┌─────────────────────────────────────────────────────────┐ │   │
+│  │  │                 Tool Loop (max 25 iterations)           │ │   │
+│  │  │                                                         │ │   │
+│  │  │  while has_tool_calls:                                  │ │   │
+│  │  │      ├── Execute tool                                   │ │   │
+│  │  │      ├── Append result to conversation                  │ │   │
+│  │  │      └── Call provider for next response                │ │   │
+│  │  └─────────────────────────────────────────────────────────┘ │   │
+│  │                                                               │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│       │                                                              │
+│       ▼                                                              │
+│  Streaming Response to Client                                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Provider Support
+----------------
+
+Unlike ClaudeAgentHelpMessageProcessor (which uses Claude SDK exclusively),
+this processor works with any LLM provider:
+
+- OpenAI (GPT-4, GPT-3.5)
+- Anthropic (Claude 3.x via API)
+- Google (Gemini)
+- Ollama (local models)
+
+Tool Execution
+--------------
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Tool Execution Loop                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Provider Response                                               │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌────────────┐    Yes    ┌────────────────────┐                │
+│  │ Has tool   │──────────>│ Execute tool       │                │
+│  │ calls?     │           │ (SearchNodes,      │                │
+│  └────────────┘           │  SearchExamples)   │                │
+│       │ No                └─────────┬──────────┘                │
+│       │                             │                           │
+│       ▼                             ▼                           │
+│  ┌────────────┐           ┌────────────────────┐                │
+│  │ Stream     │           │ Append result,     │                │
+│  │ final      │           │ call provider      │───────┐        │
+│  │ response   │           │ again              │       │        │
+│  └────────────┘           └────────────────────┘       │        │
+│                                     ▲                  │        │
+│                                     └──────────────────┘        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Key Features
+------------
+- **Provider Agnostic**: Works with any supported LLM provider
+- **Token Management**: Tracks usage to stay within context limits
+- **Graph Context**: Includes current workflow structure in prompts
+- **Tool Results**: Caches and formats tool results for LLM context
+- **Safety Limits**: Max 25 tool iterations to prevent loops
+
+Module Contents
+---------------
+- SYSTEM_PROMPT: Comprehensive workflow assistant instructions
+- HelpMessageProcessor: Main processor class
+- ToolResult: Pydantic model for tool execution results
 """
 
 import asyncio
@@ -468,10 +566,91 @@ class UIToolProxy(Tool):
 
 class HelpMessageProcessor(MessageProcessor):
     """
-    Processor for help mode messages.
+    Provider-agnostic help mode message processor.
 
-    This processor handles help requests using the integrated help system
-    with access to help-specific tools and documentation.
+    This processor handles workflow assistance requests using any supported
+    LLM provider, with access to node search and example lookup tools.
+
+    Architecture
+    ------------
+
+    ```
+    ┌─────────────────────────────────────────────────────────┐
+    │               HelpMessageProcessor                       │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                          │
+    │  ┌─────────────────────────────────────────────────────┐│
+    │  │                   process()                         ││
+    │  │                                                     ││
+    │  │  1. Extract message and validate provider           ││
+    │  │  2. Build tools: help_tools + user_tools + ui_tools ││
+    │  │  3. Create API messages with graph context          ││
+    │  │  4. Enter tool loop:                                ││
+    │  │     ┌──────────────────────────────────────┐        ││
+    │  │     │ while tool_calls and iter < 25:     │        ││
+    │  │     │   ├── Execute each tool             │        ││
+    │  │     │   ├── Stream "Calling X..." chunks  │        ││
+    │  │     │   ├── Append results to messages    │        ││
+    │  │     │   └── Call provider again           │        ││
+    │  │     └──────────────────────────────────────┘        ││
+    │  │  5. Stream final response chunks                    ││
+    │  └─────────────────────────────────────────────────────┘│
+    │                                                          │
+    └─────────────────────────────────────────────────────────┘
+    ```
+
+    Tool Categories
+    ---------------
+
+    1. **Help Tools** (always included):
+       - SearchNodesTool: Find nodes by query/type
+       - SearchExamplesTool: Find example workflows
+
+    2. **User Tools** (from message.tools):
+       - Resolved from nodetool tool registry
+       - Examples: GoogleSearch, Browser, etc.
+
+    3. **UI Tools** (from client manifest):
+       - Proxied to frontend via WebSocket
+       - Examples: ScrollTo, HighlightNode
+
+    Provider Integration
+    --------------------
+
+    Uses the BaseProvider interface for LLM calls:
+
+    ```python
+    async for event in provider.generate_messages(
+        model=model,
+        messages=messages,
+        tools=tool_defs,
+        stream=True,
+    ):
+        # Handle Chunk, ToolCallUpdate events
+    ```
+
+    Token Management
+    ----------------
+
+    - Tracks token usage for history and tool results
+    - Stays within HELP_CONTEXT_WINDOW (32K tokens)
+    - Limits response to HELP_MAX_TOKENS (16K tokens)
+
+    Example Usage
+    -------------
+    ```python
+    provider = AnthropicProvider(api_key="...")
+    processor = HelpMessageProcessor(provider)
+    await processor.process(
+        chat_history=[user_question],
+        processing_context=context,
+    )
+    ```
+
+    Attributes
+    ----------
+    provider : BaseProvider
+        The LLM provider for generating responses
     """
 
     def __init__(self, provider: BaseProvider):

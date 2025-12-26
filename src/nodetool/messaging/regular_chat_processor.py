@@ -1,8 +1,102 @@
 """
-Regular chat processor module.
+Regular Chat Processor Module
+==============================
 
-This module provides the processor for standard chat messages without workflows
-or special modes.
+This module provides the RegularChatProcessor for standard conversational
+interactions without specialized workflow or agent modes.
+
+Architecture Overview
+---------------------
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   RegularChatProcessor Flow                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  User Message                                                        │
+│       │                                                              │
+│       ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                  RegularChatProcessor                         │   │
+│  │                                                               │   │
+│  │  ┌─────────────────────────────────────────────────────────┐ │   │
+│  │  │                Optional Features                        │ │   │
+│  │  │                                                         │ │   │
+│  │  │  ┌─────────────────┐    ┌─────────────────────────┐    │ │   │
+│  │  │  │ Tool Execution  │    │  Collection Context     │    │ │   │
+│  │  │  │ (user-selected  │    │  (RAG retrieval from    │    │ │   │
+│  │  │  │  tools)         │    │   ChromaDB)             │    │ │   │
+│  │  │  └─────────────────┘    └─────────────────────────┘    │ │   │
+│  │  └─────────────────────────────────────────────────────────┘ │   │
+│  │                                                               │   │
+│  │  ┌─────────────────────────────────────────────────────────┐ │   │
+│  │  │              Provider Generation Loop                   │ │   │
+│  │  │                                                         │ │   │
+│  │  │  while has_tool_calls:                                  │ │   │
+│  │  │      ├── Stream Chunk events                            │ │   │
+│  │  │      ├── Process ToolCall events                        │ │   │
+│  │  │      ├── Execute tool, save results                     │ │   │
+│  │  │      └── Continue generation                            │ │   │
+│  │  └─────────────────────────────────────────────────────────┘ │   │
+│  │                                                               │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│       │                                                              │
+│       ▼                                                              │
+│  Streaming Response to Client                                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Key Features
+------------
+
+1. **Streaming Responses**: Real-time text chunks to client
+2. **Tool Execution**: User-selected tools from nodetool registry
+3. **Collection Context**: RAG-style retrieval from ChromaDB collections
+4. **Asset Handling**: Auto-saves images, audio, video to storage
+
+Tool Execution Flow
+-------------------
+
+```
+Provider Response
+       │
+       ▼
+┌──────────────┐    Tool    ┌─────────────────────┐
+│ Chunk Event  │◄──────────►│ ToolCall Event      │
+│ (text)       │            │                     │
+└──────┬───────┘            └──────────┬──────────┘
+       │                               │
+       ▼                               ▼
+  Stream to               ┌─────────────────────┐
+  Client                  │ Execute Tool        │
+                          │ ├── Resolve by name │
+                          │ ├── Process args    │
+                          │ └── Save assets     │
+                          └──────────┬──────────┘
+                                     │
+                                     ▼
+                          ┌─────────────────────┐
+                          │ Append to messages, │
+                          │ continue generation │
+                          └─────────────────────┘
+```
+
+Asset Processing
+----------------
+
+Tool results may contain binary data (images, audio, video).
+The processor automatically:
+1. Detects MIME type from magic bytes
+2. Hashes content for deduplication
+3. Uploads to asset storage
+4. Returns URI reference
+
+Module Contents
+---------------
+- REGULAR_SYSTEM_PROMPT: Default assistant persona
+- RegularChatProcessor: Main processor class
+- detect_mime_type(): Binary magic byte detection
 """
 
 import asyncio
@@ -150,12 +244,49 @@ def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> N
 
 class RegularChatProcessor(MessageProcessor):
     """
-    Processor for standard chat messages without workflows or special modes.
+    Standard chat message processor for conversational AI.
 
-    This processor handles regular conversational interactions, including:
-    - Text generation with streaming
-    - Tool execution
-    - Collection context queries
+    This processor handles regular chat interactions with support for
+    tool execution and RAG-style collection queries. It works with
+    any LLM provider implementing the BaseProvider interface.
+
+    Processing Flow
+    ---------------
+
+    ```
+    1. Resolve user-selected tools
+    2. Query collections for context (if specified)
+    3. Enter generation loop:
+       ├── Call provider.generate_messages()
+       ├── Stream Chunk events to client
+       ├── On ToolCall: execute, append result, continue
+       └── Repeat until no more tool calls
+    4. Send final completion message
+    ```
+
+    Features
+    --------
+    - **Streaming**: Real-time response chunks via send_message()
+    - **Tools**: Execute user-selected tools from registry
+    - **Collections**: Query ChromaDB for contextual grounding
+    - **Assets**: Auto-save binary results (images, audio, video)
+    - **Error Handling**: Graceful connection error recovery
+
+    Example Usage
+    -------------
+    ```python
+    processor = RegularChatProcessor(provider)
+    await processor.process(
+        chat_history=[user_message],
+        processing_context=context,
+        collections=["my_knowledge_base"],
+    )
+    ```
+
+    Attributes
+    ----------
+    provider : BaseProvider
+        The LLM provider for generating responses
     """
 
     def __init__(self, provider: BaseProvider):

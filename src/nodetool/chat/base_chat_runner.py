@@ -27,7 +27,10 @@ from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
-from nodetool.messaging.claude_agent_message_processor import ClaudeAgentMessageProcessor
+from nodetool.messaging.claude_agent_message_processor import (
+    ClaudeAgentMessageProcessor,
+    ClaudeAgentHelpMessageProcessor,
+)
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
@@ -373,6 +376,8 @@ class BaseChatRunner(ABC):
             await processor_task
 
         except asyncio.CancelledError:
+            # Signal the processor to stop
+            processor.cancel()
             # If cancelled, make sure the processor task is also cancelled
             processor_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -412,7 +417,17 @@ class BaseChatRunner(ABC):
 
             # Use Claude Agent SDK for Anthropic help requests
             if last_message.provider.lower() == "anthropic":
-                processor = ClaudeAgentMessageProcessor()
+                # Get API key from the provider
+                api_key = getattr(provider, 'api_key', None)
+                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
+            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
+            elif last_message.provider.lower() == "minimax":
+                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
+                api_key = getattr(provider, 'api_key', None)
+                processor = ClaudeAgentHelpMessageProcessor(
+                    api_key=api_key, 
+                    base_url=MINIMAX_BASE_URL
+                )
             else:
                 processor = HelpMessageProcessor(provider)
 
@@ -453,7 +468,17 @@ class BaseChatRunner(ABC):
         
         # Use Claude Agent SDK for Anthropic agent requests
         if last_message.provider.lower() == "anthropic":
-            processor = ClaudeAgentMessageProcessor()
+            # Get API key from the provider
+            api_key = getattr(provider, 'api_key', None)
+            processor = ClaudeAgentMessageProcessor(api_key=api_key)
+        # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
+        elif last_message.provider.lower() == "minimax":
+            from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
+            api_key = getattr(provider, 'api_key', None)
+            processor = ClaudeAgentMessageProcessor(
+                api_key=api_key,
+                base_url=MINIMAX_BASE_URL
+            )
         else:
             processor = AgentMessageProcessor(provider)
             
