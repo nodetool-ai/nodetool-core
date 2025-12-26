@@ -37,6 +37,31 @@ jobs:
         run: |
           ruff check .
 
+      - name: Run ty type checker
+        run: |
+          ty check src \
+            --warn unresolved-import \
+            --warn invalid-method-override \
+            --warn invalid-argument-type \
+            --warn unresolved-attribute \
+            --warn invalid-attribute-access \
+            --warn missing-argument \
+            --warn invalid-type-form \
+            --warn invalid-return-type \
+            --warn invalid-assignment \
+            --warn parameter-already-assigned \
+            --warn call-non-callable \
+            --warn no-matching-overload \
+            --warn unknown-argument \
+            --warn unsupported-operator \
+            --warn not-iterable \
+            --warn invalid-key \
+            --warn non-subscriptable \
+            --warn unresolved-reference \
+            --warn too-many-positional-arguments \
+            --warn invalid-parameter-default \
+            --ignore possibly-missing-attribute
+
       - name: Run tests
         run: |
           pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
