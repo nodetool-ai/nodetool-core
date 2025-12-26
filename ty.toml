@@ -1,0 +1,22 @@
+# ty Type Checker Configuration
+# https://docs.astral.sh/ty/
+
+[environment]
+# Python version to use for type checking
+python-version = "3.11"
+
+[src]
+# Exclude patterns
+exclude = [
+    ".git/**",
+    "__pycache__/**",
+    ".venv/**",
+    ".mypy_cache/**",
+    ".pytest_cache/**",
+    "build/**",
+    "dist/**",
+    "*.egg-info/**",
+]
+
+# Respect .gitignore files
+respect-ignore-files = true

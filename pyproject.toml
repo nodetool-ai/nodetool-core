@@ -137,6 +137,7 @@ dev = [
     "pytest-xdist>=3.6.0",   # Parallel test execution
     "mypy>=1.0.0",           # Type checking
     "ruff>=0.8.4",           # Linting and formatting
+    "ty>=0.0.7",             # Fast type checking
 ]
 
 [tool.hatch.metadata]
