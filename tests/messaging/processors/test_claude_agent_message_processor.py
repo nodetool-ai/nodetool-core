@@ -121,7 +121,7 @@ class TestClaudeAgentMessageProcessorHelperMethods:
 
     def test_build_system_prompt(self, claude_processor):
         """Test system prompt generation."""
-        prompt = claude_processor._build_system_prompt("Test objective")
+        prompt = claude_processor._build_system_prompt("Test objective", [])
         assert "Test objective" in prompt
         assert "Claude Agent SDK" in prompt
 

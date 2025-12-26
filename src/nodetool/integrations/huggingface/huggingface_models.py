@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
+
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.artifact_inspector import (
     ArtifactDetection,

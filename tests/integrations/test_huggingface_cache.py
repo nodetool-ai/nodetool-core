@@ -4,10 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
 import pytest
+from huggingface_hub import _CACHED_NO_EXIST
 from huggingface_hub.errors import EntryNotFoundError, GatedRepoError
 from huggingface_hub.hf_api import RepoFile
-
-from huggingface_hub import _CACHED_NO_EXIST
 
 
 def _make_mock_response(status_code: int = 401) -> MagicMock:

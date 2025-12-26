@@ -7,10 +7,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from huggingface_hub import HfApi, try_to_load_from_cache
 from huggingface_hub.hf_api import RepoFile
 from pydantic import BaseModel
 
-from huggingface_hub import HfApi, try_to_load_from_cache
 from nodetool.api.utils import current_user
 from nodetool.chat.ollama_service import (
     delete_ollama_model as _delete_ollama_model,
