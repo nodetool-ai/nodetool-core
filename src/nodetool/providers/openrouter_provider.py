@@ -513,10 +513,12 @@ class OpenRouterProvider(OpenAIProvider):
 
             # Extract OpenRouter cost from usage (in USD)
             # OpenRouter returns cost in the usage object
+            # Convert USD to credits (1 credit = $0.01 USD)
             if hasattr(completion.usage, "cost") and completion.usage.cost is not None:
-                message_cost = float(completion.usage.cost)
-                self.cost += message_cost
-                log.debug(f"OpenRouter cost for this request: ${message_cost:.6f} USD")
+                message_cost_usd = float(completion.usage.cost)
+                message_cost_credits = message_cost_usd * 100  # Convert USD to credits
+                self.cost += message_cost_credits
+                log.debug(f"OpenRouter cost for this request: ${message_cost_usd:.6f} USD ({message_cost_credits:.2f} credits)")
             else:
                 log.debug("No cost information returned from OpenRouter")
 
@@ -687,10 +689,12 @@ class OpenRouterProvider(OpenAIProvider):
                 self.usage["total_tokens"] += chunk.usage.total_tokens
 
                 # Extract OpenRouter cost from streaming usage
+                # Convert USD to credits (1 credit = $0.01 USD)
                 if hasattr(chunk.usage, "cost") and chunk.usage.cost is not None:
-                    message_cost = float(chunk.usage.cost)
-                    self.cost += message_cost
-                    log.debug(f"OpenRouter streaming cost: ${message_cost:.6f} USD")
+                    message_cost_usd = float(chunk.usage.cost)
+                    message_cost_credits = message_cost_usd * 100  # Convert USD to credits
+                    self.cost += message_cost_credits
+                    log.debug(f"OpenRouter streaming cost: ${message_cost_usd:.6f} USD ({message_cost_credits:.2f} credits)")
 
                 if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
                     self.usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens

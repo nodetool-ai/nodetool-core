@@ -897,6 +897,13 @@ class HelpMessageProcessor(MessageProcessor):
 
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
+                    # Log provider call for cost tracking
+                    await self._log_provider_call(
+                        processing_context.user_id,
+                        last_message.provider,
+                        last_message.model,
+                        processing_context.workflow_id,
+                    )
                     break
 
             # Signal the end of the help stream
@@ -997,6 +1004,51 @@ class HelpMessageProcessor(MessageProcessor):
             return "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
         else:
             return f"Connection error: {error_msg}"
+
+    async def _log_provider_call(
+        self,
+        user_id: str,
+        provider: str | None,
+        model: str | None,
+        workflow_id: str,
+    ) -> None:
+        """
+        Log the provider call to the database for cost tracking.
+
+        Args:
+            user_id: User ID making the call
+            provider: Provider name (e.g., "openai", "anthropic")
+            model: Model identifier
+            workflow_id: Workflow ID for tracking
+        """
+        if not provider or not model:
+            log.warning("Cannot log provider call: missing provider or model")
+            return
+
+        try:
+            # Get usage and cost from provider
+            usage = self.provider.usage
+            cost = self.provider.cost
+
+            await self.provider.log_provider_call(
+                user_id=user_id,
+                provider=str(provider),
+                model=model,
+                cost=cost,
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+                cached_tokens=usage.get("cached_prompt_tokens"),
+                reasoning_tokens=usage.get("reasoning_tokens"),
+                workflow_id=workflow_id,
+            )
+            log.debug(f"Logged provider call: {provider}/{model}, cost={cost}, tokens={usage.get('total_tokens', 0)}")
+        except (KeyError, AttributeError, TypeError) as e:
+            # Handle missing or invalid usage data
+            log.warning(f"Failed to log provider call due to invalid data: {e}")
+        except Exception as e:
+            # Log unexpected errors but don't fail the chat
+            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
     def _sanitize_chat_history(self, history: List[Message]) -> List[Message]:
         """

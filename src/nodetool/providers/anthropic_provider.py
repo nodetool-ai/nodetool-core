@@ -179,53 +179,21 @@ class AnthropicProvider(BaseProvider):
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
-        Get available Anthropic models.
+        Get available Anthropic models from models.json.
 
-        Fetches models dynamically from the Anthropic API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Returns models from the static models.json file instead of making API calls.
+        This ensures consistent model availability and pricing information.
 
         Returns:
             List of LanguageModel instances for Anthropic
         """
+        from nodetool.providers.models_loader import get_anthropic_models
+
         if not self.api_key:
             log.debug("No Anthropic API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            headers = {
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-            }
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get("https://api.anthropic.com/v1/models") as response,
-            ):
-                if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch Anthropic models: HTTP {response.status}"
-                    )
-                    return []
-                payload: Dict[str, Any] = await response.json()
-                data = payload.get("data", [])
-
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id") or item.get("name")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.Anthropic,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Anthropic models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching Anthropic models: {e}")
-            return []
+        return get_anthropic_models()
 
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""

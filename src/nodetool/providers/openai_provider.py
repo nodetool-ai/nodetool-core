@@ -198,54 +198,21 @@ class OpenAIProvider(BaseProvider):
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """
-        Get available OpenAI models.
+        Get available OpenAI models from models.json.
 
-        Fetches models dynamically from the OpenAI API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Returns models from the static models.json file instead of making API calls.
+        This ensures consistent model availability and pricing information.
 
         Returns:
             List of LanguageModel instances for OpenAI
         """
-        import aiohttp
+        from nodetool.providers.models_loader import get_openai_models
 
         if not self.api_key:
             log.debug("No OpenAI API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-            }
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get("https://api.openai.com/v1/models") as response,
-            ):
-                if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenAI models: HTTP {response.status}"
-                    )
-                    return []
-                payload = await response.json()
-                data = payload.get("data", [])
-
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.OpenAI,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} OpenAI models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching OpenAI models: {e}")
-            return []
+        return get_openai_models()
 
     async def get_available_tts_models(self) -> List[TTSModel]:
         """
