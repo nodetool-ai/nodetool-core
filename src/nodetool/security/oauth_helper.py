@@ -16,11 +16,6 @@ from nodetool.models.oauth_credential import OAuthCredential
 log = get_logger(__name__)
 
 
-# =============================================================================
-# Hugging Face OAuth Helper Functions
-# =============================================================================
-
-
 async def list_huggingface_accounts(user_id: str) -> list[dict]:
     """
     List all Hugging Face accounts for a user.
@@ -190,7 +185,9 @@ async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict
             )
 
             if response.status_code != 200:
-                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
+                log.error(
+                    f"Failed to get whoami: {response.status_code}, {response.text}"
+                )
                 return None
 
             return response.json()
@@ -203,6 +200,104 @@ async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict
         return None
 
 
+async def list_github_accounts(user_id: str) -> list[dict]:
+    """
+    List all GitHub accounts for a user.
+
+    Args:
+        user_id: The user ID.
+
+    Returns:
+        A list of dictionaries with account metadata.
+    """
+    credentials = await OAuthCredential.list_for_user_and_provider(
+        user_id=user_id, provider="github"
+    )
+
+    return [
+        {
+            "account_id": cred.account_id,
+            "username": cred.username,
+            "scope": cred.scope,
+            "received_at": cred.received_at.isoformat() if cred.received_at else None,
+            "expires_at": cred.expires_at.isoformat() if cred.expires_at else None,
+        }
+        for cred in credentials
+    ]
+
+
+async def get_github_token(user_id: str, account_id: str) -> Optional[str]:
+    """
+    Get a GitHub access token for a specific account.
+
+    Args:
+        user_id: The user ID.
+        account_id: The GitHub account ID.
+
+    Returns:
+        The decrypted access token, or None if not found.
+    """
+    credential = await OAuthCredential.find_by_account(
+        user_id=user_id, provider="github", account_id=account_id
+    )
+
+    if not credential:
+        log.warning(
+            f"No GitHub credential found for user {user_id}, account {account_id}"
+        )
+        return None
+
+    try:
+        return await credential.get_decrypted_access_token()
+    except Exception as e:
+        log.error(f"Failed to decrypt access token: {e}")
+        return None
+
+
+async def get_github_user_info(user_id: str, account_id: str) -> Optional[dict]:
+    """
+    Get GitHub account information using the stored token.
+
+    This makes a request to https://api.github.com/user
+    to get account metadata.
+
+    Args:
+        user_id: The user ID.
+        account_id: The GitHub account ID.
+
+    Returns:
+        A dictionary with account information, or None if the request fails.
+    """
+    token = await get_github_token(user_id, account_id)
+    if not token:
+        log.warning(f"No token available for user {user_id}, account {account_id}")
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                log.error(
+                    f"Failed to get user info: {response.status_code}, {response.text}"
+                )
+                return None
+
+            return response.json()
+
+    except httpx.HTTPError as e:
+        log.error(f"HTTP error during user info request: {e}")
+        return None
+    except Exception as e:
+        log.error(f"Unexpected error during user info request: {e}", exc_info=True)
+        return None
 # =============================================================================
 # Google OAuth Helper Functions
 # =============================================================================
