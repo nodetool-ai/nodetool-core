@@ -702,6 +702,22 @@ class WorkflowRunner:
                         # Flush projection to ensure suspension is persisted
                         await self.event_logger.flush_projection()
                         
+                        # Check if this is a trigger node suspension
+                        if e.metadata.get('trigger_node'):
+                            # Register with trigger wakeup service
+                            from nodetool.workflows.trigger_node import TriggerWakeupService
+                            
+                            wakeup_service = TriggerWakeupService.get_instance()
+                            wakeup_service.register_suspended_trigger(
+                                workflow_id=self.job_id,
+                                node_id=e.node_id,
+                                trigger_metadata=e.metadata,
+                            )
+                            log.info(
+                                f"Registered trigger node {e.node_id} for wake-up "
+                                f"in workflow {self.job_id}"
+                            )
+                        
                     except Exception as e2:
                         log.error(f"Failed to log suspension events: {e2}")
                         raise
