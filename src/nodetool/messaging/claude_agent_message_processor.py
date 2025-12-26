@@ -766,8 +766,8 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
     def _build_system_prompt(self, objective: str, chat_history: List[Message]) -> str:
         """Build a system prompt for the Claude Agent SDK with conversation context."""
-        return """You are an AI assistant powered by the Claude Agent SDK.
-Your objective is to help the user with their request.
+        return f"""You are an AI assistant powered by the Claude Agent SDK.
+Your objective is to help the user with their request: {objective}
 
 You have access to various tools. Use them as needed to accomplish the task.
 Be thorough, accurate, and provide helpful responses.
