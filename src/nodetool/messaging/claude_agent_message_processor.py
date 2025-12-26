@@ -48,7 +48,7 @@ The processors support two types of tools:
    - Executed directly in Python
    - Examples: SearchNodes, GoogleSearch, Browser
 
-2. **Frontend Tools** (client MCP server)  
+2. **Frontend Tools** (client MCP server)
    - Executed in the browser via WebSocket bridge
    - Examples: ScrollTo, HighlightNode, OpenPanel
 
@@ -127,19 +127,21 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, AsyncIterator, List
+from typing import Any, AsyncIterator, Dict, List
 from uuid import uuid4
 
 from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
     TextBlock,
     ToolUseBlock,
-    query,
-    tool as sdk_tool,
     create_sdk_mcp_server,
-    ClaudeAgentOptions,
-    AssistantMessage,
-    ResultMessage,
-    ClaudeSDKClient,
+    query,
+)
+from claude_agent_sdk import (
+    tool as sdk_tool,
 )
 
 from nodetool.agents.tools.base import Tool
@@ -152,11 +154,28 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 
-from .message_processor import MessageProcessor
 from .help_message_processor import SYSTEM_PROMPT as HELP_SYSTEM_PROMPT
+from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
+
+
+def is_transport_error(e: BaseException) -> bool:
+    """Check if exception is related to transport race condition, handling ExceptionGroups."""
+    error_str = str(e)
+    if (
+        "ProcessTransport is not ready" in error_str
+        or "CLIConnectionError" in error_str
+    ):
+        return True
+
+    # Handle ExceptionGroup (Python 3.11+)
+    if hasattr(e, "exceptions"):
+        for sub_exc in e.exceptions:
+            if is_transport_error(sub_exc):
+                return True
+    return False
 
 
 def json_schema_to_simple_types(schema: dict[str, Any]) -> dict[str, Any]:
@@ -277,15 +296,12 @@ def create_sdk_tool_from_frontend(
             # Payload typically: {"type": "tool_result", "result": ..., "status": ...}
             result_data = payload.get("result", payload)
 
-            if isinstance(result_data, (dict, list)):
-                content_text = json.dumps(result_data)
-            else:
-                content_text = str(result_data)
+            content_text = json.dumps(result_data) if isinstance(result_data, (dict, list)) else str(result_data)
 
             return {
                 "content": [{"type": "text", "text": content_text}],
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning(f"Timeout waiting for frontend tool {name}")
             return {
                 "content": [
@@ -355,23 +371,6 @@ async def query_with_retry(
         Messages from the SDK query
     """
     last_error = None
-
-    # Define check function for transport errors
-    def is_transport_error(e: BaseException) -> bool:
-        """Check if exception is related to transport race condition, handling ExceptionGroups."""
-        error_str = str(e)
-        if (
-            "ProcessTransport is not ready" in error_str
-            or "CLIConnectionError" in error_str
-        ):
-            return True
-
-        # Handle ExceptionGroup (Python 3.11+)
-        if hasattr(e, "exceptions"):
-            for sub_exc in e.exceptions:
-                if is_transport_error(sub_exc):
-                    return True
-        return False
 
     for attempt in range(max_retries):
         try:
@@ -522,9 +521,6 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
         history_context = self._format_chat_history(chat_history)
         if history_context:
             objective = f"{objective}\n\n{history_context}"
-
-        # Generate a unique execution ID for this agent session
-        agent_execution_id = str(uuid4())
 
         log.info(
             f"Starting Claude Agent SDK execution with objective: {objective[:100]}..."
@@ -898,7 +894,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         allowed_tools = ["WebSearch"]
 
         # Always include help tools for workflow assistance
-        from nodetool.agents.tools.help_tools import SearchNodesTool, SearchExamplesTool
+        from nodetool.agents.tools.help_tools import SearchExamplesTool, SearchNodesTool
 
         help_tools: List[Tool] = [
             SearchNodesTool(),

@@ -1,6 +1,7 @@
 """Unit tests for Hugging Face repo packaging detector."""
 
 from huggingface_hub import ModelInfo
+
 from nodetool.integrations.huggingface.huggingface_models import (
     RepoPackagingHint,
     detect_repo_packaging,

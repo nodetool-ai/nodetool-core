@@ -137,8 +137,8 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from huggingface_hub import AsyncInferenceClient
+
 from nodetool.metadata.types import Message, MessageTextContent
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
 

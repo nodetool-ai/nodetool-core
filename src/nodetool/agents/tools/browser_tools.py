@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-    from playwright.async_api import ElementHandle, Page
-
     from huggingface_hub import AsyncInferenceClient
+    from playwright.async_api import ElementHandle, Page
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, ToolCall

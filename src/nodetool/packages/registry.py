@@ -65,9 +65,9 @@ import httpx
 import requests
 import tomli
 import tomlkit
+from huggingface_hub import ModelInfo
 from pydantic import BaseModel
 
-from huggingface_hub import ModelInfo
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_system_file_path

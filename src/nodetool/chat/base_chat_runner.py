@@ -28,8 +28,8 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.claude_agent_message_processor import (
-    ClaudeAgentMessageProcessor,
     ClaudeAgentHelpMessageProcessor,
+    ClaudeAgentMessageProcessor,
 )
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
@@ -425,7 +425,7 @@ class BaseChatRunner(ABC):
                 from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
                 api_key = getattr(provider, 'api_key', None)
                 processor = ClaudeAgentHelpMessageProcessor(
-                    api_key=api_key, 
+                    api_key=api_key,
                     base_url=MINIMAX_BASE_URL
                 )
             else:
@@ -465,7 +465,7 @@ class BaseChatRunner(ABC):
         assert last_message.provider, "Provider is required for agent mode"
 
         provider = await get_provider(last_message.provider)
-        
+
         # Use Claude Agent SDK for Anthropic agent requests
         if last_message.provider.lower() == "anthropic":
             # Get API key from the provider
@@ -481,7 +481,7 @@ class BaseChatRunner(ABC):
             )
         else:
             processor = AgentMessageProcessor(provider)
-            
+
         processing_context = ProcessingContext(user_id=self.user_id)
 
         # Add UI tool support if available

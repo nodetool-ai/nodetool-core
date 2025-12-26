@@ -14,14 +14,14 @@ from typing import Callable, Literal
 
 import httpx
 from fastapi import WebSocket
-from huggingface_hub.errors import EntryNotFoundError
-from huggingface_hub.hf_api import RepoFile
-
 from huggingface_hub import (
     _CACHED_NO_EXIST,
     HfApi,
     try_to_load_from_cache,
 )
+from huggingface_hub.errors import EntryNotFoundError
+from huggingface_hub.hf_api import RepoFile
+
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import async_downloader, hf_auth, hf_cache
 from nodetool.ml.models.model_cache import ModelCache

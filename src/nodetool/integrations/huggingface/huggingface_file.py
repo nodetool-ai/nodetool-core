@@ -2,9 +2,8 @@
 
 import asyncio
 
-from pydantic import BaseModel
-
 from huggingface_hub import HfFileSystem
+from pydantic import BaseModel
 
 
 class HFFileInfo(BaseModel):
