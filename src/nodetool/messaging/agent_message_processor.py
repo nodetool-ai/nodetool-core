@@ -168,6 +168,11 @@ class AgentMessageProcessor(MessageProcessor):
             )
 
             async for item in agent.execute(processing_context):
+                # Check for cancellation
+                if self.is_cancelled():
+                    log.info("Agent processing cancelled by user")
+                    raise asyncio.CancelledError("Processing cancelled by user")
+                
                 log.debug(f"Agent yielded item type: {type(item).__name__}")
                 if isinstance(item, Chunk):
                     # Stream chunk to client

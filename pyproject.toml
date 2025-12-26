@@ -70,6 +70,7 @@ dependencies = [
 
     # AI dependencies
     "anthropic>=0.75.0",
+    "claude-agent-sdk>=0.1.18",
     "huggingface_hub>=0.35.3",
     "openai>=2.14.0",
     "fal-client>=0.8.1",
