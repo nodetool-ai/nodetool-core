@@ -14,7 +14,8 @@ import pytest
 from nodetool.messaging.claude_agent_message_processor import (
     ClaudeAgentMessageProcessor,
 )
-from nodetool.metadata.types import Message as ApiMessage, Provider
+from nodetool.metadata.types import Message as ApiMessage
+from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 
 
