@@ -152,6 +152,7 @@ def _load_default_routers() -> List[APIRouter]:
         thread,
         workflow,
     )
+    from nodetool.mobile import chat_api as mobile_chat
 
     routers: list[APIRouter] = [
         admin_secrets.router,
@@ -168,6 +169,7 @@ def _load_default_routers() -> List[APIRouter]:
         debug.router,
         job.router,
         settings.router,
+        mobile_chat.router,
     ]
 
     if not Environment.is_production():
