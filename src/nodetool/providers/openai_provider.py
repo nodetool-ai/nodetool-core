@@ -126,19 +126,12 @@ class OpenAIProvider(BaseProvider):
     def __init__(self, secrets: dict[str, str]):
         """Initialize the OpenAI provider with client credentials.
 
-        Reads ``OPENAI_API_KEY`` from environment and prepares usage tracking.
+        Reads ``OPENAI_API_KEY`` from environment.
         """
         assert "OPENAI_API_KEY" in secrets, "OPENAI_API_KEY is required"
         self.api_key = secrets["OPENAI_API_KEY"]
         self.client = None
         self.cost = 0.0
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-        }
         log.debug("OpenAIProvider initialized. API key present: True")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
@@ -222,9 +215,7 @@ class OpenAIProvider(BaseProvider):
                 session.get("https://api.openai.com/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenAI models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch OpenAI models: HTTP {response.status}")
                     return []
                 payload = await response.json()
                 data = payload.get("data", [])
@@ -393,11 +384,7 @@ class OpenAIProvider(BaseProvider):
         for config in image_models_config:
             model_id = config["id"]
             # Heuristic: GPT-Image-1 supports both generate and edit; DALL-E legacy considered text-to-image only
-            tasks = (
-                ["text_to_image", "image_to_image"]
-                if model_id == "gpt-image-1"
-                else ["text_to_image"]
-            )
+            tasks = ["text_to_image", "image_to_image"] if model_id == "gpt-image-1" else ["text_to_image"]
             models.append(
                 ImageModel(
                     id=model_id,
@@ -441,9 +428,7 @@ class OpenAIProvider(BaseProvider):
             supported_ratio = supported_w / supported_h
 
             # Score based on area difference and aspect ratio difference
-            area_score = abs(supported_area - target_area) / max(
-                target_area, supported_area
-            )
+            area_score = abs(supported_area - target_area) / max(target_area, supported_area)
             ratio_score = abs(supported_ratio - target_ratio)
 
             return area_score * 0.7 + ratio_score * 0.3
@@ -648,18 +633,14 @@ class OpenAIProvider(BaseProvider):
                     img = img.convert("RGB")
 
                 # Resize using high-quality LANCZOS resampling
-                resized_img = img.resize(
-                    (target_width, target_height), Image.Resampling.LANCZOS
-                )
+                resized_img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
                 # Convert back to bytes
                 output = io.BytesIO()
                 resized_img.save(output, format="PNG")
                 result = output.getvalue()
 
-                log.info(
-                    f"Resized image from {img.size[0]}x{img.size[1]} to {target_width}x{target_height}"
-                )
+                log.info(f"Resized image from {img.size[0]}x{img.size[1]} to {target_width}x{target_height}")
                 return result
         except Exception as e:
             log.error(f"Failed to resize image: {e}")
@@ -705,9 +686,7 @@ class OpenAIProvider(BaseProvider):
 
         # Use shared utility for consistent fetching across providers
         mime_type, data_bytes = await fetch_uri_bytes_and_mime(uri)
-        log.debug(
-            f"Fetched bytes via utility. Mime: {mime_type}, length: {len(data_bytes)}"
-        )
+        log.debug(f"Fetched bytes via utility. Mime: {mime_type}, length: {len(data_bytes)}")
 
         # Convert audio to mp3 if needed
         if mime_type.startswith("audio/") and mime_type != "audio/mpeg":
@@ -721,12 +700,8 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(
-                    f"Failed to convert audio URI {uri} to MP3: {e}. Using original content."
-                )
-                print(
-                    f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content."
-                )
+                log.warning(f"Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
+                print(f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             log.debug("Encoding content to base64")
@@ -786,12 +761,8 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(
-                    f"Failed to convert data URI audio to MP3: {e}. Using original content."
-                )
-                print(
-                    f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content."
-                )
+                log.warning(f"Failed to convert data URI audio to MP3: {e}. Using original content.")
+                print(f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content.")
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             log.debug("Encoding data to base64")
@@ -801,9 +772,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Normalized data URI with mime type: {mime_type}")
         return result
 
-    async def message_content_to_openai_content_part(
-        self, content: MessageContent
-    ) -> ChatCompletionContentPartParam:
+    async def message_content_to_openai_content_part(self, content: MessageContent) -> ChatCompletionContentPartParam:
         """Convert a message content to an OpenAI content part.
 
         Args:
@@ -843,12 +812,8 @@ class OpenAIProvider(BaseProvider):
                     data = base64.b64encode(mp3_data).decode("utf-8")
                     log.debug(f"Audio converted to MP3, data length: {len(data)}")
                 except Exception as e:
-                    log.warning(
-                        f"Failed to convert raw audio data to MP3: {e}. Sending original data."
-                    )
-                    print(
-                        f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data."
-                    )
+                    log.warning(f"Failed to convert raw audio data to MP3: {e}. Sending original data.")
+                    print(f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data.")
                     # Fallback to sending original data if conversion fails
                     data = base64.b64encode(content.audio.data).decode("utf-8")
 
@@ -917,9 +882,7 @@ class OpenAIProvider(BaseProvider):
             )
         elif message.role == "system":
             log.debug("Converting system message")
-            return ChatCompletionSystemMessageParam(
-                role=message.role, content=str(message.content)
-            )
+            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
@@ -928,15 +891,10 @@ class OpenAIProvider(BaseProvider):
                 log.debug("User message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
-                content = [
-                    await self.message_content_to_openai_content_part(c)
-                    for c in message.content
-                ]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
-                raise ValueError(
-                    f"Unknown message content type {type(message.content)}"
-                )
+                raise ValueError(f"Unknown message content type {type(message.content)}")
             return ChatCompletionUserMessageParam(role=message.role, content=content)
         elif message.role == "assistant":
             log.debug("Converting assistant message")
@@ -946,9 +904,7 @@ class OpenAIProvider(BaseProvider):
                     id=tool_call.id,
                     function=Function(
                         name=tool_call.name,
-                        arguments=json.dumps(
-                            tool_call.args, default=self._default_serializer
-                        ),
+                        arguments=json.dumps(tool_call.args, default=self._default_serializer),
                     ),
                 )
                 for tool_call in message.tool_calls or []
@@ -960,10 +916,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Assistant message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
-                content = [
-                    await self.message_content_to_openai_content_part(c)
-                    for c in message.content
-                ]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
             else:
                 content = None
                 log.debug("Assistant message has no content")
@@ -991,9 +944,7 @@ class OpenAIProvider(BaseProvider):
             return obj.model_dump()
         raise TypeError("Type not serializable")
 
-    def format_tools(
-        self, tools: Sequence[Tool]
-    ) -> list[ChatCompletionMessageFunctionToolCallParam]:
+    def format_tools(self, tools: Sequence[Tool]) -> list[ChatCompletionMessageFunctionToolCallParam]:
         """Convert internal tools to OpenAI function/tool definitions.
 
         Args:
@@ -1107,9 +1058,7 @@ class OpenAIProvider(BaseProvider):
             converted_messages = []
             for msg in messages:
                 if msg.role == "system":
-                    log.debug(
-                        "Converting system message to user message for O-series model"
-                    )
+                    log.debug("Converting system message to user message for O-series model")
                     converted_messages.append(
                         Message(
                             role="user",
@@ -1120,9 +1069,7 @@ class OpenAIProvider(BaseProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request(
             "chat_stream",
@@ -1150,28 +1097,6 @@ class OpenAIProvider(BaseProvider):
         async for chunk in completion:
             chunk: ChatCompletionChunk = chunk
             chunk_count += 1
-
-            # Track usage information (only available in the final chunk)
-            if chunk.usage:
-                log.debug("Processing usage statistics from chunk")
-                self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
-                self.usage["completion_tokens"] += chunk.usage.completion_tokens
-                self.usage["total_tokens"] += chunk.usage.total_tokens
-                if (
-                    chunk.usage.prompt_tokens_details
-                    and chunk.usage.prompt_tokens_details.cached_tokens
-                ):
-                    self.usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
-                if (
-                    chunk.usage.completion_tokens_details
-                    and chunk.usage.completion_tokens_details.reasoning_tokens
-                ):
-                    self.usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
-                log.debug(f"Updated usage stats: {self.usage}")
 
             if not chunk.choices:
                 log.debug("Chunk has no choices, skipping")
@@ -1211,9 +1136,7 @@ class OpenAIProvider(BaseProvider):
             if delta.content or chunk.choices[0].finish_reason == "stop":
                 current_chunk += delta.content or ""
                 finish_reason = chunk.choices[0].finish_reason
-                log.debug(
-                    f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}"
-                )
+                log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
 
                 if finish_reason == "stop":
                     log.debug("Final chunk received, logging response")
@@ -1326,9 +1249,7 @@ class OpenAIProvider(BaseProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            log.debug(
-                f"Converted {len(converted_messages)} messages for O-series model"
-            )
+            log.debug(f"Converted {len(converted_messages)} messages for O-series model")
 
         self._log_api_request("chat", messages, **request_kwargs)
 
@@ -1360,9 +1281,7 @@ class OpenAIProvider(BaseProvider):
         if completion.choices:
             choice = completion.choices[0]
             log.info("Response finish_reason: %s", choice.finish_reason)
-            log.info(
-                "Response message content length: %d", len(choice.message.content or "")
-            )
+            log.info("Response message content length: %d", len(choice.message.content or ""))
             if choice.message.content:
                 log.debug(
                     "Response message content (first 500 chars): %s",
@@ -1373,19 +1292,16 @@ class OpenAIProvider(BaseProvider):
             if choice.message.refusal:
                 log.warning("Response message refusal: %s", choice.message.refusal)
 
-        # Update usage stats
+        # Update cost
         if completion.usage:
             log.debug("Processing usage statistics")
-            self.usage["prompt_tokens"] += completion.usage.prompt_tokens
-            self.usage["completion_tokens"] += completion.usage.completion_tokens
-            self.usage["total_tokens"] += completion.usage.total_tokens
             cost = await calculate_chat_cost(
                 model,
                 completion.usage.prompt_tokens,
                 completion.usage.completion_tokens,
             )
             self.cost += cost
-            log.debug(f"Updated usage: {self.usage}, cost: {cost}")
+            log.debug(f"Updated cost: {cost}")
 
         choice = completion.choices[0]
         response_message = choice.message
@@ -1434,9 +1350,7 @@ class OpenAIProvider(BaseProvider):
         import httpx
 
         maybe_response = getattr(exc, "response", None)
-        status_code = getattr(maybe_response, "status_code", None) or getattr(
-            exc, "status_code", 500
-        )
+        status_code = getattr(maybe_response, "status_code", None) or getattr(exc, "status_code", 500)
 
         request = getattr(maybe_response, "request", None)
         if not isinstance(request, httpx.Request):
@@ -1445,9 +1359,7 @@ class OpenAIProvider(BaseProvider):
                 "https://api.openai.com/v1/chat/completions",
             )
 
-        response = (
-            maybe_response if isinstance(maybe_response, httpx.Response) else None
-        )
+        response = maybe_response if isinstance(maybe_response, httpx.Response) else None
         if response is None:
             response = httpx.Response(status_code=int(status_code), request=request)
 
@@ -1469,9 +1381,7 @@ class OpenAIProvider(BaseProvider):
 
         model_id = params.model.id
         if not model_id:
-            raise ValueError(
-                "A text-to-image model with a valid id must be specified for image generation."
-            )
+            raise ValueError("A text-to-image model with a valid id must be specified for image generation.")
 
         prompt = params.prompt.strip()
         if params.negative_prompt:
@@ -1525,9 +1435,7 @@ class OpenAIProvider(BaseProvider):
             ) from api_error
         except Exception as exc:
             log.error(f"OpenAI text-to-image generation failed: {exc}")
-            raise RuntimeError(
-                f"OpenAI text-to-image generation failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
 
     async def image_to_image(
         self,
@@ -1549,9 +1457,7 @@ class OpenAIProvider(BaseProvider):
 
         model_id = params.model.id
         if not model_id:
-            raise ValueError(
-                "An image-to-image model with a valid id must be specified for image editing."
-            )
+            raise ValueError("An image-to-image model with a valid id must be specified for image editing.")
 
         prompt = params.prompt.strip()
         if params.negative_prompt:
@@ -1560,12 +1466,8 @@ class OpenAIProvider(BaseProvider):
         size = None
         if params.target_width and params.target_height:
             if params.target_width <= 0 or params.target_height <= 0:
-                raise ValueError(
-                    "target_width and target_height must be positive integers."
-                )
-            size = self._resolve_image_size(
-                int(params.target_width), int(params.target_height)
-            )
+                raise ValueError("target_width and target_height must be positive integers.")
+            size = self._resolve_image_size(int(params.target_width), int(params.target_height))
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
@@ -1641,9 +1543,7 @@ class OpenAIProvider(BaseProvider):
             ValueError: If required parameters are missing
             RuntimeError: If generation fails
         """
-        log.debug(
-            f"Generating streaming speech for model: {model}, voice: {voice}, speed: {speed}"
-        )
+        log.debug(f"Generating streaming speech for model: {model}, voice: {voice}, speed: {speed}")
 
         if not text:
             raise ValueError("text must not be empty")
@@ -1653,9 +1553,7 @@ class OpenAIProvider(BaseProvider):
 
         # Clamp speed to OpenAI's supported range
         speed = max(0.25, min(4.0, speed))
-        log.debug(
-            f"Making streaming TTS API call with model={model}, voice={voice}, speed={speed}"
-        )
+        log.debug(f"Making streaming TTS API call with model={model}, voice={voice}, speed={speed}")
 
         try:
             # Use streaming response
@@ -1716,9 +1614,7 @@ class OpenAIProvider(BaseProvider):
             raise ValueError("OPENAI_API_KEY is required for video generation")
 
         if not params.model.id:
-            raise ValueError(
-                "A video model with a valid id must be specified for text-to-video generation."
-            )
+            raise ValueError("A video model with a valid id must be specified for text-to-video generation.")
 
         log.debug(f"Starting OpenAI video generation with model: {params.model.id}")
 
@@ -1729,9 +1625,7 @@ class OpenAIProvider(BaseProvider):
         seconds = self._seconds_from_params(params)
 
         if params.negative_prompt:
-            log.debug(
-                "negative_prompt provided but not currently supported by the OpenAI video API; ignoring."
-            )
+            log.debug("negative_prompt provided but not currently supported by the OpenAI video API; ignoring.")
 
         self._log_api_request("text_to_video", params=params)
 
@@ -1765,20 +1659,14 @@ class OpenAIProvider(BaseProvider):
         poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
         if not video.id:
             log.error(f"OpenAI video create response missing id: {video}")
-            raise RuntimeError(
-                "OpenAI video create response did not contain a video id"
-            )
+            raise RuntimeError("OpenAI video create response did not contain a video id")
 
-        log.debug(
-            f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
-        )
+        log.debug(f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}")
 
         elapsed = 0
         while video.status in ("queued", "in_progress"):
             if maximum_wait and elapsed >= maximum_wait:
-                raise TimeoutError(
-                    f"Video generation timed out after {maximum_wait} seconds"
-                )
+                raise TimeoutError(f"Video generation timed out after {maximum_wait} seconds")
 
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
@@ -1788,14 +1676,8 @@ class OpenAIProvider(BaseProvider):
                 timeout=request_timeout,
             )
 
-            log.debug(
-                f"Video job {video.id} status update: {video.status} (progress={video.progress})"
-            )
-            if (
-                "node_id" in kwargs
-                and context is not None
-                and video.progress is not None
-            ):
+            log.debug(f"Video job {video.id} status update: {video.status} (progress={video.progress})")
+            if "node_id" in kwargs and context is not None and video.progress is not None:
                 context.post_message(
                     NodeProgress(
                         node_id=kwargs["node_id"],
@@ -1808,9 +1690,7 @@ class OpenAIProvider(BaseProvider):
                 break
 
         if video.status != "completed":
-            message = (
-                video.error or f"Video generation ended with status '{video.status}'"
-            )
+            message = video.error or f"Video generation ended with status '{video.status}'"
             raise RuntimeError(message)
 
         video_bytes = await self._download_video_content(
@@ -1836,9 +1716,7 @@ class OpenAIProvider(BaseProvider):
         seconds: int,
         timeout: float,
     ) -> Video:
-        log.debug(
-            f"Submitting video generation request: {model_id}, {prompt}, {size}, {seconds}"
-        )
+        log.debug(f"Submitting video generation request: {model_id}, {prompt}, {size}, {seconds}")
         return await client.videos.create(
             model=model_id,  # type: ignore
             prompt=prompt,
@@ -1904,21 +1782,15 @@ class OpenAIProvider(BaseProvider):
             raise ValueError("OPENAI_API_KEY is required for image-to-video generation")
 
         if not params.model.id:
-            raise ValueError(
-                "A video model with a valid id must be specified for image-to-video generation."
-            )
+            raise ValueError("A video model with a valid id must be specified for image-to-video generation.")
 
-        log.debug(
-            f"Starting OpenAI image-to-video generation with model: {params.model.id}"
-        )
+        log.debug(f"Starting OpenAI image-to-video generation with model: {params.model.id}")
 
         # Extract dimensions from input image and snap to valid OpenAI sizes
         try:
             img_width, img_height = self._extract_image_dimensions(image)
             size = self._snap_to_valid_video_dimensions(img_width, img_height)
-            log.info(
-                f"Using image dimensions {img_width}x{img_height}, snapped to valid video size: {size}"
-            )
+            log.info(f"Using image dimensions {img_width}x{img_height}, snapped to valid video size: {size}")
 
             # Resize image to match the snapped video dimensions
             target_width, target_height = map(int, size.split("x"))
@@ -1930,16 +1802,12 @@ class OpenAIProvider(BaseProvider):
 
         except ValueError as e:
             log.error(f"Failed to extract/resize image dimensions: {e}")
-            raise ValueError(
-                f"Could not prepare image for video generation: {e}"
-            ) from e
+            raise ValueError(f"Could not prepare image for video generation: {e}") from e
 
         seconds = self._seconds_from_params(params)
 
         if params.negative_prompt:
-            log.debug(
-                "negative_prompt provided but not currently supported by the OpenAI video API; ignoring."
-            )
+            log.debug("negative_prompt provided but not currently supported by the OpenAI video API; ignoring.")
 
         self._log_api_request("image_to_video", params=params)
 
@@ -1974,28 +1842,20 @@ class OpenAIProvider(BaseProvider):
             ) from api_error
         except Exception as exc:
             log.error(f"OpenAI image-to-video generation failed: {exc}")
-            raise RuntimeError(
-                f"OpenAI image-to-video generation failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"OpenAI image-to-video generation failed: {exc}") from exc
 
         maximum_wait = request_timeout
         poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
         if not video.id:
             log.error(f"OpenAI video create response missing id: {video}")
-            raise RuntimeError(
-                "OpenAI video create response did not contain a video id"
-            )
+            raise RuntimeError("OpenAI video create response did not contain a video id")
 
-        log.debug(
-            f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
-        )
+        log.debug(f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}")
 
         elapsed = 0
         while video.status in ("queued", "in_progress"):
             if maximum_wait and elapsed >= maximum_wait:
-                raise TimeoutError(
-                    f"Image-to-video generation timed out after {maximum_wait} seconds"
-                )
+                raise TimeoutError(f"Image-to-video generation timed out after {maximum_wait} seconds")
 
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
@@ -2005,14 +1865,8 @@ class OpenAIProvider(BaseProvider):
                 timeout=request_timeout,
             )
 
-            log.debug(
-                f"Video job {video.id} status update: {video.status} (progress={video.progress})"
-            )
-            if (
-                "node_id" in kwargs
-                and context is not None
-                and video.progress is not None
-            ):
+            log.debug(f"Video job {video.id} status update: {video.status} (progress={video.progress})")
+            if "node_id" in kwargs and context is not None and video.progress is not None:
                 context.post_message(
                     NodeProgress(
                         node_id=kwargs["node_id"],
@@ -2025,10 +1879,7 @@ class OpenAIProvider(BaseProvider):
                 break
 
         if video.status != "completed":
-            message = (
-                video.error
-                or f"Image-to-video generation ended with status '{video.status}'"
-            )
+            message = video.error or f"Image-to-video generation ended with status '{video.status}'"
             raise RuntimeError(message)
 
         video_bytes = await self._download_video_content(
@@ -2122,9 +1973,7 @@ class OpenAIProvider(BaseProvider):
             ValueError: If required parameters are missing
             RuntimeError: If transcription fails
         """
-        log.debug(
-            f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}"
-        )
+        log.debug(f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}")
 
         if not audio:
             raise ValueError("audio must not be empty")
@@ -2169,27 +2018,6 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI ASR transcription failed: {e}")
             raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
-
-    def get_usage(self) -> dict:
-        """Return the current accumulated token usage statistics.
-
-        Returns:
-            A shallow copy of the usage counters collected so far.
-        """
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage.copy()
-
-    def reset_usage(self) -> None:
-        """Reset the usage counters to zero."""
-        log.debug("Resetting usage counters")
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-        }
-        self.cost = 0.0
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Detect whether an exception represents a context window error.

@@ -95,6 +95,49 @@ CREDIT_PRICING_TIERS = {
     # Rates per 1,000 tokens
     "embedding_small": {"per_1k_tokens": 0.003},
     "embedding_large": {"per_1k_tokens": 0.0195},
+    # Anthropic Pricing (50% premium included)
+    # Claude 4 family (2025)
+    "claude_opus_4": {
+        "input_1k_tokens": 0.045,  # ($30/1M * 1.5) / 1000
+        "output_1k_tokens": 0.15,  # ($100/1M * 1.5) / 1000
+    },
+    "claude_sonnet_4": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0375,  # ($25/1M * 1.5) / 1000
+    },
+    "claude_haiku_4": {
+        "input_1k_tokens": 0.00225,  # ($1.50/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+    },
+    # Claude 3.7 family
+    "claude_3_7_sonnet": {
+        "input_1k_tokens": 0.009,  # ($6/1M * 1.5) / 1000
+        "output_1k_tokens": 0.027,  # ($18/1M * 1.5) / 1000
+    },
+    # Claude 3.5 family
+    "claude_3_5_sonnet": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0225,  # ($15/1M * 1.5) / 1000
+    },
+    "claude_3_5_haiku": {
+        "input_1k_tokens": 0.0015,  # ($1/1M * 1.5) / 1000
+        "output_1k_tokens": 0.006,  # ($4/1M * 1.5) / 1000
+    },
+    # Claude 3 Opus
+    "claude_3_opus": {
+        "input_1k_tokens": 0.045,  # ($30/1M * 1.5) / 1000
+        "output_1k_tokens": 0.15,  # ($100/1M * 1.5) / 1000
+    },
+    # Claude 3 Sonnet
+    "claude_3_sonnet": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0225,  # ($15/1M * 1.5) / 1000
+    },
+    # Claude 3 Haiku
+    "claude_3_haiku": {
+        "input_1k_tokens": 0.000375,  # ($0.25/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0015,  # ($1.25/1M * 1.5) / 1000
+    },
 }
 
 MODEL_TO_TIER_MAP = {
@@ -145,6 +188,26 @@ MODEL_TO_TIER_MAP = {
     # Embeddings
     "text-embedding-3-small": "embedding_small",
     "text-embedding-3-large": "embedding_large",
+    # Anthropic Models
+    "claude-opus-4-20250514": "claude_opus_4",
+    "claude-opus-4-20250501": "claude_opus_4",
+    "claude-sonnet-4-20250514": "claude_sonnet_4",
+    "claude-sonnet-4-20250501": "claude_sonnet_4",
+    "claude-haiku-4-20250514": "claude_haiku_4",
+    "claude-haiku-4-20250501": "claude_haiku_4",
+    "claude-3-7-sonnet-20250511": "claude_3_7_sonnet",
+    "claude-3-7-sonnet-20250219": "claude_3_7_sonnet",
+    "claude-3-5-sonnet-20241022": "claude_3_5_sonnet",
+    "claude-3-5-sonnet-20240620": "claude_3_5_sonnet",
+    "claude-3-5-sonnet-latest": "claude_3_5_sonnet",
+    "claude-3-5-haiku-20241022": "claude_3_5_haiku",
+    "claude-3-5-haiku-latest": "claude_3_5_haiku",
+    "claude-3-opus-20240229": "claude_3_opus",
+    "claude-3-opus-latest": "claude_3_opus",
+    "claude-3-sonnet-20240229": "claude_3_sonnet",
+    "claude-3-sonnet-latest": "claude_3_sonnet",
+    "claude-3-haiku-20240307": "claude_3_haiku",
+    "claude-3-haiku-latest": "claude_3_haiku",
 }
 # --- End of New Credit-Based Pricing System ---
 
@@ -403,9 +466,7 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 # --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
 
 
-async def calculate_chat_cost(
-    model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0
-) -> float:
+async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> float:
     """Calculates cost in CREDITS for chat models.
 
     Args:

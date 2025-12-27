@@ -319,24 +319,6 @@ class TestAnthropicProvider(BaseProviderTest):
         assert response.tool_calls[0].id == "toolu_123"
 
     @pytest.mark.asyncio
-    async def test_anthropic_usage_tracking(self):
-        """Test that Anthropic usage tokens are properly tracked."""
-        provider = self.create_provider()
-        messages = self.create_simple_messages()
-
-        initial_usage = provider.get_usage()
-        initial_tokens = initial_usage.get("total_tokens", 0)
-
-        with self.mock_api_call(ResponseFixtures.simple_text_response()):
-            await provider.generate_message(messages, "claude-3-sonnet-20240229")
-
-        final_usage = provider.get_usage()
-        final_tokens = final_usage.get("total_tokens", 0)
-
-        # Usage should have increased
-        assert final_tokens >= initial_tokens
-
-    @pytest.mark.asyncio
     async def test_anthropic_error_recognition(self):
         """Test that Anthropic-specific errors are properly recognized."""
         _ = self.create_provider()

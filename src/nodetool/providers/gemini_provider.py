@@ -71,12 +71,9 @@ class GeminiProvider(BaseProvider):
         super().__init__()
         assert "GEMINI_API_KEY" in secrets, "GEMINI_API_KEY is required"
         self.api_key = secrets["GEMINI_API_KEY"]
-        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
         # Cache clients per event loop to avoid sharing aiohttp sessions across threads/loops
-        self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient] = (
-            WeakKeyDictionary()
-        )
+        self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient] = WeakKeyDictionary()
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
     def get_client(self) -> AsyncClient:
@@ -650,16 +647,6 @@ class GeminiProvider(BaseProvider):
         log.debug("Streaming generation completed; yielding synthetic done chunk")
         yield Chunk(content="", done=True)
 
-    def get_usage(self) -> dict:
-        """Return the current accumulated token usage statistics."""
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage.copy()
-
-    def reset_usage(self) -> None:
-        """Reset the usage counters to zero."""
-        log.debug("Resetting usage counters")
-        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
     async def text_to_image(
         self,
         params: Any,  # TextToImageParams
@@ -728,8 +715,6 @@ class GeminiProvider(BaseProvider):
                 if not image_bytes:
                     raise RuntimeError("No image bytes returned in response")
 
-                self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
-                self.usage["total_images"] = self.usage.get("total_images", 0) + 1
                 self._log_api_response("text_to_image", image_count=1)
 
                 return image_bytes
@@ -752,8 +737,6 @@ class GeminiProvider(BaseProvider):
             if not image or not image.image_bytes:
                 raise RuntimeError("No image bytes in response")
 
-            self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
-            self.usage["total_images"] = self.usage.get("total_images", 0) + 1
             self._log_api_response("text_to_image", image_count=1)
 
             return image.image_bytes
@@ -848,8 +831,6 @@ class GeminiProvider(BaseProvider):
             if not image_bytes:
                 raise RuntimeError("No image bytes returned in response")
 
-            self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
-            self.usage["total_images"] = self.usage.get("total_images", 0) + 1
             self._log_api_response("image_to_image", image_count=1)
 
             return image_bytes

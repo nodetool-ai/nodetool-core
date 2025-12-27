@@ -83,13 +83,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             log.info(f"Using llama-server at: {self._base_url}")
         else:
             log.debug("LLAMA_CPP_URL not set; llama-server will be started on demand")
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-        }
         # Initialize tiktoken encoding for token counting
         # Using cl100k_base which is used by gpt-4 and modern models
         try:
@@ -288,17 +281,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         return num_tokens
 
-    def _update_usage(self, prompt_tokens: int = 0, completion_tokens: int = 0):
-        """Update the usage statistics.
-
-        Args:
-            prompt_tokens: Number of tokens in the prompt.
-            completion_tokens: Number of tokens in the completion.
-        """
-        self.usage["prompt_tokens"] += prompt_tokens
-        self.usage["completion_tokens"] += completion_tokens
-        self.usage["total_tokens"] += prompt_tokens + completion_tokens
-
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
 
@@ -484,9 +466,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
                             yield tool_call
 
-                    # Count completion tokens and update usage
+                    # Count completion tokens
                     completion_tokens = self._count_tokens_in_text(completion_text)
-                    self._update_usage(prompt_tokens, completion_tokens)
                     log.debug(
                         f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
                     )
@@ -510,7 +491,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     for tc in delta_tool_calls.values():
                         if "function" in tc and "arguments" in tc["function"]:
                             completion_tokens += self._count_tokens_in_text(tc["function"]["arguments"])
-                    self._update_usage(prompt_tokens, completion_tokens)
                     log.debug(
                         f"Token usage (tool calls) - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
                     )
@@ -638,8 +618,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     except Exception:
                         pass
 
-        # Update usage statistics
-        self._update_usage(prompt_tokens, completion_tokens)
         log.debug(
             f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}"
         )
@@ -647,20 +625,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         message = Message(role="assistant", content=final_content, tool_calls=tool_calls)
         self._log_api_response("chat", message)
         return message
-
-    def get_usage(self) -> dict:
-        """Return a shallow copy of accumulated usage counters."""
-        return self.usage.copy()
-
-    def reset_usage(self) -> None:
-        """Reset all usage counters to zero."""
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-        }
 
 
 if __name__ == "__main__":

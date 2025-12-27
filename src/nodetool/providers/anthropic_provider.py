@@ -157,15 +157,6 @@ class AnthropicProvider(BaseProvider):
                 api_key=self.api_key,
             )
         return self._clients[loop]
-        # Initialize usage tracking
-        self.usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0,
-        }
-        self.cost = 0.0
-        log.debug("AnthropicProvider initialized with usage tracking")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
@@ -457,17 +448,6 @@ class AnthropicProvider(BaseProvider):
                         yield Chunk(content=thinking, done=False)
                 elif etype == "message_start":
                     msg = getattr(event, "message", None)
-                    usage = getattr(msg, "usage", None)
-                    if usage is not None:
-                        self.usage["input_tokens"] += getattr(usage, "input_tokens", 0) or 0
-                        self.usage["output_tokens"] += getattr(usage, "output_tokens", 0) or 0
-                        self.usage["cache_creation_input_tokens"] += (
-                            getattr(usage, "cache_creation_input_tokens", 0) or 0
-                        )
-                        self.usage["cache_read_input_tokens"] += getattr(usage, "cache_read_input_tokens", 0) or 0
-                        self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get(
-                            "output_tokens", 0
-                        )
                 elif etype == "content_block_stop":
                     # Tool use may appear here in real SDK; tests often omit attributes
                     content_block = getattr(event, "content_block", None)
@@ -565,24 +545,17 @@ class AnthropicProvider(BaseProvider):
             raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from Anthropic API")
 
-        # Update usage statistics
+        # Update cost
         if hasattr(response, "usage"):
             log.debug("Processing usage statistics")
             usage = response.usage
-            self.usage["input_tokens"] += usage.input_tokens
-            self.usage["output_tokens"] += usage.output_tokens
-            if usage.cache_creation_input_tokens:
-                self.usage["cache_creation_input_tokens"] += usage.cache_creation_input_tokens
-            if usage.cache_read_input_tokens:
-                self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
-            self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get("output_tokens", 0)
             cost = await calculate_chat_cost(
                 model,
                 usage.input_tokens,
                 usage.output_tokens,
             )
             self.cost += cost
-            log.debug(f"Updated usage: {self.usage}, cost: {cost}")
+            log.debug(f"Updated cost: {cost}")
 
         log.debug(f"Processing {len(response.content)} content blocks")
         content = []
@@ -635,23 +608,6 @@ class AnthropicProvider(BaseProvider):
             response = httpx.Response(status_code=int(status_code), request=request)
 
         return httpx.HTTPStatusError(str(exc), request=request, response=response)
-
-    def get_usage(self) -> dict:
-        """Return the current accumulated token usage statistics."""
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage.copy()
-
-    def reset_usage(self) -> None:
-        """Reset the usage counters to zero."""
-        log.debug("Resetting usage counters")
-        self.usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0,
-        }
-        self.cost = 0.0
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Detect Anthropic context window errors robustly."""

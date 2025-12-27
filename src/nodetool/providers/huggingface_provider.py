@@ -494,14 +494,6 @@ class HuggingFaceProvider(BaseProvider):
             )
         return self._clients[loop]
 
-        self.cost = 0.0
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
-        log.debug(f"HuggingFaceProvider initialized with provider: {self.inference_provider or 'default'}")
-
     async def __aenter__(self):
         """Async context manager entry."""
         log.debug("Entering async context manager")
@@ -826,14 +818,6 @@ class HuggingFaceProvider(BaseProvider):
         if completion is None:
             raise RuntimeError("HuggingFace chat completion did not return a response")
 
-        # Update usage statistics if available
-        if hasattr(completion, "usage") and completion.usage:
-            log.debug("Processing usage statistics")
-            self.usage["prompt_tokens"] = completion.usage.prompt_tokens or 0
-            self.usage["completion_tokens"] = completion.usage.completion_tokens or 0
-            self.usage["total_tokens"] = completion.usage.total_tokens or 0
-            log.debug(f"Updated usage: {self.usage}")
-
         # Extract the response message
         choice = completion.choices[0]
         message_data = choice.message
@@ -946,14 +930,6 @@ class HuggingFaceProvider(BaseProvider):
             async for chunk in stream:
                 chunk_count += 1
 
-                if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
-                    log.debug("Updating usage stats from streaming chunk")
-                    usage = chunk.usage  # type: ignore[attr-defined]
-                    self.usage["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
-                    self.usage["completion_tokens"] = getattr(usage, "completion_tokens", 0) or 0
-                    self.usage["total_tokens"] = getattr(usage, "total_tokens", 0) or 0
-                    log.debug(f"Updated usage: {self.usage}")
-
                 choices = getattr(chunk, "choices", None)
                 if not choices:
                     log.debug("Chunk has no choices, skipping")
@@ -1056,20 +1032,6 @@ class HuggingFaceProvider(BaseProvider):
                 else:
                     raise Exception(f"{status} {body_text or str(e)}") from e
             raise
-
-    def get_usage(self) -> dict:
-        """Get token usage statistics."""
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage
-
-    def reset_usage(self) -> None:
-        """Reset token usage statistics."""
-        log.debug("Resetting usage counters")
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Check if the error is due to context length exceeding limits."""

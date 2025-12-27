@@ -59,19 +59,12 @@ class OpenRouterProvider(OpenAIProvider):
     def __init__(self, secrets: dict[str, str]):
         """Initialize the OpenRouter provider with client credentials.
 
-        Reads ``OPENROUTER_API_KEY`` from environment and prepares usage tracking.
+        Reads ``OPENROUTER_API_KEY`` from environment.
         """
         assert "OPENROUTER_API_KEY" in secrets, "OPENROUTER_API_KEY is required"
         self.api_key = secrets["OPENROUTER_API_KEY"]
         self.client = None
         self.cost = 0.0
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-        }
         log.debug("OpenRouterProvider initialized. API key present: True")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
@@ -503,14 +496,10 @@ class OpenRouterProvider(OpenAIProvider):
             raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from OpenRouter API")
 
-        # Update usage stats and extract OpenRouter-specific cost
+        # Extract OpenRouter-specific cost
         message_cost = 0.0
         if completion.usage:
             log.debug("Processing usage statistics")
-            self.usage["prompt_tokens"] += completion.usage.prompt_tokens
-            self.usage["completion_tokens"] += completion.usage.completion_tokens
-            self.usage["total_tokens"] += completion.usage.total_tokens
-
             # Extract OpenRouter cost from usage (in USD)
             # OpenRouter returns cost in the usage object
             if hasattr(completion.usage, "cost") and completion.usage.cost is not None:
@@ -520,7 +509,7 @@ class OpenRouterProvider(OpenAIProvider):
             else:
                 log.debug("No cost information returned from OpenRouter")
 
-            log.debug(f"Updated usage: {self.usage}, total cost: ${self.cost:.6f}")
+            log.debug(f"Total cost: ${self.cost:.6f}")
 
         choice = completion.choices[0]
         response_message = choice.message
@@ -679,24 +668,16 @@ class OpenRouterProvider(OpenAIProvider):
         async for chunk in completion:
             chunk_count += 1
 
-            # Track usage information (only available in the final chunk for streaming)
+            # Track OpenRouter cost from streaming usage
             if chunk.usage:
                 log.debug("Processing usage statistics from chunk")
-                self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
-                self.usage["completion_tokens"] += chunk.usage.completion_tokens
-                self.usage["total_tokens"] += chunk.usage.total_tokens
-
                 # Extract OpenRouter cost from streaming usage
                 if hasattr(chunk.usage, "cost") and chunk.usage.cost is not None:
                     message_cost = float(chunk.usage.cost)
                     self.cost += message_cost
                     log.debug(f"OpenRouter streaming cost: ${message_cost:.6f} USD")
 
-                if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
-                    self.usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens
-                if chunk.usage.completion_tokens_details and chunk.usage.completion_tokens_details.reasoning_tokens:
-                    self.usage["reasoning_tokens"] += chunk.usage.completion_tokens_details.reasoning_tokens
-                log.debug(f"Updated usage stats: {self.usage}")
+                log.debug(f"Total cost: ${self.cost:.6f}")
 
             if not chunk.choices:
                 log.debug("Chunk has no choices, skipping")

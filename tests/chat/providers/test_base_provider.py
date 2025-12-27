@@ -404,21 +404,6 @@ class BaseProviderTest(ABC):
             assert final_response.role == "assistant"
 
     @pytest.mark.asyncio
-    async def test_usage_tracking(self):
-        """Test token usage tracking."""
-        provider = self.create_provider()
-        messages = self.create_simple_messages()
-
-        with self.mock_api_call(ResponseFixtures.simple_text_response()):
-            await provider.generate_message(messages, "test-model")
-
-        final_usage = provider.usage
-
-        # Usage should have been updated (exact behavior depends on provider)
-        assert isinstance(final_usage, dict)
-        assert "total_tokens" in final_usage
-
-    @pytest.mark.asyncio
     async def test_rate_limit_error_handling(self):
         """Test handling of rate limit errors."""
         provider = self.create_provider()
