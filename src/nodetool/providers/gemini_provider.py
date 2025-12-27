@@ -74,7 +74,7 @@ class GeminiProvider(BaseProvider):
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
         # Cache clients per event loop to avoid sharing aiohttp sessions across threads/loops
-        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient]" = (
+        self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient] = (
             WeakKeyDictionary()
         )
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")

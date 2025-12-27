@@ -78,7 +78,7 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
                 value = await creds[0].get_decrypted_access_token()
                 _SECRET_CACHE[(user_id, key)] = value
                 return value
-            
+
             # Retry with "HuggingFace" (capitalized) just in case
             creds = await OAuthCredential.list_for_user_and_provider(
                 user_id=user_id, provider="HuggingFace", limit=1
@@ -88,7 +88,7 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
                 value = await creds[0].get_decrypted_access_token()
                 _SECRET_CACHE[(user_id, key)] = value
                 return value
-            
+
             log.debug(f"No OAuth credentials found for {key} (user {user_id}, provider='huggingface' or 'HuggingFace')")
         except Exception as e:
             log.error(f"Failed to lookup OAuth credential for {key}: {e}", exc_info=True)

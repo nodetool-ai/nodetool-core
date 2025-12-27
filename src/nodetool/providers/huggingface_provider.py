@@ -481,9 +481,7 @@ class HuggingFaceProvider(BaseProvider):
         self.provider_name = f"huggingface_{inference_provider}"
 
         # Cache clients per event loop to avoid sharing httpx sessions across threads/loops
-        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncInferenceClient]" = (
-            WeakKeyDictionary()
-        )
+        self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncInferenceClient] = WeakKeyDictionary()
 
     def get_client(self) -> AsyncInferenceClient:
         """Return a HuggingFace AsyncInferenceClient for the current event loop."""
@@ -502,7 +500,7 @@ class HuggingFaceProvider(BaseProvider):
             "completion_tokens": 0,
             "total_tokens": 0,
         }
-        log.debug(f"HuggingFaceProvider initialized with provider: {inference_provider or 'default'}")
+        log.debug(f"HuggingFaceProvider initialized with provider: {self.inference_provider or 'default'}")
 
     async def __aenter__(self):
         """Async context manager entry."""

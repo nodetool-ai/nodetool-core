@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
+    import asyncio
+
     import httpx
 
 import aiohttp
@@ -101,10 +103,7 @@ class AnthropicProvider(BaseProvider):
 
         # Recursively process properties
         if "properties" in new_schema and isinstance(new_schema["properties"], dict):
-            new_schema["properties"] = {
-                k: self._prepare_json_schema(v)
-                for k, v in new_schema["properties"].items()
-            }
+            new_schema["properties"] = {k: self._prepare_json_schema(v) for k, v in new_schema["properties"].items()}
 
         # Recursively process array items
         if "items" in new_schema and isinstance(new_schema["items"], dict):
@@ -113,9 +112,7 @@ class AnthropicProvider(BaseProvider):
         # Process definitions/$defs if present
         for key in ["definitions", "$defs"]:
             if key in new_schema and isinstance(new_schema[key], dict):
-                new_schema[key] = {
-                    k: self._prepare_json_schema(v) for k, v in new_schema[key].items()
-                }
+                new_schema[key] = {k: self._prepare_json_schema(v) for k, v in new_schema[key].items()}
 
         # Remove unsupported keys
         # "Not supported: ... Numerical constraints (minimum, maximum...), String constraints (minLength...)"
@@ -147,9 +144,7 @@ class AnthropicProvider(BaseProvider):
         self.api_key = secrets["ANTHROPIC_API_KEY"]
         log.debug("AnthropicProvider initialized")
         # Cache clients per event loop to avoid sharing httpx sessions across threads/loops
-        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, anthropic.AsyncAnthropic]" = (
-            WeakKeyDictionary()
-        )
+        self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, anthropic.AsyncAnthropic] = WeakKeyDictionary()
 
     def get_client(self) -> anthropic.AsyncAnthropic:
         """Return an Anthropic async client for the current event loop."""
@@ -215,9 +210,7 @@ class AnthropicProvider(BaseProvider):
                 session.get("https://api.anthropic.com/v1/models") as response,
             ):
                 if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch Anthropic models: HTTP {response.status}"
-                    )
+                    log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
                     return []
                 payload: Dict[str, Any] = await response.json()
                 data = payload.get("data", [])
@@ -298,13 +291,9 @@ class AnthropicProvider(BaseProvider):
                             media_type = "image/png"
                         elif uri:
                             # Fetch image from URI and convert to base64
-                            log.debug(
-                                f"Fetching image and converting to base64: {uri[:50]}..."
-                            )
+                            log.debug(f"Fetching image and converting to base64: {uri[:50]}...")
                             try:
-                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(
-                                    uri
-                                )
+                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(uri)
                                 data = base64.b64encode(data_bytes).decode("utf-8")
                                 media_type = mime_type or "image/png"
                             except Exception as e:
@@ -312,9 +301,7 @@ class AnthropicProvider(BaseProvider):
                                 raise
                         else:
                             log.error("Invalid image reference with no uri or data")
-                            raise ValueError(
-                                "Invalid image reference with no uri or data"
-                            )
+                            raise ValueError("Invalid image reference with no uri or data")
                         image_source = Base64ImageSourceParam(
                             type="base64",
                             media_type=media_type,  # type: ignore
@@ -333,9 +320,7 @@ class AnthropicProvider(BaseProvider):
             log.debug("Converting assistant message")
             # Skip assistant messages with empty content
             if not message.content and not message.tool_calls:
-                log.debug(
-                    "Skipping assistant message with no content and no tool calls"
-                )
+                log.debug("Skipping assistant message with no content and no tool calls")
                 return None  # Will be filtered out later
 
             if message.tool_calls:
@@ -358,18 +343,14 @@ class AnthropicProvider(BaseProvider):
             elif isinstance(message.content, list):
                 log.debug(f"Assistant message has {len(message.content)} content parts")
                 content = []
-                assert (
-                    message.content is not None
-                ), "Assistant message content must not be None"
+                assert message.content is not None, "Assistant message content must not be None"
                 for part in message.content:
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                 return {"role": "assistant", "content": content}
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
-                raise ValueError(
-                    f"Unknown message content type {type(message.content)}"
-                )
+                raise ValueError(f"Unknown message content type {type(message.content)}")
         else:
             log.error(f"Unknown message role: {message.role}")
             raise ValueError(f"Unknown message role {message.role}")
@@ -419,9 +400,7 @@ class AnthropicProvider(BaseProvider):
                 for part in raw:
                     if isinstance(part, MessageTextContent):
                         text_parts.append(part.text)
-                system_message = (
-                    " ".join(text_parts) if len(text_parts) > 0 else str(raw)
-                )
+                system_message = " ".join(text_parts) if len(text_parts) > 0 else str(raw)
             else:
                 system_message = str(raw)
         else:
@@ -431,11 +410,7 @@ class AnthropicProvider(BaseProvider):
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
         anthropic_messages = [
-            msg
-            for msg in [
-                self.convert_message(msg) for msg in messages if msg.role != "system"
-            ]
-            if msg is not None
+            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
@@ -484,28 +459,19 @@ class AnthropicProvider(BaseProvider):
                     msg = getattr(event, "message", None)
                     usage = getattr(msg, "usage", None)
                     if usage is not None:
-                        self.usage["input_tokens"] += (
-                            getattr(usage, "input_tokens", 0) or 0
-                        )
-                        self.usage["output_tokens"] += (
-                            getattr(usage, "output_tokens", 0) or 0
-                        )
+                        self.usage["input_tokens"] += getattr(usage, "input_tokens", 0) or 0
+                        self.usage["output_tokens"] += getattr(usage, "output_tokens", 0) or 0
                         self.usage["cache_creation_input_tokens"] += (
                             getattr(usage, "cache_creation_input_tokens", 0) or 0
                         )
-                        self.usage["cache_read_input_tokens"] += (
-                            getattr(usage, "cache_read_input_tokens", 0) or 0
+                        self.usage["cache_read_input_tokens"] += getattr(usage, "cache_read_input_tokens", 0) or 0
+                        self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get(
+                            "output_tokens", 0
                         )
-                        self.usage["total_tokens"] = self.usage.get(
-                            "input_tokens", 0
-                        ) + self.usage.get("output_tokens", 0)
                 elif etype == "content_block_stop":
                     # Tool use may appear here in real SDK; tests often omit attributes
                     content_block = getattr(event, "content_block", None)
-                    if (
-                        content_block is not None
-                        and getattr(content_block, "type", "") == "tool_use"
-                    ):
+                    if content_block is not None and getattr(content_block, "type", "") == "tool_use":
                         tool_call = ToolCall(
                             id=str(getattr(content_block, "id", "")),
                             name=getattr(content_block, "name", ""),
@@ -555,9 +521,7 @@ class AnthropicProvider(BaseProvider):
                 for part in raw:
                     if isinstance(part, MessageTextContent):
                         text_parts.append(part.text)
-                system_message = (
-                    " ".join(text_parts) if len(text_parts) > 0 else str(raw)
-                )
+                system_message = " ".join(text_parts) if len(text_parts) > 0 else str(raw)
             else:
                 system_message = str(raw)
         else:
@@ -567,11 +531,7 @@ class AnthropicProvider(BaseProvider):
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
         anthropic_messages = [
-            msg
-            for msg in [
-                self.convert_message(msg) for msg in messages if msg.role != "system"
-            ]
-            if msg is not None
+            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
@@ -600,9 +560,7 @@ class AnthropicProvider(BaseProvider):
 
         try:
             client = self.get_client()
-            response: anthropic.types.message.Message = (
-                await client.messages.create(**create_kwargs)
-            )
+            response: anthropic.types.message.Message = await client.messages.create(**create_kwargs)
         except anthropic.AnthropicError as exc:
             raise self._as_httpx_status_error(exc) from exc
         log.debug("Received response from Anthropic API")
@@ -614,14 +572,10 @@ class AnthropicProvider(BaseProvider):
             self.usage["input_tokens"] += usage.input_tokens
             self.usage["output_tokens"] += usage.output_tokens
             if usage.cache_creation_input_tokens:
-                self.usage[
-                    "cache_creation_input_tokens"
-                ] += usage.cache_creation_input_tokens
+                self.usage["cache_creation_input_tokens"] += usage.cache_creation_input_tokens
             if usage.cache_read_input_tokens:
                 self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
-            self.usage["total_tokens"] = self.usage.get(
-                "input_tokens", 0
-            ) + self.usage.get("output_tokens", 0)
+            self.usage["total_tokens"] = self.usage.get("input_tokens", 0) + self.usage.get("output_tokens", 0)
             cost = await calculate_chat_cost(
                 model,
                 usage.input_tokens,
@@ -647,9 +601,7 @@ class AnthropicProvider(BaseProvider):
             elif block.type == "text":
                 content.append(block.text)
 
-        log.debug(
-            f"Response has {len(content)} text parts and {len(tool_calls)} tool calls"
-        )
+        log.debug(f"Response has {len(content)} text parts and {len(tool_calls)} tool calls")
         message = Message(
             role="assistant",
             content="\n".join(content),
@@ -669,9 +621,7 @@ class AnthropicProvider(BaseProvider):
         import httpx
 
         maybe_response = getattr(exc, "response", None)
-        status_code = getattr(maybe_response, "status_code", None) or getattr(
-            exc, "status_code", 500
-        )
+        status_code = getattr(maybe_response, "status_code", None) or getattr(exc, "status_code", 500)
 
         request = getattr(maybe_response, "request", None)
         if not isinstance(request, httpx.Request):
@@ -680,9 +630,7 @@ class AnthropicProvider(BaseProvider):
                 "https://api.anthropic.com/v1/messages",
             )
 
-        response = (
-            maybe_response if isinstance(maybe_response, httpx.Response) else None
-        )
+        response = maybe_response if isinstance(maybe_response, httpx.Response) else None
         if response is None:
             response = httpx.Response(status_code=int(status_code), request=request)
 
@@ -726,10 +674,7 @@ class AnthropicProvider(BaseProvider):
             pass
 
         is_context_error = (
-            "context length" in msg
-            or "context window" in msg
-            or "token limit" in msg
-            or "too long" in msg
+            "context length" in msg or "context window" in msg or "token limit" in msg or "too long" in msg
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error
