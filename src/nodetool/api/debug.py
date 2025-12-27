@@ -17,6 +17,17 @@ from nodetool.config.settings import get_system_data_path, load_settings
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.system import system_stats
 
+# Secret redaction patterns
+#
+# Note: Regex-based secret detection has inherent limitations:
+# - May miss secrets with unusual formats (false negatives)
+# - May incorrectly flag non-sensitive data (false positives)
+# - New API key formats may not be covered
+#
+# For comprehensive secret management, consider using dedicated secret
+# scanning tools in CI/CD pipelines. This implementation provides
+# best-effort redaction for debug bundles intended for support purposes.
+
 # Patterns that indicate a value might be a secret
 SECRET_KEY_PATTERNS = re.compile(
     r"(api[_-]?key|[_-]token$|^token[_-]|secret|password|credential|bearer|access[_-]?key|private[_-]?key)",

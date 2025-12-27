@@ -48,6 +48,11 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     """
     Retrieve a workflow graph for export, searching the database first and
     falling back to bundled examples.
+
+    Note: Uses asyncio.run() which is appropriate for CLI commands that are
+    called from outside an async context. If this function is ever called from
+    within an async context, it will raise RuntimeError. In such cases, use
+    the async version directly.
     """
     from nodetool.models.workflow import Workflow as WorkflowModel
     from nodetool.packages.registry import Registry
@@ -83,7 +88,11 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     return asyncio.run(_load())
 
 
-warnings.filterwarnings("ignore")
+# Suppress specific deprecation warnings from third-party libraries that are
+# noisy but not actionable (e.g., internal Pydantic, asyncio deprecation warnings).
+# Avoid suppressing all warnings globally as it can hide critical issues.
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="chromadb.*")
 
 
 def _get_supported_gpu_types() -> list[str]:

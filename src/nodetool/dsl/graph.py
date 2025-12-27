@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,7 +40,16 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
     Represents a node in a graph DSL.
     """
 
+    # Note: `extra="allow"` is intentional to support dynamic properties at runtime.
+    # Extra keyword arguments passed to __init__ are captured and forwarded as
+    # dynamic_properties to the underlying BaseNode. This enables flexible
+    # configuration without requiring explicit field definitions for every parameter.
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Tracks which classes have been rebuilt to avoid redundant rebuilds.
+    # Due to Pydantic's generic subclass handling, we need model_rebuild to run
+    # before the first instantiation, but not on every instantiation.
+    _rebuilt_classes: ClassVar[set[type]] = set()
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     sync_mode: str = "on_any"
@@ -66,9 +75,13 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
         cls.model_rebuild(force=True)
 
     def __init__(self, *, sync_mode: str | None = None, **data: Any) -> None:
-        # Ensure Pydantic has rebuilt the model before instantiation so declared
-        # fields are treated as standard properties rather than extras.
-        self.__class__.model_rebuild(force=True)
+        # Pydantic's generic subclass handling can cause declared fields to be
+        # treated as extras unless model_rebuild runs at the right time. We call
+        # it once per class on first instantiation to ensure proper field recognition.
+        if self.__class__ not in GraphNode._rebuilt_classes:
+            self.__class__.model_rebuild(force=True)
+            GraphNode._rebuilt_classes.add(self.__class__)
+
         if sync_mode is not None:
             if sync_mode not in ("on_any", "zip_all"):
                 raise ValueError(f"Invalid sync_mode '{sync_mode}'. Expected 'on_any' or 'zip_all'.")
