@@ -8,6 +8,7 @@ handling message conversion, streaming, and tool integration.
 import base64
 import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     import httpx
@@ -144,11 +145,23 @@ class AnthropicProvider(BaseProvider):
         """Initialize the Anthropic provider with client credentials."""
         assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
         self.api_key = secrets["ANTHROPIC_API_KEY"]
-        log.debug("Creating Anthropic AsyncClient")
-        self.client = anthropic.AsyncAnthropic(
-            api_key=self.api_key,
+        log.debug("AnthropicProvider initialized")
+        # Cache clients per event loop to avoid sharing httpx sessions across threads/loops
+        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, anthropic.AsyncAnthropic]" = (
+            WeakKeyDictionary()
         )
-        log.debug("Anthropic AsyncClient created successfully")
+
+    def get_client(self) -> anthropic.AsyncAnthropic:
+        """Return an Anthropic async client for the current event loop."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        if loop not in self._clients:
+            log.debug(f"Creating Anthropic AsyncClient for loop {id(loop)}")
+            self._clients[loop] = anthropic.AsyncAnthropic(
+                api_key=self.api_key,
+            )
+        return self._clients[loop]
         # Initialize usage tracking
         self.usage = {
             "input_tokens": 0,
@@ -449,7 +462,9 @@ class AnthropicProvider(BaseProvider):
             raise ValueError("Output format is not supported for Anthropic")
 
         log.debug("Streaming response initialized")
-        async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
+        log.debug("Streaming response initialized")
+        client = self.get_client()
+        async with client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
             async for event in ctx_stream:  # type: ignore
                 etype = getattr(event, "type", "")
                 if etype == "content_block_delta":
@@ -584,8 +599,9 @@ class AnthropicProvider(BaseProvider):
             raise ValueError("Output format is not supported for Anthropic")
 
         try:
+            client = self.get_client()
             response: anthropic.types.message.Message = (
-                await self.client.messages.create(**create_kwargs)
+                await client.messages.create(**create_kwargs)
             )
         except anthropic.AnthropicError as exc:
             raise self._as_httpx_status_error(exc) from exc

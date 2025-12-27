@@ -235,6 +235,7 @@ class WebSocketRunner:
                 raise ValueError("WebSocket is not connected")
 
             log.debug(f"Run job request: {req.model_dump(exclude={'graph'})}")
+            log.info(f"Input params: {req.params}")
 
             log.info(
                 "WebSocketRunner.run_job starting",

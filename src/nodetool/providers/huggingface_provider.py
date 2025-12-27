@@ -9,8 +9,10 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
+from weakref import WeakKeyDictionary
 
 import aiohttp
 import httpx
@@ -466,18 +468,33 @@ class HuggingFaceProvider(BaseProvider):
         """Initialize the HuggingFace provider with AsyncInferenceClient."""
         super().__init__()
         if "HF_TOKEN" not in secrets or not secrets["HF_TOKEN"]:
-            log.warning("HF_TOKEN not found in secrets, HuggingFace provider will not be initialized")
-            raise ValueError("HF_TOKEN is required but not provided")
+            # Fallback to environment variable if not in secrets
+            if os.environ.get("HF_TOKEN"):
+                secrets["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            else:
+                log.warning("HF_TOKEN not found in secrets, HuggingFace provider will not be initialized")
+                raise ValueError("HF_TOKEN is required but not provided")
         self.api_key = secrets["HF_TOKEN"]
         self.inference_provider = inference_provider
         self.provider_name = f"huggingface_{inference_provider}"
 
-        # Initialize the AsyncInferenceClient
-        log.debug(f"Creating AsyncInferenceClient with provider: {self.inference_provider}")
-        self.client = AsyncInferenceClient(
-            api_key=self.api_key,
-            provider=self.inference_provider,
+        self.provider_name = f"huggingface_{inference_provider}"
+
+        # Cache clients per event loop to avoid sharing httpx sessions across threads/loops
+        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncInferenceClient]" = (
+            WeakKeyDictionary()
         )
+
+    def get_client(self) -> AsyncInferenceClient:
+        """Return a HuggingFace AsyncInferenceClient for the current event loop."""
+        loop = asyncio.get_running_loop()
+        if loop not in self._clients:
+            log.debug(f"Creating AsyncInferenceClient for loop {id(loop)} with provider: {self.inference_provider}")
+            self._clients[loop] = AsyncInferenceClient(
+                api_key=self.api_key,
+                provider=self.inference_provider,
+            )
+        return self._clients[loop]
 
         self.cost = 0.0
         self.usage = {
@@ -498,13 +515,21 @@ class HuggingFaceProvider(BaseProvider):
         await self.close()
 
     async def close(self):
-        """Close the async client properly."""
+        """Close the async client for the current loop properly."""
         log.debug("Closing async client")
-        if hasattr(self.client, "close"):
-            await self.client.close()
-            log.debug("Async client closed successfully")
-        else:
-            log.debug("Client does not have close method")
+        try:
+            loop = asyncio.get_running_loop()
+            if loop in self._clients:
+                client = self._clients[loop]
+                if hasattr(client, "close"):
+                    await client.close()  # type: ignore
+                    log.debug("Async client closed successfully")
+                    # Remove from cache
+                    del self._clients[loop]
+                else:
+                    log.debug("Client does not have close method")
+        except RuntimeError:
+            log.debug("No running loop, cannot close client")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
@@ -727,7 +752,8 @@ class HuggingFaceProvider(BaseProvider):
         for attempt in range(max_retries + 1):
             try:
                 log.debug(f"API call attempt {attempt + 1}/{max_retries + 1}")
-                completion = await self.client.chat_completion(model=model, **request_params)
+                client = self.get_client()
+                completion = await client.chat_completion(model=model, **request_params)
                 log.debug("API call successful")
                 break
             except httpx.HTTPStatusError as e:

@@ -30,6 +30,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageFile,
+    Provider,
     ToolCall,
     TTSModel,
     VideoModel,
@@ -102,6 +103,8 @@ def get_registered_provider(
     Raises:
         ValueError: If the provider is not registered
     """
+    if provider == Provider.Empty:
+        raise ValueError("Please specify a provider")
     provider_cls, kwargs = _PROVIDER_REGISTRY.get(provider, (None, {}))
     if provider_cls is None:
         raise ValueError(f"Provider {provider} is not installed")

@@ -506,11 +506,17 @@ class WorkflowRunner:
         with self.torch_context(context):
             try:
                 if request.params:
+                    log.info(f"Processing params: {request.params}")
+                    log.info(f"Available input nodes: {list(input_nodes.keys())}")
                     for key, value in request.params.items():
+                        log.info(f"Setting input node {key} to {value}")
                         if key not in input_nodes:
+                            # Log available nodes again just in case
+                            log.error(f"Input node '{key}' not found. Available: {list(input_nodes.keys())}")
                             raise ValueError(f"No input node found for param: {key}")
 
                         node = input_nodes[key]
+                        log.info(f"Assigning property 'value'={value} to node {node.id} ({node.name})")
                         node.assign_property("value", value)
 
                 if validate_graph:
@@ -545,6 +551,7 @@ class WorkflowRunner:
                         handle_name = outputs[0].name if outputs else "output"
 
                         # push value on the node's declared output handle; end stream if not streaming
+                        log.info(f"Pushing input value for {key}: {value} handle={handle_name}")
                         self.push_input_value(
                             input_name=getattr(node, "name", key),
                             value=value,
@@ -574,6 +581,7 @@ class WorkflowRunner:
                         handle_name = outputs[0].name if outputs else "output"
                     except Exception:
                         handle_name = "output"
+                    log.info(f"Pushing default value for {name}: {default_value} handle={handle_name}")
                     self.push_input_value(input_name=name, value=default_value, source_handle=handle_name)
                     if not node.is_streaming_output():
                         self.finish_input_stream(input_name=name, source_handle=handle_name)

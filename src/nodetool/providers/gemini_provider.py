@@ -2,6 +2,7 @@ import asyncio
 import mimetypes
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     import httpx
@@ -72,14 +73,20 @@ class GeminiProvider(BaseProvider):
         self.api_key = secrets["GEMINI_API_KEY"]
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
-        self._client: AsyncClient | None = None
+        # Cache clients per event loop to avoid sharing aiohttp sessions across threads/loops
+        self._clients: "WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient]" = (
+            WeakKeyDictionary()
+        )
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
     def get_client(self) -> AsyncClient:
-        """Return an async Gemini client. Cached to reuse the same aiohttp session."""
-        if self._client is None:
-            self._client = Client(api_key=self.api_key).aio
-        return self._client
+        """Return an async Gemini client for the current event loop."""
+        from weakref import WeakKeyDictionary  # Lazy import for type hint if needed above
+
+        loop = asyncio.get_running_loop()
+        if loop not in self._clients:
+            self._clients[loop] = Client(api_key=self.api_key).aio
+        return self._clients[loop]
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
