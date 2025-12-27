@@ -1820,6 +1820,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from an IO object.
@@ -1828,6 +1829,7 @@ class ProcessingContext:
             buffer (IO): The IO object.
             name (Optional[str], optional): The name of the asset. Defaults to None
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Optional[Dict[str, Any]], optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
@@ -1838,10 +1840,10 @@ class ProcessingContext:
             )
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
-            return ImageRef(asset_id=asset.id, uri=url)
+            return ImageRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
             buffer.seek(0)
-            return ImageRef(data=buffer.read())
+            return ImageRef(data=buffer.read(), metadata=metadata)
 
     async def image_from_url(
         self,
@@ -1869,6 +1871,7 @@ class ProcessingContext:
         b: bytes,
         name: str | None = None,
         parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a bytes object.
@@ -1877,17 +1880,19 @@ class ProcessingContext:
             b (bytes): The bytes object.
             name (str | None, optional): The name of the asset. Defaults to None.
             parent_id (str | None, optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_io(BytesIO(b), name=name, parent_id=parent_id)
+        return await self.image_from_io(BytesIO(b), name=name, parent_id=parent_id, metadata=metadata)
 
     async def image_from_base64(
         self,
         b64: str,
         name: str | None = None,
         parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a base64-encoded string.
@@ -1896,12 +1901,13 @@ class ProcessingContext:
             b64 (str): The base64-encoded string.
             name (str | None, optional): The name of the asset. Defaults to None.
             parent_id (str | None, optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
         """
         return await self.image_from_bytes(
-            base64.b64decode(b64), name=name, parent_id=parent_id
+            base64.b64decode(b64), name=name, parent_id=parent_id, metadata=metadata
         )
 
     async def image_from_pil(
@@ -1909,6 +1915,7 @@ class ProcessingContext:
         image: PIL.Image.Image,
         name: str | None = None,
         parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a PIL Image object.
@@ -1917,6 +1924,7 @@ class ProcessingContext:
             image (Image.Image): The PIL Image object.
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
@@ -1926,16 +1934,16 @@ class ProcessingContext:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the PIL Image directly for fast retrieval
             self._memory_set(memory_uri, image)
-            return ImageRef(uri=memory_uri)
+            return ImageRef(uri=memory_uri, metadata=metadata)
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
             image.save(buffer, format="png")
             buffer.seek(0)
-            return await self.image_from_io(buffer, name=name, parent_id=parent_id)
+            return await self.image_from_io(buffer, name=name, parent_id=parent_id, metadata=metadata)
 
     async def image_from_numpy(
-        self, image: np.ndarray, name: str | None = None, parent_id: str | None = None
+        self, image: np.ndarray, name: str | None = None, parent_id: str | None = None, metadata: Dict[str, Any] | None = None
     ) -> ImageRef:
         """
         Creates an ImageRef from a numpy array.
@@ -1944,22 +1952,29 @@ class ProcessingContext:
             image (np.ndarray): The numpy array.
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
         """
         pil_img = self._numpy_to_pil_image(image)
-        return await self.image_from_pil(pil_img, name=name)
+        return await self.image_from_pil(pil_img, name=name, metadata=metadata)
 
     async def image_from_tensor(
         self,
         image_tensor: Any,  # Change type hint to Any since torch.Tensor may not be available
+        name: str | None = None,
+        parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ):
         """
         Creates an ImageRef from a tensor.
 
         Args:
             image_tensor: The tensor.
+            name (Optional[str], optional): The name of the asset. Defaults to None.
+            parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             ImageRef: The ImageRef object.
@@ -1974,7 +1989,7 @@ class ProcessingContext:
         if img.ndim == 5:
             img = img[0]
         if img.shape[0] == 1:
-            return await self.image_from_numpy(img[0])
+            return await self.image_from_numpy(img[0], name=name, parent_id=parent_id, metadata=metadata)
 
         batch = []
         PIL_Image, _ = _ensure_pil()
@@ -1983,7 +1998,7 @@ class ProcessingContext:
             PIL_Image.fromarray(img[i]).save(buffer, format="png")
             batch.append(buffer.getvalue())
 
-        return ImageRef(data=batch)
+        return ImageRef(data=batch, metadata=metadata)
 
     async def text_to_str(self, text_ref: TextRef | str) -> str:
         """
