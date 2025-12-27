@@ -21,8 +21,8 @@ class JobResponse(BaseModel):
     job_type: str
     status: str
     workflow_id: str
-    started_at: str
-    finished_at: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
     error: Optional[str] = None
     cost: Optional[float] = None
 
@@ -34,7 +34,7 @@ class BackgroundJobResponse(BaseModel):
     job_id: str
     status: str
     workflow_id: str
-    created_at: str
+    created_at: Optional[datetime] = None
     is_running: bool
     is_completed: bool
 
@@ -90,8 +90,8 @@ async def list_jobs(
                 job_type=job.job_type,
                 status=job.status,
                 workflow_id=job.workflow_id,
-                started_at=job.started_at.isoformat() if job.started_at else "",
-                finished_at=job.finished_at.isoformat() if job.finished_at else None,
+                started_at=job.started_at,
+                finished_at=job.finished_at,
                 error=job.error,
                 cost=job.cost,
             )
@@ -124,8 +124,8 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
         job_type=job.job_type,
         status=job.status,
         workflow_id=job.workflow_id,
-        started_at=job.started_at.isoformat() if job.started_at else "",
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
         error=job.error,
         cost=job.cost,
     )
@@ -150,7 +150,7 @@ async def list_running_jobs(user_id: str = Depends(current_user)):
             job_id=job.job_id,
             status=job.status,
             workflow_id=job.request.workflow_id,
-            created_at=job.created_at.isoformat(),
+            created_at=job.created_at,
             is_running=job.is_running(),
             is_completed=job.is_completed(),
         )
@@ -184,7 +184,7 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
         job_id=job_id,
         status=status,
         workflow_id=job.workflow_id,
-        created_at=job.started_at.isoformat() if job.started_at else "",
+        created_at=job.started_at,
         is_running=False,
         is_completed=not cancelled,
     )
