@@ -40,7 +40,6 @@ class MobileThread(BaseModel):
     id: str
     title: str
     updated_at: int  # Unix timestamp for smaller payload
-    message_count: int = 0
     last_message_preview: Optional[str] = None
 
 
@@ -164,7 +163,6 @@ async def list_threads(
             id=thread.id,
             title=thread.title or "New Chat",
             updated_at=_to_unix_timestamp(thread.updated_at),
-            message_count=0,  # Would require separate count query
             last_message_preview=last_message_preview,
         ))
     
@@ -196,7 +194,6 @@ async def create_thread(
         id=thread.id,
         title=thread.title or "New Chat",
         updated_at=_to_unix_timestamp(thread.updated_at),
-        message_count=0,
     )
 
 

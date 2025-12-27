@@ -96,7 +96,6 @@ class TestMobileThreads:
         assert thread.title == "Test Mobile Thread"
         assert thread.id is not None
         assert thread.updated_at > 0
-        assert thread.message_count == 0
 
     @pytest.mark.asyncio
     async def test_create_thread_default_title(self, mobile_client: TestClient, mobile_headers: dict):
