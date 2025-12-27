@@ -191,6 +191,7 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
+    metadata: Dict[str, Any] | None = None
 
     @staticmethod
     def from_file(path: str):
