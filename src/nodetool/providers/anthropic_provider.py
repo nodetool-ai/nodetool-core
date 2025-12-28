@@ -446,8 +446,6 @@ class AnthropicProvider(BaseProvider):
                     # at content_block_stop event.
                     elif isinstance(thinking, str):
                         yield Chunk(content=thinking, done=False)
-                elif etype == "message_start":
-                    msg = getattr(event, "message", None)
                 elif etype == "content_block_stop":
                     # Tool use may appear here in real SDK; tests often omit attributes
                     content_block = getattr(event, "content_block", None)
