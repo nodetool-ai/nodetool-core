@@ -278,7 +278,6 @@ class VariableChannelManager:
     def __init__(self, default_scalar_mode: bool = True) -> None:
         self._channels: dict[str, VariableChannel] = {}
         self._default_scalar_mode = default_scalar_mode
-        self._lock = asyncio.Lock()
 
     def get_channel(
         self,

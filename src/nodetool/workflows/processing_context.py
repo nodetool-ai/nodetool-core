@@ -507,10 +507,10 @@ class ProcessingContext:
         Returns:
             Any: The value of the variable.
         """
-        # First check the channel manager for a value
-        channel_value = self._variable_channels.get_variable_nowait(key)
-        if channel_value is not None:
-            return channel_value
+        # First check if the channel manager has a value for this key
+        channel = self._variable_channels.get_channel(key, create=False)
+        if channel is not None and channel.has_value:
+            return channel.latest_value
         # Fall back to legacy variables dict
         return self.variables.get(key, default)
 

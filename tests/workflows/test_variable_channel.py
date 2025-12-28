@@ -319,6 +319,17 @@ class TestProcessingContextVariables:
         values = ctx.get_all_variable_values()
         assert values == {"var1": "value1", "var2": "value2"}
 
+    def test_get_none_value(self):
+        """Test that get() correctly returns None when explicitly set."""
+        ctx = ProcessingContext()
+
+        # Set a variable to None explicitly
+        ctx.set("null_var", None)
+
+        # get() should return None, not the default
+        result = ctx.get("null_var", default="default")
+        assert result is None
+
     @pytest.mark.asyncio
     async def test_cleanup_closes_channels(self):
         """Test that cleanup closes variable channels."""
