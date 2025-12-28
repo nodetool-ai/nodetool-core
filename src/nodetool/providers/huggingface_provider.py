@@ -920,7 +920,8 @@ class HuggingFaceProvider(BaseProvider):
 
         # Create streaming completion using chat_completion method
         log.debug("Starting streaming API call")
-        stream = await self.client.chat_completion(model=model, **request_params)
+        client = self.get_client()
+        stream = await client.chat_completion(model=model, **request_params)
 
         # Track tool calls during streaming
         accumulated_tool_calls = {}
@@ -1091,7 +1092,8 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             # Use the text_to_speech method from AsyncInferenceClient
-            audio_bytes = await self.client.text_to_speech(
+            client = self.get_client()
+            audio_bytes = await client.text_to_speech(
                 text=text,
                 model=model,
             )
@@ -1167,7 +1169,8 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             # Use the text_to_image method from AsyncInferenceClient
-            image = await self.client.text_to_image(
+            client = self.get_client()
+            image = await client.text_to_image(
                 prompt=params.prompt,
                 model=params.model.id,
                 negative_prompt=params.negative_prompt or None,
@@ -1234,7 +1237,8 @@ class HuggingFaceProvider(BaseProvider):
             input_image = Image.open(io.BytesIO(image))
 
             # Use the image_to_image method from AsyncInferenceClient
-            result_image = await self.client.image_to_image(
+            client = self.get_client()
+            result_image = await client.image_to_image(
                 image=input_image,
                 prompt=params.prompt,
                 model=params.model.id,
@@ -1391,7 +1395,8 @@ class HuggingFaceProvider(BaseProvider):
                 api_params["seed"] = params.seed
 
             # Use the text_to_video method from AsyncInferenceClient
-            video_bytes = await self.client.text_to_video(
+            client = self.get_client()
+            video_bytes = await client.text_to_video(
                 prompt=params.prompt,
                 model=params.model.id,
                 **api_params,

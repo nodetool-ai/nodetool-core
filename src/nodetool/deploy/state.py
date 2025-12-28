@@ -7,6 +7,7 @@ locking, and timestamp tracking to ensure safe concurrent access.
 
 import fcntl
 import secrets
+import threading
 import time
 from contextlib import contextmanager, suppress
 from datetime import datetime
@@ -28,9 +29,12 @@ class StateManager:
     with support for:
     - Atomic file operations
     - File-based locking to prevent concurrent modifications
+    - Thread-based locking for in-process thread safety
     - Automatic timestamp tracking
     - State validation
     """
+
+    _thread_lock = threading.Lock()
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -49,7 +53,10 @@ class StateManager:
         """
         Acquire an exclusive lock on the deployment configuration file.
 
-        This prevents concurrent modifications by other processes.
+        This prevents concurrent modifications by other processes and threads.
+
+        Uses both a threading lock (for in-process thread safety) and
+        file locking (for cross-process safety).
 
         Args:
             timeout: Maximum time to wait for lock acquisition (seconds)
@@ -60,36 +67,44 @@ class StateManager:
         Yields:
             None: Lock is held while in context
         """
-        # Ensure lock file exists
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        start_time = time.time()
-        acquired = False
+        # First acquire the thread lock to prevent concurrent access from multiple threads
+        acquired_thread_lock = self._thread_lock.acquire(timeout=timeout)
+        if not acquired_thread_lock:
+            raise TimeoutError(f"Could not acquire thread lock within {timeout} seconds")
 
-        with open(self.lock_path, "w") as lock_file:
-            try:
-                # Try to acquire lock with timeout
-                while time.time() - start_time < timeout:
-                    try:
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        acquired = True
-                        break
-                    except OSError:
-                        time.sleep(0.1)
+        try:
+            # Then acquire the file lock for cross-process safety
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            start_time = time.time()
+            acquired = False
 
-                if not acquired:
-                    raise TimeoutError(f"Could not acquire lock on {self.lock_path} within {timeout} seconds")
+            with open(self.lock_path, "w") as lock_file:
+                try:
+                    # Try to acquire lock with timeout
+                    while time.time() - start_time < timeout:
+                        try:
+                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            acquired = True
+                            break
+                        except OSError:
+                            time.sleep(0.1)
 
-                yield
+                    if not acquired:
+                        raise TimeoutError(f"Could not acquire lock on {self.lock_path} within {timeout} seconds")
 
-            finally:
-                if acquired:
-                    with suppress(OSError):
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            lock_file.close()
+                    yield
 
-            # Clean up lock file
-            with suppress(FileNotFoundError):
-                self.lock_path.unlink()
+                finally:
+                    if acquired:
+                        with suppress(OSError):
+                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                lock_file.close()
+
+                # Clean up lock file
+                with suppress(FileNotFoundError):
+                    self.lock_path.unlink()
+        finally:
+            self._thread_lock.release()
 
     def read_state(self, deployment_name: str) -> Optional[Dict[str, Any]]:
         """

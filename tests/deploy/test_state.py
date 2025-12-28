@@ -238,7 +238,11 @@ class TestStateLocking:
         manager1 = StateManager(config_path=config_path)
         manager2 = StateManager(config_path=config_path)
 
-        with manager1.lock(), pytest.raises(TimeoutError, match="Could not acquire lock"), manager2.lock(timeout=1):
+        with (
+            manager1.lock(),
+            pytest.raises(TimeoutError, match="Could not acquire thread lock"),
+            manager2.lock(timeout=1),
+        ):
             pass
 
     def test_concurrent_read_safety(self, sample_config):
