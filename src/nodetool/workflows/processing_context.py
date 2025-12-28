@@ -54,6 +54,7 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
+from nodetool.workflows.variable_channel import VariableChannel, VariableChannelManager
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
 )
@@ -257,6 +258,8 @@ class ProcessingContext:
         self.message_queue = message_queue if message_queue else queue.Queue()
         self.device = _resolve_default_device(device)
         self.variables: dict[str, Any] = variables if variables else {}
+        # Channel-based variable manager for streaming variable support
+        self._variable_channels: VariableChannelManager = VariableChannelManager()
         self.environment: dict[str, str] = Environment.get_environment()
         if environment:
             self.environment.update(environment)
@@ -472,7 +475,7 @@ class ProcessingContext:
         Returns:
             ProcessingContext: A new ProcessingContext instance with copied properties.
         """
-        return ProcessingContext(
+        ctx = ProcessingContext(
             graph=self.graph,
             user_id=self.user_id,
             auth_token=self.auth_token,
@@ -485,11 +488,17 @@ class ProcessingContext:
             ui_tool_names=self.ui_tool_names.copy() if self.ui_tool_names else set(),
             client_tools_manifest=(self.client_tools_manifest.copy() if self.client_tools_manifest else {}),
         )
+        # Share the variable channel manager with the copy
+        ctx._variable_channels = self._variable_channels
+        return ctx
 
     def get(self, key: str, default: Any = None) -> Any:
         """
         Gets the value of a variable from the context.
         This is also used to set and retrieve api keys.
+
+        For synchronous access, this checks both the legacy variables dict and
+        the channel manager for the latest value.
 
         Args:
             key (str): The key of the variable.
@@ -498,18 +507,112 @@ class ProcessingContext:
         Returns:
             Any: The value of the variable.
         """
+        # First check the channel manager for a value
+        channel_value = self._variable_channels.get_variable_nowait(key)
+        if channel_value is not None:
+            return channel_value
+        # Fall back to legacy variables dict
         return self.variables.get(key, default)
 
     def set(self, key: str, value: Any):
         """
         Sets the value of a variable in the context.
 
+        This updates both the legacy variables dict and the channel manager
+        for backward compatibility and streaming support.
+
         Args:
             key (str): The key of the variable.
             value (Any): The value to set.
         """
         self.variables[key] = value
+        # Also update the channel manager (synchronously)
+        self._variable_channels.set_variable_sync(key, value, scalar_mode=True)
         self._persist_variable_if_needed(key, value)
+
+    async def set_variable(self, key: str, value: Any, streaming: bool = False) -> None:
+        """
+        Asynchronously set a variable value.
+
+        This method provides full channel support for streaming variables.
+
+        Args:
+            key (str): The key of the variable.
+            value (Any): The value to set.
+            streaming (bool): If True, the variable accumulates values (FIFO queue).
+                            If False, only the latest value is kept (default).
+        """
+        self.variables[key] = value
+        await self._variable_channels.set_variable(key, value, scalar_mode=not streaming)
+        self._persist_variable_if_needed(key, value)
+
+    async def get_variable(self, key: str, default: Any = None, timeout: float | None = None) -> Any:
+        """
+        Asynchronously get a variable value, waiting if necessary.
+
+        This method waits for the variable to have a value if it doesn't yet.
+
+        Args:
+            key (str): The key of the variable.
+            default (Any, optional): The default value if key not found or timeout expires.
+            timeout (float, optional): Maximum time to wait in seconds.
+
+        Returns:
+            Any: The value of the variable.
+        """
+        return await self._variable_channels.get_variable(key, default=default, timeout=timeout)
+
+    async def iter_variable(self, key: str) -> AsyncGenerator[Any, None]:
+        """
+        Iterate over values from a streaming variable until it closes.
+
+        This allows nodes to consume streaming variable values one at a time,
+        similar to how nodes can iterate over input streams.
+
+        Args:
+            key (str): The key of the variable.
+
+        Yields:
+            Any: Values from the variable channel as they arrive.
+        """
+        async for value in self._variable_channels.iter_variable(key):
+            yield value
+
+    def get_variable_channel(self, key: str, streaming: bool = False) -> VariableChannel:
+        """
+        Get the underlying channel for a variable.
+
+        This provides direct access to the channel for advanced use cases
+        like registering producers or checking channel state.
+
+        Args:
+            key (str): The key of the variable.
+            streaming (bool): If True, create a streaming channel if it doesn't exist.
+
+        Returns:
+            VariableChannel: The channel for the variable.
+        """
+        channel = self._variable_channels.get_channel(key, create=True, scalar_mode=not streaming)
+        assert channel is not None
+        return channel
+
+    def list_variable_channels(self) -> list[str]:
+        """
+        List all variable channel names.
+
+        Returns:
+            list[str]: Names of all variables with channels.
+        """
+        return self._variable_channels.list_variables()
+
+    def get_all_variable_values(self) -> dict[str, Any]:
+        """
+        Get all current variable values from channels.
+
+        Returns:
+            dict[str, Any]: Dict mapping variable names to their latest values.
+        """
+        return self._variable_channels.get_all_values()
 
     def store_step_result(self, key: str, value: Any) -> str:
         """Persist a subtask result to the workspace root and memoize a reference."""
@@ -2718,11 +2821,14 @@ class ProcessingContext:
 
     async def cleanup(self):
         """
-        Cleanup the browser context and pages.
+        Cleanup the browser context, pages, and variable channels.
         """
         if getattr(self, "_browser", None):
             await self._browser.close()  # type: ignore
             self._browser = None
+
+        # Close all variable channels
+        await self._variable_channels.close_all()
 
         # Clear memory to prevent leaks
         self.clear_memory()

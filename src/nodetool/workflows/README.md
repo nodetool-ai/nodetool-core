@@ -118,6 +118,39 @@ End-of-stream (EOS): The runner tracks the number of upstream producers per inpu
 sources complete. The inbox iterators terminate once buffers are empty and EOS is reached for the given handle(s).
 Actors mark downstream EOS on completion/error to reliably terminate consumers.
 
+### Variable Channels
+
+Variables in `ProcessingContext` are implemented as channels, following the same streaming architecture as `NodeInbox`.
+This enables nodes to publish and subscribe to workflow-wide state with full streaming support.
+
+- **VariableChannel**: Per-variable channel with FIFO buffer and optional streaming mode.
+- **VariableChannelManager**: Manages multiple variable channels for a workflow.
+
+Key Features:
+- Scalar mode (default): Only the latest value is kept, suitable for configuration-like variables.
+- Streaming mode: Values accumulate in a FIFO queue until consumed.
+- Late subscribers: In scalar mode, late subscribers get the latest value immediately.
+- Producer tracking: Supports EOS detection when all producers are done.
+
+Usage in nodes:
+```python
+# Set a variable (synchronous, uses scalar mode)
+context.set("my_var", "my_value")
+
+# Get a variable value
+value = context.get("my_var", default="fallback")
+
+# Async set with streaming support
+await context.set_variable("stream_var", value, streaming=True)
+
+# Wait for a variable to have a value (with timeout)
+value = await context.get_variable("my_var", timeout=5.0)
+
+# Iterate values from a streaming variable
+async for value in context.iter_variable("stream_var"):
+    process(value)
+```
+
 ### NodeActor Details
 
 - Responsibilities:
