@@ -494,14 +494,6 @@ class HuggingFaceProvider(BaseProvider):
             )
         return self._clients[loop]
 
-        self.cost = 0.0
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
-        log.debug(f"HuggingFaceProvider initialized with provider: {self.inference_provider or 'default'}")
-
     async def __aenter__(self):
         """Async context manager entry."""
         log.debug("Entering async context manager")
@@ -826,14 +818,6 @@ class HuggingFaceProvider(BaseProvider):
         if completion is None:
             raise RuntimeError("HuggingFace chat completion did not return a response")
 
-        # Update usage statistics if available
-        if hasattr(completion, "usage") and completion.usage:
-            log.debug("Processing usage statistics")
-            self.usage["prompt_tokens"] = completion.usage.prompt_tokens or 0
-            self.usage["completion_tokens"] = completion.usage.completion_tokens or 0
-            self.usage["total_tokens"] = completion.usage.total_tokens or 0
-            log.debug(f"Updated usage: {self.usage}")
-
         # Extract the response message
         choice = completion.choices[0]
         message_data = choice.message
@@ -936,7 +920,8 @@ class HuggingFaceProvider(BaseProvider):
 
         # Create streaming completion using chat_completion method
         log.debug("Starting streaming API call")
-        stream = await self.client.chat_completion(model=model, **request_params)
+        client = self.get_client()
+        stream = await client.chat_completion(model=model, **request_params)
 
         # Track tool calls during streaming
         accumulated_tool_calls = {}
@@ -945,14 +930,6 @@ class HuggingFaceProvider(BaseProvider):
         try:
             async for chunk in stream:
                 chunk_count += 1
-
-                if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
-                    log.debug("Updating usage stats from streaming chunk")
-                    usage = chunk.usage  # type: ignore[attr-defined]
-                    self.usage["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
-                    self.usage["completion_tokens"] = getattr(usage, "completion_tokens", 0) or 0
-                    self.usage["total_tokens"] = getattr(usage, "total_tokens", 0) or 0
-                    log.debug(f"Updated usage: {self.usage}")
 
                 choices = getattr(chunk, "choices", None)
                 if not choices:
@@ -1057,20 +1034,6 @@ class HuggingFaceProvider(BaseProvider):
                     raise Exception(f"{status} {body_text or str(e)}") from e
             raise
 
-    def get_usage(self) -> dict:
-        """Get token usage statistics."""
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage
-
-    def reset_usage(self) -> None:
-        """Reset token usage statistics."""
-        log.debug("Resetting usage counters")
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
-
     def is_context_length_error(self, error: Exception) -> bool:
         """Check if the error is due to context length exceeding limits."""
         error_str = str(error).lower()
@@ -1129,7 +1092,8 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             # Use the text_to_speech method from AsyncInferenceClient
-            audio_bytes = await self.client.text_to_speech(
+            client = self.get_client()
+            audio_bytes = await client.text_to_speech(
                 text=text,
                 model=model,
             )
@@ -1205,7 +1169,8 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             # Use the text_to_image method from AsyncInferenceClient
-            image = await self.client.text_to_image(
+            client = self.get_client()
+            image = await client.text_to_image(
                 prompt=params.prompt,
                 model=params.model.id,
                 negative_prompt=params.negative_prompt or None,
@@ -1272,7 +1237,8 @@ class HuggingFaceProvider(BaseProvider):
             input_image = Image.open(io.BytesIO(image))
 
             # Use the image_to_image method from AsyncInferenceClient
-            result_image = await self.client.image_to_image(
+            client = self.get_client()
+            result_image = await client.image_to_image(
                 image=input_image,
                 prompt=params.prompt,
                 model=params.model.id,
@@ -1429,7 +1395,8 @@ class HuggingFaceProvider(BaseProvider):
                 api_params["seed"] = params.seed
 
             # Use the text_to_video method from AsyncInferenceClient
-            video_bytes = await self.client.text_to_video(
+            client = self.get_client()
+            video_bytes = await client.text_to_video(
                 prompt=params.prompt,
                 model=params.model.id,
                 **api_params,

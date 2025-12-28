@@ -296,24 +296,6 @@ class TestOpenAIProvider(BaseProviderTest):
         assert response.tool_calls[0].id == "call_abc123"
 
     @pytest.mark.asyncio
-    async def test_openai_usage_tracking(self):
-        """Test that OpenAI usage tokens are properly tracked."""
-        provider = self.create_provider()
-        messages = self.create_simple_messages()
-
-        initial_usage = provider.usage
-        initial_tokens = initial_usage.get("total_tokens", 0)
-
-        with self.mock_api_call(ResponseFixtures.simple_text_response()):
-            await provider.generate_message(messages, "gpt-3.5-turbo")
-
-        final_usage = provider.usage
-        final_tokens = final_usage.get("total_tokens", 0)
-
-        # Usage should have increased
-        assert final_tokens >= initial_tokens
-
-    @pytest.mark.asyncio
     async def test_openai_error_recognition(self):
         """Test that OpenAI-specific errors are properly recognized."""
         _ = self.create_provider()

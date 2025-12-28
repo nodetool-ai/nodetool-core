@@ -416,6 +416,15 @@ class RegularChatProcessor(MessageProcessor):
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
                     log.debug("No more unprocessed messages, completing generation")
+
+                    # Log provider call for cost tracking
+                    await self._log_provider_call(
+                        processing_context.user_id,
+                        last_message.provider,
+                        last_message.model,
+                        processing_context.workflow_id,
+                    )
+
                     break
                 else:
                     log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
@@ -668,3 +677,41 @@ class RegularChatProcessor(MessageProcessor):
             return "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
         else:
             return f"Connection error: {error_msg}"
+
+    async def _log_provider_call(
+        self,
+        user_id: str,
+        provider: str | None,
+        model: str | None,
+        workflow_id: str,
+    ) -> None:
+        """
+        Log the provider call to the database for cost tracking.
+
+        Args:
+            user_id: User ID making the call
+            provider: Provider name (e.g., "openai", "anthropic")
+            model: Model identifier
+            workflow_id: Workflow ID for tracking
+        """
+        if not provider or not model:
+            log.warning("Cannot log provider call: missing provider or model")
+            return
+
+        try:
+            cost = self.provider.cost
+
+            await self.provider.log_provider_call(
+                user_id=user_id,
+                provider=str(provider),
+                model=model,
+                cost=cost,
+                workflow_id=workflow_id,
+            )
+            log.debug(f"Logged provider call: {provider}/{model}, cost={cost}")
+        except (KeyError, AttributeError, TypeError) as e:
+            # Handle missing or invalid data
+            log.warning(f"Failed to log provider call due to invalid data: {e}")
+        except Exception as e:
+            # Log unexpected errors but don't fail the chat
+            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)

@@ -15,6 +15,8 @@ import aiohttp
 import anthropic
 
 if TYPE_CHECKING:
+    import asyncio
+
     from nodetool.workflows.processing_context import ProcessingContext
 
 from nodetool.config.logging_config import get_logger
@@ -61,22 +63,22 @@ class MiniMaxProvider(AnthropicProvider):
         assert "MINIMAX_API_KEY" in secrets, "MINIMAX_API_KEY is required"
         self.api_key = secrets["MINIMAX_API_KEY"]
 
-        log.debug("Creating MiniMax AsyncClient (Anthropic-compatible)")
-        self.client = anthropic.AsyncAnthropic(
-            api_key=self.api_key,
-            base_url=MINIMAX_BASE_URL,
-        )
-        log.debug("MiniMax AsyncClient created successfully")
+        log.debug("MiniMaxProvider initialized")
+        self._clients: dict[int, anthropic.AsyncAnthropic] = {}
 
-        # Initialize usage tracking
-        self.usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0,
-        }
-        self.cost = 0.0
-        log.debug("MiniMaxProvider initialized with usage tracking")
+    def get_client(self) -> anthropic.AsyncAnthropic:
+        """Return a MiniMax async client for the current event loop."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+        if loop_id not in self._clients:
+            log.debug(f"Creating MiniMax AsyncClient for loop {loop_id}")
+            self._clients[loop_id] = anthropic.AsyncAnthropic(
+                api_key=self.api_key,
+                base_url=MINIMAX_BASE_URL,
+            )
+        return self._clients[loop_id]
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables required for containerized execution.

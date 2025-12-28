@@ -22,15 +22,69 @@ if TYPE_CHECKING:
 # --- New Credit-Based Pricing System ---
 # 1 credit = $0.01 USD (i.e., 1000 credits = $10 USD)
 # All rates include a 50% premium over provider base costs.
+# Pricing updated based on official OpenAI pricing (December 2023)
 
 CREDIT_PRICING_TIERS = {
-    # Rates per 1,000 tokens
-    "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},
-    "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},
+    # GPT-5 Series (newest flagship models)
+    # GPT-5.2: $1.75/1M input ($0.175/1M cached), $14/1M output → with 50% premium
+    "gpt5_tier": {
+        "input_1k_tokens": 0.002625,  # ($1.75/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0002625,  # ($0.175/1M * 1.5) / 1000
+        "output_1k_tokens": 0.021,  # ($14/1M * 1.5) / 1000
+    },
+    # GPT-5.2 pro: $21/1M input, $168/1M output → with 50% premium
+    "gpt5_pro_tier": {
+        "input_1k_tokens": 0.0315,  # ($21/1M * 1.5) / 1000
+        "output_1k_tokens": 0.252,  # ($168/1M * 1.5) / 1000
+    },
+    # GPT-5 mini: $0.25/1M input ($0.025/1M cached), $2/1M output → with 50% premium
+    "gpt5_mini_tier": {
+        "input_1k_tokens": 0.000375,  # ($0.25/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0000375,  # ($0.025/1M * 1.5) / 1000
+        "output_1k_tokens": 0.003,  # ($2/1M * 1.5) / 1000
+    },
+    # GPT-4.1 family
+    # GPT-4.1: $3/1M input ($0.75/1M cached), $12/1M output → with 50% premium
+    "gpt4_1_tier": {
+        "input_1k_tokens": 0.0045,  # ($3/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.001125,  # ($0.75/1M * 1.5) / 1000
+        "output_1k_tokens": 0.018,  # ($12/1M * 1.5) / 1000
+    },
+    # GPT-4.1 mini: $0.80/1M input ($0.20/1M cached), $3.20/1M output → with 50% premium
+    "gpt4_1_mini_tier": {
+        "input_1k_tokens": 0.0012,  # ($0.80/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0003,  # ($0.20/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0048,  # ($3.20/1M * 1.5) / 1000
+    },
+    # GPT-4.1 nano: $0.20/1M input ($0.05/1M cached), $0.80/1M output → with 50% premium
+    "gpt4_1_nano_tier": {
+        "input_1k_tokens": 0.0003,  # ($0.20/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.000075,  # ($0.05/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0012,  # ($0.80/1M * 1.5) / 1000
+    },
+    # O4-mini (reasoning): $4/1M input ($1/1M cached), $16/1M output → with 50% premium
+    "o4_mini_tier": {
+        "input_1k_tokens": 0.006,  # ($4/1M * 1.5) / 1000
+        "cached_input_1k_tokens": 0.0015,  # ($1/1M * 1.5) / 1000
+        "output_1k_tokens": 0.024,  # ($16/1M * 1.5) / 1000
+    },
+    # O1 Series (existing reasoning models)
+    "o1_tier": {"input_1k_tokens": 2.25, "output_1k_tokens": 9.0},  # o1 models
+    "o1_mini_tier": {"input_1k_tokens": 0.45, "output_1k_tokens": 1.8},  # o1-mini
+    # GPT-4o Series
+    "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},  # gpt-4o
+    "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},  # gpt-4o-mini
+    # GPT-4 Turbo
+    "gpt4_turbo": {"input_1k_tokens": 1.5, "output_1k_tokens": 6.0},  # gpt-4-turbo
     # Rates per image for gpt-image-1 (1 credit = $0.01)
     "image_gpt_low": {"per_image": 1.5},
     "image_gpt_medium": {"per_image": 6.0},
     "image_gpt_high": {"per_image": 25.0},
+    # Image generation GPT-image-1.5: $5/1M input, $10/1M output → with 50% premium
+    "image_gpt_1_5": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.015,  # ($10/1M * 1.5) / 1000
+    },
     # Rates per minute of audio
     "whisper_standard": {"per_minute": 0.9},
     "whisper_low_cost": {"per_minute": 0.45},
@@ -41,21 +95,87 @@ CREDIT_PRICING_TIERS = {
     # Rates per 1,000 tokens
     "embedding_small": {"per_1k_tokens": 0.003},
     "embedding_large": {"per_1k_tokens": 0.0195},
+    # Anthropic Pricing (50% premium included)
+    # Claude 4 family (2025)
+    "claude_opus_4": {
+        "input_1k_tokens": 0.045,  # ($30/1M * 1.5) / 1000
+        "output_1k_tokens": 0.15,  # ($100/1M * 1.5) / 1000
+    },
+    "claude_sonnet_4": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0375,  # ($25/1M * 1.5) / 1000
+    },
+    "claude_haiku_4": {
+        "input_1k_tokens": 0.00225,  # ($1.50/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+    },
+    # Claude 3.7 family
+    "claude_3_7_sonnet": {
+        "input_1k_tokens": 0.009,  # ($6/1M * 1.5) / 1000
+        "output_1k_tokens": 0.027,  # ($18/1M * 1.5) / 1000
+    },
+    # Claude 3.5 family
+    "claude_3_5_sonnet": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0225,  # ($15/1M * 1.5) / 1000
+    },
+    "claude_3_5_haiku": {
+        "input_1k_tokens": 0.0015,  # ($1/1M * 1.5) / 1000
+        "output_1k_tokens": 0.006,  # ($4/1M * 1.5) / 1000
+    },
+    # Claude 3 Opus
+    "claude_3_opus": {
+        "input_1k_tokens": 0.045,  # ($30/1M * 1.5) / 1000
+        "output_1k_tokens": 0.15,  # ($100/1M * 1.5) / 1000
+    },
+    # Claude 3 Sonnet
+    "claude_3_sonnet": {
+        "input_1k_tokens": 0.0075,  # ($5/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0225,  # ($15/1M * 1.5) / 1000
+    },
+    # Claude 3 Haiku
+    "claude_3_haiku": {
+        "input_1k_tokens": 0.000375,  # ($0.25/1M * 1.5) / 1000
+        "output_1k_tokens": 0.0015,  # ($1.25/1M * 1.5) / 1000
+    },
 }
 
 MODEL_TO_TIER_MAP = {
-    # Top Tier Chat
+    # GPT-5 Series (newest models)
+    "gpt-5.2": "gpt5_tier",
+    "gpt-5.2-pro": "gpt5_pro_tier",
+    "gpt-5-mini": "gpt5_mini_tier",
+    # GPT-4.1 Family
+    "gpt-4.1": "gpt4_1_tier",
+    "gpt-4.1-mini": "gpt4_1_mini_tier",
+    "gpt-4.1-nano": "gpt4_1_nano_tier",
+    # O4 Series (reasoning models)
+    "o4-mini": "o4_mini_tier",
+    # O1 Series (existing reasoning models)
+    "o1": "o1_tier",
+    "o1-preview": "o1_tier",
+    "o1-mini": "o1_mini_tier",
+    # O3 Series (future models)
+    "o3": "o1_tier",
+    "o3-mini": "o1_mini_tier",
+    # GPT-4o Series
     "gpt-4o": "top_tier_chat",
+    "gpt-4o-2024-11-20": "top_tier_chat",
+    "gpt-4o-2024-08-06": "top_tier_chat",
+    "gpt-4o-2024-05-13": "top_tier_chat",
     "gpt-4o-search-preview": "top_tier_chat",
-    "computer-use-preview": "top_tier_chat",
-    "o3": "top_tier_chat",  # From original pricing, mapped to top_tier
-    "gpt-4.1": "top_tier_chat",  # Assuming future model
-    # Low Tier Chat
     "gpt-4o-mini": "low_tier_chat",
+    "gpt-4o-mini-2024-07-18": "low_tier_chat",
     "gpt-4o-mini-search-preview": "low_tier_chat",
-    "o4-mini": "low_tier_chat",  # From original pricing, mapped to low_tier
-    "gpt-4.1-mini": "low_tier_chat",  # Assuming future model
-    "gpt-4.1-nano": "low_tier_chat",  # Assuming future model
+    # GPT-4 Turbo Series
+    "gpt-4-turbo": "gpt4_turbo",
+    "gpt-4-turbo-2024-04-09": "gpt4_turbo",
+    "gpt-4-turbo-preview": "gpt4_turbo",
+    "gpt-4-0125-preview": "gpt4_turbo",
+    "gpt-4-1106-preview": "gpt4_turbo",
+    "computer-use-preview": "top_tier_chat",
+    # Image models
+    "gpt-image-1.5": "image_gpt_1_5",
     # Image models like "gpt-image-1" are handled by create_image based on params.quality.
     # Whisper / Speech-to-Text
     "whisper-1": "whisper_standard",
@@ -68,6 +188,26 @@ MODEL_TO_TIER_MAP = {
     # Embeddings
     "text-embedding-3-small": "embedding_small",
     "text-embedding-3-large": "embedding_large",
+    # Anthropic Models
+    "claude-opus-4-20250514": "claude_opus_4",
+    "claude-opus-4-20250501": "claude_opus_4",
+    "claude-sonnet-4-20250514": "claude_sonnet_4",
+    "claude-sonnet-4-20250501": "claude_sonnet_4",
+    "claude-haiku-4-20250514": "claude_haiku_4",
+    "claude-haiku-4-20250501": "claude_haiku_4",
+    "claude-3-7-sonnet-20250511": "claude_3_7_sonnet",
+    "claude-3-7-sonnet-20250219": "claude_3_7_sonnet",
+    "claude-3-5-sonnet-20241022": "claude_3_5_sonnet",
+    "claude-3-5-sonnet-20240620": "claude_3_5_sonnet",
+    "claude-3-5-sonnet-latest": "claude_3_5_sonnet",
+    "claude-3-5-haiku-20241022": "claude_3_5_haiku",
+    "claude-3-5-haiku-latest": "claude_3_5_haiku",
+    "claude-3-opus-20240229": "claude_3_opus",
+    "claude-3-opus-latest": "claude_3_opus",
+    "claude-3-sonnet-20240229": "claude_3_sonnet",
+    "claude-3-sonnet-latest": "claude_3_sonnet",
+    "claude-3-haiku-20240307": "claude_3_haiku",
+    "claude-3-haiku-latest": "claude_3_haiku",
 }
 # --- End of New Credit-Based Pricing System ---
 
@@ -326,8 +466,18 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 # --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
 
 
-async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculates cost in CREDITS for chat models."""
+async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> float:
+    """Calculates cost in CREDITS for chat models.
+
+    Args:
+        model_id: Model identifier
+        input_tokens: Number of input/prompt tokens
+        output_tokens: Number of output/completion tokens
+        cached_tokens: Number of cached input tokens (for models that support caching)
+
+    Returns:
+        Cost in credits
+    """
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -335,7 +485,18 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
     if tier_name and tier_name in CREDIT_PRICING_TIERS:
         tier_pricing = CREDIT_PRICING_TIERS[tier_name]
         if "input_1k_tokens" in tier_pricing and "output_1k_tokens" in tier_pricing:
-            cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+            # Calculate cost for non-cached input tokens
+            non_cached_input = max(0, input_tokens - cached_tokens)
+            cost_input = (non_cached_input / 1000) * tier_pricing["input_1k_tokens"]
+
+            # Add cost for cached tokens if applicable
+            if cached_tokens > 0 and "cached_input_1k_tokens" in tier_pricing:
+                cost_cached = (cached_tokens / 1000) * tier_pricing["cached_input_1k_tokens"]
+                cost_input += cost_cached
+            elif cached_tokens > 0:
+                # If model doesn't have cached pricing, treat as regular input
+                cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             cost = cost_input + cost_output
         # else:

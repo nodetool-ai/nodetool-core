@@ -239,8 +239,10 @@ class TestMiniMaxProviderInit:
         """Test provider initialization with API key."""
         provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-key"})
         assert provider.api_key == "test-key"
-        # Verify client uses MiniMax base URL
-        assert provider.client.base_url.host == "api.minimax.io"
+        # Verify the provider was initialized correctly
+        assert provider.provider_name == "minimax"
+        # Verify _clients dict exists (lazy initialization happens on first get_client call)
+        assert hasattr(provider, "_clients")
 
     def test_get_container_env(self):
         """Test get_container_env returns MINIMAX_API_KEY."""

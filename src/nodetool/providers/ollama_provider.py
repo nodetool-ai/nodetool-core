@@ -140,15 +140,12 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         context_length_str = Environment.get("OLLAMA_CONTEXT_LENGTH")
         self.default_context_length = int(context_length_str) if context_length_str else None
 
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
         self._model_info_cache: Dict[str, Any] = {}
-        log.debug(f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}")
+        log.debug(
+            f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}"
+        )
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
@@ -482,20 +479,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Prepared request params with keys: {list(params.keys())}")
         return params
 
-    def _update_usage_stats(self, response):
-        """Update token usage statistics from response."""
-        prompt_tokens = getattr(response, "prompt_eval_count", 0)
-        completion_tokens = getattr(response, "eval_count", 0)
-        # Guard against None from partial/streaming responses
-        prompt_tokens = 0 if prompt_tokens is None else int(prompt_tokens)
-        completion_tokens = 0 if completion_tokens is None else int(completion_tokens)
-
-        log.debug(f"Updating usage stats - prompt: {prompt_tokens}, completion: {completion_tokens}")
-        self.usage["prompt_tokens"] += prompt_tokens
-        self.usage["completion_tokens"] += completion_tokens
-        self.usage["total_tokens"] += prompt_tokens + completion_tokens
-        log.debug(f"Updated usage stats: {self.usage}")
-
     async def generate_messages(
         self,
         messages: Sequence[Message],
@@ -547,11 +530,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
             async for response in completion:
                 chunk_count += 1
-
-                # Track usage metrics when we receive the final response
-                if response.done:
-                    log.debug("Final chunk received, updating usage stats")
-                    self._update_usage_stats(response)
 
                 # Handle native tool calls
                 if response.message.tool_calls is not None:
@@ -633,7 +611,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             response = await client.chat(**params)
             log.debug("Received complete response from Ollama")
 
-            self._update_usage_stats(response)
             content = response.message.content or ""
             log.debug(f"Response content length: {len(content)}")
 
@@ -712,20 +689,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error
-
-    def get_usage(self) -> dict:
-        """Return the current accumulated token usage statistics."""
-        log.debug(f"Getting usage stats: {self.usage}")
-        return self.usage.copy()
-
-    def reset_usage(self) -> None:
-        """Reset the usage counters to zero."""
-        log.debug("Resetting usage counters")
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
 
 
 async def main():

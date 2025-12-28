@@ -58,9 +58,7 @@ class ProviderCapability(str, Enum):
     TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
-    AUTOMATIC_SPEECH_RECOGNITION = (
-        "automatic_speech_recognition"  # Speech → Text transcription
-    )
+    AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
     TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
 
@@ -148,7 +146,6 @@ class BaseProvider:
 
     log_file: str | None = None
     cost: float = 0.0
-    usage: ClassVar[dict[str, int]] = {}
     provider_name: str = ""
 
     @classmethod
@@ -157,12 +154,75 @@ class BaseProvider:
         return []
 
     def __init__(self, secrets: dict[str, str] | None = None):
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
         self.secrets = secrets or {}
+
+    async def log_provider_call(
+        self,
+        user_id: str,
+        provider: str,
+        model: str,
+        cost: float,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+        cached_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
+        input_size: int | None = None,
+        output_size: int | None = None,
+        parameters: dict[str, Any] | None = None,
+        node_id: str = "",
+        workflow_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Log an API call to the database for cost tracking using Prediction model.
+
+        Args:
+            user_id: ID of the user making the call
+            provider: Provider name (e.g., "openai", "anthropic")
+            model: Model identifier (e.g., "gpt-4o-mini")
+            cost: Cost of the call in credits
+            input_tokens: Number of input/prompt tokens (for text models)
+            output_tokens: Number of output/completion tokens (for text models)
+            total_tokens: Total number of tokens used (for text models)
+            cached_tokens: Number of cached tokens (if applicable)
+            reasoning_tokens: Number of reasoning tokens (if applicable)
+            input_size: Input data size in bytes (for image/audio/video models)
+            output_size: Output data size in bytes (for image/audio/video models)
+            parameters: Model-specific parameters (resolution, quality, voice, etc.)
+            node_id: Optional node ID for tracking
+            workflow_id: Optional workflow ID for tracking
+            metadata: Additional metadata about the call
+        """
+        try:
+            from nodetool.models.prediction import Prediction
+
+            await Prediction.create(
+                user_id=user_id,
+                node_id=node_id,
+                provider=provider,
+                model=model,
+                workflow_id=workflow_id,
+                cost=cost,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                reasoning_tokens=reasoning_tokens,
+                input_size=input_size,
+                output_size=output_size,
+                parameters=parameters,
+                metadata=metadata,
+                status="completed",
+            )
+        except ImportError as e:
+            # Handle missing module gracefully
+            log.warning(f"Prediction model not available: {e}")
+        except (ValueError, TypeError) as e:
+            # Handle invalid parameter values
+            log.warning(f"Invalid parameters for provider call logging: {e}")
+        except Exception as e:
+            # Don't fail the API call if logging fails
+            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
     def get_capabilities(self) -> Set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""
@@ -472,9 +532,7 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGE capability
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability")
 
     def generate_messages(
         self,
@@ -504,9 +562,7 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGES capability
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability")
 
     async def text_to_image(
         self,
@@ -532,9 +588,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability")
 
     async def image_to_image(
         self,
@@ -562,9 +616,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability")
 
     def text_to_speech(
         self,
@@ -601,9 +653,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability")
 
     async def automatic_speech_recognition(
         self,
@@ -638,9 +688,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If transcription fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability")
 
     async def text_to_video(
         self,
@@ -673,9 +721,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability")
 
     async def image_to_video(
         self,
@@ -711,9 +757,7 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability")
 
 
 class MockProvider(BaseProvider):
@@ -766,9 +810,7 @@ class MockProvider(BaseProvider):
 
         Logs the call and returns the next predefined response.
         """
-        self._log_api_request(
-            "generate_message", messages=messages, model=model, tools=tools, **kwargs
-        )
+        self._log_api_request("generate_message", messages=messages, model=model, tools=tools, **kwargs)
         self.call_log.append(
             {
                 "method": "generate_message",
@@ -805,9 +847,7 @@ class MockProvider(BaseProvider):
         Currently yields the entire next predefined response. Can be adapted
         to yield individual chunks/tool calls if needed for more granular testing.
         """
-        self._log_api_request(
-            "generate_messages", messages=messages, model=model, tools=tools, **kwargs
-        )
+        self._log_api_request("generate_messages", messages=messages, model=model, tools=tools, **kwargs)
         self.call_log.append(
             {
                 "method": "generate_messages",
@@ -818,9 +858,7 @@ class MockProvider(BaseProvider):
             }
         )
         response = self._get_next_response()
-        self._log_api_response(
-            "generate_messages", response=response
-        )  # Log the full conceptual response
+        self._log_api_response("generate_messages", response=response)  # Log the full conceptual response
 
         # Simulate streaming behavior
         if response.tool_calls:

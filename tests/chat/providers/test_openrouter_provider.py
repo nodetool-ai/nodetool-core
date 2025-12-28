@@ -62,7 +62,6 @@ class TestOpenRouterProvider:
             assert "HTTP-Referer" in client.default_headers
             assert "X-Title" in client.default_headers
 
-
     def test_tool_support(self):
         """Test tool/function calling support detection."""
         provider = OpenRouterProvider(secrets={"OPENROUTER_API_KEY": "test-key"})
@@ -187,9 +186,6 @@ class TestOpenRouterProvider:
 
             # Verify cost tracking
             assert provider.cost == 0.0025
-            assert provider.usage["prompt_tokens"] == 100
-            assert provider.usage["completion_tokens"] == 50
-            assert provider.usage["total_tokens"] == 150
 
     @pytest.mark.asyncio
     async def test_text_to_image(self):
