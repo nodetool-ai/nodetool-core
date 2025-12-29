@@ -63,6 +63,7 @@ from nodetool.workflows.torch_support import (
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
 from nodetool.models.run_state import RunState
 from nodetool.models.run_node_state import RunNodeState
+from nodetool.workflows.state_manager import StateManager
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -200,6 +201,9 @@ class WorkflowRunner:
         
         # State table tracking (source of truth for correctness)
         self.run_state: RunState | None = None
+        
+        # State manager for queue-based updates (eliminates DB write contention)
+        self.state_manager: StateManager | None = None
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
@@ -531,6 +535,11 @@ class WorkflowRunner:
             log.error(f"Failed to create run_state: {e}")
             raise
         
+        # Initialize and start StateManager (single writer for node states)
+        self.state_manager = StateManager(run_id=self.job_id)
+        await self.state_manager.start()
+        log.info(f"Started StateManager for run {self.job_id}")
+        
         # Log RunCreated event (audit-only, non-fatal)
         if self.event_logger:
             try:
@@ -814,6 +823,15 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
+                
+                # Stop StateManager and flush pending updates
+                if self.state_manager:
+                    try:
+                        await self.state_manager.stop(timeout=10.0)
+                        log.info(f"StateManager stopped for run {self.job_id}")
+                    except Exception as e:
+                        log.error(f"Error stopping StateManager: {e}")
+                
                 # Stop input dispatcher if running
                 try:
                     if self._input_queue is not None:

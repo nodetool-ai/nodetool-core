@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
@@ -619,19 +620,22 @@ class NodeActor:
             node.get_node_type(),
         )
         
-        # Create or get node_state (source of truth)
-        node_state = None
-        try:
-            node_state = await RunNodeState.get_or_create(
-                run_id=self.runner.job_id,
-                node_id=node._id,
-            )
-            # Mark as scheduled
-            await node_state.mark_scheduled(attempt=1)  # TODO: track attempts properly
-            self.logger.debug(f"Marked node_state as scheduled for node {node._id}")
-        except Exception as e:
-            self.logger.error(f"Failed to create/update node_state: {e}")
-            # Continue execution - state tracking failure shouldn't block workflow
+        # Record node_id for state updates via StateManager
+        node_id = node._id
+        
+        # Queue state update: scheduled (non-blocking via StateManager)
+        if self.runner.state_manager:
+            try:
+                await self.runner.state_manager.update_node_state(
+                    node_id=node_id,
+                    status="scheduled",
+                    attempt=1,  # TODO: track attempts properly
+                    scheduled_at=datetime.now(),
+                )
+                self.logger.debug(f"Queued state update (scheduled) for node {node_id}")
+            except Exception as e:
+                self.logger.error(f"Failed to queue state update: {e}")
+                # Continue execution - state tracking failure shouldn't block workflow
         
         # Log NodeScheduled event (audit-only, non-fatal)
         if self.runner.event_logger:
@@ -648,13 +652,17 @@ class NodeActor:
         start_time = asyncio.get_event_loop().time()
         
         try:
-            # Mark node as running in state table (source of truth)
-            if node_state:
+            # Queue state update: running (non-blocking via StateManager)
+            if self.runner.state_manager:
                 try:
-                    await node_state.mark_running()
-                    self.logger.debug(f"Marked node_state as running for node {node._id}")
+                    await self.runner.state_manager.update_node_state(
+                        node_id=node_id,
+                        status="running",
+                        started_at=datetime.now(),
+                    )
+                    self.logger.debug(f"Queued state update (running) for node {node_id}")
                 except Exception as e:
-                    self.logger.error(f"Failed to mark node_state as running: {e}")
+                    self.logger.error(f"Failed to queue state update: {e}")
             
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
@@ -669,16 +677,18 @@ class NodeActor:
             # Calculate duration
             duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
             
-            # Mark node as completed in state table (source of truth)
-            if node_state:
+            # Queue state update: completed (non-blocking via StateManager)
+            if self.runner.state_manager:
                 try:
-                    await node_state.mark_completed(
+                    await self.runner.state_manager.update_node_state(
+                        node_id=node_id,
+                        status="completed",
+                        completed_at=datetime.now(),
                         outputs_json={},  # TODO: track actual outputs
-                        duration_ms=duration_ms,
                     )
-                    self.logger.debug(f"Marked node_state as completed for node {node._id}")
+                    self.logger.debug(f"Queued state update (completed) for node {node_id}")
                 except Exception as e:
-                    self.logger.error(f"Failed to mark node_state as completed: {e}")
+                    self.logger.error(f"Failed to queue state update: {e}")
             
             # Log NodeCompleted event (audit-only, non-fatal)
             if self.runner.event_logger:
@@ -716,16 +726,19 @@ class NodeActor:
                 e,
             )
             
-            # Mark node as failed in state table (source of truth)
-            if node_state:
+            # Queue state update: failed (non-blocking via StateManager)
+            if self.runner.state_manager:
                 try:
-                    await node_state.mark_failed(
-                        error=str(e)[:1000],
+                    await self.runner.state_manager.update_node_state(
+                        node_id=node_id,
+                        status="failed",
+                        failed_at=datetime.now(),
+                        last_error=str(e)[:1000],
                         retryable=False,  # TODO: determine retryability
                     )
-                    self.logger.debug(f"Marked node_state as failed for node {node._id}")
+                    self.logger.debug(f"Queued state update (failed) for node {node_id}")
                 except Exception as e2:
-                    self.logger.error(f"Failed to mark node_state as failed: {e2}")
+                    self.logger.error(f"Failed to queue state update: {e2}")
             
             # Log NodeFailed event (audit-only, non-fatal)
             if self.runner.event_logger:
