@@ -1673,14 +1673,22 @@ class OutputNode(BaseNode):
         """
         from nodetool.workflows.types import OutputUpdate
 
-        output_type = self.__class__.__name__.replace("Output", "").lower()
-
         yielded = False
         async for _handle, value in self.iter_any_input():
             yielded = True
             normalized = (
                 await context.normalize_output_value(value) if hasattr(context, "normalize_output_value") else value
             )
+
+            # Determine output type from value
+            output_type = "any"
+            if value is None:
+                output_type = "none"
+            elif type(value) in TypeToName:
+                output_type = TypeToName[type(value)]
+            elif hasattr(value, "type") and isinstance(value.type, str):
+                output_type = value.type
+
             # For streaming, preserve per-item semantics but align naming to tests
             context.post_message(
                 OutputUpdate(
@@ -1699,6 +1707,16 @@ class OutputNode(BaseNode):
                 if hasattr(context, "normalize_output_value")
                 else self.value
             )
+
+            # Determine output type from value
+            output_type = "any"
+            if self.value is None:
+                output_type = "none"
+            elif type(self.value) in TypeToName:
+                output_type = TypeToName[type(self.value)]
+            elif hasattr(self.value, "type") and isinstance(self.value.type, str):
+                output_type = self.value.type
+
             # No inbound sources or no items arrived before EOS -> fallback to property
             context.post_message(
                 OutputUpdate(
