@@ -27,6 +27,9 @@ from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.chat_workflow_message_processor import (
+    ChatWorkflowMessageProcessor,
+)
 from nodetool.messaging.claude_agent_message_processor import (
     ClaudeAgentHelpMessageProcessor,
     ClaudeAgentMessageProcessor,
@@ -498,10 +501,25 @@ class BaseChatRunner(ABC):
     async def process_messages_for_workflow(self, messages: list[ApiMessage]):
         """
         Processes messages that are part of a defined workflow.
+        
+        Routes to different processors based on the workflow's run_mode:
+        - run_mode="chat": Uses ChatWorkflowMessageProcessor
+        - Otherwise: Uses WorkflowMessageProcessor
         """
         chat_history = messages
-        processor = WorkflowMessageProcessor(self.user_id)
+        last_message = chat_history[-1]
+        
+        # Get the workflow to check its run_mode
         processing_context = ProcessingContext(user_id=self.user_id)
+        workflow = await processing_context.get_workflow(last_message.workflow_id)
+        
+        # Determine which processor to use based on run_mode
+        if workflow and workflow.run_mode == "chat":
+            log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")
+            processor = ChatWorkflowMessageProcessor(self.user_id)
+        else:
+            log.debug(f"Using WorkflowMessageProcessor for workflow {last_message.workflow_id}")
+            processor = WorkflowMessageProcessor(self.user_id)
 
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
