@@ -34,14 +34,14 @@ log = get_logger(__name__)
 def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
     """
     Recursively extract binary data from AssetRef objects.
-    
+
     Replaces binary data in AssetRef.data fields with an index reference,
     and appends the binary data to the binaries list.
-    
+
     Args:
         value: The value to process (can be dict, list, or AssetRef)
         binaries: List to collect binary data
-        
+
     Returns:
         Modified value with binary data replaced by indices
     """
@@ -59,7 +59,7 @@ def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
                     value["data"] = None
                     value["binary_index"] = len(binaries) - 1
                     return value
-        
+
         # Recursively process dict values
         return {k: extract_binary_data_from_value(v, binaries) for k, v in value.items()}
     elif isinstance(value, list):
@@ -609,15 +609,15 @@ class WebSocketRunner:
                 # Extract binary data from AssetRefs in the message
                 binaries: list[bytes] = []
                 processed_message = extract_binary_data_from_value(message, binaries)
-                
+
                 # If we have binary data, send as array [message, binary1, binary2, ...]
                 if binaries:
-                    payload = [processed_message] + binaries
+                    payload = [processed_message, *binaries]
                     packed_message = msgpack.packb(payload, use_bin_type=True)
                 else:
                     # No binary data, send just the message
                     packed_message = msgpack.packb(processed_message, use_bin_type=True)
-                    
+
                 await self.websocket.send_bytes(packed_message)  # type: ignore
             else:
                 await self.websocket.send_text(json.dumps(message))

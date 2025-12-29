@@ -199,14 +199,14 @@ def test_extract_binary_data_from_value_with_image_asset():
             }
         }
     }
-    
+
     binaries = []
     result = extract_binary_data_from_value(message, binaries)
-    
+
     # Binary data should be extracted
     assert len(binaries) == 1
     assert binaries[0] == binary_data
-    
+
     # Data field should be None, binary_index should be set
     assert result["result"]["output"]["data"] is None
     assert result["result"]["output"]["binary_index"] == 0
@@ -233,15 +233,15 @@ def test_extract_binary_data_from_value_with_multiple_assets():
             }
         }
     }
-    
+
     binaries = []
     result = extract_binary_data_from_value(message, binaries)
-    
+
     # Both binary data should be extracted
     assert len(binaries) == 2
     assert binaries[0] == binary1
     assert binaries[1] == binary2
-    
+
     # Data fields should be None, binary_indices should be set
     assert result["result"]["image"]["data"] is None
     assert result["result"]["image"]["binary_index"] == 0
@@ -262,13 +262,13 @@ def test_extract_binary_data_from_value_with_no_data():
             }
         }
     }
-    
+
     binaries = []
     result = extract_binary_data_from_value(message, binaries)
-    
+
     # No binary data should be extracted
     assert len(binaries) == 0
-    
+
     # Message should remain unchanged
     assert result["result"]["output"]["data"] is None
     assert "binary_index" not in result["result"]["output"]
@@ -295,15 +295,15 @@ def test_extract_binary_data_from_nested_structures():
             ]
         }
     }
-    
+
     binaries = []
     result = extract_binary_data_from_value(message, binaries)
-    
+
     # Both binary data should be extracted
     assert len(binaries) == 2
     assert binaries[0] == binary1
     assert binaries[1] == binary2
-    
+
     # Check indices are set correctly
     assert result["result"]["items"][0]["binary_index"] == 0
     assert result["result"]["items"][1]["nested"]["binary_index"] == 1
@@ -313,10 +313,10 @@ def test_extract_binary_data_from_nested_structures():
 async def test_websocket_runner_sends_binary_array_in_binary_mode(websocket_runner, mock_websocket):
     """Test that binary data is sent as msgpack array in BINARY mode."""
     from nodetool.integrations.websocket.websocket_runner import WebSocketMode
-    
+
     await websocket_runner.connect(mock_websocket)
     websocket_runner.mode = WebSocketMode.BINARY
-    
+
     binary_data = b"test_image_data"
     message = {
         "type": "node_update",
@@ -329,25 +329,25 @@ async def test_websocket_runner_sends_binary_array_in_binary_mode(websocket_runn
             }
         }
     }
-    
+
     await websocket_runner.send_message(message)
-    
+
     # Verify send_bytes was called
     assert mock_websocket.send_bytes.called
-    
+
     # Unpack the message and verify it's an array
     sent_data = mock_websocket.send_bytes.call_args[0][0]
     unpacked = msgpack.unpackb(sent_data, raw=False)
-    
+
     # Should be an array with [message, binary_data]
     assert isinstance(unpacked, list)
     assert len(unpacked) == 2
-    
+
     # First element should be the modified message
     assert unpacked[0]["type"] == "node_update"
     assert unpacked[0]["result"]["output"]["data"] is None
     assert unpacked[0]["result"]["output"]["binary_index"] == 0
-    
+
     # Second element should be the binary data
     assert unpacked[1] == binary_data
 
@@ -356,25 +356,25 @@ async def test_websocket_runner_sends_binary_array_in_binary_mode(websocket_runn
 async def test_websocket_runner_sends_plain_message_without_binary(websocket_runner, mock_websocket):
     """Test that messages without binary data are sent as plain msgpack."""
     from nodetool.integrations.websocket.websocket_runner import WebSocketMode
-    
+
     await websocket_runner.connect(mock_websocket)
     websocket_runner.mode = WebSocketMode.BINARY
-    
+
     message = {
         "type": "node_update",
         "node_id": "test",
         "status": "completed",
     }
-    
+
     await websocket_runner.send_message(message)
-    
+
     # Verify send_bytes was called
     assert mock_websocket.send_bytes.called
-    
+
     # Unpack the message
     sent_data = mock_websocket.send_bytes.call_args[0][0]
     unpacked = msgpack.unpackb(sent_data, raw=False)
-    
+
     # Should be just the message dict, not an array
     assert isinstance(unpacked, dict)
     assert unpacked["type"] == "node_update"
