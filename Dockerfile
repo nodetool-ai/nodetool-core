@@ -119,7 +119,7 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
             --index-url https://pypi.org/simple \
             --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
             --extra-index-url https://download.pytorch.org/whl/cu128 \
-            nodetool-core nodetool-base nodetool-huggingface ; \
+            nodetool-core==0.6.2-rc.17 nodetool-base==0.6.2-rc.17 nodetool-huggingface==0.6.2-rc.17 ; \
     fi && \
     # Clean up
     rm -rf /tmp/nodetool-core && \
