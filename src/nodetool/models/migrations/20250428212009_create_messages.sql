@@ -19,6 +19,5 @@ CREATE TABLE IF NOT EXISTS nodetool_messages (
     provider TEXT,
     model TEXT,
     agent_mode BOOLEAN,
-    workflow_assistant BOOLEAN,
     help_mode BOOLEAN
 );

@@ -1733,18 +1733,6 @@ class Message(BaseType):
     Text content or a list of message content objects, which can be text, images, or other types of content.
     """
 
-    instructions: str | list[MessageContent] | None = None
-    """
-    Deprecated alias for `content` used by older call sites/tests.
-
-    When provided and `content` is not set, this value is copied into `content`.
-    """
-
-    error_type: str | None = None
-    """
-    The type of error if the message is an error.
-    """
-
     tool_calls: list[ToolCall] | None = None
     """
     The list of tool calls returned by the model.
@@ -1758,11 +1746,6 @@ class Message(BaseType):
     input_files: list[MessageFile] | None = None
     """
     The list of input files for the message.
-    """
-
-    output_files: list[MessageFile] | None = None
-    """
-    The list of output files for the message.
     """
 
     created_at: str | None = None
@@ -1784,11 +1767,6 @@ class Message(BaseType):
     agent_mode: bool | None = None
     """
     Whether to use agent mode for processing this message.
-    """
-
-    workflow_assistant: bool | None = None
-    """
-    Whether to use workflow assistant mode for processing this message.
     """
 
     help_mode: bool | None = None
@@ -1869,7 +1847,6 @@ class Message(BaseType):
             provider=message.provider,
             model=message.model,
             agent_mode=message.agent_mode,
-            workflow_assistant=message.workflow_assistant,
             help_mode=message.help_mode,
             agent_execution_id=agent_execution_id,
             execution_event_type=execution_event_type,

@@ -32,7 +32,6 @@ class Message(DBModel):
     model: str | None = DBField(default=None)
     cost: float | None = DBField(default=None)
     agent_mode: bool | None = DBField(default=None)
-    workflow_assistant: bool | None = DBField(default=None)
     help_mode: bool | None = DBField(default=None)
     agent_execution_id: str | None = DBField(default=None)
     execution_event_type: str | None = DBField(default=None)

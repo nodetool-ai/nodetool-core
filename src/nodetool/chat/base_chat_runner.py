@@ -156,7 +156,6 @@ class BaseChatRunner(ABC):
             provider=db_message.provider,
             model=db_message.model,
             agent_mode=db_message.agent_mode,
-            workflow_assistant=db_message.workflow_assistant,
             help_mode=db_message.help_mode,
         )
 

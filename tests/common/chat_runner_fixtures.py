@@ -85,7 +85,6 @@ def create_mock_db_message(
     message.provider = kwargs.get("provider", "openai")
     message.model = kwargs.get("model", "gpt-4")
     message.agent_mode = kwargs.get("agent_mode", False)
-    message.workflow_assistant = kwargs.get("workflow_assistant", False)
     message.help_mode = kwargs.get("help_mode", False)
     return message
 

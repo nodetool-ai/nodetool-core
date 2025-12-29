@@ -823,13 +823,6 @@ class MockProvider(BaseProvider):
         response = self._get_next_response()
         self._log_api_response("generate_message", response)
 
-        # Simulate output file generation if present in the mock response
-        if hasattr(response, "output_files") and response.output_files:
-            # This provider doesn't interact with the filesystem,
-            # it just returns the message as defined.
-            # The StepContext will handle the file saving based on this message.
-            pass
-
         return response
 
     async def generate_messages(
@@ -868,9 +861,3 @@ class MockProvider(BaseProvider):
         elif response.content:
             # Yield content as a single chunk for simplicity in this mock
             yield Chunk(content=str(response.content))
-
-        # Simulate output file generation if present in the mock response
-        if hasattr(response, "output_files") and response.output_files:
-            # Similar to generate_message, just pass the info along.
-            # StepContext testing should verify file creation.
-            pass

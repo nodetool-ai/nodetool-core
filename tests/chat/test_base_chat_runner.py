@@ -87,7 +87,6 @@ class TestBaseChatRunner:
         db_message.provider = "openai"
         db_message.model = "gpt-4"
         db_message.agent_mode = True
-        db_message.workflow_assistant = False
         db_message.help_mode = False
 
         # Convert to metadata message
@@ -155,7 +154,6 @@ class TestBaseChatRunner:
             msg.provider = "openai"
             msg.model = "gpt-4"
             msg.agent_mode = False
-            msg.workflow_assistant = False
             msg.help_mode = False
 
         # Mock DBMessage.paginate
@@ -280,7 +278,6 @@ class TestBaseChatRunner:
             mock_db_message.provider = "openai"
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = False
-            mock_db_message.workflow_assistant = False
             mock_db_message.help_mode = False
 
             mock_save.return_value = mock_db_message
@@ -332,7 +329,6 @@ class TestBaseChatRunner:
             mock_db_message.provider = "openai"
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = True
-            mock_db_message.workflow_assistant = False
             mock_db_message.help_mode = False
 
             mock_save.return_value = mock_db_message
@@ -382,7 +378,6 @@ class TestBaseChatRunner:
             mock_db_message.provider = "openai"
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = False
-            mock_db_message.workflow_assistant = False
             mock_db_message.help_mode = False
 
             mock_save.return_value = mock_db_message

@@ -113,5 +113,5 @@ class WorkflowMessageProcessor(MessageProcessor):
             provider=last_message.provider,
             model=last_message.model,
             agent_mode=last_message.agent_mode or False,
-            workflow_assistant=True,
+            
         )
