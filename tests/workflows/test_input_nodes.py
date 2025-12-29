@@ -197,6 +197,68 @@ class TestInputNodeProcessing:
         assert result == "hello"
 
     @pytest.mark.asyncio
+    async def test_string_list_input_process(self):
+        """StringListInput should return its value when processed."""
+        node = StringListInput(id="test", value=["a", "b", "c"])
+        result = await node.process(None)
+        assert result == ["a", "b", "c"]
+
+    @pytest.mark.asyncio
+    async def test_folder_path_input_process(self):
+        """FolderPathInput should return its value when processed."""
+        node = FolderPathInput(id="test", value="/some/folder/path")
+        result = await node.process(None)
+        assert result == "/some/folder/path"
+
+    @pytest.mark.asyncio
+    async def test_huggingface_model_input_process(self):
+        """HuggingFaceModelInput should return its value when processed."""
+        model = HuggingFaceModel(repo_id="test/model")
+        node = HuggingFaceModelInput(id="test", value=model)
+        result = await node.process(None)
+        assert result == model
+
+    @pytest.mark.asyncio
+    async def test_color_input_process(self):
+        """ColorInput should return its value when processed."""
+        color = ColorRef(value="#FF0000")
+        node = ColorInput(id="test", value=color)
+        result = await node.process(None)
+        assert result == color
+
+    @pytest.mark.asyncio
+    async def test_language_model_input_process(self):
+        """LanguageModelInput should return its value when processed."""
+        model = LanguageModel(id="gpt-4")
+        node = LanguageModelInput(id="test", value=model)
+        result = await node.process(None)
+        assert result == model
+
+    @pytest.mark.asyncio
+    async def test_image_model_input_process(self):
+        """ImageModelInput should return its value when processed."""
+        model = ImageModel(id="dalle-3")
+        node = ImageModelInput(id="test", value=model)
+        result = await node.process(None)
+        assert result == model
+
+    @pytest.mark.asyncio
+    async def test_dataframe_input_process(self):
+        """DataframeInput should return its value when processed."""
+        df_ref = DataframeRef(uri="test://dataframe.csv")
+        node = DataframeInput(id="test", value=df_ref)
+        result = await node.process(None)
+        assert result == df_ref
+
+    @pytest.mark.asyncio
+    async def test_document_input_process(self):
+        """DocumentInput should return its value when processed."""
+        doc_ref = DocumentRef(uri="test://document.pdf")
+        node = DocumentInput(id="test", value=doc_ref)
+        result = await node.process(None)
+        assert result == doc_ref
+
+    @pytest.mark.asyncio
     async def test_image_input_process(self):
         """ImageInput should return its value when processed."""
         image_ref = ImageRef(uri="test://image.png")
@@ -219,6 +281,31 @@ class TestInputNodeProcessing:
         node = AudioInput(id="test", value=audio_ref)
         result = await node.process(None)
         assert result == audio_ref
+
+    @pytest.mark.asyncio
+    async def test_asset_folder_input_process(self):
+        """AssetFolderInput should return its value when processed."""
+        folder_ref = FolderRef(uri="test://folder")
+        node = AssetFolderInput(id="test", value=folder_ref)
+        result = await node.process(None)
+        assert result == folder_ref
+
+    @pytest.mark.asyncio
+    async def test_file_path_input_process(self):
+        """FilePathInput should return its value when processed."""
+        node = FilePathInput(id="test", value="/some/file/path.txt")
+        result = await node.process(None)
+        assert result == "/some/file/path.txt"
+
+    @pytest.mark.asyncio
+    async def test_document_file_input_process(self):
+        """DocumentFileInput should return DocumentRef and path when processed."""
+        node = DocumentFileInput(id="test", value="/path/to/document.pdf")
+        result = await node.process(None)
+        assert "document" in result
+        assert "path" in result
+        assert result["path"] == "/path/to/document.pdf"
+        assert isinstance(result["document"], DocumentRef)
 
 
 class TestInputNodeDefaults:

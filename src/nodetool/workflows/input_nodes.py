@@ -134,6 +134,9 @@ class StringListInput(InputNode):
     def return_type(cls):
         return list[str]
 
+    async def process(self, context: ProcessingContext) -> list[str]:
+        return self.value
+
 
 class FolderPathInput(InputNode):
     """
@@ -151,6 +154,9 @@ class FolderPathInput(InputNode):
     def return_type(cls):
         return str
 
+    async def process(self, context: ProcessingContext) -> str:
+        return self.value
+
 
 class HuggingFaceModelInput(InputNode):
     """
@@ -166,6 +172,9 @@ class HuggingFaceModelInput(InputNode):
     def return_type(cls):
         return HuggingFaceModel
 
+    async def process(self, context: ProcessingContext) -> HuggingFaceModel:
+        return self.value
+
 
 class ColorInput(InputNode):
     """
@@ -178,6 +187,9 @@ class ColorInput(InputNode):
     @classmethod
     def return_type(cls):
         return ColorRef
+
+    async def process(self, context: ProcessingContext) -> ColorRef:
+        return self.value
 
 
 class LanguageModelInput(InputNode):
@@ -194,6 +206,9 @@ class LanguageModelInput(InputNode):
     def return_type(cls):
         return LanguageModel
 
+    async def process(self, context: ProcessingContext) -> LanguageModel:
+        return self.value
+
 
 class ImageModelInput(InputNode):
     """
@@ -209,6 +224,9 @@ class ImageModelInput(InputNode):
     def return_type(cls):
         return ImageModel
 
+    async def process(self, context: ProcessingContext) -> ImageModel:
+        return self.value
+
 
 class DataframeInput(InputNode):
     """
@@ -223,6 +241,9 @@ class DataframeInput(InputNode):
     @classmethod
     def return_type(cls):
         return DataframeRef
+
+    async def process(self, context: ProcessingContext) -> DataframeRef:
+        return self.value
 
 
 class DocumentInput(InputNode):
@@ -244,6 +265,9 @@ class DocumentInput(InputNode):
     @classmethod
     def return_type(cls):
         return DocumentRef
+
+    async def process(self, context: ProcessingContext) -> DocumentRef:
+        return self.value
 
 
 class ImageInput(InputNode):
@@ -349,6 +373,9 @@ class AssetFolderInput(InputNode):
     def return_type(cls):
         return FolderRef
 
+    async def process(self, context: ProcessingContext) -> FolderRef:
+        return self.value
+
 
 class FilePathInput(InputNode):
     """
@@ -371,6 +398,9 @@ class FilePathInput(InputNode):
     @classmethod
     def return_type(cls):
         return str
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.value
 
 
 class DocumentFileInput(InputNode):
@@ -398,3 +428,9 @@ class DocumentFileInput(InputNode):
     @classmethod
     def return_type(cls):
         return cls.OutputType
+
+    async def process(self, context: ProcessingContext) -> "DocumentFileInput.OutputType":
+        # Create DocumentRef from file path
+        asset_ref = DocumentRef.from_file(self.value)
+        doc_ref = DocumentRef(uri=asset_ref.uri, asset_id=asset_ref.asset_id)
+        return {"document": doc_ref, "path": self.value}
