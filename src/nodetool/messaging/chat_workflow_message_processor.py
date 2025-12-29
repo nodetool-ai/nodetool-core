@@ -18,6 +18,40 @@ Architecture:
 User Message -> ChatWorkflowMessageProcessor -> Run Workflow with ChatInput
                                               -> Return Workflow Outputs as Response
 ```
+
+Usage:
+------
+To enable chat mode for a workflow:
+1. Set the workflow's `run_mode` field to "chat" in the workflow model
+2. Add one or more InputNode instances to the workflow with name "chat_input" or "messages"
+3. The input nodes will receive the full chat history as a list of messages
+4. The workflow's output nodes will be converted to chat responses
+
+Example Workflow Structure:
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐
+│ ChatInput   │─────>│ Processing   │─────>│ OutputNode  │
+│ (messages)  │      │ Nodes        │      │ (response)  │
+└─────────────┘      └──────────────┘      └─────────────┘
+```
+
+Message Format:
+---------------
+The ChatInput receives messages as a list of dictionaries:
+```python
+[
+    {
+        "role": "user",
+        "content": "Hello",
+        "created_at": "2024-01-01T00:00:00Z"
+    },
+    {
+        "role": "assistant", 
+        "content": "Hi there!",
+        "created_at": "2024-01-01T00:00:01Z"
+    }
+]
+```
 """
 
 import json
