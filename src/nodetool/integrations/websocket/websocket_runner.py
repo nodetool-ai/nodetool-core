@@ -1,3 +1,30 @@
+"""
+WebSocket-based workflow execution manager for Node Tool.
+
+This module provides WebSocket communication and workflow execution management, enabling real-time
+bidirectional communication between clients and the workflow engine. It supports both binary
+(MessagePack) and text (JSON) protocols for message exchange.
+
+Key components:
+- WebSocketRunner: Main class handling WebSocket connections and workflow execution
+- CommandType: Enum defining supported WebSocket commands (run_job, cancel_job, get_status, set_mode)
+- Message Processing: Utilities for processing and streaming workflow execution messages
+- Error Handling: Comprehensive error handling and status reporting
+
+The module supports:
+- Starting and canceling workflow jobs
+- Real-time status updates and message streaming
+- Dynamic switching between binary and text protocols
+- Graceful connection and resource management
+- Multiple concurrent jobs per WebSocket connection
+
+Binary Data Handling:
+- In BINARY mode, asset data (images, audio, video, etc.) is extracted from message payloads
+- Binary data is sent as a MessagePack array: [message_dict, binary1, binary2, ...]
+- Each asset in the message gets a 'binary_index' field pointing to its data in the array
+- This optimizes transmission and allows clients to reconstruct assets efficiently
+- Messages without binary data are sent as plain MessagePack dicts for efficiency
+"""
 import asyncio
 import gc
 import json
@@ -29,6 +56,9 @@ from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.types import Chunk, Error
 
 log = get_logger(__name__)
+
+# Asset types that may contain binary data
+ASSET_TYPES_WITH_BINARY = ["image", "audio", "video", "text", "asset"]
 
 
 def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
@@ -62,7 +92,7 @@ def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
     """
     if isinstance(value, dict):
         # Check if this looks like an AssetRef
-        if "type" in value and value.get("type") in ["image", "audio", "video", "text", "asset"]:
+        if "type" in value and value.get("type") in ASSET_TYPES_WITH_BINARY:
             # Check if it has binary data
             if "data" in value and value["data"] is not None:
                 data = value["data"]
@@ -85,34 +115,6 @@ def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
         return tuple(extract_binary_data_from_value(item, binaries) for item in value)
     else:
         return value
-
-"""
-WebSocket-based workflow execution manager for Node Tool.
-
-This module provides WebSocket communication and workflow execution management, enabling real-time
-bidirectional communication between clients and the workflow engine. It supports both binary
-(MessagePack) and text (JSON) protocols for message exchange.
-
-Key components:
-- WebSocketRunner: Main class handling WebSocket connections and workflow execution
-- CommandType: Enum defining supported WebSocket commands (run_job, cancel_job, get_status, set_mode)
-- Message Processing: Utilities for processing and streaming workflow execution messages
-- Error Handling: Comprehensive error handling and status reporting
-
-The module supports:
-- Starting and canceling workflow jobs
-- Real-time status updates and message streaming
-- Dynamic switching between binary and text protocols
-- Graceful connection and resource management
-- Multiple concurrent jobs per WebSocket connection
-
-Binary Data Handling:
-- In BINARY mode, asset data (images, audio, video, etc.) is extracted from message payloads
-- Binary data is sent as a MessagePack array: [message_dict, binary1, binary2, ...]
-- Each asset in the message gets a 'binary_index' field pointing to its data in the array
-- This optimizes transmission and allows clients to reconstruct assets efficiently
-- Messages without binary data are sent as plain MessagePack dicts for efficiency
-"""
 
 
 class CommandType(str, Enum):
