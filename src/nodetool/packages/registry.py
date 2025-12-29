@@ -70,7 +70,6 @@ from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.config.settings import get_system_file_path
 from nodetool.integrations.huggingface.huggingface_models import (
     fetch_model_info,
     has_model_index,
@@ -84,7 +83,6 @@ from nodetool.types.model import UnifiedModel
 from nodetool.types.workflow import Workflow
 
 # Constants
-PACKAGES_DIR = "packages"
 # New wheel-based package index (PEP 503 compliant)
 PACKAGE_INDEX_URL = "https://nodetool-ai.github.io/nodetool-registry/simple/"
 # Legacy JSON registry for backward compatibility
@@ -126,21 +124,6 @@ def validate_repo_id(repo_id: str) -> Tuple[bool, Optional[str]]:
         )
 
     return True, None
-
-
-def get_packages_dir() -> Path:
-    """
-    Get the path to the packages directory.
-
-    This function retrieves the system-specific path where package metadata is stored.
-    It ensures the directory exists by creating it if necessary.
-
-    Returns:
-        Path: A Path object pointing to the packages directory.
-    """
-    packages_dir = get_system_file_path(PACKAGES_DIR)
-    os.makedirs(packages_dir, exist_ok=True)
-    return packages_dir
 
 
 def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]:
@@ -1563,10 +1546,6 @@ async def main():
     Main function to run smoke tests for the registry module.
     """
     print("--- Running Smoke Tests for nodetool.packages.registry ---")
-
-    print("\n--- Testing get_packages_dir ---")
-    packages_dir = get_packages_dir()
-    print(f"Packages directory: {packages_dir}")
 
     print("\n--- Testing get_package_manager_command ---")
     pkg_mgr_cmd = get_package_manager_command()

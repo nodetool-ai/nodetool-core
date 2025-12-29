@@ -530,7 +530,7 @@ class Environment:
             return str(asset_bucket)
 
         # Default to system-specific path
-        return str(get_system_file_path("assets"))
+        return str(get_system_data_path("assets"))
 
     @classmethod
     @classmethod
