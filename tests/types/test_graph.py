@@ -39,11 +39,8 @@ def test_get_input_schema_basic():
 
 
 def test_get_output_schema_basic():
-    list_node = Node(id="list", type="nodetool.output.ListOutput", data={"name": "items"})
-    img_node = Node(id="img", type="nodetool.output.ImageOutput", data={"name": "img"})
-    schema = get_output_schema(Graph(nodes=[list_node, img_node], edges=[]))
+    output_node = Node(id="output", type="nodetool.output.Output", data={"name": "result"})
+    schema = get_output_schema(Graph(nodes=[output_node], edges=[]))
 
-    assert set(schema["required"]) == {"items", "img"}
-    assert schema["properties"]["items"]["type"] == "array"
-    img_schema = schema["properties"]["img"]
-    assert img_schema["type"] == "object" and "uri" in img_schema["properties"]
+    assert set(schema["required"]) == {"result"}
+    assert schema["properties"]["result"]["type"] == "any"

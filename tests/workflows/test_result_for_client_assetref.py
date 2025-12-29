@@ -2,14 +2,16 @@
 Test cases for result_for_client special handling of AssetRef objects.
 """
 
+from typing import Any
+
+import numpy as np
+import PIL.Image
 import pytest
-from nodetool.metadata.types import AssetRef, ImageRef, AudioRef, TextRef, VideoRef
+from pydantic import Field
+
+from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, TextRef, VideoRef
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from pydantic import Field
-from typing import Any
-import PIL.Image
-import numpy as np
 
 
 class TestAssetReturningNode(BaseNode):
@@ -62,17 +64,17 @@ async def test_result_for_client_image_memory_uri():
         auth_token="test_token",
         workflow_id="test_workflow",
     )
-    
+
     # Process node to get result with memory URI
     result = await node.process(context)
     assert "image" in result
     assert isinstance(result["image"], ImageRef)
     assert result["image"].uri.startswith("memory://")
     assert result["image"].data is None  # Not populated yet
-    
+
     # Call result_for_client to populate data field
     client_result = node.result_for_client(result)
-    
+
     # Verify structure
     assert "image" in client_result
     assert isinstance(client_result["image"], dict)
@@ -93,15 +95,15 @@ async def test_result_for_client_audio_memory_uri():
         auth_token="test_token",
         workflow_id="test_workflow",
     )
-    
+
     result = await node.process(context)
     assert "audio" in result
     assert isinstance(result["audio"], AudioRef)
     assert result["audio"].uri.startswith("memory://")
-    
+
     # Call result_for_client
     client_result = node.result_for_client(result)
-    
+
     # Verify audio data populated
     assert "audio" in client_result
     assert isinstance(client_result["audio"], dict)
@@ -120,15 +122,15 @@ async def test_result_for_client_text_memory_uri():
         auth_token="test_token",
         workflow_id="test_workflow",
     )
-    
+
     result = await node.process(context)
     assert "text" in result
     assert isinstance(result["text"], TextRef)
     assert result["text"].uri.startswith("memory://")
-    
+
     # Call result_for_client
     client_result = node.result_for_client(result)
-    
+
     # Verify text data populated
     assert "text" in client_result
     assert isinstance(client_result["text"], dict)
@@ -147,15 +149,15 @@ async def test_result_for_client_generic_with_data():
         auth_token="test_token",
         workflow_id="test_workflow",
     )
-    
+
     result = await node.process(context)
     assert "asset" in result
     assert isinstance(result["asset"], AssetRef)
     assert result["asset"].data == b"test bytes"
-    
+
     # Call result_for_client
     client_result = node.result_for_client(result)
-    
+
     # Verify data preserved as-is
     assert "asset" in client_result
     assert isinstance(client_result["asset"], dict)
@@ -171,19 +173,19 @@ async def test_result_for_client_nested_memory_uri():
         auth_token="test_token",
         workflow_id="test_workflow",
     )
-    
+
     result = await node.process(context)
-    
+
     # Call result_for_client
     client_result = node.result_for_client(result)
-    
+
     # Verify nested image has data
     assert "result" in client_result
     assert "image" in client_result["result"]
     assert isinstance(client_result["result"]["image"], dict)
     assert "data" in client_result["result"]["image"]
     assert isinstance(client_result["result"]["image"]["data"], bytes)
-    
+
     # Verify images in list also have data
     assert "nested" in client_result["result"]
     assert "more_images" in client_result["result"]["nested"]
@@ -198,7 +200,7 @@ async def test_result_for_client_nested_memory_uri():
 def test_result_for_client_primitives():
     """Test that primitive types pass through unchanged."""
     node = TestAssetReturningNode(test_mode="simple")
-    
+
     result = {
         "string": "hello",
         "int": 42,
@@ -208,20 +210,20 @@ def test_result_for_client_primitives():
         "list": [1, 2, 3],
         "dict": {"key": "value"},
     }
-    
+
     client_result = node.result_for_client(result)
-    
+
     assert client_result == result
 
 
 def test_result_for_client_bytes_placeholder():
     """Test that raw bytes get replaced with placeholder."""
     node = TestAssetReturningNode(test_mode="simple")
-    
+
     result = {"data": b"some bytes"}
-    
+
     client_result = node.result_for_client(result)
-    
+
     assert client_result["data"] == "<10 bytes>"
 
 
@@ -229,12 +231,12 @@ def test_result_for_client_bytes_placeholder():
 async def test_result_for_client_no_memory_uri():
     """Test that AssetRef without memory URI works (no data fetch)."""
     node = TestAssetReturningNode(test_mode="simple")
-    
+
     # Create AssetRef with http URI
     result = {"asset": ImageRef(uri="http://example.com/image.png")}
-    
+
     client_result = node.result_for_client(result)
-    
+
     # Should have model dump but no data field (since no memory URI)
     assert "asset" in client_result
     assert isinstance(client_result["asset"], dict)

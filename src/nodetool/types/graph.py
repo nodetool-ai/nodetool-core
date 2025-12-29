@@ -67,7 +67,7 @@ def get_input_schema(graph: Graph):
     input_schema = {"type": "object", "properties": {}, "required": []}
 
     for node in graph.nodes:
-        if node.type.startswith("nodetool.input."):
+        if node.type.startswith(("nodetool.input.", "nodetool.workflows.test_helper.")):
             input_type = node.type.split(".")[-1]
             node_schema = {}
 
@@ -120,5 +120,15 @@ def get_input_schema(graph: Graph):
 
 
 def get_output_schema(graph: Graph):
-    """Generate output schema for graph. Returns empty schema as nodes handle their own outputs."""
-    return {"type": "object", "properties": {}, "required": []}
+    output_schema = {"type": "object", "properties": {}, "required": []}
+
+    for node in graph.nodes:
+        if node.type.startswith("nodetool.output."):
+            name = node.data.get("name", node.id)
+            output_schema["properties"][name] = {
+                "type": "any",
+                "label": node.data.get("label", ""),
+            }
+            output_schema["required"].append(name)
+
+    return output_schema
