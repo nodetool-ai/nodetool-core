@@ -187,6 +187,64 @@ asset_types = set()
 
 
 class AssetRef(BaseType):
+    """
+    Base class for asset references in the workflow system.
+    
+    Asset references can point to data in multiple ways:
+    - uri: A URI pointing to the asset location (memory://, data:, file://, http(s)://, asset://)
+    - asset_id: Database ID for persistent assets
+    - data: Direct byte content (with canonical encoding per asset type)
+    - metadata: Optional metadata dict
+    
+    Data Field Canonical Encodings:
+    --------------------------------
+    The data field, when populated, must use standardized encodings to ensure
+    consistent processing by the frontend and other consumers:
+    
+    - **ImageRef**: PNG bytes (image/png)
+      * Decoded from: PIL.Image objects, numpy arrays, raw image bytes
+      * Frontend expects: Can be converted to data:image/png;base64,{data}
+      
+    - **AudioRef**: MP3 bytes (audio/mp3 or audio/mpeg)
+      * Decoded from: AudioSegment objects, numpy audio arrays, raw audio bytes
+      * Frontend expects: Can be converted to data:audio/mp3;base64,{data}
+      
+    - **VideoRef**: MP4 bytes (video/mp4)
+      * Decoded from: Video file bytes
+      * Frontend expects: Can be converted to data:video/mp4;base64,{data}
+      
+    - **TextRef**: UTF-8 encoded bytes (text/plain)
+      * Decoded from: Python str objects
+      * Frontend expects: Can be decoded as text or converted to data URI
+      
+    - **Generic AssetRef**: Raw bytes (application/octet-stream)
+      * No transformation applied
+      * Frontend must handle based on context
+    
+    Memory URIs (memory://):
+    -----------------------
+    - Used for temporary storage of Python objects during workflow execution
+    - Objects are stored in ResourceScope's MemoryUriCache with 5-minute TTL
+    - When serializing for client (e.g., in result_for_client), memory URIs are
+      resolved to populate the data field with canonical byte encoding
+    - Supports: PIL.Image, AudioSegment, str, pd.DataFrame, bytes, and more
+    
+    Data URIs (data:):
+    -----------------
+    - Embed data directly in the URI using base64 encoding
+    - Format: data:{mime};base64,{base64_data}
+    - Common for small assets or when network requests are undesirable
+    
+    File URIs (file://):
+    -------------------
+    - Point to local filesystem paths
+    - Format: file:///absolute/path or file://relative/path
+    
+    Asset IDs (asset://):
+    --------------------
+    - Reference persistent assets stored in the database
+    - Require database lookup to retrieve content
+    """
     type: Any = "asset"
     uri: str = ""
     asset_id: str | None = None
