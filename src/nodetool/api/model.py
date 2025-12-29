@@ -49,6 +49,7 @@ from nodetool.metadata.types import (
     comfy_model_to_folder,
 )
 from nodetool.ml.models.language_models import get_all_language_models
+from nodetool.ml.models.tts_models import get_all_tts_models
 from nodetool.providers import get_provider, import_providers
 from nodetool.providers.base import _PROVIDER_REGISTRY, get_registered_provider
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
@@ -539,6 +540,16 @@ async def get_image_models_endpoint(
     Get all available image generation models from a specific provider.
     """
     return await get_image_models_by_provider(provider, user)
+
+
+@router.get("/tts")
+async def get_all_tts_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[TTSModel]:
+    """
+    Get all available text-to-speech models from all providers.
+    """
+    return await get_all_tts_models(user)
 
 
 @router.get("/tts/{provider}")

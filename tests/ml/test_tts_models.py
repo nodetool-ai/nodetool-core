@@ -8,6 +8,7 @@ This module tests the TTS model discovery functionality including:
 """
 
 import pytest
+from fastapi.testclient import TestClient
 
 from nodetool.metadata.types import TTSModel
 from nodetool.ml.models.tts_models import get_all_tts_models
@@ -69,3 +70,52 @@ async def test_tts_models_have_required_fields():
 
         # Voices should be a list (can be empty for some models)
         assert isinstance(model.voices, list), f"Model voices should be a list: {model}"
+
+
+class TestTTSModelsAPI:
+    """Tests for the /api/models/tts endpoint."""
+
+    async def test_get_all_tts_models_endpoint(self, client: TestClient, headers: dict):
+        """
+        Test the /api/models/tts endpoint returns all TTS models from all providers.
+        """
+        response = client.get("/api/models/tts", headers=headers)
+        assert response.status_code == 200
+        models = response.json()
+        assert isinstance(models, list)
+
+        for model in models:
+            assert model["type"] == "tts_model"
+            assert model["id"] is not None
+            assert model["name"] is not None
+            assert model["provider"] is not None
+
+    async def test_get_tts_models_endpoint_returns_only_tts_models(self, client: TestClient, headers: dict):
+        """
+        Test that the /api/models/tts endpoint only returns TTSModel instances.
+        """
+        response = client.get("/api/models/tts", headers=headers)
+        assert response.status_code == 200
+        models = response.json()
+
+        for model in models:
+            assert model["type"] == "tts_model", f"Expected type='tts_model', got type='{model.get('type')}'"
+
+    async def test_get_tts_models_endpoint_response_format(self, client: TestClient, headers: dict):
+        """
+        Test that the /api/models/tts endpoint returns properly formatted response.
+        """
+        response = client.get("/api/models/tts", headers=headers)
+        assert response.status_code == 200
+
+        models = response.json()
+        assert isinstance(models, list)
+
+        if len(models) > 0:
+            model = models[0]
+            assert "type" in model
+            assert "id" in model
+            assert "name" in model
+            assert "provider" in model
+            assert "voices" in model
+            assert isinstance(model["voices"], list)
