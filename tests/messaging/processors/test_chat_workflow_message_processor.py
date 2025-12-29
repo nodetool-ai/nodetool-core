@@ -238,7 +238,7 @@ class TestChatWorkflowMessageProcessorProcess:
             model="gpt-4",
         )
         
-        with pytest.raises(AssertionError, match="Workflow ID is required"):
+        with pytest.raises(AssertionError, match="Workflow ID is required for chat workflow processing"):
             await chat_processor.process([message], processing_context)
 
     @pytest.mark.asyncio

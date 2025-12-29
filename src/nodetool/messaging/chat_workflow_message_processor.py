@@ -20,6 +20,7 @@ User Message -> ChatWorkflowMessageProcessor -> Run Workflow with ChatInput
 ```
 """
 
+import json
 import uuid
 from typing import List, Optional
 
@@ -76,7 +77,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
         last_message = chat_history[-1]
         
         # Workflow ID is required for chat workflows
-        assert last_message.workflow_id is not None, "Workflow ID is required for chat workflows"
+        assert last_message.workflow_id is not None, "Workflow ID is required for chat workflow processing"
 
         workflow_runner = WorkflowRunner(job_id=job_id)
         log.debug(
@@ -196,7 +197,6 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                     content.append(MessageAudioContent(audio=AudioRef(**value)))
                 else:
                     # For other dict types, convert to text
-                    import json
                     content.append(MessageTextContent(text=json.dumps(value)))
             else:
                 # For other types, convert to string

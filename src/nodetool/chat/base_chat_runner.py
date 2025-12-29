@@ -509,6 +509,10 @@ class BaseChatRunner(ABC):
         chat_history = messages
         last_message = chat_history[-1]
         
+        # Ensure workflow_id is present
+        if not last_message.workflow_id:
+            raise ValueError("Workflow ID is required for workflow processing")
+        
         # Get the workflow to check its run_mode
         processing_context = ProcessingContext(user_id=self.user_id)
         workflow = await processing_context.get_workflow(last_message.workflow_id)
