@@ -29,7 +29,7 @@ DEFAULT_ENV = {
     "JOB_EXECUTION_STRATEGY": "threaded",  # threaded, subprocess, docker
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
-    "DB_PATH": str(get_system_file_path("nodetool.sqlite3")),
+    "DB_PATH": str(get_system_data_path("nodetool.sqlite3")),
     "OLLAMA_API_URL": None,  # Must be explicitly configured; defaults to None to avoid connection errors in containers
     "ENV": "development",
     "LOG_LEVEL": "INFO",
