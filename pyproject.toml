@@ -61,7 +61,7 @@ dependencies = [
 
     # Document processing dependencies
     "bs4==0.0.2",
-    "langchain-text-splitters==1.0.0",
+    "langchain-text-splitters==1.1.0",
     "html2text",
     "markitdown",
     "PyMuPDF>=1.25.2",
