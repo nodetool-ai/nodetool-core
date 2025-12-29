@@ -18,10 +18,10 @@ NodeStatus = Literal["idle", "scheduled", "running", "completed", "failed", "sus
 class RunNodeState(DBModel):
     """
     Authoritative state for a single node in a workflow run.
-    
+
     This is the source of truth for node execution state, attempts, and status.
     Recovery and scheduling read directly from this table.
-    
+
     Key properties:
     - Mutable (status changes in place)
     - Source of truth (not derived from events)
@@ -37,15 +37,15 @@ class RunNodeState(DBModel):
 
     # Simple primary key
     id: str = DBField(hash_key=True, default_factory=lambda: "")  # Will be set via before_save
-    
+
     # Identifiers (unique together via index)
     run_id: str = DBField()
     node_id: str = DBField()
-    
+
     # Current state
     status: str = DBField()  # idle | scheduled | running | completed | failed | suspended
     attempt: int = DBField(default=1)
-    
+
     # Timestamps
     scheduled_at: datetime | None = DBField(default=None)
     started_at: datetime | None = DBField(default=None)
@@ -53,15 +53,15 @@ class RunNodeState(DBModel):
     failed_at: datetime | None = DBField(default=None)
     suspended_at: datetime | None = DBField(default=None)
     updated_at: datetime = DBField(default_factory=datetime.now)
-    
+
     # Failure information
     last_error: str | None = DBField(default=None)
     retryable: bool = DBField(default=False)
-    
+
     # Suspension/resumption state
     suspension_reason: str | None = DBField(default=None)
     resume_state_json: dict[str, Any] = DBField(default_factory=dict)
-    
+
     # Optional: outputs for completed nodes (may be large - consider external storage)
     outputs_json: dict[str, Any] = DBField(default_factory=dict)
 
@@ -75,25 +75,25 @@ class RunNodeState(DBModel):
     async def get_node_state(cls, run_id: str, node_id: str) -> "RunNodeState | None":
         """
         Get state for a specific node.
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The node identifier
-            
+
         Returns:
             RunNodeState or None if not found
         """
         # Assuming adapter supports composite key get
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field, ConditionBuilder, ConditionGroup, LogicalOperator
-        
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         condition = ConditionBuilder(
             ConditionGroup([
                 Field("run_id").equals(run_id),
                 Field("node_id").equals(node_id)
             ], LogicalOperator.AND)
         )
-        
+
         results, _ = await adapter.query(condition=condition, limit=1)
         if not results:
             return None
@@ -103,18 +103,18 @@ class RunNodeState(DBModel):
     async def get_or_create(cls, run_id: str, node_id: str) -> "RunNodeState":
         """
         Get existing node state or create idle state.
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The node identifier
-            
+
         Returns:
             RunNodeState instance
         """
         state = await cls.get_node_state(run_id, node_id)
         if state:
             return state
-        
+
         state = cls(
             run_id=run_id,
             node_id=node_id,
@@ -127,7 +127,7 @@ class RunNodeState(DBModel):
     async def mark_scheduled(self, attempt: int | None = None):
         """
         Mark node as scheduled.
-        
+
         Args:
             attempt: Optional attempt number (defaults to current + 1 if already attempted)
         """
@@ -149,7 +149,7 @@ class RunNodeState(DBModel):
     async def mark_completed(self, outputs: dict[str, Any] | None = None):
         """
         Mark node as completed.
-        
+
         Args:
             outputs: Optional outputs to store (be careful with size)
         """
@@ -162,7 +162,7 @@ class RunNodeState(DBModel):
     async def mark_failed(self, error: str, retryable: bool = False):
         """
         Mark node as failed.
-        
+
         Args:
             error: Error message
             retryable: Whether this failure is retryable
@@ -180,7 +180,7 @@ class RunNodeState(DBModel):
     ):
         """
         Mark node as suspended.
-        
+
         Args:
             reason: Human-readable suspension reason
             state: State to save for resumption
@@ -194,7 +194,7 @@ class RunNodeState(DBModel):
     async def mark_resuming(self, state: dict[str, Any]):
         """
         Prepare node for resumption (transition back to running).
-        
+
         Args:
             state: Resumed state
         """
@@ -219,23 +219,23 @@ class RunNodeState(DBModel):
     async def get_incomplete_nodes(cls, run_id: str) -> list["RunNodeState"]:
         """
         Get all incomplete nodes for a run.
-        
+
         Args:
             run_id: The workflow run identifier
-            
+
         Returns:
             List of RunNodeState for nodes that need resumption
         """
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field, ConditionBuilder, ConditionGroup, LogicalOperator
-        
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         condition = ConditionBuilder(
             ConditionGroup([
                 Field("run_id").equals(run_id),
                 Field("status").in_list(["scheduled", "running"])
             ], LogicalOperator.AND)
         )
-        
+
         results, _ = await adapter.query(condition=condition, limit=10000)
         return [cls.from_dict(row) for row in results]
 
@@ -243,18 +243,18 @@ class RunNodeState(DBModel):
     async def get_suspended_nodes(cls, run_id: str) -> list["RunNodeState"]:
         """
         Get all suspended nodes for a run.
-        
+
         Args:
             run_id: The workflow run identifier
-            
+
         Returns:
             List of RunNodeState for suspended nodes
         """
         adapter = await cls.adapter()
         from nodetool.models.condition_builder import Field
-        
+
         condition = Field("run_id").equals(run_id) & Field("status").equals("suspended")
-        
+
         results, _ = await adapter.query(condition=condition, limit=10000)
         return [cls.from_dict(row) for row in results]
 

@@ -19,11 +19,11 @@ MessageStatus = Literal["pending", "claimed", "consumed"]
 class RunInboxMessage(DBModel):
     """
     Durable inbox message for node-to-node communication.
-    
+
     Provides idempotent message delivery with configurable semantics:
     - At-least-once: Use pending/consumed status with offsets
     - Exactly-once: Use pending/claimed/consumed with TTL claims
-    
+
     Key properties:
     - Unique message_id prevents duplicates
     - Monotonic msg_seq per (run_id, node_id, handle)
@@ -39,26 +39,26 @@ class RunInboxMessage(DBModel):
         }
 
     id: str = DBField(hash_key=True, default_factory=create_time_ordered_uuid)
-    
+
     # Message identification
     message_id: str = DBField()  # Unique, deterministic ID for idempotency
     run_id: str = DBField()
     node_id: str = DBField()
     handle: str = DBField()  # Input handle name
-    
+
     # Sequencing
     msg_seq: int = DBField()  # Monotonic per (run_id, node_id, handle)
-    
+
     # Payload
     payload_json: dict[str, Any] = DBField(default_factory=dict)
     payload_ref: str | None = DBField(default=None)  # External storage reference for large payloads
-    
+
     # Status and consumption
     status: str = DBField()  # pending | claimed | consumed
     claim_worker_id: str | None = DBField(default=None)
     claim_expires_at: datetime | None = DBField(default=None)
     consumed_at: datetime | None = DBField(default=None)
-    
+
     # Timestamps
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
@@ -71,18 +71,18 @@ class RunInboxMessage(DBModel):
     async def get_next_seq(cls, run_id: str, node_id: str, handle: str) -> int:
         """
         Get next sequence number for a (run_id, node_id, handle) tuple.
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The node identifier
             handle: The input handle name
-            
+
         Returns:
             Next available sequence number
         """
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field, ConditionBuilder, ConditionGroup, LogicalOperator
-        
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         condition = ConditionBuilder(
             ConditionGroup([
                 Field("run_id").equals(run_id),
@@ -90,7 +90,7 @@ class RunInboxMessage(DBModel):
                 Field("handle").equals(handle)
             ], LogicalOperator.AND)
         )
-        
+
         results, _ = await adapter.query(
             condition=condition,
             order_by="msg_seq",
@@ -114,7 +114,7 @@ class RunInboxMessage(DBModel):
     ) -> "RunInboxMessage | None":
         """
         Append a message to the inbox (idempotent).
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The node identifier
@@ -122,7 +122,7 @@ class RunInboxMessage(DBModel):
             message_id: Unique message ID (idempotency key)
             payload: Message payload (small messages)
             payload_ref: External storage reference (large messages)
-            
+
         Returns:
             Created message or None if duplicate (idempotent)
         """
@@ -130,10 +130,10 @@ class RunInboxMessage(DBModel):
         existing = await cls.get_by_message_id(message_id)
         if existing:
             return existing
-        
+
         # Get next sequence number
         seq = await cls.get_next_seq(run_id, node_id, handle)
-        
+
         # Create message
         message = cls(
             id=create_time_ordered_uuid(),
@@ -146,7 +146,7 @@ class RunInboxMessage(DBModel):
             payload_ref=payload_ref,
             status="pending",
         )
-        
+
         try:
             await message.save()
             return message
@@ -163,7 +163,7 @@ class RunInboxMessage(DBModel):
         """Get message by unique message_id."""
         adapter = await cls.adapter()
         from nodetool.models.condition_builder import Field
-        
+
         results, _ = await adapter.query(
             condition=Field("message_id").equals(message_id),
             limit=1,
@@ -182,22 +182,22 @@ class RunInboxMessage(DBModel):
     ) -> list["RunInboxMessage"]:
         """
         Get pending messages for a node's input handle.
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The node identifier
             handle: The input handle name
             limit: Maximum messages to return
-            
+
         Returns:
             List of pending messages ordered by sequence
         """
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field, ConditionBuilder, ConditionGroup, LogicalOperator
-        
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         # Get pending or expired claims
         now = datetime.now()
-        
+
         condition = ConditionBuilder(
             ConditionGroup([
                 Field("run_id").equals(run_id),
@@ -206,15 +206,15 @@ class RunInboxMessage(DBModel):
                 Field("status").equals("pending")
             ], LogicalOperator.AND)
         )
-        
+
         results, _ = await adapter.query(
             condition=condition,
             order_by="msg_seq",
             limit=limit,
         )
-        
+
         messages = [cls.from_dict(row) for row in results]
-        
+
         # Also include expired claims
         claimed_condition = ConditionBuilder(
             ConditionGroup([
@@ -224,19 +224,19 @@ class RunInboxMessage(DBModel):
                 Field("status").equals("claimed")
             ], LogicalOperator.AND)
         )
-        
+
         claimed_results, _ = await adapter.query(
             condition=claimed_condition,
             order_by="msg_seq",
             limit=limit,
         )
-        
+
         # Filter expired claims
         for row in claimed_results:
             msg = cls.from_dict(row)
             if msg.claim_expires_at and msg.claim_expires_at < now:
                 messages.append(msg)
-        
+
         # Sort by sequence
         messages.sort(key=lambda m: m.msg_seq)
         return messages[:limit]
@@ -244,11 +244,11 @@ class RunInboxMessage(DBModel):
     async def claim(self, worker_id: str, ttl_seconds: int = 30) -> bool:
         """
         Claim this message for processing (exactly-once semantics).
-        
+
         Args:
             worker_id: Identifier of the worker claiming this message
             ttl_seconds: How long the claim is valid
-            
+
         Returns:
             True if successfully claimed, False if already claimed
         """
@@ -262,7 +262,7 @@ class RunInboxMessage(DBModel):
                     return False
             else:
                 return False
-        
+
         self.status = "claimed"
         self.claim_worker_id = worker_id
         self.claim_expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
@@ -278,7 +278,7 @@ class RunInboxMessage(DBModel):
     def get_payload(self) -> dict[str, Any]:
         """
         Get message payload (handles both inline and external).
-        
+
         Returns:
             Message payload dictionary
         """

@@ -16,10 +16,10 @@ from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_or
 class TriggerInput(DBModel):
     """
     Durable trigger input for workflow wake-up.
-    
+
     Stores external trigger events that should wake up suspended trigger workflows.
     Provides idempotent delivery and cursor support for ordered processing.
-    
+
     Key properties:
     - Unique input_id prevents duplicate delivery
     - Processed flag tracks consumption
@@ -35,22 +35,22 @@ class TriggerInput(DBModel):
         }
 
     id: str = DBField(hash_key=True, default_factory=create_time_ordered_uuid)
-    
+
     # Identification
     input_id: str = DBField()  # Unique ID for idempotency
     run_id: str = DBField()
     node_id: str = DBField()
-    
+
     # Payload
     payload_json: dict[str, Any] = DBField(default_factory=dict)
-    
+
     # Processing state
     processed: bool = DBField(default=False)
     processed_at: datetime | None = DBField(default=None)
-    
+
     # Optional cursor for ordered triggers
     cursor: str | None = DBField(default=None)
-    
+
     # Timestamps
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
@@ -70,14 +70,14 @@ class TriggerInput(DBModel):
     ) -> "TriggerInput | None":
         """
         Add a trigger input (idempotent).
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The trigger node identifier
             input_id: Unique input ID (idempotency key)
             payload: Trigger event data
             cursor: Optional cursor for ordered processing
-            
+
         Returns:
             Created TriggerInput or None if duplicate
         """
@@ -85,7 +85,7 @@ class TriggerInput(DBModel):
         existing = await cls.get_by_input_id(input_id)
         if existing:
             return existing
-        
+
         # Create trigger input
         trigger_input = cls(
             id=create_time_ordered_uuid(),
@@ -96,7 +96,7 @@ class TriggerInput(DBModel):
             cursor=cursor,
             processed=False,
         )
-        
+
         try:
             await trigger_input.save()
             return trigger_input
@@ -112,7 +112,7 @@ class TriggerInput(DBModel):
         """Get trigger input by unique input_id."""
         adapter = await cls.adapter()
         from nodetool.models.condition_builder import Field
-        
+
         results, _ = await adapter.query(
             condition=Field("input_id").equals(input_id),
             limit=1,
@@ -130,18 +130,18 @@ class TriggerInput(DBModel):
     ) -> list["TriggerInput"]:
         """
         Get pending (unprocessed) trigger inputs for a node.
-        
+
         Args:
             run_id: The workflow run identifier
             node_id: The trigger node identifier
             limit: Maximum inputs to return
-            
+
         Returns:
             List of unprocessed trigger inputs ordered by creation time
         """
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field, ConditionBuilder, ConditionGroup, LogicalOperator
-        
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         condition = ConditionBuilder(
             ConditionGroup([
                 Field("run_id").equals(run_id),
@@ -149,13 +149,13 @@ class TriggerInput(DBModel):
                 Field("processed").equals(False)
             ], LogicalOperator.AND)
         )
-        
+
         results, _ = await adapter.query(
             condition=condition,
             order_by="created_at",
             limit=limit,
         )
-        
+
         return [cls.from_dict(row) for row in results]
 
     async def mark_processed(self):
@@ -168,27 +168,27 @@ class TriggerInput(DBModel):
     async def get_runs_with_pending_inputs(cls, limit: int = 100) -> list[tuple[str, str]]:
         """
         Get (run_id, node_id) tuples for runs with pending trigger inputs.
-        
+
         This is used by the wake-up service to find suspended workflows that
         need to be resumed.
-        
+
         Args:
             limit: Maximum runs to return
-            
+
         Returns:
             List of (run_id, node_id) tuples
         """
         adapter = await cls.adapter()
         from nodetool.models.condition_builder import Field
-        
+
         condition = Field("processed").equals(False)
-        
+
         results, _ = await adapter.query(
             condition=condition,
             limit=limit,
             columns=["run_id", "node_id"],
         )
-        
+
         # Deduplicate by (run_id, node_id)
         seen = set()
         runs = []
@@ -197,7 +197,7 @@ class TriggerInput(DBModel):
             if key not in seen:
                 seen.add(key)
                 runs.append(key)
-        
+
         return runs
 
     @classmethod

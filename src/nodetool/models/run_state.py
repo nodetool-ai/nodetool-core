@@ -18,10 +18,10 @@ RunStatus = Literal["running", "suspended", "completed", "failed", "cancelled", 
 class RunState(DBModel):
     """
     Authoritative state for a workflow run.
-    
+
     This is the source of truth for run status and suspension state.
     Recovery and resumption read directly from this table.
-    
+
     Key properties:
     - Mutable (status changes in place)
     - Source of truth (not derived from events)
@@ -39,18 +39,18 @@ class RunState(DBModel):
     status: str = DBField()  # running | suspended | completed | failed | cancelled | recovering
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
-    
+
     # Suspension state (populated when status=suspended)
     suspended_node_id: str | None = DBField(default=None)
     suspension_reason: str | None = DBField(default=None)
     suspension_state_json: dict[str, Any] = DBField(default_factory=dict)
     suspension_metadata_json: dict[str, Any] = DBField(default_factory=dict)
-    
+
     # Completion/failure metadata
     completed_at: datetime | None = DBField(default=None)
     failed_at: datetime | None = DBField(default=None)
     error_message: str | None = DBField(default=None)
-    
+
     # Optional: version for optimistic locking
     version: int = DBField(default=0)
 
@@ -63,10 +63,10 @@ class RunState(DBModel):
     async def create_run(cls, run_id: str) -> "RunState":
         """
         Create a new run in running state.
-        
+
         Args:
             run_id: The workflow run identifier
-            
+
         Returns:
             Created RunState
         """
@@ -87,7 +87,7 @@ class RunState(DBModel):
     ):
         """
         Mark run as suspended.
-        
+
         Args:
             node_id: Node that initiated suspension
             reason: Human-readable suspension reason

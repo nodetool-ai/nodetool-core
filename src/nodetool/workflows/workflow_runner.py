@@ -40,6 +40,8 @@ from typing import Any, Optional
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.models.run_node_state import RunNodeState
+from nodetool.models.run_state import RunState
 from nodetool.types.graph import Edge
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
@@ -52,6 +54,7 @@ from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.state_manager import StateManager
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
@@ -61,9 +64,6 @@ from nodetool.workflows.torch_support import (
     torch,
 )
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
-from nodetool.models.run_state import RunState
-from nodetool.models.run_node_state import RunNodeState
-from nodetool.workflows.state_manager import StateManager
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -192,16 +192,16 @@ class WorkflowRunner:
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
-        
+
         # Event logging for resumability (audit-only, not source of truth)
         self.enable_event_logging = enable_event_logging
         self.event_logger: WorkflowEventLogger | None = None
         if enable_event_logging:
             self.event_logger = WorkflowEventLogger(run_id=job_id)
-        
+
         # State table tracking (source of truth for correctness)
         self.run_state: RunState | None = None
-        
+
         # State manager for queue-based updates (eliminates DB write contention)
         self.state_manager: StateManager | None = None
 
@@ -521,8 +521,8 @@ class WorkflowRunner:
         start_time = time.time()
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
-        
-        # Create run_state (source of truth) 
+
+        # Create run_state (source of truth)
         try:
             self.run_state = await RunState.create_run(
                 run_id=self.job_id,
@@ -534,12 +534,12 @@ class WorkflowRunner:
         except Exception as e:
             log.error(f"Failed to create run_state: {e}")
             raise
-        
+
         # Initialize and start StateManager (single writer for node states)
         self.state_manager = StateManager(run_id=self.job_id)
         await self.state_manager.start()
         log.info(f"Started StateManager for run {self.job_id}")
-        
+
         # Log RunCreated event (audit-only, non-fatal)
         if self.event_logger:
             try:
@@ -646,7 +646,7 @@ class WorkflowRunner:
                 # If we reach here, no exceptions from the main processing stages
                 if self.status == "running":  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
-                    
+
                     # Update run_state (source of truth)
                     if self.run_state:
                         try:
@@ -661,7 +661,7 @@ class WorkflowRunner:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
-                
+
                 # Update run_state (source of truth)
                 if self.run_state:
                     try:
@@ -671,7 +671,7 @@ class WorkflowRunner:
                         log.info(f"Marked run_state as cancelled for {self.job_id}")
                     except Exception as e:
                         log.error(f"Failed to mark run_state as cancelled: {e}")
-                
+
                 # Log RunCancelled event (audit-only, non-fatal)
                 if self.event_logger:
                     try:
@@ -788,7 +788,7 @@ class WorkflowRunner:
                     # log.error already done by generic message
 
                 self.status = "error"
-                
+
                 # Update run_state (source of truth)
                 if self.run_state:
                     try:
@@ -799,7 +799,7 @@ class WorkflowRunner:
                         log.info(f"Marked run_state as failed for {self.job_id}")
                     except Exception as e2:
                         log.error(f"Failed to mark run_state as failed: {e2}")
-                
+
                 # Log RunFailed event (audit-only, non-fatal)
                 if self.event_logger:
                     try:
@@ -809,7 +809,7 @@ class WorkflowRunner:
                         )
                     except Exception as e2:
                         log.warning(f"Failed to log RunFailed event (non-fatal): {e2}")
-                
+
                 # Always post the error JobUpdate
                 if send_job_updates:
                     context.post_message(
@@ -823,7 +823,7 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
-                
+
                 # Stop StateManager and flush pending updates
                 if self.state_manager:
                     try:
@@ -831,7 +831,7 @@ class WorkflowRunner:
                         log.info(f"StateManager stopped for run {self.job_id}")
                     except Exception as e:
                         log.error(f"Error stopping StateManager: {e}")
-                
+
                 # Stop input dispatcher if running
                 try:
                     if self._input_queue is not None:

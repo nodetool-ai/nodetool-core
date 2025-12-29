@@ -44,10 +44,10 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
+from nodetool.models.run_node_state import RunNodeState
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
-from nodetool.models.run_node_state import RunNodeState
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -619,10 +619,10 @@ class NodeActor:
             node._id,
             node.get_node_type(),
         )
-        
+
         # Record node_id for state updates via StateManager
         node_id = node._id
-        
+
         # Queue state update: scheduled (non-blocking via StateManager)
         if self.runner.state_manager:
             try:
@@ -636,7 +636,7 @@ class NodeActor:
             except Exception as e:
                 self.logger.error(f"Failed to queue state update: {e}")
                 # Continue execution - state tracking failure shouldn't block workflow
-        
+
         # Log NodeScheduled event (audit-only, non-fatal)
         if self.runner.event_logger:
             try:
@@ -647,10 +647,10 @@ class NodeActor:
                 )
             except Exception as e:
                 self.logger.warning(f"Failed to log NodeScheduled event (non-fatal): {e}")
-        
+
         # Record start time for duration calculation
         start_time = asyncio.get_event_loop().time()
-        
+
         try:
             # Queue state update: running (non-blocking via StateManager)
             if self.runner.state_manager:
@@ -663,7 +663,7 @@ class NodeActor:
                     self.logger.debug(f"Queued state update (running) for node {node_id}")
                 except Exception as e:
                     self.logger.error(f"Failed to queue state update: {e}")
-            
+
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
 
@@ -673,10 +673,10 @@ class NodeActor:
                 await self._run_streaming_output_batched_node()
             else:
                 await self._run_buffered_node()
-            
+
             # Calculate duration
             duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-            
+
             # Queue state update: completed (non-blocking via StateManager)
             if self.runner.state_manager:
                 try:
@@ -689,7 +689,7 @@ class NodeActor:
                     self.logger.debug(f"Queued state update (completed) for node {node_id}")
                 except Exception as e:
                     self.logger.error(f"Failed to queue state update: {e}")
-            
+
             # Log NodeCompleted event (audit-only, non-fatal)
             if self.runner.event_logger:
                 try:
@@ -725,7 +725,7 @@ class NodeActor:
                 node.get_node_type(),
                 e,
             )
-            
+
             # Queue state update: failed (non-blocking via StateManager)
             if self.runner.state_manager:
                 try:
@@ -739,7 +739,7 @@ class NodeActor:
                     self.logger.debug(f"Queued state update (failed) for node {node_id}")
                 except Exception as e2:
                     self.logger.error(f"Failed to queue state update: {e2}")
-            
+
             # Log NodeFailed event (audit-only, non-fatal)
             if self.runner.event_logger:
                 try:
@@ -751,7 +751,7 @@ class NodeActor:
                     )
                 except Exception as e2:
                     self.logger.warning(f"Failed to log NodeFailed event (non-fatal): {e2}")
-            
+
             # Post error update and propagate; ensure EOS downstream
             try:
                 ctx.post_message(

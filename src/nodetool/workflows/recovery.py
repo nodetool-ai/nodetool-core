@@ -76,7 +76,7 @@ class WorkflowRecoveryService:
     ) -> dict[str, dict[str, Any]]:
         """Determine which nodes need to be resumed and how."""
         resumption_plan = {}
-        
+
         incomplete = await self.get_incomplete_nodes(run_id)
         for node_state in incomplete:
             if node_state.status == "scheduled":
@@ -93,7 +93,7 @@ class WorkflowRecoveryService:
                     "attempt": node_state.attempt + 1,
                     "increment_attempt": True,
                 }
-        
+
         suspended = await self.get_suspended_nodes(run_id)
         for node_state in suspended:
             resumption_plan[node_state.node_id] = {
@@ -103,7 +103,7 @@ class WorkflowRecoveryService:
                 "resume_state": node_state.resume_state_json,
                 "increment_attempt": False,
             }
-        
+
         return resumption_plan
 
     async def restore_node_state(
@@ -115,10 +115,10 @@ class WorkflowRecoveryService:
             if n._id == node_id:
                 node = n
                 break
-        
+
         if not node or not hasattr(node, '_set_resuming_state'):
             return False
-        
+
         try:
             node._set_resuming_state(resume_state)
             return True
@@ -132,34 +132,34 @@ class WorkflowRecoveryService:
         """Resume a workflow execution."""
         if not await self.can_resume(run_id):
             return False, f"Run {run_id} cannot be resumed"
-        
+
         lease = await self.acquire_run_lease(run_id)
         if not lease:
             return False, f"Run {run_id} is already being processed"
-        
+
         try:
             run_state = await RunState.get(run_id)
             if not run_state:
                 return False, f"Run {run_id} not found"
-            
+
             await run_state.mark_recovering()
             resumption_plan = await self.determine_resumption_points(run_id, graph)
-            
+
             if not resumption_plan:
                 return True, "No incomplete nodes found"
-            
+
             for node_id, plan in resumption_plan.items():
                 if plan["action"] == "resume" and plan.get("resume_state"):
                     await self.restore_node_state(node_id, plan["resume_state"], graph)
-            
+
             for node_id, plan in resumption_plan.items():
                 node_state = await RunNodeState.get_or_create(run_id, node_id)
                 if plan.get("increment_attempt"):
                     node_state.attempt = plan["attempt"]
                 await node_state.mark_scheduled(node_state.attempt)
-            
+
             return True, f"Successfully resumed run {run_id}"
-        
+
         except Exception as e:
             log.error(f"Error resuming workflow {run_id}: {e}", exc_info=True)
             return False, f"Error resuming workflow: {str(e)}"
@@ -169,11 +169,11 @@ class WorkflowRecoveryService:
     async def find_stuck_runs(self, max_age_minutes: int = 10) -> list[str]:
         """Find runs that are stuck (running with expired lease)."""
         runs = await RunState.find({"status": "running"}, limit=1000)
-        
+
         stuck_runs = []
         for run_state in runs:
             lease = await RunLease.get(run_state.run_id)
             if not lease or lease.expires_at < datetime.now():
                 stuck_runs.append(run_state.run_id)
-        
+
         return stuck_runs

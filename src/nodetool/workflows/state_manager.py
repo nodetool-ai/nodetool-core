@@ -19,14 +19,14 @@ Usage:
     # Initialize once per workflow run
     manager = StateManager(run_id="job-123")
     await manager.start()
-    
+
     # From node actors (non-blocking)
     await manager.update_node_state(
         node_id="node-1",
         status="running",
         started_at=datetime.now()
     )
-    
+
     # Shutdown
     await manager.stop()
 """
@@ -40,14 +40,14 @@ from datetime import datetime
 from typing import Any, Literal
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_node_state import RunNodeState, NodeStatus
+from nodetool.models.run_node_state import NodeStatus, RunNodeState
 
 log = get_logger(__name__)
 
 
 class StateUpdate:
     """Represents a single state update request."""
-    
+
     def __init__(
         self,
         node_id: str,
@@ -83,23 +83,23 @@ class StateUpdate:
 class StateManager:
     """
     Queue-based state manager for run_node_state updates.
-    
+
     Implements the single-writer pattern to eliminate SQLite write contention.
     All state updates are queued and processed by a single background task.
-    
+
     Key features:
     - Non-blocking enqueue (immediate return to caller)
     - Batch processing (groups updates in single transactions)
     - Update coalescing (merges multiple updates for same node)
     - Error resilience (failed updates logged, don't crash workflow)
     - Graceful shutdown (flushes pending updates)
-    
+
     Args:
         run_id: The workflow run identifier
         batch_size: Max updates per transaction (default: 10)
         batch_interval: Max seconds between flushes (default: 0.1)
     """
-    
+
     def __init__(
         self,
         run_id: str,
@@ -109,20 +109,20 @@ class StateManager:
         self.run_id = run_id
         self.batch_size = batch_size
         self.batch_interval = batch_interval
-        
+
         # Queue for incoming updates
         self.queue: asyncio.Queue[StateUpdate | None] = asyncio.Queue()
-        
+
         # Background task
         self.writer_task: asyncio.Task | None = None
-        
+
         # State cache (node_id -> RunNodeState)
         # Keeps latest known state to avoid redundant DB reads
         self.state_cache: dict[str, RunNodeState] = {}
-        
+
         # Shutdown flag
         self._stopped = False
-        
+
         # Stats
         self.stats = {
             "updates_queued": 0,
@@ -130,48 +130,48 @@ class StateManager:
             "batches_written": 0,
             "errors": 0,
         }
-    
+
     async def start(self):
         """Start the background writer task."""
         if self.writer_task is not None:
             log.warning(f"StateManager for run {self.run_id} already started")
             return
-        
+
         log.info(f"Starting StateManager for run {self.run_id}")
         self.writer_task = asyncio.create_task(self._writer_loop())
-    
+
     async def stop(self, timeout: float = 5.0):
         """
         Stop the background writer and flush pending updates.
-        
+
         Args:
             timeout: Max seconds to wait for flush (default: 5.0)
         """
         if self.writer_task is None:
             return
-        
+
         log.info(f"Stopping StateManager for run {self.run_id}, flushing pending updates...")
-        
+
         # Signal shutdown
         self._stopped = True
         await self.queue.put(None)  # Sentinel value
-        
+
         # Wait for writer to finish
         try:
             await asyncio.wait_for(self.writer_task, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning(f"StateManager writer task timed out after {timeout}s")
             self.writer_task.cancel()
             try:
                 await self.writer_task
             except asyncio.CancelledError:
                 pass
-        
+
         log.info(
             f"StateManager stopped. Stats: {self.stats['updates_processed']}/{self.stats['updates_queued']} updates processed, "
             f"{self.stats['batches_written']} batches written, {self.stats['errors']} errors"
         )
-    
+
     async def update_node_state(
         self,
         node_id: str,
@@ -190,10 +190,10 @@ class StateManager:
     ):
         """
         Queue a state update (non-blocking).
-        
+
         This method immediately returns. The update will be processed
         asynchronously by the background writer task.
-        
+
         Args:
             node_id: Node identifier
             status: New status (optional)
@@ -212,7 +212,7 @@ class StateManager:
         if self._stopped:
             log.warning(f"StateManager is stopped, ignoring update for node {node_id}")
             return
-        
+
         update = StateUpdate(
             node_id=node_id,
             status=status,
@@ -227,38 +227,37 @@ class StateManager:
             suspension_reason=suspension_reason,
             resume_state_json=resume_state_json,
             outputs_json=outputs_json,
-            duration_ms=duration_ms,
         )
-        
+
         await self.queue.put(update)
         self.stats["updates_queued"] += 1
-    
+
     async def _writer_loop(self):
         """
         Background task that processes queued updates in batches.
-        
+
         This is the single writer that eliminates database contention.
         It groups updates and writes them in transactions.
         """
         log.debug(f"StateManager writer loop started for run {self.run_id}")
-        
+
         while True:
             # Collect batch of updates
             batch: list[StateUpdate] = []
             timeout_task = asyncio.create_task(asyncio.sleep(self.batch_interval))
-            
+
             try:
                 while len(batch) < self.batch_size:
                     # Wait for update or timeout
                     get_task = asyncio.create_task(self.queue.get())
-                    done, pending = await asyncio.wait(
+                    done, _pending = await asyncio.wait(
                         [get_task, timeout_task],
                         return_when=asyncio.FIRST_COMPLETED,
                     )
-                    
+
                     if get_task in done:
                         update = await get_task
-                        
+
                         # Check for sentinel (shutdown signal)
                         if update is None:
                             log.debug("Received shutdown signal")
@@ -269,9 +268,9 @@ class StateManager:
                             if not timeout_task.done():
                                 timeout_task.cancel()
                             return
-                        
+
                         batch.append(update)
-                        
+
                         # Cancel timeout task if batch is full
                         if len(batch) >= self.batch_size:
                             if not timeout_task.done():
@@ -281,26 +280,26 @@ class StateManager:
                         # Timeout reached, process what we have
                         get_task.cancel()
                         break
-                
+
                 # Process batch if non-empty
                 if batch:
                     await self._process_batch(batch)
-                    
+
             except Exception as e:
                 log.error(f"Error in StateManager writer loop: {e}", exc_info=True)
                 self.stats["errors"] += 1
                 # Continue processing (don't let one error crash the writer)
-    
+
     async def _process_batch(self, batch: list[StateUpdate]):
         """
         Process a batch of state updates.
-        
+
         This method:
         1. Coalesces updates (merges multiple updates for same node)
         2. Loads state from DB for nodes not in cache
         3. Applies updates in memory
         4. Saves all changes in a single pass
-        
+
         Args:
             batch: List of state updates to process
         """
@@ -337,9 +336,9 @@ class StateManager:
                         existing.outputs_json = update.outputs_json
                 else:
                     coalesced[update.node_id] = update
-            
+
             # Load states for nodes not in cache
-            for node_id in coalesced.keys():
+            for node_id in coalesced:
                 if node_id not in self.state_cache:
                     # Try to load from DB
                     state = await RunNodeState.get_node_state(self.run_id, node_id)
@@ -352,11 +351,11 @@ class StateManager:
                             attempt=1,
                         )
                     self.state_cache[node_id] = state
-            
+
             # Apply updates
             for node_id, update in coalesced.items():
                 state = self.state_cache[node_id]
-                
+
                 if update.status is not None:
                     state.status = update.status
                 if update.attempt is not None:
@@ -381,41 +380,41 @@ class StateManager:
                     state.resume_state_json = update.resume_state_json
                 if update.outputs_json is not None:
                     state.outputs_json = update.outputs_json
-                
+
                 # Update timestamp
                 state.updated_at = datetime.now()
-            
+
             # Save all states (ideally in a transaction, but save() is per-record)
             # TODO: If adapter supports batch operations, use that here
-            for node_id in coalesced.keys():
+            for node_id in coalesced:
                 state = self.state_cache[node_id]
                 await state.save()
-            
+
             # Update stats
             self.stats["updates_processed"] += len(batch)
             self.stats["batches_written"] += 1
-            
+
             log.debug(
                 f"Processed batch of {len(batch)} updates (coalesced to {len(coalesced)} nodes) for run {self.run_id}"
             )
-            
+
         except Exception as e:
             log.error(f"Error processing state update batch: {e}", exc_info=True)
             self.stats["errors"] += 1
-    
+
     async def get_node_state(self, node_id: str) -> RunNodeState | None:
         """
         Get current node state (from cache if available).
-        
+
         Args:
             node_id: Node identifier
-            
+
         Returns:
             RunNodeState or None if not found
         """
         if node_id in self.state_cache:
             return self.state_cache[node_id]
-        
+
         # Load from DB
         state = await RunNodeState.get_node_state(self.run_id, node_id)
         if state:

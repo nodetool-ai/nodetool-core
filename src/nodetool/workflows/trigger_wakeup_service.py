@@ -57,11 +57,11 @@ log = get_logger(__name__)
 class TriggerWakeupService:
     """
     Durable trigger wakeup service for cross-process coordination.
-    
+
     Stores trigger inputs durably and coordinates wakeup of suspended trigger workflows.
     No in-memory state - all coordination via database tables.
     """
-    
+
     async def deliver_trigger_input(
         self,
         run_id: str,
@@ -72,17 +72,17 @@ class TriggerWakeupService:
     ) -> bool:
         """
         Deliver a trigger input to a trigger node.
-        
+
         Stores the input durably and appends it as an inbox message.
         If input_id already exists, this is a no-op (idempotent).
-        
+
         Args:
             run_id: The workflow run ID
             node_id: The trigger node ID
             input_id: Unique input ID (for idempotency)
             payload: Trigger event payload
             cursor: Optional cursor value for ordered triggers
-            
+
         Returns:
             True if input was newly created, False if it already existed
         """
@@ -91,7 +91,7 @@ class TriggerWakeupService:
         if existing:
             log.debug(f"Trigger input {input_id} already exists (idempotent)")
             return False
-        
+
         # Create trigger input record
         trigger_input = TriggerInput(
             run_id=run_id,
@@ -102,13 +102,13 @@ class TriggerWakeupService:
             processed=False,
             created_at=datetime.now(),
         )
-        
+
         await trigger_input.save()
         log.info(
             f"Stored trigger input {input_id} for {run_id}/{node_id}"
             + (f" (cursor={cursor})" if cursor else "")
         )
-        
+
         # Also append as inbox message to wake the node
         inbox = DurableInbox(run_id=run_id, node_id=node_id)
         await inbox.append(
@@ -116,11 +116,11 @@ class TriggerWakeupService:
             payload=payload,
             message_id=f"trigger-{input_id}",
         )
-        
+
         log.info(f"Appended trigger input {input_id} to inbox for {run_id}/{node_id}")
-        
+
         return True
-    
+
     async def get_pending_inputs(
         self,
         run_id: str,
@@ -129,12 +129,12 @@ class TriggerWakeupService:
     ) -> list[TriggerInput]:
         """
         Get pending (unprocessed) trigger inputs for a node.
-        
+
         Args:
             run_id: The workflow run ID
             node_id: The trigger node ID
             limit: Maximum number of inputs to return
-            
+
         Returns:
             List of pending trigger inputs in creation order
         """
@@ -147,26 +147,26 @@ class TriggerWakeupService:
             sort=[("created_at", 1)],
             limit=limit,
         )
-        
+
         return inputs
-    
+
     async def mark_processed(self, trigger_input: TriggerInput) -> None:
         """
         Mark a trigger input as processed.
-        
+
         Args:
             trigger_input: The trigger input to mark as processed
         """
         trigger_input.processed = True
         trigger_input.processed_at = datetime.now()
         await trigger_input.save()
-        
+
         log.debug(f"Marked trigger input {trigger_input.input_id} as processed")
-    
+
     async def find_suspended_triggers(self) -> list[tuple[str, str]]:
         """
         Find suspended trigger workflows that have pending inputs.
-        
+
         Returns:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
@@ -175,7 +175,7 @@ class TriggerWakeupService:
             {"status": "suspended"},
             limit=1000,
         )
-        
+
         results = []
         for run_state in suspended_runs:
             # Check if this run has pending trigger inputs
@@ -185,12 +185,12 @@ class TriggerWakeupService:
                     node_id=run_state.suspended_node_id,
                     limit=1,
                 )
-                
+
                 if pending:
                     results.append((run_state.run_id, run_state.suspended_node_id))
-        
+
         return results
-    
+
     async def wake_up_trigger(
         self,
         run_id: str,
@@ -198,16 +198,16 @@ class TriggerWakeupService:
     ) -> bool:
         """
         Wake up a suspended trigger workflow.
-        
+
         This is a convenience method that triggers the recovery service
         to resume the workflow. The actual resumption is handled by
         WorkflowRecoveryService.
-        
+
         Args:
             run_id: The workflow run ID to wake up
             recovery_service: Optional recovery service instance
                             (if None, this just logs and returns)
-            
+
         Returns:
             True if wake-up was initiated, False otherwise
         """
@@ -216,16 +216,16 @@ class TriggerWakeupService:
         if not run_state:
             log.warning(f"Cannot wake trigger: run {run_id} not found")
             return False
-        
+
         if run_state.status != "suspended":
             log.warning(
                 f"Cannot wake trigger: run {run_id} is not suspended "
                 f"(status={run_state.status})"
             )
             return False
-        
+
         log.info(f"Waking up suspended trigger workflow {run_id}")
-        
+
         # If recovery service is provided, initiate resumption
         if recovery_service:
             # This will be implemented in Phase 5 (recovery refactor)
@@ -236,9 +236,9 @@ class TriggerWakeupService:
             log.info(
                 f"No recovery service provided, trigger wake-up logged for {run_id}"
             )
-        
+
         return True
-    
+
     async def cleanup_processed(
         self,
         run_id: str,
@@ -247,21 +247,21 @@ class TriggerWakeupService:
     ) -> int:
         """
         Clean up processed trigger inputs older than specified hours.
-        
+
         Helps manage storage growth by removing old processed inputs.
-        
+
         Args:
             run_id: The workflow run ID
             node_id: The trigger node ID
             older_than_hours: Delete processed inputs older than this many hours
-            
+
         Returns:
             Number of inputs deleted
         """
         from datetime import timedelta
-        
+
         cutoff = datetime.now() - timedelta(hours=older_than_hours)
-        
+
         # Find old processed inputs
         inputs = await TriggerInput.find(
             {
@@ -271,16 +271,16 @@ class TriggerWakeupService:
                 "processed_at": {"$lt": cutoff},
             }
         )
-        
+
         # Delete them
         count = 0
         for inp in inputs:
             await inp.delete()
             count += 1
-        
+
         if count > 0:
             log.info(
                 f"Cleaned up {count} processed trigger inputs for {run_id}/{node_id}"
             )
-        
+
         return count
