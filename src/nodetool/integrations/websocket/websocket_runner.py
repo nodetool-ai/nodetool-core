@@ -38,12 +38,27 @@ def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
     Replaces binary data in AssetRef.data fields with an index reference,
     and appends the binary data to the binaries list.
 
+    This allows sending messages with binary data as MessagePack arrays:
+    [message_dict, binary1, binary2, ...]
+
+    The message dict will have 'binary_index' fields pointing to the
+    position of each asset's binary data in the array.
+
     Args:
         value: The value to process (can be dict, list, or AssetRef)
         binaries: List to collect binary data
 
     Returns:
         Modified value with binary data replaced by indices
+
+    Example:
+        >>> binaries = []
+        >>> msg = {"output": {"type": "image", "data": b"imagedata"}}
+        >>> result = extract_binary_data_from_value(msg, binaries)
+        >>> result
+        {"output": {"type": "image", "data": None, "binary_index": 0}}
+        >>> binaries
+        [b"imagedata"]
     """
     if isinstance(value, dict):
         # Check if this looks like an AssetRef
@@ -90,6 +105,13 @@ The module supports:
 - Dynamic switching between binary and text protocols
 - Graceful connection and resource management
 - Multiple concurrent jobs per WebSocket connection
+
+Binary Data Handling:
+- In BINARY mode, asset data (images, audio, video, etc.) is extracted from message payloads
+- Binary data is sent as a MessagePack array: [message_dict, binary1, binary2, ...]
+- Each asset in the message gets a 'binary_index' field pointing to its data in the array
+- This optimizes transmission and allows clients to reconstruct assets efficiently
+- Messages without binary data are sent as plain MessagePack dicts for efficiency
 """
 
 
@@ -596,7 +618,22 @@ class WebSocketRunner:
             )
 
     async def send_message(self, message: dict):
-        """Send a message using the current mode."""
+        """
+        Send a message using the current mode.
+
+        In BINARY mode:
+        - Extracts binary data from AssetRef objects in the message
+        - Replaces binary data with index references (binary_index field)
+        - Sends as MessagePack array: [message, binary1, binary2, ...]
+        - Messages without binary data are sent as plain dicts
+
+        In TEXT mode:
+        - Sends the message as JSON string
+        - Binary data should already be converted to base64 via AssetOutputMode.DATA_URI
+
+        Args:
+            message: Dictionary containing the message to send
+        """
         if not self.websocket or self.websocket.client_state == WebSocketState.DISCONNECTED:
             log.warning(
                 "WebSocketRunner.send_message skipped because websocket is not connected",
