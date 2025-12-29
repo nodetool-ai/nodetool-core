@@ -112,7 +112,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "boto3>=1.35.63",
     "pymemcache>=4.0.0",
-    "protobuf<=3.20.3",
+    "protobuf<=6.33.2",
     "moto>=5.1.4",
 
     # Web and networking
