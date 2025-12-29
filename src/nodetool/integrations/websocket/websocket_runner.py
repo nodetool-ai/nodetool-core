@@ -30,6 +30,47 @@ from nodetool.workflows.types import Chunk, Error
 
 log = get_logger(__name__)
 
+
+def extract_binary_data_from_value(value: Any, binaries: list[bytes]) -> Any:
+    """
+    Recursively extract binary data from AssetRef objects.
+    
+    Replaces binary data in AssetRef.data fields with an index reference,
+    and appends the binary data to the binaries list.
+    
+    Args:
+        value: The value to process (can be dict, list, or AssetRef)
+        binaries: List to collect binary data
+        
+    Returns:
+        Modified value with binary data replaced by indices
+    """
+    if isinstance(value, dict):
+        # Check if this looks like an AssetRef
+        if "type" in value and value.get("type") in ["image", "audio", "video", "text", "asset"]:
+            # Check if it has binary data
+            if "data" in value and value["data"] is not None:
+                data = value["data"]
+                # Handle bytes data
+                if isinstance(data, bytes):
+                    binaries.append(data)
+                    # Replace data with index reference
+                    value = value.copy()
+                    value["data"] = None
+                    value["binary_index"] = len(binaries) - 1
+                    return value
+        
+        # Recursively process dict values
+        return {k: extract_binary_data_from_value(v, binaries) for k, v in value.items()}
+    elif isinstance(value, list):
+        # Recursively process list items
+        return [extract_binary_data_from_value(item, binaries) for item in value]
+    elif isinstance(value, tuple):
+        # Recursively process tuple items
+        return tuple(extract_binary_data_from_value(item, binaries) for item in value)
+    else:
+        return value
+
 """
 WebSocket-based workflow execution manager for Node Tool.
 
@@ -565,7 +606,18 @@ class WebSocketRunner:
 
         try:
             if self.mode == WebSocketMode.BINARY:
-                packed_message = msgpack.packb(message, use_bin_type=True)
+                # Extract binary data from AssetRefs in the message
+                binaries: list[bytes] = []
+                processed_message = extract_binary_data_from_value(message, binaries)
+                
+                # If we have binary data, send as array [message, binary1, binary2, ...]
+                if binaries:
+                    payload = [processed_message] + binaries
+                    packed_message = msgpack.packb(payload, use_bin_type=True)
+                else:
+                    # No binary data, send just the message
+                    packed_message = msgpack.packb(processed_message, use_bin_type=True)
+                    
                 await self.websocket.send_bytes(packed_message)  # type: ignore
             else:
                 await self.websocket.send_text(json.dumps(message))
