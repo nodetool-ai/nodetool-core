@@ -123,13 +123,17 @@ from nodetool.metadata.typecheck import (
 )
 from nodetool.metadata.types import (
     AssetRef,
+    AudioRef,
     ComfyData,
     ComfyModel,
     HuggingFaceModel,
+    ImageRef,
     NameToType,
     NPArray,
     OutputSlot,
+    TextRef,
     TypeToName,
+    VideoRef,
 )
 from nodetool.metadata.utils import (
     async_generator_item_type,
@@ -994,6 +998,20 @@ class BaseNode(BaseModel):
         Only allows primitive types (str, int, float, bool, None) and containers (dict, list).
         Converts Pydantic models to dicts and scrubs them.
         Everything else is replaced with a string placeholder.
+        
+        Special handling for AssetRef objects:
+        - If an AssetRef has a memory:// URI, the data field is populated with bytes
+          retrieved from the memory cache using the canonical encoding for the asset type.
+        - Canonical encodings:
+          * ImageRef: PNG bytes
+          * AudioRef: MP3 bytes  
+          * VideoRef: MP4 bytes
+          * TextRef: UTF-8 encoded bytes
+          * Generic AssetRef: raw bytes as stored
+        - The memory:// URI is left in place for potential retrieval optimization.
+        - If data field is already populated, it is preserved as-is.
+        - These bytes can be directly used by the frontend or converted to data URIs
+          following the pattern: data:{mime};base64,{base64_encoded_data}
 
         Args:
             result (Dict[str, Any]): The raw result from node processing.
@@ -1005,6 +1023,51 @@ class BaseNode(BaseModel):
         def _scrub(obj):
             if isinstance(obj, (str, int, float, bool, type(None))):
                 return obj
+            if isinstance(obj, AssetRef):
+                # Special handling for AssetRef: populate data field from memory:// URI
+                # if not already set
+                if obj.uri and obj.uri.startswith("memory://") and obj.data is None:
+                    try:
+                        from nodetool.runtime.resources import require_scope
+                        
+                        # Get the object from memory cache
+                        memory_obj = require_scope().get_memory_uri_cache().get(obj.uri)
+                        
+                        if memory_obj is None:
+                            log.warning(f"Memory object not found for URI {obj.uri}")
+                            return obj.model_dump()
+                        
+                        # Convert memory object to bytes using canonical encoding
+                        data_bytes = None
+                        
+                        if isinstance(memory_obj, bytes):
+                            # Already bytes
+                            data_bytes = memory_obj
+                        elif isinstance(memory_obj, str):
+                            # String -> UTF-8 bytes (TextRef)
+                            data_bytes = memory_obj.encode("utf-8")
+                        else:
+                            # For other types (PIL.Image, AudioSegment, etc.), use _fetch_memory_uri
+                            # which handles image normalization
+                            try:
+                                from nodetool.io.media_fetch import _fetch_memory_uri
+                                mime_type, data_bytes = _fetch_memory_uri(obj.uri)
+                            except Exception as e:
+                                log.warning(f"Failed to fetch memory URI {obj.uri}: {e}")
+                                return obj.model_dump()
+                        
+                        # Return dict with data field populated
+                        result_dict = obj.model_dump()
+                        result_dict["data"] = data_bytes
+                        return result_dict
+                    except Exception as e:
+                        # If memory fetch fails, fall through to regular model dump
+                        log.warning(f"Failed to populate data from memory URI {obj.uri}: {e}")
+                        return obj.model_dump()
+                else:
+                    # Data already present or no memory URI - convert to dict
+                    # Note: data field with bytes will be preserved as-is in the dict
+                    return obj.model_dump()
             if isinstance(obj, dict):
                 return {k: _scrub(v) for k, v in obj.items()}
             if isinstance(obj, (list, tuple)):
