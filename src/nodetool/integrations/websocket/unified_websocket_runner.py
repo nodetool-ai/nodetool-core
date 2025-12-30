@@ -398,7 +398,6 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         try:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)
-                assert packed_message is not None, "Packed message is None"
                 await self.websocket.send_bytes(packed_message)  # type: ignore
             else:
                 json_text = json.dumps(message)
@@ -415,8 +414,12 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         Returns:
             The received message data or None if connection is closed
+
+        Raises:
+            RuntimeError: If WebSocket is not connected
         """
-        assert self.websocket is not None, "WebSocket is not connected"
+        if self.websocket is None:
+            raise RuntimeError("WebSocket is not connected")
 
         try:
             message = await self.websocket.receive()
@@ -995,7 +998,8 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             handle = command.data.get("handle")
             try:
                 log.debug(f"END_INPUT_STREAM received: input={input_name} handle={handle}")
-                assert job_ctx.job_execution.runner, "Runner is not set"
+                if not job_ctx.job_execution.runner:
+                    raise RuntimeError("Runner is not set for this job execution")
                 job_ctx.job_execution.runner.finish_input_stream(input_name=input_name, source_handle=handle)
                 log.debug("END_INPUT_STREAM enqueued to runner input queue")
                 return {
