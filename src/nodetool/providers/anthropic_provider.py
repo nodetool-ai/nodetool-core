@@ -380,7 +380,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Streaming with {len(messages)} messages, {len(tools or [])} tools")
 
         # Handle response_format parameter
-        local_tools = list(tools) if tools else [] if tools else []  # Make a mutable copy
+        local_tools = list(tools) if tools else []  # Make a mutable copy
         output_format = None
 
         system_messages = [message for message in messages if message.role == "system"]
@@ -517,7 +517,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
         # Use the tools from parameter, or format the local tools
-        local_tools = list(tools) if tools else [] if tools else []
+        local_tools = list(tools) if tools else []
         anthropic_tools = self.format_tools(local_tools)
 
         log.debug(f"Making non-streaming API call to Anthropic with model: {model}")

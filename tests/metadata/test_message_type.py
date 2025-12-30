@@ -47,7 +47,7 @@ class TestMessageIsEmpty:
     def test_message_with_list_content_is_not_empty(self):
         """Test that a Message with non-empty list content is not considered empty."""
         from nodetool.metadata.types import MessageTextContent
-        
+
         message = Message(content=[MessageTextContent(text="Hello")])
         assert message.is_empty() is False
         assert message.is_set() is True

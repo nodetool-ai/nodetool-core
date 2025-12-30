@@ -13,9 +13,9 @@ from fastapi.websockets import WebSocketState
 
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode
 from nodetool.config.environment import Environment
-from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.chat_workflow_message_processor import ChatWorkflowMessageProcessor
 from nodetool.messaging.claude_agent_message_processor import ClaudeAgentHelpMessageProcessor
+from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.workflow_message_processor import WorkflowMessageProcessor
 from nodetool.metadata.types import Provider
 
