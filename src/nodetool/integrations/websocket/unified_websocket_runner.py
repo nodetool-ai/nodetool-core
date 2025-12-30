@@ -77,6 +77,9 @@ class CommandType(str, Enum):
     """
     Supported WebSocket commands for the unified runner.
 
+    All messages must be wrapped in a command structure with a valid reference
+    (job_id for workflow operations, thread_id for chat operations).
+
     Workflow Commands:
         - RUN_JOB: Start a new workflow job
         - RECONNECT_JOB: Reconnect to an existing job
@@ -88,7 +91,10 @@ class CommandType(str, Enum):
         - END_INPUT_STREAM: Close a streaming input
 
     Chat Commands:
-        - CHAT_MESSAGE: Send a chat message for processing
+        - CHAT_MESSAGE: Send a chat message for processing (requires thread_id)
+
+    Control Commands:
+        - STOP: Stop current operation (requires job_id or thread_id)
     """
 
     # Workflow commands
@@ -103,6 +109,9 @@ class CommandType(str, Enum):
 
     # Chat command - explicit command for chat messages
     CHAT_MESSAGE = "chat_message"
+
+    # Control commands
+    STOP = "stop"
 
 
 class WebSocketCommand(BaseModel):
@@ -1026,42 +1035,49 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             return {"message": f"Mode set to {new_mode}"}
 
         elif command.command == CommandType.CHAT_MESSAGE:
-            # Handle chat message through command interface
+            # Handle chat message through command interface - requires thread_id
+            thread_id = command.data.get("thread_id")
+            if not thread_id:
+                return {"error": "thread_id is required for chat_message command"}
             self.current_task = asyncio.create_task(self.handle_chat_message(command.data))
-            return {"message": "Chat message processing started"}
+            return {"message": "Chat message processing started", "thread_id": thread_id}
+
+        elif command.command == CommandType.STOP:
+            # Stop current operation - requires job_id or thread_id
+            thread_id = command.data.get("thread_id")
+            if not job_id and not thread_id:
+                return {"error": "job_id or thread_id is required for stop command"}
+
+            log.debug(f"Received stop command for job_id={job_id}, thread_id={thread_id}")
+
+            # Cancel current chat processing task if thread_id matches
+            if thread_id and self.current_task and not self.current_task.done():
+                log.debug("Stopping current chat processor")
+                self.current_task.cancel()
+
+            # Cancel job if job_id is provided
+            if job_id:
+                job_ctx = self.active_jobs.get(job_id)
+                if job_ctx and job_ctx.streaming_task and not job_ctx.streaming_task.done():
+                    job_ctx.streaming_task.cancel()
+
+            # Cancel any pending tool result waiters
+            self.tool_bridge.cancel_all()
+
+            await self.send_message(
+                {
+                    "type": "generation_stopped",
+                    "message": "Generation stopped by user",
+                    "job_id": job_id,
+                    "thread_id": thread_id,
+                }
+            )
+            log.info(f"Generation stopped by user command for job_id={job_id}, thread_id={thread_id}")
+            return {"message": "Stop command processed", "job_id": job_id, "thread_id": thread_id}
 
         else:
             log.warning(f"Unknown command received: {command.command}")
             return {"error": "Unknown command"}
-
-    def _is_chat_message(self, data: dict) -> bool:
-        """
-        Determine if the incoming data is a chat message.
-
-        Chat messages are identified by:
-        - Having role field (user, assistant, system, tool)
-        - Having type="message" or type="chat"
-        - Having content field without a command field
-
-        Args:
-            data: The incoming message data
-
-        Returns:
-            bool: True if this is a chat message, False otherwise
-        """
-        # Explicit chat types
-        if data.get("type") in ("message", "chat"):
-            return True
-
-        # Has role field (typical chat message structure)
-        if data.get("role") in ("user", "assistant", "system", "tool"):
-            return True
-
-        # Has content but no command field
-        if "content" in data and "command" not in data:
-            return True
-
-        return False
 
     async def _heartbeat(self):
         """Periodically send a lightweight heartbeat message to keep the WebSocket alive."""
@@ -1117,10 +1133,9 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         """
         Continuously receive messages from the WebSocket and handle them.
 
-        Routes messages based on their structure:
-        - Command messages (with 'command' field): Workflow operations
-        - Chat messages (with 'role' or 'content'): Chat processing
-        - Control messages (stop, ping, etc.): Connection control
+        All messages must be wrapped in a command structure with a 'command' field.
+        Special message types (ping, client_tools_manifest, tool_result) are handled
+        as control messages for backward compatibility with frontend tooling.
         """
         while True:
             try:
@@ -1134,24 +1149,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 if isinstance(data, dict):
                     msg_type = data.get("type")
 
-                    # Stop command - cancel current processing
-                    if msg_type == "stop":
-                        log.debug("Received stop command")
-                        if self.current_task and not self.current_task.done():
-                            log.debug("Stopping current processor")
-                            self.current_task.cancel()
-                        # Cancel any pending tool result waiters
-                        self.tool_bridge.cancel_all()
-                        await self.send_message(
-                            {
-                                "type": "generation_stopped",
-                                "message": "Generation stopped by user",
-                            }
-                        )
-                        log.info("Generation stopped by user command")
-                        continue
-
-                    # Client tools manifest for chat
+                    # Client tools manifest for chat (control message)
                     if msg_type == "client_tools_manifest":
                         tools = data.get("tools", [])
                         self.client_tools_manifest = {tool["name"]: tool for tool in tools}
@@ -1169,7 +1167,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                             )
                         continue
 
-                    # Tool result from frontend
+                    # Tool result from frontend (control message)
                     if msg_type == "tool_result":
                         tool_call_id = data.get("tool_call_id")
                         if tool_call_id:
@@ -1177,14 +1175,13 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                             log.debug(f"Resolved tool result for call_id: {tool_call_id}")
                         continue
 
-                    # Ping-pong for connection keepalive
+                    # Ping-pong for connection keepalive (control message)
                     if msg_type == "ping":
                         await self.send_message({"type": "pong", "ts": time.time()})
                         continue
 
-                    # Route based on message structure
+                    # All other messages must be commands
                     if "command" in data:
-                        # This is a command message (workflow operations)
                         try:
                             command = WebSocketCommand(**data)
                             response = await self.handle_command(command)
@@ -1192,23 +1189,15 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                             log.debug(f"Handled command {command.command}")
                         except Exception as decode_error:
                             log.warning("Failed to decode command message: %s", decode_error)
-                            await self.send_message({"error": "invalid_command"})
+                            await self.send_message({"error": "invalid_command", "details": str(decode_error)})
                         continue
 
-                    # Check if this is a chat message
-                    if self._is_chat_message(data):
-                        # If there's already a task running, cancel it
-                        if self.current_task and not self.current_task.done():
-                            log.debug("Cancelling current task for new chat message")
-                            self.current_task.cancel()
-
-                        # Process the chat message in a background task
-                        self.current_task = asyncio.create_task(self.handle_chat_message(data))
-                        continue
-
-                    # Unknown message type
-                    log.warning(f"Unknown message type received: {data}")
-                    await self.send_message({"error": "unknown_message_type"})
+                    # Unknown message type - must use command structure
+                    log.warning(f"Message missing 'command' field: {data}")
+                    await self.send_message({
+                        "error": "invalid_message",
+                        "message": "All messages must include a 'command' field. Use 'chat_message' command for chat."
+                    })
 
             except asyncio.CancelledError:
                 log.info("Message receiving cancelled")

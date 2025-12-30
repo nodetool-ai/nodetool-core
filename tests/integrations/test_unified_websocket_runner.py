@@ -265,52 +265,34 @@ class TestUnifiedWebSocketRunnerCommands:
         assert "error" in result
         assert "job_id is required" in result["error"]
 
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(DEFAULT_TEST_TIMEOUT)
-class TestUnifiedWebSocketRunnerChatRouting:
-    """Test suite for chat message routing."""
-
-    async def test_is_chat_message_with_role(self):
-        """Test that messages with role field are identified as chat messages."""
+    async def test_handle_command_chat_message_requires_thread_id(self):
+        """Test that CHAT_MESSAGE command requires thread_id."""
         runner = UnifiedWebSocketRunner()
 
-        assert runner._is_chat_message({"role": "user", "content": "Hello"})
-        assert runner._is_chat_message({"role": "assistant", "content": "Hi!"})
-        assert runner._is_chat_message({"role": "system", "content": "You are..."})
-        assert runner._is_chat_message({"role": "tool", "content": "result"})
+        command = WebSocketCommand(command=CommandType.CHAT_MESSAGE, data={"content": "Hello"})
+        result = await wait_for(runner.handle_command(command))
 
-    async def test_is_chat_message_with_type(self):
-        """Test that messages with type=message or type=chat are identified as chat."""
-        runner = UnifiedWebSocketRunner()
+        assert "error" in result
+        assert "thread_id is required" in result["error"]
 
-        assert runner._is_chat_message({"type": "message", "content": "Hello"})
-        assert runner._is_chat_message({"type": "chat", "content": "Hello"})
-
-    async def test_is_chat_message_with_content_no_command(self):
-        """Test that messages with content but no command are identified as chat."""
-        runner = UnifiedWebSocketRunner()
-
-        assert runner._is_chat_message({"content": "Hello"})
-        assert not runner._is_chat_message({"content": "Hello", "command": "run_job"})
-
-    async def test_is_not_chat_message_with_command(self):
-        """Test that messages with command field are not identified as chat."""
-        runner = UnifiedWebSocketRunner()
-
-        assert not runner._is_chat_message({"command": "run_job", "data": {}})
-        assert not runner._is_chat_message({"command": "cancel_job", "data": {"job_id": "123"}})
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(DEFAULT_TEST_TIMEOUT)
-class TestUnifiedWebSocketRunnerControlMessages:
-    """Test suite for control message handling."""
-
-    async def test_receive_messages_stop_command(self):
-        """Test handling stop command in receive loop."""
+    async def test_handle_command_stop_requires_reference(self):
+        """Test that STOP command requires job_id or thread_id."""
         runner = UnifiedWebSocketRunner()
         runner.websocket = Mock(spec=WebSocket)
+        runner.websocket.send_bytes = AsyncMock()
+
+        command = WebSocketCommand(command=CommandType.STOP, data={})
+        result = await wait_for(runner.handle_command(command))
+
+        assert "error" in result
+        assert "job_id or thread_id is required" in result["error"]
+
+    async def test_handle_command_stop_with_thread_id(self):
+        """Test STOP command with thread_id cancels current task."""
+        runner = UnifiedWebSocketRunner()
+        runner.websocket = Mock(spec=WebSocket)
+        runner.websocket.send_bytes = AsyncMock()
+        runner.mode = WebSocketMode.BINARY
 
         # Create a mock current task
         mock_task = Mock()
@@ -318,22 +300,52 @@ class TestUnifiedWebSocketRunnerControlMessages:
         mock_task.cancel = Mock()
         runner.current_task = mock_task
 
-        # Simulate receiving stop command then disconnect
-        messages = [{"type": "stop"}, None]
+        command = WebSocketCommand(command=CommandType.STOP, data={"thread_id": "test-thread-123"})
+        result = await wait_for(runner.handle_command(command))
 
-        with (
-            patch.object(runner, "receive_message", side_effect=messages),
-            patch.object(runner, "send_message", new_callable=AsyncMock) as mock_send,
-        ):
+        mock_task.cancel.assert_called_once()
+        assert result["message"] == "Stop command processed"
+        assert result["thread_id"] == "test-thread-123"
+
+    async def test_handle_command_stop_with_job_id(self):
+        """Test STOP command with job_id."""
+        runner = UnifiedWebSocketRunner()
+        runner.websocket = Mock(spec=WebSocket)
+        runner.websocket.send_bytes = AsyncMock()
+        runner.mode = WebSocketMode.BINARY
+
+        command = WebSocketCommand(command=CommandType.STOP, data={"job_id": "test-job-123"})
+        result = await wait_for(runner.handle_command(command))
+
+        assert result["message"] == "Stop command processed"
+        assert result["job_id"] == "test-job-123"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(DEFAULT_TEST_TIMEOUT)
+class TestUnifiedWebSocketRunnerControlMessages:
+    """Test suite for control message handling."""
+
+    async def test_receive_messages_stop_via_command(self):
+        """Test handling stop command via command structure."""
+        runner = UnifiedWebSocketRunner()
+        runner.websocket = Mock(spec=WebSocket)
+        runner.websocket.send_bytes = AsyncMock()
+        runner.mode = WebSocketMode.BINARY
+
+        # Create a mock current task
+        mock_task = Mock()
+        mock_task.done.return_value = False
+        mock_task.cancel = Mock()
+        runner.current_task = mock_task
+
+        # Simulate receiving stop command (now must be wrapped in command structure) then disconnect
+        messages = [{"command": "stop", "data": {"thread_id": "test-thread"}}, None]
+
+        with patch.object(runner, "receive_message", side_effect=messages):
             await wait_for(runner._receive_messages())
 
             mock_task.cancel.assert_called_once()
-            mock_send.assert_called_once_with(
-                {
-                    "type": "generation_stopped",
-                    "message": "Generation stopped by user",
-                }
-            )
 
     async def test_receive_messages_ping_pong(self):
         """Test ping-pong handling in receive loop."""

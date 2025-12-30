@@ -56,17 +56,43 @@ const ws = new WebSocket(`wss://api.example.com/ws?token=${authToken}`);
 
 In development mode (`REMOTE_AUTH=0`), authentication is optional and defaults to user ID "1".
 
-## Message Types
+## Message Structure
 
-Messages are routed based on their structure:
+**All messages must be wrapped in a command structure.** This ensures proper routing and requires valid references (job_id or thread_id) for operations.
 
-| Message Type | Routing | Description |
-|--------------|---------|-------------|
-| `{ command: "..." }` | Workflow handler | Explicit workflow commands |
-| `{ role: "user", content: "..." }` | Chat handler | Chat messages |
-| `{ type: "message", ... }` | Chat handler | Chat messages |
-| `{ type: "stop" }` | Control handler | Stop current operation |
-| `{ type: "ping" }` | Control handler | Keep-alive ping |
+```json
+{
+  "command": "<command_type>",
+  "data": {
+    // command-specific data
+  }
+}
+```
+
+### Available Commands
+
+| Command | Description | Required Fields |
+|---------|-------------|-----------------|
+| `run_job` | Start workflow execution | `workflow_id` |
+| `reconnect_job` | Reconnect to running job | `job_id` |
+| `cancel_job` | Cancel running job | `job_id` |
+| `get_status` | Get job status | `job_id` (optional) |
+| `stream_input` | Stream input to job | `job_id`, `input` |
+| `end_input_stream` | End streaming input | `job_id`, `input` |
+| `chat_message` | Send chat message | `thread_id` |
+| `stop` | Stop current operation | `job_id` or `thread_id` |
+| `set_mode` | Change protocol mode | `mode` |
+| `clear_models` | Clear ML models | none |
+
+### Control Messages (No Command Wrapper)
+
+These special messages are handled without the command wrapper for backward compatibility:
+
+| Type | Description |
+|------|-------------|
+| `ping` | Keep-alive ping (responds with `pong`) |
+| `client_tools_manifest` | Register client-side tools |
+| `tool_result` | Return tool execution result |
 
 ---
 
@@ -241,23 +267,34 @@ Clear ML models from memory (development only).
 
 ## Chat Messages
 
-Chat messages are automatically routed when they contain `role`, `content`, or `type: "message"`.
+Chat messages **must** be sent using the `chat_message` command with a valid `thread_id`.
 
 ### Send Chat Message
 
 **Request:**
 ```json
 {
-  "role": "user",
-  "content": "Hello, can you help me?",
-  "thread_id": "uuid-of-thread",  // optional, created if not provided
-  "model": "gpt-4",
-  "provider": "openai",
-  "tools": ["web_search", "code_execution"],  // optional
-  "collections": ["collection-uuid"],  // optional, for RAG
-  "agent_mode": false,  // optional, enables agent behavior
-  "help_mode": false,   // optional, enables help mode
-  "workflow_id": "uuid"  // optional, for workflow-specific chat
+  "command": "chat_message",
+  "data": {
+    "role": "user",
+    "content": "Hello, can you help me?",
+    "thread_id": "uuid-of-thread",  // REQUIRED
+    "model": "gpt-4",
+    "provider": "openai",
+    "tools": ["web_search", "code_execution"],  // optional
+    "collections": ["collection-uuid"],  // optional, for RAG
+    "agent_mode": false,  // optional, enables agent behavior
+    "help_mode": false,   // optional, enables help mode
+    "workflow_id": "uuid"  // optional, for workflow-specific chat
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Chat message processing started",
+  "thread_id": "uuid-of-thread"
 }
 ```
 
@@ -277,41 +314,42 @@ Send a message that triggers workflow processing:
 **Request:**
 ```json
 {
-  "role": "user",
-  "content": "Process this image",
-  "workflow_id": "uuid-of-workflow",
-  "workflow_target": "workflow"  // Routes to workflow processor
-}
-```
-
-### Alternative Command-Style Chat
-
-You can also send chat messages via the command interface:
-
-**Request:**
-```json
-{
   "command": "chat_message",
   "data": {
     "role": "user",
-    "content": "Hello!",
-    "thread_id": "..."
+    "content": "Process this image",
+    "thread_id": "uuid-of-thread",
+    "workflow_id": "uuid-of-workflow",
+    "workflow_target": "workflow"  // Routes to workflow processor
   }
 }
 ```
 
 ---
 
-## Control Messages
+## Control Commands
 
 ### Stop Current Operation
 
-Stop the current chat or workflow processing.
+Stop the current chat or workflow processing. **Requires** a `job_id` or `thread_id`.
 
-**Request:**
+**Request (stop chat):**
 ```json
 {
-  "type": "stop"
+  "command": "stop",
+  "data": {
+    "thread_id": "uuid-of-thread"
+  }
+}
+```
+
+**Request (stop job):**
+```json
+{
+  "command": "stop",
+  "data": {
+    "job_id": "uuid-of-job"
+  }
 }
 ```
 
@@ -319,7 +357,9 @@ Stop the current chat or workflow processing.
 ```json
 {
   "type": "generation_stopped",
-  "message": "Generation stopped by user"
+  "message": "Generation stopped by user",
+  "job_id": "...",
+  "thread_id": "..."
 }
 ```
 
@@ -458,7 +498,7 @@ const ws = new WebSocket('wss://api.example.com/ws');
 
 ### From `/ws/chat` to `/ws`
 
-Chat messages work the same way. The server automatically routes based on message structure.
+Chat messages must now use the `chat_message` command with a `thread_id`.
 
 **Before:**
 ```javascript
@@ -469,7 +509,10 @@ chatWs.send(JSON.stringify({ role: 'user', content: 'Hello' }));
 **After:**
 ```javascript
 const ws = new WebSocket('wss://api.example.com/ws');
-ws.send(JSON.stringify({ role: 'user', content: 'Hello' }));
+ws.send(JSON.stringify({
+  command: 'chat_message',
+  data: { role: 'user', content: 'Hello', thread_id: 'uuid-of-thread' }
+}));
 ```
 
 ### Combined Usage
@@ -487,8 +530,18 @@ ws.send(JSON.stringify({
 
 // Send a chat message (while workflow is running)
 ws.send(JSON.stringify({
-  role: 'user',
-  content: 'What\'s the status of my workflow?'
+  command: 'chat_message',
+  data: {
+    role: 'user',
+    content: 'What\'s the status of my workflow?',
+    thread_id: 'uuid-of-thread'
+  }
+}));
+
+// Stop a chat operation
+ws.send(JSON.stringify({
+  command: 'stop',
+  data: { thread_id: 'uuid-of-thread' }
 }));
 
 // Handle all updates in one place
@@ -568,17 +621,32 @@ class NodeToolWebSocket {
     });
   }
 
-  // Chat methods
-  sendChat(content, options = {}) {
+  // Chat methods - requires thread_id
+  sendChat(content, threadId, options = {}) {
     this.send({
-      role: 'user',
-      content,
-      ...options
+      command: 'chat_message',
+      data: {
+        role: 'user',
+        content,
+        thread_id: threadId,
+        ...options
+      }
     });
   }
 
-  stop() {
-    this.send({ type: 'stop' });
+  // Stop requires job_id or thread_id
+  stopChat(threadId) {
+    this.send({
+      command: 'stop',
+      data: { thread_id: threadId }
+    });
+  }
+
+  stopJob(jobId) {
+    this.send({
+      command: 'stop',
+      data: { job_id: jobId }
+    });
   }
 
   send(msg) {
@@ -605,8 +673,11 @@ client.on('message', (msg) => console.log('Assistant:', msg.content));
 // Run a workflow
 client.runJob('workflow-uuid', { input: 'value' });
 
-// Send a chat message
-client.sendChat('Hello, world!', { thread_id: 'thread-uuid' });
+// Send a chat message (thread_id required)
+client.sendChat('Hello, world!', 'thread-uuid');
+
+// Stop a chat operation
+client.stopChat('thread-uuid');
 ```
 
 ---
@@ -646,15 +717,31 @@ class NodeToolClient:
             }
         })
         
-    async def send_chat(self, content: str, **kwargs):
+    async def send_chat(self, content: str, thread_id: str, **kwargs):
+        """Send a chat message. thread_id is required."""
         await self.send({
-            "role": "user",
-            "content": content,
-            **kwargs
+            "command": "chat_message",
+            "data": {
+                "role": "user",
+                "content": content,
+                "thread_id": thread_id,
+                **kwargs
+            }
         })
         
-    async def stop(self):
-        await self.send({"type": "stop"})
+    async def stop_chat(self, thread_id: str):
+        """Stop a chat operation. Requires thread_id."""
+        await self.send({
+            "command": "stop",
+            "data": {"thread_id": thread_id}
+        })
+        
+    async def stop_job(self, job_id: str):
+        """Stop a job. Requires job_id."""
+        await self.send({
+            "command": "stop",
+            "data": {"job_id": job_id}
+        })
         
     async def close(self):
         if self.ws:
@@ -677,6 +764,12 @@ async def main():
                 break
         elif msg.get("type") == "chunk":
             print(msg["content"], end="")
+    
+    # Send a chat message (thread_id required)
+    await client.send_chat("Hello!", "thread-uuid")
+    
+    # Stop a chat operation
+    await client.stop_chat("thread-uuid")
             
     await client.close()
 
