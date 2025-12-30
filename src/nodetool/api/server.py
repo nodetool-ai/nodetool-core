@@ -385,6 +385,9 @@ def create_app(
     from nodetool.integrations.websocket.terminal_runner import (
         TerminalWebSocketRunner,
     )
+    from nodetool.integrations.websocket.unified_websocket_runner import (
+        UnifiedWebSocketRunner,
+    )
     from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
     from nodetool.integrations.websocket.websocket_updates import websocket_updates
     from nodetool.metadata.types import Provider
@@ -475,16 +478,51 @@ def create_app(
         log.warning("WebSocket connection rejected: Invalid token")
         return None, None
 
+    @app.websocket("/ws")
+    async def unified_websocket_endpoint(websocket: WebSocket):
+        """
+        Unified WebSocket endpoint for both workflow execution and chat communications.
+
+        This is the recommended endpoint for new integrations. It handles:
+        - Workflow job execution (run_job, cancel_job, get_status, etc.)
+        - Chat message processing (with AI providers)
+        - Real-time bidirectional updates
+
+        The endpoint routes messages based on their structure:
+        - Messages with 'command' field: Workflow operations
+        - Messages with 'role' or 'content': Chat messages
+        - Control messages (stop, ping, etc.): Connection control
+
+        See docs/websocket-api.md for detailed API documentation.
+        """
+        token, user_id = await _authenticate_websocket(websocket)
+        if user_id is None:
+            return
+        runner = UnifiedWebSocketRunner(auth_token=token or "", user_id=user_id)
+        await runner.run(websocket)
+
+    # Legacy endpoint - preserved for backward compatibility
     @app.websocket("/ws/predict")
     async def websocket_endpoint(websocket: WebSocket):
+        """
+        Legacy endpoint for workflow execution only.
+
+        Note: Consider migrating to /ws for unified workflow and chat support.
+        """
         token, user_id = await _authenticate_websocket(websocket)
         if user_id is None:
             return
         runner = WebSocketRunner(auth_token=token or "", user_id=user_id)
         await runner.run(websocket)
 
+    # Legacy endpoint - preserved for backward compatibility
     @app.websocket("/ws/chat")
     async def chat_websocket_endpoint(websocket: WebSocket):
+        """
+        Legacy endpoint for chat communications only.
+
+        Note: Consider migrating to /ws for unified workflow and chat support.
+        """
         token, user_id = await _authenticate_websocket(websocket)
         if user_id is None:
             return
