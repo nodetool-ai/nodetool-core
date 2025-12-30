@@ -140,8 +140,10 @@ class AnthropicProvider(BaseProvider):
 
     def __init__(self, secrets: dict[str, str]):
         """Initialize the Anthropic provider with client credentials."""
-        assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
-        self.api_key = secrets["ANTHROPIC_API_KEY"]
+        api_key = secrets.get("ANTHROPIC_API_KEY")
+        if not api_key or not api_key.strip():
+            raise ApiKeyMissingError("ANTHROPIC_API_KEY is not configured in nodetool settings")
+        self.api_key = api_key
         log.debug("AnthropicProvider initialized")
         # Cache clients per event loop to avoid sharing httpx sessions across threads/loops
         self._clients: WeakKeyDictionary[asyncio.AbstractEventLoop, anthropic.AsyncAnthropic] = WeakKeyDictionary()
@@ -348,7 +350,7 @@ class AnthropicProvider(BaseProvider):
 
     def format_tools(self, tools: Sequence[Any]) -> list[ToolParam]:
         """Convert tools to Anthropic's format with strict mode enabled."""
-        log.debug(f"Formatting {len(tools)} tools for Anthropic API")
+        log.debug(f"Formatting {len(tools or [])} tools for Anthropic API")
         formatted_tools = []
         for tool in tools:
             # Prepare schema for strict mode to ensure validation
@@ -368,16 +370,17 @@ class AnthropicProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
+        response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Generate streaming completions from Anthropic."""
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools or [])} tools")
 
         # Handle response_format parameter
-        local_tools = list(tools)  # Make a mutable copy
+        local_tools = list(tools) if tools else [] if tools else []  # Make a mutable copy
         output_format = None
 
         system_messages = [message for message in messages if message.role == "system"]
@@ -463,11 +466,10 @@ class AnthropicProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        top_k: int | None = None,
+        response_format: dict | None = None,
+        **kwargs: Any,
     ) -> Message:
         """Generate a complete non-streaming message from Anthropic.
 
@@ -477,17 +479,18 @@ class AnthropicProvider(BaseProvider):
             messages: The messages to send to the model
             model: The model to use
             tools: Tools the model can use
+            max_tokens: Maximum tokens to generate
+            response_format: Format of the response
             **kwargs: Additional parameters to pass to the Anthropic API
 
         Returns:
             A complete Message object
         """
         log.debug(f"Generating non-streaming message for model: {model}")
-        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools or [])} tools")
 
-        # Handle response_format parameter
-        local_tools = list(tools)  # Make a mutable copy
-        output_format = None
+        if response_format:
+            raise ValueError("Output format is not supported for Anthropic")
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -513,7 +516,8 @@ class AnthropicProvider(BaseProvider):
         ]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
-        # Use the potentially modified local_tools list
+        # Use the tools from parameter, or format the local tools
+        local_tools = list(tools) if tools else [] if tools else []
         anthropic_tools = self.format_tools(local_tools)
 
         log.debug(f"Making non-streaming API call to Anthropic with model: {model}")
@@ -526,15 +530,13 @@ class AnthropicProvider(BaseProvider):
         if anthropic_tools:
             create_kwargs["tools"] = anthropic_tools
 
-        if temperature is not None:
-            create_kwargs["temperature"] = temperature
-        if top_p is not None:
-            create_kwargs["top_p"] = top_p
-        if top_k is not None:
-            create_kwargs["top_k"] = top_k
-
-        if output_format:
-            raise ValueError("Output format is not supported for Anthropic")
+        # Handle temperature, top_p, top_k from kwargs if provided
+        if "temperature" in kwargs:
+            create_kwargs["temperature"] = kwargs["temperature"]
+        if "top_p" in kwargs:
+            create_kwargs["top_p"] = kwargs["top_p"]
+        if "top_k" in kwargs:
+            create_kwargs["top_k"] = kwargs["top_k"]
 
         try:
             client = self.get_client()

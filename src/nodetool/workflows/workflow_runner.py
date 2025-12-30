@@ -511,13 +511,11 @@ class WorkflowRunner:
                     for key, value in request.params.items():
                         log.info(f"Setting input node {key} to {value}")
                         if key not in input_nodes:
-                            # Log available nodes again just in case
-                            log.error(f"Input node '{key}' not found. Available: {list(input_nodes.keys())}")
-                            raise ValueError(f"No input node found for param: {key}")
-
-                        node = input_nodes[key]
-                        log.info(f"Assigning property 'value'={value} to node {node.id} ({node.name})")
-                        node.assign_property("value", value)
+                            log.warn(f"input params {key} not found as input node")
+                        else:
+                            node = input_nodes[key]
+                            log.info(f"Assigning property 'value'={value} to node {node.id} ({node.name})")
+                            node.assign_property("value", value)
 
                 if validate_graph:
                     await self.validate_graph(context, graph)
@@ -544,25 +542,26 @@ class WorkflowRunner:
                 if request.params:
                     for key, value in request.params.items():
                         if key not in input_nodes:
-                            raise ValueError(f"No input node found for param: {key}")
-                        node = input_nodes[key]
-                        # Determine the correct output handle name for this InputNode
-                        outputs = node.outputs_for_instance()
-                        handle_name = outputs[0].name if outputs else "output"
+                            log.warn(f"input params {key} not found as input node")
+                        else:
+                            node = input_nodes[key]
+                            # Determine the correct output handle name for this InputNode
+                            outputs = node.outputs_for_instance()
+                            handle_name = outputs[0].name if outputs else "output"
 
-                        # push value on the node's declared output handle; end stream if not streaming
-                        log.info(f"Pushing input value for {key}: {value} handle={handle_name}")
-                        self.push_input_value(
-                            input_name=getattr(node, "name", key),
-                            value=value,
-                            source_handle=handle_name,
-                        )
-                        if not node.is_streaming_output():
-                            # default: treat as non-streaming and end
-                            self.finish_input_stream(
+                            # push value on the node's declared output handle; end stream if not streaming
+                            log.info(f"Pushing input value for {key}: {value} handle={handle_name}")
+                            self.push_input_value(
                                 input_name=getattr(node, "name", key),
+                                value=value,
                                 source_handle=handle_name,
                             )
+                            if not node.is_streaming_output():
+                                # default: treat as non-streaming and end
+                                self.finish_input_stream(
+                                    input_name=getattr(node, "name", key),
+                                    source_handle=handle_name,
+                                )
 
                 # Also enqueue default values configured directly on graph InputNodes
                 # (e.g., NumberInput.value) when not provided via request.params.

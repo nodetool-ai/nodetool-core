@@ -16,7 +16,7 @@ from nodetool.runtime.resources import maybe_scope
 log = get_logger(__name__)
 
 # Cache for decrypted secrets: (user_id, key) -> decrypted_value
-_SECRET_CACHE: dict[tuple[str, str], str] = {}
+_SECRET_CACHE: dict[tuple[str, str], Optional[str]] = {}
 
 # Keys that should ALWAYS prioritize environment variables (System Critical Infrastructure)
 _FORCE_ENV_PRIORITY = {
@@ -70,9 +70,8 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
     if key == "HF_TOKEN":
         try:
             from nodetool.models.oauth_credential import OAuthCredential
-            creds = await OAuthCredential.list_for_user_and_provider(
-                user_id=user_id, provider="huggingface", limit=1
-            )
+
+            creds = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="huggingface", limit=1)
             if creds:
                 log.debug(f"Secret '{key}' found in OAuth credentials for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
@@ -80,9 +79,7 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
                 return value
 
             # Retry with "HuggingFace" (capitalized) just in case
-            creds = await OAuthCredential.list_for_user_and_provider(
-                user_id=user_id, provider="HuggingFace", limit=1
-            )
+            creds = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="HuggingFace", limit=1)
             if creds:
                 log.debug(f"Secret '{key}' found in OAuth credentials (capitalized) for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
@@ -99,19 +96,19 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         if secret:
             log.debug(f"Secret '{key}' found in database for user {user_id}")
             value = await secret.get_decrypted_value()
-            _SECRET_CACHE[(user_id, key)] = value
-            return value
+            if value is not None:
+                _SECRET_CACHE[(user_id, key)] = value
+                return value
     except Exception as e:
         # If database lookup fails (e.g. no ResourceScope), fall back to environment
         log.debug(f"Database lookup failed for secret '{key}': {e}. Falling back to environment.")
-
     # 3. Check environment variable
     if check_env and os.environ.get(key):
         log.debug(f"Secret '{key}' found in environment variable")
         value = os.environ.get(key)
-        _SECRET_CACHE[(user_id, key)] = value
-        return value
-
+        if value is not None:
+            _SECRET_CACHE[(user_id, key)] = value
+            return value
     # 4. Return default
     if default is not None:
         log.debug(f"Secret '{key}' not found, using default value")
@@ -242,9 +239,8 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
     if "HF_TOKEN" in keys_not_in_cache:
         try:
             from nodetool.models.oauth_credential import OAuthCredential
-            creds = await OAuthCredential.list_for_user_and_provider(
-                user_id=user_id, provider="huggingface", limit=1
-            )
+
+            creds = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="huggingface", limit=1)
             if creds:
                 log.debug(f"Secret 'HF_TOKEN' found in OAuth credentials for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
@@ -253,7 +249,7 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                 # Remove from keys to look up in DB
                 keys_not_in_cache.remove("HF_TOKEN")
             else:
-                 # Retry with "HuggingFace" (capitalized)
+                # Retry with "HuggingFace" (capitalized)
                 creds = await OAuthCredential.list_for_user_and_provider(
                     user_id=user_id, provider="HuggingFace", limit=1
                 )
@@ -264,7 +260,7 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                     _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
                     keys_not_in_cache.remove("HF_TOKEN")
         except Exception as e:
-             log.error(f"Failed to lookup OAuth credential for HF_TOKEN: {e}", exc_info=True)
+            log.error(f"Failed to lookup OAuth credential for HF_TOKEN: {e}", exc_info=True)
 
     if not keys_not_in_cache:
         return result

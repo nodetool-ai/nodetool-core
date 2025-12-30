@@ -26,6 +26,21 @@ from .message_processor import MessageProcessor
 log = get_logger(__name__)
 
 
+def _serialize_message(msg: Message) -> dict:
+    """
+    Serialize a Message object to a dictionary for workflow params.
+
+    Preserves all message fields including rich content (images, videos, audio),
+    thread_id, collections, input_files, etc.
+    """
+    msg_dict = msg.model_dump()
+
+    if "content" in msg_dict and isinstance(msg_dict["content"], list):
+        msg_dict["content"] = [c.model_dump() for c in msg_dict["content"]]
+
+    return msg_dict
+
+
 class WorkflowMessageProcessor(MessageProcessor):
     """
     Processor for workflow execution messages.
@@ -59,9 +74,17 @@ class WorkflowMessageProcessor(MessageProcessor):
         # Update processing context with workflow_id
         processing_context.workflow_id = last_message.workflow_id
 
+        # Prepare workflow parameters
+        # New interface: pass full message object and message history
+        params = {
+            "message": _serialize_message(last_message),
+            "messages": [_serialize_message(msg) for msg in chat_history],
+        }
+
         request = RunJobRequest(
             workflow_id=last_message.workflow_id,
             messages=chat_history,
+            params=params,
             graph=last_message.graph,
         )
 
@@ -113,5 +136,4 @@ class WorkflowMessageProcessor(MessageProcessor):
             provider=last_message.provider,
             model=last_message.model,
             agent_mode=last_message.agent_mode or False,
-
         )
