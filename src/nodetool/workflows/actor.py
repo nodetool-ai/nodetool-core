@@ -54,15 +54,6 @@ if TYPE_CHECKING:
     from nodetool.workflows.workflow_runner import WorkflowRunner
 
 
-def _device_move_plan(device: str | None) -> tuple[str | None, str | None]:
-    """Resolve how the actor should stage inputs/outputs for a target device."""
-    if device is None:
-        return None, None
-    if device.startswith("cuda"):
-        return device, "cpu"
-    return None, None
-
-
 class NodeActor:
     """Drives a single node to completion.
 
@@ -89,6 +80,17 @@ class NodeActor:
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
         self.logger.setLevel(logging.DEBUG)
+
+    def _filter_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Filter out chunk data from the result since chunks are streamed separately.
+
+        Args:
+            result: The collected outputs dictionary.
+
+        Returns:
+            A new dictionary with 'chunk' key removed.
+        """
+        return {k: v for k, v in result.items() if k != "chunk"}
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node."""
@@ -353,7 +355,7 @@ class NodeActor:
         await node.send_update(context, "running", properties=safe_properties)
 
         requires_gpu = node.requires_gpu()
-        node_inputs = NodeInputs(self.inbox) if self.inbox is not None else None
+        node_inputs = NodeInputs(self.inbox)
         outputs = NodeOutputs(self.runner, node, context)
 
         completed_successfully = False
@@ -407,7 +409,8 @@ class NodeActor:
             completed_successfully = True
         finally:
             if completed_successfully:
-                await node.send_update(context, "completed", result={"status": "completed"})
+                # Send the actual collected results, filtering out chunk data
+                await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
             self._mark_inbound_edges_drained(set(inputs.keys()))
 
     async def _run_buffered_node(self) -> None:
@@ -575,7 +578,8 @@ class NodeActor:
                     await node.preload_model(ctx)
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after preload_model")
 
-                    await node.run(ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx))
+                    outputs = NodeOutputs(self.runner, node, ctx)
+                    await node.run(ctx, NodeInputs(self.inbox), outputs)
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 except Exception as e:
                     self.logger.error(f"Error running node {node.get_title()} ({node._id}): {e}")
@@ -593,9 +597,11 @@ class NodeActor:
                     release_gpu_lock()
             else:
                 await node.preload_model(ctx)
-                await node.run(ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx))
+                outputs = NodeOutputs(self.runner, node, ctx)
+                await node.run(ctx, NodeInputs(self.inbox), outputs)
 
-            await node.send_update(ctx, "completed", result={"status": "completed"})
+            # Send the actual collected results, filtering out chunk data
+            await node.send_update(ctx, "completed", result=self._filter_result(outputs.collected()))
         finally:
             await node.handle_eos()
             node._on_input_item = None
