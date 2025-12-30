@@ -129,7 +129,7 @@ class MessageProcessor(ABC):
         chat_history: List[Message],
         processing_context: ProcessingContext,
         **kwargs,
-    ) -> Message:
+    ) -> Optional[Message]:
         """
         Process messages and return the assistant's response.
 
@@ -140,7 +140,7 @@ class MessageProcessor(ABC):
             **kwargs: Additional processor-specific parameters
 
         Returns:
-            Message: The assistant's response message
+            Optional[Message]: The assistant's response message, or None if processing is streamed
         """
         pass
 

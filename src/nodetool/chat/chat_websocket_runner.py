@@ -145,6 +145,10 @@ class ChatWebSocketRunner(BaseChatRunner):
         """
         Handle an incoming WebSocket message by saving to DB and processing using chat history from DB.
         """
+        log.debug(
+            f"[handle_message] Received data: {data.get('type')}, workflow_target={data.get('workflow_target')}, workflow_id={data.get('workflow_id')}"
+        )
+
         # Wrap database operations in ResourceScope for per-execution isolation
         async with ResourceScope():
             try:
@@ -161,11 +165,21 @@ class ChatWebSocketRunner(BaseChatRunner):
                 if not data.get("provider"):
                     data["provider"] = self.default_provider
 
+                log.debug(
+                    f"[handle_message] Data before save: workflow_target={data.get('workflow_target')}, workflow_id={data.get('workflow_id')}"
+                )
+
                 # Save message to database asynchronously
                 await self._save_message_to_db_async(data)
 
                 # Load history from database
                 chat_history = await self.get_chat_history_from_db(thread_id)
+                log.debug(f"[handle_message] Loaded {len(chat_history)} messages from history")
+                if chat_history:
+                    last_msg = chat_history[-1]
+                    log.debug(
+                        f"[handle_message] Last message in history: workflow_target={getattr(last_msg, 'workflow_target', 'N/A')}, workflow_id={getattr(last_msg, 'workflow_id', 'N/A')}"
+                    )
 
                 # Call the implementation method with the loaded messages
                 await self.handle_message_impl(chat_history)

@@ -1947,8 +1947,6 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     2) Dynamic import: If not found, try importing modules inferred from the
        type namespace (e.g. `foo.Bar` → import `nodetool.nodes.foo`).
        After import, consult the registry again.
-    3) Special handling for `nodetool.input.X` and `nodetool.output.X` types:
-       Try importing from `nodetool.nodes.input` and `nodetool.nodes.output`.
 
     This behavior allows `Graph.from_dict` and other loaders to accept graphs
     that reference node types by fully-qualified name, without requiring callers
@@ -1969,48 +1967,6 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
     if len(parts) == 1:
         return None
-
-    # Handle nodetool.input.X and nodetool.output.X types
-    if parts[0] == "nodetool" and len(parts) >= 3:
-        namespace = parts[1]
-        class_name = parts[-1]
-        if namespace in ("input", "output"):
-            module_prefix = f"nodetool.nodes.{namespace}"
-            try:
-                log.debug(f"Importing module: {module_prefix}")
-                importlib.import_module(module_prefix)
-                # Try with full nodetool prefix
-                if node_type in NODE_BY_TYPE:
-                    return NODE_BY_TYPE[node_type]
-                # Try without nodetool prefix
-                short_type = f"{namespace}.{class_name}"
-                if short_type in NODE_BY_TYPE:
-                    return NODE_BY_TYPE[short_type]
-            except ModuleNotFoundError as e:
-                log.error(f"Module not found: {module_prefix}")
-                log.error(f"Error: {e}")
-                import traceback
-
-                traceback.print_exc()
-                return None
-            return None
-
-        # Handle nodetool.workflows.test_helper.X types (test-only input/output nodes)
-        if namespace == "workflows" and len(parts) >= 4 and parts[2] == "test_helper":
-            module_prefix = "nodetool.workflows.test_helper"
-            try:
-                log.debug(f"Importing module: {module_prefix}")
-                importlib.import_module(module_prefix)
-                if node_type in NODE_BY_TYPE:
-                    return NODE_BY_TYPE[node_type]
-            except ModuleNotFoundError as e:
-                log.error(f"Module not found: {module_prefix}")
-                log.error(f"Error: {e}")
-                import traceback
-
-                traceback.print_exc()
-                return None
-            return None
 
     # Try to load the module if node type not found
     module_prefix = "nodetool.nodes." + ".".join(parts[:-1])

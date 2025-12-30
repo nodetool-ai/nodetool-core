@@ -1784,6 +1784,12 @@ class Message(BaseType):
     Type of agent execution event (planning_update, task_update, step_result, log_update).
     """
 
+    workflow_target: str | None = None
+    """
+    Target routing for the message. If set to "workflow", the message will be sent directly
+    to the workflow processor (bypassing normal chat routing). If null or "chat", uses normal routing.
+    """
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_instructions_to_content(cls, data: Any) -> Any:

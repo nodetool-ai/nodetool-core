@@ -160,6 +160,9 @@ class BaseChatRunner(ABC):
             model=db_message.model,
             agent_mode=db_message.agent_mode,
             help_mode=db_message.help_mode,
+            agent_execution_id=db_message.agent_execution_id,
+            execution_event_type=db_message.execution_event_type,
+            workflow_target=db_message.workflow_target,
         )
 
     async def _save_message_to_db_async(self, message_data: dict) -> DBMessage:
@@ -177,6 +180,10 @@ class BaseChatRunner(ABC):
         data_copy.pop("id", None)
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
+
+        log.debug(
+            f"[_save_message_to_db_async] workflow_target in data: {data_copy.get('workflow_target')}, workflow_id: {data_copy.get('workflow_id')}"
+        )
 
         # Normalize tools field to expected types (list[str])
         try:
@@ -420,16 +427,14 @@ class BaseChatRunner(ABC):
             # Use Claude Agent SDK for Anthropic help requests
             if last_message.provider.lower() == "anthropic":
                 # Get API key from the provider
-                api_key = getattr(provider, 'api_key', None)
+                api_key = getattr(provider, "api_key", None)
                 processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
             # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
             elif last_message.provider.lower() == "minimax":
                 from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-                api_key = getattr(provider, 'api_key', None)
-                processor = ClaudeAgentHelpMessageProcessor(
-                    api_key=api_key,
-                    base_url=MINIMAX_BASE_URL
-                )
+
+                api_key = getattr(provider, "api_key", None)
+                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
             else:
                 processor = HelpMessageProcessor(provider)
 
@@ -471,16 +476,14 @@ class BaseChatRunner(ABC):
         # Use Claude Agent SDK for Anthropic agent requests
         if last_message.provider.lower() == "anthropic":
             # Get API key from the provider
-            api_key = getattr(provider, 'api_key', None)
+            api_key = getattr(provider, "api_key", None)
             processor = ClaudeAgentMessageProcessor(api_key=api_key)
         # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
         elif last_message.provider.lower() == "minimax":
             from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-            api_key = getattr(provider, 'api_key', None)
-            processor = ClaudeAgentMessageProcessor(
-                api_key=api_key,
-                base_url=MINIMAX_BASE_URL
-            )
+
+            api_key = getattr(provider, "api_key", None)
+            processor = ClaudeAgentMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
         else:
             processor = AgentMessageProcessor(provider)
 
@@ -501,24 +504,49 @@ class BaseChatRunner(ABC):
     async def process_messages_for_workflow(self, messages: list[ApiMessage]):
         """
         Processes messages that are part of a defined workflow.
-        
-        Routes to different processors based on the workflow's run_mode:
-        - run_mode="chat": Uses ChatWorkflowMessageProcessor
+
+        Routes to different processors:
+        - help_mode=True: Uses HelpMessageProcessor (or ClaudeAgentHelpMessageProcessor for Anthropic/MiniMax)
+        - help_mode=False and run_mode="chat": Uses ChatWorkflowMessageProcessor
         - Otherwise: Uses WorkflowMessageProcessor
         """
         chat_history = messages
         last_message = chat_history[-1]
-        
-        # Ensure workflow_id is present
+
         if not last_message.workflow_id:
             raise ValueError("Workflow ID is required for workflow processing")
-        
-        # Get the workflow to check its run_mode
+
         processing_context = ProcessingContext(user_id=self.user_id)
         workflow = await processing_context.get_workflow(last_message.workflow_id)
-        
-        # Determine which processor to use based on run_mode
-        if workflow and workflow.run_mode == "chat":
+
+        if not workflow:
+            raise ValueError(f"Workflow {last_message.workflow_id} not found")
+
+        # Check for help request first
+        if last_message.help_mode:
+            log.debug(f"Processing help request for workflow {last_message.workflow_id}")
+
+            if not last_message.model:
+                raise ValueError("Model is required for help mode")
+            if not last_message.provider:
+                raise ValueError("Provider is required for help mode")
+
+            provider = await get_provider(last_message.provider)
+
+            # Use Claude Agent SDK for Anthropic help requests
+            if last_message.provider.lower() == "anthropic":
+                api_key = getattr(provider, "api_key", None)
+                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
+            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
+            elif last_message.provider.lower() == "minimax":
+                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
+
+                api_key = getattr(provider, "api_key", None)
+                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
+            else:
+                processor = HelpMessageProcessor(provider)
+        # Regular workflow processing
+        elif workflow.run_mode == "chat":
             log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")
             processor = ChatWorkflowMessageProcessor(self.user_id)
         else:
@@ -546,14 +574,27 @@ class BaseChatRunner(ABC):
             raise ValueError("No messages provided")
 
         last_message = messages[-1]
+        log.debug(
+            f"[handle_message_impl] Last message: workflow_id={last_message.workflow_id}, workflow_target={last_message.workflow_target}, agent_mode={last_message.agent_mode}"
+        )
+
         try:
             # Process the message through the appropriate processor
-            if last_message.workflow_id:
+            # Check workflow_target first - if set to "workflow", route to workflow processor
+            if last_message.workflow_target == "workflow":
+                log.info(
+                    f"Routing to workflow processor (workflow_target=workflow, workflow_id={last_message.workflow_id})"
+                )
+                await self.process_messages_for_workflow(messages)
+            elif last_message.workflow_id:
+                log.info(f"Routing to workflow processor (workflow_id={last_message.workflow_id})")
                 await self.process_messages_for_workflow(messages)
             else:
                 if last_message.agent_mode:
+                    log.info("Routing to agent processor (agent_mode=true)")
                     await self.process_agent_messages(messages)
                 else:
+                    log.info("Routing to regular chat processor")
                     await self.process_messages(messages)
 
         except asyncio.CancelledError:
