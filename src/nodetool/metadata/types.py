@@ -1805,6 +1805,38 @@ class Message(BaseType):
 
         return data
 
+    def is_empty(self) -> bool:
+        """Check if the message is empty (has no meaningful content).
+
+        A message is considered empty if:
+        - It has no role (None, empty string, or falsy)
+        - AND it has no content (None, empty string, empty list, or falsy)
+
+        This is used to detect default-initialized Message objects that
+        should not be pushed as input values in workflows.
+
+        Returns:
+            bool: True if the message has no meaningful content, False otherwise.
+        """
+        # Check if content is empty (handles None, "", [], and other falsy values)
+        content_empty = not self.content
+        if isinstance(self.content, list):
+            content_empty = len(self.content) == 0
+
+        # Check if role is empty (handles None, "", and other falsy values)
+        role_empty = not self.role
+
+        # Message is empty if both role and content are empty
+        return content_empty and role_empty
+
+    def is_set(self) -> bool:
+        """Check if the message has meaningful content.
+
+        Returns:
+            bool: True if the message has content, False otherwise.
+        """
+        return not self.is_empty()
+
     @staticmethod
     def from_model(message: Any):
         """
