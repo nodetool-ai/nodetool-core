@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import json
 import os
+import platform
 import sys
 import warnings
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_package_version
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import click
@@ -140,16 +144,11 @@ def _print_model_table(models: list[UnifiedModel], title: str) -> None:
 
 def _get_version() -> str:
     """Get the nodetool version from package metadata."""
-    try:
-        from importlib.metadata import version
-
-        for dist_name in ["nodetool", "nodetool-core", "nodetool_core"]:
-            try:
-                return version(dist_name)
-            except Exception:
-                continue
-    except Exception:
-        pass
+    for dist_name in ["nodetool", "nodetool-core", "nodetool_core"]:
+        try:
+            return get_package_version(dist_name)
+        except PackageNotFoundError:
+            continue
     return "unknown"
 
 
@@ -175,9 +174,6 @@ def info_cmd(as_json: bool):
       # Display system info as JSON
       nodetool info --json
     """
-    import json
-    import platform
-
     from nodetool.config.environment import Environment
 
     # Gather system information
@@ -199,16 +195,11 @@ def info_cmd(as_json: bool):
         "replicate",
     ]
     installed_packages: dict[str, str] = {}
-    try:
-        from importlib.metadata import version
-
-        for pkg in ai_packages:
-            try:
-                installed_packages[pkg] = version(pkg)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for pkg in ai_packages:
+        try:
+            installed_packages[pkg] = get_package_version(pkg)
+        except PackageNotFoundError:
+            pass
     info_data["ai_packages"] = installed_packages
 
     # Check environment configuration (without exposing secrets)
