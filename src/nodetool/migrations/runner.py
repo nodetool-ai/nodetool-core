@@ -11,9 +11,12 @@ Provides the core MigrationRunner class that handles:
 - Baselining for legacy databases
 """
 
+import asyncio
 import hashlib
 import importlib.util
+import socket
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -255,9 +258,6 @@ class MigrationRunner:
         Raises:
             LockError: If lock cannot be acquired within timeout
         """
-        import socket
-        import uuid
-
         lock_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
         start_time = time.time()
 
@@ -300,8 +300,6 @@ class MigrationRunner:
                         return True
 
             # Wait and retry
-            import asyncio
-
             await asyncio.sleep(0.5)
 
         raise LockError(
