@@ -6,6 +6,7 @@ all functionality works correctly with actual data storage and retrieval.
 """
 
 import chromadb
+import chromadb.errors
 import pytest
 import pytest_asyncio
 from packaging import version
@@ -18,7 +19,7 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 
 # Version checks for feature compatibility
 CHROMADB_VERSION = version.parse(chromadb.__version__)
-PEEK_INCLUDE_SUPPORT = CHROMADB_VERSION >= version.parse("1.5.0")  # peek() include param
+PEEK_INCLUDE_SUPPORT = version.parse("1.5.0") <= CHROMADB_VERSION  # peek() include param
 
 
 @pytest_asyncio.fixture
@@ -148,7 +149,7 @@ class TestAsyncChromaClient:
     @pytest.mark.asyncio
     async def test_delete_nonexistent_collection_raises(self, chroma_client):
         """Test that deleting a non-existent collection raises an error."""
-        with pytest.raises(Exception):
+        with pytest.raises(chromadb.errors.NotFoundError):
             await chroma_client.delete_collection("nonexistent_collection")
 
 
@@ -403,7 +404,8 @@ class TestAsyncChromaCollectionUpdateOperations:
     @pytest.mark.asyncio
     async def test_modify_collection_metadata(self, test_collection):
         """Test modifying collection metadata."""
-        original_metadata = test_collection.metadata.copy()
+        # Store original metadata for potential future assertions
+        _ = test_collection.metadata.copy()
 
         await test_collection.modify(metadata={"new_key": "new_value"})
 
