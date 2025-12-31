@@ -89,9 +89,6 @@ def _serialize_message(msg: Message) -> dict:
     """
     msg_dict = msg.model_dump()
 
-    # Convert MessageContent objects to dicts for JSON serialization
-    if "content" in msg_dict and isinstance(msg_dict["content"], list):
-        msg_dict["content"] = [c.model_dump() for c in msg_dict["content"]]
 
     return msg_dict
 

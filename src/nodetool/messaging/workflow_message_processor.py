@@ -35,8 +35,6 @@ def _serialize_message(msg: Message) -> dict:
     """
     msg_dict = msg.model_dump()
 
-    if "content" in msg_dict and isinstance(msg_dict["content"], list):
-        msg_dict["content"] = [c.model_dump() for c in msg_dict["content"]]
 
     return msg_dict
 
@@ -139,10 +137,12 @@ class WorkflowMessageProcessor(MessageProcessor):
         """Construct a response Message object from workflow results."""
         content = []
         for _key, value in result.items():
+            if value is None:
+                continue
             if isinstance(value, str):
                 content.append(MessageTextContent(text=value))
             elif isinstance(value, list):
-                content.append(MessageTextContent(text=" ".join(value)))
+                content.append(MessageTextContent(text=" ".join(str(v) for v in value)))
             elif isinstance(value, dict):
                 if value.get("type") == "image":
                     content.append(MessageImageContent(image=ImageRef(**value)))
@@ -151,9 +151,9 @@ class WorkflowMessageProcessor(MessageProcessor):
                 elif value.get("type") == "audio":
                     content.append(MessageAudioContent(audio=AudioRef(**value)))
                 else:
-                    raise ValueError(f"Unknown type: {value}")
+                    content.append(MessageTextContent(text=str(value)))
             else:
-                raise ValueError(f"Unknown type: {type(value)} {value}")
+                content.append(MessageTextContent(text=str(value)))
 
         return Message(
             role="assistant",

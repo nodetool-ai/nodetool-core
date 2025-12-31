@@ -162,7 +162,13 @@ def _infer_component(index: _Index) -> str:
         ):
             return "lora_adapter"
 
+    # Diffusers-style UNet (down_blocks, up_blocks, mid_block)
     if any(key.startswith(("down_blocks.", "up_blocks.", "mid_block.")) for key in all_keys):
+        return "unet"
+
+    # CompVis/SD-style single-file checkpoint (model.diffusion_model.*)
+    # These are commonly found in Civitai checkpoints
+    if any(key.startswith("model.diffusion_model.") for key in all_keys):
         return "unet"
 
     if any(key.startswith("transformer_blocks.") for key in all_keys) and not any(
@@ -230,6 +236,29 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
         return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
     if component == "unet":
+        # Check for CompVis/SD-style single-file checkpoint first
+        # These use model.diffusion_model.* naming instead of diffusers-style down_blocks.*
+        if any(key.startswith("model.diffusion_model.") for key in keys):
+            # This is a single-file SD checkpoint (commonly from Civitai)
+            # Check for SDXL indicators
+            if _has_any(keys, "conditioner.embedders."):
+                family = "sdxl-base"
+                confidence = 0.90
+                evidence.append("CompVis-style checkpoint with conditioner.embedders.* (SDXL hallmark)")
+            elif _has_any(keys, "cond_stage_model.transformer."):
+                family = "sd1"
+                confidence = 0.90
+                evidence.append("CompVis-style checkpoint with cond_stage_model.transformer.* (SD1.x hallmark)")
+            elif _has_any(keys, "cond_stage_model.model."):
+                family = "sd2"
+                confidence = 0.88
+                evidence.append("CompVis-style checkpoint with cond_stage_model.model.* (SD2.x hallmark)")
+            else:
+                family = "sd1"
+                confidence = 0.80
+                evidence.append("CompVis-style checkpoint with model.diffusion_model.* (likely SD1.x)")
+            return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
+
         probe = _find_first(keys, r"^down_blocks\.0\.resnets\.0\.conv1\.weight$")
         read_shapes = 0
         if probe and read_shapes < max_shape_reads:

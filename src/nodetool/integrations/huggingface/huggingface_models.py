@@ -1681,16 +1681,46 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     return list(result.values())
 
 
+def _is_component_only_repo(repo_id: str) -> bool:
+    """
+    Check if a repo is a component-only repo that can't be used as a standalone pipeline.
+
+    These repos contain model components (transformers, text encoders) that need to be
+    combined with base models and aren't usable as standalone image generation models.
+
+    Examples:
+    - nunchaku-tech/nunchaku-flux.1-schnell (Nunchaku FLUX transformer)
+    - nunchaku-tech/nunchaku-t5 (T5 encoder for Nunchaku)
+    """
+    repo_lower = repo_id.lower()
+    # Nunchaku repos are component-only (transformers, T5 encoders)
+    if "nunchaku" in repo_lower:
+        return True
+    return False
+
+
 async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
     """
     Shared helper to discover cached diffusion models for a specific task.
+
+    Returns:
+    - For component-only repos (like Nunchaku): only individual component files
+    - For normal repos with single-file checkpoints: repo entry + file entries
+    - For normal multi-file repos: just the repo entry
     """
     result: dict[str, ImageModel] = {}
     async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
         if not file_list:
             continue
-        if not await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list):
+        # Check if this is a component-only repo (e.g., Nunchaku transformers)
+        is_component_only = _is_component_only_repo(repo_id)
+        has_diffusion_artifacts = await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list)
+
+        # Skip non-component repos that don't have diffusion artifacts
+        if not is_component_only and not has_diffusion_artifacts:
             continue
+
+        # Add individual single-file checkpoints
         added_single_file = False
         for fname in file_list:
             if not _is_single_file_diffusion_weight(fname):
@@ -1705,7 +1735,11 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
                 supported_tasks=[task],
             )
             added_single_file = True
-        if added_single_file:
+
+        # Add repo-level entry for non-component repos
+        # - If they have single-file checkpoints, add as companion entry
+        # - If they're multi-file repos with diffusion artifacts, add as the main entry
+        if not is_component_only and (added_single_file or has_diffusion_artifacts):
             result.setdefault(
                 repo_id,
                 ImageModel(

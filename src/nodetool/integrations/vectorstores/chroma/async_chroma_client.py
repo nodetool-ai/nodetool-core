@@ -73,17 +73,21 @@ class AsyncChromaCollection:
         offset: Optional[int] = None,
         include: Optional[Iterable] = None,
     ) -> dict:
-        return await self._executor.run(
-            self._collection.get,
-            ids=ids,
-            where=where,
-            limit=limit,
-            offset=offset,
-            include=include or [],
-        )
+        kwargs = {
+            "ids": ids,
+            "where": where,
+            "limit": limit,
+            "offset": offset,
+        }
+        if include is not None:
+            kwargs["include"] = include
+        return await self._executor.run(self._collection.get, **kwargs)
 
     async def peek(self, limit: int = 10, include: Optional[Iterable] = None) -> dict:
-        return await self._executor.run(self._collection.peek, limit=limit, include=include or [])
+        kwargs = {"limit": limit}
+        if include is not None:
+            kwargs["include"] = include
+        return await self._executor.run(self._collection.peek, **kwargs)
 
     async def query(
         self,
@@ -95,16 +99,17 @@ class AsyncChromaCollection:
         where_document: Optional[dict] = None,
         include: Optional[Iterable] = None,
     ) -> dict:
-        return await self._executor.run(
-            self._collection.query,
-            query_texts=query_texts,
-            query_embeddings=query_embeddings,
-            query_images=query_images,
-            n_results=n_results,
-            where=where,
-            where_document=where_document,
-            include=include or [],
-        )
+        kwargs = {
+            "query_texts": query_texts,
+            "query_embeddings": query_embeddings,
+            "query_images": query_images,
+            "n_results": n_results,
+            "where": where,
+            "where_document": where_document,
+        }
+        if include is not None:
+            kwargs["include"] = include
+        return await self._executor.run(self._collection.query, **kwargs)
 
     # Mutations
     async def add(
