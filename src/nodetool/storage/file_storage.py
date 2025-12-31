@@ -23,8 +23,8 @@ class FileStorage(AbstractStorage):
     def generate_presigned_url(self, client_method: str, object_name: str, expiration=3600 * 24 * 7):
         return f"{self.base_url}/{object_name}"
 
-    async def file_exists(self, file_name: str) -> bool:
-        return await asyncio.to_thread(os.path.isfile, os.path.join(self.base_path, file_name))
+    async def file_exists(self, key: str) -> bool:
+        return await asyncio.to_thread(os.path.isfile, os.path.join(self.base_path, key))
 
     async def get_mtime(self, key: str):
         try:

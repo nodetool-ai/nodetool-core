@@ -23,13 +23,9 @@ class JavaScriptDockerRunner(StreamRunnerBase):
         mem_limit: str = "256m",
         nano_cpus: int = 1_000_000_000,
         timeout_seconds: int = 10,
-        *args,
         **kwargs,
     ):
-        super().__init__(*args, timeout_seconds=timeout_seconds, **kwargs)
-        self.image = image
-        self.mem_limit = mem_limit
-        self.nano_cpus = nano_cpus
+        super().__init__(image=image, mem_limit=mem_limit, nano_cpus=nano_cpus, timeout_seconds=timeout_seconds, **kwargs)
 
     def build_container_command(
         self,

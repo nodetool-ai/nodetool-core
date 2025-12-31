@@ -83,7 +83,7 @@ class FinishTool(Tool):
             "additionalProperties": False,
         }
 
-    async def process(self, _context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         return params
 
 
@@ -306,6 +306,8 @@ Safety and privacy:
 
 async def main():
     """Test scenario for the AgentExecutor."""
+    import os
+
     from nodetool.providers.openai_provider import OpenAIProvider
     from nodetool.workflows.processing_context import ProcessingContext
 
@@ -322,7 +324,8 @@ async def main():
     }
 
     # Initialize provider and context
-    provider = OpenAIProvider()
+    secrets = {"OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", "")}
+    provider = OpenAIProvider(secrets=secrets)
     processing_context = ProcessingContext()
 
     # Import math tools for testing

@@ -19,11 +19,9 @@ class PythonDockerRunner(StreamRunnerBase):
     def __init__(
         self,
         image: str = "python:3.11-slim",
-        *args,
         **kwargs,
     ):
         super().__init__(
-            *args,
             image=image,
             **kwargs,
         )

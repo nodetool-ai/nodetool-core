@@ -268,14 +268,14 @@ class DataForSEOProvider(SerpProvider):
 
         return _remove_base64_images(image_items_transformed)
 
-    async def search_finance(self, _query: str, _window: str | None = None) -> dict[str, Any] | ErrorResponse:
+    async def search_finance(self, query: str, window: str | None = None) -> dict[str, Any] | ErrorResponse:
         """
         Retrieves financial data. Not currently supported by DataForSEOProvider.
         """
         return {"error": "Google Finance search is not supported by DataForSEOProvider."}
 
     async def search_jobs(
-        self, _query: str, _location: str | None = None, _num_results: int = 10
+        self, query: str, location: str | None = None, num_results: int = 10
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for jobs. Not currently supported by DataForSEOProvider.
@@ -283,7 +283,7 @@ class DataForSEOProvider(SerpProvider):
         return {"error": "Google Jobs search is not supported by DataForSEOProvider."}
 
     async def search_lens(
-        self, _image_url: str, _country: str | None = None, _num_results: int = 10
+        self, image_url: str, country: str | None = None, num_results: int = 10
     ) -> dict[str, Any] | ErrorResponse:
         """
         Searches using an image URL (Google Lens). Not currently supported by DataForSEOProvider.
@@ -292,11 +292,11 @@ class DataForSEOProvider(SerpProvider):
 
     async def search_maps(
         self,
-        _query: str,
-        _ll: str | None = None,
-        _map_type: str = "search",
-        _data_id: str | None = None,
-        _num_results: int = 10,
+        query: str,
+        ll: str | None = None,
+        map_type: str = "search",
+        data_id: str | None = None,
+        num_results: int = 10,
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Maps. Not currently supported by DataForSEOProvider.
@@ -305,14 +305,14 @@ class DataForSEOProvider(SerpProvider):
 
     async def search_shopping(
         self,
-        _query: str,
-        _country: str | None = None,
-        _domain: str | None = None,
-        _min_price: int | None = None,
-        _max_price: int | None = None,
-        _condition: str | None = None,
-        _sort_by: str | None = None,
-        _num_results: int = 10,
+        query: str,
+        country: str | None = None,
+        domain: str | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        condition: str | None = None,
+        sort_by: str | None = None,
+        num_results: int = 10,
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for shopping results. Not currently supported by DataForSEOProvider.
