@@ -6,7 +6,7 @@ import re
 import shutil
 import tempfile
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -165,7 +165,7 @@ def _get_nodetool_version() -> str:
     except Exception:
         pass
     # Fallback to dev timestamp
-    return f"dev-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    return f"dev-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
 
 
 def _get_gpu_name() -> Optional[str]:
@@ -264,9 +264,15 @@ def _create_zip(src_dir: Path, zip_dest: Path) -> None:
     # Use shutil make_archive for robustness
     zip_dest.with_suffix("")
     # shutil.make_archive adds extension itself; to control exact name we write to temp then rename
-    tmp_base = tempfile.mktemp(prefix="nodetool-debug-")
-    archive_path = shutil.make_archive(tmp_base, "zip", root_dir=str(src_dir))
-    shutil.move(archive_path, str(zip_dest))
+    with tempfile.NamedTemporaryFile(prefix="nodetool-debug-", delete=False, suffix="") as tmp_file:
+        tmp_base = tmp_file.name
+    try:
+        archive_path = shutil.make_archive(tmp_base, "zip", root_dir=str(src_dir))
+        shutil.move(archive_path, str(zip_dest))
+    finally:
+        # Clean up the temp file if it still exists
+        with suppress(FileNotFoundError):
+            os.unlink(tmp_base)
 
 
 @router.post("/export", response_model=DebugBundleResponse)
