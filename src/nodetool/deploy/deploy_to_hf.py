@@ -75,8 +75,6 @@ def sanitize_endpoint_name(name: str) -> str:
 
     return sanitized
 
-    return sanitized
-
 
 def create_huggingface_endpoint(
     namespace: str,
