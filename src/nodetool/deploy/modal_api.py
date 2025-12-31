@@ -112,22 +112,30 @@ def create_modal_image(
     Create a Modal image configuration.
 
     Args:
-        base_image: Base Docker image
+        base_image: Base Docker image (used when dockerfile is provided, or determines
+                    which Modal base image to use - 'debian' for debian_slim)
         pip_packages: Python packages to install
         apt_packages: System packages to install
-        dockerfile: Path to custom Dockerfile
-        context_dir: Docker build context directory
+        dockerfile: Path to custom Dockerfile (when provided, base_image is ignored)
+        context_dir: Docker build context directory (only used with dockerfile)
 
     Returns:
         Modal Image object
+
+    Note:
+        When no dockerfile is provided, Modal's debian_slim base is used for reliability.
+        The base_image parameter is primarily used when providing a custom Dockerfile.
     """
     import modal
 
     if dockerfile:
-        # Use custom Dockerfile
-        return modal.Image.from_dockerfile(dockerfile, context_mount=context_dir)
+        # Use custom Dockerfile with context directory
+        if context_dir:
+            return modal.Image.from_dockerfile(dockerfile, context_dir=context_dir)
+        return modal.Image.from_dockerfile(dockerfile)
 
-    # Build image from base
+    # Build image from Modal's debian_slim base for reliability
+    # This provides a consistent, well-tested base with good Python support
     image = modal.Image.debian_slim(python_version="3.11")
 
     # Add apt packages if specified
