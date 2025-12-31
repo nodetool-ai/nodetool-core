@@ -96,8 +96,9 @@ def generate_fly_toml(deployment: FlyDeployment) -> str:
         "",
     ]
 
-    # Build section (if using local Dockerfile)
-    if deployment.image.build.dockerfile:
+    # Build section (if using local Dockerfile and a registry image is not specified)
+    # Only include build section if we're building from source (not using pre-built image)
+    if not (deployment.image.registry and deployment.image.name):
         lines.extend(
             [
                 "[build]",
@@ -493,6 +494,12 @@ class FlyDeployer:
                     # Copy pyproject.toml if it exists
                     if os.path.exists("pyproject.toml"):
                         shutil.copy("pyproject.toml", tmpdir)
+                else:
+                    raise RuntimeError(
+                        f"Dockerfile not found at '{dockerfile_src}'. "
+                        "Either create the Dockerfile or specify a pre-built image using "
+                        "image.registry and image.name."
+                    )
 
             # Add config path
             deploy_args.extend(["--config", fly_toml_path])

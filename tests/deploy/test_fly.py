@@ -303,6 +303,25 @@ class TestGenerateFlyToml:
 
         assert 'gpu_kind = "a100-pcie-40gb"' in toml_content
 
+    def test_fly_toml_with_prebuilt_image(self):
+        """Test fly.toml generation with pre-built image (no build section)."""
+        deployment = FlyDeployment(
+            app_name="test-app",
+            region="iad",
+            image=FlyImageConfig(
+                name="myapp",
+                tag="v1.0.0",
+                registry="registry.fly.io",
+            ),
+        )
+        toml_content = generate_fly_toml(deployment)
+
+        # Should NOT have a build section when using pre-built image
+        assert "[build]" not in toml_content
+        # Should still have app config
+        assert 'app = "test-app"' in toml_content
+        assert "[http_service]" in toml_content
+
 
 class TestRunFlyctl:
     """Tests for run_flyctl function."""
