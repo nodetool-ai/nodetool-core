@@ -311,8 +311,10 @@ class TestChatWorkflowMessageProcessorProcess:
         chat_processor.send_message = capture_send
 
         async def mock_run_workflow(*args, **kwargs):
+            # Make this an async generator by yielding in unreachable branch
+            if False:
+                yield
             raise ValueError("Test error")
-            yield  # Required to make this an async generator
 
         with patch(
             "nodetool.messaging.chat_workflow_message_processor.run_workflow",
@@ -496,8 +498,10 @@ class TestChatWorkflowWebSocketEventConsistency:
         chat_processor.send_message = capture_send
 
         async def mock_run_workflow(*args, **kwargs):
+            # Make this an async generator by yielding in unreachable branch
+            if False:
+                yield
             raise ValueError("Test error")
-            yield  # Required to make this an async generator
 
         with patch(
             "nodetool.messaging.chat_workflow_message_processor.run_workflow",
