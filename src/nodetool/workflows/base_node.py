@@ -1968,10 +1968,14 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     if len(parts) == 1:
         return None
 
-    # Try to load the module if node type not found
-    module_prefix = "nodetool.nodes." + ".".join(parts[:-1])
+    # Handle special case for test_helper nodes under nodetool.workflows.test_helper
+    if parts[0] == "nodetool" and parts[1] == "workflows" and parts[2] == "test_helper":
+        module_prefix = ".".join(parts[:-1])
+    else:
+        # Try to load the module under the standard nodes namespace
+        module_prefix = "nodetool.nodes." + ".".join(parts[:-1])
 
-    # Attempt under the standard nodes namespace
+    # Attempt to import the module
     try:
         log.debug(f"Importing module: {module_prefix}")
         importlib.import_module(module_prefix)

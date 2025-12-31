@@ -88,6 +88,9 @@ class TestBaseChatRunner:
         db_message.model = "gpt-4"
         db_message.agent_mode = True
         db_message.help_mode = False
+        db_message.agent_execution_id = None
+        db_message.execution_event_type = None
+        db_message.workflow_target = None
 
         # Convert to metadata message
         api_message = self.runner._db_message_to_metadata_message(db_message)
@@ -155,6 +158,9 @@ class TestBaseChatRunner:
             msg.model = "gpt-4"
             msg.agent_mode = False
             msg.help_mode = False
+            msg.agent_execution_id = None
+            msg.execution_event_type = None
+            msg.workflow_target = None
 
         # Mock DBMessage.paginate
         with patch.object(DBMessage, "paginate", return_value=(mock_messages, None)):
@@ -279,6 +285,9 @@ class TestBaseChatRunner:
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = False
             mock_db_message.help_mode = False
+            mock_db_message.agent_execution_id = None
+            mock_db_message.execution_event_type = None
+            mock_db_message.workflow_target = None
 
             mock_save.return_value = mock_db_message
             mock_history.return_value = []
@@ -330,6 +339,9 @@ class TestBaseChatRunner:
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = True
             mock_db_message.help_mode = False
+            mock_db_message.agent_execution_id = None
+            mock_db_message.execution_event_type = None
+            mock_db_message.workflow_target = None
 
             mock_save.return_value = mock_db_message
             mock_history.return_value = []
@@ -379,6 +391,9 @@ class TestBaseChatRunner:
             mock_db_message.model = "gpt-4"
             mock_db_message.agent_mode = False
             mock_db_message.help_mode = False
+            mock_db_message.agent_execution_id = None
+            mock_db_message.execution_event_type = None
+            mock_db_message.workflow_target = None
 
             mock_save.return_value = mock_db_message
             mock_history.return_value = []

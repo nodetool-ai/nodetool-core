@@ -17,6 +17,23 @@ PARAM_CASES = [
 pytestmark = pytest.mark.xdist_group(name="subprocess_execution")
 
 
+def _filter_output_lines(output: str) -> list[str]:
+    """Filter out deprecation warnings and log messages from output."""
+    lines = []
+    for line in output.splitlines():
+        # Skip deprecation warnings
+        if "DeprecationWarning" in line:
+            continue
+        # Skip .env loading log messages
+        if "Skipping .env loading" in line:
+            continue
+        # Skip other info/warning log messages that aren't JSON
+        if line.strip() and not line.strip().startswith("{") and not line.strip().startswith("["):
+            continue
+        lines.append(line)
+    return lines
+
+
 def _build_simple_workflow_graph() -> dict[str, object]:
     return {
         "nodes": [
@@ -93,7 +110,8 @@ def test_run_workflow_cli_subprocess_file(stdin_text, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
+    filtered_stdout = "\n".join(_filter_output_lines(result.stdout))
+    stdout_lines = [json.loads(line) for line in filtered_stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -137,7 +155,8 @@ def test_run_workflow_cli_subprocess_stdin(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
+    filtered_stdout = "\n".join(_filter_output_lines(result.stdout))
+    stdout_lines = [json.loads(line) for line in filtered_stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -180,7 +199,8 @@ def test_unified_run_command_stdin(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
+    filtered_stdout = "\n".join(_filter_output_lines(result.stdout))
+    stdout_lines = [json.loads(line) for line in filtered_stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
@@ -222,7 +242,8 @@ def test_unified_run_command_file(params, expected, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    stdout_lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
+    filtered_stdout = "\n".join(_filter_output_lines(result.stdout))
+    stdout_lines = [json.loads(line) for line in filtered_stdout.splitlines() if line.strip().startswith("{")]
     assert stdout_lines
 
     final_line = stdout_lines[-1]
