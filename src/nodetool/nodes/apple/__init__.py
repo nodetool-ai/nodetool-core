@@ -60,7 +60,7 @@ def _make_node_class(name: str, cacheable: bool) -> type[BaseNode]:
         "is_cacheable": classmethod(lambda _cls: cacheable),
     }
 
-    return cast(type[BaseNode], type(name, (BaseNode,), attrs))
+    return cast("type[BaseNode]", type(name, (BaseNode,), attrs))
 
 
 # ---------------------------------------------------------------------------

@@ -2,10 +2,9 @@
 Base abstract class for job execution strategies.
 """
 
-import asyncio
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
@@ -13,6 +12,9 @@ from nodetool.workflows.job_log_handler import JobLogHandler
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    import asyncio
 
 log = get_logger(__name__)
 

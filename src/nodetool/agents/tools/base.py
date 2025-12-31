@@ -19,7 +19,7 @@ class Tool:
     # Class attributes expected to be defined by subclasses
     name: str = "base_tool"  # Provide a default or make abstract
     description: str = "Base tool description"
-    input_schema: Dict[str, Any] = {}  # Default schema
+    input_schema: Dict[str, Any] = {}  # noqa: RUF012  # Mutable default is intentional; overridden by subclasses
     example: str = ""
 
     def user_message(self, params: Dict[str, Any]) -> str:
