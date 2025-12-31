@@ -93,12 +93,14 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.tool_bridge = ToolBridge()
         self.client_tools_manifest: dict[str, dict] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: str | None = None):
+    async def connect(self, websocket: WebSocket, user_id: str | None = None, **kwargs) -> None:
         """
         Accepts and establishes a new WebSocket connection.
 
         Args:
             websocket (WebSocket): The FastAPI WebSocket object representing the client connection.
+            user_id: Optional user ID for authentication.
+            **kwargs: Additional keyword arguments for compatibility.
 
         Raises:
             WebSocketDisconnect: If authentication fails.

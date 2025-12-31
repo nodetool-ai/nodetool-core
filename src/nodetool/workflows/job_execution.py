@@ -4,7 +4,7 @@ Base abstract class for job execution strategies.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
@@ -12,6 +12,9 @@ from nodetool.workflows.job_log_handler import JobLogHandler
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    import asyncio
 
 log = get_logger(__name__)
 
@@ -51,6 +54,7 @@ class JobExecution(ABC):
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
         self._log_handler: JobLogHandler | None = None
+        self._finalize_task: asyncio.Task | None = None
 
         # Install log handler to capture logs
         self._install_log_handler()
@@ -115,7 +119,7 @@ class JobExecution(ABC):
         except Exception as e:
             log.error(f"Failed to install log handler for job {self.job_id}: {e}")
 
-    def _uninstall_log_handler(self) -> None:
+    def _uninstall_log_handler(self) -> list[dict]:
         """Uninstall and persist logs for this job."""
         try:
             if self._log_handler:

@@ -72,7 +72,7 @@ class ComposeGenerator:
         Returns:
             Dictionary representing docker-compose.yml structure
         """
-        compose = {
+        compose: Dict[str, Any] = {
             "version": "3.8",
             "services": {},
         }

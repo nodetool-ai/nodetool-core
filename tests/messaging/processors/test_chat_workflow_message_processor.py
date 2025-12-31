@@ -311,8 +311,10 @@ class TestChatWorkflowMessageProcessorProcess:
         chat_processor.send_message = capture_send
 
         async def mock_run_workflow(*args, **kwargs):
+            # Make this an async generator by yielding in unreachable branch
+            if False:
+                yield
             raise ValueError("Test error")
-            yield
 
         with patch(
             "nodetool.messaging.chat_workflow_message_processor.run_workflow",
@@ -441,6 +443,122 @@ class TestChatWorkflowMessageProcessorIssues:
         actual_text = " ".join(c.text for c in response.content if isinstance(c, MessageTextContent))
         assert "['nested']" in actual_text, "Nested lists should be stringified"
         assert "{'key':" in actual_text or '{"key":' in actual_text, "Dicts should be stringified"
+
+
+class TestChatWorkflowWebSocketEventConsistency:
+    """Tests to verify chat workflows emit the same events as normal workflows."""
+
+    @pytest.mark.asyncio
+    async def test_messages_include_job_id_and_workflow_id(self, chat_processor, chat_history, processing_context):
+        """Test that all messages include job_id and workflow_id for UI visualization."""
+        sent_messages = []
+
+        async def capture_send(msg):
+            sent_messages.append(msg)
+
+        chat_processor.send_message = capture_send
+
+        # Mock run_workflow to yield various update types
+        mock_updates = [
+            OutputUpdate(
+                node_id="output1",
+                node_name="output",
+                output_name="result",
+                output_type="string",
+                value="Test response",
+            ),
+        ]
+
+        async def mock_run_workflow(*args, **kwargs):
+            for update in mock_updates:
+                yield update
+
+        with patch(
+            "nodetool.messaging.chat_workflow_message_processor.run_workflow",
+            mock_run_workflow,
+        ):
+            await chat_processor.process(chat_history, processing_context)
+
+        # Verify all messages include job_id and workflow_id
+        for msg in sent_messages:
+            assert "job_id" in msg, f"Message {msg.get('type')} missing job_id"
+            assert "workflow_id" in msg, f"Message {msg.get('type')} missing workflow_id"
+            # Verify they are non-empty strings
+            assert isinstance(msg["job_id"], str) and msg["job_id"], "job_id should be a non-empty string"
+            assert isinstance(msg["workflow_id"], str) and msg["workflow_id"], "workflow_id should be a non-empty string"
+
+    @pytest.mark.asyncio
+    async def test_error_messages_include_job_id_and_workflow_id(self, chat_processor, chat_history, processing_context):
+        """Test that error messages also include job_id and workflow_id."""
+        sent_messages = []
+
+        async def capture_send(msg):
+            sent_messages.append(msg)
+
+        chat_processor.send_message = capture_send
+
+        async def mock_run_workflow(*args, **kwargs):
+            # Make this an async generator by yielding in unreachable branch
+            if False:
+                yield
+            raise ValueError("Test error")
+
+        with patch(
+            "nodetool.messaging.chat_workflow_message_processor.run_workflow",
+            mock_run_workflow,
+        ), pytest.raises(ValueError, match="Test error"):
+            await chat_processor.process(chat_history, processing_context)
+
+        # Verify error message includes job_id and workflow_id
+        error_messages = [msg for msg in sent_messages if msg.get("type") == "error"]
+        assert len(error_messages) > 0, "Should have sent error message"
+        for msg in error_messages:
+            assert "job_id" in msg, "Error message missing job_id"
+            assert "workflow_id" in msg, "Error message missing workflow_id"
+
+        # Verify completion chunk also includes job_id and workflow_id
+        chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk" and msg.get("done")]
+        assert len(chunk_messages) > 0, "Should have sent completion chunk"
+        for msg in chunk_messages:
+            assert "job_id" in msg, "Completion chunk missing job_id"
+            assert "workflow_id" in msg, "Completion chunk missing workflow_id"
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_matches_request(self, chat_processor, chat_history, processing_context):
+        """Test that workflow_id in messages matches the requested workflow."""
+        sent_messages = []
+        expected_workflow_id = chat_history[-1].workflow_id
+
+        async def capture_send(msg):
+            sent_messages.append(msg)
+
+        chat_processor.send_message = capture_send
+
+        mock_updates = [
+            OutputUpdate(
+                node_id="output1",
+                node_name="output",
+                output_name="result",
+                output_type="string",
+                value="Test response",
+            ),
+        ]
+
+        async def mock_run_workflow(*args, **kwargs):
+            for update in mock_updates:
+                yield update
+
+        with patch(
+            "nodetool.messaging.chat_workflow_message_processor.run_workflow",
+            mock_run_workflow,
+        ):
+            await chat_processor.process(chat_history, processing_context)
+
+        # Verify all messages have the correct workflow_id
+        for msg in sent_messages:
+            assert msg.get("workflow_id") == expected_workflow_id, (
+                f"Message workflow_id {msg.get('workflow_id')} does not match expected {expected_workflow_id}"
+            )
 
 
 if __name__ == "__main__":

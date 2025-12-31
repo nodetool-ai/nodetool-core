@@ -3,9 +3,10 @@
 import asyncio
 import tempfile
 
-from nodetool.config.logging_config import get_logger
 from nodetool.nodes.lib.math import Add, Multiply
 from nodetool.nodes.nodetool.text import Concat, FormatText
+
+from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 

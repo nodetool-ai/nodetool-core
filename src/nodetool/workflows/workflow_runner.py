@@ -511,7 +511,7 @@ class WorkflowRunner:
                     for key, value in request.params.items():
                         log.info(f"Setting input node {key} to {value}")
                         if key not in input_nodes:
-                            log.warn(f"input params {key} not found as input node")
+                            log.warning(f"input params {key} not found as input node")
                         else:
                             node = input_nodes[key]
                             log.info(f"Assigning property 'value'={value} to node {node.id} ({node.name})")
@@ -542,7 +542,7 @@ class WorkflowRunner:
                 if request.params:
                     for key, value in request.params.items():
                         if key not in input_nodes:
-                            log.warn(f"input params {key} not found as input node")
+                            log.warning(f"input params {key} not found as input node")
                         else:
                             node = input_nodes[key]
                             # Determine the correct output handle name for this InputNode

@@ -852,3 +852,104 @@ class TestBrowserMethods:
         await context.cleanup()
         mock_browser.close.assert_called_once()
         assert not hasattr(context, "_browser") or context._browser is None
+
+
+class TestMetadataAdditions:
+    """Test metadata is consistently added to asset references."""
+
+    @pytest.mark.asyncio
+    async def test_image_from_pil_has_metadata(self, context: ProcessingContext, sample_image):
+        """Test that image_from_pil adds metadata automatically."""
+        result = await context.image_from_pil(sample_image)
+        assert isinstance(result, ImageRef)
+        assert result.metadata is not None
+        assert result.metadata["width"] == 100
+        assert result.metadata["height"] == 100
+        assert result.metadata["mode"] == "RGB"
+        assert result.metadata["format"] == "png"
+
+    @pytest.mark.asyncio
+    async def test_image_from_pil_preserves_custom_metadata(self, context: ProcessingContext, sample_image):
+        """Test that custom metadata is preserved when provided."""
+        custom_metadata = {"custom_key": "custom_value", "width": 999}
+        result = await context.image_from_pil(sample_image, metadata=custom_metadata)
+        assert isinstance(result, ImageRef)
+        assert result.metadata == custom_metadata
+        assert result.metadata["width"] == 999  # Custom value preserved
+
+    @pytest.mark.asyncio
+    async def test_image_from_numpy_has_metadata(self, context: ProcessingContext):
+        """Test that image_from_numpy adds metadata automatically."""
+        test_array = np.full((50, 75, 3), fill_value=128, dtype=np.uint8)  # height=50, width=75
+
+        result = await context.image_from_numpy(test_array)
+        assert isinstance(result, ImageRef)
+        assert result.metadata is not None
+        assert result.metadata["width"] == 75
+        assert result.metadata["height"] == 50
+        assert result.metadata["channels"] == 3
+        assert result.metadata["format"] == "png"
+
+    @pytest.mark.asyncio
+    async def test_image_from_numpy_grayscale_has_metadata(self, context: ProcessingContext):
+        """Test that image_from_numpy handles 2D grayscale arrays."""
+        test_array = np.full((40, 60), fill_value=128, dtype=np.uint8)  # height=40, width=60
+
+        result = await context.image_from_numpy(test_array)
+        assert isinstance(result, ImageRef)
+        assert result.metadata is not None
+        assert result.metadata["width"] == 60
+        assert result.metadata["height"] == 40
+        assert result.metadata["channels"] == 1
+
+    @pytest.mark.asyncio
+    async def test_audio_from_segment_has_metadata(self, context: ProcessingContext, sample_audio_segment):
+        """Test that audio_from_segment adds metadata automatically."""
+        result = await context.audio_from_segment(sample_audio_segment)
+        assert isinstance(result, AudioRef)
+        assert result.metadata is not None
+        assert result.metadata["sample_rate"] == sample_audio_segment.frame_rate
+        assert result.metadata["channels"] == sample_audio_segment.channels
+        assert result.metadata["format"] == "wav"
+        assert "duration_seconds" in result.metadata
+
+    @pytest.mark.asyncio
+    async def test_video_from_numpy_has_metadata(self, context: ProcessingContext):
+        """Test that video_from_numpy adds metadata automatically."""
+        video_array = np.random.randint(0, 255, (10, 50, 75, 3), dtype=np.uint8)
+
+        with patch("imageio.mimwrite") as mock_mimwrite:
+
+            def mock_write(buffer, video_data, format=None, fps=None):
+                buffer.write(b"fake video output")
+
+            mock_mimwrite.side_effect = mock_write
+
+            result = await context.video_from_numpy(video_array, fps=24)
+            assert isinstance(result, VideoRef)
+            assert result.metadata is not None
+            assert result.metadata["fps"] == 24
+            assert result.metadata["frame_count"] == 10
+            assert result.metadata["width"] == 75
+            assert result.metadata["height"] == 50
+            assert result.metadata["format"] == "mp4"
+            assert result.metadata["duration_seconds"] == 10 / 24
+
+    @pytest.mark.asyncio
+    async def test_video_from_io_with_metadata(self, context: ProcessingContext):
+        """Test that video_from_io accepts and stores metadata."""
+        buffer = BytesIO(b"fake video data")
+        custom_metadata = {"fps": 30, "format": "mp4"}
+
+        result = await context.video_from_io(buffer, metadata=custom_metadata)
+        assert isinstance(result, VideoRef)
+        assert result.metadata == custom_metadata
+
+    @pytest.mark.asyncio
+    async def test_video_from_bytes_with_metadata(self, context: ProcessingContext):
+        """Test that video_from_bytes accepts and stores metadata."""
+        custom_metadata = {"fps": 60, "codec": "h264"}
+
+        result = await context.video_from_bytes(b"video bytes", metadata=custom_metadata)
+        assert isinstance(result, VideoRef)
+        assert result.metadata == custom_metadata

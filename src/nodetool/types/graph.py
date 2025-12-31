@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
@@ -63,8 +63,8 @@ def remove_connected_slots(graph: Graph) -> Graph:
     return graph
 
 
-def get_input_schema(graph: Graph):
-    input_schema = {"type": "object", "properties": {}, "required": []}
+def get_input_schema(graph: Graph) -> Dict[str, Any]:
+    input_schema: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
 
     for node in graph.nodes:
         if node.type.startswith(("nodetool.input.", "nodetool.workflows.test_helper.")):
@@ -119,8 +119,8 @@ def get_input_schema(graph: Graph):
     return input_schema
 
 
-def get_output_schema(graph: Graph):
-    output_schema = {"type": "object", "properties": {}, "required": []}
+def get_output_schema(graph: Graph) -> Dict[str, Any]:
+    output_schema: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
 
     for node in graph.nodes:
         if node.type.startswith("nodetool.output."):

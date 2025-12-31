@@ -20,11 +20,9 @@ class BashDockerRunner(StreamRunnerBase):
     def __init__(
         self,
         image: str = "bash:5.2",
-        *args,
         **kwargs,
     ):
         super().__init__(
-            *args,
             image=image,
             **kwargs,
         )

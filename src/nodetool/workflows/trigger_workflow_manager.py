@@ -8,6 +8,7 @@ run in the background indefinitely until explicitly stopped.
 """
 
 import asyncio
+import threading
 from typing import Dict, Optional
 
 from nodetool.config.logging_config import get_logger
@@ -58,14 +59,23 @@ class TriggerWorkflowManager:
     """
 
     _instance: Optional["TriggerWorkflowManager"] = None
+    _initialized: bool = False
+    _lock: threading.Lock = threading.Lock()
+
+    def __init__(self) -> None:
+        """Initialize the TriggerWorkflowManager instance."""
+        # Only initialize once for singleton (thread-safe)
+        with TriggerWorkflowManager._lock:
+            if not TriggerWorkflowManager._initialized:
+                self._running_workflows: Dict[str, JobExecution] = {}
+                self._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
+                self._watchdog_task: Optional[asyncio.Task] = None
+                self._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
+                TriggerWorkflowManager._initialized = True
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._running_workflows: Dict[str, JobExecution] = {}
-            cls._instance._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
-            cls._instance._watchdog_task: Optional[asyncio.Task] = None
-            cls._instance._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
         return cls._instance
 
     @classmethod

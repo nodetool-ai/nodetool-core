@@ -149,6 +149,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
 
         log.info(f"Running chat workflow {last_message.workflow_id} with {len(chat_history)} messages")
         result = {}
+        workflow_id = last_message.workflow_id
 
         try:
             async for update in run_workflow(
@@ -156,14 +157,22 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                 workflow_runner,
                 processing_context,
             ):
-                await self.send_message(update.model_dump())
+                # Add job_id and workflow_id to all messages for UI visualization consistency
+                # This matches the behavior of WebSocketRunner for normal workflows
+                msg = update.model_dump()
+                msg["job_id"] = job_id
+                msg["workflow_id"] = workflow_id
+                await self.send_message(msg)
                 log.debug(f"Chat workflow update sent: {update.type}")
                 if isinstance(update, OutputUpdate):
                     result[update.node_name] = update.value
 
-            # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
-            await self.send_message(self._create_response_message(result, last_message).model_dump())
+            # Signal completion with job_id and workflow_id
+            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            response_msg = self._create_response_message(result, last_message).model_dump()
+            response_msg["job_id"] = job_id
+            response_msg["workflow_id"] = workflow_id
+            await self.send_message(response_msg)
             log.info(f"Chat workflow {last_message.workflow_id} completed successfully with job_id {job_id}")
 
         except Exception as e:
@@ -172,10 +181,12 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                 {
                     "type": "error",
                     "message": f"Error processing chat workflow: {str(e)}",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
                 }
             )
-            # Send completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            # Send completion even on error with job_id and workflow_id
+            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
             raise
         finally:
             # Always mark processing as complete

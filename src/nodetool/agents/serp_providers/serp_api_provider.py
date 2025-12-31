@@ -183,7 +183,7 @@ class SerpApiProvider(SerpProvider):
         return _remove_base64_images(result_data)
 
     async def search_jobs(
-        self, query: str, location: str | None = None, _num_results: int = 10
+        self, query: str, location: str | None = None, num_results: int = 10
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches for jobs using SerpApi's Google Jobs engine.
@@ -210,7 +210,7 @@ class SerpApiProvider(SerpProvider):
         return _remove_base64_images(result_data)
 
     async def search_lens(
-        self, image_url: str, country: str | None = None, _num_results: int = 10
+        self, image_url: str, country: str | None = None, num_results: int = 10
     ) -> dict[str, Any] | ErrorResponse:
         """
         Searches with an image URL using SerpApi's Google Lens engine.
@@ -242,7 +242,7 @@ class SerpApiProvider(SerpProvider):
         ll: str | None = None,
         map_type: str = "search",
         data_id: str | None = None,
-        _num_results: int = 10,
+        num_results: int = 10,
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Maps using SerpApi.
@@ -309,7 +309,7 @@ class SerpApiProvider(SerpProvider):
         max_price: int | None = None,
         condition: str | None = None,
         sort_by: str | None = None,
-        _num_results: int = 10,
+        num_results: int = 10,
     ) -> list[dict[str, Any]] | ErrorResponse:
         """
         Searches Google Shopping using SerpApi.

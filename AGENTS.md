@@ -38,6 +38,21 @@ pip install -e .
 - Test with coverage: `pytest --cov=src`
 - Lint and format: `ruff check .`, `black .`, `mypy .`
 
+### Validating Changes
+
+Before submitting or committing changes, always run these validation steps:
+
+1. **Run linting:** `ruff check .` - Fix any issues reported
+2. **Run tests:** `pytest -q` - Ensure all tests pass
+3. **Type checking:** `mypy .` - Check for type errors (if making changes to typed code)
+
+Example workflow:
+```bash
+ruff check .  # Fix linting issues
+pytest -q     # Run quick tests
+mypy .        # Type check (optional for quick fixes)
+```
+
 ## Coding Style & Naming Conventions
 
 - Language: Python 3.11, type hints required for new/changed code.

@@ -415,15 +415,6 @@ class OpenAICompat:
         # Handle literals (strings, numbers, booleans, None)
         if isinstance(node, ast.Constant):
             return node.value
-        # Handle strings (Python < 3.8)
-        elif isinstance(node, ast.Str):
-            return node.s
-        # Handle numbers (Python < 3.8)
-        elif isinstance(node, ast.Num):
-            return node.n
-        # Handle booleans and None (Python < 3.8)
-        elif isinstance(node, ast.NameConstant):
-            return node.value
         # Handle lists
         elif isinstance(node, ast.List):
             return [self._ast_to_value(elem) for elem in node.elts]

@@ -33,19 +33,19 @@ class SafeJSONEncoder(json.JSONEncoder):
     Other non-serializable types are converted to their string representation.
     """
 
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, bytes):
+    def default(self, o: Any) -> Any:
+        if isinstance(o, bytes):
             # Encode bytes as base64 with a marker for decoding
-            return {"__bytes__": base64.b64encode(obj).decode("ascii")}
-        if isinstance(obj, datetime):
-            return {"__datetime__": obj.isoformat()}
-        if isinstance(obj, set):
-            return {"__set__": list(obj)}
+            return {"__bytes__": base64.b64encode(o).decode("ascii")}
+        if isinstance(o, datetime):
+            return {"__datetime__": o.isoformat()}
+        if isinstance(o, set):
+            return {"__set__": list(o)}
         # For any other non-serializable type, convert to string
         try:
-            return super().default(obj)
+            return super().default(o)
         except TypeError:
-            return {"__repr__": repr(obj)}
+            return {"__repr__": repr(o)}
 
 
 def _decode_special_types(obj: Any) -> Any:

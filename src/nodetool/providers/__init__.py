@@ -159,7 +159,18 @@ def import_providers():
 
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
-_provider_cache_lock = asyncio.Lock()
+_provider_cache_lock: asyncio.Lock | None = None
+
+
+def _get_provider_cache_lock() -> asyncio.Lock:
+    """Get or create the provider cache lock lazily.
+
+    This ensures the lock is created in the correct event loop.
+    """
+    global _provider_cache_lock
+    if _provider_cache_lock is None:
+        _provider_cache_lock = asyncio.Lock()
+    return _provider_cache_lock
 
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
@@ -176,7 +187,7 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
     Raises:
         ValueError: If the provider type is not supported
     """
-    async with _provider_cache_lock:
+    async with _get_provider_cache_lock():
         if provider_type in _provider_cache:
             return _provider_cache[provider_type]
 

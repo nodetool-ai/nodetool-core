@@ -44,7 +44,7 @@ import json
 import readline
 import sys
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -154,7 +154,7 @@ class ChatWebSocketClient:
             "role": "user",
             "content": content,
             "model": self.current_model,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         if self.current_tools:

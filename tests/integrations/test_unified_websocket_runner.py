@@ -242,7 +242,7 @@ class TestUnifiedWebSocketRunnerCommands:
         runner.mode = WebSocketMode.TEXT
 
         command = WebSocketCommand(command=CommandType.SET_MODE, data={"mode": "binary"})
-        result = await wait_for(runner.handle_command(command))
+        await wait_for(runner.handle_command(command))
 
         assert runner.mode == WebSocketMode.BINARY
 

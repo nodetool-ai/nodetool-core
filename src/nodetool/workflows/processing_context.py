@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - playwright is optional
 
 from io import BytesIO
 from pickle import loads
-from typing import IO, Any, AsyncGenerator, Callable, Dict
+from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
 
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
@@ -246,7 +246,7 @@ class ProcessingContext:
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
-        ui_tool_names: set[str] | None = None,
+        ui_tool_names: Set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"
@@ -1674,10 +1674,12 @@ class ProcessingContext:
             AudioRef: The converted AudioRef object.
 
         """
-        # Extract audio metadata from the segment
-        duration = len(audio_segment) / 1000.0  # pydub duration is in milliseconds
-        sample_rate = audio_segment.frame_rate
-        channels = audio_segment.channels
+        metadata = {
+            "sample_rate": audio_segment.frame_rate,
+            "channels": audio_segment.channels,
+            "format": "wav",
+            "duration_seconds": audio_segment.duration_seconds,
+        }
 
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
@@ -1686,26 +1688,19 @@ class ProcessingContext:
             self._memory_set(memory_uri, audio_segment)
             # Also populate data field with binary representation for consistency
             buffer = BytesIO()
-            audio_segment.export(buffer, format="mp3")
+            audio_segment.export(buffer, format="wav")
             buffer.seek(0)
-            return AudioRef(
-                uri=memory_uri,
-                data=buffer.read(),
-                duration=duration,
-                sample_rate=sample_rate,
-                channels=channels,
-            )
+            return AudioRef(uri=memory_uri, data=buffer.read(), metadata=metadata)
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
-            audio_segment.export(buffer, format="mp3")
+            audio_segment.export(buffer, format="wav")
             buffer.seek(0)
-            audio_ref = await self.audio_from_io(buffer, name=name, parent_id=parent_id)
-            # Populate metadata on the returned ref
-            audio_ref.duration = duration
-            audio_ref.sample_rate = sample_rate
-            audio_ref.channels = channels
-            return audio_ref
+            ref = await self.audio_from_io(
+                buffer, name=name, parent_id=parent_id, content_type="audio/wav"
+            )
+            ref.metadata = metadata
+            return ref
 
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
@@ -1866,8 +1861,14 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        # Extract image dimensions
-        width, height = image.size
+        # Build metadata from PIL Image properties if not provided
+        if metadata is None:
+            metadata = {
+                "width": image.width,
+                "height": image.height,
+                "mode": image.mode,
+                "format": "png",
+            }
 
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
@@ -1905,6 +1906,22 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
+        # Build metadata from numpy array shape if not provided
+        if metadata is None:
+            if image.ndim == 2:
+                height, width = image.shape
+                channels = 1
+            elif image.ndim == 3:
+                height, width, channels = image.shape
+            else:
+                height, width, channels = 0, 0, 0
+            metadata = {
+                "width": width,
+                "height": height,
+                "channels": channels,
+                "format": "png",
+            }
+
         pil_img = self._numpy_to_pil_image(image)
         return await self.image_from_pil(pil_img, name=name, metadata=metadata)
 
@@ -2004,17 +2021,34 @@ class ProcessingContext:
 
         from nodetool.media.video.video_utils import export_to_video
 
-        # Calculate duration based on frame count and fps
-        num_frames = len(frames)
-        duration = num_frames / fps if fps > 0 else 0.0
+        # Build metadata from frames
+        frame_count = len(frames)
+        width, height = 0, 0
+        if frame_count > 0:
+            first_frame = frames[0]
+            PIL_Image, _ = _ensure_pil()
+            if isinstance(first_frame, PIL_Image.Image):
+                width, height = first_frame.size
+            else:
+                # numpy array
+                if first_frame.ndim >= 2:
+                    height, width = first_frame.shape[:2]
+
+        metadata = {
+            "fps": fps,
+            "frame_count": frame_count,
+            "width": width,
+            "height": height,
+            "format": "mp4",
+            "duration_seconds": frame_count / fps if fps > 0 else None,
+        }
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
-            video_ref = await self.video_from_io(open(temp.name, "rb"), name=name, parent_id=parent_id)
-            # Populate metadata on the returned ref
-            video_ref.duration = duration
-            video_ref.format = "mp4"
-            return video_ref
+            with open(temp.name, "rb") as f:
+                ref = await self.video_from_io(f)
+            ref.metadata = metadata
+            return ref
 
     async def video_from_numpy(
         self,
@@ -2037,9 +2071,20 @@ class ProcessingContext:
         # Convert numpy array to list of frames for the utility function
         video_frames = list(video)
 
-        # Calculate duration based on frame count and fps
-        num_frames = len(video_frames)
-        duration = num_frames / fps if fps > 0 else 0.0
+        # Build metadata from numpy array shape (T, H, W, C)
+        frame_count = len(video_frames)
+        width, height = 0, 0
+        if frame_count > 0 and video.ndim >= 3:
+            height, width = video.shape[1], video.shape[2]
+
+        metadata = {
+            "fps": fps,
+            "frame_count": frame_count,
+            "width": width,
+            "height": height,
+            "format": "mp4",
+            "duration_seconds": frame_count / fps if fps > 0 else None,
+        }
 
         # Use shared video utility for consistent behavior
         video_bytes = _export_to_video_bytes(video_frames, fps=fps)
@@ -2047,11 +2092,9 @@ class ProcessingContext:
         # Create BytesIO from the video bytes
         buffer = BytesIO(video_bytes)
         buffer.seek(0)
-        video_ref = await self.video_from_io(buffer, name=name, parent_id=parent_id)
-        # Populate metadata on the returned ref
-        video_ref.duration = duration
-        video_ref.format = "mp4"
-        return video_ref
+        ref = await self.video_from_io(buffer, name=name, parent_id=parent_id)
+        ref.metadata = metadata
+        return ref
 
     async def url_to_base64(self, url: str) -> str:
         """
@@ -2164,7 +2207,8 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-    ):
+        metadata: Dict[str, Any] | None = None,
+    ) -> VideoRef:
         """
         Creates an VideoRef from an IO object.
 
@@ -2172,6 +2216,7 @@ class ProcessingContext:
             context (ProcessingContext): The processing context.
             buffer (IO): The IO object.
             name (Optional[str], optional): The name of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             VideoRef: The VideoRef object.
@@ -2180,11 +2225,17 @@ class ProcessingContext:
             asset = await self.create_asset(name, "video/mpeg", buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
-            return VideoRef(asset_id=asset.id, uri=url)
+            return VideoRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            return VideoRef(data=buffer.read())
+            return VideoRef(data=buffer.read(), metadata=metadata)
 
-    async def video_from_bytes(self, b: bytes, name: str | None = None, parent_id: str | None = None) -> VideoRef:
+    async def video_from_bytes(
+        self,
+        b: bytes,
+        name: str | None = None,
+        parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> VideoRef:
         """
         Creates a VideoRef from a bytes object.
 
@@ -2192,11 +2243,12 @@ class ProcessingContext:
             b (bytes): The bytes object.
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             VideoRef: The VideoRef object.
         """
-        return await self.video_from_io(BytesIO(b), name=name, parent_id=parent_id)
+        return await self.video_from_io(BytesIO(b), name=name, parent_id=parent_id, metadata=metadata)
 
     async def video_to_frames(self, video: VideoRef, fps: int = 1) -> list[PIL.Image.Image]:
         """
