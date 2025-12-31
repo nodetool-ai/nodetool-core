@@ -40,13 +40,14 @@ jobs:
         run: |
           ty check src \
             --ignore unresolved-import \
+            --ignore possibly-missing-attribute \
+            --error invalid-type-form \
+            --error invalid-attribute-access \
+            --error invalid-return-type \
             --warn invalid-method-override \
             --warn invalid-argument-type \
             --warn unresolved-attribute \
-            --warn invalid-attribute-access \
             --warn missing-argument \
-            --warn invalid-type-form \
-            --warn invalid-return-type \
             --warn invalid-assignment \
             --warn parameter-already-assigned \
             --warn call-non-callable \
@@ -58,8 +59,7 @@ jobs:
             --warn not-subscriptable \
             --warn unresolved-reference \
             --warn too-many-positional-arguments \
-            --warn invalid-parameter-default \
-            --ignore possibly-missing-attribute
+            --warn invalid-parameter-default
 
       - name: Run tests
         run: |
