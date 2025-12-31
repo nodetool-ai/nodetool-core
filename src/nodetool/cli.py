@@ -138,10 +138,151 @@ def _print_model_table(models: list[UnifiedModel], title: str) -> None:
     console.print(table)
 
 
+def _get_version() -> str:
+    """Get the nodetool version from package metadata."""
+    try:
+        from importlib.metadata import version
+
+        for dist_name in ["nodetool", "nodetool-core", "nodetool_core"]:
+            try:
+                return version(dist_name)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return "unknown"
+
+
 @click.group()
+@click.version_option(version=_get_version(), prog_name="nodetool")
 def cli():
     """Nodetool CLI - A tool for managing and running Nodetool workflows and packages."""
     pass
+
+
+@cli.command("info")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON instead of a table.")
+def info_cmd(as_json: bool):
+    """Display system and environment information.
+
+    Shows Python version, nodetool version, installed AI provider packages,
+    and key environment variables (without exposing secrets).
+
+    Examples:
+      # Display system info as a table
+      nodetool info
+
+      # Display system info as JSON
+      nodetool info --json
+    """
+    import json
+    import platform
+
+    from nodetool.config.environment import Environment
+
+    # Gather system information
+    info_data: dict[str, Any] = {
+        "nodetool_version": _get_version(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "architecture": platform.machine(),
+    }
+
+    # Check for key AI provider packages
+    ai_packages = [
+        "openai",
+        "anthropic",
+        "google-genai",
+        "ollama",
+        "huggingface_hub",
+        "fal-client",
+        "replicate",
+    ]
+    installed_packages: dict[str, str] = {}
+    try:
+        from importlib.metadata import version
+
+        for pkg in ai_packages:
+            try:
+                installed_packages[pkg] = version(pkg)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    info_data["ai_packages"] = installed_packages
+
+    # Check environment configuration (without exposing secrets)
+    env_info: dict[str, str] = {
+        "ENV": Environment.get("ENV", "development"),
+        "LOG_LEVEL": Environment.get("LOG_LEVEL", "INFO"),
+        "AUTH_PROVIDER": Environment.get("AUTH_PROVIDER", "local"),
+    }
+
+    # Check if API keys are configured (show as "configured" or "not set")
+    api_key_vars = [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "HF_TOKEN",
+        "REPLICATE_API_TOKEN",
+        "FAL_API_KEY",
+        "OLLAMA_API_URL",
+    ]
+    api_keys_status: dict[str, str] = {}
+    for var in api_key_vars:
+        value = Environment.get(var, "")
+        api_keys_status[var] = "configured" if value else "not set"
+    info_data["api_keys"] = api_keys_status
+    info_data["environment"] = env_info
+
+    if as_json:
+        click.echo(json.dumps(info_data, indent=2))
+        return
+
+    # Display as rich tables
+    console.print()
+    console.print(Panel.fit("[bold cyan]NodeTool System Information[/]"))
+    console.print()
+
+    # System info table
+    sys_table = Table(title="System")
+    sys_table.add_column("Property", style="cyan")
+    sys_table.add_column("Value", style="green")
+    sys_table.add_row("NodeTool Version", info_data["nodetool_version"])
+    sys_table.add_row("Python Version", info_data["python_version"])
+    sys_table.add_row("Platform", info_data["platform"])
+    sys_table.add_row("Architecture", info_data["architecture"])
+    console.print(sys_table)
+    console.print()
+
+    # AI packages table
+    if installed_packages:
+        pkg_table = Table(title="Installed AI Packages")
+        pkg_table.add_column("Package", style="cyan")
+        pkg_table.add_column("Version", style="green")
+        for pkg, ver in sorted(installed_packages.items()):
+            pkg_table.add_row(pkg, ver)
+        console.print(pkg_table)
+        console.print()
+
+    # Environment table
+    env_table = Table(title="Environment")
+    env_table.add_column("Variable", style="cyan")
+    env_table.add_column("Value", style="green")
+    for var, val in env_info.items():
+        env_table.add_row(var, val)
+    console.print(env_table)
+    console.print()
+
+    # API keys status table
+    keys_table = Table(title="API Keys Status")
+    keys_table.add_column("Variable", style="cyan")
+    keys_table.add_column("Status", style="yellow")
+    for var, status in api_keys_status.items():
+        status_style = "green" if status == "configured" else "red"
+        keys_table.add_row(var, f"[{status_style}]{status}[/]")
+    console.print(keys_table)
+    console.print()
 
 
 @cli.command("mcp")
