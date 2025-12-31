@@ -2,7 +2,7 @@
 Deployment manager orchestrator for all deployment types.
 
 This module provides a unified interface for managing deployments across
-different platforms (self-hosted, RunPod, GCP). It handles:
+different platforms (self-hosted, RunPod, GCP, Modal). It handles:
 - Change detection (comparing current vs desired state)
 - Plan generation (showing what will change)
 - Deployment orchestration
@@ -16,11 +16,13 @@ from typing import Any, Dict, List, Optional, Union
 
 from nodetool.config.deployment import (
     GCPDeployment,
+    ModalDeployment,
     RunPodDeployment,
     SelfHostedDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
+from nodetool.deploy.modal import ModalDeployer
 from nodetool.deploy.runpod import RunPodDeployer
 from nodetool.deploy.self_hosted import SelfHostedDeployer
 from nodetool.deploy.state import StateManager
@@ -74,12 +76,15 @@ class DeploymentManager:
             elif isinstance(deployment, GCPDeployment):
                 info["project"] = deployment.project_id
                 info["region"] = deployment.region
+            elif isinstance(deployment, ModalDeployment):
+                info["app_name"] = deployment.app_name
+                info["app_id"] = state.get("app_id") if state else None
 
             deployments.append(info)
 
         return deployments
 
-    def get_deployment(self, name: str) -> SelfHostedDeployment | RunPodDeployment | GCPDeployment:
+    def get_deployment(self, name: str) -> SelfHostedDeployment | RunPodDeployment | GCPDeployment | ModalDeployment:
         """
         Get deployment configuration by name.
 
@@ -136,6 +141,13 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.plan()
+        elif isinstance(deployment, ModalDeployment):
+            deployer = ModalDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.plan()
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
@@ -185,6 +197,13 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.apply(dry_run=dry_run)
+        elif isinstance(deployment, ModalDeployment):
+            deployer = ModalDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.apply(dry_run=dry_run)
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
@@ -219,6 +238,13 @@ class DeploymentManager:
             return deployer.status()
         elif isinstance(deployment, GCPDeployment):
             deployer = GCPDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.status()
+        elif isinstance(deployment, ModalDeployment):
+            deployer = ModalDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -273,6 +299,13 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.logs(service=service, follow=follow, tail=tail)
+        elif isinstance(deployment, ModalDeployment):
+            deployer = ModalDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.logs(service=service, follow=follow, tail=tail)
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
@@ -311,6 +344,13 @@ class DeploymentManager:
             return deployer.destroy()
         elif isinstance(deployment, GCPDeployment):
             deployer = GCPDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.destroy()
+        elif isinstance(deployment, ModalDeployment):
+            deployer = ModalDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,

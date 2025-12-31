@@ -22,6 +22,7 @@ class DeploymentType(str, Enum):
     SELF_HOSTED = "self-hosted"
     RUNPOD = "runpod"
     GCP = "gcp"
+    MODAL = "modal"
 
 
 class DeploymentStatus(str, Enum):
@@ -387,6 +388,73 @@ class GCPDeployment(BaseModel):
 
 
 # ============================================================================
+# Modal Deployment Models
+# ============================================================================
+
+
+class ModalGPUConfig(BaseModel):
+    """GPU configuration for Modal deployments."""
+
+    type: str = Field("T4", description="GPU type (e.g., T4, A10G, A100, H100)")
+    count: int = Field(1, ge=1, description="Number of GPUs")
+
+
+class ModalResourceConfig(BaseModel):
+    """Resource configuration for Modal deployments."""
+
+    cpu: float = Field(1.0, ge=0.125, description="Number of CPUs (can be fractional)")
+    memory: int = Field(1024, ge=128, description="Memory in MB")
+    gpu: Optional[ModalGPUConfig] = Field(None, description="GPU configuration (optional)")
+    timeout: int = Field(3600, ge=1, description="Function timeout in seconds")
+    container_idle_timeout: int = Field(300, ge=0, description="Seconds before idle container is stopped")
+    allow_concurrent_inputs: int = Field(1, ge=1, description="Max concurrent inputs per container")
+
+
+class ModalImageConfig(BaseModel):
+    """Docker image configuration for Modal deployments."""
+
+    base_image: str = Field(
+        "python:3.11-slim",
+        description="Base Docker image (e.g., python:3.11-slim, modal-labs/debian-slim)"
+    )
+    python_version: str = Field("3.11", description="Python version for the environment")
+    pip_packages: List[str] = Field(default_factory=list, description="Pip packages to install")
+    apt_packages: List[str] = Field(default_factory=list, description="Apt packages to install")
+    dockerfile: Optional[str] = Field(None, description="Path to custom Dockerfile")
+    context_dir: Optional[str] = Field(None, description="Docker build context directory")
+
+
+class ModalState(BaseModel):
+    """Runtime state for Modal deployment."""
+
+    app_id: Optional[str] = None
+    function_url: Optional[str] = None
+    last_deployed: Optional[datetime] = None
+    status: DeploymentStatus = DeploymentStatus.UNKNOWN
+    app_name: Optional[str] = None
+
+
+class ModalDeployment(BaseModel):
+    """Modal serverless deployment configuration."""
+
+    type: Literal[DeploymentType.MODAL] = DeploymentType.MODAL
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    app_name: str = Field(..., description="Modal app name")
+    function_name: str = Field("handler", description="Name of the deployed function")
+    image: ModalImageConfig = Field(default_factory=ModalImageConfig)
+    resources: ModalResourceConfig = Field(default_factory=ModalResourceConfig)
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables")
+    secrets: List[str] = Field(default_factory=list, description="Modal secret names to attach")
+    region: Optional[str] = Field(None, description="Preferred region (e.g., 'us-east', 'eu-west')")
+    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
+    state: ModalState = Field(default_factory=ModalState)
+
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        return self.state.function_url
+
+
+# ============================================================================
 # Main Configuration Models
 # ============================================================================
 
@@ -407,7 +475,7 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
+    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment | ModalDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
