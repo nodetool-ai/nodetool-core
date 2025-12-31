@@ -312,7 +312,9 @@ class TestChatWorkflowMessageProcessorProcess:
 
         async def mock_run_workflow(*args, **kwargs):
             raise ValueError("Test error")
-            yield
+            # Make this an async generator (unreachable but required for typing)
+            if False:
+                yield  # pragma: no cover
 
         with patch(
             "nodetool.messaging.chat_workflow_message_processor.run_workflow",
@@ -497,7 +499,9 @@ class TestChatWorkflowWebSocketEventConsistency:
 
         async def mock_run_workflow(*args, **kwargs):
             raise ValueError("Test error")
-            yield
+            # Make this an async generator (unreachable but required for typing)
+            if False:
+                yield  # pragma: no cover
 
         with patch(
             "nodetool.messaging.chat_workflow_message_processor.run_workflow",
