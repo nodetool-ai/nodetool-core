@@ -469,8 +469,9 @@ class HuggingFaceProvider(BaseProvider):
         super().__init__()
         if "HF_TOKEN" not in secrets or not secrets["HF_TOKEN"]:
             # Fallback to environment variable if not in secrets
-            if os.environ.get("HF_TOKEN"):
-                secrets["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            hf_token = os.environ.get("HF_TOKEN")
+            if hf_token:
+                secrets["HF_TOKEN"] = hf_token
             else:
                 log.warning("HF_TOKEN not found in secrets, HuggingFace provider will not be initialized")
                 raise ValueError("HF_TOKEN is required but not provided")

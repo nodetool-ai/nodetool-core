@@ -4,7 +4,7 @@ Collection indexing service shared by API and lightweight server routes.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from nodetool.indexing.ingestion import find_input_nodes
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -54,13 +54,14 @@ async def index_file_to_collection(
         workflow = await processing_context.get_workflow(workflow_id)
         assert workflow is not None, "Workflow not found"
         req.graph = workflow.get_api_graph()
-        req.params = {}
+        params: dict[str, Any] = {}
 
         collection_input, file_input = find_input_nodes(req.graph.model_dump())
         if collection_input:
-            req.params[collection_input] = Collection(name=name)
+            params[collection_input] = Collection(name=name)
         if file_input:
-            req.params[file_input] = FilePath(path=file_path)
+            params[file_input] = FilePath(path=file_path)
+        req.params = params
 
         async for msg in run_workflow(req):
             if isinstance(msg, JobUpdate):
