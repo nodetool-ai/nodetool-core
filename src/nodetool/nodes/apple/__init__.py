@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import sys as _sys
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 from nodetool.workflows.base_node import BaseNode
 
@@ -60,7 +60,7 @@ def _make_node_class(name: str, cacheable: bool) -> type[BaseNode]:
         "is_cacheable": classmethod(lambda _cls: cacheable),
     }
 
-    return type(name, (BaseNode,), attrs)
+    return cast(type[BaseNode], type(name, (BaseNode,), attrs))
 
 
 # ---------------------------------------------------------------------------

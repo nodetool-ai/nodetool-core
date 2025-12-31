@@ -20,7 +20,7 @@ class Secret:
 
 
 _registry: List[Setting] = []
-_secrets_registry: List[Setting] = []
+_secrets_registry: List[Secret] = []
 
 
 def register_secret(
@@ -28,7 +28,7 @@ def register_secret(
     env_var: str,
     group: str,
     description: str,
-) -> List[Setting]:
+) -> List[Secret]:
     """Register a new secret."""
     secret = Secret(package_name=package_name, env_var=env_var, group=group, description=description)
     _secrets_registry.append(secret)
