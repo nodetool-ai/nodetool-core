@@ -3879,7 +3879,7 @@ cli.add_command(sync)
 
 
 # Add migrations group to the main CLI
-from nodetool.cli.migrations import migrations
+from nodetool.cli_migrations import migrations
 
 cli.add_command(migrations)
 

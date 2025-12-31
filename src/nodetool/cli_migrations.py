@@ -19,8 +19,6 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from nodetool.migrations import MIGRATIONS_DIR
-
 console = Console()
 
 
