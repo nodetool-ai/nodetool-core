@@ -10,10 +10,10 @@ import tempfile
 import time
 from pathlib import Path
 
+import docker.errors
 import pytest
 
 import docker
-import docker.errors
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
