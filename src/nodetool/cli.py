@@ -3878,6 +3878,12 @@ def sync_workflow(workflow_id: str, server_url: str):
 cli.add_command(sync)
 
 
+# Add migrations group to the main CLI
+from nodetool.cli.migrations import migrations
+
+cli.add_command(migrations)
+
+
 # ---- Proxy Commands ----
 
 
