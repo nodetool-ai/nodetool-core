@@ -479,7 +479,7 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             await asyncio.wait_for(self._migrate_table_impl(), timeout=30.0)
             log.info(f"Migration completed for table {self.table_name}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning(f"Migration timeout for {self.table_name}, attempting checkpoint recovery")
             try:
                 await self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")

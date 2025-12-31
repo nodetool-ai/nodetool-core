@@ -50,7 +50,7 @@ class Multiply(BaseNode):
 async def test_run_event_creation():
     """Test creating and appending events."""
     run_id = "test-run-1"
-    
+
     # Create first event
     event1 = await RunEvent.append_event(
         run_id=run_id,
@@ -60,7 +60,7 @@ async def test_run_event_creation():
     assert event1.seq == 0
     assert event1.event_type == "RunCreated"
     assert event1.run_id == run_id
-    
+
     # Create second event
     event2 = await RunEvent.append_event(
         run_id=run_id,
@@ -70,7 +70,7 @@ async def test_run_event_creation():
     )
     assert event2.seq == 1
     assert event2.node_id == "node1"
-    
+
     # Query events
     events = await RunEvent.get_events(run_id=run_id)
     assert len(events) == 2
@@ -82,38 +82,38 @@ async def test_run_event_creation():
 async def test_run_projection_update():
     """Test projection updates from events."""
     run_id = "test-run-2"
-    
+
     # Create events
     await RunEvent.append_event(
         run_id=run_id,
         event_type="RunCreated",
         payload={"graph": {}, "params": {}},
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeScheduled",
         payload={"node_type": "Multiply", "attempt": 1},
         node_id="node1",
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeStarted",
         payload={"attempt": 1, "inputs": {}},
         node_id="node1",
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeCompleted",
         payload={"attempt": 1, "outputs": {"output": 10}, "duration_ms": 100},
         node_id="node1",
     )
-    
+
     # Rebuild projection
     projection = await RunProjection.rebuild_from_events(run_id)
-    
+
     assert projection.status == "running"
     assert projection.last_event_seq == 3
     assert "node1" in projection.node_states
@@ -125,25 +125,25 @@ async def test_run_projection_update():
 async def test_projection_idempotency():
     """Test that replaying events produces same projection."""
     run_id = "test-run-3"
-    
+
     # Create events
     await RunEvent.append_event(
         run_id=run_id,
         event_type="RunCreated",
         payload={"graph": {}, "params": {}},
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeScheduled",
         payload={"node_type": "Multiply", "attempt": 1},
         node_id="node1",
     )
-    
+
     # Build projection twice
     projection1 = await RunProjection.rebuild_from_events(run_id)
     projection2 = await RunProjection.rebuild_from_events(run_id)
-    
+
     # Should be identical
     assert projection1.status == projection2.status
     assert projection1.last_event_seq == projection2.last_event_seq
@@ -156,19 +156,19 @@ async def test_run_lease_acquisition():
     run_id = "test-run-4"
     worker1 = "worker-1"
     worker2 = "worker-2"
-    
+
     # Worker 1 acquires lease
     lease1 = await RunLease.acquire(run_id, worker1, ttl_seconds=1)
     assert lease1 is not None
     assert lease1.worker_id == worker1
-    
+
     # Worker 2 cannot acquire while lease is held
     lease2 = await RunLease.acquire(run_id, worker2, ttl_seconds=1)
     assert lease2 is None
-    
+
     # Wait for lease to expire
     await asyncio.sleep(1.5)
-    
+
     # Worker 2 can now acquire expired lease
     lease3 = await RunLease.acquire(run_id, worker2, ttl_seconds=1)
     assert lease3 is not None
@@ -180,14 +180,14 @@ async def test_event_logger_convenience_methods():
     """Test WorkflowEventLogger convenience methods."""
     run_id = "test-run-5"
     logger = WorkflowEventLogger(run_id)
-    
+
     # Log various events
     await logger.log_run_created(graph={}, params={}, user_id="test-user")
     await logger.log_node_scheduled("node1", "Multiply", attempt=1)
     await logger.log_node_started("node1", attempt=1, inputs={})
     await logger.log_node_completed("node1", attempt=1, outputs={}, duration_ms=100)
     await logger.log_run_completed(outputs={}, duration_ms=1000)
-    
+
     # Verify events were logged
     events = await RunEvent.get_events(run_id=run_id)
     assert len(events) == 5
@@ -234,31 +234,31 @@ async def test_workflow_runner_logs_events():
         ),
     ]
     api_graph = APIGraph(nodes=nodes, edges=edges)
-    
+
     req = RunJobRequest(graph=api_graph)
     ctx = ProcessingContext(message_queue=queue.Queue())
-    
+
     job_id = "test-job-events"
     runner = WorkflowRunner(job_id=job_id, enable_event_logging=True)
-    
+
     # Run workflow
     await asyncio.wait_for(runner.run(req, ctx), timeout=5.0)
-    
+
     # Verify events were logged
     events = await RunEvent.get_events(run_id=job_id)
     assert len(events) > 0
-    
+
     # Check for run events
     run_created = next((e for e in events if e.event_type == "RunCreated"), None)
     assert run_created is not None
-    
+
     run_completed = next((e for e in events if e.event_type == "RunCompleted"), None)
     assert run_completed is not None
-    
+
     # Check for node events
     node_scheduled = [e for e in events if e.event_type == "NodeScheduled"]
     assert len(node_scheduled) > 0
-    
+
     node_completed = [e for e in events if e.event_type == "NodeCompleted"]
     assert len(node_completed) > 0
 
@@ -267,14 +267,14 @@ async def test_workflow_runner_logs_events():
 async def test_recovery_service_determine_resumption():
     """Test recovery service identifies incomplete nodes."""
     run_id = "test-run-6"
-    
+
     # Simulate a run with incomplete nodes
     await RunEvent.append_event(
         run_id=run_id,
         event_type="RunCreated",
         payload={"graph": {}, "params": {}},
     )
-    
+
     # Node 1: scheduled but never started
     await RunEvent.append_event(
         run_id=run_id,
@@ -282,7 +282,7 @@ async def test_recovery_service_determine_resumption():
         payload={"node_type": "Multiply", "attempt": 1},
         node_id="node1",
     )
-    
+
     # Node 2: started but not completed (simulates crash)
     await RunEvent.append_event(
         run_id=run_id,
@@ -296,7 +296,7 @@ async def test_recovery_service_determine_resumption():
         payload={"attempt": 1, "inputs": {}},
         node_id="node2",
     )
-    
+
     # Node 3: completed successfully
     await RunEvent.append_event(
         run_id=run_id,
@@ -316,26 +316,26 @@ async def test_recovery_service_determine_resumption():
         payload={"attempt": 1, "outputs": {}, "duration_ms": 100},
         node_id="node3",
     )
-    
+
     # Build projection and determine resumption
     projection = await RunProjection.rebuild_from_events(run_id)
     recovery = WorkflowRecoveryService()
-    
+
     from nodetool.workflows.graph import Graph
     graph = Graph(nodes=[], edges=[])  # Empty graph for this test
-    
+
     resumption_plan = await recovery.determine_resumption_points(projection, graph)
-    
+
     # Should resume node1 (never started) and node2 (incomplete)
     assert "node1" in resumption_plan
     assert resumption_plan["node1"]["action"] == "reschedule"
     assert resumption_plan["node1"]["reason"] == "never_started"
-    
+
     assert "node2" in resumption_plan
     assert resumption_plan["node2"]["action"] == "reschedule"
     assert resumption_plan["node2"]["reason"] == "incomplete_execution"
     assert resumption_plan["node2"]["attempt"] == 2  # Should retry with new attempt
-    
+
     # Node 3 should not be in resumption plan (completed)
     assert "node3" not in resumption_plan
 
@@ -344,7 +344,7 @@ async def test_recovery_service_determine_resumption():
 async def test_incomplete_nodes_detection():
     """Test detection of incomplete nodes in projection."""
     run_id = "test-run-7"
-    
+
     # Create projection with mixed node states
     projection = RunProjection(
         run_id=run_id,
@@ -357,9 +357,9 @@ async def test_incomplete_nodes_detection():
             "node4": {"status": "completed"},
         },
     )
-    
+
     incomplete = projection.get_incomplete_nodes()
-    
+
     assert len(incomplete) == 2
     assert "node2" in incomplete
     assert "node3" in incomplete
@@ -371,49 +371,49 @@ async def test_incomplete_nodes_detection():
 async def test_event_query_filters():
     """Test event querying with filters."""
     run_id = "test-run-8"
-    
+
     # Create diverse events
     await RunEvent.append_event(
         run_id=run_id,
         event_type="RunCreated",
         payload={},
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeScheduled",
         payload={},
         node_id="node1",
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeScheduled",
         payload={},
         node_id="node2",
     )
-    
+
     await RunEvent.append_event(
         run_id=run_id,
         event_type="NodeCompleted",
         payload={},
         node_id="node1",
     )
-    
+
     # Query by event type
     scheduled_events = await RunEvent.get_events(
         run_id=run_id,
         event_type="NodeScheduled",
     )
     assert len(scheduled_events) == 2
-    
+
     # Query by node_id
     node1_events = await RunEvent.get_events(
         run_id=run_id,
         node_id="node1",
     )
     assert len(node1_events) == 2
-    
+
     # Query with seq range
     events_after_0 = await RunEvent.get_events(
         run_id=run_id,

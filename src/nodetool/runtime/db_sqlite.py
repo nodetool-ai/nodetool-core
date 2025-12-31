@@ -318,18 +318,15 @@ class SQLiteScopeResources(DBResources):
         """Clean up scope resources and return connection to pool.
 
         For per-scope cleanup, we return the connection to the pool
-        for reuse. WAL checkpointing happens when the pool is closed
-        or connections are evicted.
+        for reuse. The pool itself is NOT closed here - that happens
+        when the session-scoped pool fixture is torn down.
         """
         try:
-            # First, release all connections held by adapters back to the pool
+            # Release all connections held by adapters back to the pool
             if self.pool is not None:
                 for adapter in self._adapters.values():
                     if hasattr(adapter, "connection") and adapter.connection is not None:
                         await self.pool.release(adapter.connection)
-
-                # Now close all pooled connections
-                await self.pool.close_all()
 
             # Clear adapter cache
             self._adapters.clear()

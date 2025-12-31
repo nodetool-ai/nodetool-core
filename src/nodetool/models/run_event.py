@@ -59,17 +59,17 @@ EventType = Literal[
 class RunEvent(DBModel):
     """
     Represents a single event in a workflow run's execution history.
-    
+
     **AUDIT-ONLY**: Events form an append-only log for observability and debugging.
     They are NOT the source of truth. The mutable state tables (run_state, run_node_state)
     are the authoritative source for workflow state.
-    
+
     Key characteristics:
     - Events are immutable once written
     - Sequence numbers are best-effort monotonic per run
     - Event writes may fail without breaking workflow execution
     - Used for audit trails, debugging, and timeline visualization
-    
+
     Do NOT use events for scheduling, recovery, or correctness decisions
     """
 
@@ -96,17 +96,17 @@ class RunEvent(DBModel):
     ):
         """
         Create and append a new event to the log.
-        
+
         Args:
             run_id: The workflow run identifier
             seq: Monotonic sequence number for this run
             event_type: Type of event (see EventType)
             payload: Event-specific data
             node_id: Optional node identifier for node-specific events
-            
+
         Returns:
             The created RunEvent
-            
+
         Note:
             This operation is idempotent. If an event with the same (run_id, seq)
             already exists, the existing event is returned without error.
@@ -127,10 +127,10 @@ class RunEvent(DBModel):
     async def get_next_seq(cls, run_id: str) -> int:
         """
         Get the next sequence number for a run.
-        
+
         Args:
             run_id: The workflow run identifier
-            
+
         Returns:
             The next available sequence number (max(seq) + 1, or 0 if no events)
         """
@@ -156,16 +156,16 @@ class RunEvent(DBModel):
     ) -> "RunEvent":
         """
         Append a new event to the log with automatic sequence number.
-        
+
         This is the primary API for adding events. It automatically assigns
         the next sequence number and ensures idempotency.
-        
+
         Args:
             run_id: The workflow run identifier
             event_type: Type of event (see EventType)
             payload: Event-specific data
             node_id: Optional node identifier for node-specific events
-            
+
         Returns:
             The created RunEvent
         """
@@ -184,7 +184,7 @@ class RunEvent(DBModel):
     ) -> list["RunEvent"]:
         """
         Query events for a run with optional filters.
-        
+
         Args:
             run_id: The workflow run identifier
             seq_gt: Return events with seq > this value
@@ -192,39 +192,37 @@ class RunEvent(DBModel):
             event_type: Filter by event type
             node_id: Filter by node ID
             limit: Maximum number of events to return
-            
+
         Returns:
             List of RunEvent objects ordered by sequence number
         """
         adapter = await cls.adapter()
-        
+
         conditions = [Field("run_id").equals(run_id)]
-        
+
         if seq_gt is not None:
             conditions.append(Field("seq").greater_than(seq_gt))
-        
+
         if seq_lte is not None:
             conditions.append(Field("seq").less_than_or_equal(seq_lte))
-        
+
         if event_type is not None:
             conditions.append(Field("event_type").equals(event_type))
-        
+
         if node_id is not None:
             conditions.append(Field("node_id").equals(node_id))
-        
+
         # Build composite condition
         from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, LogicalOperator
-        
-        condition = ConditionBuilder(
-            ConditionGroup(conditions, LogicalOperator.AND)
-        )
-        
+
+        condition = ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND))
+
         results, _ = await adapter.query(
             condition=condition,
             order_by="seq",
             limit=limit,
         )
-        
+
         return [cls.from_dict(row) for row in results]
 
     @classmethod
@@ -233,12 +231,12 @@ class RunEvent(DBModel):
     ) -> "RunEvent | None":
         """
         Get the most recent event for a run, optionally filtered.
-        
+
         Args:
             run_id: The workflow run identifier
             event_type: Optional event type filter
             node_id: Optional node ID filter
-            
+
         Returns:
             The most recent matching event, or None if no events found
         """
@@ -254,10 +252,10 @@ class RunEvent(DBModel):
     def from_dict(cls, data: dict[str, Any]) -> "RunEvent":
         """
         Create a RunEvent instance from a dictionary.
-        
+
         Args:
             data: Dictionary containing event data
-            
+
         Returns:
             RunEvent instance
         """

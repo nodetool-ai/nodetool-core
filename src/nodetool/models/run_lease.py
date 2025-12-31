@@ -16,7 +16,7 @@ from nodetool.models.condition_builder import Field
 class RunLease(DBModel):
     """
     Represents a lease on a workflow run for exclusive execution.
-    
+
     Leases prevent multiple workers from processing the same run concurrently.
     They automatically expire after a TTL, allowing recovery if a worker crashes.
     """
@@ -34,26 +34,24 @@ class RunLease(DBModel):
     expires_at: datetime = DBField()
 
     @classmethod
-    async def acquire(
-        cls, run_id: str, worker_id: str, ttl_seconds: int = 60
-    ) -> Optional["RunLease"]:
+    async def acquire(cls, run_id: str, worker_id: str, ttl_seconds: int = 60) -> Optional["RunLease"]:
         """
         Acquire a lease on a run.
-        
+
         Args:
             run_id: The workflow run identifier
             worker_id: Identifier for this worker (e.g., hostname, PID)
             ttl_seconds: Time-to-live for the lease in seconds
-            
+
         Returns:
             RunLease if acquired, None if run is already leased to another worker
         """
         now = datetime.now()
         expires = now + timedelta(seconds=ttl_seconds)
-        
+
         # Check for existing lease
         existing = await cls.get(run_id)
-        
+
         if existing:
             # Check if expired
             if existing.expires_at < now:
@@ -66,7 +64,7 @@ class RunLease(DBModel):
             else:
                 # Still held by another worker
                 return None
-        
+
         # No existing lease - create new one
         lease = cls(
             run_id=run_id,
@@ -80,7 +78,7 @@ class RunLease(DBModel):
     async def renew(self, ttl_seconds: int = 60) -> None:
         """
         Renew this lease to extend its expiration time.
-        
+
         Args:
             ttl_seconds: Time-to-live for the renewed lease in seconds
         """
@@ -96,7 +94,7 @@ class RunLease(DBModel):
     def is_expired(self) -> bool:
         """
         Check if this lease has expired.
-        
+
         Returns:
             True if the lease has expired
         """
@@ -105,10 +103,10 @@ class RunLease(DBModel):
     def is_held_by(self, worker_id: str) -> bool:
         """
         Check if this lease is held by a specific worker.
-        
+
         Args:
             worker_id: Worker identifier to check
-            
+
         Returns:
             True if this lease is held by the specified worker
         """
@@ -118,35 +116,35 @@ class RunLease(DBModel):
     async def cleanup_expired(cls) -> int:
         """
         Remove all expired leases from the database.
-        
+
         Returns:
             Number of leases removed
         """
         adapter = await cls.adapter()
         now = datetime.now()
-        
+
         # Query for expired leases
         results, _ = await adapter.query(
             condition=Field("expires_at").less_than(now),
             limit=1000,
         )
-        
+
         # Delete each expired lease
         count = 0
         for row in results:
             await cls.delete(row["run_id"])
             count += 1
-        
+
         return count
 
     @classmethod
     def from_dict(cls, data: dict) -> "RunLease":
         """
         Create RunLease instance from dictionary.
-        
+
         Args:
             data: Dictionary containing lease data
-            
+
         Returns:
             RunLease instance
         """
