@@ -7,7 +7,7 @@ and uses its input schema for tool parameters.
 """
 
 import re
-from typing import Any, ClassVar, Dict
+from typing import Any, Dict
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
@@ -99,7 +99,7 @@ class GraphTool(Tool):
                     return schema
             raise ValueError(f"Property {handle} not found on node {node.get_node_type()} {node.id}")
 
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 edge.targetHandle: get_property_schema(node, edge.targetHandle)

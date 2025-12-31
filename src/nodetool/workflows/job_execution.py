@@ -2,6 +2,7 @@
 Base abstract class for job execution strategies.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
@@ -51,6 +52,7 @@ class JobExecution(ABC):
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
         self._log_handler: JobLogHandler | None = None
+        self._finalize_task: asyncio.Task | None = None
 
         # Install log handler to capture logs
         self._install_log_handler()
@@ -115,7 +117,7 @@ class JobExecution(ABC):
         except Exception as e:
             log.error(f"Failed to install log handler for job {self.job_id}: {e}")
 
-    def _uninstall_log_handler(self) -> None:
+    def _uninstall_log_handler(self) -> list[dict]:
         """Uninstall and persist logs for this job."""
         try:
             if self._log_handler:

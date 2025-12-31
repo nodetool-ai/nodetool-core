@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from contextlib import suppress
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from docker.errors import APIError, NotFound
 
@@ -325,7 +325,7 @@ class DockerManager:
 
         return await asyncio.to_thread(_stop)
 
-    async def get_container_status(self, name: str) -> Dict[str, any]:
+    async def get_container_status(self, name: str) -> Dict[str, Any]:
         """
         Get current container status.
 
@@ -336,7 +336,7 @@ class DockerManager:
             Dict with status information.
         """
 
-        def _get_status() -> Dict[str, any]:
+        def _get_status() -> Dict[str, Any]:
             try:
                 container = self.docker.containers.get(name)
                 container.reload()

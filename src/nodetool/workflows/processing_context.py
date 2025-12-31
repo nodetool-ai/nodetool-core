@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - playwright is optional
 
 from io import BytesIO
 from pickle import loads
-from typing import IO, Any, AsyncGenerator, Callable, Dict
+from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
 
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
@@ -246,7 +246,7 @@ class ProcessingContext:
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
-        ui_tool_names: set[str] | None = None,
+        ui_tool_names: Set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"

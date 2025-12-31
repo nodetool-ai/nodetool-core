@@ -498,6 +498,7 @@ class SubprocessJobExecution(JobExecution):
         self.process = process
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
+        self._monitor_task: asyncio.Task | None = None
         self._completed_event = asyncio.Event()
         self._status = "running"
         self._sandbox_profile_path = sandbox_profile_path
@@ -536,7 +537,7 @@ class SubprocessJobExecution(JobExecution):
                 self.process.kill()
 
         # Cancel background tasks
-        for task in (self._stdout_task, self._stderr_task):
+        for task in (self._stdout_task, self._stderr_task, self._monitor_task):
             if task is not None:
                 task.cancel()
 

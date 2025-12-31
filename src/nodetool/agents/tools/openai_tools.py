@@ -1,5 +1,5 @@
 import base64
-from typing import TYPE_CHECKING, Any, ClassVar, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
     from openai import AsyncClient
@@ -30,7 +30,7 @@ class OpenAIWebSearchTool(Tool):
     description = "Search the web using OpenAI's web search API"
 
     def __init__(self):
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "query": {
@@ -101,7 +101,7 @@ class OpenAIImageGenerationTool(Tool):
     description = "Generate an image from a text prompt using OpenAI DALL-E"
 
     def __init__(self):
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "prompt": {
@@ -185,7 +185,7 @@ class OpenAITextToSpeechTool(Tool):
     def __init__(self):
         # Define schema based on OpenAI API parameters for TTS
         # Reference: https://platform.openai.com/docs/api-reference/audio/createSpeech
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "input": {

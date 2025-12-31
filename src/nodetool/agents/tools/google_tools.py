@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, ClassVar, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
     # Keep imports type-only to avoid heavy module loading during CLI startup
@@ -31,7 +31,7 @@ class GoogleGroundedSearchTool(Tool):
     description = "Search the web using Google's Gemini API with grounding capabilities"
 
     def __init__(self):
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "query": {
@@ -180,7 +180,7 @@ class GoogleImageGenerationTool(Tool):
     description = "Generate images based on a text prompt using Google's Gemini API"
 
     def __init__(self):
-        self.input_schema: ClassVar[dict[str, Any]] = {
+        self.input_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "prompt": {
