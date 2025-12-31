@@ -583,7 +583,7 @@ class RegularChatProcessor(MessageProcessor):
             # This case appears in some internal representations
             data = data[0]
 
-        if not isinstance(data, (bytes, bytearray)):
+        if not isinstance(data, bytes | bytearray):
             # If data is not bytes, we can't save it as file easily without more info
             return asset.model_dump()
 
@@ -661,11 +661,11 @@ class RegularChatProcessor(MessageProcessor):
             return await self._process_tool_result(obj.model_dump())
         elif isinstance(obj, dict):
             return {k: await self._process_tool_result(v) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple, set)):
+        elif isinstance(obj, list | tuple | set):
             return [await self._process_tool_result(item) for item in obj]
-        elif isinstance(obj, (bytes, bytearray)):
+        elif isinstance(obj, bytes | bytearray):
             return await self._save_asset(obj)
-        elif isinstance(obj, (date, datetime)):
+        elif isinstance(obj, date | datetime):
             return obj.isoformat()
         else:
             return obj

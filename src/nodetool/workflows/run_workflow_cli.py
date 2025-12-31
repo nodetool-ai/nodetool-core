@@ -45,7 +45,7 @@ def _default(obj: Any) -> Any:
     except Exception:
         pass
 
-    if isinstance(obj, (bytes, bytearray)):
+    if isinstance(obj, bytes | bytearray):
         return {
             "__type__": "bytes",
             "base64": base64.b64encode(bytes(obj)).decode("utf-8"),

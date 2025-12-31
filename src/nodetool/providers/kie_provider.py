@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
 
 import aiohttp
 
@@ -26,12 +26,14 @@ from nodetool.metadata.types import (
     VideoModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.types import (
-    ImageToImageParams,
-    ImageToVideoParams,
-    TextToImageParams,
-    TextToVideoParams,
-)
+
+if TYPE_CHECKING:
+    from nodetool.providers.types import (
+        ImageToImageParams,
+        ImageToVideoParams,
+        TextToImageParams,
+        TextToVideoParams,
+    )
 
 log = get_logger(__name__)
 
@@ -799,8 +801,7 @@ class KieProvider(BaseProvider):
         form.add_field("uploadPath", "images/user-uploads")
         form.add_field("fileName", filename)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(upload_url, data=form, headers=headers) as response:
+        async with aiohttp.ClientSession() as session, session.post(upload_url, data=form, headers=headers) as response:
                 response_data = await response.json()
                 if "code" in response_data:
                     self._check_response_status(response_data)
@@ -924,10 +925,7 @@ class KieProvider(BaseProvider):
             # Build input parameters
             input_params: dict[str, Any] = {}
 
-            # Different models use different field names for input image
-            if "hailuo" in params.model.id:
-                input_params["image_url"] = image_url
-            elif "sora" in params.model.id:
+            if "hailuo" in params.model.id or "sora" in params.model.id:
                 input_params["image_url"] = image_url
             elif "grok" in params.model.id:
                 input_params["image"] = image_url

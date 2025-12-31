@@ -143,7 +143,7 @@ class OpenAICompat:
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
-            elif isinstance(message.content, (dict, list)):
+            elif isinstance(message.content, dict | list):
                 content = json.dumps(message.content)
             elif isinstance(message.content, str):
                 content = message.content
@@ -170,7 +170,7 @@ class OpenAICompat:
             # Handle ipython role used by Llama models for tool results
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
-            elif isinstance(message.content, (dict, list)):
+            elif isinstance(message.content, dict | list):
                 content = json.dumps(message.content)
             elif isinstance(message.content, str):
                 content = message.content

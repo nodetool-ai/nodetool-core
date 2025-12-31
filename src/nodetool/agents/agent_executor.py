@@ -289,7 +289,7 @@ Safety and privacy:
         """Format a value for display in prompts."""
         if isinstance(value, str):
             return value[:200] + "..." if len(value) > 200 else value
-        elif isinstance(value, (dict, list)):
+        elif isinstance(value, dict | list):
             formatted = json.dumps(value, indent=2)
             return formatted[:200] + "..." if len(formatted) > 200 else formatted
         else:

@@ -212,7 +212,7 @@ class ComfyLocalProvider(BaseProvider):
             "ComfyLocal.image_to_image called: model_id=%s prompt_len=%d bytes=%d",
             getattr(params.model, "id", ""),
             len(params.prompt) if isinstance(params.prompt, str) else -1,
-            len(image_bytes) if isinstance(image_bytes, (bytes, bytearray)) else -1,
+            len(image_bytes) if isinstance(image_bytes, bytes | bytearray) else -1,
         )
 
         ckpt = params.model.id
@@ -405,7 +405,7 @@ class ComfyLocalProvider(BaseProvider):
                     raise RuntimeError(f"ComfyUI execution error: {data}")
             else:
                 log.debug("Comfy WS binary: len=%d node=%s", len(out), current_node)
-                if current_node == "save_image_websocket_node" and isinstance(out, (bytes, bytearray)):
+                if current_node == "save_image_websocket_node" and isinstance(out, bytes | bytearray):
                     images.append(out[8:])
                     log.debug("Comfy WS image frame received (total=%d)", len(images))
 

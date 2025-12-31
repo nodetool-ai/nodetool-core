@@ -178,7 +178,7 @@ class AgentEvaluator:
 
         chooser = cast("ChoiceGenerator", rng or random)
         problem_entry = chooser.choice(self.problems)
-        if isinstance(problem_entry, (tuple, list)) and len(problem_entry) >= 2:
+        if isinstance(problem_entry, tuple | list) and len(problem_entry) >= 2:
             problem_payload, expected = problem_entry[0], problem_entry[1]
         else:
             problem_payload, expected = problem_entry, None
@@ -217,7 +217,7 @@ class AgentEvaluator:
 
         problem_text = str(
             problem_payload[0]
-            if isinstance(problem_payload, (tuple, list)) and len(problem_payload) >= 1
+            if isinstance(problem_payload, tuple | list) and len(problem_payload) >= 1
             else problem_payload
         )
         log_entry = LogEntry(
@@ -309,7 +309,7 @@ class AgentEvaluator:
                 if is_correct:
                     s.correct += 1
                 s.total_runtime_seconds += float(elapsed_seconds)
-                problem_text = str(problem[0] if isinstance(problem, (tuple, list)) and len(problem) >= 1 else problem)
+                problem_text = str(problem[0] if isinstance(problem, tuple | list) and len(problem) >= 1 else problem)
                 logs.append(
                     LogEntry(
                         provider_key=provider_key,
@@ -326,7 +326,7 @@ class AgentEvaluator:
         try:
             tasks: list[asyncio.Task[None]] = []
             for problem in self.problems:
-                if isinstance(problem, (tuple, list)) and len(problem) >= 2:
+                if isinstance(problem, tuple | list) and len(problem) >= 2:
                     problem_payload, expected = problem[0], problem[1]
                 else:
                     problem_payload, expected = problem, None

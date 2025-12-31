@@ -106,7 +106,7 @@ class DynamicPropertiesNode(BaseNode):
         result = self.value
         # Sum up all dynamic properties if they are numeric
         for prop_value in self._dynamic_properties.values():
-            if isinstance(prop_value, (int, float)):
+            if isinstance(prop_value, int | float):
                 result += prop_value
         return result
 

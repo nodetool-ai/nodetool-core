@@ -1436,7 +1436,7 @@ class TaskPlanner:
             return {key: self._normalize_tool_output(val) for key, val in value.items()}
         if isinstance(value, list):
             return [self._normalize_tool_output(item) for item in value]
-        if isinstance(value, (str, int, float, bool)) or value is None:
+        if isinstance(value, str | int | float | bool) or value is None:
             return value
         return str(value)
 

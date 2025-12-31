@@ -253,7 +253,7 @@ def field_default(default_value: Any) -> str:
     if isinstance(default_value, str):
         return repr(default_value)  # Handles quotes and escapes
 
-    if isinstance(default_value, (int, float, bool)):
+    if isinstance(default_value, int | float | bool):
         return str(default_value)
 
     # 4. Handle collections

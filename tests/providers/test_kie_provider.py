@@ -1,8 +1,9 @@
 """Tests for the KieProvider implementation."""
 
-import pytest
 from enum import Enum
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from nodetool.metadata.types import ImageModel, Provider, VideoModel
 from nodetool.providers.types import (
@@ -11,7 +12,6 @@ from nodetool.providers.types import (
     TextToImageParams,
     TextToVideoParams,
 )
-
 
 # Import with error handling since this is an optional provider
 try:
@@ -59,7 +59,7 @@ class TestKieProvider:
         """Test getting available image models."""
         provider = KieProvider(secrets={"KIE_API_KEY": "test_key"})
         models = await provider.get_available_image_models()
-        
+
         assert len(models) == len(KIE_IMAGE_MODELS)
         assert all(isinstance(m, ImageModel) for m in models)
         assert all(m.provider == Provider.KIE for m in models)
@@ -69,7 +69,7 @@ class TestKieProvider:
         """Test getting available video models."""
         provider = KieProvider(secrets={"KIE_API_KEY": "test_key"})
         models = await provider.get_available_video_models()
-        
+
         assert len(models) == len(KIE_VIDEO_MODELS)
         assert all(isinstance(m, VideoModel) for m in models)
         assert all(m.provider == Provider.KIE for m in models)
@@ -145,7 +145,7 @@ class TestKieProviderApiInteraction:
             model=ImageModel(id="flux-2/pro-text-to-image", name="test", provider=Provider.KIE),
             prompt="",
         )
-        
+
         with pytest.raises(ValueError, match="prompt must not be empty"):
             await provider.text_to_image(params)
 
@@ -157,7 +157,7 @@ class TestKieProviderApiInteraction:
             model=ImageModel(id="flux-2/pro-image-to-image", name="test", provider=Provider.KIE),
             prompt="",
         )
-        
+
         with pytest.raises(ValueError, match="prompt must not be empty"):
             await provider.image_to_image(b"fake_image", params)
 
@@ -169,7 +169,7 @@ class TestKieProviderApiInteraction:
             model=VideoModel(id="kling-2.6/text-to-video", name="test", provider=Provider.KIE),
             prompt="",
         )
-        
+
         with pytest.raises(ValueError, match="prompt must not be empty"):
             await provider.text_to_video(params)
 
@@ -205,12 +205,12 @@ class TestKieProviderApiInteraction:
                 "resultJson": '{"resultUrls": ["https://example.com/image.png"]}'
             }
         })
-        
+
         # Mock download response
         mock_download_response = MagicMock()
         mock_download_response.status = 200
         mock_download_response.read = AsyncMock(return_value=b"fake_image_bytes")
-        
+
         # Setup mock to return different responses for different URLs
         def mock_get_side_effect(*args, **kwargs):
             url = args[0] if args else kwargs.get("url", "")
@@ -235,9 +235,9 @@ class TestKieProviderApiInteraction:
             width=1024,
             height=1024,
         )
-        
+
         result = await provider.text_to_image(params)
-        
+
         # Verify
         assert result == b"fake_image_bytes"
         mock_session.post.assert_called_once()
@@ -283,7 +283,7 @@ class TestKieProviderApiInteraction:
         args, kwargs = mock_session.post.call_args
         payload = kwargs["json"]
         input_params = payload["input"]
-        
+
         assert input_params["steps"] == 30
         assert input_params["prompt"] == "sunset"
 
@@ -313,11 +313,11 @@ class TestKieProviderApiInteraction:
             model=ImageModel(id="google/nano-banana", name="test", provider=Provider.KIE),
             prompt="futuristic city",
         )
-        
+
         # Mock an Enum for image_size
         class MockImageSize(str, Enum):
             SQUARE = "1:1"
-        
+
         params.image_size = MockImageSize.SQUARE
 
         # Mock internals
@@ -330,7 +330,7 @@ class TestKieProviderApiInteraction:
         args, kwargs = mock_session.post.call_args
         payload = kwargs["json"]
         input_params = payload["input"]
-        
+
         assert input_params["image_size"] == "1:1"
         assert input_params["prompt"] == "futuristic city"
 
@@ -338,7 +338,7 @@ class TestKieProviderApiInteraction:
     async def test_check_response_status_error_codes(self):
         """Test that error status codes raise appropriate errors."""
         provider = KieProvider(secrets={"KIE_API_KEY": "test_key"})
-        
+
         # Test each error code
         error_codes = {
             401: "Unauthorized",
@@ -351,7 +351,7 @@ class TestKieProviderApiInteraction:
             501: "Generation Failed",
             505: "Feature Disabled",
         }
-        
+
         for code, expected_msg in error_codes.items():
             with pytest.raises(ValueError, match=expected_msg):
                 provider._check_response_status({"code": code})

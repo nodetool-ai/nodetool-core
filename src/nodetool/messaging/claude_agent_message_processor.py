@@ -296,7 +296,7 @@ def create_sdk_tool_from_frontend(
             # Payload typically: {"type": "tool_result", "result": ..., "status": ...}
             result_data = payload.get("result", payload)
 
-            content_text = json.dumps(result_data) if isinstance(result_data, (dict, list)) else str(result_data)
+            content_text = json.dumps(result_data) if isinstance(result_data, dict | list) else str(result_data)
 
             return {
                 "content": [{"type": "text", "text": content_text}],

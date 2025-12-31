@@ -327,7 +327,7 @@ def _legacy_read_video_frames(
     temp_file = None
 
     # If bytes or file-like, save to temp file because cv2 needs a path
-    if isinstance(input_video, (bytes, io.BytesIO)) or hasattr(input_video, "read"):
+    if isinstance(input_video, bytes | io.BytesIO) or hasattr(input_video, "read"):
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             if isinstance(input_video, bytes):
                 tmp.write(input_video)

@@ -180,7 +180,7 @@ def extract_description(graph: Dict[str, Any]) -> str:
             comment = node.get("data", {}).get("comment", "")
 
             # Handle different comment formats
-            if isinstance(comment, (dict, list)):
+            if isinstance(comment, dict | list):
                 # Structured Lexical editor format (both dict and list)
                 comment = extract_text_from_lexical(comment)
             elif not isinstance(comment, str):

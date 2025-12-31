@@ -388,7 +388,7 @@ def test_node_tool_asset_ref_helper():
 
     def check_asset_refs_recursive(obj, path=""):
         """Recursively check that all AssetRefs have memory URIs."""
-        if isinstance(obj, (ImageRef, AudioRef, TextRef)):
+        if isinstance(obj, ImageRef | AudioRef | TextRef):
             assert obj.uri.startswith("memory://"), f"AssetRef at {path} should have memory URI, got: {obj.uri}"
         elif isinstance(obj, AssetRef):
             # Generic AssetRef should have data field set

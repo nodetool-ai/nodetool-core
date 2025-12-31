@@ -1021,7 +1021,7 @@ class BaseNode(BaseModel):
         """
 
         def _scrub(obj):
-            if isinstance(obj, (str, int, float, bool, type(None))):
+            if isinstance(obj, str | int | float | bool | type(None)):
                 return obj
             if isinstance(obj, AssetRef):
                 # Special handling for AssetRef: populate data field from memory:// URI
@@ -1071,13 +1071,13 @@ class BaseNode(BaseModel):
                     return obj.model_dump()
             if isinstance(obj, dict):
                 return {k: _scrub(v) for k, v in obj.items()}
-            if isinstance(obj, (list, tuple)):
+            if isinstance(obj, list | tuple):
                 return [_scrub(v) for v in obj]
             if isinstance(obj, BaseModel):
                 return _scrub(obj.model_dump())
 
             # Placeholders
-            if isinstance(obj, (bytes, bytearray)):
+            if isinstance(obj, bytes | bytearray):
                 return f"<{len(obj)} bytes>"
 
             return f"<{type(obj).__name__}>"
@@ -1136,7 +1136,7 @@ class BaseNode(BaseModel):
                     value_without_model = value.model_dump()
                     del value_without_model["model"]
                     props[p] = await context.normalize_output_value(value_without_model)
-                elif isinstance(value, (AssetRef, dict, list, tuple)):
+                elif isinstance(value, AssetRef | dict | list | tuple):
                     props[p] = await context.normalize_output_value(value)
                 else:
                     props[p] = value

@@ -293,7 +293,7 @@ class DownloadManager:
                 files_to_download.append(file)
                 continue
 
-            if not isinstance(cache_path, (str, os.PathLike)):
+            if not isinstance(cache_path, str | os.PathLike):
                 self.logger.warning("Unexpected cache entry type for %s: %s", file.path, type(cache_path))
                 files_to_download.append(file)
                 continue

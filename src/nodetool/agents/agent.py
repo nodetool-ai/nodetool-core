@@ -697,7 +697,7 @@ class Agent(BaseAgent):
                             event=TaskUpdateEvent.TASK_COMPLETED,
                         )
                     yield item
-                elif isinstance(item, (TaskUpdate, Chunk, LogUpdate)):
+                elif isinstance(item, TaskUpdate | Chunk | LogUpdate):
                     yield item
                 else:
                     yield item

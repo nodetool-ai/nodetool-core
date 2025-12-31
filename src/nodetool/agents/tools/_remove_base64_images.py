@@ -13,7 +13,7 @@ def _remove_base64_images(data: T) -> T:
             elif isinstance(data[key], str):
                 if data[key].startswith("data:"):
                     data.pop(key, None)
-            elif isinstance(data[key], (dict, list)):
+            elif isinstance(data[key], dict | list):
                 data[key] = _remove_base64_images(data[key])
     elif isinstance(data, list):
         for i in range(len(data)):

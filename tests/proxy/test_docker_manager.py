@@ -8,9 +8,9 @@ import asyncio
 import time
 
 import pytest
-from docker.errors import DockerException
 
 import docker
+from docker.errors import DockerException
 from nodetool.proxy.config import ServiceConfig
 from nodetool.proxy.docker_manager import DockerManager, ServiceRuntime
 

@@ -32,7 +32,7 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
         pil_img = numpy_to_pil_image(obj)
         return pil_to_png_bytes(pil_img)
 
-    if isinstance(obj, (bytes, bytearray)):
+    if isinstance(obj, bytes | bytearray):
         raw = bytes(obj)
         try:
             with PIL.Image.open(BytesIO(raw)) as img:
@@ -242,7 +242,7 @@ def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
         log.debug(f"Failed to normalize image: {e}")
 
     # Fallbacks
-    if isinstance(obj, (bytes, bytearray)):
+    if isinstance(obj, bytes | bytearray):
         return "application/octet-stream", bytes(obj)
 
     raise ValueError(f"Unsupported object type for memory URI: {type(obj)}")

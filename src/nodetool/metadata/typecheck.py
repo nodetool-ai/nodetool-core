@@ -107,7 +107,7 @@ TYPE_ENUM_TO_ASSET_TYPE = {
 
 def is_empty(value: Any) -> bool:
     """Checks if a value is empty."""
-    return value is None or (isinstance(value, (list, dict)) and len(value) == 0)
+    return value is None or (isinstance(value, list | dict) and len(value) == 0)
 
 
 def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
@@ -163,7 +163,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         u = type_meta.type_args[1]  # Should handle potential Any type here if needed
         return all(is_assignable(t, k) and is_assignable(u, v) for k, v in value.items())
     # Handle float types, allowing integers as well.
-    if type_meta.type == "float" and isinstance(value, (float, int)):
+    if type_meta.type == "float" and isinstance(value, float | int):
         return True
     # Handle tensor types (NPArray) - must come before asset type check
     if (type_meta.type == "tensor" or type_meta.type == "np_array") and python_type == NPArray:

@@ -1800,12 +1800,12 @@ class Message(BaseType):
         content = data.get("content")
         instructions = data.get("instructions")
 
-        if content is None and isinstance(instructions, (str, list)):
+        if content is None and isinstance(instructions, str | list):
             data = dict(data)
             data["content"] = instructions
             return data
 
-        if instructions is None and isinstance(content, (str, list)):
+        if instructions is None and isinstance(content, str | list):
             data = dict(data)
             data["instructions"] = content
             return data

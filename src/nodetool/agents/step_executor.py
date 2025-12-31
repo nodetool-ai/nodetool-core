@@ -597,7 +597,7 @@ class StepExecutor:
             return {key: self._normalize_tool_result(val) for key, val in value.items()}
         if isinstance(value, list):
             return [self._normalize_tool_result(item) for item in value]
-        if isinstance(value, (str, int, float, bool)) or value is None:
+        if isinstance(value, str | int | float | bool) or value is None:
             return value
         return str(value)
 
@@ -1560,7 +1560,7 @@ class StepExecutor:
 
             # Attempt to parse the compressed content as JSON if the original was likely JSON
             # This helps maintain structure if the LLM cooperated.
-            if isinstance(result_content, (dict, list)):
+            if isinstance(result_content, dict | list):
                 try:
                     parsed_json = json.loads(compressed_content_str)
                     return parsed_json  # Return parsed JSON if successful

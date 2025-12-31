@@ -992,7 +992,7 @@ class HelpMessageProcessor(MessageProcessor):
             return obj.model_dump()
         elif isinstance(obj, dict):
             return {k: self._recursively_model_dump(v) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple)):
+        elif isinstance(obj, list | tuple):
             return [self._recursively_model_dump(item) for item in obj]
         else:
             return obj

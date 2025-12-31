@@ -5,10 +5,10 @@ Tests for Docker-based job execution.
 import asyncio
 import subprocess
 
-import docker.errors
 import pytest
 
 import docker
+import docker.errors
 from nodetool.models.job import Job
 from nodetool.types.graph import Edge, Graph, Node
 from nodetool.workflows.docker_job_execution import DockerJobExecution

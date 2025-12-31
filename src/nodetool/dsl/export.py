@@ -82,7 +82,7 @@ def _literal(value: object) -> str:
     """
     if value is None:
         return "None"
-    if isinstance(value, (bool, int, float)):
+    if isinstance(value, bool | int | float):
         return repr(value)
     if isinstance(value, str):
         return repr(value)
@@ -368,13 +368,13 @@ def graph_to_gradio_py(
         if isinstance(default, bool) or "booleaninput" in cls_lower or "booleanoutput" in cls_lower:
             return "checkbox"
         if (
-            isinstance(default, (int, float))
+            isinstance(default, int | float)
             or "integerinput" in cls_lower
             or "floatinput" in cls_lower
             or field_lower in {"number", "count"}
         ):
             return "number"
-        if isinstance(default, (list, dict)):
+        if isinstance(default, list | dict):
             return "json"
         return "text"
 

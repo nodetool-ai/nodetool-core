@@ -539,7 +539,7 @@ class ProcessingContext:
         marker = self.variables.get(key)
         if isinstance(marker, dict) and "__workspace_result__" in marker:
             return
-        if not isinstance(value, (dict, list, str, int, float, bool)):
+        if not isinstance(value, dict | list | str | int | float | bool):
             return
         try:
             path = self._workspace_path(f"var_{key}.json")
@@ -1131,7 +1131,7 @@ class ProcessingContext:
         # Check URI cache first for downloaded content
         try:
             cached = require_scope().get_memory_uri_cache().get(url)
-            if isinstance(cached, (bytes, bytearray)):
+            if isinstance(cached, bytes | bytearray):
                 return BytesIO(bytes(cached))
         except Exception as e:
             log.debug(f"Failed to get from URI cache: {e}")

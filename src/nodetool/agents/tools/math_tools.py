@@ -90,7 +90,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         return self.UNARY_OPERATORS[op_type](operand)
 
     def visit_Constant(self, node: ast.Constant) -> float:
-        if isinstance(node.value, (int, float)):
+        if isinstance(node.value, int | float):
             return node.value
         raise ValueError(f"Unsupported constant type: {type(node.value)}")
 

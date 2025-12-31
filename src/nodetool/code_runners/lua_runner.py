@@ -54,11 +54,11 @@ def _lua_literal(value: Any, depth: int = 0) -> str:
         return "nil"
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return str(value)
     if isinstance(value, str):
         return _lua_escape_string(value)
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         items = ", ".join(_lua_literal(v, depth + 1) for v in value)
         return "{" + items + "}"
     if isinstance(value, dict):

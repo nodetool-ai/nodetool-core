@@ -308,7 +308,7 @@ def run(
         except Exception:
             pass
 
-        if isinstance(obj, (bytes, bytearray)):
+        if isinstance(obj, bytes | bytearray):
             return {
                 "__type__": "bytes",
                 "base64": base64.b64encode(bytes(obj)).decode("utf-8"),
@@ -2130,7 +2130,7 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         if deployment.proxy and deployment.proxy.services:
             for service in deployment.proxy.services:
                 service.environment = _inject(service.environment)
-    elif isinstance(deployment, (RunPodDeployment, GCPDeployment)):
+    elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
 
