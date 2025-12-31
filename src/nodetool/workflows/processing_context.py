@@ -1861,6 +1861,15 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
+        # Build metadata from PIL Image properties if not provided
+        if metadata is None:
+            metadata = {
+                "width": image.width,
+                "height": image.height,
+                "mode": image.mode,
+                "format": "png",
+            }
+
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
@@ -1893,6 +1902,22 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
+        # Build metadata from numpy array shape if not provided
+        if metadata is None:
+            if image.ndim == 2:
+                height, width = image.shape
+                channels = 1
+            elif image.ndim == 3:
+                height, width, channels = image.shape
+            else:
+                height, width, channels = 0, 0, 0
+            metadata = {
+                "width": width,
+                "height": height,
+                "channels": channels,
+                "format": "png",
+            }
+
         pil_img = self._numpy_to_pil_image(image)
         return await self.image_from_pil(pil_img, name=name, metadata=metadata)
 
@@ -1992,9 +2017,34 @@ class ProcessingContext:
 
         from nodetool.media.video.video_utils import export_to_video
 
+        # Build metadata from frames
+        frame_count = len(frames)
+        width, height = 0, 0
+        if frame_count > 0:
+            first_frame = frames[0]
+            PIL_Image, _ = _ensure_pil()
+            if isinstance(first_frame, PIL_Image.Image):
+                width, height = first_frame.size
+            else:
+                # numpy array
+                if first_frame.ndim >= 2:
+                    height, width = first_frame.shape[:2]
+
+        metadata = {
+            "fps": fps,
+            "frame_count": frame_count,
+            "width": width,
+            "height": height,
+            "format": "mp4",
+            "duration_seconds": frame_count / fps if fps > 0 else None,
+        }
+
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
-            return await self.video_from_io(open(temp.name, "rb"))
+            with open(temp.name, "rb") as f:
+                ref = await self.video_from_io(f)
+            ref.metadata = metadata
+            return ref
 
     async def video_from_numpy(
         self,
@@ -2017,13 +2067,30 @@ class ProcessingContext:
         # Convert numpy array to list of frames for the utility function
         video_frames = list(video)
 
+        # Build metadata from numpy array shape (T, H, W, C)
+        frame_count = len(video_frames)
+        width, height = 0, 0
+        if frame_count > 0 and video.ndim >= 3:
+            height, width = video.shape[1], video.shape[2]
+
+        metadata = {
+            "fps": fps,
+            "frame_count": frame_count,
+            "width": width,
+            "height": height,
+            "format": "mp4",
+            "duration_seconds": frame_count / fps if fps > 0 else None,
+        }
+
         # Use shared video utility for consistent behavior
         video_bytes = _export_to_video_bytes(video_frames, fps=fps)
 
         # Create BytesIO from the video bytes
         buffer = BytesIO(video_bytes)
         buffer.seek(0)
-        return await self.video_from_io(buffer, name=name, parent_id=parent_id)
+        ref = await self.video_from_io(buffer, name=name, parent_id=parent_id)
+        ref.metadata = metadata
+        return ref
 
     async def url_to_base64(self, url: str) -> str:
         """
@@ -2136,7 +2203,8 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-    ):
+        metadata: Dict[str, Any] | None = None,
+    ) -> VideoRef:
         """
         Creates an VideoRef from an IO object.
 
@@ -2144,6 +2212,7 @@ class ProcessingContext:
             context (ProcessingContext): The processing context.
             buffer (IO): The IO object.
             name (Optional[str], optional): The name of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             VideoRef: The VideoRef object.
@@ -2152,11 +2221,17 @@ class ProcessingContext:
             asset = await self.create_asset(name, "video/mpeg", buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
-            return VideoRef(asset_id=asset.id, uri=url)
+            return VideoRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            return VideoRef(data=buffer.read())
+            return VideoRef(data=buffer.read(), metadata=metadata)
 
-    async def video_from_bytes(self, b: bytes, name: str | None = None, parent_id: str | None = None) -> VideoRef:
+    async def video_from_bytes(
+        self,
+        b: bytes,
+        name: str | None = None,
+        parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> VideoRef:
         """
         Creates a VideoRef from a bytes object.
 
@@ -2164,11 +2239,12 @@ class ProcessingContext:
             b (bytes): The bytes object.
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
 
         Returns:
             VideoRef: The VideoRef object.
         """
-        return await self.video_from_io(BytesIO(b), name=name, parent_id=parent_id)
+        return await self.video_from_io(BytesIO(b), name=name, parent_id=parent_id, metadata=metadata)
 
     async def video_to_frames(self, video: VideoRef, fps: int = 1) -> list[PIL.Image.Image]:
         """
