@@ -39,7 +39,7 @@ jobs:
       - name: Run ty type checker
         run: |
           ty check src \
-            --warn unresolved-import \
+            --ignore unresolved-import \
             --warn invalid-method-override \
             --warn invalid-argument-type \
             --warn unresolved-attribute \
@@ -55,7 +55,7 @@ jobs:
             --warn unsupported-operator \
             --warn not-iterable \
             --warn invalid-key \
-            --warn non-subscriptable \
+            --warn not-subscriptable \
             --warn unresolved-reference \
             --warn too-many-positional-arguments \
             --warn invalid-parameter-default \

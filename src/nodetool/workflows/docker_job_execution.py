@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import docker
 from docker.types import DeviceRequest
+
+import docker
 from nodetool.code_runners.runtime_base import (
     ContainerFailureError,
     StreamRunnerBase,

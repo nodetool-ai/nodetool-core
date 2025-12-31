@@ -280,7 +280,7 @@ class TestKieProviderApiInteraction:
         await provider.text_to_image(params)
 
         # Verify post payload
-        args, kwargs = mock_session.post.call_args
+        _, kwargs = mock_session.post.call_args
         payload = kwargs["json"]
         input_params = payload["input"]
 
@@ -327,7 +327,7 @@ class TestKieProviderApiInteraction:
         await provider.text_to_image(params)
 
         # Verify post payload
-        args, kwargs = mock_session.post.call_args
+        _, kwargs = mock_session.post.call_args
         payload = kwargs["json"]
         input_params = payload["input"]
 

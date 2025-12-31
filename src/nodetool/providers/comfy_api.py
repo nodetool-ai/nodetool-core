@@ -347,8 +347,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     job_input = job["input"]
 
     validated_data, error_message = validate_input(job_input)
-    if error_message:
-        return {"error": error_message}
+    if error_message or validated_data is None:
+        return {"error": error_message or "Invalid input"}
 
     workflow = validated_data["workflow"]
     input_images = validated_data.get("images")

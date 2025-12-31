@@ -10,8 +10,9 @@ import time
 from contextlib import suppress
 from typing import Dict, Optional, Tuple
 
-import docker
 from docker.errors import APIError, NotFound
+
+import docker
 from nodetool.proxy.config import ServiceConfig
 
 log = logging.getLogger(__name__)

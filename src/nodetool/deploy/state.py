@@ -10,7 +10,7 @@ import secrets
 import threading
 import time
 from contextlib import contextmanager, suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional
 
@@ -170,7 +170,7 @@ class StateManager:
 
             # Update timestamp if requested
             if update_timestamp:
-                state_updates["last_deployed"] = datetime.utcnow()
+                state_updates["last_deployed"] = datetime.now(UTC)
 
             # Update state fields
             current_state = deployment.state.model_dump()
@@ -359,7 +359,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
         Dictionary containing snapshot of all deployment states
     """
     snapshot: Dict[str, Any] = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "version": config.version,
         "deployments": {},
     }
