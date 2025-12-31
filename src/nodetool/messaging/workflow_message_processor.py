@@ -90,23 +90,46 @@ class WorkflowMessageProcessor(MessageProcessor):
 
         log.info(f"Running workflow for {last_message.workflow_id}")
         result = {}
+        workflow_id = last_message.workflow_id
 
-        async for update in run_workflow(
-            request,
-            workflow_runner,
-            processing_context,
-        ):
-            await self.send_message(update.model_dump())
-            log.debug(f"Workflow update sent: {update.type}")
-            if isinstance(update, OutputUpdate):
-                result[update.node_name] = update.value
+        try:
+            async for update in run_workflow(
+                request,
+                workflow_runner,
+                processing_context,
+            ):
+                # Add job_id and workflow_id to all messages for UI visualization consistency
+                # This matches the behavior of WebSocketRunner for normal workflows
+                msg = update.model_dump()
+                msg["job_id"] = job_id
+                msg["workflow_id"] = workflow_id
+                await self.send_message(msg)
+                log.debug(f"Workflow update sent: {update.type}")
+                if isinstance(update, OutputUpdate):
+                    result[update.node_name] = update.value
 
-        # Signal completion
-        await self.send_message({"type": "chunk", "content": "", "done": True})
-        await self.send_message(self._create_response_message(result, last_message).model_dump())
-
-        # Always mark processing as complete
-        self.is_processing = False
+            # Signal completion with job_id and workflow_id
+            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            response_msg = self._create_response_message(result, last_message).model_dump()
+            response_msg["job_id"] = job_id
+            response_msg["workflow_id"] = workflow_id
+            await self.send_message(response_msg)
+        except Exception as e:
+            log.error(f"Error processing workflow: {e}", exc_info=True)
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": f"Error processing workflow: {str(e)}",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                }
+            )
+            # Send completion even on error with job_id and workflow_id
+            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            raise
+        finally:
+            # Always mark processing as complete
+            self.is_processing = False
 
     def _create_response_message(self, result: dict, last_message: Message) -> Message:
         """Construct a response Message object from workflow results."""
