@@ -25,7 +25,13 @@ class JavaScriptDockerRunner(StreamRunnerBase):
         timeout_seconds: int = 10,
         **kwargs,
     ):
-        super().__init__(image=image, mem_limit=mem_limit, nano_cpus=nano_cpus, timeout_seconds=timeout_seconds, **kwargs)
+        super().__init__(
+            image=image,
+            mem_limit=mem_limit,
+            nano_cpus=nano_cpus,
+            timeout_seconds=timeout_seconds,
+            **kwargs,
+        )
 
     def build_container_command(
         self,
