@@ -2036,7 +2036,7 @@ class ProcessingContext:
             "width": width,
             "height": height,
             "format": "mp4",
-            "duration_seconds": frame_count / fps if fps > 0 else 0,
+            "duration_seconds": frame_count / fps if fps > 0 else None,
         }
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
@@ -2078,7 +2078,7 @@ class ProcessingContext:
             "width": width,
             "height": height,
             "format": "mp4",
-            "duration_seconds": frame_count / fps if fps > 0 else 0,
+            "duration_seconds": frame_count / fps if fps > 0 else None,
         }
 
         # Use shared video utility for consistent behavior
