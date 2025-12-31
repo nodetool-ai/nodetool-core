@@ -1674,6 +1674,13 @@ class ProcessingContext:
             AudioRef: The converted AudioRef object.
 
         """
+        metadata = {
+            "sample_rate": audio_segment.frame_rate,
+            "channels": audio_segment.channels,
+            "format": "wav",
+            "duration_seconds": audio_segment.duration_seconds,
+        }
+
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
@@ -1681,15 +1688,19 @@ class ProcessingContext:
             self._memory_set(memory_uri, audio_segment)
             # Also populate data field with binary representation for consistency
             buffer = BytesIO()
-            audio_segment.export(buffer, format="mp3")
+            audio_segment.export(buffer, format="wav")
             buffer.seek(0)
-            return AudioRef(uri=memory_uri, data=buffer.read())
+            return AudioRef(uri=memory_uri, data=buffer.read(), metadata=metadata)
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
-            audio_segment.export(buffer, format="mp3")
+            audio_segment.export(buffer, format="wav")
             buffer.seek(0)
-            return await self.audio_from_io(buffer, name=name, parent_id=parent_id)
+            ref = await self.audio_from_io(
+                buffer, name=name, parent_id=parent_id, content_type="audio/wav"
+            )
+            ref.metadata = metadata
+            return ref
 
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
