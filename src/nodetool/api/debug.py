@@ -264,15 +264,10 @@ def _create_zip(src_dir: Path, zip_dest: Path) -> None:
     # Use shutil make_archive for robustness
     zip_dest.with_suffix("")
     # shutil.make_archive adds extension itself; to control exact name we write to temp then rename
-    with tempfile.NamedTemporaryFile(prefix="nodetool-debug-", delete=False, suffix="") as tmp_file:
-        tmp_base = tmp_file.name
-    try:
+    with tempfile.TemporaryDirectory(prefix="nodetool-debug-") as tmp_dir:
+        tmp_base = os.path.join(tmp_dir, "archive")
         archive_path = shutil.make_archive(tmp_base, "zip", root_dir=str(src_dir))
         shutil.move(archive_path, str(zip_dest))
-    finally:
-        # Clean up the temp file if it still exists
-        with suppress(FileNotFoundError):
-            os.unlink(tmp_base)
 
 
 @router.post("/export", response_model=DebugBundleResponse)

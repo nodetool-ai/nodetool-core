@@ -58,13 +58,17 @@ class TriggerWorkflowManager:
     """
 
     _instance: Optional["TriggerWorkflowManager"] = None
+    _initialized: bool = False
 
     def __init__(self) -> None:
         """Initialize the TriggerWorkflowManager instance."""
-        self._running_workflows: Dict[str, JobExecution] = {}
-        self._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
-        self._watchdog_task: Optional[asyncio.Task] = None
-        self._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
+        # Only initialize once for singleton
+        if not TriggerWorkflowManager._initialized:
+            self._running_workflows: Dict[str, JobExecution] = {}
+            self._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
+            self._watchdog_task: Optional[asyncio.Task] = None
+            self._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
+            TriggerWorkflowManager._initialized = True
 
     def __new__(cls):
         if cls._instance is None:
