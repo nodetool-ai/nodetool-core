@@ -144,7 +144,10 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
         rm -rf /app/nodetool-core ; \
     fi
 
-RUN $VIRTUAL_ENV/bin/python -m playwright install
+# Install Playwright browsers
+# Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
+RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
+    rm -rf /var/tmp/* /tmp/*
 
 # Expose port for the worker
 EXPOSE 7777
