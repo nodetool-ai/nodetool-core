@@ -622,7 +622,8 @@ class TestVideoMethods:
     async def test_video_from_numpy_metadata(self, context: ProcessingContext):
         """Test that VideoRef from numpy array has duration and format metadata populated."""
         # Create fake video data (10 frames at 50x50)
-        video_array = np.random.randint(0, 255, (10, 50, 50, 3), dtype=np.uint8)
+        num_frames = 10
+        video_array = np.random.randint(0, 255, (num_frames, 50, 50, 3), dtype=np.uint8)
         fps = 30
 
         with patch("imageio.mimwrite") as mock_mimwrite:
@@ -636,7 +637,7 @@ class TestVideoMethods:
             assert isinstance(result, VideoRef)
             # Check metadata fields are populated
             assert result.duration is not None
-            assert result.duration == 10 / fps  # 10 frames at 30 fps
+            assert result.duration == num_frames / fps
             assert result.format is not None
             assert result.format == "mp4"
 
@@ -644,7 +645,8 @@ class TestVideoMethods:
     async def test_video_from_frames_metadata(self, context: ProcessingContext, sample_image):
         """Test that VideoRef from frames has duration and format metadata populated."""
         # Create a list of frames
-        frames = [sample_image] * 15  # 15 frames
+        num_frames = 15
+        frames = [sample_image] * num_frames
         fps = 30
 
         with patch("nodetool.media.video.video_utils.export_to_video"):
@@ -653,7 +655,7 @@ class TestVideoMethods:
                 assert isinstance(result, VideoRef)
                 # Check metadata fields are populated
                 assert result.duration is not None
-                assert result.duration == 15 / fps  # 15 frames at 30 fps
+                assert result.duration == num_frames / fps
                 assert result.format is not None
                 assert result.format == "mp4"
 
