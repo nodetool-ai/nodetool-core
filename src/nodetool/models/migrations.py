@@ -6,10 +6,13 @@ race conditions during schema initialization.
 """
 
 import asyncio
-from typing import Set, Type
+from typing import TYPE_CHECKING, Set, Type, cast
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+
+if TYPE_CHECKING:
+    from nodetool.models.sqlite_adapter import SQLiteAdapter
 
 log = get_logger(__name__)
 
@@ -85,10 +88,19 @@ async def run_startup_migrations(pool: SQLiteConnectionPool | None = None) -> No
         async with _migration_lock:
             for model_cls in models:
                 table_name = model_cls.get_table_name()
+                log.info(f"Migrating table: {table_name}")
 
                 try:
                     adapter = await scope.db.adapter_for_model(model_cls)
                     await adapter.auto_migrate()
+                    log.info(f"Completed migration for table: {table_name}")
+                    # Release connection back to pool to avoid exhaustion
+                    sqlite_adapter = cast("SQLiteAdapter", adapter)
+                    pool = getattr(scope.db, "pool", None)
+                    conn = sqlite_adapter.connection
+                    if pool is not None and conn is not None:
+                        await pool.release(conn)
+                        sqlite_adapter._connection = None  # type: ignore
 
                 except Exception as e:
                     log.error(f"Failed to migrate table {table_name}: {e}", exc_info=True)

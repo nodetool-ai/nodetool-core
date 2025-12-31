@@ -524,12 +524,7 @@ class WorkflowRunner:
 
         # Create run_state (source of truth)
         try:
-            self.run_state = await RunState.create_run(
-                run_id=self.job_id,
-                graph_json=request.graph.model_dump() if request.graph else {},
-                params_json=request.params or {},
-                user_id=getattr(context, "user_id", None),
-            )
+            self.run_state = await RunState.create_run(run_id=self.job_id)
             log.info(f"Created run_state for {self.job_id} with status=running")
         except Exception as e:
             log.error(f"Failed to create run_state: {e}")
@@ -650,9 +645,7 @@ class WorkflowRunner:
                     # Update run_state (source of truth)
                     if self.run_state:
                         try:
-                            await self.run_state.mark_completed(
-                                outputs_json=self.outputs
-                            )
+                            await self.run_state.mark_completed()
                             log.info(f"Marked run_state as completed for {self.job_id}")
                         except Exception as e:
                             log.error(f"Failed to mark run_state as completed: {e}")
@@ -665,9 +658,7 @@ class WorkflowRunner:
                 # Update run_state (source of truth)
                 if self.run_state:
                     try:
-                        await self.run_state.mark_cancelled(
-                            reason="Workflow execution cancelled"
-                        )
+                        await self.run_state.mark_cancelled()
                         log.info(f"Marked run_state as cancelled for {self.job_id}")
                     except Exception as e:
                         log.error(f"Failed to mark run_state as cancelled: {e}")
@@ -675,24 +666,18 @@ class WorkflowRunner:
                 # Log RunCancelled event (audit-only, non-fatal)
                 if self.event_logger:
                     try:
-                        await self.event_logger.log_run_cancelled(
-                            reason="Workflow execution cancelled"
-                        )
+                        await self.event_logger.log_run_cancelled(reason="Workflow execution cancelled")
                     except Exception as e:
                         log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
 
                 if send_job_updates:
-                    context.post_message(
-                        JobUpdate(job_id=self.job_id, status="cancelled")
-                    )
+                    context.post_message(JobUpdate(job_id=self.job_id, status="cancelled"))
 
             except WorkflowSuspendedException as e:
                 # Handle workflow suspension from suspendable node
                 self.status = "suspended"
 
-                log.info(
-                    f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}"
-                )
+                log.info(f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}")
 
                 # Update run_state (source of truth)
                 if self.run_state:
@@ -700,8 +685,8 @@ class WorkflowRunner:
                         await self.run_state.mark_suspended(
                             node_id=e.node_id,
                             reason=e.reason,
-                            state_json=e.state,
-                            metadata_json=e.metadata,
+                            state=e.state,
+                            metadata=e.metadata,
                         )
                         log.info(f"Marked run_state as suspended for {self.job_id} at node {e.node_id}")
                     except Exception as e2:
@@ -716,7 +701,7 @@ class WorkflowRunner:
                     )
                     await node_state.mark_suspended(
                         reason=e.reason,
-                        state_json=e.state,
+                        state=e.state,
                     )
                     log.info(f"Marked node_state as suspended for node {e.node_id}")
                 except Exception as e2:
@@ -745,7 +730,7 @@ class WorkflowRunner:
                         await self.event_logger.flush_projection()
 
                         # Check if this is a trigger node suspension
-                        if e.metadata.get('trigger_node'):
+                        if e.metadata.get("trigger_node"):
                             # Register with trigger wakeup service
                             from nodetool.workflows.trigger_node import TriggerWakeupService
 
@@ -755,10 +740,7 @@ class WorkflowRunner:
                                 node_id=e.node_id,
                                 trigger_metadata=e.metadata,
                             )
-                            log.info(
-                                f"Registered trigger node {e.node_id} for wake-up "
-                                f"in workflow {self.job_id}"
-                            )
+                            log.info(f"Registered trigger node {e.node_id} for wake-up in workflow {self.job_id}")
 
                     except Exception as e2:
                         log.warning(f"Failed to log suspension events (non-fatal): {e2}")
@@ -792,10 +774,7 @@ class WorkflowRunner:
                 # Update run_state (source of truth)
                 if self.run_state:
                     try:
-                        await self.run_state.mark_failed(
-                            error=error_message_for_job_update[:1000],
-                            node_id=self.current_node,
-                        )
+                        await self.run_state.mark_failed(error=error_message_for_job_update[:1000])
                         log.info(f"Marked run_state as failed for {self.job_id}")
                     except Exception as e2:
                         log.error(f"Failed to mark run_state as failed: {e2}")
@@ -869,12 +848,8 @@ class WorkflowRunner:
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
                 total_time = time.time() - start_time
-                log.info(
-                    f"Job {self.job_id} completed successfully (post-try-finally processing)"
-                )
-                log.info(
-                    f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
-                )
+                log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
+                log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
 
                 # Log RunCompleted event (audit-only, non-fatal)
                 if self.event_logger:
