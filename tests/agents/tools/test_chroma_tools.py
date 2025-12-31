@@ -17,12 +17,12 @@ import pytest
 import pytest_asyncio
 
 from nodetool.agents.tools.chroma_tools import (
-    ChromaTextSearchTool,
-    ChromaIndexTool,
-    ChromaHybridSearchTool,
-    ChromaRecursiveSplitAndIndexTool,
-    ChromaMarkdownSplitAndIndexTool,
     ChromaBatchIndexTool,
+    ChromaHybridSearchTool,
+    ChromaIndexTool,
+    ChromaMarkdownSplitAndIndexTool,
+    ChromaRecursiveSplitAndIndexTool,
+    ChromaTextSearchTool,
 )
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,
@@ -741,8 +741,7 @@ class TestChromaToolsIntegration:
     async def test_index_then_search(self, test_collection, processing_context):
         """Test indexing documents and then searching them."""
         # Index some documents
-        index_tool = ChromaIndexTool(collection=test_collection)
-
+        # ChromaIndexTool is not used directly here; we use test_collection.add
         docs = [
             ("Apple is a fruit", "doc1"),
             ("Banana is yellow", "doc2"),

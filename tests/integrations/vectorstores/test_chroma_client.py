@@ -5,14 +5,15 @@ These tests use a real ChromaDB instance (on-disk persistent client) to ensure
 all functionality works correctly with actual data storage and retrieval.
 """
 
+import chromadb.errors
 import pytest
 
 from nodetool.integrations.vectorstores.chroma.chroma_client import (
+    DEFAULT_SEPARATORS,
+    get_all_collections,
     get_chroma_client,
     get_collection,
     split_document,
-    get_all_collections,
-    DEFAULT_SEPARATORS,
 )
 
 # Test data constants
@@ -140,7 +141,7 @@ class TestGetCollection:
         monkeypatch.delenv("CHROMA_URL", raising=False)
         monkeypatch.setenv("CHROMA_PATH", str(tmp_path))
 
-        with pytest.raises(Exception):
+        with pytest.raises(chromadb.errors.NotFoundError):
             get_collection("nonexistent_collection")
 
 
