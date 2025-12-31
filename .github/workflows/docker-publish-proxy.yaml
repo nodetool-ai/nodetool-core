@@ -34,12 +34,10 @@ jobs:
           sudo rm -rf /usr/local/share/powershell
           sudo rm -rf /usr/share/miniconda
           # Clean up Docker images
-          docker system prune -af || true
+          docker system prune -af || echo "Warning: Docker cleanup failed with exit code $?"
           # Clean apt cache
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-          # Clean tmp directories
-          sudo rm -rf /tmp/*
           echo "=== After cleanup ==="
           df -h
 
