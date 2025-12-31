@@ -14,15 +14,19 @@ from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
+from nodetool.models.workflow_version import WorkflowVersion as WorkflowVersionModel
 from nodetool.packages.registry import Registry
 from nodetool.runtime.resources import require_scope
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
+    CreateWorkflowVersionRequest,
     Workflow,
     WorkflowList,
     WorkflowRequest,
     WorkflowTool,
     WorkflowToolList,
+    WorkflowVersion,
+    WorkflowVersionList,
 )
 from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.read_graph import read_graph
@@ -588,3 +592,130 @@ async def run_workflow_by_id(
                     raise HTTPException(status_code=500, detail=msg.error)
                 result[name] = value
         return result
+
+
+# Workflow Version Endpoints
+
+
+def from_version_model(version: WorkflowVersionModel) -> WorkflowVersion:
+    """Convert a WorkflowVersionModel to a WorkflowVersion API type."""
+    return WorkflowVersion(
+        id=version.id,
+        workflow_id=version.workflow_id,
+        version=version.version,
+        created_at=version.created_at.isoformat(),
+        name=version.name,
+        description=version.description,
+        graph=Graph(
+            nodes=version.graph.get("nodes", []),
+            edges=version.graph.get("edges", []),
+        ),
+    )
+
+
+@router.post("/{id}/versions")
+async def create_version(
+    id: str,
+    version_request: CreateWorkflowVersionRequest,
+    user: str = Depends(current_user),
+) -> WorkflowVersion:
+    """
+    Create a new version of a workflow.
+
+    This saves the current state of the workflow as a version snapshot.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version = await WorkflowVersionModel.create(
+        workflow_id=id,
+        user_id=user,
+        graph=workflow.graph,
+        name=version_request.name or f"Version {await WorkflowVersionModel.get_next_version(id)}",
+        description=version_request.description or "",
+    )
+
+    return from_version_model(version)
+
+
+@router.get("/{id}/versions")
+async def list_versions(
+    id: str,
+    user: str = Depends(current_user),
+    cursor: Optional[str] = None,
+    limit: int = 100,
+) -> WorkflowVersionList:
+    """
+    List all versions of a workflow.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user and workflow.access != "public":
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    versions, next_cursor = await WorkflowVersionModel.paginate(
+        workflow_id=id,
+        limit=limit,
+        start_key=cursor,
+    )
+
+    return WorkflowVersionList(
+        versions=[from_version_model(v) for v in versions],
+        next=next_cursor if next_cursor else None,
+    )
+
+
+@router.get("/{id}/versions/{version}")
+async def get_version(
+    id: str,
+    version: int,
+    user: str = Depends(current_user),
+) -> WorkflowVersion:
+    """
+    Get a specific version of a workflow.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user and workflow.access != "public":
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version_model = await WorkflowVersionModel.get_by_version(id, version)
+    if not version_model:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return from_version_model(version_model)
+
+
+@router.post("/{id}/versions/{version}/restore")
+async def restore_version(
+    id: str,
+    version: int,
+    user: str = Depends(current_user),
+) -> Workflow:
+    """
+    Restore a workflow to a specific version.
+
+    This replaces the current workflow graph with the graph from the specified version.
+    The current state is NOT automatically saved as a new version before restoring.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version_model = await WorkflowVersionModel.get_by_version(id, version)
+    if not version_model:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    # Restore the workflow graph from the version
+    workflow.graph = version_model.graph
+    workflow.updated_at = datetime.now()
+    await workflow.save()
+
+    return await from_model(workflow)
