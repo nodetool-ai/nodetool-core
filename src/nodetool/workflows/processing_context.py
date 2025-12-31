@@ -1674,6 +1674,11 @@ class ProcessingContext:
             AudioRef: The converted AudioRef object.
 
         """
+        # Extract audio metadata from the segment
+        duration = len(audio_segment) / 1000.0  # pydub duration is in milliseconds
+        sample_rate = audio_segment.frame_rate
+        channels = audio_segment.channels
+
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
@@ -1683,13 +1688,24 @@ class ProcessingContext:
             buffer = BytesIO()
             audio_segment.export(buffer, format="mp3")
             buffer.seek(0)
-            return AudioRef(uri=memory_uri, data=buffer.read())
+            return AudioRef(
+                uri=memory_uri,
+                data=buffer.read(),
+                duration=duration,
+                sample_rate=sample_rate,
+                channels=channels,
+            )
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
             audio_segment.export(buffer, format="mp3")
             buffer.seek(0)
-            return await self.audio_from_io(buffer, name=name, parent_id=parent_id)
+            audio_ref = await self.audio_from_io(buffer, name=name, parent_id=parent_id)
+            # Populate metadata on the returned ref
+            audio_ref.duration = duration
+            audio_ref.sample_rate = sample_rate
+            audio_ref.channels = channels
+            return audio_ref
 
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
@@ -1850,18 +1866,25 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
+        # Extract image dimensions
+        width, height = image.size
+
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the PIL Image directly for fast retrieval
             self._memory_set(memory_uri, image)
-            return ImageRef(uri=memory_uri, metadata=metadata)
+            return ImageRef(uri=memory_uri, metadata=metadata, width=width, height=height)
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
             image.save(buffer, format="png")
             buffer.seek(0)
-            return await self.image_from_io(buffer, name=name, parent_id=parent_id, metadata=metadata)
+            image_ref = await self.image_from_io(buffer, name=name, parent_id=parent_id, metadata=metadata)
+            # Populate dimension metadata on the returned ref
+            image_ref.width = width
+            image_ref.height = height
+            return image_ref
 
     async def image_from_numpy(
         self,
@@ -1981,9 +2004,17 @@ class ProcessingContext:
 
         from nodetool.media.video.video_utils import export_to_video
 
+        # Calculate duration based on frame count and fps
+        num_frames = len(frames)
+        duration = num_frames / fps if fps > 0 else 0.0
+
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
-            return await self.video_from_io(open(temp.name, "rb"))
+            video_ref = await self.video_from_io(open(temp.name, "rb"), name=name, parent_id=parent_id)
+            # Populate metadata on the returned ref
+            video_ref.duration = duration
+            video_ref.format = "mp4"
+            return video_ref
 
     async def video_from_numpy(
         self,
@@ -2006,13 +2037,21 @@ class ProcessingContext:
         # Convert numpy array to list of frames for the utility function
         video_frames = list(video)
 
+        # Calculate duration based on frame count and fps
+        num_frames = len(video_frames)
+        duration = num_frames / fps if fps > 0 else 0.0
+
         # Use shared video utility for consistent behavior
         video_bytes = _export_to_video_bytes(video_frames, fps=fps)
 
         # Create BytesIO from the video bytes
         buffer = BytesIO(video_bytes)
         buffer.seek(0)
-        return await self.video_from_io(buffer, name=name, parent_id=parent_id)
+        video_ref = await self.video_from_io(buffer, name=name, parent_id=parent_id)
+        # Populate metadata on the returned ref
+        video_ref.duration = duration
+        video_ref.format = "mp4"
+        return video_ref
 
     async def url_to_base64(self, url: str) -> str:
         """

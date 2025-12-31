@@ -336,12 +336,17 @@ class AudioRef(AssetRef):
     """A reference to an audio asset."""
 
     type: Literal["audio"] = "audio"
+    duration: Optional[float] = None  # Duration in seconds
+    sample_rate: Optional[int] = None  # Sample rate in Hz
+    channels: Optional[int] = None  # Number of audio channels
 
 
 class ImageRef(AssetRef):
     """A reference to an image asset."""
 
     type: Literal["image"] = "image"
+    width: Optional[int] = None  # Image width in pixels
+    height: Optional[int] = None  # Image height in pixels
 
 
 class DocumentRef(AssetRef):

@@ -325,6 +325,17 @@ class TestImageMethods:
         assert recovered_image.size == sample_image.size
 
     @pytest.mark.asyncio
+    async def test_image_from_pil_metadata(self, context: ProcessingContext, sample_image):
+        """Test that ImageRef from PIL Image has dimension metadata populated."""
+        result = await context.image_from_pil(sample_image)
+        assert isinstance(result, ImageRef)
+        # Check dimension metadata fields are populated
+        assert result.width is not None
+        assert result.height is not None
+        assert result.width == sample_image.size[0]
+        assert result.height == sample_image.size[1]
+
+    @pytest.mark.asyncio
     async def test_image_from_numpy(self, context: ProcessingContext):
         """Test creating ImageRef from numpy array."""
         # Create test numpy array
@@ -333,6 +344,21 @@ class TestImageMethods:
         result = await context.image_from_numpy(test_array)
         assert isinstance(result, ImageRef)
         assert result.uri.startswith("memory://")  # Should be a memory URI
+
+    @pytest.mark.asyncio
+    async def test_image_from_numpy_metadata(self, context: ProcessingContext):
+        """Test that ImageRef from numpy array has dimension metadata populated."""
+        # Create test numpy array (height, width, channels)
+        test_array = np.full((60, 80, 3), fill_value=128, dtype=np.uint8)
+
+        result = await context.image_from_numpy(test_array)
+        assert isinstance(result, ImageRef)
+        # Check dimension metadata fields are populated
+        assert result.width is not None
+        assert result.height is not None
+        # Note: numpy array is (height, width), but PIL image is (width, height)
+        assert result.width == 80
+        assert result.height == 60
 
     @pytest.mark.asyncio
     async def test_image_from_url(self, context: ProcessingContext):
@@ -433,6 +459,36 @@ class TestAudioMethods:
         result = await context.audio_from_segment(sample_audio_segment)
         assert isinstance(result, AudioRef)
         assert result.uri.startswith("memory://")  # Should be a memory URI
+
+    @pytest.mark.asyncio
+    async def test_audio_from_segment_metadata(self, context: ProcessingContext, sample_audio_segment):
+        """Test that AudioRef from AudioSegment has metadata populated."""
+        result = await context.audio_from_segment(sample_audio_segment)
+        assert isinstance(result, AudioRef)
+        # Check metadata fields are populated
+        assert result.duration is not None
+        assert result.duration > 0  # Should have a positive duration
+        assert result.sample_rate is not None
+        assert result.sample_rate == sample_audio_segment.frame_rate
+        assert result.channels is not None
+        assert result.channels == sample_audio_segment.channels
+
+    @pytest.mark.asyncio
+    async def test_audio_from_numpy_metadata(self, context: ProcessingContext):
+        """Test that AudioRef from numpy array has metadata populated."""
+        # Create test audio data as int16
+        test_data = np.array([100, -100, 200, -200] * 1000, dtype=np.int16)
+        sample_rate = 22050
+
+        result = await context.audio_from_numpy(test_data, sample_rate=sample_rate)
+        assert isinstance(result, AudioRef)
+        # Check metadata fields are populated
+        assert result.duration is not None
+        assert result.duration > 0  # Should have a positive duration
+        assert result.sample_rate is not None
+        assert result.sample_rate == sample_rate
+        assert result.channels is not None
+        assert result.channels == 1  # Default mono
 
 
 class TestTextMethods:
@@ -561,6 +617,45 @@ class TestVideoMethods:
             result = await context.video_from_numpy(video_array, fps=30)
             assert isinstance(result, VideoRef)
             assert result.data is not None
+
+    @pytest.mark.asyncio
+    async def test_video_from_numpy_metadata(self, context: ProcessingContext):
+        """Test that VideoRef from numpy array has duration and format metadata populated."""
+        # Create fake video data (10 frames at 50x50)
+        video_array = np.random.randint(0, 255, (10, 50, 50, 3), dtype=np.uint8)
+        fps = 30
+
+        with patch("imageio.mimwrite") as mock_mimwrite:
+
+            def mock_write(buffer, video_data, format=None, fps=None):
+                buffer.write(b"fake video output")
+
+            mock_mimwrite.side_effect = mock_write
+
+            result = await context.video_from_numpy(video_array, fps=fps)
+            assert isinstance(result, VideoRef)
+            # Check metadata fields are populated
+            assert result.duration is not None
+            assert result.duration == 10 / fps  # 10 frames at 30 fps
+            assert result.format is not None
+            assert result.format == "mp4"
+
+    @pytest.mark.asyncio
+    async def test_video_from_frames_metadata(self, context: ProcessingContext, sample_image):
+        """Test that VideoRef from frames has duration and format metadata populated."""
+        # Create a list of frames
+        frames = [sample_image] * 15  # 15 frames
+        fps = 30
+
+        with patch("nodetool.media.video.video_utils.export_to_video"):
+            with patch("builtins.open", Mock(return_value=BytesIO(b"fake video data"))):
+                result = await context.video_from_frames(frames, fps=fps)
+                assert isinstance(result, VideoRef)
+                # Check metadata fields are populated
+                assert result.duration is not None
+                assert result.duration == 15 / fps  # 15 frames at 30 fps
+                assert result.format is not None
+                assert result.format == "mp4"
 
 
 class TestModelMethods:
