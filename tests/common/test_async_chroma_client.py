@@ -5,14 +5,20 @@ These tests use a real ChromaDB instance (on-disk persistent client) to ensure
 all functionality works correctly with actual data storage and retrieval.
 """
 
+import chromadb
 import pytest
 import pytest_asyncio
+from packaging import version
 
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,
     AsyncChromaCollection,
     get_async_chroma_client,
 )
+
+# Version checks for feature compatibility
+CHROMADB_VERSION = version.parse(chromadb.__version__)
+PEEK_INCLUDE_SUPPORT = CHROMADB_VERSION >= version.parse("1.5.0")  # peek() include param
 
 
 @pytest_asyncio.fixture
@@ -464,12 +470,12 @@ class TestAsyncChromaCollectionPeekOperations:
     """Tests for peek operations on AsyncChromaCollection.
 
     Note: The current implementation of peek() in AsyncChromaCollection passes
-    an 'include' parameter which is not supported in ChromaDB 1.4.0. These tests
-    are skipped until the implementation is updated.
+    an 'include' parameter which is not supported in ChromaDB < 1.5.0. These tests
+    are automatically skipped based on the ChromaDB version.
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="ChromaDB 1.4.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
     async def test_peek_default(self, test_collection):
         """Test peeking with default limit."""
         ids = [f"peek{i}" for i in range(15)]
@@ -482,7 +488,7 @@ class TestAsyncChromaCollectionPeekOperations:
         assert len(result["ids"]) == 10
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="ChromaDB 1.4.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
     async def test_peek_with_limit(self, test_collection):
         """Test peeking with custom limit."""
         ids = [f"peek_lim{i}" for i in range(10)]
@@ -495,7 +501,7 @@ class TestAsyncChromaCollectionPeekOperations:
         assert len(result["ids"]) == 5
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="ChromaDB 1.4.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
     async def test_peek_returns_documents_and_metadata(self, test_collection):
         """Test that peek returns documents and metadata by default."""
         ids = ["peek_inc1"]
@@ -526,13 +532,17 @@ class TestAsyncChromaEdgeCases:
 
     @pytest.mark.asyncio
     async def test_duplicate_id_add_behavior(self, test_collection):
-        """Test that adding duplicate IDs is silently ignored in ChromaDB 1.4.0."""
+        """Test duplicate ID behavior during add.
+
+        Note: ChromaDB's handling of duplicate IDs may vary by version.
+        This test documents the current behavior where duplicates are silently ignored.
+        """
         await test_collection.add(ids=["dup1"], documents=["Original"], embeddings=[[0.1] * 4])
 
-        # ChromaDB 1.4.0 silently ignores duplicate IDs during add
+        # Add duplicate - behavior may be version-dependent
         await test_collection.add(ids=["dup1"], documents=["Duplicate"], embeddings=[[0.2] * 4])
 
-        # Count should still be 1 (duplicate ignored)
+        # Count should still be 1 (duplicate ignored in current version)
         count = await test_collection.count()
         assert count == 1
 

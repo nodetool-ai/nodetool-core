@@ -15,6 +15,26 @@ from nodetool.integrations.vectorstores.chroma.chroma_client import (
     DEFAULT_SEPARATORS,
 )
 
+# Test data constants
+EMBEDDING_DIM = 4  # Dimension of test embeddings
+LARGE_DOC_PARAGRAPHS = 100  # Number of paragraphs for large document tests
+PARAGRAPH_REPETITIONS = 10  # Repetitions of filler text per paragraph
+
+
+def generate_test_embedding(value: float, dim: int = EMBEDDING_DIM) -> list[float]:
+    """Generate a simple test embedding."""
+    return [value] * dim
+
+
+def generate_distinct_embeddings(count: int, dim: int = EMBEDDING_DIM) -> list[list[float]]:
+    """Generate distinct embeddings for testing (orthogonal-ish)."""
+    embeddings = []
+    for i in range(count):
+        emb = [0.0] * dim
+        emb[i % dim] = 1.0  # One-hot style for distinctness
+        embeddings.append(emb)
+    return embeddings
+
 
 @pytest.fixture
 def chroma_client(tmp_path, monkeypatch):
@@ -28,10 +48,11 @@ def chroma_client(tmp_path, monkeypatch):
 def collection_with_data(chroma_client):
     """Create a collection with some test data."""
     collection = chroma_client.create_collection(name="test_collection")
+    embeddings = generate_distinct_embeddings(3)
     collection.add(
         ids=["doc1", "doc2", "doc3"],
         documents=["First document", "Second document", "Third document"],
-        embeddings=[[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]],
+        embeddings=embeddings,
     )
     yield collection
     try:
@@ -196,8 +217,9 @@ class TestSplitDocument:
 
     def test_split_document_long_text(self):
         """Test splitting a long document."""
-        # Create a ~50KB document
-        text = "\n\n".join([f"Paragraph {i}: " + "Lorem ipsum dolor sit amet. " * 10 for i in range(100)])
+        # Create a large document with well-defined paragraphs
+        filler_text = "Lorem ipsum dolor sit amet. " * PARAGRAPH_REPETITIONS
+        text = "\n\n".join([f"Paragraph {i}: {filler_text}" for i in range(LARGE_DOC_PARAGRAPHS)])
         chunks = split_document(text, source_id="long_doc", chunk_size=2000, chunk_overlap=200)
 
         # Should produce multiple chunks
