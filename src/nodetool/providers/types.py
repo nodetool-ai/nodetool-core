@@ -5,7 +5,7 @@ This module defines canonical request and response types for text-to-image, imag
 and text-to-video generation.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from nodetool.metadata.types import (
     ImageModel,
@@ -17,6 +17,8 @@ ImageBytes = bytes
 
 class TextToImageParams(BaseModel):
     """Parameters for text-to-image generation."""
+
+    model_config = ConfigDict(extra="allow")
 
     model: ImageModel = Field(description="Provider and model ID for the text-to-image model")
     prompt: str = Field(description="Text prompt describing the desired image")
@@ -39,6 +41,8 @@ class TextToImageParams(BaseModel):
 class ImageToImageParams(BaseModel):
     """Parameters for image-to-image generation."""
 
+    model_config = ConfigDict(extra="allow")
+
     model: ImageModel = Field(description="Provider and model ID for the image-to-image model")
     prompt: str = Field(description="Text prompt describing the desired transformation")
     negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid")
@@ -60,6 +64,8 @@ VideoBytes = bytes
 class TextToVideoParams(BaseModel):
     """Parameters for text-to-video generation."""
 
+    model_config = ConfigDict(extra="allow")
+
     model: VideoModel = Field(description="Provider and model ID for the text-to-video model")
     prompt: str = Field(description="Text prompt describing the desired video")
     negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid in the video")
@@ -77,7 +83,9 @@ class TextToVideoParams(BaseModel):
 class ImageToVideoParams(BaseModel):
     """Parameters for image-to-video generation."""
 
-    model: VideoModel = Field(description="Provider and model ID for the image-to-video model")
+    model_config = ConfigDict(extra="allow")
+
+    model: VideoModel = Field(description="Provider and model ID for the video model")
     prompt: str | None = Field(default=None, description="Optional text prompt to guide video generation")
     negative_prompt: str | None = Field(default=None, description="Text prompt describing what to avoid in the video")
     num_frames: int | None = Field(default=None, description="Number of frames to generate (provider-specific)")
