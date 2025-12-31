@@ -1,6 +1,6 @@
 import io
 from datetime import datetime
-from typing import AsyncIterator, Dict, Iterator
+from typing import IO, AsyncIterator, Dict, Iterator
 
 from nodetool.concurrency.async_iterators import AsyncByteStream
 from nodetool.storage.abstract_storage import AbstractStorage
@@ -19,8 +19,8 @@ class MemoryStorage(AbstractStorage):
     async def get_url(self, key: str) -> str:
         return f"{self.base_url}/{key}"
 
-    async def file_exists(self, file_name: str) -> bool:
-        return file_name in self.storage
+    async def file_exists(self, key: str) -> bool:
+        return key in self.storage
 
     async def get_mtime(self, key: str):
         return self.mtimes.get(key, datetime.now())
@@ -45,17 +45,17 @@ class MemoryStorage(AbstractStorage):
         self.storage[key] = bytes_io.getvalue()
         return f"{self.base_url}/{key}"
 
-    async def download(self, key: str, stream: io.BytesIO):
+    async def download(self, key: str, stream: IO):
         if key in self.storage:
             stream.write(self.storage[key])
         else:
             raise FileNotFoundError(f"File {key} not found")
 
-    async def upload(self, key: str, content: io.BytesIO) -> str:
+    async def upload(self, key: str, content: IO) -> str:
         self.storage[key] = content.read()
         return f"{self.base_url}/{key}"
 
-    def upload_sync(self, key: str, content: io.BytesIO) -> str:
+    def upload_sync(self, key: str, content: IO) -> str:
         self.storage[key] = content.read()
         return f"{self.base_url}/{key}"
 

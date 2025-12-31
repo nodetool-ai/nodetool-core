@@ -90,15 +90,15 @@ class PackageModel(BaseModel):
 
 
 class EnumEncoder(json.JSONEncoder):
-    def default(self, obj):
+    def default(self, o):
         try:
-            if isinstance(obj, Enum):
-                return obj.value
-            if obj == b"":
+            if isinstance(o, Enum):
+                return o.value
+            if o == b"":
                 return ""
-            return super().default(obj)
+            return super().default(o)
         except TypeError as e:
-            raise TypeError(f"Error encoding {obj}: {e}") from e
+            raise TypeError(f"Error encoding {o}: {e}") from e
 
 
 def get_submodules(package_name: str, verbose: bool = False) -> List[str]:

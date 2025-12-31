@@ -31,12 +31,12 @@ class S3Storage(AbstractStorage):
         else:
             return f"https://{self.domain}/{key}"
 
-    async def file_exists(self, file_name: str) -> bool:
+    async def file_exists(self, key: str) -> bool:
         """
         Check if an asset exists in S3.
         """
         try:
-            await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=file_name)
+            await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=key)
             return True
         except ClientError:
             return False

@@ -80,10 +80,9 @@ class LuaRunner(StreamRunnerBase):
         self,
         image: str = "nickblah/lua:5.2.4-luarocks-ubuntu",
         executable: str = "lua",
-        *args,
         **kwargs,
     ) -> None:
-        super().__init__(*args, image=image, **kwargs)
+        super().__init__(image=image, **kwargs)
         self.executable = executable
 
     def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
@@ -128,5 +127,5 @@ class LuaRunner(StreamRunnerBase):
 class LuaSubprocessRunner(LuaRunner):
     """Convenience runner that always uses local subprocess mode."""
 
-    def __init__(self, *args, executable: str = "lua", **kwargs) -> None:
-        super().__init__(*args, executable=executable, mode="subprocess", **kwargs)
+    def __init__(self, executable: str = "lua", **kwargs) -> None:
+        super().__init__(executable=executable, mode="subprocess", **kwargs)
