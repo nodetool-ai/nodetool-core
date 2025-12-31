@@ -67,7 +67,7 @@ class WorkflowVersion(BaseModel):
     version: int
     created_at: str
     name: str
-    description: str | None = None
+    description: str = ""
     graph: Graph
 
 
@@ -82,4 +82,4 @@ class CreateWorkflowVersionRequest(BaseModel):
     """Request to create a new workflow version."""
 
     name: str = ""
-    description: str | None = None
+    description: str = ""

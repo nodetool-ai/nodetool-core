@@ -42,7 +42,7 @@ class WorkflowVersion(DBModel):
     version: int = DBField(default=1)
     created_at: datetime = DBField(default_factory=datetime.now)
     name: str = DBField(default="")
-    description: str | None = DBField(default="")
+    description: str = DBField(default="")
     graph: dict = DBField(default_factory=dict)
 
     @classmethod
@@ -144,26 +144,28 @@ class WorkflowVersion(DBModel):
         cls,
         workflow_id: str,
         limit: int = 100,
-        start_key: Optional[str] = None,
-    ) -> tuple[list["WorkflowVersion"], str]:
+        start_version: Optional[int] = None,
+    ) -> tuple[list["WorkflowVersion"], Optional[int]]:
         """Paginate through versions for a specific workflow.
 
         Args:
             workflow_id: The ID of the workflow to get versions for.
             limit: Maximum number of versions to return.
-            start_key: The ID of the version to start pagination after (exclusive).
+            start_version: The version number to start pagination after (exclusive).
+                Results are ordered by version descending, so this should be the
+                lowest version number from the previous page.
 
         Returns:
-            A tuple containing a list of WorkflowVersion objects and the ID of the
-            last evaluated version (or an empty string if it's the last page).
+            A tuple containing a list of WorkflowVersion objects and the version number
+            of the last returned version (or None if it's the last page).
         """
         conditions = [Field("workflow_id").equals(workflow_id)]
 
-        if start_key:
-            conditions.append(Field("id").greater_than(start_key))
+        if start_version is not None:
+            conditions.append(Field("version").less_than(start_version))
 
         adapter = await cls.adapter()
-        results, last_evaluated_key = await adapter.query(
+        results, _ = await adapter.query(
             columns=["*"],
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="version",
@@ -173,4 +175,7 @@ class WorkflowVersion(DBModel):
 
         versions = [WorkflowVersion.from_dict(row) for row in results[:limit]]
 
-        return versions, last_evaluated_key if len(results) > limit else ""
+        # Return the last version number for pagination if there are more results
+        next_cursor = versions[-1].version if len(results) > limit and versions else None
+
+        return versions, next_cursor

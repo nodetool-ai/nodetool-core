@@ -630,12 +630,16 @@ async def create_version(
     if workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    # Get the next version number once before creating
+    next_version = await WorkflowVersionModel.get_next_version(id)
+    version_name = version_request.name or f"Version {next_version}"
+
     version = await WorkflowVersionModel.create(
         workflow_id=id,
         user_id=user,
         graph=workflow.graph,
-        name=version_request.name or f"Version {await WorkflowVersionModel.get_next_version(id)}",
-        description=version_request.description or "",
+        name=version_name,
+        description=version_request.description,
     )
 
     return from_version_model(version)
@@ -645,11 +649,17 @@ async def create_version(
 async def list_versions(
     id: str,
     user: str = Depends(current_user),
-    cursor: Optional[str] = None,
+    cursor: Optional[int] = None,
     limit: int = 100,
 ) -> WorkflowVersionList:
     """
     List all versions of a workflow.
+
+    Args:
+        id: Workflow ID
+        cursor: Version number to start pagination after (for next page, use the
+                version number from the 'next' field in the response)
+        limit: Maximum number of versions to return
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
@@ -660,12 +670,12 @@ async def list_versions(
     versions, next_cursor = await WorkflowVersionModel.paginate(
         workflow_id=id,
         limit=limit,
-        start_key=cursor,
+        start_version=cursor,
     )
 
     return WorkflowVersionList(
         versions=[from_version_model(v) for v in versions],
-        next=next_cursor if next_cursor else None,
+        next=str(next_cursor) if next_cursor else None,
     )
 
 
