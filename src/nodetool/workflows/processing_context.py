@@ -2041,7 +2041,8 @@ class ProcessingContext:
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
-            ref = await self.video_from_io(open(temp.name, "rb"))
+            with open(temp.name, "rb") as f:
+                ref = await self.video_from_io(f)
             ref.metadata = metadata
             return ref
 
