@@ -285,6 +285,8 @@ def ensure_project_set(project_id: Optional[str] = None) -> str:
         console.print("Set a project with: gcloud config set project YOUR_PROJECT_ID")
         sys.exit(1)
 
+    # project is str after the above check (sys.exit doesn't return)
+    assert project is not None  # Helps type checker understand flow
     return project
 
 

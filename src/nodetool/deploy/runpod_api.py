@@ -638,6 +638,8 @@ def create_or_update_runpod_template(
                 print(f"Response data: {json.dumps(result, indent=2)}")
                 sys.exit(1)
 
+            # template_id is str after the above check (sys.exit doesn't return)
+            assert template_id is not None
             print(f"Template created successfully: {template_id}")
             return template_id
 

@@ -8,7 +8,7 @@ independently within agent workflows.
 """
 
 import json
-from typing import Any, ClassVar, Dict, Type
+from typing import Any, Dict, Type
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.node_metadata import NodeMetadata
@@ -91,7 +91,7 @@ class NodeTool(Tool):
             except Exception:
                 pass
 
-        self.input_schema: ClassVar[dict[str, Any]] = {"type": "object", "properties": properties}
+        self.input_schema: dict[str, Any] = {"type": "object", "properties": properties}
 
         if required:
             self.input_schema["required"] = required

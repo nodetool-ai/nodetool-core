@@ -4,7 +4,7 @@ Manager for executing workflow jobs using different execution strategies.
 
 import asyncio
 from contextlib import suppress
-from typing import ClassVar, Dict, Optional
+from typing import Dict, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
@@ -30,9 +30,9 @@ class JobExecutionManager:
     """
 
     _instance: Optional["JobExecutionManager"] = None
-    _jobs: ClassVar[Dict[str, JobExecution]] = {}
-    _cleanup_task: ClassVar[Optional[asyncio.Task]] = None
-    _finalizing_jobs: ClassVar[set[str]] = set()
+    _jobs: Dict[str, JobExecution]
+    _cleanup_task: Optional[asyncio.Task]
+    _finalizing_jobs: set[str]
 
     def __new__(cls):
         if cls._instance is None:

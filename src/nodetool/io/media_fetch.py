@@ -162,7 +162,7 @@ def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
     # when this sync function is called from an async context
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(asyncio.run, _do_fetch())
-        data = future.result()
+        data: bytes = future.result()
 
     # Guess mime type from the key
     mime_type, _ = mimetypes.guess_type(key)

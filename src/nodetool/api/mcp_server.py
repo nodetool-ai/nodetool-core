@@ -1304,7 +1304,7 @@ async def get_asset(asset_id: str) -> dict[str, Any]:
     if not asset:
         raise ValueError(f"Asset {asset_id} not found")
 
-    return _asset_to_dict(asset)
+    return await _asset_to_dict(asset)
 
 
 @mcp.tool()
