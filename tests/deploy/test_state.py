@@ -4,7 +4,7 @@ Unit tests for deployment state management.
 
 import threading
 import time
-from datetime import datetime, timezone, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 
@@ -115,12 +115,12 @@ class TestStateManager:
         _config, config_path = sample_config
         manager = StateManager(config_path=config_path)
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
 
         # Update state with timestamp
         manager.write_state("test-server", {"status": "running"}, update_timestamp=True)
 
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         # Read back
         state = manager.read_state("test-server")
