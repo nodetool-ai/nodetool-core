@@ -677,8 +677,8 @@ class SubprocessJobExecution(JobExecution):
 
     @classmethod
     async def create_and_start(
-        cls, 
-        request: RunJobRequest, 
+        cls,
+        request: RunJobRequest,
         context: ProcessingContext,
         job_id: str | None = None,
         execution_id: str | None = None,

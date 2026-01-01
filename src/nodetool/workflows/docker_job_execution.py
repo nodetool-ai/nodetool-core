@@ -483,7 +483,7 @@ class DockerJobExecution(JobExecution):
             if self._job_model:
                 self._job_model.status = "cancelled"
                 await self._job_model.save()
-            
+
             return True
 
         except Exception as e:

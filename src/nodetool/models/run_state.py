@@ -140,7 +140,7 @@ class RunState(DBModel):
         """
         if self.version != expected_version:
             return False
-        
+
         self.worker_id = worker_id
         self.heartbeat_at = datetime.now()
         # save() will handle the version increment and check

@@ -197,7 +197,7 @@ class NodeActor:
         """Mark end-of-stream on all inbound and outbound edges."""
         # Mark inbound edges as drained (we've consumed all input)
         self._mark_inbound_edges_drained(self._inbound_handles())
-        
+
         # Mark outbound edges as drained and unblock downstream consumers
         for edge in self._outbound_edges():
             inbox = self.runner.node_inboxes.get(edge.target)

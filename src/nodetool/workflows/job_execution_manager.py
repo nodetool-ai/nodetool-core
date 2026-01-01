@@ -355,7 +355,6 @@ class JobExecutionManager:
 
     async def claim_and_recover(self, run: RunState):
         """Claim a potentially stale run and schedule recovery."""
-        worker_id = Environment.get_worker_id()
         try:
             # Try to claim
             await run.save()
