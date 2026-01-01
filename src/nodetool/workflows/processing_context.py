@@ -62,6 +62,7 @@ from nodetool.metadata.types import (
     AudioRef,
     DataframeRef,
     ImageRef,
+    Model3DRef,
     ModelRef,
     NPArray,
     Provider,
@@ -201,6 +202,18 @@ class AssetOutputMode(str, Enum):
     STORAGE_URL = "storage_url"
     WORKSPACE = "workspace"
     RAW = "raw"
+
+
+# 3D model format to MIME type and extension mapping
+MODEL_3D_FORMAT_MAPPING: dict[str, tuple[str, str]] = {
+    "glb": ("model/gltf-binary", "glb"),
+    "gltf": ("model/gltf+json", "gltf"),
+    "obj": ("model/obj", "obj"),
+    "stl": ("model/stl", "stl"),
+    "ply": ("application/x-ply", "ply"),
+    "fbx": ("application/octet-stream", "fbx"),
+    "usdz": ("model/vnd.usdz+zip", "usdz"),
+}
 
 
 class ProcessingContext:
@@ -2265,6 +2278,113 @@ class ProcessingContext:
         video_bytes = await self.asset_to_bytes(video)
         return await asyncio.to_thread(extract_video_frames, video_bytes, fps)
 
+    async def model3d_from_io(
+        self,
+        buffer: IO,
+        name: str | None = None,
+        parent_id: str | None = None,
+        format: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> Model3DRef:
+        """
+        Creates a Model3DRef from an IO object.
+
+        Args:
+            buffer (IO): The IO object containing 3D model data.
+            name (Optional[str], optional): The name of the asset. Defaults to None.
+            parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            format (Optional[str], optional): The 3D format (glb, gltf, obj, stl, ply, fbx, usdz). Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
+
+        Returns:
+            Model3DRef: The Model3DRef object.
+        """
+        # Get content type from shared mapping
+        mime_type, _ = MODEL_3D_FORMAT_MAPPING.get(format or "glb", ("model/gltf-binary", "glb"))
+
+        if name:
+            asset = await self.create_asset(name, mime_type, buffer, parent_id=parent_id)
+            storage = require_scope().get_asset_storage()
+            url = await storage.get_url(asset.file_name)
+            return Model3DRef(asset_id=asset.id, uri=url, format=format, metadata=metadata)
+        else:
+            buffer.seek(0)
+            return Model3DRef(data=buffer.read(), format=format, metadata=metadata)
+
+    async def model3d_from_bytes(
+        self,
+        b: bytes,
+        name: str | None = None,
+        parent_id: str | None = None,
+        format: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> Model3DRef:
+        """
+        Creates a Model3DRef from a bytes object.
+
+        Args:
+            b (bytes): The bytes object containing 3D model data.
+            name (Optional[str], optional): The name of the asset. Defaults to None.
+            parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
+            format (Optional[str], optional): The 3D format (glb, gltf, obj, stl, ply, fbx, usdz). Defaults to None.
+            metadata (Dict[str, Any] | None, optional): The metadata of the asset. Defaults to None.
+
+        Returns:
+            Model3DRef: The Model3DRef object.
+        """
+        return await self.model3d_from_io(BytesIO(b), name=name, parent_id=parent_id, format=format, metadata=metadata)
+
+    async def model3d_to_bytes(self, model3d_ref: Model3DRef) -> bytes:
+        """
+        Converts a Model3DRef to bytes.
+
+        Args:
+            model3d_ref (Model3DRef): The 3D model reference to convert.
+
+        Returns:
+            bytes: The 3D model data as bytes.
+        """
+        return await self.asset_to_bytes(model3d_ref)
+
+    async def model3d_to_io(self, model3d_ref: Model3DRef) -> IO[bytes]:
+        """
+        Converts a Model3DRef to an IO object.
+
+        Args:
+            model3d_ref (Model3DRef): The 3D model reference to convert.
+
+        Returns:
+            IO[bytes]: The 3D model data as an IO object.
+        """
+        return await self.asset_to_io(model3d_ref)
+
+    async def model3d_to_base64(self, model3d_ref: Model3DRef) -> str:
+        """
+        Converts a Model3DRef to a base64-encoded string.
+
+        Args:
+            model3d_ref (Model3DRef): The 3D model reference to convert.
+
+        Returns:
+            str: The base64-encoded string representation of the 3D model.
+        """
+        model3d_bytes = await self.asset_to_io(model3d_ref)
+        return base64.b64encode(model3d_bytes.read()).decode("utf-8")
+
+    async def model3d_ref_to_data_uri(self, model3d_ref: Model3DRef) -> str:
+        """
+        Convert a Model3DRef to a data URI.
+
+        Args:
+            model3d_ref (Model3DRef): The 3D model reference to convert.
+
+        Returns:
+            str: The data URI.
+        """
+        # Get MIME type from shared mapping
+        mime_type, _ = MODEL_3D_FORMAT_MAPPING.get(model3d_ref.format or "glb", ("model/gltf-binary", "glb"))
+        return f"data:{mime_type};base64,{await self.model3d_to_base64(model3d_ref)}"
+
     async def to_estimator(self, model_ref: ModelRef):
         """
         Converts a model reference to an estimator object.
@@ -2425,6 +2545,9 @@ class ProcessingContext:
             return "video/mp4", "mp4"
         if isinstance(asset, TextRef):
             return "text/plain", "txt"
+        if isinstance(asset, Model3DRef):
+            # Use shared format mapping
+            return MODEL_3D_FORMAT_MAPPING.get(asset.format or "glb", ("model/gltf-binary", "glb"))
         return "application/octet-stream", "bin"
 
     async def _asset_to_data_uri(self, asset: AssetRef) -> AssetRef:
