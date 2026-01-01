@@ -1,0 +1,74 @@
+name: Auto-fix
+
+on:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-fix:
+    name: Run auto-fix tools
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install ruff
+
+      - name: Run ruff with auto-fix
+        run: ruff check --fix .
+
+      - name: Run ruff format
+        run: ruff format .
+
+      - name: Commit and push fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet
+          if [ $? -eq 0 ]; then
+            echo "No changes to commit"
+          else
+            git commit -m "style: auto-fix ruff linting and formatting"
+            git push
+          fi
+
+  check-fixes:
+    name: Verify fixes don't break tests
+    needs: auto-fix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run ruff check (verify no issues remain)
+        run: ruff check .
+
+      - name: Run ruff format (verify formatting)
+        run: ruff format --check .
