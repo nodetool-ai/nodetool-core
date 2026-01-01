@@ -319,8 +319,12 @@ class ThreadedEventLoop:
 
     @property
     def is_running(self) -> bool:
-        """Check if the event loop is running."""
-        return self._running
+        """Check if the event loop is running.
+
+        Returns True only if the loop is marked as running AND the thread is still alive.
+        This ensures accurate state after stop() has been called.
+        """
+        return self._running and (self._thread is not None and self._thread.is_alive())
 
     def __enter__(self) -> "ThreadedEventLoop":
         self.start()

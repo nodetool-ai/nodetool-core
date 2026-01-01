@@ -464,9 +464,9 @@ async def test_subprocess_job_execution(simple_workflow, cleanup_jobs):
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
 
-    # Wait for subprocess to complete (should be quick for simple workflow)
-    max_wait = 5.0
-    wait_interval = 0.1
+    # Wait for subprocess to complete (increased timeout for parallel test runs)
+    max_wait = 15.0
+    wait_interval = 0.2
     elapsed = 0.0
 
     while elapsed < max_wait and bg_job.is_running():
@@ -474,7 +474,7 @@ async def test_subprocess_job_execution(simple_workflow, cleanup_jobs):
         elapsed += wait_interval
 
     # Check completion
-    assert bg_job.is_completed(), "Subprocess job should have completed"
+    assert bg_job.is_completed(), f"Subprocess job should have completed (elapsed: {elapsed}s, status: {bg_job.status})"
     assert bg_job.status in [
         "completed",
         "failed",

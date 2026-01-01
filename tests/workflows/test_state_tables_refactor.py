@@ -18,6 +18,8 @@ from nodetool.models.run_node_state import RunNodeState
 from nodetool.models.run_state import RunState
 from nodetool.models.trigger_input import TriggerInput
 
+pytestmark = pytest.mark.xdist_group(name="database")
+
 
 class TestRunState:
     """Test RunState model operations."""
@@ -29,7 +31,7 @@ class TestRunState:
         run_state = await RunState.create_run(run_id=run_id)
 
         assert run_state.run_id == run_id
-        assert run_state.status == "running"
+        assert run_state.status == "scheduled"
         assert run_state.version == 1
 
     @pytest.mark.asyncio

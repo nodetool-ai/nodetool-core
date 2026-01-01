@@ -1,18 +1,16 @@
 """
 Tests for resumable workflows event logging and recovery.
 
-This module tests the event log, projection, and recovery mechanisms.
+This module tests the event log and recovery mechanisms.
 """
 
 import asyncio
 import queue
-from datetime import datetime
 
 import pytest
 
 from nodetool.models.run_event import RunEvent
 from nodetool.models.run_lease import RunLease
-from nodetool.models.run_projection import RunProjection
 from nodetool.types.graph import Edge as APIEdge
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.types.graph import Node as APINode
@@ -22,6 +20,8 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.recovery import WorkflowRecoveryService
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
+
+pytestmark = pytest.mark.xdist_group(name="database")
 
 
 class NumberInput(InputNode):
@@ -76,78 +76,6 @@ async def test_run_event_creation():
     assert len(events) == 2
     assert events[0].seq == 0
     assert events[1].seq == 1
-
-
-@pytest.mark.asyncio
-async def test_run_projection_update():
-    """Test projection updates from events."""
-    run_id = "test-run-2"
-
-    # Create events
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunCreated",
-        payload={"graph": {}, "params": {}},
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeScheduled",
-        payload={"node_type": "Multiply", "attempt": 1},
-        node_id="node1",
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeStarted",
-        payload={"attempt": 1, "inputs": {}},
-        node_id="node1",
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeCompleted",
-        payload={"attempt": 1, "outputs": {"output": 10}, "duration_ms": 100},
-        node_id="node1",
-    )
-
-    # Rebuild projection
-    projection = await RunProjection.rebuild_from_events(run_id)
-
-    assert projection.status == "running"
-    assert projection.last_event_seq == 3
-    assert "node1" in projection.node_states
-    assert projection.node_states["node1"]["status"] == "completed"
-    assert projection.node_states["node1"]["outputs"] == {"output": 10}
-
-
-@pytest.mark.asyncio
-async def test_projection_idempotency():
-    """Test that replaying events produces same projection."""
-    run_id = "test-run-3"
-
-    # Create events
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunCreated",
-        payload={"graph": {}, "params": {}},
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeScheduled",
-        payload={"node_type": "Multiply", "attempt": 1},
-        node_id="node1",
-    )
-
-    # Build projection twice
-    projection1 = await RunProjection.rebuild_from_events(run_id)
-    projection2 = await RunProjection.rebuild_from_events(run_id)
-
-    # Should be identical
-    assert projection1.status == projection2.status
-    assert projection1.last_event_seq == projection2.last_event_seq
-    assert projection1.node_states == projection2.node_states
 
 
 @pytest.mark.asyncio
@@ -219,12 +147,8 @@ async def test_workflow_runner_logs_events():
         ),
     ]
     edges = [
-        APIEdge(
-            id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"
-        ),
-        APIEdge(
-            id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"
-        ),
+        APIEdge(id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"),
+        APIEdge(id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"),
         APIEdge(
             id="e3",
             source="mul",
@@ -266,65 +190,36 @@ async def test_workflow_runner_logs_events():
 @pytest.mark.asyncio
 async def test_recovery_service_determine_resumption():
     """Test recovery service identifies incomplete nodes."""
+    from nodetool.models.run_node_state import RunNodeState
+    from nodetool.models.run_state import RunState
+
     run_id = "test-run-6"
 
-    # Simulate a run with incomplete nodes
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunCreated",
-        payload={"graph": {}, "params": {}},
-    )
+    # Create run state
+    await RunState.create_run(run_id=run_id, execution_strategy="threaded")
 
     # Node 1: scheduled but never started
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeScheduled",
-        payload={"node_type": "Multiply", "attempt": 1},
-        node_id="node1",
-    )
+    node1 = await RunNodeState.get_or_create(run_id, "node1")
+    await node1.mark_scheduled(attempt=1)
 
     # Node 2: started but not completed (simulates crash)
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeScheduled",
-        payload={"node_type": "Add", "attempt": 1},
-        node_id="node2",
-    )
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeStarted",
-        payload={"attempt": 1, "inputs": {}},
-        node_id="node2",
-    )
+    node2 = await RunNodeState.get_or_create(run_id, "node2")
+    await node2.mark_scheduled(attempt=1)
+    await node2.mark_running()
 
     # Node 3: completed successfully
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeScheduled",
-        payload={"node_type": "Divide", "attempt": 1},
-        node_id="node3",
-    )
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeStarted",
-        payload={"attempt": 1, "inputs": {}},
-        node_id="node3",
-    )
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeCompleted",
-        payload={"attempt": 1, "outputs": {}, "duration_ms": 100},
-        node_id="node3",
-    )
+    node3 = await RunNodeState.get_or_create(run_id, "node3")
+    await node3.mark_scheduled(attempt=1)
+    await node3.mark_running()
+    await node3.mark_completed({"output": 42})
 
-    # Build projection and determine resumption
-    projection = await RunProjection.rebuild_from_events(run_id)
     recovery = WorkflowRecoveryService()
 
     from nodetool.workflows.graph import Graph
+
     graph = Graph(nodes=[], edges=[])  # Empty graph for this test
 
-    resumption_plan = await recovery.determine_resumption_points(projection, graph)
+    resumption_plan = await recovery.determine_resumption_points(run_id, graph)
 
     # Should resume node1 (never started) and node2 (incomplete)
     assert "node1" in resumption_plan
@@ -338,33 +233,6 @@ async def test_recovery_service_determine_resumption():
 
     # Node 3 should not be in resumption plan (completed)
     assert "node3" not in resumption_plan
-
-
-@pytest.mark.asyncio
-async def test_incomplete_nodes_detection():
-    """Test detection of incomplete nodes in projection."""
-    run_id = "test-run-7"
-
-    # Create projection with mixed node states
-    projection = RunProjection(
-        run_id=run_id,
-        status="running",
-        last_event_seq=5,
-        node_states={
-            "node1": {"status": "completed"},
-            "node2": {"status": "started"},
-            "node3": {"status": "scheduled"},
-            "node4": {"status": "completed"},
-        },
-    )
-
-    incomplete = projection.get_incomplete_nodes()
-
-    assert len(incomplete) == 2
-    assert "node2" in incomplete
-    assert "node3" in incomplete
-    assert "node1" not in incomplete
-    assert "node4" not in incomplete
 
 
 @pytest.mark.asyncio

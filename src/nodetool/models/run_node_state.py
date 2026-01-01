@@ -88,10 +88,7 @@ class RunNodeState(DBModel):
         from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
 
         condition = ConditionBuilder(
-            ConditionGroup([
-                Field("run_id").equals(run_id),
-                Field("node_id").equals(node_id)
-            ], LogicalOperator.AND)
+            ConditionGroup([Field("run_id").equals(run_id), Field("node_id").equals(node_id)], LogicalOperator.AND)
         )
 
         results, _ = await adapter.query(condition=condition, limit=1)
@@ -239,10 +236,9 @@ class RunNodeState(DBModel):
         from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
 
         condition = ConditionBuilder(
-            ConditionGroup([
-                Field("run_id").equals(run_id),
-                Field("status").in_list(["scheduled", "running"])
-            ], LogicalOperator.AND)
+            ConditionGroup(
+                [Field("run_id").equals(run_id), Field("status").in_list(["scheduled", "running"])], LogicalOperator.AND
+            )
         )
 
         results, _ = await adapter.query(condition=condition, limit=10000)
@@ -260,9 +256,11 @@ class RunNodeState(DBModel):
             List of RunNodeState for suspended nodes
         """
         adapter = await cls.adapter()
-        from nodetool.models.condition_builder import Field
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
 
-        condition = Field("run_id").equals(run_id) & Field("status").equals("suspended")
+        condition = ConditionBuilder(
+            ConditionGroup([Field("run_id").equals(run_id), Field("status").equals("suspended")], LogicalOperator.AND)
+        )
 
         results, _ = await adapter.query(condition=condition, limit=10000)
         return [cls.from_dict(row) for row in results]

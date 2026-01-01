@@ -6,7 +6,6 @@ from nodetool.models.run_event import RunEvent
 from nodetool.models.run_inbox_message import RunInboxMessage
 from nodetool.models.run_lease import RunLease
 from nodetool.models.run_node_state import RunNodeState
-from nodetool.models.run_projection import RunProjection
 from nodetool.models.run_state import RunState
 from nodetool.models.secret import Secret
 from nodetool.models.thread import Thread
@@ -22,7 +21,6 @@ __all__ = [
     "RunInboxMessage",
     "RunLease",
     "RunNodeState",
-    "RunProjection",
     "RunState",
     "Secret",
     "Thread",

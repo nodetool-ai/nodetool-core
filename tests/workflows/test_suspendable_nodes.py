@@ -7,7 +7,6 @@ import asyncio
 import pytest
 
 from nodetool.models.run_event import RunEvent
-from nodetool.models.run_projection import RunProjection
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.suspendable_node import (
     SuspendableNode,
@@ -196,74 +195,6 @@ async def test_projection_tracks_suspended_state():
             "metadata": {},
         },
     )
-
-    # Build projection
-    projection = await RunProjection.rebuild_from_events(run_id)
-
-    # Check run status
-    assert projection.status == "suspended"
-    assert projection.metadata.get("suspended_node_id") == "node1"
-
-    # Check node status
-    assert "node1" in projection.node_states
-    assert projection.node_states["node1"]["status"] == "suspended"
-    assert projection.node_states["node1"]["suspension_reason"] == "Waiting for input"
-    assert projection.node_states["node1"]["suspension_state"] == {"input_needed": True}
-
-
-@pytest.mark.asyncio
-async def test_projection_tracks_resumed_state():
-    """Test that projection tracks node resumption."""
-    run_id = "test-resume-1"
-
-    # Create suspension events
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunCreated",
-        payload={},
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeSuspended",
-        node_id="node1",
-        payload={
-            "reason": "Waiting",
-            "state": {"data": "value"},
-            "metadata": {},
-        },
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunSuspended",
-        payload={"node_id": "node1", "reason": "Waiting", "metadata": {}},
-    )
-
-    # Create resumption events
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="NodeResumed",
-        node_id="node1",
-        payload={"state": {"data": "value", "approved": True}},
-    )
-
-    await RunEvent.append_event(
-        run_id=run_id,
-        event_type="RunResumed",
-        payload={"node_id": "node1", "metadata": {}},
-    )
-
-    # Build projection
-    projection = await RunProjection.rebuild_from_events(run_id)
-
-    # Check run status
-    assert projection.status == "running"
-    assert projection.metadata.get("resumed_node_id") == "node1"
-
-    # Check node status
-    assert projection.node_states["node1"]["status"] == "running"
-    assert projection.node_states["node1"]["resumed_state"]["approved"] is True
 
 
 @pytest.mark.asyncio

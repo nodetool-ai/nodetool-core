@@ -59,21 +59,13 @@ class WorkflowRecoveryService:
 
     async def get_incomplete_nodes(self, run_id: str) -> list[RunNodeState]:
         """Get nodes that are incomplete (need to be resumed)."""
-        return await RunNodeState.find({
-            "run_id": run_id,
-            "status": {"$in": ["scheduled", "running"]},
-        })
+        return await RunNodeState.get_incomplete_nodes(run_id)
 
     async def get_suspended_nodes(self, run_id: str) -> list[RunNodeState]:
         """Get nodes that are suspended (need state restoration)."""
-        return await RunNodeState.find({
-            "run_id": run_id,
-            "status": "suspended",
-        })
+        return await RunNodeState.get_suspended_nodes(run_id)
 
-    async def determine_resumption_points(
-        self, run_id: str, graph: Graph
-    ) -> dict[str, dict[str, Any]]:
+    async def determine_resumption_points(self, run_id: str, graph: Graph) -> dict[str, dict[str, Any]]:
         """Determine which nodes need to be resumed and how."""
         resumption_plan = {}
 
@@ -106,9 +98,7 @@ class WorkflowRecoveryService:
 
         return resumption_plan
 
-    async def restore_node_state(
-        self, node_id: str, resume_state: dict[str, Any], graph: Graph
-    ) -> bool:
+    async def restore_node_state(self, node_id: str, resume_state: dict[str, Any], graph: Graph) -> bool:
         """Restore state to a suspended node in the graph."""
         node = None
         for n in graph.nodes:
@@ -116,7 +106,7 @@ class WorkflowRecoveryService:
                 node = n
                 break
 
-        if not node or not hasattr(node, '_set_resuming_state'):
+        if not node or not hasattr(node, "_set_resuming_state"):
             return False
 
         try:
@@ -126,9 +116,7 @@ class WorkflowRecoveryService:
             log.error(f"Failed to restore state to node {node_id}: {e}")
             return False
 
-    async def resume_workflow(
-        self, run_id: str, graph: Graph, context: ProcessingContext
-    ) -> tuple[bool, str]:
+    async def resume_workflow(self, run_id: str, graph: Graph, context: ProcessingContext) -> tuple[bool, str]:
         """Resume a workflow execution."""
         if not await self.can_resume(run_id):
             return False, f"Run {run_id} cannot be resumed"

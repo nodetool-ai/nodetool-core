@@ -254,7 +254,7 @@ class NodeActor:
         await node.pre_process(context)
 
         cached_result: dict[str, Any] | None = None
-        if node.is_cacheable() and not self.runner.disable_caching:
+        if node.is_cacheable() and not getattr(self.runner, "disable_caching", False):
             cached_result = context.get_cached_result(node)
 
         if cached_result is not None:
@@ -306,7 +306,7 @@ class NodeActor:
 
             result = outputs_collector.collected()
 
-            if node.is_cacheable() and not self.runner.disable_caching and not driven_by_stream:
+            if node.is_cacheable() and not getattr(self.runner, "disable_caching", False) and not driven_by_stream:
                 self.logger.debug(
                     "Caching result for node: %s (%s)",
                     node.get_title(),
@@ -394,7 +394,9 @@ class NodeActor:
 
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after preload_model")
 
-                    await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
+                    await self._execute_with_timeout(
+                        context, node.run(context, node_inputs, outputs), node_inputs, outputs
+                    )
 
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 except Exception as e:
@@ -413,14 +415,52 @@ class NodeActor:
                     release_gpu_lock()
             else:
                 await node.preload_model(context)
-                await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
+                await self._execute_with_timeout(context, node.run(context, node_inputs, outputs), node_inputs, outputs)
 
             completed_successfully = True
         finally:
             if completed_successfully:
-                # Send the actual collected results, filtering out chunk data
-                await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
-            # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
+                await self._send_completed_update(context, node, outputs)
+            await self._handle_post_execution(context, node)
+
+    async def _execute_with_timeout(
+        self,
+        context: Any,
+        coro: Awaitable[None],
+        node_inputs: NodeInputs,
+        outputs: NodeOutputs,
+    ) -> None:
+        """Execute a node coroutine with optional timeout.
+
+        If the node defines a timeout via get_timeout_seconds(), wrap the execution
+        in asyncio.wait_for(). On timeout, post an error message and re-raise.
+        """
+        timeout_seconds = self.node.get_timeout_seconds()
+        if timeout_seconds is None or timeout_seconds <= 0:
+            await coro
+            return
+
+        try:
+            await asyncio.wait_for(coro, timeout=timeout_seconds)
+        except TimeoutError:
+            context.post_message(
+                NodeUpdate(
+                    node_id=self.node.id,
+                    node_name=self.node.get_title(),
+                    node_type=self.node.get_node_type(),
+                    status="error",
+                    error=f"Node timed out after {timeout_seconds}s",
+                )
+            )
+            raise
+
+    async def _send_completed_update(self, context: Any, node: Any, outputs: NodeOutputs) -> None:
+        """Send the completed update with results."""
+        await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
+
+    async def _handle_post_execution(self, context: Any, node: Any) -> None:
+        """Handle post-execution cleanup."""
+        pass  # Placeholder for any post-execution logic
 
     async def _run_buffered_node(self) -> None:
         """Legacy buffered node execution (no streaming output)."""
@@ -631,7 +671,7 @@ class NodeActor:
         node_id = node._id
 
         # Queue state update: scheduled (non-blocking via StateManager)
-        if self.runner.state_manager:
+        if getattr(self.runner, "state_manager", None):
             try:
                 await self.runner.state_manager.update_node_state(
                     node_id=node_id,
@@ -645,7 +685,8 @@ class NodeActor:
                 # Continue execution - state tracking failure shouldn't block workflow
 
         # Log NodeScheduled event (audit-only, non-fatal)
-        if self.runner.event_logger:
+        event_logger = getattr(self.runner, "event_logger", None)
+        if event_logger:
             try:
                 await self.runner.event_logger.log_node_scheduled(
                     node_id=node._id,
@@ -660,7 +701,8 @@ class NodeActor:
 
         try:
             # Queue state update: running (non-blocking via StateManager)
-            if self.runner.state_manager:
+            state_manager = getattr(self.runner, "state_manager", None)
+            if state_manager:
                 try:
                     await self.runner.state_manager.update_node_state(
                         node_id=node_id,
@@ -685,7 +727,8 @@ class NodeActor:
             duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
 
             # Queue state update: completed (non-blocking via StateManager)
-            if self.runner.state_manager:
+            state_manager = getattr(self.runner, "state_manager", None)
+            if state_manager:
                 try:
                     await self.runner.state_manager.update_node_state(
                         node_id=node_id,
@@ -698,7 +741,8 @@ class NodeActor:
                     self.logger.error(f"Failed to queue state update: {e}")
 
             # Log NodeCompleted event (audit-only, non-fatal)
-            if self.runner.event_logger:
+            event_logger = getattr(self.runner, "event_logger", None)
+            if event_logger:
                 try:
                     await self.runner.event_logger.log_node_completed(
                         node_id=node._id,
@@ -731,7 +775,8 @@ class NodeActor:
             )
 
             # Queue state update: suspended (non-blocking via StateManager)
-            if self.runner.state_manager:
+            state_manager = getattr(self.runner, "state_manager", None)
+            if state_manager:
                 try:
                     await self.runner.state_manager.update_node_state(
                         node_id=node_id,
@@ -752,7 +797,7 @@ class NodeActor:
                         node_name=node.get_title(),
                         node_type=node.get_node_type(),
                         status="suspended",
-                        properties={}, # No extra properties for now
+                        properties={},  # No extra properties for now
                     )
                 )
             finally:
@@ -775,7 +820,8 @@ class NodeActor:
             )
 
             # Queue state update: failed (non-blocking via StateManager)
-            if self.runner.state_manager:
+            state_manager = getattr(self.runner, "state_manager", None)
+            if state_manager:
                 try:
                     await self.runner.state_manager.update_node_state(
                         node_id=node_id,
@@ -789,7 +835,8 @@ class NodeActor:
                     self.logger.error(f"Failed to queue state update: {e2}")
 
             # Log NodeFailed event (audit-only, non-fatal)
-            if self.runner.event_logger:
+            event_logger = getattr(self.runner, "event_logger", None)
+            if event_logger:
                 try:
                     await self.runner.event_logger.log_node_failed(
                         node_id=node._id,

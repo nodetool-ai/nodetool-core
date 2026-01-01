@@ -104,7 +104,10 @@ async def test_db_pool(worker_id):
         if pool is not None:
             try:
                 await pool.close_all()
-                SQLiteConnectionPool._pools.pop(db_path, None)
+                import asyncio
+
+                loop_id = id(asyncio.get_running_loop())
+                SQLiteConnectionPool._pools.pop((loop_id, db_path), None)
             except Exception as e:
                 import logging
 
@@ -119,22 +122,32 @@ async def test_db_pool(worker_id):
 
 async def _truncate_all_tables(pool):
     """Truncate all tables to reset database state between tests."""
-    connection = await pool.acquire()
+    connection = None
     try:
-        # Get list of all tables
+        connection = await pool.acquire()
         cursor = await connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
         )
         tables = await cursor.fetchall()
 
-        # Truncate each table
         for table in tables:
             table_name = table[0]
-            await connection.execute(f"DELETE FROM {table_name}")
+            try:
+                await connection.execute(f"DELETE FROM {table_name}")
+            except Exception:
+                pass
 
-        await connection.commit()
+        try:
+            await connection.commit()
+        except Exception:
+            pass
     finally:
-        await pool.release(connection)
+        if connection is not None:
+            try:
+                await connection.rollback()
+            except Exception:
+                pass
+            await pool.release(connection)
 
 
 @pytest_asyncio.fixture(autouse=True, scope="function")

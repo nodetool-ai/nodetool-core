@@ -242,6 +242,11 @@ class SQLiteConnectionPool:
         while not self.available.empty():
             try:
                 conn = self.available.get_nowait()
+                # Rollback any pending transactions first
+                try:
+                    await conn.rollback()
+                except Exception:
+                    pass
                 await self._close_connection_with_checkpoint(conn)
                 connections_closed += 1
                 log.debug(f"Closed SQLite connection from pool for {self.db_path}")
@@ -320,16 +325,21 @@ class SQLiteScopeResources(DBResources):
     async def cleanup(self) -> None:
         """Clean up scope resources and return connection to pool.
 
-        For per-scope cleanup, we return the connection to the pool
-        for reuse. The pool itself is NOT closed here - that happens
-        when the session-scoped pool fixture is torn down.
+        Rolls back any pending transactions before releasing connections
+        to prevent database locks.
         """
         try:
             # Release all connections held by adapters back to the pool
             if self.pool is not None:
                 for adapter in self._adapters.values():
                     if hasattr(adapter, "connection") and adapter.connection is not None:
-                        await self.pool.release(adapter.connection)
+                        conn = adapter.connection
+                        # Rollback any pending transactions to prevent locks
+                        try:
+                            await conn.rollback()
+                        except Exception:
+                            pass
+                        await self.pool.release(conn)
 
             # Clear adapter cache
             self._adapters.clear()

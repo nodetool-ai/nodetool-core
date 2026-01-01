@@ -525,14 +525,19 @@ class WorkflowRunner:
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
-        # Create run_state (source of truth) - now handled by job_execution_manager
+        # Create run_state (source of truth) - creates if not exists for direct runner usage
         try:
             self.run_state = await RunState.get(self.job_id)
             if self.run_state is None:
-                raise ValueError(f"run_state not found for job {self.job_id}")
-            log.info(f"Loaded run_state for {self.job_id} with status={self.run_state.status}")
+                self.run_state = await RunState.create_run(
+                    run_id=self.job_id,
+                    execution_strategy=request.execution_strategy.value if request.execution_strategy else None,
+                )
+                log.info(f"Created run_state for {self.job_id} with status={self.run_state.status}")
+            else:
+                log.info(f"Loaded run_state for {self.job_id} with status={self.run_state.status}")
         except Exception as e:
-            log.error(f"Failed to load run_state: {e}")
+            log.error(f"Failed to load/create run_state: {e}")
             raise
 
         # Initialize and start StateManager (single writer for node states)
@@ -735,13 +740,9 @@ class WorkflowRunner:
 
                         # Log RunSuspended event
                         await self.event_logger.log_run_suspended(
-                            node_id=e.node_id,
                             reason=e.reason,
-                            metadata=e.metadata,
+                            suspended_node_id=e.node_id,
                         )
-
-                        # Flush projection to ensure suspension is persisted
-                        await self.event_logger.flush_projection()
 
                         # Check if this is a trigger node suspension
                         if e.metadata.get("trigger_node"):
@@ -798,7 +799,6 @@ class WorkflowRunner:
                     try:
                         await self.event_logger.log_run_failed(
                             error=error_message_for_job_update[:1000],
-                            node_id=None,
                         )
                     except Exception as e2:
                         log.warning(f"Failed to log RunFailed event (non-fatal): {e2}")
