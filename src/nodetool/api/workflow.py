@@ -46,6 +46,11 @@ class WorkflowGenerateNameRequest(BaseModel):
     model: str
 
 
+# Constants for workflow name generation
+MAX_WORKFLOW_NAME_LENGTH = 60
+MAX_NODES_IN_DESCRIPTION = 10
+
+
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
@@ -636,15 +641,13 @@ async def generate_workflow_name(
     node_descriptions = []
     for node in graph.nodes:
         node_info = node.type.split(".")[-1]  # Get the last part of the node type
-        if hasattr(node, "data") and node.data:
-            # Include relevant data if available
-            if isinstance(node.data, dict) and "label" in node.data:
-                node_info += f" ({node.data['label']})"
+        if node.data and isinstance(node.data, dict) and "label" in node.data:
+            node_info += f" ({node.data['label']})"
         node_descriptions.append(node_info)
 
     workflow_content = (
-        f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:10])}"
-        + (f"... and {len(graph.nodes) - 10} more" if len(graph.nodes) > 10 else "")
+        f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:MAX_NODES_IN_DESCRIPTION])}"
+        + (f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more" if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION else "")
     )
     if workflow.description:
         workflow_content = f"Description: {workflow.description}\n{workflow_content}"
@@ -659,7 +662,7 @@ async def generate_workflow_name(
         messages=[
             Message(
                 role="system",
-                content="You are a helpful assistant that creates concise, descriptive names for workflows based on their content (maximum 60 characters). Return only the name, nothing else.",
+                content=f"You are a helpful assistant that creates concise, descriptive names for workflows based on their content (maximum {MAX_WORKFLOW_NAME_LENGTH} characters). Return only the name, nothing else.",
             ),
             Message(
                 role="user",
@@ -675,11 +678,13 @@ async def generate_workflow_name(
         new_name = new_name.strip("\"'")
 
         # Update the workflow name
-        workflow.name = new_name[:60]  # Ensure max 60 characters
+        workflow.name = new_name[:MAX_WORKFLOW_NAME_LENGTH]
         workflow.updated_at = datetime.now()
         await workflow.save()
 
         log.info(f"Updated workflow {id} name to: {new_name}")
+
+    return await from_model(workflow)
 
     return await from_model(workflow)
 
