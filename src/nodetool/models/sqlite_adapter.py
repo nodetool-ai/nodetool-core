@@ -373,19 +373,18 @@ class SQLiteAdapter(DatabaseAdapter):
 
     async def auto_migrate(
         self,
-    ):
+    ) -> None:
         """Run automatic migration for this table.
 
-        Checks if migration has already been completed this session to avoid
-        redundant work. Uses per-table locking to prevent concurrent migrations.
+        DEPRECATED: This method is deprecated. Schema migrations are now
+        handled by the dedicated migration system in nodetool.migrations.
+        This method is kept for backward compatibility but does nothing.
+        Use 'nodetool migrations upgrade' CLI command instead.
         """
-        # Perform migration
-        if await self.table_exists():
-            await self.migrate_table()
-        else:
-            await self.create_table()
-            for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
+        # Deprecated - migrations now handled by nodetool.migrations
+        # This method intentionally does nothing to avoid conflicts with
+        # the new migration system
+        pass
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -452,95 +451,6 @@ class SQLiteAdapter(DatabaseAdapter):
             await self.connection.commit()
 
         await retry_on_locked(_drop)
-
-    async def migrate_table(self) -> None:
-        """Performs schema migration for the table.
-
-        Compares the current schema in the database with the model's defined schema.
-        Adds new columns if they exist in the model but not in the database table.
-        Handles adding columns by creating a new table, copying data, and replacing the old table.
-        Drops columns that are no longer in the model schema (potential data loss).
-        """
-        current_schema = await self.get_current_schema()
-        desired_schema = self.get_desired_schema()
-
-        # Compare current and desired schemas
-        fields_to_add = desired_schema - current_schema
-        fields_to_remove = current_schema - desired_schema
-
-        # Get current indexes
-        current_indexes = {index["name"]: index for index in await self.list_indexes()}
-        desired_indexes = {index["name"]: index for index in self.indexes}
-
-        # Compare indexes
-        indexes_to_add = set(desired_indexes.keys()) - set(current_indexes.keys())
-        indexes_to_update = []
-
-        # Check if existing indexes need updates
-        for name in set(current_indexes.keys()) & set(desired_indexes.keys()):
-            current = current_indexes[name]
-            desired = desired_indexes[name]
-            if current["columns"] != desired["columns"] or current["unique"] != desired["unique"]:
-                indexes_to_update.append(name)
-
-        # If no changes needed, return early
-        if not (fields_to_add or fields_to_remove or indexes_to_add or indexes_to_update):
-            return
-
-        # Drop affected indexes before table modifications
-        if fields_to_remove:
-            for index in await self.list_indexes():
-                await self.drop_index(index["name"])
-        else:
-            for index_name in indexes_to_update:
-                await self.drop_index(index_name)
-
-        # Handle table schema changes
-        if fields_to_add:
-            for field_name in fields_to_add:
-                # Refresh schema each time to avoid races; skip if already present
-                try:
-                    current_schema = await self.get_current_schema()
-                except Exception:
-                    current_schema = set()
-                if field_name in current_schema:
-                    continue
-
-                field_type = get_sqlite_type(self.fields[field_name].annotation)
-                try:
-                    log.info(f"Adding column {field_name} to {self.table_name}")
-                    await self.connection.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")
-                except sqlite3.OperationalError as e:
-                    # If another concurrent migration added the column, ignore
-                    if "duplicate column name" in str(e).lower():
-                        pass
-                    else:
-                        raise
-
-        if fields_to_remove:
-            # Create new table with desired schema
-            log.warning(f"Recreating table {self.table_name} to remove fields: {fields_to_remove}")
-            await self.create_table(suffix="_new")
-
-            # Copy data
-            columns = ", ".join(desired_schema)
-            await self.connection.execute(
-                f"INSERT INTO {self.table_name}_new ({columns}) SELECT {columns} FROM {self.table_name}"
-            )
-
-            await self.connection.execute(f"DROP TABLE {self.table_name}")
-            await self.connection.execute(f"ALTER TABLE {self.table_name}_new RENAME TO {self.table_name}")
-
-            # Recreate all indexes
-            for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
-        else:
-            # Create new indexes and update modified ones
-            for index_name in indexes_to_add | set(indexes_to_update):
-                index = desired_indexes[index_name]
-                await self.create_index(index_name, index["columns"], index["unique"])
-
-        await self.connection.commit()
 
     async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or replaces) an item into the database table.
