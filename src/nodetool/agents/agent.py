@@ -396,13 +396,13 @@ class AgentRunner(StreamRunnerBase):
         )
         self.resource_limits = resource_limits
 
-    def build_container_command(self, user_code: str, _env_locals: dict[str, Any]) -> list[str]:
+    def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         """
         Build the command to run the agent inside the container.
 
         Args:
             user_code: Path to the agent configuration file
-            _env_locals: Additional environment variables (ignored)
+            env_locals: Additional environment variables (ignored)
 
         Returns:
             Command list for the container
@@ -830,10 +830,13 @@ async def test_docker_feature():
     Smoke test for the Docker feature in Agent.
     Tests that an Agent can be initialized with a docker_image parameter.
     """
+    import os
+
     from nodetool.providers.openai_provider import OpenAIProvider
 
-    # Create a mock provider
-    provider = OpenAIProvider()
+    # Create a provider with required secrets
+    secrets = {"OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", "")}
+    provider = OpenAIProvider(secrets=secrets)
 
     # Test that Agent can be initialized with docker_image parameter
     agent = Agent(
@@ -861,10 +864,13 @@ async def test_sandbox_feature():
     Smoke test for the Sandbox feature in Agent.
     Tests that an Agent can be initialized with use_sandbox=True parameter.
     """
+    import os
+
     from nodetool.providers.openai_provider import OpenAIProvider
 
-    # Create a mock provider
-    provider = OpenAIProvider()
+    # Create a provider with required secrets
+    secrets = {"OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", "")}
+    provider = OpenAIProvider(secrets=secrets)
 
     # Test that Agent can be initialized with use_sandbox parameter
     agent = Agent(

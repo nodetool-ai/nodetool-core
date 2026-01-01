@@ -945,10 +945,13 @@ class WebContentExtractor:
     """
 
     def __init__(self, processing_context: ProcessingContext):
+        import os
+
         from nodetool.providers.openai_provider import OpenAIProvider
 
         self.processing_context = processing_context
-        self.provider = OpenAIProvider()
+        secrets = {"OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", "")}
+        self.provider = OpenAIProvider(secrets=secrets)
         self.model = "gpt-4o-mini"
         self.tools = [DOMExamineTool(), DOMSearchTool(), DOMExtractTool()]
         self.max_iterations = 5

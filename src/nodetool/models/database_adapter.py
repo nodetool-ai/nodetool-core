@@ -11,6 +11,9 @@ Defines the Abstract Base Class (ABC) for database adapters.
 This module specifies the interface that all database adapters (like SQLite, PostgreSQL)
 must implement to interact with the DBModel base class. It ensures a consistent API
 for database operations across different database systems.
+
+Note: Migration functionality has been moved to the dedicated migration system
+in nodetool.migrations. The auto_migrate method is deprecated and will be removed.
 """
 
 
@@ -19,6 +22,9 @@ class DatabaseAdapter(ABC):
 
     Defines the common interface for interacting with different database backends.
     Subclasses must implement all abstract methods to provide concrete database operations.
+
+    Note: Schema migrations are now handled by the migration system in nodetool.migrations.
+    The auto_migrate method is deprecated and should not be used for new code.
     """
 
     fields: Dict[str, FieldInfo]
@@ -123,8 +129,14 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    async def auto_migrate(self):
+    async def auto_migrate(self) -> None:
         """
         Automatically migrate the table to current schema.
+
+        DEPRECATED: This method is deprecated. Schema migrations are now
+        handled by the dedicated migration system in nodetool.migrations.
+        This method is kept for backward compatibility but does nothing.
+        Use 'nodetool migrations upgrade' CLI command instead.
         """
+        # Deprecated - migrations now handled by nodetool.migrations
         pass

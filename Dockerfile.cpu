@@ -109,7 +109,10 @@ RUN echo "Installing external nodetool packages from registry..." && \
     rm -rf /var/tmp/*
 
 
-# RUN /app/venv/bin/playwright install
+# Install Playwright browsers (uncomment to enable)
+# Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
+# RUN TMPDIR=/var/tmp /app/venv/bin/playwright install && \
+#     rm -rf /var/tmp/* /tmp/*
 
 # Expose port for the worker
 EXPOSE 7777

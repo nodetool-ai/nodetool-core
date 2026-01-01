@@ -284,7 +284,8 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         websocket: WebSocket,
         user_id: str | None = None,
         auth_token: str | None = None,
-    ):
+        **kwargs,
+    ) -> None:
         """
         Establish the WebSocket connection with authentication.
 
@@ -292,6 +293,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             websocket: The FastAPI WebSocket object
             user_id: Optional pre-authenticated user ID (e.g., from middleware)
             auth_token: Optional authentication token
+            **kwargs: Additional keyword arguments for compatibility.
         """
         if auth_token is not None:
             self.auth_token = auth_token

@@ -128,12 +128,12 @@ async def test_manager_start_subprocess_job(simple_workflow, cleanup_jobs):
         nodes=[
             GraphNode(
                 id="input_text",
-                type="nodetool.input.StringInput",
+                type="nodetool.workflows.test_helper.StringInput",
                 data={"name": "text", "label": "Input Text", "value": ""},
             ),
             GraphNode(
                 id="format_text",
-                type="nodetool.text.FormatText",
+                type="nodetool.workflows.test_helper.FormatText",
                 data={
                     "template": "Hello, {{ text }}",
                     "inputs": {"text": {"node_id": "input_text", "output": "value"}},
@@ -141,7 +141,7 @@ async def test_manager_start_subprocess_job(simple_workflow, cleanup_jobs):
             ),
             GraphNode(
                 id="output_result",
-                type="nodetool.output.StringOutput",
+                type="nodetool.workflows.test_helper.StringOutput",
                 data={
                     "name": "result",
                     "value": "",
@@ -363,12 +363,12 @@ async def test_manager_docker_strategy(simple_workflow, cleanup_jobs):
         nodes=[
             GraphNode(
                 id="input_text",
-                type="nodetool.input.StringInput",
+                type="nodetool.workflows.test_helper.StringInput",
                 data={"name": "text", "label": "Input Text", "value": ""},
             ),
             GraphNode(
                 id="format_text",
-                type="nodetool.text.FormatText",
+                type="nodetool.workflows.test_helper.FormatText",
                 data={
                     "template": "Docker: {{ text }}",
                     "inputs": {"text": {"node_id": "input_text", "output": "value"}},
@@ -376,7 +376,7 @@ async def test_manager_docker_strategy(simple_workflow, cleanup_jobs):
             ),
             GraphNode(
                 id="output_result",
-                type="nodetool.output.StringOutput",
+                type="nodetool.workflows.test_helper.StringOutput",
                 data={
                     "name": "result",
                     "value": "",

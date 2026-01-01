@@ -374,10 +374,12 @@ class Environment:
     @classmethod
     def get_db_path(cls):
         """
-        The database url is the url of the slite database.
+        The database url is the url of the sqlite database.
         """
         if RUNNING_PYTEST:
-            raise Exception("NOPE")
+            import tempfile
+            from pathlib import Path
+            return str(Path(tempfile.gettempdir()) / "nodetool_test_subprocess.db")
         else:
             return cls.get("DB_PATH")
 

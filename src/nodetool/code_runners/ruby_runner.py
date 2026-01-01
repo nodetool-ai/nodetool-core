@@ -20,11 +20,9 @@ class RubyDockerRunner(StreamRunnerBase):
     def __init__(
         self,
         image: str = "ruby:3.3-alpine",
-        *args,
         **kwargs,
     ):
         super().__init__(
-            *args,
             image=image,
             **kwargs,
         )

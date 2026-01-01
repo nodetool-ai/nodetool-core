@@ -62,7 +62,7 @@ def _build_simple_workflow_graph() -> Graph:
         nodes=[
             Node(
                 id="input_text",
-                type="nodetool.input.StringInput",
+                type="nodetool.workflows.test_helper.StringInput",
                 data={
                     "name": "text",
                     "label": "Input Text",
@@ -71,14 +71,14 @@ def _build_simple_workflow_graph() -> Graph:
             ),
             Node(
                 id="format_text",
-                type="nodetool.text.FormatText",
+                type="nodetool.workflows.test_helper.FormatText",
                 data={
                     "template": "Docker test: {{ text }}",
                 },
             ),
             Node(
                 id="output_result",
-                type="nodetool.output.StringOutput",
+                type="nodetool.workflows.test_helper.StringOutput",
                 data={
                     "name": "result",
                     "value": "",
@@ -420,7 +420,7 @@ async def test_docker_job_preview_update_messages():
         nodes=[
             Node(
                 id="input_text",
-                type="nodetool.input.StringInput",
+                type="nodetool.workflows.test_helper.StringInput",
                 data={
                     "name": "text",
                     "label": "Input Text",
@@ -429,7 +429,7 @@ async def test_docker_job_preview_update_messages():
             ),
             Node(
                 id="format_text",
-                type="nodetool.text.FormatText",
+                type="nodetool.workflows.test_helper.FormatText",
                 data={
                     "template": "Preview test: {{ text }}",
                 },
@@ -444,7 +444,7 @@ async def test_docker_job_preview_update_messages():
             ),
             Node(
                 id="output_result",
-                type="nodetool.output.StringOutput",
+                type="nodetool.workflows.test_helper.StringOutput",
                 data={
                     "name": "result",
                     "value": "",

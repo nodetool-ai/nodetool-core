@@ -690,7 +690,7 @@ def worker(
     # Parse comma-separated tools string into list
     tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
 
-    run_worker(host, port, remote_auth, provider, default_model, tools_list, loaded_workflows)
+    run_worker(host, port, provider, default_model, tools_list, loaded_workflows)
 
 
 @cli.command("dsl-export")
@@ -1171,7 +1171,7 @@ def list_hf_models(model_type: str, task: str | None, limit: int | None, as_json
         get_models_by_hf_type,
     )
 
-    models: list[UnifiedModel] = asyncio.run(get_models_by_hf_type(model_type, task))
+    models: list[UnifiedModel] = asyncio.run(get_models_by_hf_type(model_type))
 
     if limit is not None:
         models = models[:limit]
@@ -3876,6 +3876,12 @@ def sync_workflow(workflow_id: str, server_url: str):
 
 # Add sync group to the main CLI
 cli.add_command(sync)
+
+
+# Add migrations group to the main CLI
+from nodetool.cli_migrations import migrations
+
+cli.add_command(migrations)
 
 
 # ---- Proxy Commands ----

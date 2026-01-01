@@ -137,7 +137,7 @@ async def update_settings(req: SettingsUpdateRequest, user: str = Depends(curren
 
     # Save only non-secret settings to settings.yaml
     # Secrets are now in the database, so we don't save them to secrets.yaml
-    save_settings(settings, {})
+    save_settings(settings)
 
     Environment.load_settings()
 

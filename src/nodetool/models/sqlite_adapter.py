@@ -33,19 +33,19 @@ class SafeJSONEncoder(json.JSONEncoder):
     Other non-serializable types are converted to their string representation.
     """
 
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, bytes):
+    def default(self, o: Any) -> Any:
+        if isinstance(o, bytes):
             # Encode bytes as base64 with a marker for decoding
-            return {"__bytes__": base64.b64encode(obj).decode("ascii")}
-        if isinstance(obj, datetime):
-            return {"__datetime__": obj.isoformat()}
-        if isinstance(obj, set):
-            return {"__set__": list(obj)}
+            return {"__bytes__": base64.b64encode(o).decode("ascii")}
+        if isinstance(o, datetime):
+            return {"__datetime__": o.isoformat()}
+        if isinstance(o, set):
+            return {"__set__": list(o)}
         # For any other non-serializable type, convert to string
         try:
-            return super().default(obj)
+            return super().default(o)
         except TypeError:
-            return {"__repr__": repr(obj)}
+            return {"__repr__": repr(o)}
 
 
 def _decode_special_types(obj: Any) -> Any:
@@ -373,23 +373,18 @@ class SQLiteAdapter(DatabaseAdapter):
 
     async def auto_migrate(
         self,
-    ):
+    ) -> None:
         """Run automatic migration for this table.
 
-        Checks if migration has already been completed this session to avoid
-        redundant work. Uses per-table locking to prevent concurrent migrations.
+        DEPRECATED: This method is deprecated. Schema migrations are now
+        handled by the dedicated migration system in nodetool.migrations.
+        This method is kept for backward compatibility but does nothing.
+        Use 'nodetool migrations upgrade' CLI command instead.
         """
-        log.info(f"[{self.table_name}] Starting auto_migrate")
-        log.debug(f"[{self.table_name}] Checking if table exists")
-        if await self.table_exists():
-            log.debug(f"[{self.table_name}] Table exists, calling migrate_table")
-            await self.migrate_table()
-        else:
-            log.debug(f"[{self.table_name}] Table does not exist, creating table and indexes")
-            await self.create_table()
-            for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
-        log.info(f"[{self.table_name}] auto_migrate completed")
+        # Deprecated - migrations now handled by nodetool.migrations
+        # This method intentionally does nothing to avoid conflicts with
+        # the new migration system
+        pass
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -397,22 +392,17 @@ class SQLiteAdapter(DatabaseAdapter):
 
     async def table_exists(self) -> bool:
         """Checks if the table associated with this adapter exists in the database."""
-        log.debug(f"[{self.table_name}] Checking if table exists in sqlite_master")
         cursor = await self.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (self.table_name,),
         )
-        result = await cursor.fetchone()
-        log.debug(f"[{self.table_name}] table_exists result: {result is not None}")
-        return result is not None
+        return (await cursor.fetchone()) is not None
 
     async def get_current_schema(self) -> set[str]:
         """Retrieves the current schema of the table from the database."""
-        log.debug(f"[{self.table_name}] Getting current schema via PRAGMA table_info")
         cursor = await self.connection.execute(f"PRAGMA table_info({self.table_name})")
         rows = await cursor.fetchall()
         current_schema = {row[1] for row in rows}
-        log.debug(f"[{self.table_name}] Current schema columns: {current_schema}")
         return current_schema
 
     def get_desired_schema(self) -> set[str]:
@@ -442,16 +432,11 @@ class SQLiteAdapter(DatabaseAdapter):
         sql += f"PRIMARY KEY ({primary_key}))"
 
         async def _create():
-            log.debug(f"[{table_name}] Executing CREATE TABLE SQL")
             await self.connection.execute(sql)
-            log.debug(f"[{table_name}] Committing transaction")
             await self.connection.commit()
-            log.debug(f"[{table_name}] Table created successfully")
 
         try:
-            log.debug(f"[{table_name}] Calling retry_on_locked")
             await retry_on_locked(_create)
-            log.debug(f"[{table_name}] retry_on_locked completed")
         except aiosqlite.Error as e:
             log.error(f"SQLite error during table creation: {e}")
             raise e
@@ -466,113 +451,6 @@ class SQLiteAdapter(DatabaseAdapter):
             await self.connection.commit()
 
         await retry_on_locked(_drop)
-
-    async def migrate_table(self) -> None:
-        """Performs schema migration for the table.
-
-        Compares the current schema in the database with the model's defined schema.
-        Adds new columns if they exist in the model but not in the database table.
-        Handles adding columns by creating a new table, copying data, and replacing the old table.
-        Drops columns that are no longer in the model schema (potential data loss).
-        """
-        log.info(f"Starting migration for table {self.table_name}")
-        try:
-            await asyncio.wait_for(self._migrate_table_impl(), timeout=30.0)
-            log.info(f"Migration completed for table {self.table_name}")
-        except TimeoutError:
-            log.warning(f"Migration timeout for {self.table_name}, attempting checkpoint recovery")
-            try:
-                await self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                log.info(f"WAL checkpoint completed for {self.table_name}")
-            except Exception as e:
-                log.error(f"WAL checkpoint failed: {e}")
-            raise
-
-    async def _migrate_table_impl(self) -> None:
-        log.debug(f"[{self.table_name}] Getting current schema")
-        current_schema = await self.get_current_schema()
-        log.debug(f"[{self.table_name}] Current schema: {current_schema}")
-
-        desired_schema = self.get_desired_schema()
-        log.debug(f"[{self.table_name}] Desired schema: {desired_schema}")
-
-        # Compare current and desired schemas
-        fields_to_add = desired_schema - current_schema
-        fields_to_remove = current_schema - desired_schema
-
-        # Get current indexes
-        current_indexes = {index["name"]: index for index in await self.list_indexes()}
-        desired_indexes = {index["name"]: index for index in self.indexes}
-
-        # Compare indexes
-        indexes_to_add = set(desired_indexes.keys()) - set(current_indexes.keys())
-        indexes_to_update = []
-
-        # Check if existing indexes need updates
-        for name in set(current_indexes.keys()) & set(desired_indexes.keys()):
-            current = current_indexes[name]
-            desired = desired_indexes[name]
-            if current["columns"] != desired["columns"] or current["unique"] != desired["unique"]:
-                indexes_to_update.append(name)
-
-        # If no changes needed, return early
-        if not (fields_to_add or fields_to_remove or indexes_to_add or indexes_to_update):
-            return
-
-        # Drop affected indexes before table modifications
-        if fields_to_remove:
-            for index in await self.list_indexes():
-                await self.drop_index(index["name"])
-        else:
-            for index_name in indexes_to_update:
-                await self.drop_index(index_name)
-
-        # Handle table schema changes
-        if fields_to_add:
-            for field_name in fields_to_add:
-                # Refresh schema each time to avoid races; skip if already present
-                try:
-                    current_schema = await self.get_current_schema()
-                except Exception:
-                    current_schema = set()
-                if field_name in current_schema:
-                    continue
-
-                field_type = get_sqlite_type(self.fields[field_name].annotation)
-                try:
-                    log.info(f"Adding column {field_name} to {self.table_name}")
-                    await self.connection.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")
-                except sqlite3.OperationalError as e:
-                    # If another concurrent migration added the column, ignore
-                    if "duplicate column name" in str(e).lower():
-                        pass
-                    else:
-                        raise
-
-        if fields_to_remove:
-            # Create new table with desired schema
-            log.warning(f"Recreating table {self.table_name} to remove fields: {fields_to_remove}")
-            await self.create_table(suffix="_new")
-
-            # Copy data
-            columns = ", ".join(desired_schema)
-            await self.connection.execute(
-                f"INSERT INTO {self.table_name}_new ({columns}) SELECT {columns} FROM {self.table_name}"
-            )
-
-            await self.connection.execute(f"DROP TABLE {self.table_name}")
-            await self.connection.execute(f"ALTER TABLE {self.table_name}_new RENAME TO {self.table_name}")
-
-            # Recreate all indexes
-            for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
-        else:
-            # Create new indexes and update modified ones
-            for index_name in indexes_to_add | set(indexes_to_update):
-                index = desired_indexes[index_name]
-                await self.create_index(index_name, index["columns"], index["unique"])
-
-        await self.connection.commit()
 
     async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or replaces) an item into the database table.
@@ -746,13 +624,9 @@ class SQLiteAdapter(DatabaseAdapter):
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
 
         log.info(f"Creating index {index_name} on {self.table_name}")
-
-        async def _create_index():
+        try:
             await self.connection.execute(sql)
             await self.connection.commit()
-
-        try:
-            await retry_on_locked(_create_index)
         except aiosqlite.Error as e:
             log.error(f"SQLite error during index creation: {e}")
             raise e
