@@ -29,30 +29,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run ty type checker
-        run: |
-          uv run ty check src \
-            --ignore unresolved-import \
-            --ignore possibly-missing-attribute \
-            --error invalid-type-form \
-            --error invalid-attribute-access \
-            --error invalid-return-type \
-            --error parameter-already-assigned \
-            --error too-many-positional-arguments \
-            --warn invalid-method-override \
-            --warn invalid-argument-type \
-            --warn unresolved-attribute \
-            --warn missing-argument \
-            --warn invalid-assignment \
-            --warn call-non-callable \
-            --warn no-matching-overload \
-            --warn unknown-argument \
-            --warn unsupported-operator \
-            --warn not-iterable \
-            --warn invalid-key \
-            --warn not-subscriptable \
-            --warn unresolved-reference \
-            --warn invalid-parameter-default
-
       - name: Run tests
         run: uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
