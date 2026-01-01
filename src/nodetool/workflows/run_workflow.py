@@ -4,6 +4,8 @@ from typing import AsyncGenerator
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import ResourceScope
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -239,26 +241,27 @@ async def run_workflow(
                     yield msg
 
     else:
-        run_task = asyncio.create_task(run())
+        async with ResourceScope():
+            run_task = asyncio.create_task(run())
 
-        try:
-            async for msg in process_workflow_messages(context, runner):
-                yield msg
-        except Exception as e:
-            log.exception(e)
-            run_task.cancel()
-            with suppress(asyncio.CancelledError):
+            try:
+                async for msg in process_workflow_messages(context, runner):
+                    yield msg
+            except Exception as e:
+                log.exception(e)
+                run_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await run_task
+                async for msg in handle_runner_error(e, runner):
+                    yield msg
+                raise
+
+            try:
                 await run_task
-            async for msg in handle_runner_error(e, runner):
+            except Exception as exception:
+                log.exception(exception)
+                async for msg in handle_runner_error(exception, runner):
+                    yield msg
+                raise
+            async for msg in drain_pending_messages():
                 yield msg
-            raise
-
-        try:
-            await run_task
-        except Exception as exception:
-            log.exception(exception)
-            async for msg in handle_runner_error(exception, runner):
-                yield msg
-            raise
-        async for msg in drain_pending_messages():
-            yield msg

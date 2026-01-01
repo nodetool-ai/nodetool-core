@@ -48,7 +48,7 @@ def _build_simple_workflow_graph() -> dict[str, object]:
             },
             {
                 "id": "format_text",
-                "type": "nodetool.text.FormatText",
+                "type": "nodetool.workflows.test_helper.FormatText",
                 "data": {
                     "template": "Hello, {{ text }}",
                     "inputs": {"text": {"node_id": "input_text", "output": "value"}},
