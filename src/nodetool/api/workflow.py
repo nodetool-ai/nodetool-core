@@ -686,8 +686,6 @@ async def generate_workflow_name(
 
     return await from_model(workflow)
 
-    return await from_model(workflow)
-
 
 # Workflow Version Endpoints
 
