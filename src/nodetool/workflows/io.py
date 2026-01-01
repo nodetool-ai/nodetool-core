@@ -191,7 +191,9 @@ class NodeOutputs:
                     inbox.mark_source_done(edge.targetHandle)
                 # Notify that this specific edge has been drained
                 with suppress(Exception):
-                    self.context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
+                    self.context.post_message(
+                        EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained")
+                    )
 
     async def default(self, value: Any) -> None:
         """Convenience for emitting to the default slot.

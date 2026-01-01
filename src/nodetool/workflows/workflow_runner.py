@@ -333,6 +333,7 @@ class WorkflowRunner:
                             self._edge_counters[edge_id] += 1
                             context.post_message(
                                 EdgeUpdate(
+                                    workflow_id=context.workflow_id,
                                     edge_id=edge_id,
                                     status="message_sent",
                                     counter=self._edge_counters[edge_id],
@@ -345,7 +346,9 @@ class WorkflowRunner:
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
                             inbox.mark_source_done(edge.targetHandle)
-                            context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
+                            context.post_message(
+                                EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id or "", status="drained")
+                            )
                         else:
                             log.debug(f"No inbox for target {edge.target} on edge {edge.id}")
             except Exception as e:
@@ -813,6 +816,7 @@ class WorkflowRunner:
                 self._edge_counters[edge_id] += 1
                 context.post_message(
                     EdgeUpdate(
+                        workflow_id=context.workflow_id,
                         edge_id=edge_id,
                         status="message_sent",
                         counter=self._edge_counters[edge_id],
@@ -862,7 +866,7 @@ class WorkflowRunner:
                 if inbox is None:
                     continue
                 if (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle)) and edge.id:
-                    context.post_message(EdgeUpdate(edge_id=edge.id, status="drained"))
+                    context.post_message(EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id, status="drained"))
             except Exception:
                 # Best effort - ignore errors during draining
                 pass

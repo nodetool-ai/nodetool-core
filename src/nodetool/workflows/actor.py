@@ -154,7 +154,9 @@ class NodeActor:
                 continue
             if edge.targetHandle not in handle_set:
                 continue
-            self.context.post_message(EdgeUpdate(edge_id=edge.id or "", status="drained"))
+            self.context.post_message(
+                EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained")
+            )
 
     async def _gather_initial_inputs(self, handles: set[str] | None = None) -> dict[str, Any]:
         """Wait for exactly one value per specified inbound handle and return a map.
@@ -196,7 +198,7 @@ class NodeActor:
                 inbox.mark_source_done(edge.targetHandle)
             # Notify listeners that this edge has been drained (EOS signaled)
             self.context.post_message(
-                EdgeUpdate(edge_id=edge.id or "", status="drained"),
+                EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained"),
             )
 
     async def process_node_with_inputs(
