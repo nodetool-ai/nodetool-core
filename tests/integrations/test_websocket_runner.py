@@ -181,3 +181,77 @@ async def test_websocket_runner_get_status_with_job_id(websocket_runner, mock_we
 
         assert "job_id" in status
         assert status["job_id"] == job_id
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_pause_job_no_job_id(websocket_runner, mock_websocket):
+    """Test that pause_job returns error when no job_id is provided."""
+    await websocket_runner.connect(mock_websocket)
+
+    result = await websocket_runner.pause_job("", None)
+
+    assert "error" in result
+    assert result["error"] == "No job_id provided"
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_pause_job_not_found(websocket_runner, mock_websocket):
+    """Test that pause_job returns error when job is not found."""
+    await websocket_runner.connect(mock_websocket)
+
+    result = await websocket_runner.pause_job("nonexistent-job-id", None)
+
+    assert "error" in result
+    assert "not found" in result["error"].lower() or result["error"] == "Job not found"
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_resume_job_no_job_id(websocket_runner, mock_websocket):
+    """Test that resume_job returns error when no job_id is provided."""
+    await websocket_runner.connect(mock_websocket)
+
+    result = await websocket_runner.resume_job("", None)
+
+    assert "error" in result
+    assert result["error"] == "No job_id provided"
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_resume_job_not_found(websocket_runner, mock_websocket):
+    """Test that resume_job returns error when job is not found."""
+    await websocket_runner.connect(mock_websocket)
+
+    result = await websocket_runner.resume_job("nonexistent-job-id", None)
+
+    assert "error" in result
+    assert "not found" in result["error"].lower() or result["error"] == "Job not found"
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_handle_pause_command(websocket_runner, mock_websocket):
+    """Test that handle_command properly handles PAUSE_JOB command."""
+    from nodetool.integrations.websocket.websocket_runner import CommandType, WebSocketCommand
+
+    await websocket_runner.connect(mock_websocket)
+
+    # Test that PAUSE_JOB command requires job_id
+    command = WebSocketCommand(command=CommandType.PAUSE_JOB, data={})
+    result = await websocket_runner.handle_command(command)
+
+    assert "error" in result
+    assert result["error"] == "job_id is required"
+
+
+@pytest.mark.asyncio
+async def test_websocket_runner_handle_resume_command(websocket_runner, mock_websocket):
+    """Test that handle_command properly handles RESUME_JOB command."""
+    from nodetool.integrations.websocket.websocket_runner import CommandType, WebSocketCommand
+
+    await websocket_runner.connect(mock_websocket)
+
+    # Test that RESUME_JOB command requires job_id
+    command = WebSocketCommand(command=CommandType.RESUME_JOB, data={})
+    result = await websocket_runner.handle_command(command)
+
+    assert "error" in result
+    assert result["error"] == "job_id is required"

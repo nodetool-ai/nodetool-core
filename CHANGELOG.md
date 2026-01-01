@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- **SQLite Concurrency**: Improved database handling with higher busy timeouts, WAL support, and optimized retry logic to prevent "database is locked" errors
+- **Event Logging**: Optimized `log_event` with non-blocking batch mode to reduce database contention
 - **Media Utilities Consolidation**: Refactored media/asset conversion utilities out of `processing_context.py` into
   focused, reusable modules:
   - Added `common/font_utils.py` with `get_system_font_path()` for cross-platform font discovery

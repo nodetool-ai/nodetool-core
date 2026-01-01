@@ -20,9 +20,14 @@ class WorkflowEventLogger:
     Logger for recording workflow execution events.
 
     This class provides a high-level API for logging events and updating
-    projections during workflow execution. It batches events when possible
-    and handles projection updates asynchronously.
+    projections during workflow execution. Events are queued and written
+    asynchronously to reduce database contention and improve throughput.
     """
+
+    # Max events to batch before forcing a flush
+    BATCH_SIZE = 10
+    # Max time to wait before flushing partial batch (seconds)
+    FLUSH_INTERVAL = 0.1
 
     def __init__(self, run_id: str, enable_projection_updates: bool = True):
         """
@@ -36,6 +41,82 @@ class WorkflowEventLogger:
         self.enable_projection_updates = enable_projection_updates
         self._projection: RunProjection | None = None
         self._projection_lock = asyncio.Lock()
+        # Event queue for async batching
+        self._event_queue: asyncio.Queue = asyncio.Queue()
+        self._flush_task: asyncio.Task | None = None
+        self._is_running = False
+
+    async def start(self):
+        """Start the background event flushing task."""
+        if self._is_running:
+            return
+        self._is_running = True
+        self._flush_task = asyncio.create_task(self._flush_loop())
+        log.debug(f"Started event logger flush task for run {self.run_id}")
+
+    async def stop(self):
+        """Stop the background event flushing task and flush remaining events."""
+        self._is_running = False
+        if self._flush_task:
+            # Process any remaining events
+            await self._flush_pending()
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+            self._flush_task = None
+            log.debug(f"Stopped event logger flush task for run {self.run_id}")
+
+    async def _flush_loop(self):
+        """Background loop that periodically flushes queued events."""
+        while self._is_running:
+            try:
+                await asyncio.sleep(self.FLUSH_INTERVAL)
+                await self._flush_pending()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Error in event flush loop: {e}", exc_info=True)
+
+    async def _flush_pending(self):
+        """Flush all pending events from the queue."""
+        events_to_flush = []
+        while not self._event_queue.empty() and len(events_to_flush) < self.BATCH_SIZE:
+            try:
+                event_data = self._event_queue.get_nowait()
+                events_to_flush.append(event_data)
+            except asyncio.QueueEmpty:
+                break
+
+        if not events_to_flush:
+            return
+
+        # Write events sequentially but in one batch
+        for event_data in events_to_flush:
+            try:
+                event_type = event_data["event_type"]
+                payload = event_data["payload"]
+                node_id = event_data.get("node_id")
+                update_projection = event_data.get("update_projection", True)
+
+                event = await RunEvent.append_event(
+                    run_id=self.run_id,
+                    event_type=event_type,
+                    payload=payload,
+                    node_id=node_id,
+                )
+
+                log.debug(f"Flushed event {event_type} for run {self.run_id} (seq={event.seq})")
+
+                # Update projection if enabled
+                if update_projection and self.enable_projection_updates:
+                    projection = await self.get_projection()
+                    await projection.update_from_event(event)
+                    await projection.save()
+
+            except Exception as e:
+                log.error(f"Error flushing event: {e}", exc_info=True)
 
     async def get_projection(self) -> RunProjection:
         """
@@ -48,6 +129,7 @@ class WorkflowEventLogger:
             async with self._projection_lock:
                 if self._projection is None:
                     self._projection = await RunProjection.get_or_create(self.run_id)
+        assert self._projection is not None
         return self._projection
 
     async def log_event(
@@ -56,7 +138,8 @@ class WorkflowEventLogger:
         payload: dict[str, Any],
         node_id: str | None = None,
         update_projection: bool = True,
-    ) -> RunEvent:
+        blocking: bool = True,
+    ) -> RunEvent | None:
         """
         Log a single event to the event log.
 
@@ -65,10 +148,23 @@ class WorkflowEventLogger:
             payload: Event-specific data
             node_id: Optional node identifier
             update_projection: Whether to update projection after logging
+            blocking: If True (default), write immediately. If False, queue for batch processing.
 
         Returns:
-            The created RunEvent
+            The created RunEvent (only if blocking=True), or None if queued
         """
+        # If non-blocking and flush task is running, queue the event
+        if not blocking and self._is_running:
+            await self._event_queue.put({
+                "event_type": event_type,
+                "payload": payload,
+                "node_id": node_id,
+                "update_projection": update_projection,
+            })
+            log.debug(f"Queued event {event_type} for run {self.run_id}")
+            return None
+
+        # Otherwise, write immediately (blocking)
         try:
             # Append event to log
             event = await RunEvent.append_event(

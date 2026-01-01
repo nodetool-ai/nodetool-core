@@ -147,9 +147,12 @@ class SQLiteConnectionPool:
                 await connection.execute("PRAGMA journal_mode=DELETE")
             else:
                 await connection.execute("PRAGMA journal_mode=WAL")
-            await connection.execute("PRAGMA busy_timeout=5000")  # 5 seconds
+            # Increased busy_timeout to 30 seconds for high-concurrency scenarios
+            await connection.execute("PRAGMA busy_timeout=30000")  # 30 seconds
             await connection.execute("PRAGMA synchronous=NORMAL")
             await connection.execute("PRAGMA cache_size=-64000")  # 64MB
+            # Enable memory-mapped I/O for better read performance
+            await connection.execute("PRAGMA mmap_size=268435456")  # 256MB
             await connection.commit()
             log.debug("SQLite connection configured with PRAGMA settings")
         except Exception as e:

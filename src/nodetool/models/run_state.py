@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from nodetool.models.base_model import DBField, DBIndex, DBModel
 
-RunStatus = Literal["running", "suspended", "completed", "failed", "cancelled", "recovering"]
+RunStatus = Literal["running", "suspended", "paused", "completed", "failed", "cancelled", "recovering"]
 
 
 @DBIndex(columns=["status"], name="idx_run_state_status")
@@ -125,6 +125,11 @@ class RunState(DBModel):
         self.status = "cancelled"
         await self.save()
 
+    async def mark_paused(self):
+        """Mark run as paused."""
+        self.status = "paused"
+        await self.save()
+
     async def mark_recovering(self):
         """Mark run as recovering (transient state during recovery)."""
         self.status = "recovering"
@@ -132,7 +137,11 @@ class RunState(DBModel):
 
     def is_resumable(self) -> bool:
         """Check if run can be resumed."""
-        return self.status in ["running", "suspended", "recovering", "failed"]
+        return self.status in ["running", "suspended", "paused", "recovering", "failed"]
+
+    def is_paused(self) -> bool:
+        """Check if run is currently paused."""
+        return self.status == "paused"
 
     def is_suspended(self) -> bool:
         """Check if run is currently suspended."""

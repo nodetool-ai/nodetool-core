@@ -38,7 +38,7 @@ class WorkflowRecoveryService:
         run_state = await RunState.get(run_id)
         if not run_state:
             return False
-        return run_state.status in ["running", "failed", "suspended", "recovering"]
+        return run_state.status in ["running", "failed", "suspended", "paused", "recovering"]
 
     async def acquire_run_lease(self, run_id: str) -> RunLease | None:
         """Acquire exclusive lease on a run."""

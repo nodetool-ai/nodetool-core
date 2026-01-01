@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from nodetool.models.base_model import DBField, DBIndex, DBModel
 
-NodeStatus = Literal["idle", "scheduled", "running", "completed", "failed", "suspended"]
+NodeStatus = Literal["idle", "scheduled", "running", "paused", "completed", "failed", "suspended"]
 
 
 @DBIndex(columns=["run_id", "status"], name="idx_run_node_state_run_status")
@@ -214,6 +214,15 @@ class RunNodeState(DBModel):
     def is_retryable_failure(self) -> bool:
         """Check if node failed but can be retried."""
         return self.status == "failed" and self.retryable
+
+    def is_paused(self) -> bool:
+        """Check if node is paused."""
+        return self.status == "paused"
+
+    async def mark_paused(self):
+        """Mark node as paused."""
+        self.status = "paused"
+        await self.save()
 
     @classmethod
     async def get_incomplete_nodes(cls, run_id: str) -> list["RunNodeState"]:

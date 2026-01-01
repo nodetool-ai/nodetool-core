@@ -27,6 +27,9 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.types import Chunk, Error
+from nodetool.workflows.recovery import WorkflowRecoveryService
+from nodetool.models.run_state import RunState
+from nodetool.models.run_node_state import RunNodeState
 
 log = get_logger(__name__)
 
@@ -39,12 +42,12 @@ bidirectional communication between clients and the workflow engine. It supports
 
 Key components:
 - WebSocketRunner: Main class handling WebSocket connections and workflow execution
-- CommandType: Enum defining supported WebSocket commands (run_job, cancel_job, get_status, set_mode)
+- CommandType: Enum defining supported WebSocket commands (run_job, cancel_job, pause_job, resume_job, get_status, set_mode)
 - Message Processing: Utilities for processing and streaming workflow execution messages
 - Error Handling: Comprehensive error handling and status reporting
 
 The module supports:
-- Starting and canceling workflow jobs
+- Starting, canceling, pausing, and resuming workflow jobs
 - Real-time status updates and message streaming
 - Dynamic switching between binary and text protocols
 - Graceful connection and resource management
@@ -56,6 +59,8 @@ class CommandType(str, Enum):
     RUN_JOB = "run_job"
     RECONNECT_JOB = "reconnect_job"
     CANCEL_JOB = "cancel_job"
+    PAUSE_JOB = "pause_job"
+    RESUME_JOB = "resume_job"
     GET_STATUS = "get_status"
     SET_MODE = "set_mode"
     CLEAR_MODELS = "clear_models"
@@ -606,6 +611,149 @@ class WebSocketRunner:
                 "workflow_id": workflow_id or "",
             }
 
+    async def pause_job(self, job_id: str, workflow_id: Optional[str] = None):
+        """
+        Pauses the specified job.
+
+        Updates RunState to "paused" status and marks all currently running nodes as "paused".
+
+        Returns:
+            dict: A dictionary with a message indicating the job was paused, or an error if not possible.
+        """
+        if not job_id:
+            log.warning("No job_id provided for pause")
+            return {"error": "No job_id provided"}
+
+        log.info(f"Attempting to pause job: {job_id}")
+
+        try:
+            # Get the run state from database
+            run_state = await RunState.get(job_id)
+            if not run_state:
+                log.warning(f"Run state not found for job: {job_id}")
+                return {
+                    "error": "Job not found",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id or "",
+                }
+
+            # Check if the job can be paused (must be running)
+            if run_state.status != "running":
+                log.warning(f"Cannot pause job {job_id}: status is {run_state.status}")
+                return {
+                    "error": f"Cannot pause job: status is '{run_state.status}', must be 'running'",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id or "",
+                }
+
+            # Mark the run as paused
+            await run_state.mark_paused()
+            log.info(f"Marked run {job_id} as paused")
+
+            # Get all running nodes and mark them as paused
+            running_nodes = await RunNodeState.get_incomplete_nodes(job_id)
+            paused_node_count = 0
+            for node_state in running_nodes:
+                if node_state.status == "running":
+                    await node_state.mark_paused()
+                    paused_node_count += 1
+                    log.debug(f"Marked node {node_state.node_id} as paused")
+
+            log.info(f"Paused {paused_node_count} running nodes for job {job_id}")
+
+            # Stop streaming task if active
+            job_ctx = self.active_jobs.get(job_id)
+            if job_ctx and job_ctx.streaming_task and not job_ctx.streaming_task.done():
+                job_ctx.streaming_task.cancel()
+                self.active_jobs.pop(job_id, None)
+
+            # Cancel the job execution (but state is preserved for resumption)
+            job_manager = JobExecutionManager.get_instance()
+            await job_manager.cancel_job(job_id)
+
+            return {
+                "message": "Job paused successfully",
+                "job_id": job_id,
+                "workflow_id": workflow_id or "",
+                "paused_nodes": paused_node_count,
+            }
+
+        except Exception as e:
+            log.exception(f"Error pausing job {job_id}: {e}")
+            return {
+                "error": f"Error pausing job: {str(e)}",
+                "job_id": job_id,
+                "workflow_id": workflow_id or "",
+            }
+
+    async def resume_job(self, job_id: str, workflow_id: Optional[str] = None):
+        """
+        Resumes a paused job.
+
+        Validates the run state is "paused" and uses WorkflowRecoveryService to restart execution.
+
+        Returns:
+            dict: A dictionary with a message indicating the job was resumed, or an error if not possible.
+        """
+        if not job_id:
+            log.warning("No job_id provided for resume")
+            return {"error": "No job_id provided"}
+
+        log.info(f"Attempting to resume job: {job_id}")
+
+        try:
+            # Get the run state from database
+            run_state = await RunState.get(job_id)
+            if not run_state:
+                log.warning(f"Run state not found for job: {job_id}")
+                return {
+                    "error": "Job not found",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id or "",
+                }
+
+            # Check if the job can be resumed (must be paused)
+            if run_state.status != "paused":
+                log.warning(f"Cannot resume job {job_id}: status is {run_state.status}")
+                return {
+                    "error": f"Cannot resume job: status is '{run_state.status}', must be 'paused'",
+                    "job_id": job_id,
+                    "workflow_id": workflow_id or "",
+                }
+
+            # Use WorkflowRecoveryService to resume the workflow
+            recovery_service = WorkflowRecoveryService()
+
+            # Mark the run as running again
+            await run_state.mark_resumed()
+            log.info(f"Marked run {job_id} as running (resumed)")
+
+            # Get paused nodes and mark them as scheduled for re-execution
+            paused_nodes = await RunNodeState.get_incomplete_nodes(job_id)
+            resumed_node_count = 0
+            for node_state in paused_nodes:
+                if node_state.status == "paused":
+                    await node_state.mark_scheduled(node_state.attempt)
+                    resumed_node_count += 1
+                    log.debug(f"Marked node {node_state.node_id} as scheduled for resumption")
+
+            log.info(f"Scheduled {resumed_node_count} paused nodes for resumption in job {job_id}")
+
+            return {
+                "message": "Job resumed successfully",
+                "job_id": job_id,
+                "workflow_id": workflow_id or "",
+                "resumed_nodes": resumed_node_count,
+            }
+
+        except Exception as e:
+            log.exception(f"Error resuming job {job_id}: {e}")
+            return {
+                "error": f"Error resuming job: {str(e)}",
+                "job_id": job_id,
+                "workflow_id": workflow_id or "",
+            }
+
     def get_status(self, job_id: str | None = None):
         """
         Gets the current status of job execution.
@@ -751,6 +899,14 @@ class WebSocketRunner:
             if not job_id:
                 return {"error": "job_id is required"}
             return await self.cancel_job(job_id, workflow_id)
+        elif command.command == CommandType.PAUSE_JOB:
+            if not job_id:
+                return {"error": "job_id is required"}
+            return await self.pause_job(job_id, workflow_id)
+        elif command.command == CommandType.RESUME_JOB:
+            if not job_id:
+                return {"error": "job_id is required"}
+            return await self.resume_job(job_id, workflow_id)
         elif command.command == CommandType.GET_STATUS:
             return self.get_status(job_id)
         elif command.command == CommandType.SET_MODE:
