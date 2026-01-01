@@ -90,6 +90,7 @@ from nodetool.metadata.types import (
     TextRef,
     VideoRef,
     WorkflowRef,
+    Model3DRef 
 )
 from nodetool.packages.registry import Registry
 from nodetool.system.system_stats import SystemStats
@@ -117,6 +118,7 @@ UnionType = (
     | NPArray
     | VideoRef
     | ModelRef
+    | Model3DRef
     | DocumentRef
     | FontRef
     | TextRef
