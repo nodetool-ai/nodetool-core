@@ -131,7 +131,7 @@ async def test_threaded_job_cancellation(simple_workflow, cleanup_jobs):
     cleanup_jobs.append(job)
 
     # Cancel the job
-    result = job.cancel()
+    result = await job.cancel()
 
     # Should return True if cancelled, False if already completed
     assert isinstance(result, bool)
@@ -162,7 +162,7 @@ async def test_threaded_job_cleanup(simple_workflow, cleanup_jobs):
     job = await ThreadedJobExecution.create_and_start(request, context)
 
     # Cleanup should stop the event loop
-    job.cleanup_resources()
+    await job.cleanup_resources()
 
     # Event loop should be stopped
     await asyncio.sleep(0.1)

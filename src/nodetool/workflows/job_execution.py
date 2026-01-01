@@ -33,7 +33,9 @@ class JobExecution(ABC):
         job_model: Job model instance for database updates
         created_at: When the job was created
         _status: Internal mutable status field
+        _status: Internal mutable status field
         runner: Optional WorkflowRunner instance (only for threaded execution)
+        execution_id: Unique identifier for this specific execution attempt
     """
 
     def __init__(
@@ -43,12 +45,14 @@ class JobExecution(ABC):
         request: RunJobRequest,
         job_model: Job,
         runner: WorkflowRunner | None = None,
+        execution_id: str | None = None,
     ):
         self.job_id = job_id
         self.context = context
         self.request = request
         self.job_model = job_model
         self.runner = runner
+        self.execution_id = execution_id
         self.created_at = datetime.now()
         self._status: str = "starting"
         self._result: dict[str, Any] | None = None
@@ -94,12 +98,12 @@ class JobExecution(ABC):
         return self._status in ("completed", "error", "cancelled")
 
     @abstractmethod
-    def cancel(self) -> bool:
+    async def cancel(self) -> bool:
         """Cancel the running job. Returns True if cancelled, False otherwise."""
         pass
 
     @abstractmethod
-    def cleanup_resources(self) -> None:
+    async def cleanup_resources(self) -> None:
         """Clean up resources associated with this job."""
         pass
 

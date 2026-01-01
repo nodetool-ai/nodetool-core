@@ -23,7 +23,7 @@ class ReaderTool:
 
     name = "reader_lm"
     description = "Send a chat completion request to jinaai/ReaderLM-v2:featherless-ai on HuggingFace Hub."
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "message": {
@@ -259,7 +259,7 @@ class BrowserTool(Tool):
 
     name = "browser"
     description = "Fetch content from a web page"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {
@@ -383,7 +383,7 @@ class ScreenshotTool(Tool):
 
     name = "take_screenshot"
     description = "Take a screenshot of the current browser window or a specific element"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {
@@ -459,7 +459,7 @@ class DOMExamineTool(Tool):
 
     name = "dom_examine"
     description = "Examine DOM structure and get detailed information about elements"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {
@@ -583,7 +583,7 @@ class DOMSearchTool(Tool):
 
     name = "dom_search"
     description = "Search for DOM elements using various criteria"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {
@@ -742,7 +742,7 @@ class DOMExtractTool(Tool):
 
     name = "dom_extract"
     description = "Extract content from specific DOM elements"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {
@@ -1035,7 +1035,7 @@ Always be systematic and thorough. Return structured data when possible."""
 
                 # Process tool calls
                 for tool_call in response.tool_calls:
-                    result["tool_calls"].append({"name": tool_call.name, "args": tool_call.args})
+                    result["tool_calls"].append({"name": tool_call.name, "args": tool_call.args})  # type: ignore[union-attr]
 
                     # Execute the tool
                     tool_result = await self._execute_tool(tool_call)
@@ -1078,7 +1078,7 @@ class AgenticBrowserTool(Tool):
 
     name = "agentic_browser"
     description = "Intelligently extract specific content from web pages using an AI agent"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "url": {

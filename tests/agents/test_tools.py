@@ -73,15 +73,15 @@ async def test_save_and_read_asset(monkeypatch):
         create_asset=create_asset,
         find_asset_by_filename=find_asset_by_filename,
         download_asset=download_asset,
-    )
+    )  # type: ignore[arg-type]
 
     save_tool = SaveAssetTool()
-    result = await save_tool.process(context, {"text": "hi", "filename": "test.txt"})
+    result = await save_tool.process(context, {"text": "hi", "filename": "test.txt"})  # type: ignore[arg-type]
     assert result["success"] is True
     assert result["asset_id"] == "asset123"
 
     read_tool = ReadAssetTool()
-    result = await read_tool.process(context, {"filename": "test.txt"})
+    result = await read_tool.process(context, {"filename": "test.txt"})  # type: ignore[arg-type]
     assert result["success"] is True
     assert result["content"] == b"hi"
     assert result["filename"] == "test.txt"

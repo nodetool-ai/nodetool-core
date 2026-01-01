@@ -332,6 +332,7 @@ class DockerJobExecution(JobExecution):
         request: RunJobRequest,
         job_model: Job,
         runner: NodetoolDockerRunner,
+        execution_id: str | None = None,
     ):
         """
         Initialize Docker job execution.
@@ -342,8 +343,9 @@ class DockerJobExecution(JobExecution):
             request: Job request with workflow details
             job_model: Database model for the job
             runner: Docker runner instance
+            execution_id: Unique identifier for this specific execution attempt
         """
-        super().__init__(job_id, context, request, job_model)
+        super().__init__(job_id, context, request, job_model, execution_id=execution_id)
         self._runner = runner
         self._job_model = job_model
         self._context = context
@@ -458,11 +460,11 @@ class DockerJobExecution(JobExecution):
         except json.JSONDecodeError:
             log.debug(f"Non-JSON output: {line[:100]}")
 
-    async def cancel(self) -> None:
+    async def cancel(self) -> bool:
         """Cancel the job by stopping the Docker runner."""
         if self.is_completed():
             log.warning(f"Job {self.job_id} already finished")
-            return
+            return False
 
         log.info(f"Cancelling Docker job {self.job_id}")
         self._status = "cancelled"
@@ -482,8 +484,11 @@ class DockerJobExecution(JobExecution):
                 self._job_model.status = "cancelled"
                 await self._job_model.save()
 
+            return True
+
         except Exception as e:
             log.error(f"Error cancelling job: {e}")
+            return False
 
     async def cleanup_resources(self) -> None:
         """Clean up Docker resources."""
@@ -526,12 +531,14 @@ class DockerJobExecution(JobExecution):
         cpu_limit: float | None = None,
         gpu_device_ids: list[int] | None = None,
         gpu_memory_limit: str | None = None,
+        job_id: str | None = None,
+        execution_id: str | None = None,
     ) -> "DockerJobExecution":
         """
         Create and start a new Docker-based job with resource constraints.
 
         This factory method:
-        - Creates job ID and database record
+        - Creates job ID (if not provided) and database record
         - Creates Docker runner with resource limits
         - Starts async execution task
         - Returns DockerJobExecution instance
@@ -548,11 +555,13 @@ class DockerJobExecution(JobExecution):
                            Defaults to DOCKER_GPU_DEVICES env var (comma-separated)
             gpu_memory_limit: GPU memory limit per device (e.g., "4g").
                             Defaults to DOCKER_GPU_MEMORY_LIMIT env var
+            job_id: Optional existing job ID (if pre-generated)
+            execution_id: Optional execution ID for tracking
 
         Returns:
             DockerJobExecution instance with execution started
         """
-        job_id = uuid4().hex
+        job_id = job_id or uuid4().hex
 
         # Load resource limits from environment if not specified
         mem_limit = mem_limit or os.getenv("DOCKER_MEM_LIMIT", "2g")
@@ -618,6 +627,7 @@ class DockerJobExecution(JobExecution):
             request=request,
             job_model=job_model,
             runner=runner,
+            execution_id=execution_id,
         )
 
         # Set status to running

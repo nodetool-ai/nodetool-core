@@ -301,13 +301,9 @@ class TaskPlanner:
                     task_plan_data: dict = yaml.safe_load(f)
                     self.task_plan = TaskPlan(**task_plan_data)
                     if self.display_manager:
-                        log.debug(
-                            "Loaded existing task plan from %s", self.tasks_file_path
-                        )
+                        log.debug("Loaded existing task plan from %s", self.tasks_file_path)
                     return True
-            except (
-                Exception
-            ) as e:  # Keep general exception for file I/O or parsing issues
+            except Exception as e:  # Keep general exception for file I/O or parsing issues
                 if self.display_manager:
                     log.debug(
                         "Could not load or parse existing task plan from %s: %s",
@@ -330,9 +326,7 @@ class TaskPlanner:
         """
         # Provide default string representation if schema/type are None or not set
         overall_output_schema_str = (
-            json.dumps(self.output_schema)
-            if self.output_schema
-            else "Not specified (default: string)"
+            json.dumps(self.output_schema) if self.output_schema else "Not specified (default: string)"
         )
 
         # Format inputs information
@@ -357,9 +351,7 @@ class TaskPlanner:
             "step_schema": STEP_JSON_SCHEMA,
         }
 
-    def _render_prompt(
-        self, template_string: str, context: Optional[Dict[str, str]] = None
-    ) -> str:
+    def _render_prompt(self, template_string: str, context: Optional[Dict[str, str]] = None) -> str:
         """Renders a prompt template using Jinja2.
 
         Args:
@@ -675,10 +667,7 @@ class TaskPlanner:
         extractor_like_ids: list[str] = []
         for st in steps:
             sid = (st.id or "").lower()
-            if any(
-                x in sid
-                for x in ("extract", "fetch", "scrape", "crawl", "parse", "process")
-            ):
+            if any(x in sid for x in ("extract", "fetch", "scrape", "crawl", "parse", "process")):
                 extractor_like_ids.append(st.id)
 
         if aggregator_ids and extractor_like_ids:
@@ -687,9 +676,7 @@ class TaskPlanner:
                 if agg is None:
                     continue
                 declared_inputs = set(agg.depends_on or [])
-                missing = [
-                    eid for eid in extractor_like_ids if eid not in declared_inputs
-                ]
+                missing = [eid for eid in extractor_like_ids if eid not in declared_inputs]
                 if missing:
                     errors.append(
                         f"Aggregator '{agg_id}' must depend on all extractor steps. Missing dependencies: {missing}"
@@ -707,10 +694,7 @@ class TaskPlanner:
         phase_result_name: str,
         skip_reason: str | None = None,
     ) -> AsyncGenerator[
-        Chunk
-        | ToolCall
-        | PlanningUpdate
-        | tuple[List[Message], Optional[PlanningUpdate]],
+        Chunk | ToolCall | PlanningUpdate | tuple[List[Message], Optional[PlanningUpdate]],
         None,
     ]:
         """Generic method to run a planning phase.
@@ -768,9 +752,7 @@ class TaskPlanner:
 
         # Update display before LLM call
         if self.display_manager:
-            self.display_manager.update_planning_display(
-                phase_display_name, "Running", f"Generating {phase_name}..."
-            )
+            self.display_manager.update_planning_display(phase_display_name, "Running", f"Generating {phase_name}...")
 
         log.debug("Calling LLM for %s using model: %s", phase_name, self.model)
         available_tools: Sequence[Tool] = self.execution_tools
@@ -835,14 +817,10 @@ class TaskPlanner:
 
         phase_status: str = "Completed"
         phase_content: str | Text = self._format_message_content(response_message)
-        log.debug(
-            "%s phase completed with status: %s", phase_name.capitalize(), phase_status
-        )
+        log.debug("%s phase completed with status: %s", phase_name.capitalize(), phase_status)
 
         if self.display_manager:
-            self.display_manager.update_planning_display(
-                phase_display_name, phase_status, phase_content
-            )
+            self.display_manager.update_planning_display(phase_display_name, phase_status, phase_content)
 
         log.info(f"{phase_result_name} phase completed with status: {phase_status}")
         log.info(f"{phase_result_name} phase content: {phase_content}")
@@ -861,10 +839,7 @@ class TaskPlanner:
         objective: str,
         max_retries: int,
     ) -> AsyncGenerator[
-        Chunk
-        | ToolCall
-        | PlanningUpdate
-        | tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]],
+        Chunk | ToolCall | PlanningUpdate | tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]],
         None,
     ]:
         """Handles Phase 2: Plan Creation.
@@ -892,9 +867,7 @@ class TaskPlanner:
                 - A `PlanningUpdate` object summarizing the outcome of this phase.
         """
         if self.display_manager:
-            self.display_manager.debug(
-                f"Starting plan creation phase with max_retries={max_retries}"
-            )
+            self.display_manager.debug(f"Starting plan creation phase with max_retries={max_retries}")
 
         task: Optional[Task] = None
         plan_creation_error: Optional[Exception] = None
@@ -911,13 +884,9 @@ class TaskPlanner:
         agent_task_prompt_content = ""
 
         if self.display_manager:
-            self.display_manager.debug(
-                f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
-            )
+            self.display_manager.debug(f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars")
         if self.display_manager:
-            self.display_manager.debug(
-                f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
-            )
+            self.display_manager.debug(f"Agent task prompt length: {len(agent_task_prompt_content)} chars")
 
         history.append(
             Message(
@@ -970,11 +939,7 @@ class TaskPlanner:
                             task_data = tool_call.args
                             log.debug(
                                 "Extracted task from tool call: %s",
-                                (
-                                    list(task_data.keys())
-                                    if isinstance(task_data, dict)
-                                    else type(task_data)
-                                ),
+                                (list(task_data.keys()) if isinstance(task_data, dict) else type(task_data)),
                             )
                             break
 
@@ -986,9 +951,7 @@ class TaskPlanner:
 
                 if not task_data:
                     failure_reason = f"LLM did not call create_task tool on attempt {attempt + 1}/{max_retries}"
-                    log.warning(
-                        f"{failure_reason}. Response: {response_message.content}"
-                    )
+                    log.warning(f"{failure_reason}. Response: {response_message.content}")
 
                     # Add error feedback to history for retry
                     if attempt < max_retries - 1:
@@ -1000,30 +963,24 @@ class TaskPlanner:
                         continue
                     else:
                         plan_creation_error = ValueError(failure_reason)
-                        phase_content = f"{failure_reason}. Last message: {self._format_message_content(response_message)}"
+                        phase_content = (
+                            f"{failure_reason}. Last message: {self._format_message_content(response_message)}"
+                        )
                         phase_status = "Failed"
                         break
 
                 # Validate and build task from extracted JSON
                 log.debug(
                     "Validating extracted JSON: %s",
-                    (
-                        list(task_data.keys())
-                        if isinstance(task_data, dict)
-                        else type(task_data)
-                    ),
+                    (list(task_data.keys()) if isinstance(task_data, dict) else type(task_data)),
                 )
-                validated_task, validation_errors = (
-                    await self._validate_structured_output_plan(task_data, objective)
-                )
+                validated_task, validation_errors = await self._validate_structured_output_plan(task_data, objective)
 
                 if validated_task and not validation_errors:
                     task = validated_task
                     phase_status = "Success"
                     # Don't show raw JSON content in the UI update, show a summary
-                    phase_content = (
-                        f"Created plan '{task.title}' with {len(task.steps)} steps."
-                    )
+                    phase_content = f"Created plan '{task.title}' with {len(task.steps)} steps."
                     log.debug(
                         "JSON-based plan creation successful: %d steps",
                         len(task.steps),
@@ -1031,7 +988,9 @@ class TaskPlanner:
                     break
                 else:
                     # Validation failed, provide feedback for retry
-                    failure_reason = f"Task validation failed on attempt {attempt + 1}/{max_retries}: {'; '.join(validation_errors)}"
+                    failure_reason = (
+                        f"Task validation failed on attempt {attempt + 1}/{max_retries}: {'; '.join(validation_errors)}"
+                    )
                     log.warning(failure_reason)
 
                     if attempt < max_retries - 1:
@@ -1070,11 +1029,7 @@ class TaskPlanner:
 
                 if attempt < max_retries - 1:
                     last_msg = history[-1] if history else None
-                    if (
-                        last_msg
-                        and last_msg.role == "assistant"
-                        and last_msg.tool_calls
-                    ):
+                    if last_msg and last_msg.role == "assistant" and last_msg.tool_calls:
                         for tc in last_msg.tool_calls:
                             history.append(
                                 Message(
@@ -1094,9 +1049,7 @@ class TaskPlanner:
                 else:
                     plan_creation_error = e
                     phase_status = "Failed"
-                    phase_content = (
-                        f"JSON generation failed: {str(e)}\n{traceback.format_exc()}"
-                    )
+                    phase_content = f"JSON generation failed: {str(e)}\n{traceback.format_exc()}"
                     break
 
         # Update Table for Phase 2
@@ -1142,9 +1095,7 @@ class TaskPlanner:
 
         # Start the live display using the display manager
         if self.display_manager:
-            self.display_manager.start_live(
-                self.display_manager.create_planning_tree("Task Planner")
-            )
+            self.display_manager.start_live(self.display_manager.create_planning_tree("Task Planner"))
 
         history: List[Message] = [
             Message(role="system", content=self.system_prompt),
@@ -1171,9 +1122,7 @@ class TaskPlanner:
             plan_creation_error = None
             planning_update = None
 
-            async for update in self._run_plan_creation_phase(
-                history, objective, max_retries
-            ):
+            async for update in self._run_plan_creation_phase(history, objective, max_retries):
                 if isinstance(update, tuple):
                     task, plan_creation_error, planning_update = update
                 else:
@@ -1195,16 +1144,10 @@ class TaskPlanner:
                 # Construct error message based on plan_creation_error or last message
                 if plan_creation_error:
                     error_message = f"Failed to create valid task during Plan Creation phase. Original error: {str(plan_creation_error)}"
-                    full_error_message = (
-                        f"{error_message}\n{traceback.format_exc()}"
-                        if self.verbose
-                        else error_message
-                    )
+                    full_error_message = f"{error_message}\n{traceback.format_exc()}" if self.verbose else error_message
                     log.error("Task creation failed: %s", error_message)
                     # Yield failure update before raising
-                    yield PlanningUpdate(
-                        phase=current_phase, status="Failed", content=error_message
-                    )
+                    yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
                     # Update display for overall failure
                     if self.display_manager:
                         self.display_manager.update_planning_display(
@@ -1218,9 +1161,7 @@ class TaskPlanner:
                     error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
                     log.error("Task creation failed: %s", error_message)
                     # Yield failure update before raising
-                    yield PlanningUpdate(
-                        phase=current_phase, status="Failed", content=error_message
-                    )
+                    yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
                     # Update display for overall failure
                     if self.display_manager:
                         self.display_manager.update_planning_display(
@@ -1266,9 +1207,7 @@ class TaskPlanner:
                 log.error("Planning Error: %s", error_message)
 
             # Yield failure update before re-raising
-            yield PlanningUpdate(
-                phase=current_phase, status="Failed", content=error_message
-            )
+            yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
             raise  # Re-raise the caught exception
 
         finally:
@@ -1303,9 +1242,7 @@ class TaskPlanner:
                 args_str = json.dumps(tc.args)
                 calls_summary.append(f"- Tool Call: {tc.name}\\n  Args: {args_str}")
             # Use Text object for potential future styling
-            return Text(
-                "\\n".join(calls_summary)
-            )  # No <think> tag removal for tool call summaries
+            return Text("\\n".join(calls_summary))  # No <think> tag removal for tool call summaries
 
         raw_content_str: Optional[str] = None
         if message.content:
@@ -1314,31 +1251,23 @@ class TaskPlanner:
                 try:
                     raw_content_str = "\\n".join(str(item) for item in message.content)
                 except Exception:
-                    raw_content_str = str(
-                        message.content
-                    )  # Fallback to string representation of the list
+                    raw_content_str = str(message.content)  # Fallback to string representation of the list
             elif isinstance(message.content, str):
                 raw_content_str = message.content
             else:
                 # Handle other unexpected content types
-                raw_content_str = (
-                    f"Unexpected content type: {type(message.content).__name__}"
-                )
+                raw_content_str = f"Unexpected content type: {type(message.content).__name__}"
 
         cleaned_content: Optional[str] = remove_think_tags(raw_content_str)
 
         if cleaned_content:  # If cleaned_content is not None and not empty
             return Text(cleaned_content)
-        elif (
-            raw_content_str is not None
-        ):  # Original content existed but was all <think> tags or whitespace
+        elif raw_content_str is not None:  # Original content existed but was all <think> tags or whitespace
             return Text("")  # Display as empty, not "Empty message content"
         else:  # No message.content to begin with
             return Text("Empty message content.", style="dim")
 
-    def _format_message_content_for_update(
-        self, message: Optional[Message]
-    ) -> Optional[str]:
+    def _format_message_content_for_update(self, message: Optional[Message]) -> Optional[str]:
         """Formats message content into a simple string for PlanningUpdate.
 
         This method is similar to `_format_message_content` but specifically
@@ -1366,9 +1295,7 @@ class TaskPlanner:
             elif isinstance(message.content, str):
                 raw_str_content = message.content
             else:
-                raw_str_content = (
-                    f"Unexpected content type: {type(message.content).__name__}"
-                )
+                raw_str_content = f"Unexpected content type: {type(message.content).__name__}"
 
         return remove_think_tags(raw_str_content)
 
@@ -1471,9 +1398,7 @@ class TaskPlanner:
                   validation is successful, otherwise None.
                 - A list of string error messages encountered during validation.
         """
-        log.debug(
-            "%s: Starting tool task validation for tool '%s'", sub_context, tool_name
-        )
+        log.debug("%s: Starting tool task validation for tool '%s'", sub_context, tool_name)
         validation_errors: List[str] = []
         parsed_content: Optional[dict] = None
 
@@ -1495,9 +1420,7 @@ class TaskPlanner:
         # Validate content is JSON and parse it
         if isinstance(content, dict):
             parsed_content = content  # Already a dict
-            log.debug(
-                "%s: Content is already a dict with %d keys", sub_context, len(content)
-            )
+            log.debug("%s: Content is already a dict with %d keys", sub_context, len(content))
         elif isinstance(content, str):
             log.debug(
                 "%s: Parsing JSON string content of length %d",
@@ -1516,12 +1439,12 @@ class TaskPlanner:
             else:
                 error_msg = f"'content' is not valid JSON. Content: '{content}'"
                 log.error("%s (tool: %s): %s", sub_context, tool_name, error_msg)
-                validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): {error_msg}"
-                )
+                validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
                 return None, validation_errors
         else:
-            error_msg = f"Expected JSON string or object for tool arguments, but got {type(content)}. Content: '{content}'"
+            error_msg = (
+                f"Expected JSON string or object for tool arguments, but got {type(content)}. Content: '{content}'"
+            )
             log.error("%s (tool: %s): %s", sub_context, tool_name, error_msg)
             validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
             return None, validation_errors
@@ -1537,16 +1460,14 @@ class TaskPlanner:
                     tool_name,
                 )
             except ValidationError as e:
-                error_msg = f"JSON arguments in 'content' do not match the tool's input schema. Error: {e.message}. Path: {'/'.join(map(str, e.path))}. Schema: {e.schema}. Args: {parsed_content}"
+                error_msg = f"JSON arguments in 'content' do not match the tool's input schema. Error: {e.message}. Path: {'/'.join([str(p) for p in e.path])}. Schema: {e.schema}. Args: {parsed_content}"
                 log.error(
                     "%s (tool: %s): Schema validation failed: %s",
                     sub_context,
                     tool_name,
                     error_msg,
                 )
-                validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): {error_msg}"
-                )
+                validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
                 return None, validation_errors
             except Exception as e:  # Catch other potential validation errors
                 error_msg = f"Error validating arguments against tool schema. Error: {e}. Args: {parsed_content}"
@@ -1556,9 +1477,7 @@ class TaskPlanner:
                     tool_name,
                     error_msg,
                 )
-                validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): {error_msg}"
-                )
+                validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
                 return None, validation_errors
         else:
             log.debug(
@@ -1610,9 +1529,7 @@ class TaskPlanner:
 
         return validation_errors
 
-    def _process_step_schema(
-        self, step_data: dict, sub_context: str
-    ) -> tuple[Optional[str], List[str]]:
+    def _process_step_schema(self, step_data: dict, sub_context: str) -> tuple[Optional[str], List[str]]:
         """Processes and validates the output_schema for a step.
 
         Accepts schema definitions provided as JSON strings or already-parsed
@@ -1690,14 +1607,10 @@ class TaskPlanner:
                         try:
                             yaml_candidate = yaml.safe_load(stripped_schema)
                         except yaml.YAMLError as yaml_error:
-                            raise ValueError(
-                                "Unable to parse output_schema as JSON or YAML"
-                            ) from yaml_error
+                            raise ValueError("Unable to parse output_schema as JSON or YAML") from yaml_error
 
                         if not isinstance(yaml_candidate, dict):
-                            raise ValueError(
-                                "Output schema string must describe an object structure"
-                            ) from json_error
+                            raise ValueError("Output schema string must describe an object structure") from json_error
 
                         schema_dict = yaml_candidate
                         log.warning(
@@ -1709,9 +1622,7 @@ class TaskPlanner:
                 log.debug("%s: No output_schema provided; using default", sub_context)
                 schema_dict = default_schema("Missing output_schema")
             else:
-                raise ValueError(
-                    f"Output schema must be a JSON string or dict, got {type(raw_schema)}"
-                )
+                raise ValueError(f"Output schema must be a JSON string or dict, got {type(raw_schema)}")
 
             if schema_dict is None:
                 raise ValueError("Schema parsing produced no result")
@@ -1776,9 +1687,7 @@ class TaskPlanner:
         processed_data = step_data.copy()  # Work on a copy
 
         try:
-            processed_data["output_schema"] = (
-                final_schema_str  # Already validated/generated
-            )
+            processed_data["output_schema"] = final_schema_str  # Already validated/generated
 
             # Map 'depends_on' to 'depends_on' if LLM used wrong field name
             if "depends_on" in processed_data and "depends_on" not in processed_data:
@@ -1792,9 +1701,7 @@ class TaskPlanner:
             # Validate depends_on
             raw_depends_on = processed_data.get("depends_on", [])
             if not isinstance(raw_depends_on, list):
-                validation_errors.append(
-                    f"{sub_context}: depends_on must be a list, got {type(raw_depends_on)}."
-                )
+                validation_errors.append(f"{sub_context}: depends_on must be a list, got {type(raw_depends_on)}.")
                 processed_data["depends_on"] = []
             else:
                 # Ensure all items in depends_on are strings
@@ -1814,9 +1721,7 @@ class TaskPlanner:
             # Handle optional model assignment
             step_model = processed_data.get("model")
             if not isinstance(step_model, str) or not step_model.strip():
-                processed_data["model"] = (
-                    self.model
-                )  # Default to planner's primary model
+                processed_data["model"] = self.model  # Default to planner's primary model
             else:
                 processed_data["model"] = step_model.strip()
 
@@ -1832,9 +1737,7 @@ class TaskPlanner:
 
             # Filter args based on Step model fields
             step_model_fields = Step.model_fields.keys()
-            filtered_data = {
-                k: v for k, v in processed_data.items() if k in step_model_fields
-            }
+            filtered_data = {k: v for k, v in processed_data.items() if k in step_model_fields}
 
             # Stringify content if it was a parsed JSON object (for tool args)
             if isinstance(parsed_tool_content, dict):
@@ -1862,9 +1765,7 @@ class TaskPlanner:
             return filtered_data, validation_errors
 
         except Exception as e:  # Catch unexpected errors during preparation
-            validation_errors.append(
-                f"{sub_context}: Unexpected error preparing step data: {e}"
-            )
+            validation_errors.append(f"{sub_context}: Unexpected error preparing step data: {e}")
             return None, validation_errors
 
     def _sanitize_tools_list(
@@ -1921,9 +1822,7 @@ class TaskPlanner:
         sub_context = f"{context_prefix} step {index}"
         log.debug("Processing %s", sub_context)
         all_validation_errors: List[str] = []
-        parsed_tool_content: Optional[dict] = (
-            None  # To store parsed JSON for tool tasks
-        )
+        parsed_tool_content: Optional[dict] = None  # To store parsed JSON for tool tasks
 
         try:
             # --- Validate Tool Call vs Agent Instruction ---
@@ -1947,9 +1846,7 @@ class TaskPlanner:
                     sub_context,
                 )
                 all_validation_errors.extend(tool_errors)
-                if (
-                    parsed_tool_content is None and tool_errors
-                ):  # Fatal error during tool validation
+                if parsed_tool_content is None and tool_errors:  # Fatal error during tool validation
                     log.error(
                         "%s: Tool validation failed with %d errors",
                         sub_context,
@@ -1975,17 +1872,13 @@ class TaskPlanner:
 
             # --- Process schema ---
             log.debug("%s: Processing output schema", sub_context)
-            final_schema_str, schema_errors = self._process_step_schema(
-                step_data, sub_context
-            )
+            final_schema_str, schema_errors = self._process_step_schema(step_data, sub_context)
             all_validation_errors.extend(schema_errors)
             # Continue even if there were schema errors, as a default might be used.
             # Need final_schema_str for data preparation. If None, indicates a fatal schema issue.
             if final_schema_str is None:
                 log.error("%s: Fatal schema processing error", sub_context)
-                all_validation_errors.append(
-                    f"{sub_context}: Fatal error processing output schema."
-                )
+                all_validation_errors.append(f"{sub_context}: Fatal error processing output schema.")
                 return None, all_validation_errors
             else:
                 log.debug("%s: Schema processing successful", sub_context)
@@ -2014,39 +1907,29 @@ class TaskPlanner:
             # Pydantic validation happens here
             log.debug("%s: Creating Step object", sub_context)
             step = Step(**filtered_data)
-            log.debug(
-                "%s: Step created successfully with id='%s'", sub_context, step.id
-            )
+            log.debug("%s: Step created successfully with id='%s'", sub_context, step.id)
             # Return successful step and any *non-fatal* validation errors collected
             return step, all_validation_errors
 
-        except (
-            ValidationError
-        ) as e:  # Catch Pydantic validation errors during Step(**filtered_data)
+        except ValidationError as e:  # Catch Pydantic validation errors during Step(**filtered_data)
             error_msg = f"{sub_context}: Invalid data for Step model: {e}"
             log.error("%s: Pydantic validation error: %s", sub_context, e)
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
         except Exception as e:  # Catch any other unexpected errors
             error_msg = f"{sub_context}: Unexpected error processing step: {e}\n{traceback.format_exc()}"
-            log.error(
-                "%s: Unexpected processing error: %s", sub_context, e, exc_info=True
-            )
+            log.error("%s: Unexpected processing error: %s", sub_context, e, exc_info=True)
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
 
-    async def _process_step_list(
-        self, raw_steps: list, context_prefix: str
-    ) -> tuple[List[Step], List[str]]:
+    async def _process_step_list(self, raw_steps: list, context_prefix: str) -> tuple[List[Step], List[str]]:
         """
         Processes a list of raw step data dictionaries using the helper method.
         """
         processed_steps: List[Step] = []
         all_validation_errors: List[str] = []
         # Build tool map once
-        available_execution_tools: Dict[str, Tool] = {
-            tool.name: tool for tool in self.execution_tools
-        }
+        available_execution_tools: Dict[str, Tool] = {tool.name: tool for tool in self.execution_tools}
 
         for i, step_data in enumerate(raw_steps):
             sub_context = f"{context_prefix} step {i}"
@@ -2096,18 +1979,14 @@ class TaskPlanner:
         all_validation_errors: List[str] = []
 
         # Validate the steps first
-        steps, step_validation_errors = await self._process_step_list(
-            task_data.get("steps", []), "structured output"
-        )
+        steps, step_validation_errors = await self._process_step_list(task_data.get("steps", []), "structured output")
         all_validation_errors.extend(step_validation_errors)
 
         log.debug("Subtasks processed: %s", steps)
         log.debug("Subtask validation errors: %s", step_validation_errors)
 
         # If step processing had fatal errors, don't proceed to dependency check
-        if not steps and task_data.get(
-            "steps"
-        ):  # Check if steps were provided but processing failed
+        if not steps and task_data.get("steps"):  # Check if steps were provided but processing failed
             # Errors are already in all_validation_errors
             return None, all_validation_errors
 
@@ -2145,9 +2024,7 @@ class TaskPlanner:
             all_validation_errors.extend(semantic_errors)
 
         # If any fatal errors occurred anywhere, return None
-        if any(
-            err for err in all_validation_errors
-        ):  # Check if there are any errors at all
+        if any(err for err in all_validation_errors):  # Check if there are any errors at all
             # Check specifically for fatal errors that would prevent Task creation
             # (e.g., invalid structure from _process_step_list, dependency errors)
             # For simplicity here, consider *any* validation error as potentially blocking.
@@ -2227,9 +2104,7 @@ class TaskPlanner:
                     steps, validation_errors = [], []  # Ensure these are empty lists
                 else:
                     # Use the updated _process_step_list
-                    steps, validation_errors = await self._process_step_list(
-                        raw_steps_list, context_prefix
-                    )
+                    steps, validation_errors = await self._process_step_list(raw_steps_list, context_prefix)
 
                 all_steps.extend(steps)
                 all_validation_errors.extend(validation_errors)
@@ -2237,17 +2112,13 @@ class TaskPlanner:
 
                 # Add tool response message *after* processing its args
                 response_content = "Task parameters received and processed."
-                call_specific_errors = [
-                    e for e in validation_errors if context_prefix in e
-                ]
+                call_specific_errors = [e for e in validation_errors if context_prefix in e]
                 if call_specific_errors:
-                    response_content = f"Task parameters received, but validation errors occurred: {'; '.join(call_specific_errors)}"
-
-                history.append(
-                    Message(
-                        role="tool", content=response_content, tool_call_id=tool_call.id
+                    response_content = (
+                        f"Task parameters received, but validation errors occurred: {'; '.join(call_specific_errors)}"
                     )
-                )
+
+                history.append(Message(role="tool", content=response_content, tool_call_id=tool_call.id))
                 tool_responses_added.add(tool_call.id)  # Mark as processed
 
             else:
@@ -2288,9 +2159,7 @@ class TaskPlanner:
         if not all_steps and any(tc.name == "create_task" for tc in tool_calls):
             # Check if create_task was called but resulted in no valid steps
             # This might happen if the steps list was empty or all items failed validation
-            raise ValueError(
-                "Task creation tool call processed, but resulted in zero valid steps."
-            )
+            raise ValueError("Task creation tool call processed, but resulted in zero valid steps.")
 
         # If validation passed and steps exist
         return (
@@ -2298,9 +2167,7 @@ class TaskPlanner:
             all_validation_errors,
         )  # Return task and empty error list
 
-    async def _process_tool_calls(
-        self, message: Message, history: List[Message]
-    ) -> Task:
+    async def _process_tool_calls(self, message: Message, history: List[Message]) -> Task:
         """
         Helper method to process tool calls, create task, and handle validation.
         Delegates validation logic to _validate_and_build_task_from_tool_calls.
@@ -2309,18 +2176,14 @@ class TaskPlanner:
             raise ValueError(f"No tool calls found in the message: {message.content}")
 
         # Delegate the core processing and validation
-        task, _validation_errors = await self._validate_and_build_task_from_tool_calls(
-            message.tool_calls, history
-        )
+        task, _validation_errors = await self._validate_and_build_task_from_tool_calls(message.tool_calls, history)
 
         # _validate_and_build_task_from_tool_calls raises ValueError on failure,
         # so if we reach here, validation passed.
         if task is None:
             # This case should technically be handled by the exception in the helper,
             # but added for defensive programming.
-            raise ValueError(
-                "Task validation passed but task object is unexpectedly None."
-            )
+            raise ValueError("Task validation passed but task object is unexpectedly None.")
 
         return task
 
@@ -2354,13 +2217,9 @@ class TaskPlanner:
                 tools=tools,
                 max_tokens=PLAN_CREATION_MAX_TOKENS,
             )
-            history.append(
-                message
-            )  # Add assistant's response to history *before* processing
+            history.append(message)  # Add assistant's response to history *before* processing
             last_message = message
-            log.debug(
-                "LLM response received, has_tool_calls=%s", bool(message.tool_calls)
-            )
+            log.debug("LLM response received, has_tool_calls=%s", bool(message.tool_calls))
 
             if not message.tool_calls:
                 # LLM didn't use the expected tool
@@ -2540,9 +2399,7 @@ class TaskPlanner:
         """
         return "No file-based inputs (data flows through task dependencies)"
 
-    def _detect_list_processing(
-        self, objective: str, input_files: List[str]
-    ) -> tuple[bool, int]:
+    def _detect_list_processing(self, objective: str, input_files: List[str]) -> tuple[bool, int]:
         """
         Detects if the objective involves processing a list of items.
 
@@ -2584,9 +2441,7 @@ class TaskPlanner:
         # Check if input files suggest list processing
         if not is_list and input_files:
             for file in input_files:
-                if any(
-                    ext in file.lower() for ext in [".csv", ".jsonl", "list", "urls"]
-                ):
+                if any(ext in file.lower() for ext in [".csv", ".jsonl", "list", "urls"]):
                     is_list = True
                     if estimated_count == 0:
                         estimated_count = 50  # Default assumption
@@ -2617,35 +2472,21 @@ class TaskPlanner:
             schema.setdefault("additionalProperties", False)
 
             # Make all defined properties required if 'required' is not already present
-            if (
-                "properties" in schema
-                and isinstance(schema["properties"], dict)
-                and "required" not in schema
-            ):
+            if "properties" in schema and isinstance(schema["properties"], dict) and "required" not in schema:
                 prop_names = list(schema["properties"].keys())
                 if prop_names:  # Only add 'required' if there are properties
                     schema["required"] = prop_names
 
         # Handle arrays - add a default items field if 'items' is missing
-        elif (
-            isinstance(schema, dict)
-            and schema.get("type") == "array"
-            and "items" not in schema
-        ):
+        elif isinstance(schema, dict) and schema.get("type") == "array" and "items" not in schema:
             schema["items"] = {"type": "string"}  # Default to string items
 
         # Recursively process nested schemas within properties
-        if (
-            isinstance(schema, dict)
-            and "properties" in schema
-            and isinstance(schema["properties"], dict)
-        ):
+        if isinstance(schema, dict) and "properties" in schema and isinstance(schema["properties"], dict):
             for prop_name, prop_schema in schema["properties"].items():
                 # Ensure prop_schema is a dict before recursing
                 if isinstance(prop_schema, dict):
-                    schema["properties"][prop_name] = (
-                        self._ensure_additional_properties_false(prop_schema)
-                    )
+                    schema["properties"][prop_name] = self._ensure_additional_properties_false(prop_schema)
 
         # Recursively process nested schemas within array items
         if isinstance(schema, dict) and "items" in schema:
@@ -2654,27 +2495,15 @@ class TaskPlanner:
                 schema["items"] = self._ensure_additional_properties_false(items_schema)
             elif isinstance(items_schema, list):  # Handle tuple schemas in 'items'
                 schema["items"] = [
-                    (
-                        self._ensure_additional_properties_false(item)
-                        if isinstance(item, dict)
-                        else item
-                    )
+                    (self._ensure_additional_properties_false(item) if isinstance(item, dict) else item)
                     for item in items_schema
                 ]
 
         # Recursively process anyOf, allOf, oneOf schemas
         for key in ["anyOf", "allOf", "oneOf"]:
-            if (
-                isinstance(schema, dict)
-                and key in schema
-                and isinstance(schema[key], list)
-            ):
+            if isinstance(schema, dict) and key in schema and isinstance(schema[key], list):
                 schema[key] = [
-                    (
-                        self._ensure_additional_properties_false(item)
-                        if isinstance(item, dict)
-                        else item
-                    )
+                    (self._ensure_additional_properties_false(item) if isinstance(item, dict) else item)
                     for item in schema[key]
                 ]
 

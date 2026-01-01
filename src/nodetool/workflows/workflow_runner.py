@@ -40,6 +40,8 @@ from typing import Any, Optional
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.models.run_node_state import RunNodeState
+from nodetool.models.run_state import RunState
 from nodetool.types.graph import Edge
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
@@ -47,10 +49,13 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
+from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.state_manager import StateManager
+from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     BaseTorchSupport,
@@ -139,6 +144,7 @@ class WorkflowRunner:
         device: str | None = None,
         disable_caching: bool = False,
         buffer_limit: int | None = 3,
+        enable_event_logging: bool = True,
     ):
         """
         Initializes a new WorkflowRunner instance.
@@ -151,6 +157,7 @@ class WorkflowRunner:
             buffer_limit (Optional[int]): Maximum number of items allowed in each per-handle inbox buffer.
                                          When a buffer reaches this limit, producers will block until consumers
                                          drain the buffer, implementing backpressure. None means unlimited.
+            enable_event_logging (bool): Whether to enable event logging for resumability.
         """
         self.job_id = job_id
         self.status = "running"
@@ -185,6 +192,18 @@ class WorkflowRunner:
         self._runner_loop: asyncio.AbstractEventLoop | None = None
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
+
+        # Event logging for resumability (audit-only, not source of truth)
+        self.enable_event_logging = enable_event_logging
+        self.event_logger: WorkflowEventLogger | None = None
+        if enable_event_logging:
+            self.event_logger = WorkflowEventLogger(run_id=job_id)
+
+        # State table tracking (source of truth for correctness)
+        self.run_state: RunState | None = None
+
+        # State manager for queue-based updates (eliminates DB write contention)
+        self.state_manager: StateManager | None = None
 
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
@@ -506,6 +525,37 @@ class WorkflowRunner:
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
+        # Create run_state (source of truth) - creates if not exists for direct runner usage
+        try:
+            self.run_state = await RunState.get(self.job_id)
+            if self.run_state is None:
+                self.run_state = await RunState.create_run(
+                    run_id=self.job_id,
+                    execution_strategy=request.execution_strategy.value if request.execution_strategy else None,
+                )
+                log.info(f"Created run_state for {self.job_id} with status={self.run_state.status}")
+            else:
+                log.info(f"Loaded run_state for {self.job_id} with status={self.run_state.status}")
+        except Exception as e:
+            log.error(f"Failed to load/create run_state: {e}")
+            raise
+
+        # Initialize and start StateManager (single writer for node states)
+        self.state_manager = StateManager(run_id=self.job_id)
+        await self.state_manager.start()
+        log.info(f"Started StateManager for run {self.job_id}")
+
+        # Log RunCreated event (audit-only, non-fatal)
+        if self.event_logger:
+            try:
+                await self.event_logger.log_run_created(
+                    graph=request.graph.model_dump() if request.graph else {},
+                    params=request.params or {},
+                    user_id=getattr(context, "user_id", ""),
+                )
+            except Exception as e:
+                log.warning(f"Failed to log RunCreated event (non-fatal): {e}")
+
         with self.torch_context(context):
             try:
                 if request.params:
@@ -602,12 +652,126 @@ class WorkflowRunner:
                 if self.status == "running":  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
+                    # Update run_state (source of truth)
+                    if self.run_state:
+                        try:
+                            await self.run_state.mark_completed()
+                            log.info(f"Marked run_state as completed for {self.job_id}")
+                        except Exception as e:
+                            log.error(f"Failed to mark run_state as completed: {e}")
+
             except asyncio.CancelledError:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
+
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_cancelled()
+                        log.info(f"Marked run_state as cancelled for {self.job_id}")
+                    except Exception as e:
+                        log.error(f"Failed to mark run_state as cancelled: {e}")
+
+                # Log RunCancelled event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_cancelled(reason="Workflow execution cancelled")
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
+
                 if send_job_updates:
                     context.post_message(JobUpdate(job_id=self.job_id, status="cancelled"))
+
+            except WorkflowSuspendedException as e:
+                # Handle workflow suspension from suspendable node
+                self.status = "suspended"
+
+                log.info(f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}")
+
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            state=e.state,
+                            metadata=e.metadata,
+                        )
+                        log.info(f"Marked run_state as suspended for {self.job_id} at node {e.node_id}")
+                    except Exception as e2:
+                        log.error(f"Failed to mark run_state as suspended: {e2}")
+                        raise
+
+                # Update node_state to suspended (source of truth)
+                try:
+                    node_state = await RunNodeState.get_or_create(
+                        run_id=self.job_id,
+                        node_id=e.node_id,
+                    )
+                    await node_state.mark_suspended(
+                        reason=e.reason,
+                        state=e.state,
+                    )
+                    log.info(f"Marked node_state as suspended for node {e.node_id}")
+                except Exception as e2:
+                    log.error(f"Failed to mark node_state as suspended: {e2}")
+                    raise
+
+                # Flush pending state updates from all nodes before suspending
+                if self.state_manager:
+                    try:
+                        await self.state_manager.stop(timeout=5.0)
+                        log.info(f"Flushed and stopped StateManager for run {self.job_id}")
+                        self.state_manager = None  # Prevent finally block from stopping again
+                    except Exception as e2:
+                        log.warning(f"Failed to stop StateManager: {e2}")
+
+                # Log suspension events (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        # Log NodeSuspended event
+                        await self.event_logger.log_node_suspended(
+                            node_id=e.node_id,
+                            reason=e.reason,
+                            state=e.state,
+                            metadata=e.metadata,
+                        )
+
+                        # Log RunSuspended event
+                        await self.event_logger.log_run_suspended(
+                            reason=e.reason,
+                            suspended_node_id=e.node_id,
+                        )
+
+                        # Check if this is a trigger node suspension
+                        if e.metadata.get("trigger_node"):
+                            # Register with trigger wakeup service
+                            from nodetool.workflows.trigger_node import TriggerWakeupService
+
+                            wakeup_service = TriggerWakeupService.get_instance()
+                            wakeup_service.register_suspended_trigger(
+                                workflow_id=self.job_id,
+                                node_id=e.node_id,
+                                trigger_metadata=e.metadata,
+                            )
+                            log.info(f"Registered trigger node {e.node_id} for wake-up in workflow {self.job_id}")
+
+                    except Exception as e2:
+                        log.warning(f"Failed to log suspension events (non-fatal): {e2}")
+
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="suspended",
+                            message=f"Workflow suspended at node {e.node_id}: {e.reason}",
+                        )
+                    )
+
+                # Do not re-raise - suspension is a clean exit
+                return
+
             except Exception as e:
                 error_message_for_job_update = str(e)
                 log.error(f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}")
@@ -621,6 +785,24 @@ class WorkflowRunner:
                     # log.error already done by generic message
 
                 self.status = "error"
+
+                # Update run_state (source of truth)
+                if self.run_state:
+                    try:
+                        await self.run_state.mark_failed(error=error_message_for_job_update[:1000])
+                        log.info(f"Marked run_state as failed for {self.job_id}")
+                    except Exception as e2:
+                        log.error(f"Failed to mark run_state as failed: {e2}")
+
+                # Log RunFailed event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_failed(
+                            error=error_message_for_job_update[:1000],
+                        )
+                    except Exception as e2:
+                        log.warning(f"Failed to log RunFailed event (non-fatal): {e2}")
+
                 # Always post the error JobUpdate
                 if send_job_updates:
                     context.post_message(
@@ -634,6 +816,15 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
+
+                # Stop StateManager and flush pending updates
+                if self.state_manager:
+                    try:
+                        await self.state_manager.stop(timeout=10.0)
+                        log.info(f"StateManager stopped for run {self.job_id}")
+                    except Exception as e:
+                        log.error(f"Error stopping StateManager: {e}")
+
                 # Stop input dispatcher if running
                 try:
                     if self._input_queue is not None:
@@ -673,6 +864,17 @@ class WorkflowRunner:
                 total_time = time.time() - start_time
                 log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
                 log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
+
+                # Log RunCompleted event (audit-only, non-fatal)
+                if self.event_logger:
+                    try:
+                        await self.event_logger.log_run_completed(
+                            outputs=self.outputs,
+                            duration_ms=int(total_time * 1000),
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to log RunCompleted event (non-fatal): {e}")
+
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(
@@ -876,6 +1078,8 @@ class WorkflowRunner:
 
         OutputNodes are not driven by actors (outputs are captured in send_messages).
         """
+        from nodetool.models.condition_builder import Field
+        from nodetool.models.run_node_state import RunNodeState
         from nodetool.workflows.actor import NodeActor
 
         log.info(
@@ -883,26 +1087,101 @@ class WorkflowRunner:
             len(graph.nodes),
             len(graph.edges),
         )
-        tasks: list[asyncio.Task] = []
+
+        # Load existing node states for resumption
+        node_states = {}
+        log.info(
+            f"Checking for existing node states for run {self.job_id} (status={self.run_state.status if self.run_state else 'None'})"
+        )
+        if self.run_state and self.run_state.status in ["suspended", "running"]:
+            try:
+                # Query all node states for this run
+                condition = Field("run_id") == self.job_id
+                states, _ = await RunNodeState.query(condition=condition)
+                for state in states:
+                    node_states[state.node_id] = state
+                log.info(f"Loaded {len(node_states)} existing node states for resumption: {list(node_states.keys())}")
+                for node_id, state in node_states.items():
+                    log.info(f"  Node {node_id}: status={state.status}")
+            except Exception as e:
+                log.warning(f"Failed to load node states for resumption: {e}")
+
+        tasks = []
         for node in graph.nodes:
             inbox = self.node_inboxes.get(node._id)
             assert inbox is not None, f"No inbox found for node {node._id}"
-            # Skip starting actors for InputNodes; they are driven externally via input queue
+
+            # Skip InputNodes - driven externally
             try:
                 if isinstance(node, InputNode):
                     continue
             except Exception:
                 pass
+
+            # Check if node was already completed
+            node_state = node_states.get(node._id)
+            log.info(
+                f"Processing node {node._id}: type={node.get_node_type()}, state={node_state.status if node_state else 'not found'}"
+            )
+            if node_state and node_state.status == "completed":
+                log.info(f"Skipping already completed node: {node._id} ({node.get_node_type()})")
+                continue
+
+            # Restore resuming state for suspended nodes
+            if node_state and node_state.status == "suspended":
+                if hasattr(node, "_set_resuming_state") and node_state.resume_state_json:
+                    try:
+                        node._set_resuming_state(node_state.resume_state_json, 0)
+                        log.info(
+                            f"Restored resuming state for suspended node: {node._id} "
+                            f"(state_keys={list(node_state.resume_state_json.keys())})"
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to restore resuming state for node {node._id}: {e}")
+
             actor = NodeActor(self, node, context, inbox)
             tasks.append(asyncio.create_task(actor.run()))
-        # Wait for all, propagate first error if any
+
+        # Smart wait loop:
+        # - If WorkflowSuspendedException occurs, cancel all other tasks and exit immediately (Fast Suspend).
+        # - If other exceptions occur, wait for all tasks to finish (standard Gather behavior).
+        pending = set(tasks)
+        log.info(f"Starting process_graph wait loop with {len(pending)} tasks")
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_EXCEPTION)
+            log.info(f"Wait loop iteration: {len(done)} done, {len(pending)} pending")
+            for t in done:
+                # Check for suspension
+                if t.exception():
+                    log.info(f"Task finished with exception: {type(t.exception())} - {t.exception()}")
+                    if isinstance(t.exception(), WorkflowSuspendedException):
+                        exc = t.exception()
+                        log.info(
+                            f"Detected WorkflowSuspendedException in task {t}. Cancelling {len(pending)} pending tasks."
+                        )
+                        # Cancel remaining tasks
+                        for p in pending:
+                            p.cancel()
+                        # Wait for clean cancellation
+                        if pending:
+                            log.info("Waiting for cancellations to complete...")
+                            await asyncio.gather(*pending, return_exceptions=True)
+                            log.info("Cancellations complete.")
+                        raise exc
+
+        log.info("Wait loop completed naturally (no suspension raised).")
+        # If we reach here, all tasks completed without suspension (or suspension happened but was masked? No, we check done).
+        # Propagate first error if any (preserving original priority)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         first_error: Exception | None = None
         for r in results:
             if isinstance(r, Exception) and first_error is None:
                 first_error = r
         if first_error is not None:
+            log.error(f"Propagating first error from results: {first_error}")
             raise first_error
+
+        log.info("process_graph finished successfully (no errors/suspensions).")
 
     def log_vram_usage(self, message=""):
         """

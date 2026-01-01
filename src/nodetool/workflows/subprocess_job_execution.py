@@ -493,8 +493,9 @@ class SubprocessJobExecution(JobExecution):
         job_model: Job,
         process: asyncio.subprocess.Process,
         sandbox_profile_path: str | None = None,
+        execution_id: str | None = None,
     ):
-        super().__init__(job_id, context, request, job_model, runner=None)
+        super().__init__(job_id, context, request, job_model, runner=None, execution_id=execution_id)
         self.process = process
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
@@ -519,7 +520,7 @@ class SubprocessJobExecution(JobExecution):
             return True
         return self.process.returncode is not None
 
-    def cancel(self) -> bool:
+    async def cancel(self) -> bool:
         """Cancel the running subprocess."""
         if self.is_completed():
             return False
@@ -529,7 +530,7 @@ class SubprocessJobExecution(JobExecution):
         self._status = "cancelled"
         return True
 
-    def cleanup_resources(self) -> None:
+    async def cleanup_resources(self) -> None:
         """Clean up subprocess resources."""
         # Ensure subprocess terminated
         if self.process.returncode is None:
@@ -675,12 +676,18 @@ class SubprocessJobExecution(JobExecution):
                 )
 
     @classmethod
-    async def create_and_start(cls, request: RunJobRequest, context: ProcessingContext) -> "SubprocessJobExecution":
+    async def create_and_start(
+        cls,
+        request: RunJobRequest,
+        context: ProcessingContext,
+        job_id: str | None = None,
+        execution_id: str | None = None,
+    ) -> "SubprocessJobExecution":
         """
         Create and start a new subprocess-based job.
 
         This factory method:
-        - Creates job ID and database record
+        - Creates job ID (if not provided) and database record
         - Spawns subprocess running run_workflow_cli
         - Writes request JSON to subprocess stdin
         - Starts stdout/stderr streaming
@@ -689,11 +696,13 @@ class SubprocessJobExecution(JobExecution):
         Args:
             request: Job request with workflow details
             context: Processing context for the job
+            job_id: Optional existing job ID (if pre-generated)
+            execution_id: Optional execution ID for tracking
 
         Returns:
             SubprocessJobExecution instance with execution started
         """
-        job_id = uuid4().hex
+        job_id = job_id or uuid4().hex
 
         log.info(f"Starting subprocess job {job_id} for workflow {request.workflow_id}")
 
@@ -759,6 +768,7 @@ class SubprocessJobExecution(JobExecution):
             job_model=job_model,
             process=process,
             sandbox_profile_path=sandbox_profile_path,
+            execution_id=execution_id,
         )
 
         # Start streaming tasks

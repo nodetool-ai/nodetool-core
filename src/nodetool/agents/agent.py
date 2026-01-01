@@ -626,22 +626,24 @@ class Agent(BaseAgent):
             if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
                 self.task = task_planner_instance.task_plan.tasks[0]
 
-            assert self.task is not None, "Task was not created by planner and was not provided initially."
+        assert self.task is not None, "Task was not created by planner and was not provided initially."
+        task: Task = self.task
 
+        if not self.initial_task:
             yield TaskUpdate(
-                task=self.task,
+                task=task,
                 event=TaskUpdateEvent.TASK_CREATED,
             )
 
-        if self.output_schema and len(self.task.steps) > 0:
-            self.task.steps[-1].output_schema = json.dumps(self.output_schema)
+        if self.output_schema and len(task.steps) > 0:
+            task.steps[-1].output_schema = json.dumps(self.output_schema)
 
         tool_calls: list[ToolCall] = []
 
         # Start live display managed by AgentConsole
         if self.display_manager:
             self.display_manager.start_live(
-                self.display_manager.create_execution_tree(title=self.name, task=self.task, tool_calls=tool_calls)
+                self.display_manager.create_execution_tree(title=self.name, task=task, tool_calls=tool_calls)
             )
 
         try:
@@ -650,7 +652,7 @@ class Agent(BaseAgent):
                 model=self.model,
                 processing_context=context,
                 tools=list(self.tools),  # Ensure it's a list of Tool
-                task=self.task,
+                task=task,
                 system_prompt=self.system_prompt,
                 inputs=self.inputs,
                 max_steps=self.max_steps,
@@ -663,7 +665,7 @@ class Agent(BaseAgent):
             yield LogUpdate(
                 node_id="agent_executor",
                 node_name=self.name,
-                content=f"Starting execution of {len(self.task.steps)} steps...",
+                content=f"Starting execution of {len(task.steps)} steps...",
                 severity="info",
             )
 
@@ -677,7 +679,7 @@ class Agent(BaseAgent):
                 if self.display_manager:
                     new_table = self.display_manager.create_execution_tree(
                         title=f"Task:\\n{self.objective}",
-                        task=self.task,
+                        task=task,
                         tool_calls=tool_calls,
                     )
                     self.display_manager.update_live(new_table)
@@ -693,7 +695,7 @@ class Agent(BaseAgent):
                         log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
                         self.results = item.result
                         yield TaskUpdate(
-                            task=self.task,
+                            task=task,
                             event=TaskUpdateEvent.TASK_COMPLETED,
                         )
                     yield item

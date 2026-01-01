@@ -1,7 +1,7 @@
 import pytest
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.integrations.websocket.unified_websocket_runner import ToolBridge
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.metadata.types import Message, Provider, ToolCall
 from nodetool.providers.base import MockProvider
@@ -26,22 +26,7 @@ class DummyRunner(BaseChatRunner):
         return None
 
 
-class ResolvingRunner(DummyRunner):
-    async def send_message(self, message: dict):  # type: ignore[override]
-        self.sent.append(message)
-        if message.get("type") == "tool_call":
-            call_id = message["tool_call_id"]
-            tool_bridge.resolve_result(
-                call_id,
-                {
-                    "type": "tool_result",
-                    "tool_call_id": call_id,
-                    "thread_id": message.get("thread_id"),
-                    "ok": True,
-                    "result": {"ok": True},
-                    "elapsed_ms": 1,
-                },
-            )
+
 
 
 @pytest.mark.asyncio
@@ -67,8 +52,7 @@ async def test_help_processor_appends_tool_history():
         },
     }
 
-    global tool_bridge
-    tool_bridge = ChatWebSocketRunner().tool_bridge
+    tool_bridge = ToolBridge()
     context = ProcessingContext(
         tool_bridge=tool_bridge,
         ui_tool_names={"ui_add_node"},
@@ -78,12 +62,29 @@ async def test_help_processor_appends_tool_history():
     chat_history = [
         Message(
             role="user",
-            instructions="Please add nodes",
+            content="Please add nodes",
             provider=Provider.OpenAI,
             model="gpt-test",
             thread_id="t1",
         )
     ]
+
+    class ResolvingRunner(DummyRunner):
+        async def send_message(self, message: dict):  # type: ignore[override]
+            self.sent.append(message)
+            if message.get("type") == "tool_call":
+                call_id = message["tool_call_id"]
+                tool_bridge.resolve_result(
+                    call_id,
+                    {
+                        "type": "tool_result",
+                        "tool_call_id": call_id,
+                        "thread_id": message.get("thread_id"),
+                        "ok": True,
+                        "result": {"ok": True},
+                        "elapsed_ms": 1,
+                    },
+                )
 
     runner = ResolvingRunner()
 

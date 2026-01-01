@@ -270,6 +270,18 @@ register_secret(
 )
 
 
+register_setting(
+    package_name="nodetool",
+    env_var="WORKER_ID",
+    group="Deployment",
+    description=(
+        "Unique identifier for this worker instance. "
+        "Used for job ownership and recovery. "
+        "If not set, it will be automatically generated."
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minimal WebSocket Chat Client for testing ChatWebSocketRunner
+Minimal WebSocket Chat Client for testing UnifiedWebSocketRunner
 
 ### Features
 
@@ -163,7 +163,40 @@ class ChatWebSocketClient:
         if self.current_workflow:
             message["workflow_id"] = self.current_workflow
 
+        # Wrap in command structure
+        command_msg = {
+            "command": "chat_message",
+            "data": message
+        }
+
         # Send message in appropriate format
+        try:
+            if self.message_format == MessageFormat.BINARY:
+                packed = msgpack.packb(command_msg, use_bin_type=True)
+                assert self.websocket, "WebSocket not connected"
+                await self.websocket.send(packed or b"")
+            else:
+                assert self.websocket, "WebSocket not connected"
+                await self.websocket.send(json.dumps(command_msg))
+
+        except Exception as e:
+            self.print_message(
+                datetime.now().strftime("%H:%M:%S"),
+                "system",
+                f"Error sending message: {e}",
+            )
+
+    async def send_command(self, command: str, data: Dict[str, Any]):
+        """Send a generic command to the WebSocket server."""
+        if not self.websocket:
+            self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
+            return
+
+        message = {
+            "command": command,
+            "data": data
+        }
+
         try:
             if self.message_format == MessageFormat.BINARY:
                 packed = msgpack.packb(message, use_bin_type=True)
@@ -177,9 +210,8 @@ class ChatWebSocketClient:
             self.print_message(
                 datetime.now().strftime("%H:%M:%S"),
                 "system",
-                f"Error sending message: {e}",
+                f"Error sending command {command}: {e}",
             )
-
     async def receive_messages(self):
         """Continuously receive and display messages from the server."""
         try:
@@ -276,6 +308,7 @@ class ChatWebSocketClient:
             print(f"  /model <name>      - Change model (current: {self.current_model})")
             print("  /tools <t1,t2>     - Set tools (comma-separated)")
             print("  /workflow <id>     - Set workflow ID")
+            print("  /resume <job_id>   - Resume a suspended/failed job")
             print("  /clear             - Clear screen")
             print("  /quit              - Exit\n")
 
@@ -299,6 +332,13 @@ class ChatWebSocketClient:
                 self.print_message(timestamp, "system", f"Workflow ID set to: {self.current_workflow}")
             else:
                 self.print_message(timestamp, "system", f"Current workflow: {self.current_workflow}")
+
+        elif cmd == "/resume":
+            if not args:
+                self.print_message(timestamp, "system", "Usage: /resume <job_id>")
+            else:
+                self.print_message(timestamp, "system", f"Sending resume command for job: {args}")
+                await self.send_command("resume_job", {"job_id": args})
 
         elif cmd == "/clear":
             print("\033[2J\033[H")  # Clear screen and move cursor to top
@@ -366,8 +406,8 @@ async def main():
     parser = argparse.ArgumentParser(description="WebSocket Chat Client")
     parser.add_argument(
         "--url",
-        default="ws://localhost:8000/chat",
-        help="WebSocket URL (default: ws://localhost:8000/chat)",
+        default="ws://localhost:8000/ws",
+        help="WebSocket URL (default: ws://localhost:8000/ws)",
     )
     parser.add_argument("--token", help="Authentication token (JWT)")
     parser.add_argument("--binary", action="store_true", help="Use binary message format (MessagePack)")

@@ -39,9 +39,9 @@ async def get_system_fonts() -> FontResponse:
             for font_dir in font_dirs:
                 if os.path.exists(font_dir):
                     # offload blocking os.listdir to a thread
-                    entries = await asyncio.to_thread(os.listdir, font_dir)
+                    entries = await asyncio.to_thread(os.listdir, font_dir)  # type: ignore[arg-type]
                     for font_file in entries:
-                        if font_file.endswith((".ttf", ".otf", ".ttc", ".dfont")):
+                        if font_file.endswith((".ttf", ".otf", ".ttc", ".dfont")):  # type: ignore[arg-type]
                             font_name = os.path.splitext(font_file)[0]
                             fonts.append(font_name)
         except Exception as e:
@@ -52,9 +52,9 @@ async def get_system_fonts() -> FontResponse:
             # Windows font directory
             font_dir = os.path.join(os.environ["WINDIR"], "Fonts")
             if os.path.exists(font_dir):
-                entries = await asyncio.to_thread(os.listdir, font_dir)
+                entries = await asyncio.to_thread(os.listdir, font_dir)  # type: ignore[arg-type]
                 for font_file in entries:
-                    if font_file.endswith((".ttf", ".otf", ".ttc")):
+                    if font_file.endswith((".ttf", ".otf", ".ttc")):  # type: ignore[arg-type]
                         font_name = os.path.splitext(font_file)[0]
                         fonts.append(font_name)
         except Exception as e:

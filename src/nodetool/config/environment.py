@@ -1,6 +1,8 @@
 import os
+import socket
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -38,6 +40,7 @@ DEFAULT_ENV = {
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
     "NODETOOL_ENABLE_TERMINAL_WS": "1",  # Enable terminal WebSocket in dev/test (blocked in production)
+    "WORKER_ID": None,
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
     "SUPABASE_KEY": None,
@@ -379,6 +382,7 @@ class Environment:
         if RUNNING_PYTEST:
             import tempfile
             from pathlib import Path
+
             return str(Path(tempfile.gettempdir()) / "nodetool_test_subprocess.db")
         else:
             return cls.get("DB_PATH")
@@ -637,3 +641,27 @@ class Environment:
         # Currently no thread-local caches in Environment
         # This method exists to prevent errors when called from threaded_event_loop
         pass
+
+    _worker_id: Optional[str] = None
+
+    @classmethod
+    def get_worker_id(cls) -> str:
+        """
+        Get the unique worker ID for this instance.
+        If not configured, generates one based on hostname + pid + uuid.
+        """
+        if cls._worker_id is not None:
+            return cls._worker_id
+
+        # 1. Try environment/settings
+        worker_id = cls.get("WORKER_ID")
+
+        # 2. Auto-generate if missing
+        if not worker_id:
+            hostname = socket.gethostname()
+            pid = os.getpid()
+            unique_suffix = str(uuid.uuid4())[:8]
+            worker_id = f"{hostname}-{pid}-{unique_suffix}"
+
+        cls._worker_id = worker_id
+        return worker_id

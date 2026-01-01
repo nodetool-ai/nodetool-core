@@ -43,8 +43,9 @@ class ThreadedJobExecution(JobExecution):
         request: RunJobRequest,
         job_model: Job,
         event_loop: ThreadedEventLoop,
+        execution_id: str | None = None,
     ):
-        super().__init__(job_id, context, request, job_model, runner=runner)
+        super().__init__(job_id, context, request, job_model, runner=runner, execution_id=execution_id)
         self.event_loop = event_loop
         self.future: Future | None = None
 
@@ -69,16 +70,25 @@ class ThreadedJobExecution(JobExecution):
         """Check if the job has completed (success, error, or cancelled)."""
         return self.future is not None and self.future.done()
 
-    def cancel(self) -> bool:
+    async def cancel(self) -> bool:
         """Cancel the running job."""
         if not self.is_completed():
             if self.future:
                 self.future.cancel()
+
+                # Propagate cancellation to the asyncio task running on the thread
+                # The task is attached to the future by ThreadedEventLoop.run_coroutine
+                task = getattr(self.future, "task", None)
+                # Use private _loop access as we are tightly coupled with ThreadedEventLoop
+                loop = self.event_loop._loop
+                if task and loop and loop.is_running():
+                    loop.call_soon_threadsafe(task.cancel)
+
             self._set_status("cancelled")
             return True
         return False
 
-    def cleanup_resources(self) -> None:
+    async def cleanup_resources(self) -> None:
         """Clean up resources associated with this job (stop event loop)."""
         if self.event_loop and self.event_loop.is_running:
             self.event_loop.stop()
@@ -110,9 +120,14 @@ class ThreadedJobExecution(JobExecution):
                 self._set_status("running")
                 await self.runner.run(self.request, self.context)
 
-                # Update job status on completion
-                self._set_status("completed")
-                await self.job_model.update(status="completed", finished_at=datetime.now())
+                # Check if workflow was suspended (not completed)
+                if self.runner and self.runner.status == "suspended":
+                    log.info("Workflow suspended, not setting completed status")
+                    await self.job_model.update(status="suspended", finished_at=datetime.now())
+                else:
+                    # Update job status on completion
+                    self._set_status("completed")
+                    await self.job_model.update(status="completed", finished_at=datetime.now())
                 log.info(f"Background job {self.job_id} completed successfully")
 
             except asyncio.CancelledError:
@@ -145,12 +160,18 @@ class ThreadedJobExecution(JobExecution):
                 await self.finalize_state()
 
     @classmethod
-    async def create_and_start(cls, request: RunJobRequest, context: ProcessingContext) -> "ThreadedJobExecution":
+    async def create_and_start(
+        cls,
+        request: RunJobRequest,
+        context: ProcessingContext,
+        job_id: str | None = None,
+        execution_id: str | None = None,
+    ) -> "ThreadedJobExecution":
         """
         Create and start a new background job.
 
         This factory method handles all initialization:
-        - Creates job ID and database record
+        - Creates job ID (if not provided) and database record
         - Sets up workflow runner
         - Creates dedicated event loop
         - Starts execution in background
@@ -158,11 +179,13 @@ class ThreadedJobExecution(JobExecution):
         Args:
             request: Job request with workflow details
             context: Processing context for the job
+            job_id: Optional existing job ID (if pre-generated)
+            execution_id: Optional execution ID for tracking specific attempts
 
         Returns:
             ThreadedJobExecution instance with execution already started
         """
-        job_id = uuid4().hex
+        job_id = job_id or uuid4().hex
         runner = WorkflowRunner(job_id=job_id)
 
         # Create persistent event loop for this job
@@ -196,6 +219,7 @@ class ThreadedJobExecution(JobExecution):
             request=request,
             job_model=job_model,
             event_loop=event_loop,
+            execution_id=execution_id,
         )
 
         # Schedule execution on the persistent loop
