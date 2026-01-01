@@ -555,7 +555,6 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     msg["workflow_id"] = job_ctx.workflow_id
                     await self.send_message(msg)
 
-
                     # Track if we received a terminal status update
                     if msg.get("type") == "job_update":
                         status = msg.get("status")
@@ -634,8 +633,8 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                             ).model_dump()
                         )
                     elif final_status == "suspended":
-                         # Should have been sent by runner, but send here if missed
-                         await self.send_message(
+                        # Should have been sent by runner, but send here if missed
+                        await self.send_message(
                             JobUpdate(
                                 status="suspended",
                                 job_id=job_ctx.job_id,
@@ -1044,7 +1043,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 return {"error": "job_id is required"}
             log.info(f"Resuming job: {job_id}")
             # Use asyncio task to handle resumption in background
-            asyncio.create_task(self.resume_job(job_id, workflow_id))
+            self._resume_task = asyncio.create_task(self.resume_job(job_id, workflow_id))
             return {
                 "message": f"Resumption initiated for job {job_id}",
                 "job_id": job_id,
@@ -1280,10 +1279,12 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
                     # Unknown message type - must use command structure
                     log.warning(f"Message missing 'command' field: {data}")
-                    await self.send_message({
-                        "error": "invalid_message",
-                        "message": "All messages must include a 'command' field. Use 'chat_message' command for chat."
-                    })
+                    await self.send_message(
+                        {
+                            "error": "invalid_message",
+                            "message": "All messages must include a 'command' field. Use 'chat_message' command for chat.",
+                        }
+                    )
 
             except asyncio.CancelledError:
                 log.info("Message receiving cancelled")

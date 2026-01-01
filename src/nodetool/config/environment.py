@@ -39,7 +39,6 @@ DEFAULT_ENV = {
     "DEBUG": None,
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
-    "NODETOOL_API_URL": None,
     "NODETOOL_ENABLE_TERMINAL_WS": "1",  # Enable terminal WebSocket in dev/test (blocked in production)
     "WORKER_ID": None,
     "SENTRY_DSN": None,
@@ -383,6 +382,7 @@ class Environment:
         if RUNNING_PYTEST:
             import tempfile
             from pathlib import Path
+
             return str(Path(tempfile.gettempdir()) / "nodetool_test_subprocess.db")
         else:
             return cls.get("DB_PATH")

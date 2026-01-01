@@ -1,6 +1,6 @@
 """
 Migration: Create workflow_versions table
-Version: 20260101_000000
+Version: 20260102_000000
 """
 
 from typing import TYPE_CHECKING
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nodetool.migrations.db_adapter import MigrationDBAdapter
 
-version = "20260101_000000"
+version = "20260102_000000"
 name = "create_workflow_versions"
 
 creates_tables = ["nodetool_workflow_versions"]

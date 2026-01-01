@@ -4,6 +4,7 @@ Version: 20260101_000000
 """
 
 from typing import TYPE_CHECKING
+
 from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 if TYPE_CHECKING:
@@ -47,7 +48,7 @@ async def down(db: "MigrationDBAdapter") -> None:
     await db.execute("DROP INDEX IF EXISTS idx_run_state_recovery")
     await db.execute("DROP INDEX IF EXISTS idx_run_state_heartbeat")
     await db.execute("DROP INDEX IF EXISTS idx_run_state_worker")
-    
+
     # Drop columns
     columns = [
         "metadata_json",
@@ -58,7 +59,7 @@ async def down(db: "MigrationDBAdapter") -> None:
         "execution_id",
         "execution_strategy",
     ]
-    
+
     for col in columns:
         try:
             if await db.column_exists("run_state", col):
