@@ -13,16 +13,22 @@ from pydantic import BaseModel, Field
 from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import Message, Provider
 from nodetool.models.workflow import Workflow as WorkflowModel
+from nodetool.models.workflow_version import WorkflowVersion as WorkflowVersionModel
 from nodetool.packages.registry import Registry
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import require_scope
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
+    CreateWorkflowVersionRequest,
     Workflow,
     WorkflowList,
     WorkflowRequest,
     WorkflowTool,
     WorkflowToolList,
+    WorkflowVersion,
+    WorkflowVersionList,
 )
 from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.read_graph import read_graph
@@ -31,6 +37,20 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
+
+
+class WorkflowGenerateNameRequest(BaseModel):
+    """Request model for generating a workflow name using an LLM."""
+
+    provider: str
+    model: str
+
+
+# Constants for workflow name generation
+MAX_WORKFLOW_NAME_LENGTH = 60
+MAX_NODES_IN_DESCRIPTION = 10
+
+
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
@@ -588,3 +608,217 @@ async def run_workflow_by_id(
                     raise HTTPException(status_code=500, detail=msg.error)
                 result[name] = value
         return result
+
+
+@router.post("/{id}/generate-name")
+async def generate_workflow_name(
+    id: str,
+    req: WorkflowGenerateNameRequest,
+    user: str = Depends(current_user),
+) -> Workflow:
+    """
+    Generate a name for a workflow using an LLM based on its content.
+
+    This endpoint analyzes the workflow's nodes and structure to generate
+    a descriptive name (maximum 60 characters). Similar to chat thread
+    auto-titling functionality.
+
+    Args:
+        id: The workflow ID
+        req: Request containing provider and model to use for generation
+
+    Returns:
+        The updated workflow with the generated name
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Build a description of the workflow from its graph
+    graph = workflow.get_api_graph()
+    node_descriptions = []
+    for node in graph.nodes:
+        node_info = node.type.split(".")[-1]  # Get the last part of the node type
+        if node.data and isinstance(node.data, dict) and "label" in node.data:
+            node_info += f" ({node.data['label']})"
+        node_descriptions.append(node_info)
+
+    workflow_content = (
+        f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:MAX_NODES_IN_DESCRIPTION])}"
+        + (f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more" if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION else "")
+    )
+    if workflow.description:
+        workflow_content = f"Description: {workflow.description}\n{workflow_content}"
+
+    # Use the provided provider and model for LLM call
+    provider = await get_provider(Provider(req.provider), user_id=user)
+    log.debug(f"Generating name for workflow {id} using provider: {provider}")
+
+    # Make the LLM call
+    response = await provider.generate_message(
+        model=req.model,
+        messages=[
+            Message(
+                role="system",
+                content=f"You are a helpful assistant that creates concise, descriptive names for workflows based on their content (maximum {MAX_WORKFLOW_NAME_LENGTH} characters). Return only the name, nothing else.",
+            ),
+            Message(
+                role="user",
+                content="Create a workflow name for: " + workflow_content,
+            ),
+        ],
+    )
+    log.debug(f"Name generation response: {response}")
+
+    if response.content:
+        new_name = str(response.content)
+        # Clean up the name (remove quotes if present)
+        new_name = new_name.strip("\"'")
+
+        # Update the workflow name
+        workflow.name = new_name[:MAX_WORKFLOW_NAME_LENGTH]
+        workflow.updated_at = datetime.now()
+        await workflow.save()
+
+        log.info(f"Updated workflow {id} name to: {new_name}")
+
+    return await from_model(workflow)
+
+
+# Workflow Version Endpoints
+
+
+def from_version_model(version: WorkflowVersionModel) -> WorkflowVersion:
+    """Convert a WorkflowVersionModel to a WorkflowVersion API type."""
+    return WorkflowVersion(
+        id=version.id,
+        workflow_id=version.workflow_id,
+        version=version.version,
+        created_at=version.created_at.isoformat(),
+        name=version.name,
+        description=version.description,
+        graph=Graph(
+            nodes=version.graph.get("nodes", []),
+            edges=version.graph.get("edges", []),
+        ),
+    )
+
+
+@router.post("/{id}/versions")
+async def create_version(
+    id: str,
+    version_request: CreateWorkflowVersionRequest,
+    user: str = Depends(current_user),
+) -> WorkflowVersion:
+    """
+    Create a new version of a workflow.
+
+    This saves the current state of the workflow as a version snapshot.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Get the next version number once before creating
+    next_version = await WorkflowVersionModel.get_next_version(id)
+    version_name = version_request.name or f"Version {next_version}"
+
+    version = await WorkflowVersionModel.create(
+        workflow_id=id,
+        user_id=user,
+        graph=workflow.graph,
+        name=version_name,
+        description=version_request.description,
+    )
+
+    return from_version_model(version)
+
+
+@router.get("/{id}/versions")
+async def list_versions(
+    id: str,
+    user: str = Depends(current_user),
+    cursor: Optional[int] = None,
+    limit: int = 100,
+) -> WorkflowVersionList:
+    """
+    List all versions of a workflow.
+
+    Args:
+        id: Workflow ID
+        cursor: Version number to start pagination after (for next page, use the
+                version number from the 'next' field in the response)
+        limit: Maximum number of versions to return
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user and workflow.access != "public":
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    versions, next_cursor = await WorkflowVersionModel.paginate(
+        workflow_id=id,
+        limit=limit,
+        start_version=cursor,
+    )
+
+    return WorkflowVersionList(
+        versions=[from_version_model(v) for v in versions],
+        next=str(next_cursor) if next_cursor else None,
+    )
+
+
+@router.get("/{id}/versions/{version}")
+async def get_version(
+    id: str,
+    version: int,
+    user: str = Depends(current_user),
+) -> WorkflowVersion:
+    """
+    Get a specific version of a workflow.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user and workflow.access != "public":
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version_model = await WorkflowVersionModel.get_by_version(id, version)
+    if not version_model:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return from_version_model(version_model)
+
+
+@router.post("/{id}/versions/{version}/restore")
+async def restore_version(
+    id: str,
+    version: int,
+    user: str = Depends(current_user),
+) -> Workflow:
+    """
+    Restore a workflow to a specific version.
+
+    This replaces the current workflow graph with the graph from the specified version.
+    The current state is NOT automatically saved as a new version before restoring.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version_model = await WorkflowVersionModel.get_by_version(id, version)
+    if not version_model:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    # Restore the workflow graph from the version
+    workflow.graph = version_model.graph
+    workflow.updated_at = datetime.now()
+    await workflow.save()
+
+    return await from_model(workflow)

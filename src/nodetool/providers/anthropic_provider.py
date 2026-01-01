@@ -349,18 +349,16 @@ class AnthropicProvider(BaseProvider):
             raise ValueError(f"Unknown message role {message.role}")
 
     def format_tools(self, tools: Sequence[Any]) -> list[ToolParam]:
-        """Convert tools to Anthropic's format with strict mode enabled."""
+        """Convert tools to Anthropic's format."""
         log.debug(f"Formatting {len(tools or [])} tools for Anthropic API")
         formatted_tools = []
         for tool in tools:
-            # Prepare schema for strict mode to ensure validation
             input_schema = self._prepare_json_schema(tool.input_schema)
             formatted_tools.append(
                 {
                     "name": tool.name,
                     "description": tool.description,
                     "input_schema": input_schema,
-                    "strict": True,
                 }
             )
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
