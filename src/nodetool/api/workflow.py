@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field
 from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import Message, Provider
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.models.workflow_version import WorkflowVersion as WorkflowVersionModel
 from nodetool.packages.registry import Registry
+from nodetool.providers import get_provider
 from nodetool.runtime.resources import require_scope
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
@@ -35,6 +37,15 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
+
+
+class WorkflowGenerateNameRequest(BaseModel):
+    """Request model for generating a workflow name using an LLM."""
+
+    provider: str
+    model: str
+
+
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
@@ -592,6 +603,85 @@ async def run_workflow_by_id(
                     raise HTTPException(status_code=500, detail=msg.error)
                 result[name] = value
         return result
+
+
+@router.post("/{id}/generate-name")
+async def generate_workflow_name(
+    id: str,
+    req: WorkflowGenerateNameRequest,
+    user: str = Depends(current_user),
+) -> Workflow:
+    """
+    Generate a name for a workflow using an LLM based on its content.
+
+    This endpoint analyzes the workflow's nodes and structure to generate
+    a descriptive name (maximum 60 characters). Similar to chat thread
+    auto-titling functionality.
+
+    Args:
+        id: The workflow ID
+        req: Request containing provider and model to use for generation
+
+    Returns:
+        The updated workflow with the generated name
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Build a description of the workflow from its graph
+    graph = workflow.get_api_graph()
+    node_descriptions = []
+    for node in graph.nodes:
+        node_info = node.type.split(".")[-1]  # Get the last part of the node type
+        if hasattr(node, "data") and node.data:
+            # Include relevant data if available
+            if isinstance(node.data, dict) and "label" in node.data:
+                node_info += f" ({node.data['label']})"
+        node_descriptions.append(node_info)
+
+    workflow_content = (
+        f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:10])}"
+        + (f"... and {len(graph.nodes) - 10} more" if len(graph.nodes) > 10 else "")
+    )
+    if workflow.description:
+        workflow_content = f"Description: {workflow.description}\n{workflow_content}"
+
+    # Use the provided provider and model for LLM call
+    provider = await get_provider(Provider(req.provider), user_id=user)
+    log.debug(f"Generating name for workflow {id} using provider: {provider}")
+
+    # Make the LLM call
+    response = await provider.generate_message(
+        model=req.model,
+        messages=[
+            Message(
+                role="system",
+                content="You are a helpful assistant that creates concise, descriptive names for workflows based on their content (maximum 60 characters). Return only the name, nothing else.",
+            ),
+            Message(
+                role="user",
+                content="Create a workflow name for: " + workflow_content,
+            ),
+        ],
+    )
+    log.debug(f"Name generation response: {response}")
+
+    if response.content:
+        new_name = str(response.content)
+        # Clean up the name (remove quotes if present)
+        new_name = new_name.strip("\"'")
+
+        # Update the workflow name
+        workflow.name = new_name[:60]  # Ensure max 60 characters
+        workflow.updated_at = datetime.now()
+        await workflow.save()
+
+        log.info(f"Updated workflow {id} name to: {new_name}")
+
+    return await from_model(workflow)
 
 
 # Workflow Version Endpoints
