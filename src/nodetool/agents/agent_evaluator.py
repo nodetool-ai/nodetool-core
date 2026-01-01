@@ -274,6 +274,7 @@ class AgentEvaluator:
                     "--output-json",
                     output_json_path,
                 ]
+                clean_cmd = [c for c in cmd if c is not None]
                 start_time = time.perf_counter()
                 stdout_path_obj = Path(stdout_path)
                 stderr_path_obj = Path(stderr_path)
@@ -284,7 +285,7 @@ class AgentEvaluator:
                     stderr_path_obj.open("a", encoding="utf-8") as stderr_file,
                 ):
                     proc = await asp.create_subprocess_exec(
-                        *cmd,
+                        *clean_cmd,
                         stdout=stdout_file,
                         stderr=stderr_file,
                     )

@@ -13,8 +13,8 @@ from nodetool.agents.tools.asset_tools import (
 async def test_save_asset_tool_missing_filename():
     tool = SaveAssetTool()
     # context is not used when filename is missing
-    context = SimpleNamespace()
-    result = await tool.process(context, {"text": "hi"})
+    context = SimpleNamespace()  # type: ignore[arg-type]
+    result = await tool.process(context, {"text": "hi"})  # type: ignore[arg-type]
     assert result == {"success": False, "error": "Filename is required"}
 
 
@@ -35,9 +35,9 @@ async def test_read_asset_tool_asset_not_found():
     async def find_asset_by_filename(name):
         return None
 
-    context = SimpleNamespace(find_asset_by_filename=find_asset_by_filename)
+    context = SimpleNamespace(find_asset_by_filename=find_asset_by_filename)  # type: ignore[arg-type]
     tool = ReadAssetTool()
-    result = await tool.process(context, {"filename": "missing.txt"})
+    result = await tool.process(context, {"filename": "missing.txt"})  # type: ignore[arg-type]
     assert result == {
         "success": False,
         "error": "Asset with filename missing.txt not found",
@@ -51,10 +51,10 @@ async def test_list_assets_directory_tool_success():
     async def list_assets(parent_id=None, recursive=False, mime_type=None):
         return [asset], 1
 
-    context = SimpleNamespace(list_assets=list_assets)
+    context = SimpleNamespace(list_assets=list_assets)  # type: ignore[arg-type]
     tool = ListAssetsDirectoryTool()
     result = await tool.process(
-        context,
+        context,  # type: ignore[arg-type]
         {"parent_id": None, "recursive": True, "filter_mime_type": "text/plain"},
     )
     assert result["success"] is True
@@ -67,9 +67,9 @@ async def test_list_assets_directory_tool_error():
     async def list_assets(*args, **kwargs):
         raise RuntimeError("boom")
 
-    context = SimpleNamespace(list_assets=list_assets)
+    context = SimpleNamespace(list_assets=list_assets)  # type: ignore[arg-type]
     tool = ListAssetsDirectoryTool()
-    result = await tool.process(context, {})
+    result = await tool.process(context, {})  # type: ignore[arg-type]
     assert result["success"] is False
     assert "boom" in result["error"]
 

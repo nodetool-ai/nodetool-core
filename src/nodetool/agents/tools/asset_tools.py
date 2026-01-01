@@ -8,7 +8,7 @@ This module provides tools for managing assets:
 """
 
 from io import BytesIO
-from typing import Any, ClassVar
+from typing import Any, Dict
 
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -16,9 +16,9 @@ from .base import Tool
 
 
 class SaveAssetTool(Tool):
-    name: ClassVar[str] = "save_text_asset"
-    description: ClassVar[str] = "Save text content as an asset file in the assets directory"
-    input_schema: ClassVar[dict[str, Any]] = {
+    name = "save_text_asset"
+    description = "Save text content as an asset file in the assets directory"
+    input_schema = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "text": {
@@ -33,7 +33,7 @@ class SaveAssetTool(Tool):
         "required": ["text", "filename"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         try:
             text = params["text"]
             filename = params.get("filename")
@@ -61,7 +61,7 @@ class SaveAssetTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: dict) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         filename = params.get("filename", "an asset")
         msg = f"Saving text asset as {filename}..."
         if len(msg) > 80:
@@ -72,7 +72,7 @@ class SaveAssetTool(Tool):
 class ReadAssetTool(Tool):
     name = "read_asset"
     description = "Read content from an asset file"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "filename": {
@@ -83,7 +83,7 @@ class ReadAssetTool(Tool):
         "required": ["filename"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         try:
             filename = params["filename"]
             asset = await context.find_asset_by_filename(filename)
@@ -110,7 +110,7 @@ class ReadAssetTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: dict) -> str:
+    def user_message(self, params: Dict[str, Any]) -> str:
         filename = params.get("filename", "an asset")
         msg = f"Reading asset {filename}..."
         if len(msg) > 80:
@@ -121,7 +121,7 @@ class ReadAssetTool(Tool):
 class ListAssetsDirectoryTool(Tool):
     name = "list_assets_directory"
     description = "List assets in a directory"
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "parent_id": {
@@ -137,7 +137,7 @@ class ListAssetsDirectoryTool(Tool):
         "required": [],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         try:
             parent_id = params.get("parent_id")
             recursive = params.get("recursive", False)
@@ -171,5 +171,5 @@ class ListAssetsDirectoryTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: dict) -> str:
+    def user_message(self, params: Dict[str, Any]) -> str:
         return "Listing assets..."

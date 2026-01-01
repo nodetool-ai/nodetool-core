@@ -55,7 +55,7 @@ class RunnerExecutionTool(Tool):
     language_label: str = "code"
     network_disabled: bool = False
 
-    input_schema: ClassVar[dict[str, Any]] = {
+    input_schema: dict[str, Any] = {  # noqa: RUF012
         "type": "object",
         "properties": {
             "code": {
@@ -203,7 +203,7 @@ class RunnerExecutionTool(Tool):
             "network_disabled": self.network_disabled,
             "workspace_mount_path": workspace_mount,
         }
-        return self.runner_cls(**runner_kwargs)
+        return self.runner_cls(**runner_kwargs)  # type: ignore[arg-type]
 
     def runner_options_for_call(self, mode: RunnerMode, params: dict[str, Any]) -> dict[str, Any]:
         """Hook for subclasses to tweak runner options per invocation."""

@@ -1,6 +1,6 @@
-from typing import TypeVar
+from typing import Any, TypeVar
 
-T = TypeVar("T")
+T = TypeVar("T", bound="dict[str, Any] | list[Any]")
 
 
 def _remove_base64_images(data: T) -> T:
@@ -14,8 +14,8 @@ def _remove_base64_images(data: T) -> T:
                 if data[key].startswith("data:"):
                     data.pop(key, None)
             elif isinstance(data[key], dict | list):
-                data[key] = _remove_base64_images(data[key])
+                data[key] = _remove_base64_images(data[key])  # type: ignore[index]
     elif isinstance(data, list):
         for i in range(len(data)):
-            data[i] = _remove_base64_images(data[i])
+            data[i] = _remove_base64_images(data[i])  # type: ignore[index]
     return data
