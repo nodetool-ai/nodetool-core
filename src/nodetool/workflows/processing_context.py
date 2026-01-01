@@ -204,6 +204,18 @@ class AssetOutputMode(str, Enum):
     RAW = "raw"
 
 
+# 3D model format to MIME type and extension mapping
+MODEL_3D_FORMAT_MAPPING: dict[str, tuple[str, str]] = {
+    "glb": ("model/gltf-binary", "glb"),
+    "gltf": ("model/gltf+json", "gltf"),
+    "obj": ("model/obj", "obj"),
+    "stl": ("model/stl", "stl"),
+    "ply": ("application/x-ply", "ply"),
+    "fbx": ("application/octet-stream", "fbx"),
+    "usdz": ("model/vnd.usdz+zip", "usdz"),
+}
+
+
 class ProcessingContext:
     """
     The processing context is the workflow's interface to the outside world.
@@ -2287,20 +2299,11 @@ class ProcessingContext:
         Returns:
             Model3DRef: The Model3DRef object.
         """
-        # Map format to content type
-        format_to_content_type = {
-            "glb": "model/gltf-binary",
-            "gltf": "model/gltf+json",
-            "obj": "model/obj",
-            "stl": "model/stl",
-            "ply": "application/x-ply",
-            "fbx": "application/octet-stream+fbx",
-            "usdz": "model/vnd.usdz+zip",
-        }
-        content_type = format_to_content_type.get(format or "glb", "model/gltf-binary")
+        # Get content type from shared mapping
+        mime_type, _ = MODEL_3D_FORMAT_MAPPING.get(format or "glb", ("model/gltf-binary", "glb"))
 
         if name:
-            asset = await self.create_asset(name, content_type, buffer, parent_id=parent_id)
+            asset = await self.create_asset(name, mime_type, buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return Model3DRef(asset_id=asset.id, uri=url, format=format, metadata=metadata)
@@ -2378,17 +2381,8 @@ class ProcessingContext:
         Returns:
             str: The data URI.
         """
-        # Map format to MIME type
-        format_to_mime = {
-            "glb": "model/gltf-binary",
-            "gltf": "model/gltf+json",
-            "obj": "model/obj",
-            "stl": "model/stl",
-            "ply": "application/x-ply",
-            "fbx": "application/octet-stream",
-            "usdz": "model/vnd.usdz+zip",
-        }
-        mime_type = format_to_mime.get(model3d_ref.format or "glb", "model/gltf-binary")
+        # Get MIME type from shared mapping
+        mime_type, _ = MODEL_3D_FORMAT_MAPPING.get(model3d_ref.format or "glb", ("model/gltf-binary", "glb"))
         return f"data:{mime_type};base64,{await self.model3d_to_base64(model3d_ref)}"
 
     async def to_estimator(self, model_ref: ModelRef):
@@ -2552,17 +2546,8 @@ class ProcessingContext:
         if isinstance(asset, TextRef):
             return "text/plain", "txt"
         if isinstance(asset, Model3DRef):
-            # Map format to MIME type and extension
-            format_mapping = {
-                "glb": ("model/gltf-binary", "glb"),
-                "gltf": ("model/gltf+json", "gltf"),
-                "obj": ("model/obj", "obj"),
-                "stl": ("model/stl", "stl"),
-                "ply": ("application/x-ply", "ply"),
-                "fbx": ("application/octet-stream", "fbx"),
-                "usdz": ("model/vnd.usdz+zip", "usdz"),
-            }
-            return format_mapping.get(asset.format or "glb", ("model/gltf-binary", "glb"))
+            # Use shared format mapping
+            return MODEL_3D_FORMAT_MAPPING.get(asset.format or "glb", ("model/gltf-binary", "glb"))
         return "application/octet-stream", "bin"
 
     async def _asset_to_data_uri(self, asset: AssetRef) -> AssetRef:
