@@ -21,7 +21,9 @@ jobs:
           sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
 
       - name: Install uv
-        run: pip install --upgrade uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Sync dependencies
         run: uv sync --frozen

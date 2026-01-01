@@ -19,14 +19,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install ruff
+        run: uv pip install --system ruff
 
       - name: Run ruff with auto-fix
         run: ruff check --fix .
@@ -58,14 +57,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run ruff check (verify no issues remain)
         run: ruff check .
