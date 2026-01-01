@@ -6,17 +6,16 @@ Version: 20250428_212009_004
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "20250428_212009_004"
 name = "create_messages"
 
-# Tables this migration creates
 creates_tables = ["nodetool_messages"]
 modifies_tables = []
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Create the messages table."""
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nodetool_messages (
@@ -47,6 +46,6 @@ async def up(db: "aiosqlite.Connection") -> None:
     """)
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Drop the messages table."""
     await db.execute("DROP TABLE IF EXISTS nodetool_messages")

@@ -188,7 +188,7 @@ class SQLiteMigrationAdapter(MigrationDBAdapter):
             return None
         # Convert to dict using cursor.description
         columns = [desc[0] for desc in cursor.description]
-        return dict(zip(columns, row))
+        return dict(zip(columns, row, strict=True))
 
     async def fetchall(self, sql: str, params: tuple[Any, ...] | None = None) -> list[dict[str, Any]]:
         """Execute a query and fetch all rows."""
@@ -200,7 +200,7 @@ class SQLiteMigrationAdapter(MigrationDBAdapter):
         if not rows:
             return []
         columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        return [dict(zip(columns, row, strict=True)) for row in rows]
 
     async def commit(self) -> None:
         """Commit the current transaction."""
@@ -272,20 +272,20 @@ class PostgresMigrationAdapter(MigrationDBAdapter):
         await self._ensure_connection()
         # Convert ? placeholders to PostgreSQL %s style
         sql = sql.replace("?", "%s")
-        async with self._conn.cursor() as cursor:
+        async with self._conn.cursor() as cursor:  # type: ignore[union-attr]
             if params:
-                await cursor.execute(sql, params)
+                await cursor.execute(sql, params)  # type: ignore[union-attr]
             else:
-                await cursor.execute(sql)
-            self._rowcount = cursor.rowcount
-            return cursor
+                await cursor.execute(sql)  # type: ignore[union-attr]
+            self._rowcount = cursor.rowcount  # type: ignore[union-attr]
+            return cursor  # type: ignore[return-value]
 
     async def executemany(self, sql: str, params_list: list[tuple[Any, ...]]) -> None:
         """Execute a SQL statement multiple times."""
         await self._ensure_connection()
         sql = sql.replace("?", "%s")
-        async with self._conn.cursor() as cursor:
-            await cursor.executemany(sql, params_list)
+        async with self._conn.cursor() as cursor:  # type: ignore[union-attr]
+            await cursor.executemany(sql, params_list)  # type: ignore[union-attr]
 
     async def fetchone(self, sql: str, params: tuple[Any, ...] | None = None) -> dict[str, Any] | None:
         """Execute a query and fetch one row."""
@@ -293,12 +293,12 @@ class PostgresMigrationAdapter(MigrationDBAdapter):
         sql = sql.replace("?", "%s")
         from psycopg.rows import dict_row
 
-        async with self._conn.cursor(row_factory=dict_row) as cursor:
+        async with self._conn.cursor(row_factory=dict_row) as cursor:  # type: ignore[union-attr]
             if params:
-                await cursor.execute(sql, params)
+                await cursor.execute(sql, params)  # type: ignore[union-attr]
             else:
-                await cursor.execute(sql)
-            return await cursor.fetchone()
+                await cursor.execute(sql)  # type: ignore[union-attr]
+            return await cursor.fetchone()  # type: ignore[union-attr]
 
     async def fetchall(self, sql: str, params: tuple[Any, ...] | None = None) -> list[dict[str, Any]]:
         """Execute a query and fetch all rows."""
@@ -306,12 +306,12 @@ class PostgresMigrationAdapter(MigrationDBAdapter):
         sql = sql.replace("?", "%s")
         from psycopg.rows import dict_row
 
-        async with self._conn.cursor(row_factory=dict_row) as cursor:
+        async with self._conn.cursor(row_factory=dict_row) as cursor:  # type: ignore[union-attr]
             if params:
-                await cursor.execute(sql, params)
+                await cursor.execute(sql, params)  # type: ignore[union-attr]
             else:
-                await cursor.execute(sql)
-            return await cursor.fetchall()
+                await cursor.execute(sql)  # type: ignore[union-attr]
+            return await cursor.fetchall()  # type: ignore[union-attr]
 
     async def commit(self) -> None:
         """Commit the current transaction."""

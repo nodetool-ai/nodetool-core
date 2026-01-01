@@ -6,17 +6,16 @@ Version: 20251225_000000
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "20251225_000000"
 name = "create_oauth_credentials"
 
-# Tables this migration creates
 creates_tables = ["nodetool_oauth_credentials"]
 modifies_tables = []
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Create the oauth_credentials table."""
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nodetool_oauth_credentials (
@@ -36,20 +35,18 @@ async def up(db: "aiosqlite.Connection") -> None:
         )
     """)
 
-    # Create index for user_id and provider combination
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_oauth_credentials_user_provider
         ON nodetool_oauth_credentials (user_id, provider)
     """)
 
-    # Create unique index for user_id, provider, and account_id
     await db.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_credentials_user_provider_account
         ON nodetool_oauth_credentials (user_id, provider, account_id)
     """)
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Drop the oauth_credentials table."""
     await db.execute("DROP INDEX IF EXISTS idx_oauth_credentials_user_provider")
     await db.execute("DROP INDEX IF EXISTS idx_oauth_credentials_user_provider_account")

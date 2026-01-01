@@ -6,34 +6,31 @@ Version: 20251011_000000
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "20251011_000000"
 name = "add_agent_execution_fields_to_messages"
 
-# Tables this migration modifies
 creates_tables = []
 modifies_tables = ["nodetool_messages"]
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Add agent_execution_id and execution_event_type columns to messages table."""
-    cursor = await db.execute("PRAGMA table_info(nodetool_messages)")
-    columns = await cursor.fetchall()
-    column_names = [col[1] for col in columns]
+    columns = await db.get_columns("nodetool_messages")
 
-    if "agent_execution_id" not in column_names:
+    if "agent_execution_id" not in columns:
         await db.execute("""
             ALTER TABLE nodetool_messages ADD COLUMN agent_execution_id TEXT
         """)
 
-    if "execution_event_type" not in column_names:
+    if "execution_event_type" not in columns:
         await db.execute("""
             ALTER TABLE nodetool_messages ADD COLUMN execution_event_type TEXT
         """)
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Remove agent execution fields from messages table.
 
     Note: SQLite doesn't support DROP COLUMN directly in older versions.

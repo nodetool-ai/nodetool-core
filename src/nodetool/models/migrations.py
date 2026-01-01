@@ -35,6 +35,10 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
     - Validates checksums of previously applied migrations
     - Runs migrations in transactions with rollback on failure
 
+    For Supabase deployments, programmatic migrations are skipped.
+    Use 'nodetool migrations export' to generate SQL files, then
+    run 'supabase db push' to apply them.
+
     Args:
         pool: Optional SQLite connection pool. If None, creates one using
               the environment configuration.
@@ -44,18 +48,28 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
         ChecksumError: If checksum validation fails
         LockError: If migration lock cannot be acquired
     """
+    from nodetool.config.environment import Environment
     from nodetool.migrations.runner import MigrationRunner
     from nodetool.migrations.state import DatabaseState, detect_database_state_sqlite
     from nodetool.runtime.db_sqlite import SQLiteConnectionPool as PoolClass
 
     log.info("Starting database migrations...")
 
+    # Check if using Supabase (Supabase URL present but no direct PostgreSQL connection)
+    supabase_url = Environment.get_supabase_url()
+    postgres_db = Environment.get("POSTGRES_DB")
+
+    if supabase_url and not postgres_db:
+        log.info("Supabase detected - programmatic migrations skipped")
+        log.info("To manage schema, run:")
+        log.info("  1. nodetool migrations export  # Generate SQL files")
+        log.info("  2. supabase db push            # Apply migrations via Supabase CLI")
+        return
+
     async with _migration_lock:
         # Get or create pool
         if pool is None:
             from pathlib import Path
-
-            from nodetool.config.environment import Environment
 
             db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
             db_path = str(Path(db_path).expanduser())
@@ -99,4 +113,3 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
 
         finally:
             await pool.release(conn)
-

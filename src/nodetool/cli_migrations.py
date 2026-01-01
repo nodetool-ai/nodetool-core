@@ -66,6 +66,7 @@ def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool
         # Migrate to a specific version
         nodetool migrations upgrade --target 20250501_000000
     """
+
     async def run_upgrade():
         from nodetool.config.environment import Environment
         from nodetool.migrations.runner import MigrationRunner
@@ -135,9 +136,7 @@ def downgrade(steps: int, force: bool):
         nodetool migrations downgrade --steps 3
     """
     if not force:
-        if not click.confirm(
-            f"Are you sure you want to rollback {steps} migration(s)? This may cause data loss."
-        ):
+        if not click.confirm(f"Are you sure you want to rollback {steps} migration(s)? This may cause data loss."):
             console.print("[yellow]Operation cancelled[/]")
             return
 
@@ -183,6 +182,7 @@ def status():
     Examples:
         nodetool migrations status
     """
+
     async def run_status():
         from nodetool.config.environment import Environment
         from nodetool.migrations.runner import MigrationRunner
@@ -205,7 +205,7 @@ def status():
                 console.print()
 
                 # Applied migrations table
-                if result['applied']:
+                if result["applied"]:
                     table = Table(title="Applied Migrations")
                     table.add_column("Version", style="cyan")
                     table.add_column("Name", style="green")
@@ -213,26 +213,26 @@ def status():
                     table.add_column("Time (ms)", style="blue")
                     table.add_column("Baselined", style="magenta")
 
-                    for m in result['applied']:
+                    for m in result["applied"]:
                         table.add_row(
-                            m['version'],
-                            m['name'],
-                            m['applied_at'],
-                            str(m['execution_time_ms']),
-                            "Yes" if m['baselined'] else "No",
+                            m["version"],
+                            m["name"],
+                            m["applied_at"],
+                            str(m["execution_time_ms"]),
+                            "Yes" if m["baselined"] else "No",
                         )
 
                     console.print(table)
                     console.print()
 
                 # Pending migrations table
-                if result['pending']:
+                if result["pending"]:
                     table = Table(title="Pending Migrations")
                     table.add_column("Version", style="cyan")
                     table.add_column("Name", style="green")
 
-                    for m in result['pending']:
-                        table.add_row(m['version'], m['name'])
+                    for m in result["pending"]:
+                        table.add_row(m["version"], m["name"])
 
                     console.print(table)
                 else:
@@ -279,7 +279,7 @@ Version: {version}
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "{version}"
 name = "{safe_name}"
@@ -290,15 +290,17 @@ creates_tables = []
 modifies_tables = []
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Apply the migration.
 
     TODO: Add your migration logic here.
+    Use db.execute() for SQL statements.
+    Use db.get_columns() to check existing columns.
     """
     pass
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Rollback the migration.
 
     TODO: Add your rollback logic here.
@@ -336,6 +338,7 @@ def validate():
     Examples:
         nodetool migrations validate
     """
+
     async def run_validate():
         from nodetool.config.environment import Environment
         from nodetool.migrations.runner import MigrationRunner
@@ -402,9 +405,7 @@ def baseline(force: bool):
         nodetool migrations baseline --force
     """
     if not force:
-        if not click.confirm(
-            "This will mark migrations as applied based on existing tables. Continue?"
-        ):
+        if not click.confirm("This will mark migrations as applied based on existing tables. Continue?"):
             console.print("[yellow]Operation cancelled[/]")
             return
 
@@ -434,3 +435,138 @@ def baseline(force: bool):
             raise SystemExit(1) from e
 
     asyncio.run(run_baseline())
+
+
+@migrations.command("export")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Output directory for Supabase migrations",
+)
+@click.option(
+    "--migrations-dir",
+    "-m",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Source directory for Python migrations",
+)
+@click.option(
+    "--latest-only",
+    is_flag=True,
+    help="Only export migrations not already in output directory",
+)
+def export(output: str | None, migrations_dir: str | None, latest_only: bool):
+    """Export migrations to Supabase format.
+
+    Creates SQL migration files in supabase/migrations/ that can be
+    applied using the Supabase CLI (supabase db push).
+
+    Examples:
+        # Export all migrations to supabase/migrations/
+        nodetool migrations export
+
+        # Export only new migrations
+        nodetool migrations export --latest-only
+
+        # Export to custom directory
+        nodetool migrations export --output ./custom/supabase/migrations
+    """
+    import asyncio
+    from pathlib import Path
+
+    async def run_export():
+        from nodetool.config.environment import Environment
+        from nodetool.migrations.export_supabase import export_all_migrations
+
+        try:
+            output_path = Path(output) if output else None
+            migrations_path = Path(migrations_dir) if migrations_dir else None
+
+            if not output_path:
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
+                output_path = project_root / "supabase" / "migrations"
+
+            console.print(f"[cyan]Exporting migrations to: {output_path}[/]")
+
+            created = await export_all_migrations(
+                output_dir=output_path,
+                migrations_dir=migrations_path,
+                latest_only=latest_only,
+            )
+
+            if created:
+                console.print(f"[green]✅ Exported {len(created)} migration(s):[/]")
+                for f in created:
+                    console.print(f"  • {f.name}")
+                console.print()
+                console.print("[cyan]Next steps:[/]")
+                console.print("  1. Review the generated SQL files")
+                console.print("  2. Check them into version control")
+                console.print("  3. Run: supabase db push")
+            else:
+                console.print("[yellow]No new migrations to export[/]")
+
+        except Exception as e:
+            console.print(f"[red]❌ Export failed: {e}[/]")
+            raise SystemExit(1) from e
+
+    asyncio.run(run_export())
+
+
+@migrations.command("check-export")
+def check_export():
+    """Check if all migrations are exported to Supabase format.
+
+    Exits with code 1 if there are pending migrations to export.
+
+    Examples:
+        nodetool migrations check-export
+    """
+    import asyncio
+    import sys
+    from pathlib import Path
+
+    async def run_check():
+        from nodetool.config.environment import Environment
+        from nodetool.migrations.export_supabase import export_all_migrations
+        from nodetool.migrations.runner import MIGRATIONS_DIR, MigrationRunner
+
+        try:
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            supabase_dir = project_root / "supabase"
+            output_dir = supabase_dir / "migrations"
+
+            # Find existing Supabase migrations
+            existing: dict[str, bool] = {}
+            if output_dir.exists():
+                for f in output_dir.glob("*.sql"):
+                    version_match = f.stem.split("_")[0]
+                    if version_match.isdigit():
+                        existing[version_match] = True
+
+            # Load Python migrations
+            runner = MigrationRunner(None, migrations_dir=MIGRATIONS_DIR)
+            migrations = runner.discover_migrations()
+
+            # Find pending
+            pending = [m for m in migrations if m.version.replace("_", "") not in existing]
+
+            if pending:
+                console.print(f"[yellow]⚠️  {len(pending)} migration(s) not exported to Supabase:[/]")
+                for m in pending:
+                    console.print(f"  • {m.version}: {m.name}")
+                console.print()
+                console.print("Run: nodetool migrations export")
+                raise SystemExit(1)
+            else:
+                console.print("[green]✅ All migrations are exported to Supabase format[/]")
+
+        except SystemExit:
+            raise
+        except Exception as e:
+            console.print(f"[red]❌ Check failed: {e}[/]")
+            raise SystemExit(1) from e
+
+    asyncio.run(run_check())

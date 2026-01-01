@@ -6,23 +6,19 @@ Version: 20251223_000000
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "20251223_000000"
 name = "add_cost_tracking_to_predictions"
 
-# Tables this migration modifies
 creates_tables = []
 modifies_tables = ["nodetool_predictions"]
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Add cost tracking fields to predictions table."""
-    cursor = await db.execute("PRAGMA table_info(nodetool_predictions)")
-    columns = await cursor.fetchall()
-    column_names = [col[1] for col in columns]
+    columns = await db.get_columns("nodetool_predictions")
 
-    # Add new columns if they don't exist
     new_columns = [
         ("total_tokens", "INTEGER"),
         ("cached_tokens", "INTEGER"),
@@ -34,12 +30,11 @@ async def up(db: "aiosqlite.Connection") -> None:
     ]
 
     for col_name, col_type in new_columns:
-        if col_name not in column_names:
+        if col_name not in columns:
             await db.execute(f"""
                 ALTER TABLE nodetool_predictions ADD COLUMN {col_name} {col_type}
             """)
 
-    # Create indexes for cost aggregation queries
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_prediction_user_provider
         ON nodetool_predictions(user_id, provider)
@@ -56,7 +51,7 @@ async def up(db: "aiosqlite.Connection") -> None:
     """)
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Remove cost tracking fields from predictions table.
 
     Note: We only drop the indexes since SQLite doesn't support DROP COLUMN

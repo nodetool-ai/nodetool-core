@@ -110,32 +110,60 @@ class MigrationRunner:
     - Checksum validation for integrity
     - Baselining for legacy database upgrades
 
+    The runner is database-agnostic and works with any database that has
+    a MigrationDBAdapter implementation (SQLite, PostgreSQL, etc.).
+
     Example:
-        runner = MigrationRunner(connection)
-        await runner.migrate()  # Apply all pending migrations
-        status = await runner.status()  # Get migration status
-        await runner.rollback(steps=1)  # Rollback last migration
+        # Using with raw connection (auto-creates adapter)
+        runner = MigrationRunner(sqlite_connection)
+        await runner.migrate()
+
+        # Using with explicit adapter
+        adapter = PostgresMigrationAdapter(pool)
+        runner = MigrationRunner(adapter)
+        await runner.migrate()
+
+        status = await runner.status()
+        await runner.rollback(steps=1)
     """
 
     def __init__(
         self,
-        connection: "aiosqlite.Connection",
+        connection_or_adapter: Any = None,
         migrations_dir: Path | None = None,
     ):
         """Initialize the migration runner.
 
         Args:
-            connection: SQLite database connection
+            connection_or_adapter: Either a MigrationDBAdapter instance or
+                                   a raw database connection (will be wrapped
+                                   in an appropriate adapter). Can be None for
+                                   discovery-only operations.
             migrations_dir: Optional custom migrations directory
         """
-        self._connection = connection
+        # Accept either an adapter or a raw connection, or None for discovery-only
+        if connection_or_adapter is None:
+            self._adapter = None
+        elif isinstance(connection_or_adapter, MigrationDBAdapter):
+            self._adapter = connection_or_adapter
+        else:
+            # Try to create an adapter from the connection
+            self._adapter = create_migration_adapter(connection_or_adapter)
+
         self._migrations_dir = migrations_dir or MIGRATIONS_DIR
         self._migrations_cache: list[Migration] | None = None
 
     @property
-    def connection(self) -> "aiosqlite.Connection":
-        """Get the database connection."""
-        return self._connection
+    def adapter(self) -> MigrationDBAdapter | None:
+        """Get the database adapter."""
+        return self._adapter
+
+    @property
+    def db_type(self) -> str:
+        """Get the database type."""
+        if self._adapter is None:
+            return "unknown"
+        return self._adapter.db_type
 
     # -------------------------------------------------------------------------
     # Migration tracking table management
@@ -143,8 +171,10 @@ class MigrationRunner:
 
     async def _create_tracking_tables(self) -> None:
         """Create the migration tracking and lock tables if they don't exist."""
+        db_type = self._adapter.db_type
+
         # Create migrations tracking table
-        await self._connection.execute(f"""
+        await self._adapter.execute(f"""
             CREATE TABLE IF NOT EXISTS {MIGRATION_TRACKING_TABLE} (
                 version TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -155,22 +185,38 @@ class MigrationRunner:
             )
         """)
 
-        # Create migration lock table
-        await self._connection.execute(f"""
-            CREATE TABLE IF NOT EXISTS {MIGRATION_LOCK_TABLE} (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                locked_at TEXT,
-                locked_by TEXT
-            )
-        """)
+        # Create migration lock table - syntax varies slightly by database
+        if db_type == "sqlite":
+            await self._adapter.execute(f"""
+                CREATE TABLE IF NOT EXISTS {MIGRATION_LOCK_TABLE} (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    locked_at TEXT,
+                    locked_by TEXT
+                )
+            """)
+            # Insert initial lock row if not exists (SQLite uses INSERT OR IGNORE)
+            await self._adapter.execute(f"""
+                INSERT OR IGNORE INTO {MIGRATION_LOCK_TABLE} (id, locked_at, locked_by)
+                VALUES (1, NULL, NULL)
+            """)
+        else:
+            # PostgreSQL/MySQL style
+            await self._adapter.execute(f"""
+                CREATE TABLE IF NOT EXISTS {MIGRATION_LOCK_TABLE} (
+                    id INTEGER PRIMARY KEY,
+                    locked_at TEXT,
+                    locked_by TEXT,
+                    CONSTRAINT single_row CHECK (id = 1)
+                )
+            """)
+            # PostgreSQL uses ON CONFLICT DO NOTHING
+            await self._adapter.execute(f"""
+                INSERT INTO {MIGRATION_LOCK_TABLE} (id, locked_at, locked_by)
+                VALUES (1, NULL, NULL)
+                ON CONFLICT (id) DO NOTHING
+            """)
 
-        # Insert initial lock row if not exists
-        await self._connection.execute(f"""
-            INSERT OR IGNORE INTO {MIGRATION_LOCK_TABLE} (id, locked_at, locked_by)
-            VALUES (1, NULL, NULL)
-        """)
-
-        await self._connection.commit()
+        await self._adapter.commit()
 
     async def _get_applied_migrations(self) -> dict[str, AppliedMigration]:
         """Get all applied migrations from the tracking table.
@@ -178,26 +224,24 @@ class MigrationRunner:
         Returns:
             Dict mapping version to AppliedMigration objects
         """
-        if not await table_exists_sqlite(self._connection, MIGRATION_TRACKING_TABLE):
+        if not await self._adapter.table_exists(MIGRATION_TRACKING_TABLE):
             return {}
 
-        cursor = await self._connection.execute(f"""
+        rows = await self._adapter.fetchall(f"""
             SELECT version, name, checksum, applied_at, execution_time_ms, baselined
             FROM {MIGRATION_TRACKING_TABLE}
             ORDER BY version
         """)
-        rows = await cursor.fetchall()
 
         applied = {}
         for row in rows:
-            version, name, checksum, applied_at, execution_time_ms, baselined = row
-            applied[version] = AppliedMigration(
-                version=version,
-                name=name,
-                checksum=checksum,
-                applied_at=datetime.fromisoformat(applied_at),
-                execution_time_ms=execution_time_ms,
-                baselined=bool(baselined),
+            applied[row["version"]] = AppliedMigration(
+                version=row["version"],
+                name=row["name"],
+                checksum=row["checksum"],
+                applied_at=datetime.fromisoformat(row["applied_at"]),
+                execution_time_ms=row["execution_time_ms"],
+                baselined=bool(row["baselined"]),
             )
         return applied
 
@@ -214,7 +258,7 @@ class MigrationRunner:
             execution_time_ms: How long the migration took
             baselined: Whether this was a baseline (not actually executed)
         """
-        await self._connection.execute(
+        await self._adapter.execute(
             f"""
             INSERT INTO {MIGRATION_TRACKING_TABLE}
             (version, name, checksum, applied_at, execution_time_ms, baselined)
@@ -229,7 +273,7 @@ class MigrationRunner:
                 1 if baselined else 0,
             ),
         )
-        await self._connection.commit()
+        await self._adapter.commit()
 
     async def _remove_migration_record(self, version: str) -> None:
         """Remove a migration record from the tracking table.
@@ -237,11 +281,11 @@ class MigrationRunner:
         Args:
             version: The migration version to remove
         """
-        await self._connection.execute(
+        await self._adapter.execute(
             f"DELETE FROM {MIGRATION_TRACKING_TABLE} WHERE version = ?",
             (version,),
         )
-        await self._connection.commit()
+        await self._adapter.commit()
 
     # -------------------------------------------------------------------------
     # Locking mechanism
@@ -266,7 +310,7 @@ class MigrationRunner:
 
         while time.time() - start_time < timeout:
             # Try to acquire lock using atomic UPDATE
-            cursor = await self._connection.execute(
+            await self._adapter.execute(
                 f"""
                 UPDATE {MIGRATION_LOCK_TABLE}
                 SET locked_at = ?, locked_by = ?
@@ -274,52 +318,46 @@ class MigrationRunner:
                 """,
                 (datetime.utcnow().isoformat(), lock_id),
             )
-            await self._connection.commit()
+            await self._adapter.commit()
 
-            if cursor.rowcount > 0:
+            if self._adapter.get_rowcount() > 0:
                 log.debug(f"Migration lock acquired by {lock_id}")
                 return True
 
             # Check if lock is stale (older than 5 minutes)
-            cursor = await self._connection.execute(
-                f"SELECT locked_at, locked_by FROM {MIGRATION_LOCK_TABLE} WHERE id = 1"
-            )
-            row = await cursor.fetchone()
-            if row and row[0]:
-                locked_at = datetime.fromisoformat(row[0])
+            row = await self._adapter.fetchone(f"SELECT locked_at, locked_by FROM {MIGRATION_LOCK_TABLE} WHERE id = 1")
+            if row and row["locked_at"]:
+                locked_at = datetime.fromisoformat(row["locked_at"])
                 if (datetime.utcnow() - locked_at).total_seconds() > 300:
                     # Stale lock, try to take it over
-                    log.warning(f"Taking over stale migration lock from {row[1]}")
-                    cursor = await self._connection.execute(
+                    log.warning(f"Taking over stale migration lock from {row['locked_by']}")
+                    await self._adapter.execute(
                         f"""
                         UPDATE {MIGRATION_LOCK_TABLE}
                         SET locked_at = ?, locked_by = ?
                         WHERE id = 1 AND locked_at = ?
                         """,
-                        (datetime.utcnow().isoformat(), lock_id, row[0]),
+                        (datetime.utcnow().isoformat(), lock_id, row["locked_at"]),
                     )
-                    await self._connection.commit()
-                    if cursor.rowcount > 0:
+                    await self._adapter.commit()
+                    if self._adapter.get_rowcount() > 0:
                         return True
 
             # Wait and retry
             await asyncio.sleep(0.5)
 
-        raise LockError(
-            f"Could not acquire migration lock within {timeout}s. "
-            "Another migration may be in progress."
-        )
+        raise LockError(f"Could not acquire migration lock within {timeout}s. Another migration may be in progress.")
 
     async def _release_lock(self) -> None:
         """Release the migration lock."""
-        await self._connection.execute(
+        await self._adapter.execute(
             f"""
             UPDATE {MIGRATION_LOCK_TABLE}
             SET locked_at = NULL, locked_by = NULL
             WHERE id = 1
             """
         )
-        await self._connection.commit()
+        await self._adapter.commit()
         log.debug("Migration lock released")
 
     # -------------------------------------------------------------------------
@@ -360,21 +398,13 @@ class MigrationRunner:
 
             # Validate required attributes
             if not hasattr(module, "version"):
-                raise MigrationDiscoveryError(
-                    f"Migration {file_path} missing 'version' attribute"
-                )
+                raise MigrationDiscoveryError(f"Migration {file_path} missing 'version' attribute")
             if not hasattr(module, "name"):
-                raise MigrationDiscoveryError(
-                    f"Migration {file_path} missing 'name' attribute"
-                )
+                raise MigrationDiscoveryError(f"Migration {file_path} missing 'name' attribute")
             if not hasattr(module, "up"):
-                raise MigrationDiscoveryError(
-                    f"Migration {file_path} missing 'up' function"
-                )
+                raise MigrationDiscoveryError(f"Migration {file_path} missing 'up' function")
             if not hasattr(module, "down"):
-                raise MigrationDiscoveryError(
-                    f"Migration {file_path} missing 'down' function"
-                )
+                raise MigrationDiscoveryError(f"Migration {file_path} missing 'down' function")
 
             return Migration(
                 version=module.version,
@@ -389,9 +419,7 @@ class MigrationRunner:
         except Exception as e:
             if isinstance(e, MigrationDiscoveryError):
                 raise
-            raise MigrationDiscoveryError(
-                f"Failed to load migration {file_path}: {e}"
-            ) from e
+            raise MigrationDiscoveryError(f"Failed to load migration {file_path}: {e}") from e
 
     def discover_migrations(self) -> list[Migration]:
         """Discover and load all migrations from the migrations directory.
@@ -422,9 +450,7 @@ class MigrationRunner:
             except MigrationDiscoveryError:
                 raise
             except Exception as e:
-                raise MigrationDiscoveryError(
-                    f"Failed to discover migration {file_path}: {e}"
-                ) from e
+                raise MigrationDiscoveryError(f"Failed to discover migration {file_path}: {e}") from e
 
         # Sort by version
         migrations.sort(key=lambda m: m.version)
@@ -464,6 +490,30 @@ class MigrationRunner:
         return mismatches
 
     # -------------------------------------------------------------------------
+    # Database state detection
+    # -------------------------------------------------------------------------
+
+    async def _detect_database_state(self) -> DatabaseState:
+        """Detect the current state of the database.
+
+        Returns:
+            DatabaseState enum value
+        """
+        from nodetool.migrations.state import APPLICATION_TABLES
+
+        # First, check if migration tracking table exists
+        if await self._adapter.table_exists(MIGRATION_TRACKING_TABLE):
+            return DatabaseState.MIGRATION_TRACKED
+
+        # Check if any application tables exist
+        for table_name in APPLICATION_TABLES:
+            if await self._adapter.table_exists(table_name):
+                return DatabaseState.LEGACY_DATABASE
+
+        # No tables exist - fresh install
+        return DatabaseState.FRESH_INSTALL
+
+    # -------------------------------------------------------------------------
     # Migration execution
     # -------------------------------------------------------------------------
 
@@ -494,7 +544,7 @@ class MigrationRunner:
             LockError: If lock cannot be acquired
         """
         # Detect database state
-        db_state = await detect_database_state_sqlite(self._connection)
+        db_state = await self._detect_database_state()
         log.info(f"Database state: {db_state.value}")
 
         # Create tracking tables if needed
@@ -572,22 +622,19 @@ class MigrationRunner:
         start_time = time.time()
 
         try:
-            # Execute migration's up function
-            await migration.up(self._connection)
-            await self._connection.commit()
+            # Execute migration's up function with the adapter
+            await migration.up(self._adapter)
+            await self._adapter.commit()
 
             # Record successful migration
             execution_time_ms = int((time.time() - start_time) * 1000)
             await self._record_migration(migration, execution_time_ms)
 
-            log.info(
-                f"Migration {migration.version} applied successfully "
-                f"in {execution_time_ms}ms"
-            )
+            log.info(f"Migration {migration.version} applied successfully in {execution_time_ms}ms")
 
         except Exception as e:
             # Rollback on failure
-            await self._connection.rollback()
+            await self._adapter.rollback()
             raise MigrationError(
                 f"Migration {migration.version} failed: {e}",
                 migration_version=migration.version,
@@ -608,10 +655,7 @@ class MigrationRunner:
         baselined = 0
         executed = 0
 
-        log.info(
-            "Detected existing database without migration tracking. "
-            "Performing baseline..."
-        )
+        log.info("Detected existing database without migration tracking. Performing baseline...")
 
         for migration in migrations:
             # Check if the tables this migration creates already exist
@@ -620,7 +664,7 @@ class MigrationRunner:
                 # Check each table individually
                 all_exist = True
                 for table in migration.creates_tables:
-                    if not await table_exists_sqlite(self._connection, table):
+                    if not await self._adapter.table_exists(table):
                         all_exist = False
                         break
                 should_baseline = all_exist
@@ -628,7 +672,7 @@ class MigrationRunner:
                 # For ALTER TABLE migrations, check if the table exists
                 all_exist = True
                 for table in migration.modifies_tables:
-                    if not await table_exists_sqlite(self._connection, table):
+                    if not await self._adapter.table_exists(table):
                         all_exist = False
                         break
                 should_baseline = all_exist
@@ -643,10 +687,7 @@ class MigrationRunner:
                 await self._apply_migration(migration)
                 executed += 1
 
-        log.info(
-            f"Baselining complete: {baselined} migrations baselined, "
-            f"{executed} migrations executed"
-        )
+        log.info(f"Baselining complete: {baselined} migrations baselined, {executed} migrations executed")
 
     async def baseline(self, force: bool = False) -> int:
         """Manually trigger baselining for the current database state.
@@ -667,24 +708,18 @@ class MigrationRunner:
 
         try:
             # Check current state
-            has_tracking = await table_exists_sqlite(
-                self._connection, MIGRATION_TRACKING_TABLE
-            )
+            has_tracking = await self._adapter.table_exists(MIGRATION_TRACKING_TABLE)
 
             if has_tracking and not force:
-                raise BaselineError(
-                    "Migration tracking already exists. Use --force to re-baseline."
-                )
+                raise BaselineError("Migration tracking already exists. Use --force to re-baseline.")
 
             if not has_tracking:
                 await self._create_tracking_tables()
 
             # Clear existing records if forcing
             if force and has_tracking:
-                await self._connection.execute(
-                    f"DELETE FROM {MIGRATION_TRACKING_TABLE}"
-                )
-                await self._connection.commit()
+                await self._adapter.execute(f"DELETE FROM {MIGRATION_TRACKING_TABLE}")
+                await self._adapter.commit()
 
             # Baseline all migrations
             migrations = self.discover_migrations()
@@ -696,14 +731,14 @@ class MigrationRunner:
                 if migration.creates_tables:
                     all_exist = True
                     for table in migration.creates_tables:
-                        if not await table_exists_sqlite(self._connection, table):
+                        if not await self._adapter.table_exists(table):
                             all_exist = False
                             break
                     tables_exist = all_exist
                 elif migration.modifies_tables:
                     all_exist = True
                     for table in migration.modifies_tables:
-                        if not await table_exists_sqlite(self._connection, table):
+                        if not await self._adapter.table_exists(table):
                             all_exist = False
                             break
                     tables_exist = all_exist
@@ -753,17 +788,14 @@ class MigrationRunner:
 
                 # Skip baselined migrations - they weren't actually applied
                 if applied_migration.baselined:
-                    log.warning(
-                        f"Skipping rollback of baselined migration: {version}"
-                    )
+                    log.warning(f"Skipping rollback of baselined migration: {version}")
                     await self._remove_migration_record(version)
                     rolled_back.append(version)
                     continue
 
                 if version not in migrations_map:
                     raise RollbackError(
-                        f"Migration {version} not found in migrations directory. "
-                        "Cannot rollback.",
+                        f"Migration {version} not found in migrations directory. Cannot rollback.",
                         migration_version=version,
                     )
 
@@ -788,15 +820,15 @@ class MigrationRunner:
         log.info(f"Rolling back migration: {migration.version} ({migration.name})")
 
         try:
-            await migration.down(self._connection)
-            await self._connection.commit()
+            await migration.down(self._adapter)
+            await self._adapter.commit()
 
             await self._remove_migration_record(migration.version)
 
             log.info(f"Migration {migration.version} rolled back successfully")
 
         except Exception as e:
-            await self._connection.rollback()
+            await self._adapter.rollback()
             raise RollbackError(
                 f"Rollback of migration {migration.version} failed: {e}",
                 migration_version=migration.version,
@@ -816,17 +848,14 @@ class MigrationRunner:
             - applied: List of applied migrations with details
             - pending: List of pending migrations
         """
-        db_state = await detect_database_state_sqlite(self._connection)
+        db_state = await self._detect_database_state()
 
         if db_state == DatabaseState.FRESH_INSTALL:
             return {
                 "state": db_state.value,
                 "current_version": None,
                 "applied": [],
-                "pending": [
-                    {"version": m.version, "name": m.name}
-                    for m in self.discover_migrations()
-                ],
+                "pending": [{"version": m.version, "name": m.name} for m in self.discover_migrations()],
             }
 
         applied = await self._get_applied_migrations()
@@ -846,10 +875,7 @@ class MigrationRunner:
                 }
                 for m in applied.values()
             ],
-            "pending": [
-                {"version": m.version, "name": m.name}
-                for m in pending
-            ],
+            "pending": [{"version": m.version, "name": m.name} for m in pending],
         }
 
     async def get_current_version(self) -> str | None:

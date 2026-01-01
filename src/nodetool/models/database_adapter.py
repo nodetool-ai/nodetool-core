@@ -128,6 +128,7 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
     async def auto_migrate(self) -> None:
         """
         Automatically migrate the table to current schema.

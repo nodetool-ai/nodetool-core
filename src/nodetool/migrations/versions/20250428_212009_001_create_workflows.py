@@ -6,17 +6,16 @@ Version: 20250428_212009_001
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from nodetool.migrations.db_adapter import MigrationDBAdapter
 
 version = "20250428_212009_001"
 name = "create_workflows"
 
-# Tables this migration creates
 creates_tables = ["nodetool_workflows"]
 modifies_tables = []
 
 
-async def up(db: "aiosqlite.Connection") -> None:
+async def up(db: "MigrationDBAdapter") -> None:
     """Create the workflows table."""
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nodetool_workflows (
@@ -41,7 +40,7 @@ async def up(db: "aiosqlite.Connection") -> None:
     """)
 
 
-async def down(db: "aiosqlite.Connection") -> None:
+async def down(db: "MigrationDBAdapter") -> None:
     """Drop the workflows table."""
     await db.execute("DROP INDEX IF EXISTS idx_nodetool_workflows_user_id")
     await db.execute("DROP TABLE IF EXISTS nodetool_workflows")
