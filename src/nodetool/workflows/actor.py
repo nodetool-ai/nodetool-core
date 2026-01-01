@@ -46,6 +46,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.run_node_state import RunNodeState
 from nodetool.workflows.io import NodeInputs, NodeOutputs
+from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
@@ -196,7 +197,7 @@ class NodeActor:
         """Mark end-of-stream on all inbound and outbound edges."""
         # Mark inbound edges as drained (we've consumed all input)
         self._mark_inbound_edges_drained(self._inbound_handles())
-        
+
         # Mark outbound edges as drained and unblock downstream consumers
         for edge in self._outbound_edges():
             inbox = self.runner.node_inboxes.get(edge.target)
@@ -720,6 +721,47 @@ class NodeActor:
                 await self._mark_downstream_eos()
             finally:
                 raise
+        except WorkflowSuspendedException as e:
+            self.logger.info(
+                "Node execution suspended: %s (%s) [%s] - %s",
+                node.get_title(),
+                node._id,
+                node.get_node_type(),
+                e.reason,
+            )
+
+            # Queue state update: suspended (non-blocking via StateManager)
+            if self.runner.state_manager:
+                try:
+                    await self.runner.state_manager.update_node_state(
+                        node_id=node_id,
+                        status="suspended",
+                        suspended_at=datetime.now(),
+                        suspension_reason=e.reason,
+                        resume_state_json=e.state,
+                    )
+                    self.logger.debug(f"Queued state update (suspended) for node {node_id}")
+                except Exception as e2:
+                    self.logger.error(f"Failed to queue state update: {e2}")
+
+            # Post suspended update (not error)
+            try:
+                ctx.post_message(
+                    NodeUpdate(
+                        node_id=node.id,
+                        node_name=node.get_title(),
+                        node_type=node.get_node_type(),
+                        status="suspended",
+                        properties={}, # No extra properties for now
+                    )
+                )
+            finally:
+                # Suspension stops execution, so we don't mark downstream as drained yet
+                # (unless we want downstream to stop too? Usually suspension means pause)
+                # For now, let's allow rerun.
+                pass
+            self.logger.info("Re-raising WorkflowSuspendedException via 'raise e'")
+            raise e
         except Exception as e:
             import traceback
 

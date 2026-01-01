@@ -9,7 +9,7 @@ This module provides a single WebSocket endpoint that handles both workflow exec
 - More efficient resource usage with a single connection
 
 The runner routes messages based on their command/type field and supports all
-functionality from both the original WebSocketRunner and ChatWebSocketRunner.
+functionality from previous legacy runners.
 
 Message Routing:
 - Workflow commands: run_job, cancel_job, get_status, set_mode, clear_models, etc.
@@ -100,6 +100,7 @@ class CommandType(str, Enum):
     # Workflow commands
     RUN_JOB = "run_job"
     RECONNECT_JOB = "reconnect_job"
+    RESUME_JOB = "resume_job"
     CANCEL_JOB = "cancel_job"
     GET_STATUS = "get_status"
     SET_MODE = "set_mode"
@@ -225,7 +226,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     """
     Unified WebSocket runner that handles both workflow execution and chat communications.
 
-    This runner combines the functionality of WebSocketRunner and ChatWebSocketRunner,
+    This runner combines the functionality of previous legacy runners,
     providing a single WebSocket endpoint for all real-time communications.
 
     Features:
@@ -554,10 +555,11 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     msg["workflow_id"] = job_ctx.workflow_id
                     await self.send_message(msg)
 
+
                     # Track if we received a terminal status update
                     if msg.get("type") == "job_update":
                         status = msg.get("status")
-                        if status in ("completed", "failed", "cancelled", "error"):
+                        if status in ("completed", "failed", "cancelled", "error", "suspended"):
                             received_terminal_update = True
 
                     if not self.websocket or self.websocket.client_state == WebSocketState.DISCONNECTED:
@@ -598,14 +600,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                         await self.send_message(msg)
                         if msg.get("type") == "job_update":
                             status = msg.get("status")
-                            if status in ("completed", "failed", "cancelled", "error"):
+                            if status in ("completed", "failed", "cancelled", "error", "suspended"):
                                 received_terminal_update = True
 
             # If still no terminal update, check job status directly
             if not received_terminal_update:
                 final_status = job_ctx.job_execution.status
                 if (
-                    final_status in ("completed", "cancelled", "error", "failed")
+                    final_status in ("completed", "cancelled", "error", "failed", "suspended")
                     or job_ctx.job_execution.is_completed()
                 ):
                     log.info(f"Sending fallback terminal status for job {job_ctx.job_id}: {final_status}")
@@ -629,6 +631,16 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                                 job_id=job_ctx.job_id,
                                 workflow_id=job_ctx.workflow_id,
                                 error=str(err),
+                            ).model_dump()
+                        )
+                    elif final_status == "suspended":
+                         # Should have been sent by runner, but send here if missed
+                         await self.send_message(
+                            JobUpdate(
+                                status="suspended",
+                                job_id=job_ctx.job_id,
+                                workflow_id=job_ctx.workflow_id,
+                                message="Workflow suspended (fallback update)",
                             ).model_dump()
                         )
                     else:
@@ -769,6 +781,66 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         except Exception as e:
             log.exception(f"Error reconnecting to job {job_id}: {e}")
+            await self.send_message(
+                JobUpdate(
+                    status="failed",
+                    error=str(e),
+                    job_id=job_id,
+                    workflow_id=workflow_id or "",
+                ).model_dump()
+            )
+
+    async def resume_job(self, job_id: str, workflow_id: Optional[str] = None):
+        """Resume a suspended or recovering job from persistence."""
+        try:
+            if not self.websocket:
+                raise ValueError("WebSocket is not connected")
+
+            log.info(f"UnifiedWebSocketRunner: Resuming job: {job_id}")
+
+            # Check if job is already active in manager (in-memory)
+            job_manager = JobExecutionManager.get_instance()
+            existing_job = job_manager.get_job(job_id)
+
+            if existing_job and existing_job.is_running():
+                log.info(f"Job {job_id} is already running in memory. Reconnecting instead.")
+                return await self.reconnect_job(job_id, workflow_id)
+
+            # Trigger resumption
+            success = await job_manager.resume_run(job_id)
+
+            if not success:
+                raise ValueError(f"Failed to resume job {job_id}. Check server logs for details.")
+
+            # Get the new job execution (resumed job)
+            job_execution = job_manager.get_job(job_id)
+            if not job_execution:
+                raise ValueError(f"Job {job_id} resumed but not found in manager")
+
+            # Create streaming context
+            if not workflow_id:
+                workflow_id = job_execution.request.workflow_id
+
+            job_ctx = JobStreamContext(job_id, workflow_id, job_execution)
+            self.active_jobs[job_id] = job_ctx
+
+            # Send current job status
+            await self.send_message(
+                JobUpdate(
+                    status="running",
+                    job_id=job_id,
+                    workflow_id=workflow_id,
+                    message="Job resumed successfully",
+                ).model_dump()
+            )
+
+            # Start streaming messages
+            job_ctx.streaming_task = asyncio.create_task(self._stream_job_messages(job_ctx, False))
+
+            log.info(f"Resumed and streaming job {job_id}")
+
+        except Exception as e:
+            log.exception(f"Error resuming job {job_id}: {e}")
             await self.send_message(
                 JobUpdate(
                     status="failed",
@@ -963,6 +1035,18 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             self._reconnect_task = asyncio.create_task(self.reconnect_job(job_id, workflow_id))
             return {
                 "message": f"Reconnecting to job {job_id}",
+                "job_id": job_id,
+                "workflow_id": workflow_id,
+            }
+
+        elif command.command == CommandType.RESUME_JOB:
+            if not job_id:
+                return {"error": "job_id is required"}
+            log.info(f"Resuming job: {job_id}")
+            # Use asyncio task to handle resumption in background
+            asyncio.create_task(self.resume_job(job_id, workflow_id))
+            return {
+                "message": f"Resumption initiated for job {job_id}",
                 "job_id": job_id,
                 "workflow_id": workflow_id,
             }

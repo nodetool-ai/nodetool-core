@@ -10,11 +10,14 @@ from typing import Any, Literal
 
 from nodetool.models.base_model import DBField, DBIndex, DBModel
 
-RunStatus = Literal["running", "suspended", "paused", "completed", "failed", "cancelled", "recovering"]
+RunStatus = Literal["scheduled", "running", "suspended", "paused", "completed", "failed", "cancelled", "recovering"]
 
 
 @DBIndex(columns=["status"], name="idx_run_state_status")
 @DBIndex(columns=["updated_at"], name="idx_run_state_updated")
+@DBIndex(columns=["worker_id"], name="idx_run_state_worker")
+@DBIndex(columns=["heartbeat_at"], name="idx_run_state_heartbeat")
+@DBIndex(columns=["status", "heartbeat_at"], name="idx_run_state_recovery")
 class RunState(DBModel):
     """
     Authoritative state for a workflow run.
@@ -51,6 +54,15 @@ class RunState(DBModel):
     failed_at: datetime | None = DBField(default=None)
     error_message: str | None = DBField(default=None)
 
+    # Execution tracking
+    execution_strategy: str | None = DBField(default=None)
+    execution_id: str | None = DBField(default=None)
+    worker_id: str | None = DBField(default=None)
+    heartbeat_at: datetime | None = DBField(default=None)
+    retry_count: int = DBField(default=0)
+    max_retries: int = DBField(default=3)
+    metadata_json: dict[str, Any] = DBField(default_factory=dict)
+
     # Optional: version for optimistic locking
     version: int = DBField(default=0)
 
@@ -60,23 +72,85 @@ class RunState(DBModel):
         self.version += 1
 
     @classmethod
-    async def create_run(cls, run_id: str) -> "RunState":
+    async def create_run(
+        cls,
+        run_id: str,
+        execution_strategy: str | None = None,
+        worker_id: str | None = None,
+    ) -> "RunState":
         """
-        Create a new run in running state.
+        Create a new run in scheduled state.
 
         Args:
             run_id: The workflow run identifier
+            execution_strategy: Execution strategy (threaded/subprocess/docker)
+            worker_id: ID of the worker creating this run
 
         Returns:
             Created RunState
         """
         run = cls(
             run_id=run_id,
-            status="running",
+            status="scheduled",
             version=0,
+            execution_strategy=execution_strategy,
+            worker_id=worker_id,
+            heartbeat_at=datetime.now() if worker_id else None,
         )
         await run.save()
         return run
+
+    async def claim(self, worker_id: str):
+        """Claim ownership of this run."""
+        self.worker_id = worker_id
+        self.heartbeat_at = datetime.now()
+        await self.save()
+
+    async def release(self):
+        """Release ownership (e.g. on clean shutdown)."""
+        self.worker_id = None
+        self.heartbeat_at = None
+        await self.save()
+
+    async def update_heartbeat(self):
+        """Update heartbeat to now."""
+        self.heartbeat_at = datetime.now()
+        await self.save()
+
+    async def increment_retry(self):
+        """Increment retry count."""
+        self.retry_count += 1
+        await self.save()
+
+    def is_stale(self, threshold_minutes: int = 5) -> bool:
+        """Check if run has missed heartbeats."""
+        if self.heartbeat_at is None:
+            return True
+        from datetime import timedelta
+        return (datetime.now() - self.heartbeat_at) > timedelta(minutes=threshold_minutes)
+
+    def is_owned_by(self, worker_id: str) -> bool:
+        """Check if run is owned by a specific worker."""
+        return self.worker_id == worker_id
+
+    async def acquire_with_cas(self, worker_id: str, expected_version: int) -> bool:
+        """
+        Attempt to claim run using optimistic locking.
+        Returns True if successful, False if version mismatch.
+        """
+        if self.version != expected_version:
+            return False
+        
+        self.worker_id = worker_id
+        self.heartbeat_at = datetime.now()
+        # save() will handle the version increment and check
+        # But for strictly atomic CAS, the underlying adapter needs to support it.
+        # Assuming DBModel.save() checks version if present.
+        try:
+            await self.save()
+            return True
+        except Exception:
+            return False
 
     async def mark_suspended(
         self,

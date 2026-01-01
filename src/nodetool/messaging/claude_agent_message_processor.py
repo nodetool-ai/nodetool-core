@@ -172,7 +172,7 @@ def is_transport_error(e: BaseException) -> bool:
 
     # Handle ExceptionGroup (Python 3.11+)
     if hasattr(e, "exceptions"):
-        for sub_exc in e.exceptions:
+        for sub_exc in e.exceptions:  # type: ignore
             if is_transport_error(sub_exc):
                 return True
     return False
@@ -274,13 +274,13 @@ def create_sdk_tool_from_frontend(
     input_schema = tool_def.get("input_schema", {})
     simple_schema = json_schema_to_simple_types(input_schema)
 
-    async def tool_handler(**kwargs) -> dict[str, Any]:
+    async def tool_handler(args: dict[str, Any]) -> dict[str, Any]:
         try:
             # Wait for tool ID pushed by the loop (with timeout)
             # This ensures we have the ID matching the tool call currently being processed by the SDK
             tool_id = await asyncio.wait_for(id_queue.get(), timeout=30.0)
 
-            log.debug(f"Executing frontend tool {name} (id={tool_id}) with args: {kwargs}")
+            log.debug(f"Executing frontend tool {name} (id={tool_id}) with args: {args}")
 
             if not tool_bridge:
                 raise ValueError("Tool bridge not available")
@@ -289,7 +289,7 @@ def create_sdk_tool_from_frontend(
             waiter = tool_bridge.create_waiter(tool_id)
 
             # Wait for result (long timeout for user interaction)
-            # The result payload is what we get from ChatWebSocketRunner
+            # The result payload is what we get from UnifiedWebSocketRunner
             payload = await asyncio.wait_for(waiter, timeout=600.0)
 
             # Extract result from payload

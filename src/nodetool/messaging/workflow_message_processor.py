@@ -99,7 +99,7 @@ class WorkflowMessageProcessor(MessageProcessor):
                 processing_context,
             ):
                 # Add job_id and workflow_id to all messages for UI visualization consistency
-                # This matches the behavior of WebSocketRunner for normal workflows
+                # This matches the behavior of UnifiedWebSocketRunner for normal workflows
                 msg = update.model_dump()
                 msg["job_id"] = job_id
                 msg["workflow_id"] = workflow_id

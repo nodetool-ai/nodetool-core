@@ -120,7 +120,7 @@ class WorkflowRecoveryService:
             return False
 
         try:
-            node._set_resuming_state(resume_state)
+            node._set_resuming_state(resume_state, 0)
             return True
         except Exception as e:
             log.error(f"Failed to restore state to node {node_id}: {e}")

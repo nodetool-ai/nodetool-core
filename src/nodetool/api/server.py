@@ -378,7 +378,6 @@ def create_app(
 
     from nodetool.api.middleware import ResourceScopeMiddleware
     from nodetool.api.openai import create_openai_compatible_router
-    from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
     from nodetool.integrations.huggingface.hf_websocket import (
         huggingface_download_endpoint,
     )
@@ -388,7 +387,6 @@ def create_app(
     from nodetool.integrations.websocket.unified_websocket_runner import (
         UnifiedWebSocketRunner,
     )
-    from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
     from nodetool.integrations.websocket.websocket_updates import websocket_updates
     from nodetool.metadata.types import Provider
     from nodetool.runtime.resources import (
@@ -500,35 +498,6 @@ def create_app(
             return
         runner = UnifiedWebSocketRunner(auth_token=token or "", user_id=user_id)
         await runner.run(websocket)
-
-    # Legacy endpoint - preserved for backward compatibility
-    @app.websocket("/ws/predict")
-    async def websocket_endpoint(websocket: WebSocket):
-        """
-        Legacy endpoint for workflow execution only.
-
-        Note: Consider migrating to /ws for unified workflow and chat support.
-        """
-        token, user_id = await _authenticate_websocket(websocket)
-        if user_id is None:
-            return
-        runner = WebSocketRunner(auth_token=token or "", user_id=user_id)
-        await runner.run(websocket)
-
-    # Legacy endpoint - preserved for backward compatibility
-    @app.websocket("/ws/chat")
-    async def chat_websocket_endpoint(websocket: WebSocket):
-        """
-        Legacy endpoint for chat communications only.
-
-        Note: Consider migrating to /ws for unified workflow and chat support.
-        """
-        token, user_id = await _authenticate_websocket(websocket)
-        if user_id is None:
-            return
-        chat_runner = ChatWebSocketRunner(auth_token=token or "")
-        chat_runner.user_id = user_id
-        await chat_runner.run(websocket)
 
     @app.websocket("/ws/terminal")
     async def terminal_websocket_endpoint(websocket: WebSocket):

@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -160,17 +161,27 @@ def import_providers():
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock: asyncio.Lock | None = None
+_provider_cache_locks: dict[int, asyncio.Lock] = {}
+_provider_cache_locks_lock = threading.Lock()
 
 
 def _get_provider_cache_lock() -> asyncio.Lock:
     """Get or create the provider cache lock lazily.
 
     This ensures the lock is created in the correct event loop.
+    Multiple event loops (threads) each get their own lock to avoid
+    the "locked by different event loop" error.
     """
     global _provider_cache_lock
     if _provider_cache_lock is None:
         _provider_cache_lock = asyncio.Lock()
-    return _provider_cache_lock
+
+    loop_id = id(asyncio.get_running_loop())
+
+    with _provider_cache_locks_lock:
+        if loop_id not in _provider_cache_locks:
+            _provider_cache_locks[loop_id] = asyncio.Lock()
+        return _provider_cache_locks[loop_id]
 
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:

@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
-from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest

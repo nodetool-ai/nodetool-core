@@ -1,7 +1,7 @@
 import pytest
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.integrations.websocket.unified_websocket_runner import ToolBridge
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.metadata.types import Message, Provider, ToolCall
 from nodetool.providers.base import MockProvider
@@ -10,7 +10,8 @@ from nodetool.workflows.processing_context import ProcessingContext
 
 @pytest.mark.asyncio
 async def test_toolbridge_resolves_result_via_receive_loop(monkeypatch):
-    runner = ChatWebSocketRunner()
+    runner = DummyRunner()
+    runner.tool_bridge = ToolBridge()
 
     # Prepare a waiting future
     call_id = "call_1"
@@ -59,6 +60,20 @@ class DummyRunner(BaseChatRunner):
     async def receive_message(self):  # type: ignore[override]
         return None
 
+    async def _receive_messages(self):
+        """Mock loop that mimics ChatWebSocketRunner's handling of tool results."""
+        while True:
+            message = await self.receive_message()
+            if message is None:
+                break
+
+            # Mimic tool result handling
+            if hasattr(self, "tool_bridge") and message.get("type") == "tool_result":
+                self.tool_bridge.resolve_result(
+                    message["tool_call_id"],
+                    message
+                )
+
 
 @pytest.mark.asyncio
 async def test_help_processor_ui_tool_flow():
@@ -99,7 +114,7 @@ async def test_help_processor_ui_tool_flow():
         },
     }
 
-    tool_bridge = ChatWebSocketRunner().tool_bridge  # reuse implementation
+    tool_bridge = ToolBridge()
     context = ProcessingContext(
         tool_bridge=tool_bridge,
         ui_tool_names={"ui_add_node"},
@@ -110,7 +125,7 @@ async def test_help_processor_ui_tool_flow():
     chat_history = [
         Message(
             role="user",
-            instructions="Please add a node",
+            content="Please add a node",
             provider=Provider.OpenAI,
             model="gpt-test",
             thread_id="t1",

@@ -525,12 +525,14 @@ class WorkflowRunner:
         if send_job_updates:
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
-        # Create run_state (source of truth)
+        # Create run_state (source of truth) - now handled by job_execution_manager
         try:
-            self.run_state = await RunState.create_run(run_id=self.job_id)
-            log.info(f"Created run_state for {self.job_id} with status=running")
+            self.run_state = await RunState.get(self.job_id)
+            if self.run_state is None:
+                raise ValueError(f"run_state not found for job {self.job_id}")
+            log.info(f"Loaded run_state for {self.job_id} with status={self.run_state.status}")
         except Exception as e:
-            log.error(f"Failed to create run_state: {e}")
+            log.error(f"Failed to load run_state: {e}")
             raise
 
         # Initialize and start StateManager (single writer for node states)
@@ -710,6 +712,15 @@ class WorkflowRunner:
                 except Exception as e2:
                     log.error(f"Failed to mark node_state as suspended: {e2}")
                     raise
+
+                # Flush pending state updates from all nodes before suspending
+                if self.state_manager:
+                    try:
+                        await self.state_manager.stop(timeout=5.0)
+                        log.info(f"Flushed and stopped StateManager for run {self.job_id}")
+                        self.state_manager = None  # Prevent finally block from stopping again
+                    except Exception as e2:
+                        log.warning(f"Failed to stop StateManager: {e2}")
 
                 # Log suspension events (audit-only, non-fatal)
                 if self.event_logger:
@@ -1067,6 +1078,8 @@ class WorkflowRunner:
 
         OutputNodes are not driven by actors (outputs are captured in send_messages).
         """
+        from nodetool.models.condition_builder import Field
+        from nodetool.models.run_node_state import RunNodeState
         from nodetool.workflows.actor import NodeActor
 
         log.info(
@@ -1074,26 +1087,101 @@ class WorkflowRunner:
             len(graph.nodes),
             len(graph.edges),
         )
-        tasks: list[asyncio.Task] = []
+
+        # Load existing node states for resumption
+        node_states = {}
+        log.info(
+            f"Checking for existing node states for run {self.job_id} (status={self.run_state.status if self.run_state else 'None'})"
+        )
+        if self.run_state and self.run_state.status in ["suspended", "running"]:
+            try:
+                # Query all node states for this run
+                condition = Field("run_id") == self.job_id
+                states, _ = await RunNodeState.query(condition=condition)
+                for state in states:
+                    node_states[state.node_id] = state
+                log.info(f"Loaded {len(node_states)} existing node states for resumption: {list(node_states.keys())}")
+                for node_id, state in node_states.items():
+                    log.info(f"  Node {node_id}: status={state.status}")
+            except Exception as e:
+                log.warning(f"Failed to load node states for resumption: {e}")
+
+        tasks = []
         for node in graph.nodes:
             inbox = self.node_inboxes.get(node._id)
             assert inbox is not None, f"No inbox found for node {node._id}"
-            # Skip starting actors for InputNodes; they are driven externally via input queue
+
+            # Skip InputNodes - driven externally
             try:
                 if isinstance(node, InputNode):
                     continue
             except Exception:
                 pass
+
+            # Check if node was already completed
+            node_state = node_states.get(node._id)
+            log.info(
+                f"Processing node {node._id}: type={node.get_node_type()}, state={node_state.status if node_state else 'not found'}"
+            )
+            if node_state and node_state.status == "completed":
+                log.info(f"Skipping already completed node: {node._id} ({node.get_node_type()})")
+                continue
+
+            # Restore resuming state for suspended nodes
+            if node_state and node_state.status == "suspended":
+                if hasattr(node, "_set_resuming_state") and node_state.resume_state_json:
+                    try:
+                        node._set_resuming_state(node_state.resume_state_json, 0)
+                        log.info(
+                            f"Restored resuming state for suspended node: {node._id} "
+                            f"(state_keys={list(node_state.resume_state_json.keys())})"
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to restore resuming state for node {node._id}: {e}")
+
             actor = NodeActor(self, node, context, inbox)
             tasks.append(asyncio.create_task(actor.run()))
-        # Wait for all, propagate first error if any
+
+        # Smart wait loop:
+        # - If WorkflowSuspendedException occurs, cancel all other tasks and exit immediately (Fast Suspend).
+        # - If other exceptions occur, wait for all tasks to finish (standard Gather behavior).
+        pending = set(tasks)
+        log.info(f"Starting process_graph wait loop with {len(pending)} tasks")
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_EXCEPTION)
+            log.info(f"Wait loop iteration: {len(done)} done, {len(pending)} pending")
+            for t in done:
+                # Check for suspension
+                if t.exception():
+                    log.info(f"Task finished with exception: {type(t.exception())} - {t.exception()}")
+                    if isinstance(t.exception(), WorkflowSuspendedException):
+                        exc = t.exception()
+                        log.info(
+                            f"Detected WorkflowSuspendedException in task {t}. Cancelling {len(pending)} pending tasks."
+                        )
+                        # Cancel remaining tasks
+                        for p in pending:
+                            p.cancel()
+                        # Wait for clean cancellation
+                        if pending:
+                            log.info("Waiting for cancellations to complete...")
+                            await asyncio.gather(*pending, return_exceptions=True)
+                            log.info("Cancellations complete.")
+                        raise exc
+
+        log.info("Wait loop completed naturally (no suspension raised).")
+        # If we reach here, all tasks completed without suspension (or suspension happened but was masked? No, we check done).
+        # Propagate first error if any (preserving original priority)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         first_error: Exception | None = None
         for r in results:
             if isinstance(r, Exception) and first_error is None:
                 first_error = r
         if first_error is not None:
+            log.error(f"Propagating first error from results: {first_error}")
             raise first_error
+
+        log.info("process_graph finished successfully (no errors/suspensions).")
 
     def log_vram_usage(self, message=""):
         """
