@@ -57,3 +57,29 @@ class WorkflowTool(BaseModel):
 class WorkflowToolList(BaseModel):
     next: str | None
     workflows: List[WorkflowTool]
+
+
+class WorkflowVersion(BaseModel):
+    """Represents a version/snapshot of a workflow."""
+
+    id: str
+    workflow_id: str
+    version: int
+    created_at: str
+    name: str
+    description: str = ""
+    graph: Graph
+
+
+class WorkflowVersionList(BaseModel):
+    """List of workflow versions with pagination support."""
+
+    next: str | None
+    versions: List[WorkflowVersion]
+
+
+class CreateWorkflowVersionRequest(BaseModel):
+    """Request to create a new workflow version."""
+
+    name: str = ""
+    description: str = ""
