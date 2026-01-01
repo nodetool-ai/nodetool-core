@@ -191,7 +191,11 @@ class NodeActor:
         return values
 
     async def _mark_downstream_eos(self) -> None:
-        """Mark end-of-stream on all outbound handles to unblock consumers."""
+        """Mark end-of-stream on all inbound and outbound edges."""
+        # Mark inbound edges as drained (we've consumed all input)
+        self._mark_inbound_edges_drained(self._inbound_handles())
+        
+        # Mark outbound edges as drained and unblock downstream consumers
         for edge in self._outbound_edges():
             inbox = self.runner.node_inboxes.get(edge.target)
             if inbox is not None:
@@ -309,7 +313,7 @@ class NodeActor:
 
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
-        self._mark_inbound_edges_drained(set(inputs.keys()))
+        # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
 
     async def process_streaming_node_with_inputs(
         self,
@@ -413,7 +417,7 @@ class NodeActor:
             if completed_successfully:
                 # Send the actual collected results, filtering out chunk data
                 await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
-            self._mark_inbound_edges_drained(set(inputs.keys()))
+            # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
 
     async def _run_buffered_node(self) -> None:
         """Legacy buffered node execution (no streaming output)."""
@@ -542,7 +546,7 @@ class NodeActor:
         # Drain inputs in arrival order and capture via runner
         async for handle, item in self.inbox.iter_any():
             await self.runner.process_output_node(ctx, node, {handle: item})  # type: ignore[arg-type]
-            self._mark_inbound_edges_drained({handle})
+            # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
 
         # Upstream completed - mark downstream EOS
         await self._mark_downstream_eos()
@@ -555,7 +559,8 @@ class NodeActor:
         await node.pre_process(ctx)
         await node.send_update(ctx, "running", properties=[])
         requires_gpu = node.requires_gpu()
-        node._on_input_item = lambda handle: self._mark_inbound_edges_drained({handle})
+        # Note: drained updates are sent at end-of-stream, not per item
+        # node._on_input_item callback is not needed for drained notifications
 
         if requires_gpu and self.runner.device == "cpu":
             error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
@@ -606,7 +611,6 @@ class NodeActor:
             await node.send_update(ctx, "completed", result=self._filter_result(outputs.collected()))
         finally:
             await node.handle_eos()
-            node._on_input_item = None
         await self._mark_downstream_eos()
 
     async def run(self) -> None:
