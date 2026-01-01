@@ -65,8 +65,10 @@ async def db_adapter():
         ],
     )
 
-    # Run auto-migration to create tables
-    await adapter.auto_migrate()
+    # Create table directly (auto_migrate is deprecated)
+    await adapter.create_table()
+    for index in adapter.indexes:
+        await adapter.create_index(index["name"], index["columns"], index["unique"])
 
     yield adapter
 
@@ -197,20 +199,6 @@ def test_translate_condition_to_sql():
     assert translate_condition_to_sql(condition) == expected
 
 
-@pytest.mark.asyncio
-async def test_table_migration(db_adapter):
-    # Add a new field
-    db_adapter.fields["new_field"] = DBField()
-    await db_adapter.migrate_table()
-
-    # Check if the new field was added
-    current_schema = await db_adapter.get_current_schema()
-    assert "new_field" in current_schema
-
-    # Remove a field
-    del db_adapter.fields["optional_field"]
-    await db_adapter.migrate_table()
-
-    # Check if the field was removed
-    current_schema = await db_adapter.get_current_schema()
-    assert "optional_field" not in current_schema
+# Note: test_table_migration was removed because the migrate_table() method
+# has been deprecated. Schema migrations are now handled by the migration
+# system in nodetool.migrations.

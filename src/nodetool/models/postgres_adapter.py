@@ -586,8 +586,15 @@ class PostgresAdapter(DatabaseAdapter):
             raise e
 
     async def auto_migrate(self) -> None:
-        """Auto-migration is not implemented for PostgresAdapter."""
-        raise NotImplementedError("auto_migrate is not implemented for PostgresAdapter")
+        """Run automatic migration for this table.
+
+        DEPRECATED: This method is deprecated. Schema migrations are now
+        handled by the dedicated migration system in nodetool.migrations.
+        This method is kept for backward compatibility but does nothing.
+        Use 'nodetool migrations upgrade' CLI command instead.
+        """
+        # Deprecated - migrations now handled by nodetool.migrations
+        pass
 
     def __del__(self):
         """Cleanup method when the adapter object is garbage collected."""

@@ -53,7 +53,7 @@ def _build_simple_workflow_graph() -> Graph:
         nodes=[
             GraphNode(
                 id="input_text",
-                type="nodetool.input.StringInput",
+                type="nodetool.workflows.test_helper.StringInput",
                 data={
                     "name": "text",
                     "label": "Input Text",
@@ -62,7 +62,7 @@ def _build_simple_workflow_graph() -> Graph:
             ),
             GraphNode(
                 id="format_text",
-                type="nodetool.text.FormatText",
+                type="nodetool.workflows.test_helper.FormatText",
                 data={
                     "template": "Hello, {{ text }}",
                     "inputs": {"text": {"node_id": "input_text", "output": "value"}},
@@ -70,7 +70,7 @@ def _build_simple_workflow_graph() -> Graph:
             ),
             GraphNode(
                 id="output_result",
-                type="nodetool.output.StringOutput",
+                type="nodetool.workflows.test_helper.StringOutput",
                 data={
                     "name": "result",
                     "value": "",
