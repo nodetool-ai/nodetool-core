@@ -23,15 +23,16 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: uv pip install --system ruff
+        run: uv sync --all-extras --dev
 
       - name: Run ruff with auto-fix
-        run: ruff check --fix .
+        run: uv run ruff check --fix .
 
       - name: Run ruff format
-        run: ruff format .
+        run: uv run ruff format .
 
       - name: Commit and push fixes
         run: |
@@ -61,12 +62,13 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --all-extras --dev
 
       - name: Run ruff check (verify no issues remain)
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Run ruff format (verify formatting)
-        run: ruff format --check .
+        run: uv run ruff format --check .
