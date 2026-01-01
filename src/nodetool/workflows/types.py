@@ -141,6 +141,7 @@ class EdgeUpdate(BaseModel):
     """
 
     type: Literal["edge_update"] = "edge_update"
+    workflow_id: str
     edge_id: str
     status: str
     counter: int | None = None
