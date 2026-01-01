@@ -21,6 +21,7 @@ from nodetool.metadata.types import (
     AudioRef,
     DataframeRef,
     ImageRef,
+    Model3DRef,
     ModelRef,
     TextRef,
     VideoRef,
@@ -856,3 +857,195 @@ class TestMetadataAdditions:
         result = await context.video_from_bytes(b"video bytes", metadata=custom_metadata)
         assert isinstance(result, VideoRef)
         assert result.metadata == custom_metadata
+
+
+class TestModel3DMethods:
+    """Test 3D model-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_io(self, context: ProcessingContext):
+        """Test creating Model3DRef from IO object."""
+        buffer = BytesIO(b"fake 3d model data")
+
+        result = await context.model3d_from_io(buffer)
+        assert isinstance(result, Model3DRef)
+        assert result.data == b"fake 3d model data"
+        assert result.format is None
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_io_with_format(self, context: ProcessingContext):
+        """Test creating Model3DRef from IO object with format."""
+        buffer = BytesIO(b"fake obj model data")
+
+        result = await context.model3d_from_io(buffer, format="obj")
+        assert isinstance(result, Model3DRef)
+        assert result.data == b"fake obj model data"
+        assert result.format == "obj"
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_io_with_name(self, context: ProcessingContext):
+        """Test creating Model3DRef from IO object with name."""
+        buffer = BytesIO(b"fake glb model data")
+
+        # Use real in-memory asset storage via Environment in tests
+        result = await context.model3d_from_io(buffer, name="test.glb", format="glb")
+        assert isinstance(result, Model3DRef)
+        assert result.asset_id is not None
+        assert result.format == "glb"
+        # URL should come from MemoryStorage base_url
+        assert result.uri.startswith(Environment.get_storage_api_url())
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_bytes(self, context: ProcessingContext):
+        """Test creating Model3DRef from bytes."""
+        test_bytes = b"3d model bytes"
+
+        result = await context.model3d_from_bytes(test_bytes)
+        assert isinstance(result, Model3DRef)
+        assert result.data == test_bytes
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_bytes_with_format(self, context: ProcessingContext):
+        """Test creating Model3DRef from bytes with format."""
+        test_bytes = b"stl model bytes"
+
+        result = await context.model3d_from_bytes(test_bytes, format="stl")
+        assert isinstance(result, Model3DRef)
+        assert result.data == test_bytes
+        assert result.format == "stl"
+
+    @pytest.mark.asyncio
+    async def test_model3d_from_bytes_with_metadata(self, context: ProcessingContext):
+        """Test creating Model3DRef from bytes with metadata."""
+        test_bytes = b"3d model data"
+        custom_metadata = {"vertices": 1000, "faces": 500}
+
+        result = await context.model3d_from_bytes(test_bytes, format="glb", metadata=custom_metadata)
+        assert isinstance(result, Model3DRef)
+        assert result.metadata == custom_metadata
+
+    @pytest.mark.asyncio
+    async def test_model3d_to_bytes(self, context: ProcessingContext):
+        """Test converting Model3DRef to bytes."""
+        test_data = b"3d model content"
+        model3d_ref = Model3DRef(data=test_data)
+
+        result = await context.model3d_to_bytes(model3d_ref)
+        assert result == test_data
+
+    @pytest.mark.asyncio
+    async def test_model3d_to_io(self, context: ProcessingContext):
+        """Test converting Model3DRef to IO object."""
+        test_data = b"3d model io data"
+        model3d_ref = Model3DRef(data=test_data)
+
+        result = await context.model3d_to_io(model3d_ref)
+        assert result.read() == test_data
+
+    @pytest.mark.asyncio
+    async def test_model3d_to_base64(self, context: ProcessingContext):
+        """Test converting Model3DRef to base64 string."""
+        test_data = b"3d model base64 data"
+        model3d_ref = Model3DRef(data=test_data)
+
+        result = await context.model3d_to_base64(model3d_ref)
+        assert isinstance(result, str)
+        assert base64.b64decode(result) == test_data
+
+    @pytest.mark.asyncio
+    async def test_model3d_ref_to_data_uri(self, context: ProcessingContext):
+        """Test converting Model3DRef to data URI."""
+        test_data = b"3d model uri data"
+        model3d_ref = Model3DRef(data=test_data, format="glb")
+
+        result = await context.model3d_ref_to_data_uri(model3d_ref)
+        assert result.startswith("data:model/gltf-binary;base64,")
+        # Verify the base64 content
+        b64_content = result.split(",")[1]
+        assert base64.b64decode(b64_content) == test_data
+
+    @pytest.mark.asyncio
+    async def test_model3d_ref_to_data_uri_obj_format(self, context: ProcessingContext):
+        """Test converting Model3DRef with OBJ format to data URI."""
+        test_data = b"obj model data"
+        model3d_ref = Model3DRef(data=test_data, format="obj")
+
+        result = await context.model3d_ref_to_data_uri(model3d_ref)
+        assert result.startswith("data:model/obj;base64,")
+
+    @pytest.mark.asyncio
+    async def test_model3d_ref_to_data_uri_stl_format(self, context: ProcessingContext):
+        """Test converting Model3DRef with STL format to data URI."""
+        test_data = b"stl model data"
+        model3d_ref = Model3DRef(data=test_data, format="stl")
+
+        result = await context.model3d_ref_to_data_uri(model3d_ref)
+        assert result.startswith("data:model/stl;base64,")
+
+
+class TestModel3DAssetOutputModes:
+    """Test 3D model asset normalization across output modes."""
+
+    @pytest.mark.asyncio
+    async def test_normalize_model3d_python_mode(self, context: ProcessingContext):
+        """Test that Model3DRef remains untouched in PYTHON mode."""
+        context.asset_output_mode = AssetOutputMode.PYTHON
+        model3d_ref = Model3DRef(data=b"raw-3d-bytes", format="glb")
+
+        result = await context.normalize_output_value(model3d_ref)
+
+        assert result is model3d_ref  # untouched in python mode
+
+    @pytest.mark.asyncio
+    async def test_normalize_model3d_data_uri_mode(self, context: ProcessingContext):
+        """Test that Model3DRef is converted to data URI in DATA_URI mode."""
+        context.asset_output_mode = AssetOutputMode.DATA_URI
+        model3d_ref = Model3DRef(data=b"3d-model-bytes", format="glb")
+
+        result = await context.normalize_output_value(model3d_ref)
+
+        assert isinstance(result, Model3DRef)
+        assert result.uri is not None
+        assert result.uri.startswith("data:model/gltf-binary;base64,")
+        assert result.data is None  # payload moved into data URI
+
+    @pytest.mark.asyncio
+    async def test_normalize_model3d_temp_url_mode(self, context: ProcessingContext):
+        """Test that Model3DRef is uploaded to temp storage in TEMP_URL mode."""
+        context.asset_output_mode = AssetOutputMode.TEMP_URL
+        model3d_ref = Model3DRef(data=b"3d-model-bytes", format="glb")
+
+        result = await context.normalize_output_value({"model": model3d_ref})
+
+        assert result["model"]["type"] == "model_3d"
+        assert result["model"]["asset_id"] is None
+        assert result["model"]["uri"].startswith(Environment.get_temp_storage_api_url())
+
+    @pytest.mark.asyncio
+    async def test_normalize_model3d_workspace_mode(self, context: ProcessingContext, tmp_path):
+        """Test that Model3DRef is persisted to workspace in WORKSPACE mode."""
+        context.workspace_dir = str(tmp_path)
+        context.asset_output_mode = AssetOutputMode.WORKSPACE
+        model3d_ref = Model3DRef(data=b"workspace-3d-bytes", format="stl")
+
+        result = await context.normalize_output_value(model3d_ref)
+
+        assert result["type"] == "model_3d"
+        assert result["asset_id"] is None
+        output_path = Path(result["path"])
+        assert output_path.exists()
+        assert output_path.read_bytes() == b"workspace-3d-bytes"
+        assert output_path.parent == tmp_path / "assets"
+        assert output_path.suffix == ".stl"
+
+    @pytest.mark.asyncio
+    async def test_normalize_model3d_raw_mode(self, context: ProcessingContext):
+        """Test that Model3DRef data is embedded in RAW mode."""
+        context.asset_output_mode = AssetOutputMode.RAW
+        model3d_ref = Model3DRef(data=b"raw-3d-model-bytes", format="glb")
+
+        result = await context.normalize_output_value(model3d_ref)
+
+        assert isinstance(result, Model3DRef)
+        assert result.data == b"raw-3d-model-bytes"
+        assert result.uri is None

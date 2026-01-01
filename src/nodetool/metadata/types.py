@@ -353,6 +353,16 @@ class DocumentRef(AssetRef):
     type: Literal["document"] = "document"
 
 
+class Model3DRef(AssetRef):
+    """
+    A reference to a 3D model asset.
+    Supports common 3D formats like GLB, GLTF, OBJ, FBX, STL, PLY, USDZ.
+    """
+
+    type: Literal["model_3d"] = "model_3d"
+    format: Optional[str] = None  # The 3D format (glb, gltf, obj, fbx, stl, ply, usdz)
+
+
 class RSSEntry(BaseType):
     type: Literal["rss_entry"] = "rss_entry"
     title: str = ""
