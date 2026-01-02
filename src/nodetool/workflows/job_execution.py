@@ -160,23 +160,29 @@ class JobExecution(ABC):
         """
         Ensure finished jobs have their status written to the database.
 
-        This method updates the database if the job is in a transient state
-        or missing a finished_at timestamp.
+        This method updates RunState for status and Job for logs/finished_at.
         """
+        from nodetool.models.run_state import RunState
+
         try:
-            # Capture and persist logs before finalizing
             captured_logs = self._uninstall_log_handler()
 
-            # Reload to ensure we operate on latest values
+            run_state = await RunState.get(self.job_id)
+            if run_state and self._status in {"completed", "failed", "cancelled"}:
+                if run_state.status != self._status:
+                    if self._status == "completed":
+                        await run_state.mark_completed()
+                    elif self._status == "failed":
+                        await run_state.mark_failed(error=self._error or "Unknown error")
+                    elif self._status == "cancelled":
+                        await run_state.mark_cancelled()
+
             await self.job_model.reload()
             update_kwargs = {}
 
-            if self.job_model.status in {"running", "starting", "queued"}:
-                update_kwargs["status"] = self._status
             if self.job_model.finished_at is None:
                 update_kwargs["finished_at"] = datetime.now()
 
-            # Add logs to the update
             if captured_logs:
                 update_kwargs["logs"] = captured_logs
 
@@ -185,6 +191,6 @@ class JobExecution(ABC):
 
         except Exception as e:
             log.exception(
-                "JobExecution.finalize_state: failed to persist status",
+                "JobExecution.finalize_state: failed to persist state",
                 extra={"job_id": self.job_id, "error": str(e)},
             )

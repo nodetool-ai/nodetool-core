@@ -16,7 +16,6 @@ class Job(DBModel):
     id: str = DBField()
     user_id: str = DBField(default="")
     job_type: str = DBField(default="")
-    status: str = DBField(default="starting")
     workflow_id: str = DBField(default="")
     started_at: datetime = DBField(default_factory=datetime.now)
     finished_at: datetime | None = DBField(default=None)
@@ -32,7 +31,7 @@ class Job(DBModel):
         return job if job and job.user_id == user_id else None
 
     @classmethod
-    async def create(cls, workflow_id: str, user_id: str, **kwargs):
+    async def create(cls, workflow_id: str, user_id: str, **kwargs):  # type: ignore[override]
         return await super().create(
             id=create_time_ordered_uuid(),
             workflow_id=workflow_id,

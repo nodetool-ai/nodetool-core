@@ -81,6 +81,7 @@ from nodetool.metadata.types import (
     InferenceProviderTextToTextModel,
     InferenceProviderTranslationModel,
     LanguageModel,
+    Model3DRef,
     ModelRef,
     NodeRef,
     NPArray,
@@ -90,7 +91,6 @@ from nodetool.metadata.types import (
     TextRef,
     VideoRef,
     WorkflowRef,
-    Model3DRef 
 )
 from nodetool.packages.registry import Registry
 from nodetool.system.system_stats import SystemStats

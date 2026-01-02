@@ -123,16 +123,35 @@ class ThreadedJobExecution(JobExecution):
                 # Check if workflow was suspended (not completed)
                 if self.runner and self.runner.status == "suspended":
                     log.info("Workflow suspended, not setting completed status")
-                    await self.job_model.update(status="suspended", finished_at=datetime.now())
+                    from nodetool.models.run_state import RunState
+
+                    run_state = await RunState.get(self.job_id)
+                    if run_state:
+                        await run_state.mark_suspended(
+                            node_id="",
+                            reason="Workflow suspended",
+                            state={},
+                        )
+                    await self.job_model.update(finished_at=datetime.now())
                 else:
                     # Update job status on completion
                     self._set_status("completed")
-                    await self.job_model.update(status="completed", finished_at=datetime.now())
+                    from nodetool.models.run_state import RunState
+
+                    run_state = await RunState.get(self.job_id)
+                    if run_state:
+                        await run_state.mark_completed()
+                    await self.job_model.update(finished_at=datetime.now())
                 log.info(f"Background job {self.job_id} completed successfully")
 
             except asyncio.CancelledError:
                 self._set_status("cancelled")
-                await self.job_model.update(status="cancelled", finished_at=datetime.now())
+                from nodetool.models.run_state import RunState
+
+                run_state = await RunState.get(self.job_id)
+                if run_state:
+                    await run_state.mark_cancelled()
+                await self.job_model.update(finished_at=datetime.now())
                 log.info(f"Background job {self.job_id} cancelled")
                 raise
             except Exception as e:
@@ -142,9 +161,13 @@ class ThreadedJobExecution(JobExecution):
                 error_text = str(e).strip()
                 error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
                 tb_text = traceback.format_exc()
-                # Track error locally for fallback reporters
                 self._error = error_msg
-                await self.job_model.update(status="failed", error=error_msg, finished_at=datetime.now())
+                from nodetool.models.run_state import RunState
+
+                run_state = await RunState.get(self.job_id)
+                if run_state:
+                    await run_state.mark_failed(error=error_msg)
+                await self.job_model.update(error=error_msg, finished_at=datetime.now())
                 log.exception("Background job %s failed: %s", self.job_id, error_msg)
                 self.context.post_message(
                     JobUpdate(
@@ -156,7 +179,6 @@ class ThreadedJobExecution(JobExecution):
                 )
                 raise
             finally:
-                # Ensure finalize_state runs while ResourceScope is active
                 await self.finalize_state()
 
     @classmethod
@@ -201,7 +223,6 @@ class ThreadedJobExecution(JobExecution):
             workflow_id=request.workflow_id,
             user_id=request.user_id,
             job_type=request.job_type,
-            status="running",
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )

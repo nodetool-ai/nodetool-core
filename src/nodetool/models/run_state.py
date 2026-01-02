@@ -8,6 +8,8 @@ this is mutable and represents the current truth. The event log is audit-only.
 from datetime import datetime
 from typing import Any, Literal
 
+from pydantic import field_validator
+
 from nodetool.models.base_model import DBField, DBIndex, DBModel
 
 RunStatus = Literal["scheduled", "running", "suspended", "paused", "completed", "failed", "cancelled", "recovering"]
@@ -65,6 +67,15 @@ class RunState(DBModel):
 
     # Optional: version for optimistic locking
     version: int = DBField(default=0)
+
+    @field_validator("metadata_json", "suspension_state_json", "suspension_metadata_json", mode="before")
+    @classmethod
+    def default_none_to_dict(cls, v: Any) -> dict[str, Any]:
+        """Convert None values to empty dict for backward compatibility with existing records."""
+        if v is None:
+            return {}
+        return v
+
 
     def before_save(self):
         """Update timestamp and version before saving."""

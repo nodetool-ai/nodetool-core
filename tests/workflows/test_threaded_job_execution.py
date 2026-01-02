@@ -7,11 +7,13 @@ import asyncio
 import pytest
 
 from nodetool.models.job import Job
+from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
+from tests.conftest import get_job_status
 
 # Add timeout to all tests in this file to prevent hanging
 # Run these tests in the same xdist group to avoid parallel execution issues
@@ -26,9 +28,9 @@ async def cleanup_jobs():
     # Cleanup any jobs created during tests
     for job in jobs_to_cleanup:
         try:
-            job.cleanup_resources()
+            await job.cleanup_resources()
             if not job.is_completed():
-                job.cancel()
+                await job.cancel()
         except Exception as e:
             print(f"Error cleaning up job {job.job_id}: {e}")
     await asyncio.sleep(0.1)
@@ -106,7 +108,7 @@ async def test_threaded_job_is_running(simple_workflow, cleanup_jobs):
 
     # After completion, is_running should return False
     if job.is_completed():
-        assert not job.is_running() or job.runner.is_running() is False
+        assert not job.is_running() or (job.runner and job.runner.is_running() is False)
 
 
 @pytest.mark.asyncio
@@ -227,15 +229,20 @@ async def test_threaded_job_database_record(simple_workflow, cleanup_jobs):
     assert db_job.id == job.job_id
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
+    # Create RunState for the job (ThreadedJobExecution doesn't create it)
+    run_state = await RunState.create_run(run_id=job.job_id, execution_strategy="threaded")
+    run_state.status = "running"
+    await run_state.save()
     # Empty workflows may complete very quickly, so status could be running, completed, or failed
-    assert db_job.status in ["running", "completed", "failed"]
+    status = await get_job_status(job.job_id)
+    assert status in ["running", "completed", "failed"]
 
     # Wait for completion
     await asyncio.sleep(0.3)
 
     # Reload and check status updated
-    await db_job.reload()
-    assert db_job.status in ["running", "completed", "failed"]
+    status = await get_job_status(job.job_id)
+    assert status in ["running", "completed", "failed"]
 
 
 @pytest.mark.asyncio

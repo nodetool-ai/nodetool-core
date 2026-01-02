@@ -8,11 +8,23 @@ from pydantic import BaseModel
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
+from nodetool.models.run_state import RunState
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+class RunStateResponse(BaseModel):
+    """Subset of RunState for API responses."""
+
+    status: str
+    suspended_node_id: Optional[str] = None
+    suspension_reason: Optional[str] = None
+    error_message: Optional[str] = None
+    execution_strategy: Optional[str] = None
+    is_resumable: bool = False
 
 
 class JobResponse(BaseModel):
@@ -25,6 +37,7 @@ class JobResponse(BaseModel):
     finished_at: Optional[datetime] = None
     error: Optional[str] = None
     cost: Optional[float] = None
+    run_state: Optional[RunStateResponse] = None
 
     class Config:
         from_attributes = True
@@ -42,6 +55,35 @@ class BackgroundJobResponse(BaseModel):
 class JobListResponse(BaseModel):
     jobs: List[JobResponse]
     next_start_key: Optional[str] = None
+
+
+async def get_job_status(job_id: str, job: Job) -> str:
+    """Get the authoritative status for a job from RunState."""
+    try:
+        run_state = await RunState.get(job_id)
+        if run_state:
+            return run_state.status
+    except Exception:
+        pass
+    return "unknown"
+
+
+async def get_run_state_response(job_id: str) -> Optional[RunStateResponse]:
+    """Get run state details for API response."""
+    try:
+        run_state = await RunState.get(job_id)
+        if run_state:
+            return RunStateResponse(
+                status=run_state.status,
+                suspended_node_id=run_state.suspended_node_id,
+                suspension_reason=run_state.suspension_reason,
+                error_message=run_state.error_message,
+                execution_strategy=run_state.execution_strategy,
+                is_resumable=run_state.is_resumable(),
+            )
+    except Exception as e:
+        log.debug(f"Failed to get run state for job {job_id}: {e}")
+    return None
 
 
 @router.get("/", response_model=JobListResponse)
@@ -88,12 +130,13 @@ async def list_jobs(
                 id=job.id,
                 user_id=job.user_id,
                 job_type=job.job_type,
-                status=job.status,
+                status=await get_job_status(job.id, job),
                 workflow_id=job.workflow_id,
                 started_at=job.started_at,
                 finished_at=job.finished_at,
                 error=job.error,
                 cost=job.cost,
+                run_state=await get_run_state_response(job.id),
             )
             for job in jobs
         ],
@@ -118,16 +161,19 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    status = await get_job_status(job_id, job)
+
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
         job_type=job.job_type,
-        status=job.status,
+        status=status,
         workflow_id=job.workflow_id,
         started_at=job.started_at,
         finished_at=job.finished_at,
         error=job.error,
         cost=job.cost,
+        run_state=await get_run_state_response(job_id),
     )
 
 
@@ -306,33 +352,66 @@ async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current
 async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
     """
     Ensure job status reflects the background execution manager.
-    Syncs completed/failed states from the background manager; marks missing handles as failed.
+    Syncs completed/failed states from RunState and background manager.
     """
+    from nodetool.models.condition_builder import Field
+
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}
 
     updates = []
     for job in jobs:
         bg_job = bg_jobs.get(job.id)
-        if bg_job is None and job.status in {"running", "starting", "queued"}:
-            job.status = "failed"
-            job.error = job.error or "Reconciled: execution handle missing"
-            job.finished_at = job.finished_at or datetime.now(UTC)
-            updates.append(job.save())
+
+        # Get current RunState status
+        run_state = await RunState.get(job.id)
+        current_status = run_state.status if run_state else None
+
+        if run_state is None:
+            # No RunState exists - create one based on background job state
+            if bg_job is not None:
+                if bg_job.is_completed():
+                    # Create RunState with completed status
+                    await RunState.create_run(
+                        run_id=job.id,
+                        execution_strategy=getattr(bg_job.request, "execution_strategy", None),
+                    )
+                    run_state = await RunState.get(job.id)
+                    if run_state:
+                        run_state.status = getattr(bg_job, "status", "completed")
+                        await run_state.save()
+                elif bg_job.is_running():
+                    # Create RunState with running status
+                    await RunState.create_run(
+                        run_id=job.id,
+                        execution_strategy=getattr(bg_job.request, "execution_strategy", None),
+                    )
+                    run_state = await RunState.get(job.id)
+                    if run_state:
+                        run_state.status = "running"
+                        await run_state.save()
+            else:
+                # No RunState and no background job - mark as failed
+                if current_status in {None, "scheduled", "running"}:
+                    await RunState.create_run(run_id=job.id)
+                    run_state = await RunState.get(job.id)
+                    if run_state:
+                        run_state.status = "failed"
+                        run_state.error_message = "Reconciled: execution handle missing"
+                        await run_state.save()
         elif bg_job is not None and bg_job.is_completed():
             new_status = getattr(bg_job, "status", "completed")
-            if job.status != new_status or job.finished_at is None:
-                job.status = new_status
-                job.error = job.error or bg_job.error
-                job.finished_at = job.finished_at or datetime.now(UTC)
-                updates.append(job.save())
+            if current_status != new_status or run_state.completed_at is None:
+                run_state.status = new_status
+                run_state.error_message = run_state.error_message or bg_job.error
+                run_state.completed_at = datetime.now(UTC)
+                updates.append(run_state.save())
         elif bg_job is not None and not bg_job.is_running():
-            # Not running but not completed: mark as failed
-            if job.status in {"running", "starting", "queued"}:
-                job.status = "failed"
-                job.error = job.error or "Reconciled: execution handle stopped unexpectedly"
-                job.finished_at = job.finished_at or datetime.now(UTC)
-                updates.append(job.save())
+            if current_status in {"running", "scheduled"}:
+                run_state.status = "failed"
+                run_state.error_message = run_state.error_message or "Reconciled: execution handle stopped unexpectedly"
+                run_state.failed_at = datetime.now(UTC)
+                updates.append(run_state.save())
 
     if updates:
         await asyncio.gather(*updates)

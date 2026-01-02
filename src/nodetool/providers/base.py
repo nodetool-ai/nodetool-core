@@ -147,7 +147,7 @@ class BaseProvider:
     log_file: str | None = None
     cost: float = 0.0
     provider_name: str = ""
-    usage: dict[str, Any] = {}
+    usage: ClassVar[dict[str, Any]] = {}
 
     @classmethod
     def required_secrets(cls) -> list[str]:

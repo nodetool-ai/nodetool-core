@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 from nodetool.models.job import Job
+from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
 from nodetool.types.graph import Edge, Graph
 from nodetool.types.graph import Node as GraphNode
@@ -31,11 +32,11 @@ async def cleanup_jobs():
     for job_id, job in list(manager._jobs.items()):
         try:
             # Use the cleanup_resources method
-            job.cleanup_resources()
+            await job.cleanup_resources()
 
             # Cancel if not completed
             if not job.is_completed():
-                job.cancel()
+                await job.cancel()
 
         except Exception as e:
             print(f"Error cleaning up job {job_id}: {e}")
@@ -118,7 +119,9 @@ async def test_start_job(simple_workflow, cleanup_jobs):
     assert db_job.id == bg_job.job_id
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
-    assert db_job.status == "running"
+    run_state = await RunState.get(bg_job.job_id)
+    assert run_state is not None
+    assert run_state.status == "running"
     assert db_job.params == {}
 
     # Wait a moment for the job to potentially complete
@@ -160,9 +163,11 @@ async def test_job_completion_updates_model(simple_workflow, cleanup_jobs):
     db_job = await Job.get(job_id)
     assert db_job is not None
 
-    # Job should be completed
-    assert db_job.status in ["completed", "running", "failed"]
-    if db_job.status == "completed":
+    # Job should be completed - check RunState for status
+    run_state = await RunState.get(job_id)
+    assert run_state is not None
+    assert run_state.status in ["completed", "running", "failed"]
+    if run_state.status == "completed":
         assert db_job.finished_at is not None
 
 
@@ -199,16 +204,16 @@ async def test_cancel_job(simple_workflow, cleanup_jobs):
     max_retries = 10
     for _ in range(max_retries):
         await asyncio.sleep(0.1)
-        db_job = await Job.get(job_id)
+        run_state = await RunState.get(job_id)
         # Break if we've reached a final state
-        if db_job.status in ["completed", "cancelled", "failed"]:
+        if run_state and run_state.status in ["completed", "cancelled", "failed"]:
             break
 
     # Verify job status
-    db_job = await Job.get(job_id)
-    assert db_job is not None
+    run_state = await RunState.get(job_id)
+    assert run_state is not None
     # Status should be in a final state (not running)
-    assert db_job.status in ["completed", "cancelled", "failed"]
+    assert run_state.status in ["completed", "cancelled", "failed"]
 
     # Note: Even if cancel() returns True, empty workflows may complete
     # before the cancellation takes effect, so we accept both statuses
@@ -315,7 +320,7 @@ async def test_cleanup_completed_jobs(simple_workflow, cleanup_jobs):
         if bg_job.runner:
             bg_job.runner.status = "completed"
         # Cancel the job to mark it as completed
-        bg_job.cancel()
+        await bg_job.cancel()
 
     # Cleanup with max_age_seconds=0 should remove it
     await manager.cleanup_completed_jobs(max_age_seconds=0)
@@ -323,8 +328,6 @@ async def test_cleanup_completed_jobs(simple_workflow, cleanup_jobs):
     # Job should be removed from manager but still in DB
     assert manager.get_job(job_id) is None
 
-    # DB record should still exist
-    await Job.get(job_id)
     # Note: Depending on timing, job may or may not be in DB
 
 
@@ -360,7 +363,8 @@ async def test_job_error_handling(simple_workflow, cleanup_jobs):
     db_job = await Job.get(job_id)
     assert db_job is not None
     # Job should have failed or be running (depending on timing)
-    if db_job.status == "failed":
+    run_state = await RunState.get(job_id)
+    if run_state and run_state.status == "failed":
         assert db_job.error is not None
         assert len(db_job.error) > 0
 

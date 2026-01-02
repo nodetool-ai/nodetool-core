@@ -21,6 +21,7 @@ from nodetool.api import mcp_server
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
+from nodetool.models.run_state import RunState
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
@@ -381,8 +382,9 @@ class TestJobOperations:
             user_id="1",
             workflow_id=workflow.id,
             job_type="workflow",
-            status="completed",
         )
+        # Create RunState for the job
+        await RunState.create_run(run_id=job.id, execution_strategy="threaded")
 
         result = await list_jobs(limit=10)
 
@@ -395,21 +397,23 @@ class TestJobOperations:
         """Test listing jobs filtered by workflow."""
         await workflow.save()
 
-        await Job.create(
+        job = await Job.create(
             user_id="1",
             workflow_id=workflow.id,
             job_type="workflow",
-            status="completed",
         )
+        # Create RunState for the job
+        await RunState.create_run(run_id=job.id, execution_strategy="threaded")
 
         # Create another workflow and job
         workflow2 = await Workflow.create(user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []})
-        await Job.create(
+        job2 = await Job.create(
             user_id="1",
             workflow_id=workflow2.id,
             job_type="workflow",
-            status="completed",
         )
+        # Create RunState for the second job
+        await RunState.create_run(run_id=job2.id, execution_strategy="threaded")
 
         result = await list_jobs(workflow_id=workflow.id, limit=10)
 
@@ -423,8 +427,10 @@ class TestJobOperations:
             user_id="1",
             workflow_id="test-workflow",
             job_type="workflow",
-            status="completed",
         )
+        # Create RunState for the job with completed status
+        run_state = await RunState.create_run(run_id=job.id, execution_strategy="threaded")
+        await run_state.mark_completed()
 
         result = await get_job(job.id)
 

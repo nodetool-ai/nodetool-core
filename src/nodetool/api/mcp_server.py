@@ -84,6 +84,19 @@ from nodetool.workflows.types import (
 log = get_logger(__name__)
 
 
+async def get_job_status(job_id: str) -> str:
+    """Get the authoritative status for a job from RunState."""
+    from nodetool.models.run_state import RunState
+
+    try:
+        run_state = await RunState.get(job_id)
+        if run_state:
+            return run_state.status
+    except Exception:
+        pass
+    return "unknown"
+
+
 async def get_hf_token(user_id: str | None = None) -> str | None:
     """Get HF_TOKEN from environment variables or database secrets (async).
 
@@ -1340,7 +1353,7 @@ async def list_jobs(
                 "id": job.id,
                 "user_id": job.user_id,
                 "job_type": job.job_type,
-                "status": job.status,
+                "status": await get_job_status(job.id),
                 "workflow_id": job.workflow_id,
                 "started_at": job.started_at.isoformat() if job.started_at else "",
                 "finished_at": job.finished_at.isoformat() if job.finished_at else None,
@@ -1369,7 +1382,7 @@ async def get_job(job_id: str) -> dict[str, Any]:
         "id": job.id,
         "user_id": job.user_id,
         "job_type": job.job_type,
-        "status": job.status,
+        "status": await get_job_status(job_id),
         "workflow_id": job.workflow_id,
         "started_at": job.started_at.isoformat() if job.started_at else "",
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
@@ -4479,6 +4492,470 @@ def create_mcp_app():
         Configured FastMCP instance
     """
     return mcp
+
+
+@mcp.tool()
+async def get_run_state(run_id: str) -> dict[str, Any]:
+    """
+    Get the current state of a workflow run.
+
+    This is the authoritative source of truth for run status and execution state.
+
+    Args:
+        run_id: The workflow run ID
+
+    Returns:
+        Run state including status, timestamps, suspension state, and execution metadata
+    """
+    from nodetool.models.run_state import RunState
+
+    run_state = await RunState.get(run_id)
+    if not run_state:
+        raise ValueError(f"Run state not found for run_id: {run_id}")
+
+    return {
+        "run_id": run_state.run_id,
+        "status": run_state.status,
+        "created_at": run_state.created_at.isoformat() if run_state.created_at else None,
+        "updated_at": run_state.updated_at.isoformat() if run_state.updated_at else None,
+        "completed_at": run_state.completed_at.isoformat() if run_state.completed_at else None,
+        "failed_at": run_state.failed_at.isoformat() if run_state.failed_at else None,
+        "error_message": run_state.error_message,
+        "execution_strategy": run_state.execution_strategy,
+        "execution_id": run_state.execution_id,
+        "worker_id": run_state.worker_id,
+        "heartbeat_at": run_state.heartbeat_at.isoformat() if run_state.heartbeat_at else None,
+        "retry_count": run_state.retry_count,
+        "max_retries": run_state.max_retries,
+        "suspended_node_id": run_state.suspended_node_id,
+        "suspension_reason": run_state.suspension_reason,
+        "suspension_state": run_state.suspension_state_json,
+        "suspension_metadata": run_state.suspension_metadata_json,
+        "metadata": run_state.metadata_json,
+        "version": run_state.version,
+        "is_stale": run_state.is_stale(),
+        "is_complete": run_state.is_complete(),
+        "is_suspended": run_state.is_suspended(),
+        "is_resumable": run_state.is_resumable(),
+    }
+
+
+@mcp.tool()
+async def list_run_states(
+    status: str | None = None,
+    include_stale: bool = False,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """
+    List workflow run states with optional filtering.
+
+    Args:
+        status: Filter by status (scheduled, running, suspended, paused, completed, failed, cancelled, recovering)
+        include_stale: Include runs with stale heartbeats
+        limit: Maximum number of runs to return
+
+    Returns:
+        List of run states matching the filters
+    """
+    from nodetool.models.condition_builder import Field
+    from nodetool.models.run_state import RunState
+
+    conditions = []
+
+    if status:
+        conditions.append(Field("status").equals(status))
+
+    if not include_stale:
+        conditions.append(Field("heartbeat_at").is_not(None))
+
+    from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, LogicalOperator
+
+    if conditions:
+        condition = ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND))
+        runs, _ = await RunState.query(condition=condition, limit=limit)
+    else:
+        runs, _ = await RunState.query(limit=limit)
+
+    return {
+        "runs": [
+            {
+                "run_id": run.run_id,
+                "status": run.status,
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+                "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+                "worker_id": run.worker_id,
+                "execution_strategy": run.execution_strategy,
+                "error_message": run.error_message,
+                "is_stale": run.is_stale(),
+                "is_complete": run.is_complete(),
+            }
+            for run in runs
+        ],
+        "count": len(runs),
+    }
+
+
+@mcp.tool()
+async def get_run_events(
+    run_id: str,
+    event_type: str | None = None,
+    node_id: str | None = None,
+    seq_gt: int | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """
+    Get the event log for a workflow run.
+
+    Events provide an audit trail of what happened during execution.
+    Events are append-only and best-effort ordered.
+
+    Args:
+        run_id: The workflow run ID
+        event_type: Optional filter by event type
+        node_id: Optional filter by node ID
+        seq_gt: Return events with sequence number greater than this
+        limit: Maximum number of events to return
+
+    Returns:
+        List of events ordered by sequence number
+    """
+    from nodetool.models.run_event import RunEvent
+
+    events = await RunEvent.get_events(
+        run_id=run_id,
+        event_type=event_type,
+        node_id=node_id,
+        seq_gt=seq_gt,
+        limit=limit,
+    )
+
+    return {
+        "run_id": run_id,
+        "events": [
+            {
+                "id": event.id,
+                "run_id": event.run_id,
+                "seq": event.seq,
+                "event_type": event.event_type,
+                "event_time": event.event_time.isoformat() if event.event_time else None,
+                "node_id": event.node_id,
+                "payload": event.payload,
+            }
+            for event in events
+        ],
+        "count": len(events),
+    }
+
+
+@mcp.tool()
+async def get_run_timeline(run_id: str) -> dict[str, Any]:
+    """
+    Get a formatted timeline view of a workflow run's execution.
+
+    This provides a human-readable chronological view of all events,
+    useful for debugging and understanding execution flow.
+
+    Args:
+        run_id: The workflow run ID
+
+    Returns:
+        Timeline with events, statistics, and duration info
+    """
+    from nodetool.models.run_event import RunEvent
+    from nodetool.models.run_state import RunState
+
+    run_state = await RunState.get(run_id)
+    if not run_state:
+        raise ValueError(f"Run state not found for run_id: {run_id}")
+
+    events = await RunEvent.get_events(run_id=run_id, limit=1000)
+
+    if not events:
+        return {
+            "run_id": run_id,
+            "status": run_state.status,
+            "message": "No events recorded for this run",
+            "timeline": [],
+        }
+
+    timeline_entries = []
+    event_counts: dict[str, int] = {}
+    node_events: dict[str, list[dict]] = {}
+
+    for event in events:
+        entry = {
+            "seq": event.seq,
+            "time": event.event_time.isoformat() if event.event_time else None,
+            "event": event.event_type,
+            "node_id": event.node_id,
+            "details": event.payload,
+        }
+        timeline_entries.append(entry)
+
+        event_counts[event.event_type] = event_counts.get(event.event_type, 0) + 1
+
+        if event.node_id:
+            if event.node_id not in node_events:
+                node_events[event.node_id] = []
+            node_events[event.node_id].append(entry)
+
+    first_time = events[0].event_time if events else None
+    last_time = events[-1].event_time if events else None
+
+    duration_seconds = None
+    if first_time and last_time:
+        duration_seconds = (last_time - first_time).total_seconds()
+
+    return {
+        "run_id": run_id,
+        "status": run_state.status,
+        "error_message": run_state.error_message,
+        "started_at": first_time.isoformat() if first_time else None,
+        "completed_at": last_time.isoformat() if last_time else None,
+        "duration_seconds": duration_seconds,
+        "total_events": len(events),
+        "event_counts": event_counts,
+        "node_count": len(node_events),
+        "nodes_with_events": list(node_events.keys()),
+        "timeline": timeline_entries,
+    }
+
+
+@mcp.tool()
+async def get_active_jobs() -> dict[str, Any]:
+    """
+    Get all currently active job executions.
+
+    Returns:
+        List of active jobs with their current status and metadata
+    """
+    from nodetool.models.run_state import RunState
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+    manager = JobExecutionManager.get_instance()
+    jobs = manager.list_jobs()
+
+    active_jobs = []
+    for job in jobs:
+        if job.is_running():
+            run_state = await RunState.get(job.job_id)
+            active_jobs.append(
+                {
+                    "job_id": job.job_id,
+                    "execution_id": job.execution_id,
+                    "workflow_id": job.request.workflow_id,
+                    "user_id": job.request.user_id,
+                    "status": job.status,
+                    "execution_strategy": job.request.execution_strategy.value
+                    if job.request.execution_strategy
+                    else None,
+                    "started_at": job.started_at.isoformat() if job.started_at else None,
+                    "worker_id": Environment.get_worker_id(),
+                    "run_state_status": run_state.status if run_state else None,
+                    "is_stale": run_state.is_stale() if run_state else None,
+                }
+            )
+
+    return {
+        "active_jobs": active_jobs,
+        "count": len(active_jobs),
+    }
+
+
+@mcp.tool()
+async def cancel_run(run_id: str) -> dict[str, Any]:
+    """
+    Cancel a running workflow job.
+
+    Args:
+        run_id: The job/run ID to cancel
+
+    Returns:
+        Cancellation result
+    """
+    from nodetool.models.run_state import RunState
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+    run_state = await RunState.get(run_id)
+    if not run_state:
+        raise ValueError(f"Run state not found for run_id: {run_id}")
+
+    if run_state.is_complete():
+        raise ValueError(f"Run {run_id} is already complete (status: {run_state.status})")
+
+    manager = JobExecutionManager.get_instance()
+    cancelled = await manager.cancel_job(run_id)
+
+    if cancelled:
+        async with ResourceScope():
+            await run_state.mark_cancelled()
+
+        return {
+            "run_id": run_id,
+            "cancelled": True,
+            "message": f"Run {run_id} has been cancelled",
+        }
+
+    return {
+        "run_id": run_id,
+        "cancelled": False,
+        "message": f"Run {run_id} could not be cancelled (may not be in memory)",
+    }
+
+
+@mcp.tool()
+async def recover_run(run_id: str) -> dict[str, Any]:
+    """
+    Attempt to recover a stale or failed run.
+
+    Args:
+        run_id: The run ID to recover
+
+    Returns:
+        Recovery result
+    """
+    from nodetool.models.run_state import RunState
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+    run_state = await RunState.get(run_id)
+    if not run_state:
+        raise ValueError(f"Run state not found for run_id: {run_id}")
+
+    if not run_state.is_resumable():
+        raise ValueError(f"Run {run_id} is not resumable (status: {run_state.status})")
+
+    manager = JobExecutionManager.get_instance()
+    success = await manager.resume_run(run_id)
+
+    if success:
+        return {
+            "run_id": run_id,
+            "recovered": True,
+            "message": f"Run {run_id} recovery initiated successfully",
+        }
+
+    return {
+        "run_id": run_id,
+        "recovered": False,
+        "message": f"Failed to recover run {run_id}",
+    }
+
+
+@mcp.tool()
+async def get_node_run_events(run_id: str, node_id: str) -> dict[str, Any]:
+    """
+    Get all events for a specific node within a run.
+
+    Useful for debugging individual node execution.
+
+    Args:
+        run_id: The workflow run ID
+        node_id: The node ID to get events for
+
+    Returns:
+        All events for the specified node
+    """
+    from nodetool.models.run_event import RunEvent
+
+    events = await RunEvent.get_events(run_id=run_id, node_id=node_id, limit=500)
+
+    if not events:
+        return {
+            "run_id": run_id,
+            "node_id": node_id,
+            "events": [],
+            "count": 0,
+            "message": f"No events found for node {node_id} in run {run_id}",
+        }
+
+    first_time = events[0].event_time if events else None
+    last_time = events[-1].event_time if events else None
+
+    duration_seconds = None
+    if first_time and last_time:
+        duration_seconds = (last_time - first_time).total_seconds()
+
+    return {
+        "run_id": run_id,
+        "node_id": node_id,
+        "events": [
+            {
+                "seq": event.seq,
+                "time": event.event_time.isoformat() if event.event_time else None,
+                "event": event.event_type,
+                "details": event.payload,
+            }
+            for event in events
+        ],
+        "count": len(events),
+        "duration_seconds": duration_seconds,
+    }
+
+
+@mcp.tool()
+async def analyze_run_errors(run_id: str) -> dict[str, Any]:
+    """
+    Analyze a run for errors and failures.
+
+    Returns a diagnostic summary of what went wrong.
+
+    Args:
+        run_id: The workflow run ID
+
+    Returns:
+        Error analysis including failed nodes, error messages, and suggestions
+    """
+    from nodetool.models.run_event import RunEvent
+    from nodetool.models.run_state import RunState
+
+    run_state = await RunState.get(run_id)
+    if not run_state:
+        raise ValueError(f"Run state not found for run_id: {run_id}")
+
+    events = await RunEvent.get_events(run_id=run_id, limit=1000)
+
+    failed_node_events = [e for e in events if e.event_type == "NodeFailed"]
+
+    run_failed_events = [e for e in events if e.event_type in ("RunFailed", "RunCancelled")]
+
+    errors = []
+    for event in failed_node_events:
+        errors.append(
+            {
+                "node_id": event.node_id,
+                "error": event.payload.get("error", "Unknown error"),
+                "seq": event.seq,
+                "time": event.event_time.isoformat() if event.event_time else None,
+            }
+        )
+
+    for event in run_failed_events:
+        errors.append(
+            {
+                "node_id": None,
+                "error": event.payload.get("error", f"Run {event.event_type}"),
+                "seq": event.seq,
+                "time": event.event_time.isoformat() if event.event_time else None,
+            }
+        )
+
+    suggestions = []
+    if run_state.status == "failed":
+        if run_state.error_message:
+            suggestions.append(f"Run failed with error: {run_state.error_message}")
+        for error in errors:
+            if error["node_id"]:
+                suggestions.append(f"Node {error['node_id']} failed: {error['error']}")
+
+    return {
+        "run_id": run_id,
+        "status": run_state.status,
+        "error_message": run_state.error_message,
+        "total_events": len(events),
+        "failed_nodes": len(failed_node_events),
+        "errors": errors,
+        "suggestions": suggestions,
+    }
 
 
 if __name__ == "__main__":

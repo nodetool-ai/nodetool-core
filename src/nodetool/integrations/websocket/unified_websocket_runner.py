@@ -57,7 +57,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.job import Job
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
-from nodetool.types.job import JobUpdate
+from nodetool.types.job import JobUpdate, RunStateInfo
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.job_execution_manager import (
     JobExecution,
@@ -127,6 +127,30 @@ class WebSocketMode(str, Enum):
 
     BINARY = "binary"
     TEXT = "text"
+
+
+async def build_run_state_info(job_id: str) -> RunStateInfo | None:
+    """Build RunStateInfo from persisted RunState for WebSocket messages."""
+    try:
+        async with ResourceScope():
+            from nodetool.models.run_state import RunState
+
+            run_state = await RunState.get(job_id)
+            if run_state:
+                log.info(f"build_run_state_info: Found RunState for job {job_id}, status={run_state.status}")
+                return RunStateInfo(
+                    status=run_state.status,
+                    suspended_node_id=run_state.suspended_node_id,
+                    suspension_reason=run_state.suspension_reason,
+                    error_message=run_state.error_message,
+                    execution_strategy=run_state.execution_strategy,
+                    is_resumable=run_state.is_resumable(),
+                )
+            else:
+                log.warning(f"build_run_state_info: No RunState found for job {job_id}")
+    except Exception as e:
+        log.error(f"build_run_state_info: Failed to build run state info for job {job_id}: {e}")
+    return None
 
 
 class ToolBridge:
@@ -532,12 +556,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     async def _stream_job_messages(self, job_ctx: JobStreamContext, explicit_types: bool):
         """Stream messages from a background job to the client."""
         try:
-            # Send initial job update
+            # Send initial job update with run_state
+            run_state_info = await build_run_state_info(job_ctx.job_id)
             await self.send_message(
                 JobUpdate(
                     status="running",
                     job_id=job_ctx.job_id,
                     workflow_id=job_ctx.workflow_id,
+                    run_state=run_state_info,
                 ).model_dump()
             )
 
@@ -672,16 +698,23 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             if job_execution is None:
                 async with ResourceScope():
                     db_job = await Job.get(job_id)
-                    if db_job and db_job.status in {"running", "starting", "queued"}:
+                    from nodetool.models.run_state import RunState
+
+                    run_state = await RunState.get(job_id)
+                    current_status = run_state.status if run_state else None
+
+                    if current_status in {"running", "scheduled", "queued", None}:
                         log.warning(
                             "UnifiedWebSocketRunner: Job missing from manager; marking as failed",
                             extra={"job_id": job_id},
                         )
-                        await db_job.update(
-                            status="failed",
-                            error="Job worker unavailable during reconnect",
-                            finished_at=datetime.now(),
-                        )
+                        if run_state:
+                            await run_state.mark_failed(error="Job worker unavailable during reconnect")
+                        if db_job:
+                            await db_job.update(
+                                error="Job worker unavailable during reconnect",
+                                finished_at=datetime.now(),
+                            )
                 log.warning(
                     "UnifiedWebSocketRunner: Job not found during reconnect",
                     extra={"job_id": job_id},
@@ -708,13 +741,25 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 final_status = job_execution.status
                 try:
                     await job_execution.job_model.reload()
-                    if job_execution.job_model.status in {
-                        "running",
-                        "starting",
-                        "queued",
-                    }:
+                    from nodetool.models.run_state import RunState
+
+                    run_state = await RunState.get(job_id)
+                    current_status = run_state.status if run_state else None
+
+                    if current_status in {"running", "scheduled", "queued"}:
+                        if final_status == "completed":
+                            if run_state:
+                                await run_state.mark_completed()
+                        elif final_status in {"error", "failed"}:
+                            err_detail = getattr(job_execution, "error", None) or getattr(
+                                job_execution.job_model, "error", None
+                            )
+                            if run_state:
+                                await run_state.mark_failed(error=str(err_detail) if err_detail else "Unknown error")
+                        elif final_status == "cancelled":
+                            if run_state:
+                                await run_state.mark_cancelled()
                         await job_execution.job_model.update(
-                            status=final_status,
                             finished_at=datetime.now(),
                         )
                 except Exception as persist_error:
@@ -744,12 +789,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             job_ctx = JobStreamContext(job_id, workflow_id, job_execution)
             self.active_jobs[job_id] = job_ctx
 
-            # Send current job status
+            # Send current job status with run_state
+            run_state_info = await build_run_state_info(job_id)
             await self.send_message(
                 JobUpdate(
                     status=job_execution.status,
                     job_id=job_id,
                     workflow_id=workflow_id,
+                    run_state=run_state_info,
                 ).model_dump()
             )
 

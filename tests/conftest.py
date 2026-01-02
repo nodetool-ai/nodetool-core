@@ -21,6 +21,7 @@ from nodetool.deploy.auth import get_worker_auth_token
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
+from nodetool.models.run_state import RunState
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import ResourceScope, require_scope
@@ -28,6 +29,18 @@ from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.graph import Edge, Node
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
+
+
+async def get_job_status(job_id: str) -> str:
+    """Get the authoritative status for a job from RunState."""
+    try:
+        run_state = await RunState.get(job_id)
+        if run_state:
+            return run_state.status
+    except Exception:
+        pass
+    return "unknown"
+
 
 configure_logging("DEBUG")
 
