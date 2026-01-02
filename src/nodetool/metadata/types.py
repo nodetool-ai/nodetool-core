@@ -387,6 +387,54 @@ class FontRef(BaseType):
     name: str = ""
 
 
+class LayoutElement(BaseModel):
+    """A visual element in a layout canvas."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str = ""
+    type: str = Field(default="rectangle", description="Element type: text, image, rectangle, group")
+    x: float = 0
+    y: float = 0
+    width: float = 100
+    height: float = 100
+    rotation: float = 0
+    zIndex: int = Field(default=0, alias="z_index")
+    visible: bool = True
+    locked: bool = False
+    name: str = ""
+    properties: Dict[str, Any] = Field(default_factory=dict)
+    children: List["LayoutElement"] = Field(default_factory=list)
+
+
+class ExposedInput(BaseModel):
+    """Defines an exposed input that maps to an element property."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    elementId: str = Field(default="", alias="element_id")
+    property: str = ""  # 'content' for text, 'source' for image
+    inputName: str = Field(default="", alias="input_name")
+    inputType: str = Field(default="string", alias="input_type")  # "string" or "image"
+
+
+class LayoutCanvasData(BaseType):
+    """
+    Canvas layout data for the visual layout editor.
+    Contains elements, dimensions, and exposed inputs for dynamic node properties.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: Literal["layout_canvas"] = "layout_canvas"
+    width: int = 800
+    height: int = 600
+    backgroundColor: str = Field(default="#ffffff", alias="background_color")
+    backgroundImage: Optional[str] = Field(default=None, alias="background_image")
+    elements: List[LayoutElement] = Field(default_factory=list)
+    exposedInputs: List[ExposedInput] = Field(default_factory=list, alias="exposed_inputs")
+
+
 class Provider(str, enum.Enum):
     AIME = "aime"
     OpenAI = "openai"
