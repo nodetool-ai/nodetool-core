@@ -310,24 +310,22 @@ class RegularChatProcessor(MessageProcessor):
         unprocessed_messages = []
 
         if last_message.tools:
-            tools: list[Tool] = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
+            tools: list[Tool] = [t for t in resolved_tools if t is not None]
         else:
             tools = []
 
         # Include UI proxy tools if client provided a manifest via tool bridge
         ui_tools: list[Tool] = []
+        tool_bridge = getattr(processing_context, "tool_bridge", None)
+        client_tools_manifest = getattr(processing_context, "client_tools_manifest", None)
         try:
-            if (
-                hasattr(processing_context, "tool_bridge")
-                and processing_context.tool_bridge
-                and hasattr(processing_context, "client_tools_manifest")
-                and processing_context.client_tools_manifest
-            ):
+            if tool_bridge and client_tools_manifest:
                 from .help_message_processor import UIToolProxy
 
-                for _, tool_manifest in processing_context.client_tools_manifest.items():
+                for _, tool_manifest in client_tools_manifest.items():
                     try:
                         ui_tools.append(UIToolProxy(tool_manifest))
                     except Exception as e:
@@ -385,13 +383,12 @@ class RegularChatProcessor(MessageProcessor):
                         log.debug(f"Processing tool call: {chunk.name}")
 
                         # Check if this is a UI tool
-                        if (
-                            hasattr(processing_context, "ui_tool_names")
-                            and chunk.name in processing_context.ui_tool_names
-                        ):
+                        ui_tool_names = getattr(processing_context, "ui_tool_names", set())
+                        if chunk.name in ui_tool_names:
                             # Handle UI tool call using provider tool_call id to satisfy OpenAI API
                             tool_call_id = chunk.id
-                            assert tool_call_id is not None, "Tool call id is required"
+                            if tool_call_id is None:
+                                raise ValueError("Tool call id is required")
 
                             # Create assistant message with tool call
                             assistant_msg = Message(
@@ -422,14 +419,11 @@ class RegularChatProcessor(MessageProcessor):
                             }
                             await self.send_message(tool_call_message)
 
-                            # Wait for result from frontend
+                            # Wait for result from frontend (tool_bridge is guaranteed to exist since
+                            # ui_tool_names is only populated when tool_bridge is available)
                             try:
-                                tool_bridge = getattr(processing_context, "tool_bridge", None)
-                                if tool_bridge is None:
-                                    raise ValueError("Tool bridge not available")
-
                                 payload = await asyncio.wait_for(
-                                    tool_bridge.create_waiter(tool_call_id),
+                                    tool_bridge.create_waiter(tool_call_id),  # type: ignore[union-attr]
                                     timeout=60.0,
                                 )
 
