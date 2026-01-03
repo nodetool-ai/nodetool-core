@@ -150,6 +150,7 @@ async def _truncate_all_tables(pool):
                 await connection.execute(f"DELETE FROM {table_name}")
             except Exception as e:
                 import logging
+
                 logging.debug(f"Failed to truncate table {table_name}: {e}")
                 pass
 
@@ -158,6 +159,7 @@ async def _truncate_all_tables(pool):
     except Exception as e:
         # Rollback on error
         import logging
+
         logging.debug(f"Error during table truncation, rolling back: {e}")
         if connection is not None:
             try:
@@ -207,11 +209,16 @@ async def setup_and_teardown(request, test_db_pool):
             break
         except Exception as e:
             import logging
+
             if attempt < max_truncate_retries - 1:
-                logging.debug(f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}")
+                logging.debug(
+                    f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}"
+                )
                 await asyncio.sleep(0.1 * (attempt + 1))  # Brief delay before retry
             else:
-                logging.warning(f"Error truncating tables after {max_truncate_retries} attempts: {e}")
+                logging.warning(
+                    f"Error truncating tables after {max_truncate_retries} attempts: {e}"
+                )
 
 
 @pytest.fixture(autouse=True)
@@ -229,12 +236,20 @@ def _set_dummy_api_keys(monkeypatch):
     prevents providers from raising ApiKeyMissingError during initialization.
     """
     monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
+    monkeypatch.setenv(
+        "ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    )
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
     monkeypatch.setenv("HF_TOKEN", os.getenv("HF_TOKEN", "test-hf-token"))
-    monkeypatch.setenv("OLLAMA_API_URL", os.getenv("OLLAMA_API_URL", "http://localhost:11434"))
-    monkeypatch.setenv("REPLICATE_API_TOKEN", os.getenv("REPLICATE_API_TOKEN", "test-replicate-token"))
-    monkeypatch.setenv("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", "test-elevenlabs-key"))
+    monkeypatch.setenv(
+        "OLLAMA_API_URL", os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+    )
+    monkeypatch.setenv(
+        "REPLICATE_API_TOKEN", os.getenv("REPLICATE_API_TOKEN", "test-replicate-token")
+    )
+    monkeypatch.setenv(
+        "ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", "test-elevenlabs-key")
+    )
     monkeypatch.setenv("FAL_API_KEY", os.getenv("FAL_API_KEY", "test-fal-key"))
 
 
@@ -492,7 +507,9 @@ async def thread(user_id: str):
 
 @pytest_asyncio.fixture()
 async def message(user_id: str, thread: Thread):
-    msg = await Message.create(user_id=user_id, thread_id=thread.id, role="user", content="Hello")
+    msg = await Message.create(
+        user_id=user_id, thread_id=thread.id, role="user", content="Hello"
+    )
     return msg
 
 
@@ -566,7 +583,11 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Log any non-daemon threads that might prevent exit
     main_thread = threading.main_thread()
-    non_daemon_threads = [t for t in threading.enumerate() if t != main_thread and t.is_alive() and not t.daemon]
+    non_daemon_threads = [
+        t
+        for t in threading.enumerate()
+        if t != main_thread and t.is_alive() and not t.daemon
+    ]
 
     if non_daemon_threads:
         logging.warning(
