@@ -316,10 +316,13 @@ class TestChatWorkflowMessageProcessorProcess:
                 yield
             raise ValueError("Test error")
 
-        with patch(
-            "nodetool.messaging.chat_workflow_message_processor.run_workflow",
-            mock_run_workflow,
-        ), pytest.raises(ValueError, match="Test error"):
+        with (
+            patch(
+                "nodetool.messaging.chat_workflow_message_processor.run_workflow",
+                mock_run_workflow,
+            ),
+            pytest.raises(ValueError, match="Test error"),
+        ):
             await chat_processor.process(chat_history, processing_context)
 
         assert any(msg.get("type") == "error" for msg in sent_messages)
@@ -485,10 +488,14 @@ class TestChatWorkflowWebSocketEventConsistency:
             assert "workflow_id" in msg, f"Message {msg.get('type')} missing workflow_id"
             # Verify they are non-empty strings
             assert isinstance(msg["job_id"], str) and msg["job_id"], "job_id should be a non-empty string"
-            assert isinstance(msg["workflow_id"], str) and msg["workflow_id"], "workflow_id should be a non-empty string"
+            assert isinstance(msg["workflow_id"], str) and msg["workflow_id"], (
+                "workflow_id should be a non-empty string"
+            )
 
     @pytest.mark.asyncio
-    async def test_error_messages_include_job_id_and_workflow_id(self, chat_processor, chat_history, processing_context):
+    async def test_error_messages_include_job_id_and_workflow_id(
+        self, chat_processor, chat_history, processing_context
+    ):
         """Test that error messages also include job_id and workflow_id."""
         sent_messages = []
 
@@ -503,10 +510,13 @@ class TestChatWorkflowWebSocketEventConsistency:
                 yield
             raise ValueError("Test error")
 
-        with patch(
-            "nodetool.messaging.chat_workflow_message_processor.run_workflow",
-            mock_run_workflow,
-        ), pytest.raises(ValueError, match="Test error"):
+        with (
+            patch(
+                "nodetool.messaging.chat_workflow_message_processor.run_workflow",
+                mock_run_workflow,
+            ),
+            pytest.raises(ValueError, match="Test error"),
+        ):
             await chat_processor.process(chat_history, processing_context)
 
         # Verify error message includes job_id and workflow_id

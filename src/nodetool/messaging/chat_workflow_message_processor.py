@@ -168,7 +168,9 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                     result[update.node_name] = update.value
 
             # Signal completion with job_id and workflow_id
-            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            await self.send_message(
+                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id}
+            )
             response_msg = self._create_response_message(result, last_message).model_dump()
             response_msg["job_id"] = job_id
             response_msg["workflow_id"] = workflow_id
@@ -186,7 +188,9 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                 }
             )
             # Send completion even on error with job_id and workflow_id
-            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            await self.send_message(
+                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id}
+            )
             raise
         finally:
             # Always mark processing as complete

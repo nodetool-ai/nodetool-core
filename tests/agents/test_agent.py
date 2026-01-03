@@ -80,9 +80,7 @@ class DummyTaskExecutor:
         step = self.task.steps[0]
         yield TaskUpdate(task=self.task, step=step, event=TaskUpdateEvent.STEP_STARTED)
         yield Chunk(content="work")
-        yield TaskUpdate(
-            task=self.task, step=step, event=TaskUpdateEvent.STEP_COMPLETED
-        )
+        yield TaskUpdate(task=self.task, step=step, event=TaskUpdateEvent.STEP_COMPLETED)
         yield StepResult(step=step, result="done", is_task_result=True)
 
 
@@ -132,8 +130,5 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
         items.append(item)
 
     assert any(isinstance(i, StepResult) for i in items)
-    assert any(
-        isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED
-        for i in items
-    )
+    assert any(isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED for i in items)
     assert agent.get_results() == "done"

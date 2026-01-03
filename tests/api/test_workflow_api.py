@@ -157,10 +157,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
     await workflow.save()
 
     # Create a mock provider that returns a generated name
-    mock_response = Message(
-        role="assistant",
-        content="Image Processing Pipeline"
-    )
+    mock_response = Message(role="assistant", content="Image Processing Pipeline")
     mock_provider = MockProvider([mock_response])
 
     # Patch get_provider to return our mock
@@ -168,7 +165,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
         response = client.post(
             f"/api/workflows/{workflow.id}/generate-name",
             json={"provider": "openai", "model": "gpt-4"},
-            headers=headers
+            headers=headers,
         )
 
     assert response.status_code == 200
@@ -186,9 +183,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
 async def test_generate_workflow_name_not_found(client: TestClient, headers: dict[str, str]):
     """Test generating name for non-existent workflow returns 404."""
     response = client.post(
-        "/api/workflows/nonexistent-id/generate-name",
-        json={"provider": "openai", "model": "gpt-4"},
-        headers=headers
+        "/api/workflows/nonexistent-id/generate-name", json={"provider": "openai", "model": "gpt-4"}, headers=headers
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Workflow not found"
@@ -207,10 +202,7 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
     await workflow.save()
 
     # Create a mock provider that returns a generated name
-    mock_response = Message(
-        role="assistant",
-        content="Filter Image Processor"
-    )
+    mock_response = Message(role="assistant", content="Filter Image Processor")
     mock_provider = MockProvider([mock_response])
 
     # Patch get_provider to return our mock
@@ -218,7 +210,7 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
         response = client.post(
             f"/api/workflows/{workflow.id}/generate-name",
             json={"provider": "anthropic", "model": "claude-3"},
-            headers=headers
+            headers=headers,
         )
 
     assert response.status_code == 200

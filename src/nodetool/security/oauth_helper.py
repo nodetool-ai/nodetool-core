@@ -26,9 +26,7 @@ async def list_huggingface_accounts(user_id: str) -> list[dict]:
     Returns:
         A list of dictionaries with account metadata.
     """
-    credentials = await OAuthCredential.list_for_user_and_provider(
-        user_id=user_id, provider="huggingface"
-    )
+    credentials = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="huggingface")
 
     return [
         {
@@ -53,14 +51,10 @@ async def get_huggingface_token(user_id: str, account_id: str) -> Optional[str]:
     Returns:
         The decrypted access token, or None if not found.
     """
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="huggingface", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="huggingface", account_id=account_id)
 
     if not credential:
-        log.warning(
-            f"No Hugging Face credential found for user {user_id}, account {account_id}"
-        )
+        log.warning(f"No Hugging Face credential found for user {user_id}, account {account_id}")
         return None
 
     try:
@@ -81,14 +75,10 @@ async def refresh_huggingface_token(user_id: str, account_id: str) -> bool:
     Returns:
         True if refresh was successful, False otherwise.
     """
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="huggingface", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="huggingface", account_id=account_id)
 
     if not credential:
-        log.warning(
-            f"No Hugging Face credential found for user {user_id}, account {account_id}"
-        )
+        log.warning(f"No Hugging Face credential found for user {user_id}, account {account_id}")
         return False
 
     refresh_token = await credential.get_decrypted_refresh_token()
@@ -114,9 +104,7 @@ async def refresh_huggingface_token(user_id: str, account_id: str) -> bool:
             )
 
             if token_response.status_code != 200:
-                log.error(
-                    f"Token refresh failed: {token_response.status_code}, {token_response.text}"
-                )
+                log.error(f"Token refresh failed: {token_response.status_code}, {token_response.text}")
                 return False
 
             token_data = token_response.json()
@@ -185,9 +173,7 @@ async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict
             )
 
             if response.status_code != 200:
-                log.error(
-                    f"Failed to get whoami: {response.status_code}, {response.text}"
-                )
+                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
                 return None
 
             return response.json()
@@ -210,9 +196,7 @@ async def list_github_accounts(user_id: str) -> list[dict]:
     Returns:
         A list of dictionaries with account metadata.
     """
-    credentials = await OAuthCredential.list_for_user_and_provider(
-        user_id=user_id, provider="github"
-    )
+    credentials = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="github")
 
     return [
         {
@@ -237,14 +221,10 @@ async def get_github_token(user_id: str, account_id: str) -> Optional[str]:
     Returns:
         The decrypted access token, or None if not found.
     """
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="github", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="github", account_id=account_id)
 
     if not credential:
-        log.warning(
-            f"No GitHub credential found for user {user_id}, account {account_id}"
-        )
+        log.warning(f"No GitHub credential found for user {user_id}, account {account_id}")
         return None
 
     try:
@@ -285,9 +265,7 @@ async def get_github_user_info(user_id: str, account_id: str) -> Optional[dict]:
             )
 
             if response.status_code != 200:
-                log.error(
-                    f"Failed to get user info: {response.status_code}, {response.text}"
-                )
+                log.error(f"Failed to get user info: {response.status_code}, {response.text}")
                 return None
 
             return response.json()

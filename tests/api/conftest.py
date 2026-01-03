@@ -16,6 +16,7 @@ from nodetool.workflows.property import Property
 # Define test node classes
 class IntegerInput(InputNode):
     """Test integer input node."""
+
     value: int = 0
 
     @classmethod
@@ -28,6 +29,7 @@ class IntegerInput(InputNode):
 
 class IntegerOutput(BaseNode):
     """Test integer output node."""
+
     value: int = 0
 
     @classmethod
@@ -41,6 +43,7 @@ class IntegerOutput(BaseNode):
 
 class Concat(BaseNode):
     """Test text concatenation node."""
+
     a: str = ""
     b: str = ""
 
@@ -173,11 +176,9 @@ def mock_registry_with_test_nodes():
         # Return test package
         return [test_package]
 
-    with patch.object(
-        Registry, "get_all_installed_nodes", mock_get_all_installed_nodes
-    ), patch.object(
-        Registry, "find_node_by_type", mock_find_node_by_type
-    ), patch.object(
-        Registry, "list_installed_packages", mock_list_installed_packages
+    with (
+        patch.object(Registry, "get_all_installed_nodes", mock_get_all_installed_nodes),
+        patch.object(Registry, "find_node_by_type", mock_find_node_by_type),
+        patch.object(Registry, "list_installed_packages", mock_list_installed_packages),
     ):
         yield

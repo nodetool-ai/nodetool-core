@@ -647,7 +647,11 @@ async def generate_workflow_name(
 
     workflow_content = (
         f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:MAX_NODES_IN_DESCRIPTION])}"
-        + (f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more" if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION else "")
+        + (
+            f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more"
+            if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION
+            else ""
+        )
     )
     if workflow.description:
         workflow_content = f"Description: {workflow.description}\n{workflow_content}"

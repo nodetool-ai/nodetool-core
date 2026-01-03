@@ -26,9 +26,6 @@ class DummyRunner(BaseChatRunner):
         return None
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_help_processor_appends_tool_history():
     tool_call1 = ToolCall(id="tc1", name="ui_add_node", args={"node": {}})

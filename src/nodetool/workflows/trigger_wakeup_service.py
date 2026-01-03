@@ -104,10 +104,7 @@ class TriggerWakeupService:
         )
 
         await trigger_input.save()
-        log.info(
-            f"Stored trigger input {input_id} for {run_id}/{node_id}"
-            + (f" (cursor={cursor})" if cursor else "")
-        )
+        log.info(f"Stored trigger input {input_id} for {run_id}/{node_id}" + (f" (cursor={cursor})" if cursor else ""))
 
         # Also append as inbox message to wake the node
         inbox = DurableInbox(run_id=run_id, node_id=node_id)
@@ -218,10 +215,7 @@ class TriggerWakeupService:
             return False
 
         if run_state.status != "suspended":
-            log.warning(
-                f"Cannot wake trigger: run {run_id} is not suspended "
-                f"(status={run_state.status})"
-            )
+            log.warning(f"Cannot wake trigger: run {run_id} is not suspended (status={run_state.status})")
             return False
 
         log.info(f"Waking up suspended trigger workflow {run_id}")
@@ -233,9 +227,7 @@ class TriggerWakeupService:
             log.info(f"Recovery service will resume {run_id}")
             # await recovery_service.resume_workflow(run_id, graph, context)
         else:
-            log.info(
-                f"No recovery service provided, trigger wake-up logged for {run_id}"
-            )
+            log.info(f"No recovery service provided, trigger wake-up logged for {run_id}")
 
         return True
 
@@ -279,8 +271,6 @@ class TriggerWakeupService:
             count += 1
 
         if count > 0:
-            log.info(
-                f"Cleaned up {count} processed trigger inputs for {run_id}/{node_id}"
-            )
+            log.info(f"Cleaned up {count} processed trigger inputs for {run_id}/{node_id}")
 
         return count

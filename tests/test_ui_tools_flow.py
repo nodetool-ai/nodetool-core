@@ -69,10 +69,7 @@ class DummyRunner(BaseChatRunner):
 
             # Mimic tool result handling
             if hasattr(self, "tool_bridge") and message.get("type") == "tool_result":
-                self.tool_bridge.resolve_result(
-                    message["tool_call_id"],
-                    message
-                )
+                self.tool_bridge.resolve_result(message["tool_call_id"], message)
 
 
 @pytest.mark.asyncio

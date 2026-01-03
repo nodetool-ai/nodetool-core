@@ -109,9 +109,7 @@ class DurableInbox:
 
         # Generate message_id if not provided
         if message_id is None:
-            message_id = self.generate_message_id(
-                self.run_id, self.node_id, handle, next_seq
-            )
+            message_id = self.generate_message_id(self.run_id, self.node_id, handle, next_seq)
 
         # Check if message already exists (idempotency)
         existing = await RunInboxMessage.find_one({"message_id": message_id})
@@ -143,10 +141,7 @@ class DurableInbox:
         )
 
         await message.save()
-        log.debug(
-            f"Appended message {message_id} to inbox "
-            f"({self.run_id}/{self.node_id}/{handle}), seq={next_seq}"
-        )
+        log.debug(f"Appended message {message_id} to inbox ({self.run_id}/{self.node_id}/{handle}), seq={next_seq}")
 
         return message
 
@@ -265,9 +260,6 @@ class DurableInbox:
             count += 1
 
         if count > 0:
-            log.info(
-                f"Cleaned up {count} consumed messages from inbox "
-                f"({self.run_id}/{self.node_id}/{handle})"
-            )
+            log.info(f"Cleaned up {count} consumed messages from inbox ({self.run_id}/{self.node_id}/{handle})")
 
         return count

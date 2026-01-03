@@ -455,9 +455,7 @@ class TestUnifiedWebSocketRunnerAuthentication:
         ):
             # Mock the auth provider
             mock_auth = AsyncMock()
-            mock_auth.verify_token = AsyncMock(
-                return_value=MagicMock(ok=True, user_id="authenticated_user")
-            )
+            mock_auth.verify_token = AsyncMock(return_value=MagicMock(ok=True, user_id="authenticated_user"))
             mock_provider.return_value = mock_auth
 
             runner = UnifiedWebSocketRunner(auth_token="valid_token")

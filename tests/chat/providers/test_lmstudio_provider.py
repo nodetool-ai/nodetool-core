@@ -157,4 +157,3 @@ async def test_container_env(provider):
     env_vars = provider.get_container_env(context)
     assert "LMSTUDIO_API_URL" in env_vars
     assert env_vars["LMSTUDIO_API_URL"] == "http://localhost:1234"
-

@@ -164,10 +164,7 @@ log.setLevel(logging.DEBUG)
 def is_transport_error(e: BaseException) -> bool:
     """Check if exception is related to transport race condition, handling ExceptionGroups."""
     error_str = str(e)
-    if (
-        "ProcessTransport is not ready" in error_str
-        or "CLIConnectionError" in error_str
-    ):
+    if "ProcessTransport is not ready" in error_str or "CLIConnectionError" in error_str:
         return True
 
     # Handle ExceptionGroup (Python 3.11+)
@@ -304,9 +301,7 @@ def create_sdk_tool_from_frontend(
         except TimeoutError:
             log.warning(f"Timeout waiting for frontend tool {name}")
             return {
-                "content": [
-                    {"type": "text", "text": "Error: Timeout waiting for frontend tool execution"}
-                ],
+                "content": [{"type": "text", "text": "Error: Timeout waiting for frontend tool execution"}],
                 "is_error": True,
             }
         except Exception as e:
@@ -388,10 +383,7 @@ async def query_with_retry(
             if is_transport_error(e):
                 last_error = e
                 delay = initial_delay * (2**attempt)
-                log.warning(
-                    f"SDK transport error (attempt {attempt + 1}/{max_retries}), "
-                    f"retrying in {delay}s: {e}"
-                )
+                log.warning(f"SDK transport error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {e}")
                 await asyncio.sleep(delay)
             else:
                 # For other errors, don't retry
@@ -486,9 +478,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self.base_url = base_url
         if not self.api_key:
-            log.warning(
-                "No Anthropic API key provided. Set ANTHROPIC_API_KEY environment variable."
-            )
+            log.warning("No Anthropic API key provided. Set ANTHROPIC_API_KEY environment variable.")
 
     async def process(
         self,
@@ -522,9 +512,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
         if history_context:
             objective = f"{objective}\n\n{history_context}"
 
-        log.info(
-            f"Starting Claude Agent SDK execution with objective: {objective[:100]}..."
-        )
+        log.info(f"Starting Claude Agent SDK execution with objective: {objective[:100]}...")
 
         # Built-in tools to allow
         allowed_tools = ["WebSearch"]
@@ -536,18 +524,13 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
         if last_message.tools:
             log.debug(f"User selected tools: {last_message.tools}")
             resolved_tools = await asyncio.gather(
-                *[
-                    resolve_tool_by_name(name, processing_context.user_id)
-                    for name in last_message.tools
-                ]
+                *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
             custom_tools = [t for t in resolved_tools if t is not None]
 
             if custom_tools:
                 log.debug(f"Creating MCP server with tools: {[t.name for t in custom_tools]}")
-                mcp_server = await create_mcp_server_from_tools(
-                    custom_tools, processing_context, "nodetool"
-                )
+                mcp_server = await create_mcp_server_from_tools(custom_tools, processing_context, "nodetool")
                 mcp_servers["nodetool"] = mcp_server
 
                 # Add all tool names to allowed_tools with MCP format
@@ -563,9 +546,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             for name, tool_def in processing_context.client_tools_manifest.items():
                 q = asyncio.Queue()
                 frontend_tool_queues[name] = q
-                t = create_sdk_tool_from_frontend(
-                    name, tool_def, processing_context.tool_bridge, q
-                )
+                t = create_sdk_tool_from_frontend(name, tool_def, processing_context.tool_bridge, q)
                 frontend_tools.append(t)
                 allowed_tools.append(f"mcp__client__{name}")
 
@@ -614,9 +595,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                             # Check for cancellation
                             if self.is_cancelled():
                                 log.info("Claude agent processing cancelled by user")
-                                raise asyncio.CancelledError(
-                                    "Processing cancelled by user"
-                                )
+                                raise asyncio.CancelledError("Processing cancelled by user")
 
                             if isinstance(message, AssistantMessage):
                                 # Process content blocks from assistant
@@ -661,9 +640,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                         )
 
                             elif isinstance(message, ResultMessage):
-                                log.info(
-                                    f"Claude agent execution completed. Duration: {message.duration_ms}ms"
-                                )
+                                log.info(f"Claude agent execution completed. Duration: {message.duration_ms}ms")
                                 await self.send_message(
                                     {
                                         "type": "chunk",
@@ -685,8 +662,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                         last_error = e
                         delay = initial_delay * (2**attempt)
                         log.warning(
-                            f"SDK transport error (attempt {attempt + 1}/{max_retries}), "
-                            f"retrying in {delay}s: {e}"
+                            f"SDK transport error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {e}"
                         )
                         await asyncio.sleep(delay)
                     else:
@@ -699,18 +675,14 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
         except asyncio.CancelledError:
             log.info("Claude agent processing was cancelled")
-            await self.send_message(
-                {"type": "generation_stopped", "message": "Generation stopped by user"}
-            )
+            await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
             raise
 
         except Exception as e:
             log.error(f"Error in Claude Agent SDK execution: {e}", exc_info=True)
             error_msg = f"Claude Agent SDK execution error: {str(e)}"
 
-            await self.send_message(
-                {"type": "error", "message": error_msg, "error_type": "agent_error"}
-            )
+            await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
 
             # Signal completion even on error
             await self.send_message({"type": "chunk", "content": "", "done": True})
@@ -856,9 +828,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self.base_url = base_url
         if not self.api_key:
-            log.warning(
-                "No Anthropic API key provided. Set ANTHROPIC_API_KEY environment variable."
-            )
+            log.warning("No Anthropic API key provided. Set ANTHROPIC_API_KEY environment variable.")
 
     async def process(
         self,
@@ -886,9 +856,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         if history_context:
             objective = f"{objective}\n\n{history_context}"
 
-        log.info(
-            f"Starting Claude Agent SDK help execution with objective: {objective[:100]}..."
-        )
+        log.info(f"Starting Claude Agent SDK help execution with objective: {objective[:100]}...")
 
         # Built-in tools for help mode (read-only, no edit/bash)
         allowed_tools = ["WebSearch"]
@@ -907,10 +875,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         if last_message.tools:
             log.debug(f"User selected tools: {last_message.tools}")
             resolved_tools = await asyncio.gather(
-                *[
-                    resolve_tool_by_name(name, processing_context.user_id)
-                    for name in last_message.tools
-                ]
+                *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
             custom_tools = [t for t in resolved_tools if t is not None]
 
@@ -918,9 +883,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         all_tools = help_tools + custom_tools
 
         log.debug(f"Creating MCP server with help tools: {[t.name for t in all_tools]}")
-        mcp_server = await create_mcp_server_from_tools(
-            all_tools, processing_context, "nodetool"
-        )
+        mcp_server = await create_mcp_server_from_tools(all_tools, processing_context, "nodetool")
         mcp_servers = {"nodetool": mcp_server}
 
         # Add all tool names to allowed_tools with MCP format
@@ -935,9 +898,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
             for name, tool_def in processing_context.client_tools_manifest.items():
                 q = asyncio.Queue()
                 frontend_tool_queues[name] = q
-                t = create_sdk_tool_from_frontend(
-                    name, tool_def, processing_context.tool_bridge, q
-                )
+                t = create_sdk_tool_from_frontend(name, tool_def, processing_context.tool_bridge, q)
                 frontend_tools.append(t)
                 allowed_tools.append(f"mcp__client__{name}")
 
@@ -986,9 +947,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                             # Check for cancellation
                             if self.is_cancelled():
                                 log.info("Claude help processing cancelled by user")
-                                raise asyncio.CancelledError(
-                                    "Processing cancelled by user"
-                                )
+                                raise asyncio.CancelledError("Processing cancelled by user")
 
                             if isinstance(message, AssistantMessage):
                                 # Process content blocks from assistant
@@ -1031,9 +990,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                                         )
 
                             elif isinstance(message, ResultMessage):
-                                log.info(
-                                    f"Claude help execution completed. Duration: {message.duration_ms}ms"
-                                )
+                                log.info(f"Claude help execution completed. Duration: {message.duration_ms}ms")
                                 await self.send_message(
                                     {
                                         "type": "chunk",
@@ -1055,8 +1012,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                         last_error = e
                         delay = initial_delay * (2**attempt)
                         log.warning(
-                            f"SDK transport error (attempt {attempt + 1}/{max_retries}), "
-                            f"retrying in {delay}s: {e}"
+                            f"SDK transport error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {e}"
                         )
                         await asyncio.sleep(delay)
                     else:
@@ -1069,18 +1025,14 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
 
         except asyncio.CancelledError:
             log.info("Claude help processing was cancelled")
-            await self.send_message(
-                {"type": "generation_stopped", "message": "Generation stopped by user"}
-            )
+            await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
             raise
 
         except Exception as e:
             log.error(f"Error in Claude Agent SDK help execution: {e}", exc_info=True)
             error_msg = f"Claude Agent SDK help error: {str(e)}"
 
-            await self.send_message(
-                {"type": "error", "message": error_msg, "error_type": "help_error"}
-            )
+            await self.send_message({"type": "error", "message": error_msg, "error_type": "help_error"})
 
             # Signal completion even on error
             await self.send_message({"type": "chunk", "content": "", "done": True})

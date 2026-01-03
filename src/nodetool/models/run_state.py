@@ -76,7 +76,6 @@ class RunState(DBModel):
             return {}
         return v
 
-
     def before_save(self):
         """Update timestamp and version before saving."""
         self.updated_at = datetime.now()
@@ -138,6 +137,7 @@ class RunState(DBModel):
         if self.heartbeat_at is None:
             return True
         from datetime import timedelta
+
         return (datetime.now() - self.heartbeat_at) > timedelta(minutes=threshold_minutes)
 
     def is_owned_by(self, worker_id: str) -> bool:

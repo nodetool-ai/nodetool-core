@@ -240,22 +240,19 @@ register_secret(
     description="DataForSEO password for accessing DataForSEO's API",
 )
 register_secret(
-    package_name="nodetool",
-    env_var="KIE_API_KEY",
-    group="KIE",
-    description="KIE API key for accessing kie.ai"
+    package_name="nodetool", env_var="KIE_API_KEY", group="KIE", description="KIE API key for accessing kie.ai"
 )
 register_secret(
     package_name="nodetool",
     env_var="GITHUB_CLIENT_ID",
     group="GitHub",
-    description="GitHub OAuth App Client ID for OAuth PKCE authentication flow"
+    description="GitHub OAuth App Client ID for OAuth PKCE authentication flow",
 )
 register_secret(
     package_name="nodetool",
     env_var="GITHUB_CLIENT_SECRET",
     group="GitHub",
-    description="GitHub OAuth App Client Secret for OAuth PKCE authentication flow"
+    description="GitHub OAuth App Client Secret for OAuth PKCE authentication flow",
 )
 register_secret(
     package_name="nodetool",

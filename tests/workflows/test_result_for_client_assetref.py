@@ -83,7 +83,7 @@ async def test_result_for_client_image_memory_uri():
     assert isinstance(client_result["image"]["data"], bytes)
     assert len(client_result["image"]["data"]) > 0
     # Should be PNG bytes (starts with PNG header)
-    assert client_result["image"]["data"][:8] == b'\x89PNG\r\n\x1a\n'
+    assert client_result["image"]["data"][:8] == b"\x89PNG\r\n\x1a\n"
 
 
 @pytest.mark.asyncio

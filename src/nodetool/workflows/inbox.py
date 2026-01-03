@@ -74,11 +74,13 @@ class NodeInbox:
         the coroutine and task are created in the correct loop context.
         This avoids "Future attached to a different loop" errors on Windows.
         """
+
         def _schedule_notify() -> None:
             """Create and schedule the notification task on the target loop.
 
             This runs in the target loop's thread via call_soon_threadsafe.
             """
+
             async def _notify() -> None:
                 async with self._cond:
                     self._cond.notify_all()
