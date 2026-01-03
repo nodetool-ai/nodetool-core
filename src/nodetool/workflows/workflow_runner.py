@@ -529,7 +529,9 @@ class WorkflowRunner:
                     duplicate_names.append(name)
                 seen_names.add(name)
         if duplicate_names:
-            raise ValueError(f"Multiple InputNode(s) have the same name. Duplicate names: {', '.join(set(duplicate_names))}. Please use unique names for each input node.")
+            raise ValueError(
+                f"Multiple InputNode(s) have the same name. Duplicate names: {', '.join(set(duplicate_names))}. Please use unique names for each input node."
+            )
 
         start_time = time.time()
         if send_job_updates:
