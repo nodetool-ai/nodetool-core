@@ -120,9 +120,7 @@ class WorkflowVersion(DBModel):
         return WorkflowVersion.from_dict(results[0]) if results else None
 
     @classmethod
-    async def get_by_version(
-        cls, workflow_id: str, version: int
-    ) -> Optional["WorkflowVersion"]:
+    async def get_by_version(cls, workflow_id: str, version: int) -> Optional["WorkflowVersion"]:
         """
         Get a specific version of a workflow.
         """

@@ -55,9 +55,7 @@ async def example_streaming_chat():
 
     # Generate a streaming response
     print("Response: ", end="", flush=True)
-    async for chunk in provider.generate_messages(
-        messages=messages, model="MiniMax-M2.1-lightning", max_tokens=100
-    ):
+    async for chunk in provider.generate_messages(messages=messages, model="MiniMax-M2.1-lightning", max_tokens=100):
         if hasattr(chunk, "content"):
             print(chunk.content, end="", flush=True)
 

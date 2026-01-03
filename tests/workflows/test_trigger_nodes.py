@@ -27,14 +27,14 @@ class TestIntervalTrigger(TriggerNode):
             return await self.process_trigger_resumption(context)
 
         try:
-            event = await self.wait_for_trigger_event(
-                timeout_seconds=self.get_inactivity_timeout()
-            )
-            return {'triggered_at': datetime.now(), 'event': event}
+            event = await self.wait_for_trigger_event(timeout_seconds=self.get_inactivity_timeout())
+            return {"triggered_at": datetime.now(), "event": event}
         except TriggerInactivityTimeout:
-            await self.suspend_for_inactivity({
-                'interval_seconds': self.interval_seconds,
-            })
+            await self.suspend_for_inactivity(
+                {
+                    "interval_seconds": self.interval_seconds,
+                }
+            )
 
 
 def test_trigger_node_is_trigger():
@@ -102,7 +102,7 @@ async def test_trigger_node_send_and_receive_event():
     node = TestIntervalTrigger(id="test8")
 
     # Send event to node
-    event_data = {'type': 'interval', 'value': 123}
+    event_data = {"type": "interval", "value": 123}
     await node.send_trigger_event(event_data)
 
     # Wait for event (should return immediately)
@@ -123,9 +123,9 @@ async def test_trigger_node_suspension_on_timeout():
     exception = exc_info.value
     assert exception.node_id == "test9"
     assert "inactivity timeout" in exception.reason.lower()
-    assert exception.state['interval_seconds'] == 30
-    assert exception.metadata.get('trigger_node') is True
-    assert exception.metadata.get('inactivity_suspension') is True
+    assert exception.state["interval_seconds"] == 30
+    assert exception.metadata.get("trigger_node") is True
+    assert exception.metadata.get("inactivity_suspension") is True
 
 
 @pytest.mark.asyncio
@@ -137,8 +137,8 @@ async def test_trigger_node_resumption():
     # Set resuming state
     node._set_resuming_state(
         saved_state={
-            'suspended_at': datetime.now().isoformat(),
-            'interval_seconds': 60,
+            "suspended_at": datetime.now().isoformat(),
+            "interval_seconds": 60,
         },
         event_seq=10,
     )
@@ -147,8 +147,8 @@ async def test_trigger_node_resumption():
 
     # Process should return resumption info
     result = await node.process(ctx)
-    assert result['status'] == 'resumed'
-    assert result['trigger_node_id'] == 'test10'
+    assert result["status"] == "resumed"
+    assert result["trigger_node_id"] == "test10"
 
 
 @pytest.mark.asyncio
@@ -176,18 +176,18 @@ async def test_trigger_node_process_trigger_resumption():
     ctx = ProcessingContext(message_queue=None)
 
     saved_state = {
-        'suspended_at': '2025-12-26T10:00:00',
-        'trigger_data': 'test_value',
+        "suspended_at": "2025-12-26T10:00:00",
+        "trigger_data": "test_value",
     }
 
     node._set_resuming_state(saved_state, event_seq=5)
 
     result = await node.process_trigger_resumption(ctx)
 
-    assert result['status'] == 'resumed'
-    assert result['trigger_node_id'] == 'test12'
-    assert result['saved_state'] == saved_state
-    assert 'resumed_at' in result
+    assert result["status"] == "resumed"
+    assert result["trigger_node_id"] == "test12"
+    assert result["saved_state"] == saved_state
+    assert "resumed_at" in result
 
 
 @pytest.mark.asyncio
@@ -198,13 +198,13 @@ async def test_trigger_node_suspend_for_inactivity():
     node._update_activity_time()
 
     with pytest.raises(WorkflowSuspendedException) as exc_info:
-        await node.suspend_for_inactivity({'custom_field': 'value'})
+        await node.suspend_for_inactivity({"custom_field": "value"})
 
     exception = exc_info.value
-    assert 'inactivity timeout' in exception.reason.lower()
-    assert exception.state['custom_field'] == 'value'
-    assert exception.state['trigger_node_type'] == 'TestIntervalTrigger'
-    assert exception.metadata['trigger_node'] is True
+    assert "inactivity timeout" in exception.reason.lower()
+    assert exception.state["custom_field"] == "value"
+    assert exception.state["trigger_node_type"] == "TestIntervalTrigger"
+    assert exception.metadata["trigger_node"] is True
 
 
 def test_trigger_wakeup_service_singleton():
@@ -221,13 +221,13 @@ def test_trigger_wakeup_service_register():
     service.register_suspended_trigger(
         workflow_id="wf-1",
         node_id="node-1",
-        trigger_metadata={'type': 'interval'},
+        trigger_metadata={"type": "interval"},
     )
 
     triggers = service.list_suspended_triggers()
     assert "wf-1:node-1" in triggers
-    assert triggers["wf-1:node-1"]['workflow_id'] == "wf-1"
-    assert triggers["wf-1:node-1"]['node_id'] == "node-1"
+    assert triggers["wf-1:node-1"]["workflow_id"] == "wf-1"
+    assert triggers["wf-1:node-1"]["node_id"] == "node-1"
 
     # Cleanup
     service.unregister_suspended_trigger("wf-1", "node-1")

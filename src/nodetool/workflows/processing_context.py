@@ -1709,9 +1709,7 @@ class ProcessingContext:
             buffer = BytesIO()
             audio_segment.export(buffer, format="wav")
             buffer.seek(0)
-            ref = await self.audio_from_io(
-                buffer, name=name, parent_id=parent_id, content_type="audio/wav"
-            )
+            ref = await self.audio_from_io(buffer, name=name, parent_id=parent_id, content_type="audio/wav")
             ref.metadata = metadata
             return ref
 

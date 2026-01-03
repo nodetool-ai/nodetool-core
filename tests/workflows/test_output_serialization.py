@@ -15,8 +15,8 @@ from nodetool.workflows.output_serialization import (
 def test_serialize_none():
     """Test serialization of None value."""
     result = serialize_output_for_event_log(None)
-    assert result['type'] == 'inline'
-    assert result['value'] is None
+    assert result["type"] == "inline"
+    assert result["value"] is None
 
 
 def test_serialize_small_dict():
@@ -24,8 +24,8 @@ def test_serialize_small_dict():
     data = {"status": "ok", "count": 42, "message": "success"}
     result = serialize_output_for_event_log(data)
 
-    assert result['type'] == 'inline'
-    assert result['value'] == data
+    assert result["type"] == "inline"
+    assert result["value"] == data
 
 
 def test_serialize_small_list():
@@ -33,8 +33,8 @@ def test_serialize_small_list():
     data = [1, 2, 3, 4, 5]
     result = serialize_output_for_event_log(data)
 
-    assert result['type'] == 'inline'
-    assert result['value'] == data
+    assert result["type"] == "inline"
+    assert result["value"] == data
 
 
 def test_serialize_large_object():
@@ -43,12 +43,13 @@ def test_serialize_large_object():
     data = {"data": "x" * 2_000_000}
     result = serialize_output_for_event_log(data, max_size=1_000_000)
 
-    assert result['type'] == 'external_ref'
-    assert 'size_bytes' in result
+    assert result["type"] == "external_ref"
+    assert "size_bytes" in result
 
 
 def test_serialize_non_json_serializable():
     """Test serialization of non-JSON-serializable object."""
+
     class CustomClass:
         def __init__(self):
             self.value = 42
@@ -56,8 +57,8 @@ def test_serialize_non_json_serializable():
     obj = CustomClass()
     result = serialize_output_for_event_log(obj)
 
-    assert result['type'] == 'truncated'
-    assert 'reason' in result
+    assert result["type"] == "truncated"
+    assert "reason" in result
 
 
 def test_serialize_asset_ref():
@@ -67,10 +68,10 @@ def test_serialize_asset_ref():
     img = ImageRef(uri="file:///path/to/image.png", asset_id="abc123")
     result = serialize_output_for_event_log(img)
 
-    assert result['type'] == 'asset_ref'
-    assert result['asset_type'] == 'ImageRef'
-    assert result['uri'] == "file:///path/to/image.png"
-    assert result['asset_id'] == "abc123"
+    assert result["type"] == "asset_ref"
+    assert result["asset_type"] == "ImageRef"
+    assert result["uri"] == "file:///path/to/image.png"
+    assert result["asset_id"] == "abc123"
 
 
 def test_serialize_outputs_dict_mixed():
@@ -86,15 +87,15 @@ def test_serialize_outputs_dict_mixed():
 
     result = serialize_outputs_dict(outputs)
 
-    assert result['image']['type'] == 'asset_ref'
-    assert result['video']['type'] == 'asset_ref'
-    assert result['result']['type'] == 'inline'
-    assert result['large']['type'] == 'external_ref'
+    assert result["image"]["type"] == "asset_ref"
+    assert result["video"]["type"] == "asset_ref"
+    assert result["result"]["type"] == "inline"
+    assert result["large"]["type"] == "external_ref"
 
 
 def test_deserialize_inline():
     """Test deserialization of inline value."""
-    serialized = {'type': 'inline', 'value': {"status": "ok", "count": 42}}
+    serialized = {"type": "inline", "value": {"status": "ok", "count": 42}}
     result = deserialize_output_from_event_log(serialized)
 
     assert result == {"status": "ok", "count": 42}
@@ -105,44 +106,44 @@ def test_deserialize_asset_ref():
     from nodetool.metadata.types import ImageRef
 
     serialized = {
-        'type': 'asset_ref',
-        'asset_type': 'ImageRef',
-        'uri': 'file:///image.png',
-        'asset_id': 'abc123',
+        "type": "asset_ref",
+        "asset_type": "ImageRef",
+        "uri": "file:///image.png",
+        "asset_id": "abc123",
     }
     result = deserialize_output_from_event_log(serialized)
 
     assert isinstance(result, ImageRef)
-    assert result.uri == 'file:///image.png'
-    assert result.asset_id == 'abc123'
+    assert result.uri == "file:///image.png"
+    assert result.asset_id == "abc123"
 
 
 def test_deserialize_external_ref():
     """Test deserialization of external ref (returns placeholder)."""
     serialized = {
-        'type': 'external_ref',
-        'storage_id': 'xyz789',
-        'size_bytes': 2000013,
+        "type": "external_ref",
+        "storage_id": "xyz789",
+        "size_bytes": 2000013,
     }
     result = deserialize_output_from_event_log(serialized)
 
     assert isinstance(result, dict)
-    assert result['_placeholder'] is True
-    assert result['_storage_id'] == 'xyz789'
+    assert result["_placeholder"] is True
+    assert result["_storage_id"] == "xyz789"
 
 
 def test_deserialize_truncated():
     """Test deserialization of truncated value."""
     serialized = {
-        'type': 'truncated',
-        'reason': 'Not JSON-serializable',
-        'preview': 'CustomClass(...)',
+        "type": "truncated",
+        "reason": "Not JSON-serializable",
+        "preview": "CustomClass(...)",
     }
     result = deserialize_output_from_event_log(serialized)
 
     assert isinstance(result, dict)
-    assert result['_placeholder'] is True
-    assert result['_type'] == 'truncated'
+    assert result["_placeholder"] is True
+    assert result["_type"] == "truncated"
 
 
 def test_roundtrip_small_data():
@@ -176,19 +177,19 @@ def test_serialize_outputs_dict_empty():
 def test_deserialize_outputs_dict():
     """Test deserialization of outputs dict."""
     serialized = {
-        'result': {'type': 'inline', 'value': {"status": "ok"}},
-        'image': {
-            'type': 'asset_ref',
-            'asset_type': 'ImageRef',
-            'uri': 'file:///image.png',
-            'asset_id': 'abc123',
+        "result": {"type": "inline", "value": {"status": "ok"}},
+        "image": {
+            "type": "asset_ref",
+            "asset_type": "ImageRef",
+            "uri": "file:///image.png",
+            "asset_id": "abc123",
         },
     }
 
     result = deserialize_outputs_dict(serialized)
 
-    assert result['result'] == {"status": "ok"}
-    assert hasattr(result['image'], 'uri')
+    assert result["result"] == {"status": "ok"}
+    assert hasattr(result["image"], "uri")
 
 
 def test_compress_streaming_outputs():
@@ -198,16 +199,16 @@ def test_compress_streaming_outputs():
 
     # Simulate 1000 image chunks from streaming node
     outputs = {
-        'frames': [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
-        'metadata': {"fps": 30, "duration": 33.33}
+        "frames": [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
+        "metadata": {"fps": 30, "duration": 33.33},
     }
 
     compressed = compress_streaming_outputs(outputs)
 
-    assert compressed['type'] == 'streaming_compressed'
-    assert compressed['chunk_count'] == 1001  # 1000 frames + 1 metadata
-    assert 'size_bytes' in compressed
-    assert compressed['storage_id'] == 'not_implemented'  # TODO: implement temp storage
+    assert compressed["type"] == "streaming_compressed"
+    assert compressed["chunk_count"] == 1001  # 1000 frames + 1 metadata
+    assert "size_bytes" in compressed
+    assert compressed["storage_id"] == "not_implemented"  # TODO: implement temp storage
 
 
 def test_should_compress_streaming():
@@ -216,15 +217,15 @@ def test_should_compress_streaming():
     from nodetool.workflows.output_serialization import should_compress_streaming
 
     # Many chunks - should compress
-    many_chunks = {'frames': [ImageRef(uri=f"temp://f{i}.png") for i in range(500)]}
+    many_chunks = {"frames": [ImageRef(uri=f"temp://f{i}.png") for i in range(500)]}
     assert should_compress_streaming(many_chunks, threshold=100) is True
 
     # Few chunks - no compression needed
-    few_chunks = {'frames': [ImageRef(uri=f"temp://f{i}.png") for i in range(10)]}
+    few_chunks = {"frames": [ImageRef(uri=f"temp://f{i}.png") for i in range(10)]}
     assert should_compress_streaming(few_chunks, threshold=100) is False
 
     # Single output - no compression
-    single = {'image': ImageRef(uri="temp://image.png")}
+    single = {"image": ImageRef(uri="temp://image.png")}
     assert should_compress_streaming(single, threshold=100) is False
 
 
@@ -232,10 +233,10 @@ def test_uses_temp_storage():
     """Test detection of temp/memory storage URIs."""
     from nodetool.workflows.output_serialization import uses_temp_storage
 
-    assert uses_temp_storage('memory://bucket/file.png') is True
-    assert uses_temp_storage('temp://bucket/file.png') is True
-    assert uses_temp_storage('file:///path/to/file.png') is False
-    assert uses_temp_storage('s3://bucket/file.png') is False
+    assert uses_temp_storage("memory://bucket/file.png") is True
+    assert uses_temp_storage("temp://bucket/file.png") is True
+    assert uses_temp_storage("file:///path/to/file.png") is False
+    assert uses_temp_storage("s3://bucket/file.png") is False
 
 
 def test_serialize_with_memory_uri_warning(caplog):
@@ -250,5 +251,5 @@ def test_serialize_with_memory_uri_warning(caplog):
         img = ImageRef(uri="memory://temp/image.png", asset_id="mem123")
         result = serialize_output_for_event_log(img, use_temp_storage=True)
 
-    assert result['type'] == 'asset_ref'
-    assert 'non-durable storage' in caplog.text
+    assert result["type"] == "asset_ref"
+    assert "non-durable storage" in caplog.text

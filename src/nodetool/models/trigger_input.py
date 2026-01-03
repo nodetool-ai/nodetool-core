@@ -143,11 +143,10 @@ class TriggerInput(DBModel):
         from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
 
         condition = ConditionBuilder(
-            ConditionGroup([
-                Field("run_id").equals(run_id),
-                Field("node_id").equals(node_id),
-                Field("processed").equals(False)
-            ], LogicalOperator.AND)
+            ConditionGroup(
+                [Field("run_id").equals(run_id), Field("node_id").equals(node_id), Field("processed").equals(False)],
+                LogicalOperator.AND,
+            )
         )
 
         results, _ = await adapter.query(

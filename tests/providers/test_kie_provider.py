@@ -20,6 +20,7 @@ try:
         KIE_VIDEO_MODELS,
         KieProvider,
     )
+
     KIE_PROVIDER_AVAILABLE = True
 except ImportError:
     KIE_IMAGE_MODELS = []
@@ -185,26 +186,22 @@ class TestKieProviderApiInteraction:
         # Mock POST response (submit task)
         mock_post_response = MagicMock()
         mock_post_response.status = 200
-        mock_post_response.json = AsyncMock(return_value={
-            "code": 200,
-            "message": "success",
-            "data": {"taskId": "task_123"}
-        })
-        mock_session.post = MagicMock(return_value=MagicMock(
-            __aenter__=AsyncMock(return_value=mock_post_response),
-            __aexit__=AsyncMock()
-        ))
+        mock_post_response.json = AsyncMock(
+            return_value={"code": 200, "message": "success", "data": {"taskId": "task_123"}}
+        )
+        mock_session.post = MagicMock(
+            return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_post_response), __aexit__=AsyncMock())
+        )
 
         # Mock GET responses (poll status and download)
         mock_get_response = MagicMock()
         mock_get_response.status = 200
-        mock_get_response.json = AsyncMock(return_value={
-            "code": 200,
-            "data": {
-                "state": "success",
-                "resultJson": '{"resultUrls": ["https://example.com/image.png"]}'
+        mock_get_response.json = AsyncMock(
+            return_value={
+                "code": 200,
+                "data": {"state": "success", "resultJson": '{"resultUrls": ["https://example.com/image.png"]}'},
             }
-        })
+        )
 
         # Mock download response
         mock_download_response = MagicMock()
@@ -215,15 +212,9 @@ class TestKieProviderApiInteraction:
         def mock_get_side_effect(*args, **kwargs):
             url = args[0] if args else kwargs.get("url", "")
             if "recordInfo" in url:
-                return MagicMock(
-                    __aenter__=AsyncMock(return_value=mock_get_response),
-                    __aexit__=AsyncMock()
-                )
+                return MagicMock(__aenter__=AsyncMock(return_value=mock_get_response), __aexit__=AsyncMock())
             else:
-                return MagicMock(
-                    __aenter__=AsyncMock(return_value=mock_download_response),
-                    __aexit__=AsyncMock()
-                )
+                return MagicMock(__aenter__=AsyncMock(return_value=mock_download_response), __aexit__=AsyncMock())
 
         mock_session.get = MagicMock(side_effect=mock_get_side_effect)
 
@@ -253,14 +244,10 @@ class TestKieProviderApiInteraction:
 
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "code": 200,
-            "data": {"taskId": "task_456"}
-        })
-        mock_session.post = MagicMock(return_value=MagicMock(
-            __aenter__=AsyncMock(return_value=mock_response),
-            __aexit__=AsyncMock()
-        ))
+        mock_response.json = AsyncMock(return_value={"code": 200, "data": {"taskId": "task_456"}})
+        mock_session.post = MagicMock(
+            return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock())
+        )
 
         # Execute
         provider = KieProvider(secrets={"KIE_API_KEY": "test_key"})
@@ -298,14 +285,10 @@ class TestKieProviderApiInteraction:
 
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "code": 200,
-            "data": {"taskId": "task_789"}
-        })
-        mock_session.post = MagicMock(return_value=MagicMock(
-            __aenter__=AsyncMock(return_value=mock_response),
-            __aexit__=AsyncMock()
-        ))
+        mock_response.json = AsyncMock(return_value={"code": 200, "data": {"taskId": "task_789"}})
+        mock_session.post = MagicMock(
+            return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock())
+        )
 
         # Execute
         provider = KieProvider(secrets={"KIE_API_KEY": "test_key"})

@@ -135,7 +135,7 @@ def safe_eval_expression(expression: str) -> float:
     expression = expression.replace("^", "**")
 
     try:
-        tree = ast.parse(expression, mode='eval')
+        tree = ast.parse(expression, mode="eval")
         evaluator = SafeExpressionEvaluator()
         return evaluator.visit(tree)
     except SyntaxError as e:

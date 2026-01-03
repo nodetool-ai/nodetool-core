@@ -132,6 +132,7 @@ async def _run(req_dict: dict[str, Any]) -> int:
 
 def main() -> int:
     import warnings
+
     warnings.warn(
         "run_workflow_cli.main() is deprecated. Use 'nodetool run --stdin --jsonl' instead.",
         DeprecationWarning,

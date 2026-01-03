@@ -14,9 +14,7 @@ from nodetool.types.workflow import WorkflowVersion as WorkflowVersionType
 
 
 @pytest.mark.asyncio
-async def test_create_workflow_version(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_create_workflow_version(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test creating a new version of a workflow."""
     await workflow.save()
 
@@ -39,9 +37,7 @@ async def test_create_workflow_version(
 
 
 @pytest.mark.asyncio
-async def test_create_multiple_versions(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_create_multiple_versions(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test creating multiple versions increments the version number."""
     await workflow.save()
 
@@ -69,9 +65,7 @@ async def test_create_multiple_versions(
 
 
 @pytest.mark.asyncio
-async def test_list_workflow_versions(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_list_workflow_versions(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test listing all versions of a workflow."""
     await workflow.save()
 
@@ -94,9 +88,7 @@ async def test_list_workflow_versions(
 
 
 @pytest.mark.asyncio
-async def test_get_specific_version(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_specific_version(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test getting a specific version of a workflow."""
     await workflow.save()
 
@@ -122,9 +114,7 @@ async def test_get_specific_version(
 
 
 @pytest.mark.asyncio
-async def test_get_nonexistent_version(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_get_nonexistent_version(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test getting a version that doesn't exist returns 404."""
     await workflow.save()
 
@@ -136,9 +126,7 @@ async def test_get_nonexistent_version(
 
 
 @pytest.mark.asyncio
-async def test_restore_workflow_version(
-    client: TestClient, workflow: Workflow, headers: dict[str, str]
-):
+async def test_restore_workflow_version(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     """Test restoring a workflow to a previous version."""
     await workflow.save()
 
@@ -176,9 +164,7 @@ async def test_restore_workflow_version(
 
 
 @pytest.mark.asyncio
-async def test_create_version_for_nonexistent_workflow(
-    client: TestClient, headers: dict[str, str]
-):
+async def test_create_version_for_nonexistent_workflow(client: TestClient, headers: dict[str, str]):
     """Test creating a version for a workflow that doesn't exist."""
     request = CreateWorkflowVersionRequest(name="Test")
     response = client.post(

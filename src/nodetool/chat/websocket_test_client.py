@@ -164,10 +164,7 @@ class ChatWebSocketClient:
             message["workflow_id"] = self.current_workflow
 
         # Wrap in command structure
-        command_msg = {
-            "command": "chat_message",
-            "data": message
-        }
+        command_msg = {"command": "chat_message", "data": message}
 
         # Send message in appropriate format
         try:
@@ -192,10 +189,7 @@ class ChatWebSocketClient:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
             return
 
-        message = {
-            "command": command,
-            "data": data
-        }
+        message = {"command": command, "data": data}
 
         try:
             if self.message_format == MessageFormat.BINARY:
@@ -212,6 +206,7 @@ class ChatWebSocketClient:
                 "system",
                 f"Error sending command {command}: {e}",
             )
+
     async def receive_messages(self):
         """Continuously receive and display messages from the server."""
         try:

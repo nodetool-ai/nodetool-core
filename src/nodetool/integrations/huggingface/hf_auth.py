@@ -41,9 +41,8 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
         # 1. Try to get from OAuth credentials (Prioritize OAuth)
         try:
             from nodetool.models.oauth_credential import OAuthCredential
-            creds = await OAuthCredential.list_for_user_and_provider(
-                user_id=user_id, provider="huggingface", limit=1
-            )
+
+            creds = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="huggingface", limit=1)
             if creds:
                 log.debug(f"get_hf_token: OAuth credential found for user_id={user_id}")
                 return await creds[0].get_decrypted_access_token()

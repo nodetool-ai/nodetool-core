@@ -455,7 +455,7 @@ class KieProvider(BaseProvider):
                 elif attr == "rendering_speed" and hasattr(val, "value"):
                     input_params["rendering_speed"] = val.value
                 elif attr == "model_version":
-                     # Map model_version to model in input params (e.g. for Suno)
+                    # Map model_version to model in input params (e.g. for Suno)
                     input_params["model"] = val.value if hasattr(val, "value") else val
                 elif attr == "image_url" and "image_url" not in input_params:
                     input_params["image_url"] = val
@@ -802,17 +802,17 @@ class KieProvider(BaseProvider):
         form.add_field("fileName", filename)
 
         async with aiohttp.ClientSession() as session, session.post(upload_url, data=form, headers=headers) as response:
-                response_data = await response.json()
-                if "code" in response_data:
-                    self._check_response_status(response_data)
+            response_data = await response.json()
+            if "code" in response_data:
+                self._check_response_status(response_data)
 
-                if response.status != 200 or not response_data.get("success"):
-                    raise ValueError(f"Failed to upload image: {response.status} - {response_data}")
+            if response.status != 200 or not response_data.get("success"):
+                raise ValueError(f"Failed to upload image: {response.status} - {response_data}")
 
-                download_url = response_data.get("data", {}).get("downloadUrl")
-                if not download_url:
-                    raise ValueError(f"No downloadUrl in upload response: {response_data}")
-                return download_url
+            download_url = response_data.get("data", {}).get("downloadUrl")
+            if not download_url:
+                raise ValueError(f"No downloadUrl in upload response: {response_data}")
+            return download_url
 
     # Video Generation Methods
 

@@ -1,6 +1,7 @@
 """
 Additional tests for HuggingFace model discovery to ensure comprehensive coverage.
 """
+
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ from nodetool.integrations.huggingface.huggingface_models import (
 @dataclass
 class ModelTypeSpec:
     """Specification for testing a model type."""
+
     hf_type: str
     model_type: str
     description: str
@@ -98,8 +100,7 @@ async def test_search_config_consistency():
 
             # Both should have repo_pattern if one does
             if "repo_pattern" in base_config:
-                assert "repo_pattern" in ckpt_config, \
-                    f"{ckpt_type} missing repo_pattern from {base_type}"
+                assert "repo_pattern" in ckpt_config, f"{ckpt_type} missing repo_pattern from {base_type}"
 
 
 @pytest.mark.asyncio
@@ -153,12 +154,11 @@ async def test_model_detection_with_various_architectures(tmp_path):
 
         result = detect_model(model_path, framework="np")
 
-        assert result.component == expected_component, \
+        assert result.component == expected_component, (
             f"{name}: expected component {expected_component}, got {result.component}"
-        assert result.family == expected_family, \
-            f"{name}: expected family {expected_family}, got {result.family}"
-        assert result.confidence > 0.8, \
-            f"{name}: low confidence {result.confidence}"
+        )
+        assert result.family == expected_family, f"{name}: expected family {expected_family}, got {result.family}"
+        assert result.confidence > 0.8, f"{name}: low confidence {result.confidence}"
 
 
 @pytest.mark.asyncio
@@ -193,8 +193,9 @@ async def test_config_json_model_type_inference(tmp_path):
         file_entries = [("config.json", 100)]
         inferred_type = _infer_model_type_from_local_configs(file_entries, config_dir)
 
-        assert inferred_type == expected_type, \
+        assert inferred_type == expected_type, (
             f"Expected {expected_type} for {config_data['model_type']}, got {inferred_type}"
+        )
 
 
 @pytest.mark.asyncio
@@ -263,8 +264,7 @@ async def test_checkpoint_variant_detection(monkeypatch, tmp_path):
 
     # Check that the checkpoint file is found
     file_models = [m for m in models if m.path is not None]
-    assert any(m.path == "sdxl_checkpoint.safetensors" for m in file_models), \
-        "Checkpoint file not found in results"
+    assert any(m.path == "sdxl_checkpoint.safetensors" for m in file_models), "Checkpoint file not found in results"
 
 
 if __name__ == "__main__":
