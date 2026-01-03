@@ -106,9 +106,7 @@ async def retry_on_locked(func, max_retries=20, initial_delay=0.02):
                 import random
 
                 jitter = delay * random.uniform(0.5, 1.5)
-                log.debug(
-                    f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})"
-                )
+                log.debug(f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(jitter)
                 delay = min(delay * 2, 3.0)  # Exponential backoff capped at 3 seconds
             else:
@@ -118,9 +116,7 @@ async def retry_on_locked(func, max_retries=20, initial_delay=0.02):
     raise last_exception or Exception("Unexpected error in retry_on_locked")
 
 
-def convert_to_sqlite_format(
-    value: Any, py_type: Type
-) -> int | float | str | bytes | None:
+def convert_to_sqlite_format(value: Any, py_type: Type) -> int | float | str | bytes | None:
     """
     Convert a Python value to a format suitable for SQLite based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -203,9 +199,7 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
         raise TypeError(f"Unsupported type for SQLite: {py_type}")
 
 
-def convert_from_sqlite_attributes(
-    attributes: Dict[str, Any], fields: Dict[str, FieldInfo]
-) -> Dict[str, Any]:
+def convert_from_sqlite_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
     """
     Convert a dictionary of attributes from SQLite to a dictionary of Python types based on the provided fields.
     """
@@ -219,9 +213,7 @@ def convert_from_sqlite_attributes(
     }
 
 
-def convert_to_sqlite_attributes(
-    attributes: Dict[str, Any], fields: Dict[str, FieldInfo]
-) -> Dict[str, Any]:
+def convert_to_sqlite_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
     """
     Convert a dictionary of attributes from SQLite to a dictionary of Python types based on the provided fields.
     """
@@ -245,12 +237,7 @@ def get_sqlite_type(field_type: Any) -> str:
         return get_sqlite_type(_type)
 
     # Direct mapping of Python types to SQLite types
-    if (
-        field_type is str
-        or field_type is Any
-        or field_type in (list, dict, set)
-        or origin in (list, dict, set)
-    ):
+    if field_type is str or field_type is Any or field_type in (list, dict, set) or origin in (list, dict, set):
         return "TEXT"
     elif field_type is int or field_type is bool:  # bool is stored as INTEGER (0 or 1)
         return "INTEGER"
@@ -369,9 +356,7 @@ class SQLiteAdapter(DatabaseAdapter):
         effective_timeout = timeout
         if effective_timeout is None and self.query_timeout is not None:
             effective_timeout = self.query_timeout
-        if self._is_shutting_down and (
-            effective_timeout is None or effective_timeout > 5.0
-        ):
+        if self._is_shutting_down and (effective_timeout is None or effective_timeout > 5.0):
             effective_timeout = 5.0
 
         if effective_timeout is None:
@@ -505,9 +490,7 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
 
         async def _get():
-            cursor = await self._execute_with_timeout(
-                self.connection.execute(query, (key,))
-            )
+            cursor = await self._execute_with_timeout(self.connection.execute(query, (key,)))
             item = await self._execute_with_timeout(cursor.fetchone())
             if item is None:
                 return None
@@ -526,16 +509,12 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
 
         async def _delete():
-            await self._execute_with_timeout(
-                self.connection.execute(query, (primary_key,))
-            )
+            await self._execute_with_timeout(self.connection.execute(query, (primary_key,)))
             await self._execute_with_timeout(self.connection.commit())
 
         await retry_on_locked(_delete)
 
-    def _build_condition(
-        self, condition: Condition | ConditionGroup
-    ) -> tuple[str, list[Any]]:
+    def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[str, list[Any]]:
         """Recursively builds an SQL WHERE clause and parameters from a Condition or ConditionGroup.
 
         Args:
@@ -592,21 +571,15 @@ class SQLiteAdapter(DatabaseAdapter):
         params = []
         where_clause = "1=1"  # Default to select all if no condition
         if condition:  # Check if a condition was provided
-            where_clause, params = self._build_condition(
-                condition.root
-            )  # Pass the root group
+            where_clause, params = self._build_condition(condition.root)  # Pass the root group
 
         fetch_limit = limit + 1
         query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {fetch_limit}"
 
         async def _query():
-            cursor = await self._execute_with_timeout(
-                self.connection.execute(query, params)
-            )
+            cursor = await self._execute_with_timeout(self.connection.execute(query, params))
             rows = await self._execute_with_timeout(cursor.fetchall())
-            res = [
-                convert_from_sqlite_attributes(dict(row), self.fields) for row in rows
-            ]
+            res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
 
             if len(res) <= limit:
                 return res, ""
@@ -621,9 +594,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return await _query()
 
-    async def execute_sql(
-        self, sql: str, params: Optional[dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+    async def execute_sql(self, sql: str, params: Optional[dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
         Args:
@@ -636,25 +607,18 @@ class SQLiteAdapter(DatabaseAdapter):
         """
 
         async def _execute():
-            cursor = await self._execute_with_timeout(
-                self.connection.execute(sql, params or {})
-            )
+            cursor = await self._execute_with_timeout(self.connection.execute(sql, params or {}))
             if cursor.description:
                 columns = [col[0] for col in cursor.description]
                 rows = await self._execute_with_timeout(cursor.fetchall())
                 return [
-                    convert_from_sqlite_attributes(
-                        dict(zip(columns, row, strict=False)), self.fields
-                    )
-                    for row in rows
+                    convert_from_sqlite_attributes(dict(zip(columns, row, strict=False)), self.fields) for row in rows
                 ]
             return []
 
         return await _execute()
 
-    async def create_index(
-        self, index_name: str, columns: List[str], unique: bool = False
-    ) -> None:
+    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
         unique_str = "UNIQUE" if unique else ""
         columns_str = ", ".join(columns)
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
