@@ -39,8 +39,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet
-          if [ $? -eq 0 ]; then
+          if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "style: auto-fix ruff linting and formatting"
