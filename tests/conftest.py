@@ -143,23 +143,30 @@ async def _truncate_all_tables(pool):
         )
         tables = await cursor.fetchall()
 
+        # Use a single transaction for all deletes
         for table in tables:
             table_name = table[0]
             try:
                 await connection.execute(f"DELETE FROM {table_name}")
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.debug(f"Failed to truncate table {table_name}: {e}")
                 pass
 
-        try:
-            await connection.commit()
-        except Exception:
-            pass
-    finally:
+        # Commit all deletes in a single transaction
+        await connection.commit()
+    except Exception as e:
+        # Rollback on error
+        import logging
+        logging.debug(f"Error during table truncation, rolling back: {e}")
         if connection is not None:
             try:
                 await connection.rollback()
             except Exception:
                 pass
+        raise
+    finally:
+        if connection is not None:
             await pool.release(connection)
 
 
@@ -192,12 +199,19 @@ async def setup_and_teardown(request, test_db_pool):
                 pass
 
     # Truncate all tables to reset state for next test
-    try:
-        await _truncate_all_tables(test_db_pool)
-    except Exception as e:
-        import logging
-
-        logging.warning(f"Error truncating tables: {e}")
+    # Retry truncation if it fails due to lock (can happen during parallel execution)
+    max_truncate_retries = 3
+    for attempt in range(max_truncate_retries):
+        try:
+            await _truncate_all_tables(test_db_pool)
+            break
+        except Exception as e:
+            import logging
+            if attempt < max_truncate_retries - 1:
+                logging.debug(f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}")
+                await asyncio.sleep(0.1 * (attempt + 1))  # Brief delay before retry
+            else:
+                logging.warning(f"Error truncating tables after {max_truncate_retries} attempts: {e}")
 
 
 @pytest.fixture(autouse=True)
