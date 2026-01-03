@@ -108,7 +108,7 @@ import tempfile
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import httpx
 from pydantic import BaseModel
@@ -134,6 +134,9 @@ from nodetool.workflows.types import (
 )
 
 from .message_processor import MessageProcessor
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
@@ -307,11 +310,32 @@ class RegularChatProcessor(MessageProcessor):
         unprocessed_messages = []
 
         if last_message.tools:
-            tools = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
+            tools: list[Tool] = [t for t in resolved_tools if t is not None]
         else:
             tools = []
+
+        # Include UI proxy tools if client provided a manifest via tool bridge
+        ui_tools: list[Tool] = []
+        tool_bridge = getattr(processing_context, "tool_bridge", None)
+        client_tools_manifest = getattr(processing_context, "client_tools_manifest", None)
+        try:
+            if tool_bridge and client_tools_manifest:
+                from .help_message_processor import UIToolProxy
+
+                for _, tool_manifest in client_tools_manifest.items():
+                    try:
+                        ui_tools.append(UIToolProxy(tool_manifest))
+                    except Exception as e:
+                        log.warning(f"Failed to register UI tool proxy: {e}")
+
+                if ui_tools:
+                    tools.extend(ui_tools)
+                    log.debug(f"Added {len(ui_tools)} UI tool proxies to regular chat tools")
+        except Exception as e:
+            log.warning(f"Error while adding UI tool proxies: {e}")
 
         # Extract query text for collection search
         query_text = self._extract_query_text(last_message)
@@ -356,62 +380,127 @@ class RegularChatProcessor(MessageProcessor):
                         content += chunk.content
                         await self.send_message(chunk.model_dump())
                     elif isinstance(chunk, ToolCall):
-                        # Resolve tool and prepare message
-                        tool = await resolve_tool_by_name(chunk.name, processing_context.user_id)
-                        message_text = tool.user_message(chunk.args)
-
-                        # Create assistant message with tool call
-                        assistant_msg = Message(
-                            role="assistant",
-                            tool_calls=[
-                                ToolCall(
-                                    id=chunk.id,
-                                    name=chunk.name,
-                                    args=chunk.args,
-                                    result=None,
-                                    message=message_text,
-                                )
-                            ],
-                            thread_id=last_message.thread_id,
-                            workflow_id=last_message.workflow_id,
-                            provider=last_message.provider,
-                            model=last_message.model,
-                            agent_mode=last_message.agent_mode or False,
-                        )
-                        unprocessed_messages.append(assistant_msg)
-
-                        # Stream assistant tool-call message to client so UI can render it immediately
-                        await self.send_message(assistant_msg.model_dump())
-
                         log.debug(f"Processing tool call: {chunk.name}")
 
-                        # Process the tool call
-                        # We resolve the tool again inside _run_tool or just execute directly?
-                        # Since we already resolved 'tool', we can just run it.
-                        # But _run_tool is convenient.
-                        # However, _run_tool does logging and message creation which we partly did.
-                        # To minimal change, let's keep _run_tool but ignore its returned message or change how we use it.
-                        # Actually, keeping _run_tool is fine, it just resolves again (cached?) or cheap.
+                        # Check if this is a UI tool
+                        ui_tool_names = getattr(processing_context, "ui_tool_names", set())
+                        if chunk.name in ui_tool_names:
+                            # Handle UI tool call using provider tool_call id to satisfy OpenAI API
+                            tool_call_id = chunk.id
+                            if tool_call_id is None:
+                                raise ValueError("Tool call id is required")
 
-                        tool_result, _ = await self._run_tool(processing_context, chunk, graph)
-                        log.debug(f"Tool {chunk.name} execution complete, id={tool_result.id}")
+                            # Create assistant message with tool call
+                            assistant_msg = Message(
+                                role="assistant",
+                                tool_calls=[
+                                    ToolCall(
+                                        id=chunk.id,
+                                        name=chunk.name,
+                                        args=chunk.args,
+                                        result=None,
+                                    )
+                                ],
+                                thread_id=last_message.thread_id,
+                                workflow_id=last_message.workflow_id,
+                                provider=last_message.provider,
+                                model=last_message.model,
+                                agent_mode=last_message.agent_mode or False,
+                            )
+                            unprocessed_messages.append(assistant_msg)
 
-                        # Convert result to JSON
-                        converted_result = await self._process_tool_result(tool_result.result)
-                        tool_result_json = json.dumps(converted_result)
-                        tool_msg = Message(
-                            role="tool",
-                            tool_call_id=tool_result.id,
-                            name=chunk.name,
-                            content=tool_result_json,
-                            thread_id=last_message.thread_id,
-                            workflow_id=last_message.workflow_id,
-                            provider=last_message.provider,
-                            model=last_message.model,
-                        )
-                        unprocessed_messages.append(tool_msg)
-                        # Stream tool result to client for immediate visualization
-                        await self.send_message(tool_msg.model_dump())
+                            # Forward tool call to frontend
+                            tool_call_message = {
+                                "type": "tool_call",
+                                "tool_call_id": tool_call_id,
+                                "name": chunk.name,
+                                "args": chunk.args,
+                                "thread_id": last_message.thread_id,
+                            }
+                            await self.send_message(tool_call_message)
+
+                            # Wait for result from frontend (tool_bridge is guaranteed to exist since
+                            # ui_tool_names is only populated when tool_bridge is available)
+                            try:
+                                payload = await asyncio.wait_for(
+                                    tool_bridge.create_waiter(tool_call_id),  # type: ignore[union-attr]
+                                    timeout=60.0,
+                                )
+
+                            except TimeoutError:
+                                payload = {
+                                    "ok": False,
+                                    "error": f"Frontend tool {chunk.name} timed out after 60 seconds",
+                                }
+
+                            # Normalize payload into a tool result
+                            if payload.get("ok"):
+                                normalized = payload.get("result", {})
+                            else:
+                                normalized = {"error": payload.get("error", "Frontend tool execution failed")}
+
+                            # Create tool result message
+                            tool_result_json = json.dumps(normalized)
+                            tool_msg = Message(
+                                role="tool",
+                                tool_call_id=tool_call_id,
+                                name=chunk.name,
+                                content=tool_result_json,
+                                thread_id=last_message.thread_id,
+                                workflow_id=last_message.workflow_id,
+                                provider=last_message.provider,
+                                model=last_message.model,
+                            )
+                            unprocessed_messages.append(tool_msg)
+                            await self.send_message(tool_msg.model_dump())
+                        else:
+                            # Handle regular server-side tool call
+                            tool = await resolve_tool_by_name(chunk.name, processing_context.user_id)
+                            message_text = tool.user_message(chunk.args)
+
+                            # Create assistant message with tool call
+                            assistant_msg = Message(
+                                role="assistant",
+                                tool_calls=[
+                                    ToolCall(
+                                        id=chunk.id,
+                                        name=chunk.name,
+                                        args=chunk.args,
+                                        result=None,
+                                        message=message_text,
+                                    )
+                                ],
+                                thread_id=last_message.thread_id,
+                                workflow_id=last_message.workflow_id,
+                                provider=last_message.provider,
+                                model=last_message.model,
+                                agent_mode=last_message.agent_mode or False,
+                            )
+                            unprocessed_messages.append(assistant_msg)
+
+                            # Stream assistant tool-call message to client so UI can render it immediately
+                            await self.send_message(assistant_msg.model_dump())
+
+                            # Process the tool call
+                            tool_result, _ = await self._run_tool(processing_context, chunk, graph)
+                            log.debug(f"Tool {chunk.name} execution complete, id={tool_result.id}")
+
+                            # Convert result to JSON
+                            converted_result = await self._process_tool_result(tool_result.result)
+                            tool_result_json = json.dumps(converted_result)
+                            tool_msg = Message(
+                                role="tool",
+                                tool_call_id=tool_result.id,
+                                name=chunk.name,
+                                content=tool_result_json,
+                                thread_id=last_message.thread_id,
+                                workflow_id=last_message.workflow_id,
+                                provider=last_message.provider,
+                                model=last_message.model,
+                            )
+                            unprocessed_messages.append(tool_msg)
+                            # Stream tool result to client for immediate visualization
+                            await self.send_message(tool_msg.model_dump())
 
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
