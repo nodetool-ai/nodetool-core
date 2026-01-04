@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
@@ -69,6 +69,8 @@ class WorkflowVersion(BaseModel):
     name: str
     description: str = ""
     graph: Graph
+    save_type: str = "manual"
+    autosave_metadata: dict[str, Any] = {}
 
 
 class WorkflowVersionList(BaseModel):
@@ -83,3 +85,20 @@ class CreateWorkflowVersionRequest(BaseModel):
 
     name: str = ""
     description: str = ""
+
+
+class AutosaveWorkflowRequest(BaseModel):
+    """Request to autosave a workflow version."""
+
+    save_type: str = "autosave"
+    description: str = ""
+    force: bool = False
+    client_id: str | None = None
+
+
+class AutosaveResponse(BaseModel):
+    """Response from an autosave request."""
+
+    version: WorkflowVersion | None = None
+    message: str
+    skipped: bool = False
