@@ -472,6 +472,8 @@ async def update_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
+
+    new_graph = remove_connected_slots(workflow_request.graph).model_dump()
     workflow.name = workflow_request.name
     workflow.tool_name = workflow_request.tool_name
     workflow.description = workflow_request.description
@@ -480,11 +482,22 @@ async def update_workflow(
     if workflow_request.thumbnail is not None:
         workflow.thumbnail = workflow_request.thumbnail
     workflow.access = workflow_request.access
-    workflow.graph = remove_connected_slots(workflow_request.graph).model_dump()
+    workflow.graph = new_graph
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
     await workflow.save()
+
+    next_version = await WorkflowVersionModel.get_next_version(id)
+    version_name = f"Version {next_version}"
+    await WorkflowVersionModel.create(
+        workflow_id=id,
+        user_id=user,
+        graph=new_graph,
+        name=version_name,
+        description=workflow_request.description or "",
+    )
+
     updated_workflow = await from_model(workflow)
 
     return updated_workflow
