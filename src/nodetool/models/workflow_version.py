@@ -25,7 +25,7 @@ capturing the workflow's graph and metadata at a specific point in time.
 log = get_logger(__name__)
 
 
-@DBIndex(columns=["workflow_id"])
+@DBIndex(columns=["workflow_id", "save_type", "created_at"])
 class WorkflowVersion(DBModel):
     """Database model representing a version of a nodetool workflow."""
 
@@ -44,6 +44,8 @@ class WorkflowVersion(DBModel):
     name: str = DBField(default="")
     description: str = DBField(default="")
     graph: dict = DBField(default_factory=dict)
+    save_type: str = DBField(default="manual")
+    autosave_metadata: dict = DBField(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]):
@@ -65,6 +67,8 @@ class WorkflowVersion(DBModel):
                     "edges": [],
                 },
             ),
+            save_type=data.get("save_type", "manual"),
+            autosave_metadata=data.get("autosave_metadata", {}),
         )
 
     @classmethod
@@ -75,12 +79,13 @@ class WorkflowVersion(DBModel):
         graph: dict[str, Any],
         name: str = "",
         description: str = "",
+        save_type: str = "manual",
+        autosave_metadata: dict[str, Any] | None = None,
         **kwargs,
     ):  # type: ignore
         """
         Create a new workflow version in the database.
         """
-        # Get the next version number
         next_version = await cls.get_next_version(workflow_id)
 
         return await super().create(
@@ -91,6 +96,8 @@ class WorkflowVersion(DBModel):
             name=name,
             description=description,
             graph=graph,
+            save_type=save_type,
+            autosave_metadata=autosave_metadata or {},
             **kwargs,
         )
 
@@ -177,3 +184,109 @@ class WorkflowVersion(DBModel):
         next_cursor = versions[-1].version if len(results) > limit and versions else None
 
         return versions, next_cursor
+
+    @classmethod
+    async def get_latest_autosave(cls, workflow_id: str) -> Optional["WorkflowVersion"]:
+        """
+        Get the latest autosave version of a workflow.
+        """
+        conditions = [
+            Field("workflow_id").equals(workflow_id),
+            Field("save_type").equals("autosave"),
+        ]
+
+        adapter = await cls.adapter()
+        results, _ = await adapter.query(
+            columns=["*"],
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+            order_by="created_at",
+            reverse=True,
+            limit=1,
+        )
+        return WorkflowVersion.from_dict(results[0]) if results else None
+
+    @classmethod
+    async def get_autosave_versions(cls, workflow_id: str, limit: int = 100) -> list["WorkflowVersion"]:
+        """
+        Get all autosave versions for a workflow, ordered by creation time descending.
+        """
+        conditions = [
+            Field("workflow_id").equals(workflow_id),
+            Field("save_type").equals("autosave"),
+        ]
+
+        adapter = await cls.adapter()
+        results, _ = await adapter.query(
+            columns=["*"],
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+            order_by="created_at",
+            reverse=True,
+            limit=limit,
+        )
+        return [WorkflowVersion.from_dict(row) for row in results]
+
+    @classmethod
+    async def count_autosaves(cls, workflow_id: str) -> int:
+        """
+        Count the number of autosave versions for a workflow.
+        """
+        conditions = [
+            Field("workflow_id").equals(workflow_id),
+            Field("save_type").equals("autosave"),
+        ]
+
+        adapter = await cls.adapter()
+        results, _ = await adapter.query(
+            columns=["COUNT(*) as count"],
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+            limit=1,
+        )
+        return results[0].get("count", 0) if results else 0
+
+    @classmethod
+    async def delete_old_autosaves(
+        cls,
+        workflow_id: str,
+        keep_count: int,
+        older_than: Optional[datetime] = None,
+    ) -> int:
+        """
+        Delete old autosave versions, keeping the most recent ones.
+
+        Args:
+            workflow_id: The workflow ID to clean up
+            keep_count: Maximum number of autosaves to keep
+            older_than: If provided, also delete autosaves older than this datetime
+
+        Returns:
+            Number of deleted versions
+        """
+        autosaves = await cls.get_autosave_versions(workflow_id, limit=1000)
+
+        if not autosaves:
+            return 0
+
+        versions_to_delete: list[str] = []
+
+        for autosave in autosaves[keep_count:]:
+            if older_than is None or autosave.created_at < older_than:
+                versions_to_delete.append(autosave.id)
+
+        if not versions_to_delete:
+            return 0
+
+        for version_id in versions_to_delete:
+            await cls.delete(id=version_id)
+
+        return len(versions_to_delete)
+
+    @classmethod
+    async def delete_by_id(cls, version_id: str) -> bool:
+        """
+        Delete a specific version by ID.
+        """
+        try:
+            await cls.delete(id=version_id)
+            return True
+        except Exception:
+            return False
