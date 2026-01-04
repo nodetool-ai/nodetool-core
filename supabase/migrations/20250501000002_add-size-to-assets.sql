@@ -1,1 +1,0 @@
-ALTER TABLE nodetool_assets ADD COLUMN size INTEGER;

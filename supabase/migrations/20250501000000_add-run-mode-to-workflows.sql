@@ -1,1 +1,0 @@
-ALTER TABLE nodetool_workflows ADD COLUMN run_mode TEXT;
