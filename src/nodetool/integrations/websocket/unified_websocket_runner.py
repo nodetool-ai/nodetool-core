@@ -1111,11 +1111,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             try:
                 log.debug(f"STREAM_INPUT received: input={input_name} handle={handle} type={type(value)}")
                 if value and value.get("type") == "chunk":
-                    value = Chunk(
-                        content=value["content"],
-                        done=value["done"],
-                        content_type=value["content_type"],
-                    )
+                    value = Chunk(**value)
                 job_ctx.job_execution.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
                 log.debug("STREAM_INPUT enqueued to runner input queue")
                 return {
