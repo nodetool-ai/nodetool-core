@@ -1,0 +1,28 @@
+#!/bin/bash
+# Post-installation script for nodetool-core
+# This script is run after the package is installed
+
+set -e
+
+# Ensure the nodetool command is in the PATH
+echo ""
+echo "=================================="
+echo "nodetool-core installed successfully!"
+echo "=================================="
+echo ""
+echo "IMPORTANT: This package requires additional Python dependencies."
+echo ""
+echo "To install all required dependencies, run:"
+echo ""
+echo "    pip3 install --user nodetool-core"
+echo ""
+echo "Or for system-wide installation (with sudo):"
+echo ""
+echo "    sudo pip3 install nodetool-core"
+echo ""
+echo "After installing dependencies, you can use the 'nodetool' command."
+echo ""
+
+#DEBHELPER#
+
+exit 0

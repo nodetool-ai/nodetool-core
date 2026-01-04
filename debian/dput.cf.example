@@ -1,0 +1,12 @@
+# Example dput configuration for Launchpad PPA
+#
+# Copy this file to ~/.dput.cf and update with your username
+#
+# Usage: dput nodetool-ppa ../nodetool-core_*_source.changes
+
+[nodetool-ppa]
+fqdn = ppa.launchpad.net
+method = ftp
+incoming = ~YOUR_USERNAME/nodetool/ubuntu/
+login = anonymous
+allow_unsigned_uploads = 0

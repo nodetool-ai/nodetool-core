@@ -1,0 +1,8 @@
+nodetool-core (0.6.2~rc18-1) unstable; urgency=medium
+
+  * Initial Debian packaging release
+  * Package provides nodetool-core Python library
+  * Includes CLI tool for running AI workflows
+  * Supports Python 3.10, 3.11, and 3.12
+
+ -- Matthias Georgi <matti.georgi@gmail.com>  Sun, 04 Jan 2026 00:30:00 +0000
