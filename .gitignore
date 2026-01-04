@@ -148,8 +148,11 @@ deb_dist/
 *.dsc
 *.changes
 *.buildinfo
+*.tar.gz
 debian/.debhelper/
 debian/python3-nodetool-core/
 debian/files
 debian/*.debhelper*
 debian/*.substvars
+debian/debhelper-build-stamp
+.pybuild/
