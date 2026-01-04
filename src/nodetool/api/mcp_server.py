@@ -1082,10 +1082,11 @@ async def list_workflows(
             # Apply query filter if specified
             if query:
                 query_lower = query.lower()
+                wf_tags = wf_dict["tags"] or []
                 if (
                     query_lower in wf_dict["name"].lower()
                     or query_lower in wf_dict["description"].lower()
-                    or any(query_lower in tag.lower() for tag in wf_dict["tags"])
+                    or any(query_lower in tag.lower() for tag in wf_tags)
                 ):
                     result.append(wf_dict)
             else:
@@ -1477,7 +1478,7 @@ async def list_models(
 
     # Get models based on recommended flag
     if recommended_only:
-        all_models = await recommended_models(user="1")
+        all_models = await recommended_models("1")
     elif model_type == "language_model":
         # Use specialized function for language models
         lm_models = await get_language_models()
@@ -1500,7 +1501,7 @@ async def list_models(
             for m in lm_models
         ]
     elif model_type == "image_model":
-        img_models = await get_all_image_models_func()
+        img_models = await get_all_image_models_func("1")
         all_models = [
             type(
                 "Model",
@@ -1519,7 +1520,7 @@ async def list_models(
             for m in img_models
         ]
     elif model_type == "tts_model":
-        tts_models = await get_all_tts_models_func()
+        tts_models = await get_all_tts_models_func("1")
         all_models = [
             type(
                 "Model",
@@ -1538,7 +1539,7 @@ async def list_models(
             for m in tts_models
         ]
     elif model_type == "asr_model":
-        asr_models = await get_all_asr_models_func()
+        asr_models = await get_all_asr_models_func("1")
         all_models = [
             type(
                 "Model",
@@ -1557,7 +1558,7 @@ async def list_models(
             for m in asr_models
         ]
     else:
-        all_models = await get_all_models(user="1")
+        all_models = await get_all_models("1")
 
     # Filter by provider
     if provider.lower() != "all":
