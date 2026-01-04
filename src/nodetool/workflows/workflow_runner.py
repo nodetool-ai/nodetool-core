@@ -520,6 +520,18 @@ class WorkflowRunner:
             raise ValueError(f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}")
 
         input_nodes = {node.name: node for node in graph.inputs()}
+        duplicate_names = []
+        seen_names = set()
+        for node in graph.inputs():
+            name = getattr(node, "name", None)
+            if name:
+                if name in seen_names:
+                    duplicate_names.append(name)
+                seen_names.add(name)
+        if duplicate_names:
+            raise ValueError(
+                f"Multiple InputNode(s) have the same name. Duplicate names: {', '.join(set(duplicate_names))}. Please use unique names for each input node."
+            )
 
         start_time = time.time()
         if send_job_updates:
