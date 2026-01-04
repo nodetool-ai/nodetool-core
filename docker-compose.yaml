@@ -55,14 +55,6 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   memcached:
     image: memcached:bookworm
