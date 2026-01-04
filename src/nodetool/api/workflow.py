@@ -21,6 +21,8 @@ from nodetool.providers import get_provider
 from nodetool.runtime.resources import require_scope
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
+    AutosaveResponse,
+    AutosaveWorkflowRequest,
     CreateWorkflowVersionRequest,
     Workflow,
     WorkflowList,
@@ -720,6 +722,8 @@ def from_version_model(version: WorkflowVersionModel) -> WorkflowVersion:
             nodes=version.graph.get("nodes", []),
             edges=version.graph.get("edges", []),
         ),
+        save_type=version.save_type,
+        autosave_metadata=version.autosave_metadata,
     )
 
 
@@ -839,3 +843,109 @@ async def restore_version(
     await workflow.save()
 
     return await from_model(workflow)
+
+
+@router.post("/{id}/autosave")
+async def autosave_workflow(
+    id: str,
+    autosave_request: AutosaveWorkflowRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(current_user),
+) -> AutosaveResponse:
+    """
+    Create an autosave version of a workflow.
+
+    The backend decides whether to create a version based on:
+    - Rate limiting (minimum interval between saves)
+    - Max versions per workflow limit
+
+    Args:
+        id: Workflow ID
+        autosave_request: Autosave request with save_type, description, force flag
+        background_tasks: Background tasks for cleanup operations
+        user: Current authenticated user
+
+    Returns:
+        AutosaveResponse with version info or skipped status
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    if autosave_request.save_type == "autosave" and not autosave_request.force:
+        latest_autosave = await WorkflowVersionModel.get_latest_autosave(id)
+        if latest_autosave:
+            min_interval = 30
+            elapsed = (datetime.now() - latest_autosave.created_at).total_seconds()
+            if elapsed < min_interval:
+                log.debug(f"Autosave skipped for workflow {id}: too soon ({elapsed:.1f}s < {min_interval}s)")
+                return AutosaveResponse(version=None, message="skipped (too soon)", skipped=True)
+
+    max_versions = 20
+    autosave_count = await WorkflowVersionModel.count_autosaves(id)
+    if autosave_count >= max_versions and not autosave_request.force:
+        log.debug(f"Autosave skipped for workflow {id}: max versions reached ({autosave_count} >= {max_versions})")
+        return AutosaveResponse(version=None, message="skipped (max versions)", skipped=True)
+
+    next_version = await WorkflowVersionModel.get_next_version(id)
+    version_name = f"Autosave {next_version}"
+
+    autosave_metadata: dict[str, Any] = {
+        "client_id": autosave_request.client_id,
+        "trigger_reason": autosave_request.save_type,
+    }
+
+    version = await WorkflowVersionModel.create(
+        workflow_id=id,
+        user_id=user,
+        graph=workflow.graph,
+        name=version_name,
+        description=autosave_request.description,
+        save_type=autosave_request.save_type,
+        autosave_metadata=autosave_metadata,
+    )
+
+    log.info(f"Autosave created for workflow {id}: version {version.version}")
+
+    background_tasks.add_task(
+        cleanup_old_autosaves,
+        workflow_id=id,
+        max_versions=max_versions,
+        keep_days=7,
+    )
+
+    return AutosaveResponse(
+        version=from_version_model(version),
+        message="autosaved",
+        skipped=False,
+    )
+
+
+async def cleanup_old_autosaves(
+    workflow_id: str,
+    max_versions: int = 20,
+    keep_days: int = 7,
+) -> None:
+    """
+    Cleanup old autosave versions for a workflow.
+
+    Args:
+        workflow_id: The workflow ID to clean up
+        max_versions: Maximum autosaves to keep per workflow
+        keep_days: Number of days to keep autosaves
+    """
+    try:
+        from datetime import timedelta
+
+        cutoff_date = datetime.now() - timedelta(days=keep_days)
+        deleted_count = await WorkflowVersionModel.delete_old_autosaves(
+            workflow_id=workflow_id,
+            keep_count=max_versions,
+            older_than=cutoff_date,
+        )
+        if deleted_count > 0:
+            log.info(f"Cleaned up {deleted_count} old autosaves for workflow {workflow_id}")
+    except Exception as e:
+        log.error(f"Error cleaning up autosaves for workflow {workflow_id}: {e}")
