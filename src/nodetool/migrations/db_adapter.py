@@ -265,6 +265,8 @@ class PostgresMigrationAdapter(MigrationDBAdapter):
     async def _ensure_connection(self):
         """Ensure we have an active connection."""
         if self._conn is None:
+            # Use the connection context manager to get a connection
+            # We need to keep the connection open across multiple operations
             self._conn = await self._pool.getconn()
 
     async def execute(self, sql: str, params: tuple[Any, ...] | None = None) -> Any:
@@ -403,7 +405,7 @@ def create_migration_adapter(connection: Any) -> MigrationDBAdapter:
         if hasattr(connection, "_conn") or "sqlite" in type(connection).__module__.lower():
             return SQLiteMigrationAdapter(connection)
 
-    # Check for psycopg pool
+    # Check for psycopg pool (supports both getconn/putconn and connection context manager)
     if hasattr(connection, "getconn") and hasattr(connection, "putconn"):
         return PostgresMigrationAdapter(connection)
 
