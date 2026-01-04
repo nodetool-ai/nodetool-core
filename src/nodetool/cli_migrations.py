@@ -485,8 +485,7 @@ def export(output: str | None, migrations_dir: str | None, latest_only: bool):
             migrations_path = Path(migrations_dir) if migrations_dir else None
 
             if not output_path:
-                project_root = Path(__file__).resolve().parent.parent.parent.parent
-                output_path = project_root / "supabase" / "migrations"
+                output_path = Path.cwd() / "supabase" / "migrations"
 
             console.print(f"[cyan]Exporting migrations to: {output_path}[/]")
 
@@ -534,8 +533,7 @@ def check_export():
         from nodetool.migrations.runner import MIGRATIONS_DIR, MigrationRunner
 
         try:
-            project_root = Path(__file__).resolve().parent.parent.parent.parent
-            supabase_dir = project_root / "supabase"
+            supabase_dir = Path.cwd() / "supabase"
             output_dir = supabase_dir / "migrations"
 
             # Find existing Supabase migrations
