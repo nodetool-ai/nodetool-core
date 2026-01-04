@@ -41,8 +41,8 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
             from psycopg_pool import AsyncConnectionPool
         except ImportError as e:
             raise ImportError(
-                "psycopg_pool is required for PostgreSQL migrations. "
-                "Install it with: pip install psycopg[pool]"
+                "psycopg-pool is required for PostgreSQL migrations. "
+                "Install it with: pip install psycopg psycopg-pool"
             ) from e
 
         pool = AsyncConnectionPool(postgres_url, min_size=1, max_size=5)
