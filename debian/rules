@@ -22,13 +22,14 @@ override_dh_auto_install:
 	# Install the wheel into the staging area
 	mkdir -p debian/python3-nodetool-core/usr/lib/python3/dist-packages
 	python3 -m pip install --target debian/python3-nodetool-core/usr/lib/python3/dist-packages --no-deps .pybuild/wheels/*.whl
-	# Ensure console scripts are installed
-	mkdir -p debian/python3-nodetool-core/usr/bin
-	echo '#!/usr/bin/python3' > debian/python3-nodetool-core/usr/bin/nodetool
-	echo 'from nodetool.cli import cli' >> debian/python3-nodetool-core/usr/bin/nodetool
-	echo 'if __name__ == "__main__":' >> debian/python3-nodetool-core/usr/bin/nodetool
-	echo '    cli()' >> debian/python3-nodetool-core/usr/bin/nodetool
-	chmod +x debian/python3-nodetool-core/usr/bin/nodetool
+	# pip installs console scripts to bin/ directory - move to /usr/bin
+	if [ -d debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin ]; then \
+		mkdir -p debian/python3-nodetool-core/usr/bin; \
+		mv debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin/* debian/python3-nodetool-core/usr/bin/; \
+		rmdir debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin; \
+	fi
+	# Ensure console scripts are executable
+	find debian/python3-nodetool-core/usr/bin -type f -exec chmod +x {} \; 2>/dev/null || true
 
 override_dh_auto_test:
 	# Skip tests during package build - they require external services

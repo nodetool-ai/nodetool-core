@@ -14,9 +14,31 @@ set -e
 
 # Configuration
 PACKAGE_NAME="nodetool-core"
-BASE_VERSION="0.6.2~rc18"
+
+# Extract version from pyproject.toml and convert to Debian format
+# e.g., "0.6.2-rc.18" -> "0.6.2~rc18"
+if command -v python3 &> /dev/null && [ -f "pyproject.toml" ]; then
+    RAW_VERSION=$(python3 -c "
+import tomllib
+with open('pyproject.toml', 'rb') as f:
+    data = tomllib.load(f)
+print(data['project']['version'])
+" 2>/dev/null || echo "")
+    if [ -n "$RAW_VERSION" ]; then
+        # Convert PEP 440 to Debian version: replace -rc. with ~rc
+        BASE_VERSION=$(echo "$RAW_VERSION" | sed 's/-rc\./~rc/g' | sed 's/-/~/g')
+    else
+        BASE_VERSION="0.6.2~rc18"  # fallback
+    fi
+else
+    BASE_VERSION="0.6.2~rc18"  # fallback
+fi
+
 DEBIAN_REVISION="1"
-PPA_NAME="${PPA_NAME:-ppa:YOUR_USERNAME/nodetool}"
+
+# PPA configuration - set PPA_NAME environment variable or use --ppa argument
+# Example: export PPA_NAME="ppa:yourusername/nodetool"
+PPA_NAME="${PPA_NAME:-}"
 
 # Ubuntu versions to build for (default: latest LTS versions)
 DEFAULT_VERSIONS="noble jammy"
@@ -59,6 +81,18 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Validate PPA configuration for uploads
+if [ "$UPLOAD" = true ] && [ -z "$PPA_NAME" ]; then
+    echo "ERROR: PPA name is required for uploads."
+    echo ""
+    echo "Set the PPA name using one of these methods:"
+    echo "  1. Environment variable: export PPA_NAME='ppa:yourusername/nodetool'"
+    echo "  2. Command line argument: $0 --upload --ppa 'ppa:yourusername/nodetool'"
+    echo ""
+    echo "To create a PPA, visit: https://launchpad.net/~/+activate-ppa"
+    exit 1
+fi
+
 echo "============================================"
 echo "Building $PACKAGE_NAME for PPA upload"
 echo "============================================"
@@ -66,7 +100,7 @@ echo ""
 echo "Project root: $PROJECT_ROOT"
 echo "Base version: $BASE_VERSION-$DEBIAN_REVISION"
 echo "Ubuntu versions: $VERSIONS"
-echo "PPA: $PPA_NAME"
+echo "PPA: ${PPA_NAME:-'(not set - upload disabled)'}"
 echo "Upload: $UPLOAD"
 echo ""
 

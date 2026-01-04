@@ -44,6 +44,7 @@ imageio-ffmpeg
 opencv-python-headless
 
 # Other specialized packages
+# bs4 is a metapackage for beautifulsoup4
 bs4 python3-bs4
 ftfy
 gguf
