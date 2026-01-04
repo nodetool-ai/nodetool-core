@@ -41,6 +41,38 @@ register_setting(
     ),
 )
 
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_ENABLED",
+    group="Autosave",
+    description="Enable automatic saving of workflow versions (default: true)",
+    enum=["true", "false"],
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_INTERVAL_MINUTES",
+    group="Autosave",
+    description="Interval in minutes between automatic workflow autosaves (default: 5, range: 1-60)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_MIN_INTERVAL_SECONDS",
+    group="Autosave",
+    description="Minimum interval in seconds between autosaves to prevent duplicates (default: 30)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_MAX_VERSIONS_PER_WORKFLOW",
+    group="Autosave",
+    description="Maximum number of autosave versions to keep per workflow (default: 20)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_KEEP_DAYS",
+    group="Autosave",
+    description="Number of days to keep autosave versions before cleanup (default: 7)",
+)
+
 # ComfyUI settings
 register_setting(
     package_name="nodetool",
