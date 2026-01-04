@@ -1,0 +1,12 @@
+# Ignore files that shouldn't be in the source package
+extend-diff-ignore = "\.egg-info$"
+
+# Ignore some build artifacts
+tar-ignore = ".git"
+tar-ignore = ".venv"
+tar-ignore = "__pycache__"
+tar-ignore = "*.pyc"
+tar-ignore = "deb_dist"
+tar-ignore = "dist"
+tar-ignore = "build"
+tar-ignore = "*.egg-info"

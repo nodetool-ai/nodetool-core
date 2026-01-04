@@ -1,0 +1,43 @@
+#!/usr/bin/make -f
+
+# Enable verbose build output
+export DH_VERBOSE = 1
+
+# Use pybuild with setuptools
+export PYBUILD_NAME = nodetool-core
+export PYBUILD_SYSTEM = pyproject
+
+# Avoid conflict with the project's build.py file
+export PYTHONDONTWRITEBYTECODE = 1
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	# Use pip wheel to build, avoiding the build.py conflict
+	mkdir -p .pybuild/wheels
+	cd $(CURDIR) && python3 -m pip wheel --no-build-isolation --no-deps --wheel-dir .pybuild/wheels .
+
+override_dh_auto_install:
+	# Install the wheel into the staging area
+	mkdir -p debian/python3-nodetool-core/usr/lib/python3/dist-packages
+	python3 -m pip install --target debian/python3-nodetool-core/usr/lib/python3/dist-packages --no-deps .pybuild/wheels/*.whl
+	# pip installs console scripts to bin/ directory - move to /usr/bin
+	if [ -d debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin ]; then \
+		mkdir -p debian/python3-nodetool-core/usr/bin; \
+		mv debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin/* debian/python3-nodetool-core/usr/bin/; \
+		rmdir debian/python3-nodetool-core/usr/lib/python3/dist-packages/bin; \
+	fi
+	# Ensure console scripts are executable
+	find debian/python3-nodetool-core/usr/bin -type f -exec chmod +x {} \; 2>/dev/null || true
+
+override_dh_auto_test:
+	# Skip tests during package build - they require external services
+	# Tests can be run separately: pytest -q
+	@echo "Skipping tests during package build"
+
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGELOG.md
