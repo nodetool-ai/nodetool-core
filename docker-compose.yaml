@@ -2,12 +2,6 @@ services:
   api:
     image: ghcr.io/nodetool-ai/nodetool:latest
     restart: unless-stopped
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USE_LOCAL_WHEELS: ${USE_LOCAL_WHEELS:-0}
-        USE_LOCAL_REPO: ${USE_LOCAL_REPO:-0}
     volumes:
       - ${HF_HOME:-./.cache/huggingface}:/app/huggingface
       - /var/run/docker.sock:/var/run/docker.sock
