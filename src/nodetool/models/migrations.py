@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from nodetool.config.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from nodetool.runtime.db_postgres import PostgresConnectionPool
     from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
 log = get_logger(__name__)
@@ -25,7 +26,7 @@ log = get_logger(__name__)
 _migration_lock = asyncio.Lock()
 
 
-async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> None:
+async def run_startup_migrations(pool: "SQLiteConnectionPool | PostgresConnectionPool | None" = None) -> None:
     """Run all database migrations at application startup.
 
     This function uses the new migration runner which:
@@ -40,8 +41,8 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
     run 'supabase db push' to apply them.
 
     Args:
-        pool: Optional SQLite connection pool. If None, creates one using
-              the environment configuration.
+        pool: Optional connection pool. If None, creates one based on
+              environment configuration (PostgreSQL or SQLite).
 
     Raises:
         MigrationError: If any migration fails
@@ -50,8 +51,7 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
     """
     from nodetool.config.environment import Environment
     from nodetool.migrations.runner import MigrationRunner
-    from nodetool.migrations.state import DatabaseState, detect_database_state_sqlite
-    from nodetool.runtime.db_sqlite import SQLiteConnectionPool as PoolClass
+    from nodetool.migrations.state import detect_database_state_postgres
 
     log.info("Starting database migrations...")
 
@@ -67,20 +67,39 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
         return
 
     async with _migration_lock:
-        # Get or create pool
+        # Get or create pool based on database type
         if pool is None:
-            from pathlib import Path
+            if postgres_db:
+                # Use PostgreSQL
+                from nodetool.runtime.db_postgres import PostgresConnectionPool
 
-            db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
-            db_path = str(Path(db_path).expanduser())
-            pool = await PoolClass.get_shared(db_path)
+                db_params = Environment.get_postgres_params()
+                conninfo = (
+                    f"dbname={db_params['database']} user={db_params['user']} "
+                    f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
+                )
+                pool = await PostgresConnectionPool.get_shared(conninfo)
+            else:
+                # Fall back to SQLite
+                from pathlib import Path
+
+                db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
+                db_path = str(Path(db_path).expanduser())
+                from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+
+                pool = await SQLiteConnectionPool.get_shared(db_path)
 
         # Acquire connection for migrations
         conn = await pool.acquire()
 
         try:
             # Detect initial state for logging
-            db_state = await detect_database_state_sqlite(conn)
+            if postgres_db:
+                db_state = await detect_database_state_postgres(pool)
+            else:
+                from nodetool.migrations.state import detect_database_state_sqlite
+
+                db_state = await detect_database_state_sqlite(conn)
             log.info(f"Database state: {db_state.value}")
 
             # Create migration runner and execute migrations
@@ -112,4 +131,4 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | None" = None) -> 
             raise
 
         finally:
-            await pool.release(conn)
+            await pool.release(conn)  # type: ignore[arg-type]

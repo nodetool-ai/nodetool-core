@@ -259,10 +259,11 @@ class ResourceScope:
         connection from shared pool.
 
         Returns:
-            DBResources instance (SQLiteScopeResources or similar)
+            DBResources instance (SQLiteScopeResources, PostgresScopeResources, or SupabaseScopeResources)
         """
         supabase_url = Environment.get_supabase_url()
         supabase_key = Environment.get_supabase_key()
+        postgres_db = Environment.get("POSTGRES_DB")
 
         if supabase_url and supabase_key:
             from nodetool.runtime.db_supabase import SupabaseScopeResources
@@ -277,6 +278,16 @@ class ResourceScope:
 
             client = AsyncClient(supabase_url, supabase_key)
             return SupabaseScopeResources(client)
+        elif postgres_db:
+            from nodetool.runtime.db_postgres import PostgresConnectionPool, PostgresScopeResources
+
+            db_params = Environment.get_postgres_params()
+            conninfo = (
+                f"dbname={db_params['database']} user={db_params['user']} "
+                f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
+            )
+            pool = await PostgresConnectionPool.get_shared(conninfo)
+            return PostgresScopeResources(pool)
         else:
             from nodetool.runtime.db_sqlite import (
                 SQLiteConnectionPool,
@@ -284,7 +295,6 @@ class ResourceScope:
             )
 
             if self.pool is None:
-                # Use provided db_path or fall back to environment config
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
                 return SQLiteScopeResources(pool)
             else:

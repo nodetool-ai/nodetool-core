@@ -441,20 +441,35 @@ class PostgresAdapter(DatabaseAdapter):
 
     async def query(
         self,
-        condition: ConditionBuilder,
+        condition: ConditionBuilder | None = None,
+        order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
         columns: List[str] | None = None,
     ) -> tuple[List[Dict[str, Any]], str]:
         pk = self.get_primary_key()
-        order_by = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(Identifier(self.table_name), Identifier(pk))
+        if order_by:
+            order_clause = SQL("{}.{} {}").format(
+                Identifier(self.table_name), Identifier(order_by), SQL("DESC" if reverse else "ASC")
+            )
+        else:
+            order_clause = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(
+                Identifier(self.table_name), Identifier(pk)
+            )
 
-        where_clause, params = self._build_condition(condition.build())
+        if condition is not None:
+            where_clause, params = self._build_condition(condition.build())
+        else:
+            where_clause = SQL("1=1")
+            params = []
 
         if columns:
-            cols = SQL(", ").join(
-                [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in columns]
-            )
+            if columns == ["*"]:
+                cols = SQL("*")
+            else:
+                cols = SQL(", ").join(
+                    [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in columns]
+                )
         else:
             cols = SQL(", ").join(
                 [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in self.fields]
@@ -465,7 +480,7 @@ class PostgresAdapter(DatabaseAdapter):
             cols,
             Identifier(self.table_name),
             where_clause,
-            order_by,
+            order_clause,
             SQL(str(fetch_limit)),
         )
 
