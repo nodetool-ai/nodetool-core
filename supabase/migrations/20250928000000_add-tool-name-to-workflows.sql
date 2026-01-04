@@ -1,0 +1,1 @@
+ALTER TABLE nodetool_workflows ADD COLUMN tool_name TEXT

@@ -1,0 +1,1 @@
+ALTER TABLE nodetool_jobs ADD COLUMN params TEXT
