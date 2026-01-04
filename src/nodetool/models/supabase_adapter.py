@@ -41,6 +41,11 @@ def convert_to_supabase_format(value: Any, py_type: Type | None) -> Any:
         return value.isoformat()
     if hasattr(value, "value") and isinstance(type(value), EnumType):
         return value.value  # Store enum value
+    # Handle boolean to integer conversion for PostgreSQL integer columns
+    if py_type is bool and value is True:
+        return 1
+    if py_type is bool and value is False:
+        return 0
     # For lists/dicts, supabase-py usually handles JSON serialization
     return value
 
@@ -72,6 +77,9 @@ def convert_from_supabase_format(value: Any, py_type: Type | None) -> Any:
         except ValueError:
             log.warning(f"Could not cast value '{value}' to Enum {py_type}")
             return value
+    # Handle integer to boolean conversion for PostgreSQL integer columns
+    elif py_type is bool and isinstance(value, int):
+        return value != 0
     # Basic types and JSON usually handled correctly by supabase-py
     return value
 
