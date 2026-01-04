@@ -6,6 +6,7 @@ from nodetool.models.workflow_version import WorkflowVersion
 from nodetool.types.graph import Edge, Node
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.types.workflow import (
+    AutosaveWorkflowRequest,
     CreateWorkflowVersionRequest,
     WorkflowRequest,
     WorkflowVersionList,
@@ -266,3 +267,226 @@ async def test_workflow_version_model_get_by_version(
     # Get nonexistent version
     v99 = await WorkflowVersion.get_by_version(workflow.id, 99)
     assert v99 is None
+
+
+@pytest.mark.asyncio
+async def test_autosave_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test autosave endpoint creates an autosave version."""
+    await workflow.save()
+
+    response = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["skipped"] is False
+    assert data["message"] == "autosaved"
+    assert data["version"] is not None
+    assert data["version"]["save_type"] == "autosave"
+    assert "Autosave" in data["version"]["name"]
+
+
+@pytest.mark.asyncio
+async def test_autosave_rate_limiting(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test autosave respects rate limiting (skips if too soon)."""
+    await workflow.save()
+
+    # First autosave should succeed
+    response1 = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave"},
+        headers=headers,
+    )
+    assert response1.status_code == 200
+    assert response1.json()["skipped"] is False
+
+    # Second autosave immediately should be skipped
+    response2 = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave"},
+        headers=headers,
+    )
+    assert response2.status_code == 200
+    assert response2.json()["skipped"] is True
+    assert response2.json()["message"] == "skipped (too soon)"
+
+
+@pytest.mark.asyncio
+async def test_autosave_force_bypasses_rate_limit(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test autosave with force=true bypasses rate limiting."""
+    await workflow.save()
+
+    # First autosave
+    response1 = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave"},
+        headers=headers,
+    )
+    assert response1.status_code == 200
+    assert response1.json()["skipped"] is False
+
+    # Force autosave should succeed despite rate limit
+    response2 = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave", "force": True},
+        headers=headers,
+    )
+    assert response2.status_code == 200
+    assert response2.json()["skipped"] is False
+
+
+@pytest.mark.asyncio
+async def test_autosave_max_versions_limit(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test autosave respects max versions per workflow."""
+    await workflow.save()
+
+    # Create autosaves with force to bypass rate limiting
+    for i in range(25):  # More than the default max of 20
+        response = client.post(
+            f"/api/workflows/{workflow.id}/autosave",
+            json={"save_type": "autosave", "force": True},
+            headers=headers,
+        )
+        if response.json().get("skipped"):
+            break
+
+    # The last one should be skipped due to max versions
+    last_response = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "autosave", "force": True},
+        headers=headers,
+    )
+    assert last_response.json()["skipped"] is True
+    assert "max versions" in last_response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_autosave_creates_autosave_metadata(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test autosave includes autosave_metadata with client_id and trigger_reason."""
+    await workflow.save()
+
+    response = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={
+            "save_type": "autosave",
+            "client_id": "test-client-123",
+            "description": "Test autosave",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"]["autosave_metadata"]["client_id"] == "test-client-123"
+    assert data["version"]["autosave_metadata"]["trigger_reason"] == "autosave"
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_save_type(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test checkpoint save_type creates version with correct save_type."""
+    await workflow.save()
+
+    response = client.post(
+        f"/api/workflows/{workflow.id}/autosave",
+        json={"save_type": "checkpoint", "description": "Pre-run checkpoint"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"]["save_type"] == "checkpoint"
+    assert data["version"]["description"] == "Pre-run checkpoint"
+
+
+@pytest.mark.asyncio
+async def test_workflow_update_does_not_create_version(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test that PUT /workflows/{id} does NOT automatically create a version."""
+    await workflow.save()
+
+    # Count versions before update
+    response = client.get(f"/api/workflows/{workflow.id}/versions", headers=headers)
+    initial_count = len(response.json()["versions"])
+
+    # Update workflow
+    graph = APIGraph(nodes=[Node(id="1", type="nodetool.input.TextInput", data={"label": "Input"})], edges=[])
+    request = WorkflowRequest(
+        name="Updated Name",
+        access="private",
+        graph=graph,
+    )
+    response = client.put(
+        f"/api/workflows/{workflow.id}",
+        json=request.model_dump(),
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    # Count versions after update - should be the same
+    response = client.get(f"/api/workflows/{workflow.id}/versions", headers=headers)
+    final_count = len(response.json()["versions"])
+    assert final_count == initial_count
+
+
+@pytest.mark.asyncio
+async def test_workflow_version_model_get_latest_autosave(
+    workflow: Workflow,
+):
+    """Test get_latest_autosave method returns only autosave versions."""
+    await workflow.save()
+
+    # Create a manual version
+    await WorkflowVersion.create(
+        workflow_id=workflow.id,
+        user_id=workflow.user_id,
+        graph=workflow.graph,
+        name="Manual Version",
+        save_type="manual",
+    )
+
+    # Create an autosave
+    autosave = await WorkflowVersion.create(
+        workflow_id=workflow.id,
+        user_id=workflow.user_id,
+        graph=workflow.graph,
+        name="Autosave 1",
+        save_type="autosave",
+    )
+
+    latest_autosave = await WorkflowVersion.get_latest_autosave(workflow.id)
+    assert latest_autosave is not None
+    assert latest_autosave.id == autosave.id
+    assert latest_autosave.save_type == "autosave"
+
+
+@pytest.mark.asyncio
+async def test_workflow_version_model_count_autosaves(
+    workflow: Workflow,
+):
+    """Test count_autosaves method."""
+    await workflow.save()
+
+    # No autosaves yet
+    count = await WorkflowVersion.count_autosaves(workflow.id)
+    assert count == 0
+
+    # Create autosaves
+    for i in range(3):
+        await WorkflowVersion.create(
+            workflow_id=workflow.id,
+            user_id=workflow.user_id,
+            graph=workflow.graph,
+            name=f"Autosave {i + 1}",
+            save_type="autosave",
+        )
+
+    # Create a manual version (should not count)
+    await WorkflowVersion.create(
+        workflow_id=workflow.id,
+        user_id=workflow.user_id,
+        graph=workflow.graph,
+        name="Manual Version",
+        save_type="manual",
+    )
+
+    count = await WorkflowVersion.count_autosaves(workflow.id)
+    assert count == 3

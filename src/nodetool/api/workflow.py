@@ -880,7 +880,7 @@ async def autosave_workflow(
 
     max_versions = 20
     autosave_count = await WorkflowVersionModel.count_autosaves(id)
-    if autosave_count >= max_versions and not autosave_request.force:
+    if autosave_count >= max_versions:
         log.debug(f"Autosave skipped for workflow {id}: max versions reached ({autosave_count} >= {max_versions})")
         return AutosaveResponse(version=None, message="skipped (max versions)", skipped=True)
 
