@@ -11,8 +11,8 @@ completed_at TEXT,
 failed_at TEXT,
 error_message TEXT,
 version INTEGER NOT NULL DEFAULT 0
-)
+);
 CREATE INDEX IF NOT EXISTS idx_run_state_status
-ON run_state(status)
+ON run_state(status);
 CREATE INDEX IF NOT EXISTS idx_run_state_updated
-ON run_state(updated_at)
+ON run_state(updated_at);

@@ -22,4 +22,4 @@ help_mode INTEGER,
 agent_execution_id TEXT,
 execution_event_type TEXT,
 workflow_target TEXT
-)
+);

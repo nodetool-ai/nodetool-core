@@ -9,4 +9,4 @@ finished_at TEXT,
 graph TEXT,
 error TEXT,
 cost REAL
-)
+);

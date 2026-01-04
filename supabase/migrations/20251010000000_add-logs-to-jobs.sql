@@ -1,1 +1,1 @@
-ALTER TABLE nodetool_jobs ADD COLUMN logs TEXT
+ALTER TABLE nodetool_jobs ADD COLUMN logs TEXT;

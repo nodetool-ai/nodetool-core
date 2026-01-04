@@ -13,10 +13,10 @@ claim_expires_at TEXT,
 consumed_at TEXT,
 created_at TEXT NOT NULL,
 updated_at TEXT NOT NULL
-)
+);
 CREATE INDEX IF NOT EXISTS idx_inbox_run_node_handle_seq
-ON run_inbox_messages(run_id, node_id, handle, msg_seq)
+ON run_inbox_messages(run_id, node_id, handle, msg_seq);
 CREATE INDEX IF NOT EXISTS idx_inbox_run_node_handle_status
-ON run_inbox_messages(run_id, node_id, handle, status)
+ON run_inbox_messages(run_id, node_id, handle, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_message_id
-ON run_inbox_messages(message_id)
+ON run_inbox_messages(message_id);

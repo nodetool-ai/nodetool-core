@@ -4,4 +4,4 @@ user_id TEXT,
 title TEXT,
 created_at TEXT,
 updated_at TEXT
-)
+);

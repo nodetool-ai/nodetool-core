@@ -16,4 +16,4 @@ duration REAL,
 hardware TEXT,
 input_tokens INTEGER,
 output_tokens INTEGER
-)
+);

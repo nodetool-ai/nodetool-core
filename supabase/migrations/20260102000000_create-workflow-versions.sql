@@ -7,8 +7,8 @@ created_at TEXT NOT NULL,
 name TEXT DEFAULT '',
 description TEXT DEFAULT '',
 graph TEXT DEFAULT '{}'
-)
+);
 CREATE INDEX IF NOT EXISTS idx_nodetool_workflow_versions_workflow_id
-ON nodetool_workflow_versions (workflow_id)
+ON nodetool_workflow_versions (workflow_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nodetool_workflow_versions_workflow_version
-ON nodetool_workflow_versions (workflow_id, version)
+ON nodetool_workflow_versions (workflow_id, version);

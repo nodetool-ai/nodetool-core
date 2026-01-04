@@ -10,6 +10,6 @@ content_type TEXT,
 metadata TEXT,
 created_at TEXT,
 duration REAL
-)
+);
 CREATE INDEX IF NOT EXISTS idx_nodetool_assets_user_id_parent_id
-ON nodetool_assets (user_id, parent_id)
+ON nodetool_assets (user_id, parent_id);

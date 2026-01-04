@@ -15,8 +15,8 @@ retryable INTEGER NOT NULL DEFAULT 0,
 suspension_reason TEXT,
 resume_state_json TEXT,
 outputs_json TEXT
-)
+);
 CREATE INDEX IF NOT EXISTS idx_run_node_state_run_status
-ON run_node_state(run_id, status)
+ON run_node_state(run_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_run_node_state_run_node
-ON run_node_state(run_id, node_id)
+ON run_node_state(run_id, node_id);

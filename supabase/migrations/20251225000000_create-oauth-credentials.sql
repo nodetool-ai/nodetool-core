@@ -12,8 +12,8 @@ received_at TEXT NOT NULL,
 expires_at TEXT,
 created_at TEXT NOT NULL,
 updated_at TEXT NOT NULL
-)
+);
 CREATE INDEX IF NOT EXISTS idx_oauth_credentials_user_provider
-ON nodetool_oauth_credentials (user_id, provider)
+ON nodetool_oauth_credentials (user_id, provider);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_credentials_user_provider_account
-ON nodetool_oauth_credentials (user_id, provider, account_id)
+ON nodetool_oauth_credentials (user_id, provider, account_id);

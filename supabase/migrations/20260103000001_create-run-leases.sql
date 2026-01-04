@@ -3,6 +3,6 @@ run_id TEXT PRIMARY KEY,
 worker_id TEXT NOT NULL,
 acquired_at TEXT NOT NULL,
 expires_at TEXT NOT NULL
-)
+);
 CREATE INDEX IF NOT EXISTS idx_run_leases_expires
-ON run_leases(expires_at)
+ON run_leases(expires_at);

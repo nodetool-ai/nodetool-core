@@ -108,6 +108,8 @@ async def export_migration_to_sql(
                                 arg = call.args[0]
                                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                                     sql = arg.value.strip()
+                                    if sql and not sql.endswith(";"):
+                                        sql = sql + ";"
                                     if sql:
                                         sql_statements.append(sql)
 
