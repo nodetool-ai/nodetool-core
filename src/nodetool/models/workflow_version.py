@@ -237,11 +237,11 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["COUNT(*) as count"],
+            columns=["id"],
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
-            limit=1,
+            limit=1000,
         )
-        return results[0].get("count", 0) if results else 0
+        return len(results)
 
     @classmethod
     async def delete_old_autosaves(
