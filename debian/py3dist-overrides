@@ -1,0 +1,56 @@
+# Python dependency mapping for packages not available in Debian repositories
+# Format: pypi-name debian-package-name
+#
+# This file helps dh_python3 understand how to map Python dependencies
+# to Debian packages. For packages that don't exist in Debian, we'll
+# recommend users install them via pip.
+
+# Core AI dependencies (not in Debian repos - install via pip)
+anthropic
+claude-agent-sdk
+openai
+google-genai
+ollama
+fal-client
+runpod
+huggingface-hub
+tiktoken
+sentencepiece
+
+# LlamaIndex (not in Debian repos)
+llama-index-core
+llama-index-embeddings-ollama
+
+# Document processing (partially in Debian)
+langchain-text-splitters
+markitdown
+pymupdf4llm
+paddleocr
+paddlepaddle
+pdfplumber
+
+# Vector DB (not in Debian)
+chromadb
+
+# Networking/Web (not in Debian)
+fastmcp
+mcp
+pyngrok
+playwright
+
+# Media processing (some not in Debian)
+ffmpeg-python
+imageio-ffmpeg
+opencv-python-headless
+
+# Other specialized packages
+bs4 python3-bs4
+ftfy
+gguf
+hf-transfer
+hf-xet
+moto python3-moto
+nvidia-ml-py
+openapi-pydantic
+pytesseract python3-pytesseract
+supabase

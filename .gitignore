@@ -141,3 +141,15 @@ tmp/
 *.bak2
 *.backup
 *.old
+
+# Debian packaging artifacts
+deb_dist/
+*.deb
+*.dsc
+*.changes
+*.buildinfo
+debian/.debhelper/
+debian/python3-nodetool-core/
+debian/files
+debian/*.debhelper*
+debian/*.substvars

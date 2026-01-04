@@ -1,0 +1,41 @@
+Source: nodetool-core
+Section: python
+Priority: optional
+Maintainer: Matthias Georgi <matti.georgi@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-setuptools,
+               python3-hatchling,
+               python3-pip
+Standards-Version: 4.6.2
+Homepage: https://github.com/nodetool-ai/nodetool-core
+Vcs-Browser: https://github.com/nodetool-ai/nodetool-core
+Vcs-Git: https://github.com/nodetool-ai/nodetool-core.git
+Rules-Requires-Root: no
+
+Package: python3-nodetool-core
+Architecture: all
+Depends: ${python3:Depends},
+         ${misc:Depends},
+         python3 (>= 3.10),
+         python3-pip
+Recommends: ffmpeg,
+            tesseract-ocr
+Suggests: python3-torch
+Description: Nodetool Core - AI Workflow Engine library
+ Nodetool Core is the core library for Nodetool, providing the necessary
+ functionality for building and running AI workflows.
+ .
+ Key features include:
+  - Node-Based DSL for declaring graphs in pure Python or JSON
+  - First-class agent support with planner, browser, and tool-calling
+  - Multi-provider AI integration (OpenAI, Anthropic, Google, Ollama)
+  - WebSocket support for real-time updates
+  - Async database operations with SQLite and PostgreSQL support
+  - ChromaDB integration for vector storage
+ .
+ This package requires additional Python dependencies to be installed via pip.
+ After installation, run: pip3 install --user nodetool-core
+ to install the complete dependency tree.
