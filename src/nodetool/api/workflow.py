@@ -463,9 +463,14 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
 async def update_workflow(
     id: str,
     workflow_request: WorkflowRequest,
-    background_tasks: BackgroundTasks,
     user: str = Depends(current_user),
 ) -> Workflow:
+    """
+    Update an existing workflow.
+
+    Note: This endpoint does NOT create a version. Use POST /versions for manual
+    version creation, or POST /autosave for automatic version saving.
+    """
     log.debug(f"Updating workflow {id} with settings: {workflow_request.settings}")
     workflow = await WorkflowModel.get(id)
     if not workflow:
@@ -489,16 +494,6 @@ async def update_workflow(
     workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
     await workflow.save()
-
-    next_version = await WorkflowVersionModel.get_next_version(id)
-    version_name = f"Version {next_version}"
-    await WorkflowVersionModel.create(
-        workflow_id=id,
-        user_id=user,
-        graph=new_graph,
-        name=version_name,
-        description=workflow_request.description or "",
-    )
 
     updated_workflow = await from_model(workflow)
 
