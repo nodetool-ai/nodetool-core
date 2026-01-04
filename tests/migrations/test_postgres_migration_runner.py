@@ -31,10 +31,12 @@ POSTGRES_URL = os.environ.get("POSTGRES_TEST_URL", "postgresql://testuser:testpa
 
 
 def postgres_available():
-    """Check if PostgreSQL is available for testing."""
+    """Check if PostgreSQL psycopg_pool is available for testing."""
     try:
-        import psycopg_pool  # noqa: F401
+        from psycopg_pool import AsyncConnectionPool
 
+        # Verify the import works - use the imported class
+        _ = AsyncConnectionPool
         return True
     except ImportError:
         return False
@@ -158,16 +160,15 @@ class TestPostgresMigrationRunner:
         assert "20250101_000001" in applied
 
         # Verify table was created
-        async with postgres_pool.connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
-                )
-                columns = [row[0] for row in await cursor.fetchall()]
-                assert "id" in columns
-                assert "name" in columns
-                assert "value" in columns
-                assert "description" in columns
+        async with postgres_pool.connection() as conn, conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
+            )
+            columns = [row[0] for row in await cursor.fetchall()]
+            assert "id" in columns
+            assert "name" in columns
+            assert "value" in columns
+            assert "description" in columns
 
     async def test_postgres_migration_idempotent(self, postgres_pool, temp_migrations_dir):
         """Test that running migrate twice doesn't cause errors."""
@@ -225,13 +226,12 @@ class TestPostgresMigrationRunner:
         assert len(status["pending"]) == 1
 
         # Verify column was removed
-        async with postgres_pool.connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
-                )
-                columns = [row[0] for row in await cursor.fetchall()]
-                assert "description" not in columns
+        async with postgres_pool.connection() as conn, conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
+            )
+            columns = [row[0] for row in await cursor.fetchall()]
+            assert "description" not in columns
 
     async def test_postgres_checksum_validation(self, postgres_pool, temp_migrations_dir):
         """Test that checksum validation works with PostgreSQL."""
