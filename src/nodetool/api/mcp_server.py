@@ -1982,7 +1982,7 @@ async def list_storage_files(
     # Try to list files (not all storage backends support this)
     try:
         if hasattr(storage, "list_files"):
-            files = await storage.list_files(limit=limit)
+            files = await getattr(storage, "list_files")(limit=limit)  # ty: ignore  # type: ignore[call-overload]
             return {
                 "files": [
                     {
@@ -4567,7 +4567,7 @@ async def list_run_states(
         conditions.append(Field("status").equals(status))
 
     if not include_stale:
-        conditions.append(Field("heartbeat_at").is_not(None))
+        conditions.append(Field("heartbeat_at") != None)
 
     from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, LogicalOperator
 

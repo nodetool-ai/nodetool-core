@@ -334,7 +334,7 @@ class BrowserTool(Tool):
                 locale="en-US",
                 timezone_id="America/New_York",
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
-            )
+            )  # type: ignore[union-attr]
 
             page = await browser_context.new_page()
             await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -432,7 +432,7 @@ class ScreenshotTool(Tool):
             browser = await context.get_browser()
             browser_context = await browser.new_context(
                 bypass_csp=True,
-            )
+            )  # type: ignore[union-attr]
             page = await browser_context.new_page()
 
             # Navigate to the URL

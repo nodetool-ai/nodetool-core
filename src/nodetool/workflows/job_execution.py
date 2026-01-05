@@ -54,6 +54,7 @@ class JobExecution(ABC):
         self.runner = runner
         self.execution_id = execution_id
         self.created_at = datetime.now()
+        self.started_at: datetime | None = None
         self._status: str = "starting"
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
@@ -82,6 +83,12 @@ class JobExecution(ABC):
     def age_seconds(self) -> float:
         """Get the age of the job in seconds."""
         return (datetime.now() - self.created_at).total_seconds()
+
+    def _update_status(self, status: str) -> None:
+        """Update status and set started_at when transitioning to running."""
+        if status == "running" and self._status != "running":
+            self.started_at = datetime.now()
+        self._status = status
 
     @abstractmethod
     def is_running(self) -> bool:

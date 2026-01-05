@@ -44,7 +44,7 @@ class RunWorkflowCommand(Command):
 
         # Find workflow by name
         try:
-            workflows, _ = Workflow.paginate(user_id=cli.context.user_id, limit=1000)
+            workflows, _ = await Workflow.paginate(user_id=cli.context.user_id, limit=1000)
 
             # Find workflow with matching name
             found_workflow = None

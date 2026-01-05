@@ -51,7 +51,7 @@ class ThreadedJobExecution(JobExecution):
 
     def _set_status(self, status: str) -> None:
         """Update both the internal and runner status consistently."""
-        self._status = status
+        self._update_status(status)
         if self.runner:
             self.runner.status = status
 

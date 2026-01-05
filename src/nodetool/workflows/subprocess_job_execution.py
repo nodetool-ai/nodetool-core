@@ -501,7 +501,7 @@ class SubprocessJobExecution(JobExecution):
         self._stderr_task: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
         self._completed_event = asyncio.Event()
-        self._status = "running"
+        self._update_status("running")
         self._sandbox_profile_path = sandbox_profile_path
 
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
