@@ -120,8 +120,8 @@ class JobExecutionManager:
 
         worker_id = Environment.get_worker_id()
         execution_id = str(uuid.uuid4())
-        # Generate a new run_id since specific run_id is not provided in request
-        run_id = str(uuid.uuid4())
+        # Use client-provided job_id if available, otherwise generate a new one
+        run_id = request.job_id if request.job_id else str(uuid.uuid4())
 
         # 1. Create RunState record (DB source of truth)
         # Using ResourceScope to ensure DB connection
