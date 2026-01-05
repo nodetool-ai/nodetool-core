@@ -113,12 +113,6 @@ class TestRegularChatProcessorThreadId:
         chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk"]
         assert len(chunk_messages) > 0, "Should have sent chunk messages"
 
-        # Debug: print all messages
-        import json
-        print(f"\nTotal messages sent: {len(sent_messages)}")
-        for i, msg in enumerate(sent_messages):
-            print(f"Message {i}: {json.dumps(msg, indent=2)}")
-
         for i, msg in enumerate(chunk_messages):
             # Thread_id should be present in the sent message
             assert (
