@@ -85,7 +85,7 @@ if __name__ == "__main__":
     container = None
     sock = None
     try:
-        api_client = docker.APIClient()
+        api_client = docker.APIClient()  # type: ignore[union-attr]
         container = api_client.create_container(
             image=image,
             command=cmd,

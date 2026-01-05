@@ -3104,12 +3104,15 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 # Handle HuggingFace models
                 if model_type.startswith("hf."):
                     repo_id = model.get("repo_id")
+                    if not repo_id:
+                        console.print(f"  [red]Error: repo_id is required for HF models[/]")
+                        continue
                     console.print(f"  [cyan]Downloading HF model: {repo_id}[/]")
 
                     # Start download (streaming progress)
                     last_status = None
                     async for progress in client.download_huggingface_model(
-                        repo_id=repo_id,
+                        repo_id=repo_id,  # type: ignore[arg-type]
                         file_path=model.get("path"),
                         ignore_patterns=model.get("ignore_patterns"),
                         allow_patterns=model.get("allow_patterns"),
@@ -3133,10 +3136,13 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 # Handle Ollama models
                 elif model_type == "language_model" and model.get("provider") == "ollama":
                     model_id = model.get("id")
+                    if not model_id:
+                        console.print(f"  [red]Error: model id is required for Ollama models[/]")
+                        continue
                     console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
 
                     last_status = None
-                    async for progress in client.download_ollama_model(model_name=model_id):
+                    async for progress in client.download_ollama_model(model_name=model_id):  # type: ignore[arg-type]
                         last_status = progress.get("status")
                         if last_status and last_status != "success":
                             console.print(f"    [yellow]{last_status}[/]", end="\r")
@@ -3265,7 +3271,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 auth_token = deployment.worker_auth_token
 
             # Create client
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
 
             # Sync assets first
             workflow_data = from_model(workflow).model_dump()
@@ -3354,7 +3360,7 @@ def deploy_workflows_list(deployment_name: str):
                 auth_token = deployment.worker_auth_token
 
             # Get workflows from remote
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             result = await client.list_workflows()
 
             workflows = result.get("workflows", [])
@@ -3436,7 +3442,7 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
                 auth_token = deployment.worker_auth_token
 
             # Delete from remote
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             result = await client.delete_workflow(workflow_id)
 
             if result.get("status") == "ok":
@@ -3511,7 +3517,7 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
                 auth_token = deployment.worker_auth_token
 
             # Run workflow on remote
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             result = await client.run_workflow(workflow_id, workflow_params)
 
             console.print("[green]✅ Workflow executed successfully[/]")
@@ -3571,7 +3577,7 @@ def deploy_database_get(deployment_name: str, table: str, key: str):
                 auth_token = deployment.worker_auth_token
 
             # Get item from database
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             item = await client.db_get(table, key)
 
             console.print(f"[bold cyan]Item from {table}/{key}:[/]")
@@ -3627,7 +3633,7 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
                 auth_token = deployment.worker_auth_token
 
             # Save item to database
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             result = await client.db_save(table, item)
 
             console.print(f"[green]✅ Item saved to {table}[/]")
@@ -3682,7 +3688,7 @@ def deploy_database_delete(deployment_name: str, table: str, key: str, force: bo
                 auth_token = deployment.worker_auth_token
 
             # Delete item from database
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
             await client.db_delete(table, key)
 
             console.print(f"[green]✅ Item {table}/{key} deleted successfully[/]")
@@ -3742,7 +3748,7 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
             if isinstance(deployment, SelfHostedDeployment):
                 auth_token = deployment.worker_auth_token
 
-            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
 
             # Get local collection
             chroma_client = await get_async_chroma_client()

@@ -142,7 +142,7 @@ class RunPodDeployer:
             }
 
             # Call legacy deploy function
-            deploy_to_runpod(**deploy_kwargs)
+            deploy_to_runpod(**deploy_kwargs)  # type: ignore[arg-type]
 
             results["steps"].append("RunPod deployment completed")
 

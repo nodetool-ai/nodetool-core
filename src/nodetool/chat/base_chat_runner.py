@@ -407,7 +407,7 @@ class BaseChatRunner(ABC):
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
 
         assert last_message.model, "Model is required"
@@ -492,7 +492,7 @@ class BaseChatRunner(ABC):
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
 
         await self._run_processor(
@@ -556,7 +556,7 @@ class BaseChatRunner(ABC):
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
 
         await self._run_processor(

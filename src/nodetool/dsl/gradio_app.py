@@ -69,7 +69,7 @@ async def _execute_workflow(workflow: Any) -> None:
             pass
         return
     if hasattr(runner, "run"):
-        await runner.run()
+        await runner.run()  # type: ignore[call-arg]
         return
     raise RuntimeError("WorkflowRunner has no run or run_stream method")
 

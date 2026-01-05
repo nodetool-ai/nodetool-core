@@ -44,5 +44,5 @@ async def get_all_image_models(user_id: str) -> List[ImageModel]:
 if __name__ == "__main__":
     import asyncio
 
-    models = asyncio.run(get_all_image_models())
+    models = asyncio.run(get_all_image_models(user_id="1"))
     print(models)

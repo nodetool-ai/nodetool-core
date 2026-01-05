@@ -162,7 +162,7 @@ async def process_regular_chat(
                 console.print(chunk.content, end="", highlight=False)
                 if messages[-1].role == "assistant":
                     assert isinstance(messages[-1].content, str)
-                    messages[-1].content += current_chunk
+                    messages[-1].content += current_chunk  # type: ignore[operator]
                 else:
                     messages.append(Message(role="assistant", content=current_chunk))
 

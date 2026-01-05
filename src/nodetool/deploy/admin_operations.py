@@ -483,7 +483,7 @@ async def download_hf_model(
         if user_id is not None:
             stream_kwargs["user_id"] = user_id
 
-        async for chunk in stream_hf_model_download(**stream_kwargs):
+        async for chunk in stream_hf_model_download(**stream_kwargs):  # type: ignore[arg-type]
             yield chunk
     else:
         # Non-streaming download - still use the download manager but just return final result
