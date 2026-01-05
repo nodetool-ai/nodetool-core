@@ -27,7 +27,7 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
 
     Args:
         postgres_url: Optional PostgreSQL connection URL. If provided, connects to PostgreSQL.
-                      Otherwise uses SQLite from DB_PATH environment variable.
+                      Otherwise checks POSTGRES_* env vars or falls back to SQLite.
 
     Returns:
         Tuple of (connection_or_pool, cleanup_func, db_type)
@@ -35,16 +35,29 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
     Raises:
         ImportError: If psycopg_pool is not installed when using PostgreSQL.
     """
-    if postgres_url:
+    from nodetool.config.environment import Environment
+
+    # Check for PostgreSQL configuration
+    postgres_db = Environment.get("POSTGRES_DB")
+
+    if postgres_url or postgres_db:
         # Connect to PostgreSQL
         try:
             from psycopg_pool import AsyncConnectionPool
         except ImportError as e:
             raise ImportError(
-                "psycopg-pool is required for PostgreSQL migrations. "
-                "Install it with: pip install psycopg psycopg-pool"
+                "psycopg-pool is required for PostgreSQL migrations. Install it with: pip install psycopg psycopg-pool"
             ) from e
 
+        # Build connection URL from individual vars if not provided
+        if not postgres_url and postgres_db:
+            params = Environment.get_postgres_params()
+            postgres_url = (
+                f"dbname={params['database']} user={params['user']} "
+                f"password={params['password']} host={params['host']} port={params['port']}"
+            )
+
+        assert postgres_url is not None, "postgres_url should be set at this point"
         pool = AsyncConnectionPool(postgres_url, min_size=1, max_size=5)
         await pool.open()
 
@@ -54,7 +67,6 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
         return pool, cleanup, "postgres"
     else:
         # Connect to SQLite
-        from nodetool.config.environment import Environment
         from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
         db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
