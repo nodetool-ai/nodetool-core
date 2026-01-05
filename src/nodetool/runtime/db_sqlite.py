@@ -38,6 +38,7 @@ class SQLiteConnectionPool:
         self.available: asyncio.Queue = asyncio.Queue(maxsize=pool_size)
         self.active_count = 0
         self._lock = asyncio.Lock()
+        self._all_connections: list[aiosqlite.Connection] = []  # Track all connections for cleanup
 
     @classmethod
     def _get_loop_lock(cls, loop_id: int) -> asyncio.Lock:
@@ -141,6 +142,9 @@ class SQLiteConnectionPool:
         connection = await aiosqlite.connect(resolved_path, **connect_kwargs)
         connection.row_factory = aiosqlite.Row
 
+        # Track this connection for cleanup
+        self._all_connections.append(connection)
+
         # Apply pragmas for concurrency and performance
         try:
             if ":memory:" in self.db_path:
@@ -239,9 +243,10 @@ class SQLiteConnectionPool:
     async def close_all(self) -> None:
         """Close all pooled connections with proper WAL checkpointing."""
         connections_closed = 0
-        while not self.available.empty():
+
+        # Close all tracked connections
+        for conn in self._all_connections:
             try:
-                conn = self.available.get_nowait()
                 # Rollback any pending transactions first
                 try:
                     await conn.rollback()
@@ -250,10 +255,13 @@ class SQLiteConnectionPool:
                 await self._close_connection_with_checkpoint(conn)
                 connections_closed += 1
                 log.debug(f"Closed SQLite connection from pool for {self.db_path}")
-            except asyncio.QueueEmpty:
-                break
+            except Exception as e:
+                log.warning(f"Error closing connection for {self.db_path}: {e}")
 
-        # Reset active count since we closed all connections
+        # Clear the tracking list
+        self._all_connections.clear()
+
+        # Reset active count
         async with self._lock:
             self.active_count = 0
 

@@ -222,8 +222,14 @@ class ResourceScope:
         try:
             # Unbind the scope from the context variable
             if self._token is not None:
-                _current_scope.reset(self._token)
-                log.debug("ResourceScope unbound from context")
+                try:
+                    _current_scope.reset(self._token)
+                    log.debug("ResourceScope unbound from context")
+                except ValueError:
+                    # Token was created in a different context (e.g., nested task)
+                    # This is expected in some test scenarios, log and continue
+                    log.debug("ResourceScope token reset skipped (different context)")
+                    pass
 
             # Only clean up database resources if we own them (not borrowed from parent)
             if self.db is not None and self._owns_db:
