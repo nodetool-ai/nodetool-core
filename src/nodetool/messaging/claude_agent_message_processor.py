@@ -608,6 +608,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                                 "type": "chunk",
                                                 "content": text,
                                                 "done": False,
+                                                "thread_id": last_message.thread_id,
                                             }
                                         )
                                     elif isinstance(block, ToolUseBlock):
@@ -646,6 +647,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                                         "type": "chunk",
                                         "content": "",
                                         "done": True,
+                                        "thread_id": last_message.thread_id,
                                     }
                                 )
 
@@ -685,7 +687,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
 
             await self.send_message(
                 Message(
@@ -960,6 +962,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                                                 "type": "chunk",
                                                 "content": text,
                                                 "done": False,
+                                                "thread_id": last_message.thread_id,
                                             }
                                         )
                                     elif isinstance(block, ToolUseBlock):
@@ -996,6 +999,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                                         "type": "chunk",
                                         "content": "",
                                         "done": True,
+                                        "thread_id": last_message.thread_id,
                                     }
                                 )
 
@@ -1035,7 +1039,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
             await self.send_message({"type": "error", "message": error_msg, "error_type": "help_error"})
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
 
             await self.send_message(
                 Message(

@@ -764,7 +764,10 @@ class HelpMessageProcessor(MessageProcessor):
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         accumulated_content += chunk.content
-                        await self.send_message({"type": "chunk", "content": chunk.content, "done": False})
+                        # Set thread_id if available
+                        if last_message.thread_id and not chunk.thread_id:
+                            chunk.thread_id = last_message.thread_id
+                        await self.send_message({"type": "chunk", "content": chunk.content, "done": False, "thread_id": chunk.thread_id})
                     elif isinstance(chunk, ToolCall):
                         log.debug(f"Processing help tool call: {chunk.name}")
 

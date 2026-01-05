@@ -175,12 +175,16 @@ class AgentMessageProcessor(MessageProcessor):
 
                 log.debug(f"Agent yielded item type: {type(item).__name__}")
                 if isinstance(item, Chunk):
+                    # Set thread_id if available
+                    if last_message.thread_id and not item.thread_id:
+                        item.thread_id = last_message.thread_id
                     # Stream chunk to client
                     await self.send_message(
                         {
                             "type": "chunk",
                             "content": item.content,
                             "done": item.done if hasattr(item, "done") else False,
+                            "thread_id": item.thread_id,
                         }
                     )
                 elif isinstance(item, ToolCall):
