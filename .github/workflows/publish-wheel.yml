@@ -133,7 +133,8 @@ jobs:
             dist/*.whl.metadata
           draft: false
           prerelease: ${{ needs.validate.outputs.is-prerelease }}
-          generate_release_notes: true
+          generate_release_notes: false
+          asset_delete_mode: replace
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
