@@ -44,6 +44,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache UV packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
