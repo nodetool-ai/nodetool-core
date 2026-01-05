@@ -2,7 +2,6 @@ FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
     PROXY_CONFIG=/etc/nodetool/proxy.yaml
 
 WORKDIR /app
@@ -11,7 +10,7 @@ FROM base AS pip-deps
 
 # Install runtime dependencies
 COPY src/nodetool/proxy/requirements.txt /tmp/proxy-requirements.txt
-RUN pip install --no-cache-dir -r /tmp/proxy-requirements.txt
+RUN pip install -r /tmp/proxy-requirements.txt
 
 FROM base AS final
 
