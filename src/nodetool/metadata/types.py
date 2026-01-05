@@ -1678,6 +1678,7 @@ class Chunk(BaseType):
 
     type: Literal["chunk"] = "chunk"
     node_id: str | None = None
+    thread_id: str | None = None
     content_type: Literal["text", "audio", "image", "video", "document"] = "text"
     content: str = ""
     content_metadata: dict[str, Any] = {}

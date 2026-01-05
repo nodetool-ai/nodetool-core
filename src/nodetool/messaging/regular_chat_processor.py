@@ -354,6 +354,9 @@ class RegularChatProcessor(MessageProcessor):
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         content += chunk.content
+                        # Set thread_id if available
+                        if last_message.thread_id and not chunk.thread_id:
+                            chunk.thread_id = last_message.thread_id
                         await self.send_message(chunk.model_dump())
                     elif isinstance(chunk, ToolCall):
                         # Resolve tool and prepare message
@@ -430,7 +433,7 @@ class RegularChatProcessor(MessageProcessor):
                     log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
 
             # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
             await self.send_message(
                 Message(
                     role="assistant",
@@ -458,7 +461,7 @@ class RegularChatProcessor(MessageProcessor):
             )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
 
             # Return an error message
             await self.send_message(
