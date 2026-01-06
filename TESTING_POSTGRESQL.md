@@ -2,6 +2,20 @@
 
 This document describes how to run the test suite with PostgreSQL instead of the default SQLite.
 
+## Current Status
+
+**✅ Working:**
+- PostgreSQL test database setup via Docker Compose
+- Connection pool management  
+- Database migrations
+- Schema isolation for parallel test execution
+- GitHub Actions CI integration
+- Tests that mock database adapters (e.g., `tests/models/test_postgres_adapter.py`)
+
+**⚠️ Known Issues:**
+- Tests using `ResourceScope` fixture may hang during cleanup (under investigation)
+- Workaround: Use `@pytest.mark.no_setup` marker to skip ResourceScope setup for PostgreSQL tests
+
 ## Quick Start
 
 ### Using Docker Compose (Recommended)
