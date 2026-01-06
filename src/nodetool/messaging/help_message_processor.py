@@ -767,7 +767,15 @@ class HelpMessageProcessor(MessageProcessor):
                         # Set thread_id if available
                         if last_message.thread_id and not chunk.thread_id:
                             chunk.thread_id = last_message.thread_id
-                        await self.send_message({"type": "chunk", "content": chunk.content, "done": False, "thread_id": chunk.thread_id})
+                        await self.send_message(
+                            {
+                                "type": "chunk",
+                                "content": chunk.content,
+                                "done": False,
+                                "thread_id": chunk.thread_id,
+                                "workflow_id": last_message.workflow_id,
+                            }
+                        )
                     elif isinstance(chunk, ToolCall):
                         log.debug(f"Processing help tool call: {chunk.name}")
 
@@ -785,6 +793,7 @@ class HelpMessageProcessor(MessageProcessor):
                                 "name": chunk.name,
                                 "args": chunk.args,
                                 "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
                             }
 
                             await self.send_message(tool_call_message)
@@ -819,52 +828,53 @@ class HelpMessageProcessor(MessageProcessor):
                                 args=chunk.args,
                                 result=normalized,
                             )
-                        else:
+                        elif chunk.name in help_tools_by_name:
                             # Handle built-in help tools locally
-                            if chunk.name in help_tools_by_name:
-                                tool_impl = help_tools_by_name[chunk.name]
-                                # Notify client about tool execution
-                                await self.send_message(
-                                    ToolCallUpdate(
-                                        name=chunk.name,
-                                        args=chunk.args,
-                                        message=tool_impl.user_message(chunk.args),
-                                    ).model_dump()
+                            tool_impl = help_tools_by_name[chunk.name]
+                            # Notify client about tool execution
+                            await self.send_message(
+                                ToolCallUpdate(
+                                    thread_id=last_message.thread_id,
+                                    workflow_id=last_message.workflow_id,
+                                    name=chunk.name,
+                                    args=chunk.args,
+                                    message=tool_impl.user_message(chunk.args),
+                                ).model_dump()
+                            )
+                            try:
+                                result = await tool_impl.process(processing_context, chunk.args)
+                                tool_result = ToolCall(
+                                    id=chunk.id,
+                                    name=chunk.name,
+                                    args=chunk.args,
+                                    result=result,
                                 )
-                                try:
-                                    result = await tool_impl.process(processing_context, chunk.args)
-                                    tool_result = ToolCall(
-                                        id=chunk.id,
-                                        name=chunk.name,
-                                        args=chunk.args,
-                                        result=result,
-                                    )
-                                except (ValueError, TypeError, KeyError) as e:
-                                    # Tool execution failed due to invalid parameters
-                                    # Return error to model so it can retry with corrected args
-                                    log.warning(f"Help tool {chunk.name} failed: {e}. Returning error to model.")
-                                    tool_result = ToolCall(
-                                        id=chunk.id,
-                                        name=chunk.name,
-                                        args=chunk.args,
-                                        result={"error": f"Tool execution failed: {str(e)}"},
-                                    )
-                            else:
-                                # Try to process as regular server tool, with graceful error handling
-                                try:
-                                    tool_result = await self._run_tool(processing_context, chunk)
-                                except ValueError:
-                                    # Tool not found - return error to model instead of crashing
-                                    # This helps smaller models that may hallucinate tool names
-                                    log.warning(f"Tool not found: {chunk.name}. Returning error to model.")
-                                    tool_result = ToolCall(
-                                        id=chunk.id,
-                                        name=chunk.name,
-                                        args=chunk.args,
-                                        result={
-                                            "error": f"Tool '{chunk.name}' not found. Available tools: search_nodes, search_examples, and UI tools. Use search_nodes to find valid node types."
-                                        },
-                                    )
+                            except (ValueError, TypeError, KeyError) as e:
+                                # Tool execution failed due to invalid parameters
+                                # Return error to model so it can retry with corrected args
+                                log.warning(f"Help tool {chunk.name} failed: {e}. Returning error to model.")
+                                tool_result = ToolCall(
+                                    id=chunk.id,
+                                    name=chunk.name,
+                                    args=chunk.args,
+                                    result={"error": f"Tool execution failed: {str(e)}"},
+                                )
+                        else:
+                            # Try to process as regular server tool, with graceful error handling
+                            try:
+                                tool_result = await self._run_tool(processing_context, chunk, last_message.thread_id, last_message.workflow_id)
+                            except ValueError:
+                                # Tool not found - return error to model instead of crashing
+                                # This helps smaller models that may hallucinate tool names
+                                log.warning(f"Tool not found: {chunk.name}. Returning error to model.")
+                                tool_result = ToolCall(
+                                    id=chunk.id,
+                                    name=chunk.name,
+                                    args=chunk.args,
+                                    result={
+                                        "error": f"Tool '{chunk.name}' not found. Available tools: search_nodes, search_examples, and UI tools. Use search_nodes to find valid node types."
+                                    },
+                                )
 
                         log.debug(f"Help tool {chunk.name} execution complete, id={tool_result.id}")
 
@@ -910,7 +920,15 @@ class HelpMessageProcessor(MessageProcessor):
                     break
 
             # Signal the end of the help stream
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
             # await self.send_message(
             #     Message(
             #         role="assistant",
@@ -935,11 +953,21 @@ class HelpMessageProcessor(MessageProcessor):
                     "type": "error",
                     "message": error_msg,
                     "error_type": "connection_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
                 }
             )
 
             # Signal the end of the help stream with error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Return an error message
             await self.send_message(
@@ -963,6 +991,8 @@ class HelpMessageProcessor(MessageProcessor):
         self,
         context: ProcessingContext,
         tool_call: ToolCall,
+        thread_id: str | None = None,
+        workflow_id: str | None = None,
     ) -> ToolCall:
         """Execute a tool call and return the result."""
         from nodetool.agents.tools.tool_registry import resolve_tool_by_name
@@ -973,6 +1003,8 @@ class HelpMessageProcessor(MessageProcessor):
         # Send tool call to client
         await self.send_message(
             ToolCallUpdate(
+                thread_id=thread_id,
+                workflow_id=workflow_id,
                 name=tool_call.name,
                 args=tool_call.args,
                 message=tool.user_message(tool_call.args),

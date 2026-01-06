@@ -193,6 +193,8 @@ class AgentMessageProcessor(MessageProcessor):
                         await self.send_message(
                             {
                                 "type": "tool_call_update",
+                                "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
                                 "tool_call_id": item.id,
                                 "name": item.name,
                                 "message": f"Calling {item.name}...",
@@ -388,17 +390,41 @@ class AgentMessageProcessor(MessageProcessor):
             )
 
             # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
         except Exception as e:
             log.error(f"Error in agent execution: {e}", exc_info=True)
             error_msg = f"Agent execution error: {str(e)}"
 
             # Send error message to client
-            await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_msg,
+                    "error_type": "agent_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Return error message
             await self.send_message(

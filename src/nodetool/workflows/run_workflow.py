@@ -26,7 +26,7 @@ async def handle_runner_error(
 
     error_message = str(exception)
 
-    yield Error(error=error_message)
+    yield Error(message=error_message)
     yield JobUpdate(job_id=runner.job_id, status="failed", error=error_message)
 
 
@@ -42,10 +42,7 @@ async def process_message(
         req (RunJobRequest): The request object for the job.
     """
     msg = await context.pop_message_async()
-    if isinstance(msg, Error):
-        raise Exception(msg.error)
-    else:
-        yield msg
+    yield msg
 
 
 async def process_workflow_messages(
@@ -64,6 +61,7 @@ async def process_workflow_messages(
         sleep_interval (float): Time to sleep between message checks
         explicit_types (bool): Whether to wrap primitive types in explicit types
     """
+    error_occurred = False
     try:
         log.debug("Starting workflow message processing")
         while runner.is_running():
@@ -81,7 +79,16 @@ async def process_workflow_messages(
         log.debug("Finished processing workflow messages")
     except Exception as e:
         log.exception(e)
-        raise
+        error_occurred = True
+        async for msg in handle_runner_error(e, runner):
+            yield msg
+    finally:
+        # Always drain pending messages, even if an error occurred
+        while context.has_messages():
+            async for msg in process_message(context):
+                yield msg
+        if error_occurred:
+            raise
 
 
 async def run_workflow(
@@ -196,11 +203,12 @@ async def run_workflow(
                     run_future.result()
                 except Exception as e:
                     log.exception(e)
-                    try:
-                        async for msg in handle_runner_error(e, runner):
-                            yield msg
-                    finally:
-                        run_future.cancel()
+                    async for msg in handle_runner_error(e, runner):
+                        yield msg
+                # Drain pending messages after error
+                async for msg in drain_pending_messages():
+                    yield msg
+                raise
             else:
                 try:
                     run_future.result()
@@ -208,8 +216,9 @@ async def run_workflow(
                     log.exception(e)
                     async for msg in handle_runner_error(e, runner):
                         yield msg
-            async for msg in drain_pending_messages():
-                yield msg
+                # Drain pending messages after normal completion
+                async for msg in drain_pending_messages():
+                    yield msg
         else:
             # Backwards-compatible behavior: create a temporary loop for this run
             with ThreadedEventLoop() as tel:
@@ -229,6 +238,10 @@ async def run_workflow(
                         log.exception(e)
                         async for msg in handle_runner_error(e, runner):
                             yield msg
+                    # Drain pending messages after error
+                    async for msg in drain_pending_messages():
+                        yield msg
+                    raise
                 else:
                     try:
                         run_future.result()
@@ -236,8 +249,9 @@ async def run_workflow(
                         log.exception(e)
                         async for msg in handle_runner_error(e, runner):
                             yield msg
-                async for msg in drain_pending_messages():
-                    yield msg
+                    # Drain pending messages after normal completion
+                    async for msg in drain_pending_messages():
+                        yield msg
 
     else:
         async with ResourceScope():
@@ -253,6 +267,8 @@ async def run_workflow(
                     await run_task
                 async for msg in handle_runner_error(e, runner):
                     yield msg
+                async for msg in drain_pending_messages():
+                    yield msg
                 raise
 
             try:
@@ -260,6 +276,8 @@ async def run_workflow(
             except Exception as exception:
                 log.exception(exception)
                 async for msg in handle_runner_error(exception, runner):
+                    yield msg
+                async for msg in drain_pending_messages():
                     yield msg
                 raise
             async for msg in drain_pending_messages():

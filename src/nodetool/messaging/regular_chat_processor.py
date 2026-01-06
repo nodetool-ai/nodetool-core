@@ -457,11 +457,21 @@ class RegularChatProcessor(MessageProcessor):
                     "type": "error",
                     "message": error_msg,
                     "error_type": "connection_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
                 }
             )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Return an error message
             await self.send_message(

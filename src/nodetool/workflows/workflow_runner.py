@@ -535,6 +535,7 @@ class WorkflowRunner:
 
         start_time = time.time()
         if send_job_updates:
+            log.debug(f"Posting 'running' job update for job {self.job_id}")
             context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
         # Create run_state (source of truth) - creates if not exists for direct runner usage

@@ -182,6 +182,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                     "message": f"Error processing chat workflow: {str(e)}",
                     "job_id": job_id,
                     "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
                 }
             )
             # Send completion even on error with job_id and workflow_id

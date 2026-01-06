@@ -243,6 +243,7 @@ async def process_workflow_messages(
         log.debug("Finished processing workflow messages")
     except Exception as e:
         log.exception(e)
+        yield {"type": "error", "message": str(e)}
         raise
 
 
@@ -709,10 +710,10 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                             extra={"job_id": job_id},
                         )
                         if run_state:
-                            await run_state.mark_failed(error="Job worker unavailable during reconnect")
+                            await run_state.mark_failed(error="Job worker was unavailable")
                         if db_job:
                             await db_job.update(
-                                error="Job worker unavailable during reconnect",
+                                error="Job worker was unavailable during reconnect",
                                 finished_at=datetime.now(),
                             )
                 log.warning(
@@ -827,10 +828,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         except Exception as e:
             log.exception(f"Error reconnecting to job {job_id}: {e}")
+            error_message = str(e)
+            # Provide a user-friendly error message for unknown jobs
+            if "not found" in error_message.lower():
+                error_message = "This job may have expired or the link is invalid. Please start a new workflow."
             await self.send_message(
                 JobUpdate(
                     status="failed",
-                    error=str(e),
+                    error=error_message,
                     job_id=job_id,
                     workflow_id=workflow_id or "",
                 ).model_dump()
@@ -887,10 +892,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         except Exception as e:
             log.exception(f"Error resuming job {job_id}: {e}")
+            error_message = str(e)
+            # Provide a user-friendly error message for unknown or failed jobs
+            if "not found" in error_message.lower() or "failed to resume" in error_message.lower():
+                error_message = "This job may have expired or cannot be resumed. Please start a new workflow."
             await self.send_message(
                 JobUpdate(
                     status="failed",
-                    error=str(e),
+                    error=error_message,
                     job_id=job_id,
                     workflow_id=workflow_id or "",
                 ).model_dump()

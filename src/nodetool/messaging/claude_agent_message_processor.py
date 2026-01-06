@@ -684,10 +684,26 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
             log.error(f"Error in Claude Agent SDK execution: {e}", exc_info=True)
             error_msg = f"Claude Agent SDK execution error: {str(e)}"
 
-            await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_msg,
+                    "error_type": "agent_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             await self.send_message(
                 Message(
@@ -1036,10 +1052,26 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
             log.error(f"Error in Claude Agent SDK help execution: {e}", exc_info=True)
             error_msg = f"Claude Agent SDK help error: {str(e)}"
 
-            await self.send_message({"type": "error", "message": error_msg, "error_type": "help_error"})
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_msg,
+                    "error_type": "help_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             await self.send_message(
                 Message(

@@ -240,3 +240,17 @@ module = [
 ]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+# Basedpyright configuration for type checking
+[tool.basedpyright]
+typeCheckingMode = "standard"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportUnknownLambdaType = "none"
+reportMissingTypeStubs = "none"
+reportUnusedImport = "none"
+reportUnusedVariable = "none"
+reportUnusedFunction = "none"
+reportUnusedClass = "none"

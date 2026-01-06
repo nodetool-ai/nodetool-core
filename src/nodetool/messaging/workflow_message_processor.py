@@ -5,7 +5,7 @@ This module provides the processor for workflow execution messages.
 """
 
 import uuid
-from typing import List, Optional
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -26,7 +26,7 @@ from .message_processor import MessageProcessor
 log = get_logger(__name__)
 
 
-def _serialize_message(msg: Message) -> dict:
+def _serialize_message(msg: Message) -> dict[str, Any]:
     """
     Serialize a Message object to a dictionary for workflow params.
 
@@ -34,7 +34,6 @@ def _serialize_message(msg: Message) -> dict:
     thread_id, collections, input_files, etc.
     """
     msg_dict = msg.model_dump()
-
 
     return msg_dict
 
@@ -47,13 +46,13 @@ class WorkflowMessageProcessor(MessageProcessor):
     the workflow and streaming results back to the client.
     """
 
-    def __init__(self, user_id: Optional[str]):
+    def __init__(self, user_id: str | None):
         super().__init__()
         self.user_id = user_id
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -69,8 +68,9 @@ class WorkflowMessageProcessor(MessageProcessor):
         workflow_runner = WorkflowRunner(job_id=job_id)
         log.debug(f"Initialized WorkflowRunner for workflow {last_message.workflow_id} with job_id {job_id}")
 
-        # Update processing context with workflow_id
+        # Update processing context with workflow_id and user_id
         processing_context.workflow_id = last_message.workflow_id
+        processing_context.user_id = self.user_id or processing_context.user_id
 
         # Prepare workflow parameters
         # New interface: pass full message object and message history
@@ -108,7 +108,14 @@ class WorkflowMessageProcessor(MessageProcessor):
 
             # Signal completion with job_id and workflow_id
             await self.send_message(
-                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id, "thread_id": last_message.thread_id}
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
             )
             response_msg = self._create_response_message(result, last_message).model_dump()
             response_msg["job_id"] = job_id
@@ -122,18 +129,26 @@ class WorkflowMessageProcessor(MessageProcessor):
                     "message": f"Error processing workflow: {str(e)}",
                     "job_id": job_id,
                     "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
                 }
             )
             # Send completion even on error with job_id and workflow_id
             await self.send_message(
-                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id, "thread_id": last_message.thread_id}
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
             )
             raise
         finally:
             # Always mark processing as complete
             self.is_processing = False
 
-    def _create_response_message(self, result: dict, last_message: Message) -> Message:
+    def _create_response_message(self, result: dict[str, Any], last_message: Message) -> Message:
         """Construct a response Message object from workflow results."""
         content = []
         for _key, value in result.items():
@@ -152,6 +167,12 @@ class WorkflowMessageProcessor(MessageProcessor):
                     content.append(MessageAudioContent(audio=AudioRef(**value)))
                 else:
                     content.append(MessageTextContent(text=str(value)))
+            elif isinstance(value, ImageRef):
+                content.append(MessageImageContent(image=value))
+            elif isinstance(value, VideoRef):
+                content.append(MessageVideoContent(video=value))
+            elif isinstance(value, AudioRef):
+                content.append(MessageAudioContent(audio=value))
             else:
                 content.append(MessageTextContent(text=str(value)))
 

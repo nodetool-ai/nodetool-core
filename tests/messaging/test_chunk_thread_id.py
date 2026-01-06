@@ -131,8 +131,12 @@ class TestAgentMessageProcessorThreadId:
         from nodetool.messaging.agent_message_processor import (
             AgentMessageProcessor,
         )
+        from nodetool.providers.base import BaseProvider
 
-        processor = AgentMessageProcessor()
+        # Create a mock provider
+        mock_provider = MagicMock(spec=BaseProvider)
+
+        processor = AgentMessageProcessor(provider=mock_provider)
 
         # Create test message with thread_id
         test_message = Message(
@@ -156,7 +160,7 @@ class TestAgentMessageProcessorThreadId:
             yield Chunk(content="step by step", done=True)
 
         # Mock Agent class
-        with patch("nodetool.messaging.agent_message_processor.Agent") as MockAgent:
+        with patch("nodetool.agents.agent.Agent") as MockAgent:
             mock_agent = MagicMock()
             mock_agent.execute = mock_execute
             MockAgent.return_value = mock_agent
@@ -354,7 +358,7 @@ class TestWorkflowMessageProcessorThreadId:
             )
 
         with patch(
-            "nodetool.messaging.workflow_message_processor.run_workflow",
+            "nodetool.workflows.run_workflow.run_workflow",
             mock_run_workflow,
         ):
             await processor.process([test_message], processing_context)

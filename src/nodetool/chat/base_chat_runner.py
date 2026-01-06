@@ -609,6 +609,11 @@ class BaseChatRunner(ABC):
                 )
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
-            error_message = {"type": "error", "message": str(e)}
+            error_message = {
+                "type": "error",
+                "message": str(e),
+                "thread_id": last_message.thread_id,
+                "workflow_id": last_message.workflow_id,
+            }
             with suppress(Exception):
                 await self.send_message(error_message)
