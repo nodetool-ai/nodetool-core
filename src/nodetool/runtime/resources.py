@@ -287,13 +287,19 @@ class ResourceScope:
         elif postgres_db:
             from nodetool.runtime.db_postgres import PostgresConnectionPool, PostgresScopeResources
 
-            db_params = Environment.get_postgres_params()
-            conninfo = (
-                f"dbname={db_params['database']} user={db_params['user']} "
-                f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
-            )
-            pool = await PostgresConnectionPool.get_shared(conninfo)
-            return PostgresScopeResources(pool)
+            # If a pool was provided, use it if it's a PostgresConnectionPool
+            if self.pool is not None:
+                assert isinstance(self.pool, PostgresConnectionPool), "Pool must be a PostgresConnectionPool when POSTGRES_DB is set"
+                return PostgresScopeResources(self.pool)
+            else:
+                # Otherwise create a new pool from environment
+                db_params = Environment.get_postgres_params()
+                conninfo = (
+                    f"dbname={db_params['database']} user={db_params['user']} "
+                    f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
+                )
+                pool = await PostgresConnectionPool.get_shared(conninfo)
+                return PostgresScopeResources(pool)
         else:
             from nodetool.runtime.db_sqlite import (
                 SQLiteConnectionPool,
@@ -304,7 +310,7 @@ class ResourceScope:
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
                 return SQLiteScopeResources(pool)
             else:
-                assert isinstance(self.pool, SQLiteConnectionPool), "Pool must be a SQLiteConnectionPool"
+                assert isinstance(self.pool, SQLiteConnectionPool), "Pool must be a SQLiteConnectionPool when using SQLite"
                 return SQLiteScopeResources(self.pool)
 
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:

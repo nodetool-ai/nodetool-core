@@ -17,6 +17,23 @@ from nodetool.runtime.resources import DBResources
 log = get_logger(__name__)
 
 
+class _AsyncConnectionWrapper:
+    """Wrapper to provide connection() context manager interface."""
+
+    def __init__(self, pool: "PostgresConnectionPool"):
+        self.pool = pool
+
+    async def __aenter__(self):
+        """Acquire connection when entering context."""
+        psycopg_pool = await self.pool.get_pool()
+        self._conn_ctx = psycopg_pool.connection()
+        return await self._conn_ctx.__aenter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Release connection when exiting context."""
+        return await self._conn_ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+
 class PostgresConnectionPool:
     """Async connection pool for PostgreSQL."""
 
@@ -83,6 +100,19 @@ class PostgresConnectionPool:
                     )
                     log.debug("Opened PostgreSQL connection pool")
         return self._pool
+
+    def connection(self):
+        """Get a connection context manager from the pool.
+
+        Returns a context manager that acquires and releases a connection.
+        This is the same interface as psycopg_pool.AsyncConnectionPool.
+        """
+        async def _get_connection():
+            pool = await self.get_pool()
+            return pool.connection()
+
+        # Return an awaitable that returns the context manager
+        return _AsyncConnectionWrapper(self)
 
     async def acquire(self):
         """Acquire a connection from the pool.
