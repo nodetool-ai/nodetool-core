@@ -397,9 +397,10 @@ class Provider(str, enum.Enum):
     Ollama = "ollama"
     LMStudio = "lmstudio"
     KIE = "kie"
-    # Comfy providers (two explicit entries)
+    # Comfy providers (three entries)
     ComfyLocal = "comfy_local"
     ComfyRunpod = "comfy_runpod"
+    ComfyTemplate = "comfy_template"
     Local = "local"
     LlamaCpp = "llama_cpp"
     Gemini = "gemini"
