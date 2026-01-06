@@ -1,0 +1,80 @@
+template_id: qwen_image_edit
+template_type: image_to_image
+template_name: Qwen Image Edit
+description: Qwen Image Edit model for advanced image editing with multiple input images
+inputs:
+  prompt:
+    node_id: 111
+    node_type: TextEncodeQwenImageEditPlus
+    input_field: prompt
+    input_type: STRING
+    required: true
+  image:
+    node_id: 78
+    node_type: LoadImage
+    input_field: image
+    input_type: IMAGE
+    required: true
+  image2:
+    node_id: 120
+    node_type: LoadImage
+    input_field: image
+    input_type: IMAGE
+    required: false
+  image3:
+    node_id: 121
+    node_type: LoadImage
+    input_field: image
+    input_type: IMAGE
+    required: false
+  seed:
+    node_id: 3
+    node_type: KSampler
+    input_field: seed
+    input_type: INT
+    required: false
+    default: 0
+  steps:
+    node_id: 3
+    node_type: KSampler
+    input_field: steps
+    input_type: INT
+    required: false
+    default: 4
+  cfg:
+    node_id: 3
+    node_type: KSampler
+    input_field: cfg
+    input_type: FLOAT
+    required: false
+    default: 1.0
+  sampler:
+    node_id: 3
+    node_type: KSampler
+    input_field: sampler_name
+    input_type: STRING
+    required: false
+    default: "euler"
+  scheduler:
+    node_id: 3
+    node_type: KSampler
+    input_field: scheduler
+    input_type: STRING
+    required: false
+    default: "simple"
+outputs:
+  image:
+    node_id: 60
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+presets:
+  fast:
+    steps: 4
+    cfg: 1.0
+  standard:
+    steps: 20
+    cfg: 2.5
+  quality:
+    steps: 50
+    cfg: 4.0
