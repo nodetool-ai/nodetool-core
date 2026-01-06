@@ -22,6 +22,7 @@ class DeploymentType(str, Enum):
     SELF_HOSTED = "self-hosted"
     RUNPOD = "runpod"
     GCP = "gcp"
+    AWS = "aws"
 
 
 class DeploymentStatus(str, Enum):
@@ -387,6 +388,90 @@ class GCPDeployment(BaseModel):
 
 
 # ============================================================================
+# AWS Deployment Models
+# ============================================================================
+
+
+class AWSBuildConfig(BaseModel):
+    """Docker build configuration for AWS."""
+
+    platform: str = "linux/amd64"
+
+
+class AWSImageConfig(BaseModel):
+    """Docker image configuration for AWS App Runner."""
+
+    registry: Optional[str] = Field(None, description="ECR registry URL (auto-detected if not provided)")
+    repository: str = Field(..., description="ECR repository name")
+    tag: str = Field(..., description="Image tag")
+    build: AWSBuildConfig = Field(default_factory=AWSBuildConfig)
+
+    @property
+    def full_name(self) -> str:
+        """Get full image name with registry and tag."""
+        if self.registry:
+            return f"{self.registry}/{self.repository}:{self.tag}"
+        return f"{self.repository}:{self.tag}"
+
+
+class AWSResourceConfig(BaseModel):
+    """App Runner resource configuration."""
+
+    cpu: str = Field("2 vCPU", description="CPU allocation (e.g., '1 vCPU', '2 vCPU', '4 vCPU')")
+    memory: str = Field("4 GB", description="Memory allocation (e.g., '2 GB', '3 GB', '4 GB')")
+    min_instances: int = Field(1, description="Minimum number of instances")
+    max_instances: int = Field(3, description="Maximum number of instances")
+    max_concurrency: int = Field(100, description="Maximum concurrent requests per instance")
+
+
+class AWSHealthCheckConfig(BaseModel):
+    """App Runner health check configuration."""
+
+    path: str = Field("/health", description="Health check endpoint path")
+    interval: int = Field(10, description="Interval between health checks in seconds")
+    timeout: int = Field(5, description="Health check timeout in seconds")
+    healthy_threshold: int = Field(1, description="Number of consecutive successful checks to consider healthy")
+    unhealthy_threshold: int = Field(5, description="Number of consecutive failed checks to consider unhealthy")
+
+
+class AWSNetworkConfig(BaseModel):
+    """App Runner network configuration."""
+
+    is_publicly_accessible: bool = Field(True, description="Whether the service is publicly accessible")
+    vpc_connector_arn: Optional[str] = Field(None, description="VPC connector ARN for private resources")
+
+
+class AWSState(BaseModel):
+    """Runtime state for AWS App Runner deployment."""
+
+    service_url: Optional[str] = None
+    service_arn: Optional[str] = None
+    last_deployed: Optional[datetime] = None
+    status: DeploymentStatus = DeploymentStatus.UNKNOWN
+
+
+class AWSDeployment(BaseModel):
+    """AWS App Runner deployment configuration."""
+
+    type: Literal[DeploymentType.AWS] = DeploymentType.AWS
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    region: str = Field("us-east-1", description="AWS region")
+    service_name: str = Field(..., description="App Runner service name")
+    image: AWSImageConfig
+    resources: AWSResourceConfig = Field(default_factory=AWSResourceConfig)
+    health_check: AWSHealthCheckConfig = Field(default_factory=AWSHealthCheckConfig)
+    network: AWSNetworkConfig = Field(default_factory=AWSNetworkConfig)
+    iam_role_arn: Optional[str] = Field(None, description="IAM role ARN for ECR access")
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
+    state: AWSState = Field(default_factory=AWSState)
+
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        return self.state.service_url
+
+
+# ============================================================================
 # Main Configuration Models
 # ============================================================================
 
@@ -407,7 +492,7 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
+    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment | AWSDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
