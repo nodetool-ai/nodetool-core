@@ -73,9 +73,89 @@ def worker_id(request):
 #         logger.propagate = False
 
 
+def pytest_configure(config):
+    """Configure pytest with custom logic."""
+    # Check if we should use PostgreSQL for tests
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+    config.use_postgres = use_postgres
+
+
 @pytest_asyncio.fixture(scope="session")
-async def test_db_pool(worker_id):
-    """Create test database once for entire session with connection pool.
+async def postgres_db_pool(worker_id):
+    """Create PostgreSQL test database pool for entire session.
+
+    This fixture:
+    - Connects to PostgreSQL test database (must be running)
+    - Creates a unique schema per worker for pytest-xdist compatibility
+    - Runs migrations once at session start
+    - Creates a persistent connection pool
+    - Cleans up schema and pool at session end
+
+    Args:
+        worker_id: Provided by pytest-xdist to identify the worker process
+
+    Yields:
+        PostgresConnectionPool: Pool for use in tests
+    """
+    from nodetool.models.migrations import run_startup_migrations
+    from nodetool.runtime.db_postgres import PostgresConnectionPool
+
+    # Get PostgreSQL connection parameters from environment
+    db_name = os.getenv("POSTGRES_TEST_DB", "nodetool_test")
+    db_user = os.getenv("POSTGRES_TEST_USER", "nodetool_test")
+    db_password = os.getenv("POSTGRES_TEST_PASSWORD", "nodetool_test_password")
+    db_host = os.getenv("POSTGRES_TEST_HOST", "localhost")
+    db_port = os.getenv("POSTGRES_TEST_PORT", "5433")
+
+    # Create unique schema name for this worker
+    worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
+    schema_name = f"test_schema{worker_suffix}"
+
+    # Build connection string
+    conninfo = f"dbname={db_name} user={db_user} password={db_password} host={db_host} port={db_port} options='-c search_path={schema_name},public'"
+
+    pool = None
+    try:
+        # Create connection pool
+        pool = await PostgresConnectionPool.get_shared(conninfo)
+
+        # Create schema for this worker
+        conn = await pool.acquire()
+        try:
+            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+            await conn.execute(f"SET search_path TO {schema_name}, public")
+            await conn.commit()
+        finally:
+            await pool.release(conn)
+
+        # Run migrations once for the session
+        await run_startup_migrations(pool)
+
+        yield pool
+
+    finally:
+        # Clean up schema and pool at session end
+        if pool is not None:
+            try:
+                # Drop the schema
+                conn = await pool.acquire()
+                try:
+                    await conn.execute(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE")
+                    await conn.commit()
+                finally:
+                    await pool.release(conn)
+
+                # Close the pool
+                await pool.close()
+            except Exception as e:
+                import logging
+
+                logging.warning(f"Error cleaning up PostgreSQL session: {e}")
+
+
+@pytest_asyncio.fixture(scope="session")
+async def sqlite_db_pool(worker_id):
+    """Create SQLite test database once for entire session with connection pool.
 
     This fixture:
     - Creates a single temporary database file per worker (for pytest-xdist compatibility)
@@ -87,7 +167,7 @@ async def test_db_pool(worker_id):
         worker_id: Provided by pytest-xdist to identify the worker process
 
     Yields:
-        tuple: (pool, db_path) for use in tests
+        SQLiteConnectionPool: Pool for use in tests
     """
     import os
     import tempfile
@@ -133,29 +213,83 @@ async def test_db_pool(worker_id):
             pass
 
 
+@pytest_asyncio.fixture(scope="session")
+async def test_db_pool(request, worker_id, sqlite_db_pool, postgres_db_pool):
+    """Provide test database pool based on environment configuration.
+
+    Returns PostgreSQL pool if USE_POSTGRES_FOR_TESTS=1, otherwise SQLite pool.
+
+    Args:
+        request: pytest request object
+        worker_id: Worker ID for pytest-xdist
+        sqlite_db_pool: SQLite connection pool fixture
+        postgres_db_pool: PostgreSQL connection pool fixture
+
+    Yields:
+        Connection pool (either SQLite or PostgreSQL)
+    """
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+
+    if use_postgres:
+        yield postgres_db_pool
+    else:
+        yield sqlite_db_pool
+
+
 async def _truncate_all_tables(pool):
-    """Truncate all tables to reset database state between tests."""
+    """Truncate all tables to reset database state between tests.
+
+    Supports both SQLite and PostgreSQL backends.
+    """
     connection = None
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+
     try:
         connection = await pool.acquire()
-        cursor = await connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
-        )
-        tables = await cursor.fetchall()
 
-        # Use a single transaction for all deletes
-        for table in tables:
-            table_name = table[0]
-            try:
-                await connection.execute(f"DELETE FROM {table_name}")
-            except Exception as e:
-                import logging
+        if use_postgres:
+            # PostgreSQL: Query information_schema for nodetool tables
+            cursor = await connection.execute(
+                """
+                SELECT tablename FROM pg_tables 
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema') 
+                AND tablename LIKE 'nodetool_%'
+                """
+            )
+            tables = await cursor.fetchall()
 
-                logging.debug(f"Failed to truncate table {table_name}: {e}")
-                pass
+            # Use TRUNCATE for PostgreSQL (faster and handles foreign keys better)
+            for table in tables:
+                table_name = table[0]
+                try:
+                    await connection.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+                except Exception as e:
+                    import logging
 
-        # Commit all deletes in a single transaction
-        await connection.commit()
+                    logging.debug(f"Failed to truncate table {table_name}: {e}")
+                    pass
+
+            await connection.commit()
+        else:
+            # SQLite: Query sqlite_master for nodetool tables
+            cursor = await connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
+            )
+            tables = await cursor.fetchall()
+
+            # Use a single transaction for all deletes
+            for table in tables:
+                table_name = table[0]
+                try:
+                    await connection.execute(f"DELETE FROM {table_name}")
+                except Exception as e:
+                    import logging
+
+                    logging.debug(f"Failed to truncate table {table_name}: {e}")
+                    pass
+
+            # Commit all deletes in a single transaction
+            await connection.commit()
     except Exception as e:
         # Rollback on error
         import logging
