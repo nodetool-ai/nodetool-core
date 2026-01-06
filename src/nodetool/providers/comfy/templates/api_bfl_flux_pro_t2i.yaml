@@ -1,0 +1,68 @@
+template_id: api_bfl_flux_pro_t2i
+template_name: BFL Flux Pro Text to Image
+template_type: text_to_image
+description: BFL Flux Pro API template for high-quality image generation
+
+inputs:
+  prompt:
+    node_id: 11
+    node_type: FluxProUltraImageNode
+    input_field: image_prompt
+    input_type: STRING
+    required: true
+    description: "Positive prompt for image generation"
+
+  seed:
+    node_id: 11
+    node_type: FluxProUltraImageNode
+    input_field: noise_seed
+    input_type: INT
+    required: false
+    default: 0
+    description: "Random seed for reproducibility"
+
+  aspect_ratio:
+    node_id: 11
+    node_type: FluxProUltraImageNode
+    input_field: aspect_ratio
+    input_type: STRING
+    required: false
+    default: "1:1"
+    description: "Aspect ratio for output image"
+
+  guidance:
+    node_id: 11
+    node_type: FluxProUltraImageNode
+    input_field: guidance
+    input_type: FLOAT
+    required: false
+    default: 3.5
+    description: "Guidance scale for image generation"
+
+outputs:
+  image:
+    node_id: 12
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+    description: "Generated image output"
+
+nodes:
+  "11":
+    type: FluxProUltraImageNode
+    class_type: FluxProUltraImageNode
+  "12":
+    type: SaveImage
+    class_type: SaveImage
+    filename_prefix: "ComfyUI"
+
+presets:
+  standard:
+    guidance: 3.5
+    aspect_ratio: "1:1"
+  wide:
+    guidance: 3.5
+    aspect_ratio: "16:9"
+  tall:
+    guidance: 3.5
+    aspect_ratio: "9:16"
