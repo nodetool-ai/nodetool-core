@@ -110,6 +110,11 @@ async def test_db_pool(request, worker_id):
         # Create unique schema name for this worker
         worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
         schema_name = f"test_schema{worker_suffix}"
+        
+        # Validate schema name to prevent SQL injection (alphanumeric and underscore only)
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]+$', schema_name):
+            raise ValueError(f"Invalid schema name: {schema_name}")
 
         # Build connection string
         conninfo = f"dbname={db_name} user={db_user} password={db_password} host={db_host} port={db_port} options='-c search_path={schema_name},public'"
@@ -120,10 +125,18 @@ async def test_db_pool(request, worker_id):
             pool = await PostgresConnectionPool.get_shared(conninfo)
 
             # Create schema for this worker using connection context manager
+            # Use psycopg's SQL identifier for safe schema name handling
             psycopg_pool = await pool.get_pool()
             async with psycopg_pool.connection() as conn:
-                await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
-                await conn.execute(f"SET search_path TO {schema_name}, public")
+                # Use psycopg.sql.Identifier for safe SQL generation
+                from psycopg.sql import SQL, Identifier
+                
+                await conn.execute(
+                    SQL("CREATE SCHEMA IF NOT EXISTS {}").format(Identifier(schema_name))
+                )
+                await conn.execute(
+                    SQL("SET search_path TO {}, public").format(Identifier(schema_name))
+                )
                 await conn.commit()
 
             # Set POSTGRES_DB for the entire test session
@@ -149,9 +162,14 @@ async def test_db_pool(request, worker_id):
             if pool is not None:
                 try:
                     # Drop the schema using connection context manager
+                    # Use psycopg.sql.Identifier for safe SQL generation
                     psycopg_pool = await pool.get_pool()
                     async with psycopg_pool.connection() as conn:
-                        await conn.execute(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE")
+                        from psycopg.sql import SQL, Identifier
+                        
+                        await conn.execute(
+                            SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(Identifier(schema_name))
+                        )
                         await conn.commit()
 
                     # Close the pool
@@ -227,10 +245,15 @@ async def _truncate_all_tables(pool):
             tables = await cursor.fetchall()
 
             # Use TRUNCATE for PostgreSQL (faster and handles foreign keys better)
+            # Use psycopg.sql.Identifier for safe table name handling
+            from psycopg.sql import SQL, Identifier
+            
             for table in tables:
                 table_name = table[0]
                 try:
-                    await connection.execute(f"TRUNCATE TABLE {table_name} CASCADE")
+                    await connection.execute(
+                        SQL("TRUNCATE TABLE {} CASCADE").format(Identifier(table_name))
+                    )
                 except Exception as e:
                     import logging
 
@@ -246,8 +269,14 @@ async def _truncate_all_tables(pool):
             tables = await cursor.fetchall()
 
             # Use a single transaction for all deletes
+            # Note: SQLite doesn't support parameterized table names in DELETE
+            # but table names come from sqlite_master which is trusted
             for table in tables:
                 table_name = table[0]
+                # Validate table name to ensure it came from sqlite_master
+                if not table_name.startswith('nodetool_'):
+                    continue
+                    
                 try:
                     await connection.execute(f"DELETE FROM {table_name}")
                 except Exception as e:
