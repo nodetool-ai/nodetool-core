@@ -130,7 +130,7 @@ async def test_run_workflow_propagates_initialization_error():
 
     agen = run_workflow(req, runner=runner, context=context, use_thread=False)
 
-    messages: list[JobUpdate | Error] = []
+    messages: list = []
     try:
         messages.append(await agen.__anext__())
         messages.append(await agen.__anext__())

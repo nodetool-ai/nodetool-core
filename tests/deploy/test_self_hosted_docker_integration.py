@@ -432,6 +432,13 @@ class TestDockerCleanup:
 
         container_name = "nodetool-test-cleanup"
 
+        # Clean up any existing container with this name
+        try:
+            old_container = docker_client.containers.get(container_name)
+            old_container.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
         # Start a container
         container = docker_client.containers.run(
             "nginx:alpine",
