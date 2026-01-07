@@ -161,9 +161,7 @@ class TestPostgresMigrationRunner:
 
         # Verify table was created
         async with postgres_pool.connection() as conn, conn.cursor() as cursor:
-            await cursor.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
-            )
+            await cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'")
             columns = [row[0] for row in await cursor.fetchall()]
             assert "id" in columns
             assert "name" in columns
@@ -227,9 +225,7 @@ class TestPostgresMigrationRunner:
 
         # Verify column was removed
         async with postgres_pool.connection() as conn, conn.cursor() as cursor:
-            await cursor.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'"
-            )
+            await cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'test_table'")
             columns = [row[0] for row in await cursor.fetchall()]
             assert "description" not in columns
 

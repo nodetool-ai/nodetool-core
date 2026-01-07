@@ -234,6 +234,7 @@ class TestWebSocketRoutingKeys:
     def test_chunk_has_thread_id_field(self, ws):
         """Test that chunk messages can include thread_id."""
         from nodetool.metadata.types import Chunk
+
         chunk = Chunk(content="test", thread_id="test-thread-123")
         assert hasattr(chunk, "thread_id")
         assert chunk.thread_id == "test-thread-123"
