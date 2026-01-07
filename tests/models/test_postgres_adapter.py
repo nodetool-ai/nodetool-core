@@ -40,7 +40,7 @@ class TestModel(DBModel):
         return {"table_name": "test_table"}
 
     @classmethod
-    def adapter(cls):
+    def adapter(cls) -> PostgresAdapter:
         return PostgresAdapter(
             db_params={
                 "database": "test_db",
@@ -176,7 +176,8 @@ def test_convert_to_postgres_format():
     assert convert_to_postgres_format("test", str) == "test"
     assert convert_to_postgres_format(123, int) == 123
     assert convert_to_postgres_format(1.23, float) == 1.23
-    assert convert_to_postgres_format(True, bool) is True
+    assert convert_to_postgres_format(True, bool) == 1  # Converted to int for INTEGER columns
+    assert convert_to_postgres_format(False, bool) == 0  # Converted to int for INTEGER columns
 
     # For lists and dicts, check if the result is a Jsonb object and compare its value
     list_result = convert_to_postgres_format(["a", "b"], List[str])

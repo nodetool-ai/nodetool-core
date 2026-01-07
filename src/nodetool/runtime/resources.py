@@ -152,6 +152,8 @@ class ResourceScope:
     # Class-level auth provider singletons (shared across all scopes)
     _class_static_auth_provider: Any = None
     _class_user_auth_provider: Any = None
+    # Class-level test pool override (used by pytest fixtures)
+    _test_pool: Any = None
 
     def __init__(
         self,
@@ -287,13 +289,24 @@ class ResourceScope:
         elif postgres_db:
             from nodetool.runtime.db_postgres import PostgresConnectionPool, PostgresScopeResources
 
-            db_params = Environment.get_postgres_params()
-            conninfo = (
-                f"dbname={db_params['database']} user={db_params['user']} "
-                f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
-            )
-            pool = await PostgresConnectionPool.get_shared(conninfo)
-            return PostgresScopeResources(pool)
+            # Check for test pool override first (used by pytest fixtures)
+            if ResourceScope._test_pool is not None:
+                return PostgresScopeResources(ResourceScope._test_pool)
+            # If a pool was provided, use it if it's a PostgresConnectionPool
+            elif self.pool is not None:
+                assert isinstance(self.pool, PostgresConnectionPool), (
+                    "Pool must be a PostgresConnectionPool when POSTGRES_DB is set"
+                )
+                return PostgresScopeResources(self.pool)
+            else:
+                # Otherwise create a new pool from environment
+                db_params = Environment.get_postgres_params()
+                conninfo = (
+                    f"dbname={db_params['database']} user={db_params['user']} "
+                    f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
+                )
+                pool = await PostgresConnectionPool.get_shared(conninfo)
+                return PostgresScopeResources(pool)
         else:
             from nodetool.runtime.db_sqlite import (
                 SQLiteConnectionPool,
@@ -304,7 +317,9 @@ class ResourceScope:
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
                 return SQLiteScopeResources(pool)
             else:
-                assert isinstance(self.pool, SQLiteConnectionPool), "Pool must be a SQLiteConnectionPool"
+                assert isinstance(self.pool, SQLiteConnectionPool), (
+                    "Pool must be a SQLiteConnectionPool when using SQLite"
+                )
                 return SQLiteScopeResources(self.pool)
 
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:

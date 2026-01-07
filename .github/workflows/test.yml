@@ -11,6 +11,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nodetool_test
+          POSTGRES_USER: nodetool_test
+          POSTGRES_PASSWORD: nodetool_test_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U nodetool_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,5 +44,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run tests
+      - name: Run tests with SQLite
         run: uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
+
+      - name: Run tests with PostgreSQL
+        env:
+          USE_POSTGRES_FOR_TESTS: "1"
+          POSTGRES_TEST_DB: nodetool_test
+          POSTGRES_TEST_USER: nodetool_test
+          POSTGRES_TEST_PASSWORD: nodetool_test_password
+          POSTGRES_TEST_HOST: localhost
+          POSTGRES_TEST_PORT: "5433"
+        run: uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
+

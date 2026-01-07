@@ -30,7 +30,7 @@ async def up(db: "MigrationDBAdapter") -> None:
             thumbnail TEXT,
             graph TEXT,
             settings TEXT,
-            receive_clipboard INTEGER
+            receive_clipboard BOOLEAN
         )
     """)
 
