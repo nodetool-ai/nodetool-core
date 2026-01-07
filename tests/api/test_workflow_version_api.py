@@ -343,7 +343,7 @@ async def test_autosave_max_versions_limit(client: TestClient, workflow: Workflo
     await workflow.save()
 
     # Create autosaves with force to bypass rate limiting
-    for i in range(25):  # More than the default max of 20
+    for _i in range(25):  # More than the default max of 20
         response = client.post(
             f"/api/workflows/{workflow.id}/autosave",
             json={"save_type": "autosave", "force": True},
