@@ -53,7 +53,6 @@ class Workflow(DBModel):
     thumbnail_url: str | None = DBField(default=None)
     graph: dict = DBField(default_factory=dict)
     settings: dict[str, Any] | None = DBField(default_factory=dict)
-    receive_clipboard: bool | None = DBField(default=False)
     run_mode: str | None = DBField(default=None)
 
     def before_save(self):

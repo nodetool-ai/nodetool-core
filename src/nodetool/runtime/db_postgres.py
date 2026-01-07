@@ -40,7 +40,12 @@ class PostgresConnectionPool:
     _pools: ClassVar[Dict[str, "PostgresConnectionPool"]] = {}
     _pool_locks: ClassVar[Dict[str, asyncio.Lock]] = {}
 
-    def __init__(self, conninfo: str, min_size: int = 1, max_size: int = 10):
+    def __init__(
+        self,
+        conninfo: str,
+        min_size: int = 1,
+        max_size: int = 10,
+    ):
         """Initialize the connection pool.
 
         Args:
@@ -62,7 +67,12 @@ class PostgresConnectionPool:
         return cls._pool_locks[pool_key]
 
     @classmethod
-    async def get_shared(cls, conninfo: str, min_size: int = 1, max_size: int = 10) -> "PostgresConnectionPool":
+    async def get_shared(
+        cls,
+        conninfo: str,
+        min_size: int = 1,
+        max_size: int = 10,
+    ) -> "PostgresConnectionPool":
         """Get or create a shared connection pool.
 
         Args:
@@ -96,8 +106,8 @@ class PostgresConnectionPool:
                         self.conninfo,
                         min_size=self.min_size,
                         max_size=self.max_size,
-                        open=True,
                     )
+                    await self._pool.open()
                     log.debug("Opened PostgreSQL connection pool")
         return self._pool
 
@@ -107,6 +117,7 @@ class PostgresConnectionPool:
         Returns a context manager that acquires and releases a connection.
         This is the same interface as psycopg_pool.AsyncConnectionPool.
         """
+
         async def _get_connection():
             pool = await self.get_pool()
             return pool.connection()
@@ -173,11 +184,17 @@ class PostgresScopeResources(DBResources):
             )
             self.pool = await PostgresConnectionPool.get_shared(conninfo)
 
+        # Get the underlying psycopg pool to pass to the adapter
+        psycopg_pool = None
+        if self.pool is not None:
+            psycopg_pool = await self.pool.get_pool()
+
         adapter = PostgresAdapter(
             db_params=Environment.get_postgres_params(),
             fields=model_cls.db_fields(),
             table_schema=model_cls.get_table_schema(),
             indexes=model_cls.get_indexes(),
+            pool=psycopg_pool,
         )
         await adapter.initialize()
 

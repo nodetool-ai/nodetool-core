@@ -84,7 +84,10 @@ def pytest_configure(config):
 async def test_db_pool(request, worker_id):
     """Provide test database pool based on environment configuration.
 
-    Returns PostgreSQL pool if USE_POSTGRES_FOR_TESTS=1, otherwise SQLite pool.
+    Uses template database approach for PostgreSQL:
+    - Master worker creates template database with migrations
+    - Each worker creates its own DB from template using `createdb -T`
+    - Fast (no re-migration per worker) + complete isolation
 
     Args:
         request: pytest request object
@@ -96,88 +99,127 @@ async def test_db_pool(request, worker_id):
     use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
 
     if use_postgres:
-        # Import and setup PostgreSQL
+        import subprocess
         from nodetool.models.migrations import run_startup_migrations
         from nodetool.runtime.db_postgres import PostgresConnectionPool
 
-        # Get PostgreSQL connection parameters from environment
-        db_name = os.getenv("POSTGRES_TEST_DB", "nodetool_test")
-        db_user = os.getenv("POSTGRES_TEST_USER", "nodetool_test")
-        db_password = os.getenv("POSTGRES_TEST_PASSWORD", "nodetool_test_password")
         db_host = os.getenv("POSTGRES_TEST_HOST", "localhost")
         db_port = os.getenv("POSTGRES_TEST_PORT", "5433")
+        db_user = os.getenv("POSTGRES_TEST_USER", "nodetool_test")
+        db_password = os.getenv("POSTGRES_TEST_PASSWORD", "nodetool_test_password")
 
-        # Create unique schema name for this worker
-        worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
-        schema_name = f"test_schema{worker_suffix}"
-        
-        # Validate schema name to prevent SQL injection (alphanumeric and underscore only)
-        import re
-        if not re.match(r'^[a-zA-Z0-9_]+$', schema_name):
-            raise ValueError(f"Invalid schema name: {schema_name}")
+        def run_psql(sql, database="postgres"):
+            """Run SQL via psql CLI."""
+            env = os.environ.copy()
+            env["PGPASSWORD"] = db_password
+            result = subprocess.run(
+                [
+                    "psql",
+                    "-h",
+                    db_host,
+                    "-p",
+                    db_port,
+                    "-U",
+                    db_user,
+                    "-d",
+                    database,
+                    "-c",
+                    sql,
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            return result.returncode == 0, result.stdout, result.stderr
 
-        # Build connection string
-        conninfo = f"dbname={db_name} user={db_user} password={db_password} host={db_host} port={db_port} options='-c search_path={schema_name},public'"
+        # Set up environment for PostgreSQL migrations
+        from nodetool.config.environment import Environment
+
+        original_postgres_db = os.environ.get("POSTGRES_DB")
+
+        # Only master worker creates the template database
+        is_master = worker_id == "master"
+        template_db_name = "nodetool_test_template"
+
+        if is_master:
+            # Drop and recreate template database from base template
+            run_psql(f"DROP DATABASE IF EXISTS {template_db_name}")
+            run_psql(f"CREATE DATABASE {template_db_name} TEMPLATE template0")
+
+            # Set POSTGRES_DB before running migrations so PostgreSQL path is used
+            os.environ["POSTGRES_DB"] = template_db_name
+            Environment.settings = None  # Clear cache so it re-reads env
+
+            # Connect to the new template database and run migrations
+            template_conninfo = (
+                f"dbname={template_db_name} user={db_user} password={db_password} host={db_host} port={db_port}"
+            )
+
+            # Run migrations directly (we're already in an async context)
+            pool = await PostgresConnectionPool.get_shared(template_conninfo)
+            await run_startup_migrations(pool)
+            await pool.close()
+            PostgresConnectionPool._pools.clear()
+
+        # Barrier to ensure template is ready before workers connect
+        # Use a simple file-based sync for xdist compatibility
+        import time
+
+        sync_file = "/tmp/nodetool_test_template_ready"
+        if not is_master:
+            for _ in range(50):
+                if os.path.exists(sync_file):
+                    break
+                time.sleep(0.1)
+        else:
+            with open(sync_file, "w") as f:
+                f.write("ready")
+            time.sleep(0.5)  # Give workers a moment to notice
+
+        # Each worker gets its own database cloned from template
+        worker_db_name = f"nodetool_test_{worker_id}"
+        run_psql(f"DROP DATABASE IF EXISTS {worker_db_name}")
+        success = run_psql(f"CREATE DATABASE {worker_db_name} TEMPLATE {template_db_name}")
+        if not success:
+            raise RuntimeError(f"Failed to create worker database {worker_db_name}")
+
+        # Set environment so ResourceScopeMiddleware uses PostgreSQL
+        os.environ["POSTGRES_DB"] = worker_db_name
+        Environment.settings = None  # Clear cache so it re-reads env
 
         pool = None
+        worker_conninfo = f"dbname={worker_db_name} user={db_user} password={db_password} host={db_host} port={db_port}"
+
         try:
-            # Create connection pool
-            pool = await PostgresConnectionPool.get_shared(conninfo)
-
-            # Create schema for this worker using connection context manager
-            # Use psycopg's SQL identifier for safe schema name handling
-            psycopg_pool = await pool.get_pool()
-            async with psycopg_pool.connection() as conn:
-                # Use psycopg.sql.Identifier for safe SQL generation
-                from psycopg.sql import SQL, Identifier
-                
-                await conn.execute(
-                    SQL("CREATE SCHEMA IF NOT EXISTS {}").format(Identifier(schema_name))
-                )
-                await conn.execute(
-                    SQL("SET search_path TO {}, public").format(Identifier(schema_name))
-                )
-                await conn.commit()
-
-            # Set POSTGRES_DB for the entire test session
-            # This is needed for ResourceScope to detect PostgreSQL
-            original_postgres_db = os.environ.get("POSTGRES_DB")
-            os.environ["POSTGRES_DB"] = db_name
-
-            try:
-                # Run migrations once for the session
-                await run_startup_migrations(pool)
-
-                yield pool
-
-            finally:
-                # Restore original POSTGRES_DB value at session end
-                if original_postgres_db is None:
-                    os.environ.pop("POSTGRES_DB", None)
-                else:
-                    os.environ["POSTGRES_DB"] = original_postgres_db
-
+            pool = await PostgresConnectionPool.get_shared(worker_conninfo)
+            yield pool
         finally:
-            # Clean up schema and pool at session end
+            # Restore env
+            if original_postgres_db is None:
+                os.environ.pop("POSTGRES_DB", None)
+            else:
+                os.environ["POSTGRES_DB"] = original_postgres_db
+            Environment.settings = None  # Clear cache to restore original behavior
+
+            # Cleanup
             if pool is not None:
                 try:
-                    # Drop the schema using connection context manager
-                    # Use psycopg.sql.Identifier for safe SQL generation
-                    psycopg_pool = await pool.get_pool()
-                    async with psycopg_pool.connection() as conn:
-                        from psycopg.sql import SQL, Identifier
-                        
-                        await conn.execute(
-                            SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(Identifier(schema_name))
-                        )
-                        await conn.commit()
-
-                    # Close the pool
                     await pool.close()
-                except Exception as e:
-                    import logging
+                except Exception:
+                    pass
+                PostgresConnectionPool._pools.clear()
 
-                    logging.warning(f"Error cleaning up PostgreSQL session: {e}")
+            # Drop worker database (template persists for reuse)
+            run_psql(f"DROP DATABASE IF EXISTS {worker_db_name}")
+
+        # Master cleans up template after all workers finish
+        if is_master:
+            try:
+                os.remove(sync_file)
+            except OSError:
+                pass
+            run_psql(f"DROP DATABASE IF EXISTS {template_db_name}")
+
     else:
         # Use SQLite
         import tempfile
@@ -247,13 +289,11 @@ async def _truncate_all_tables(pool):
             # Use TRUNCATE for PostgreSQL (faster and handles foreign keys better)
             # Use psycopg.sql.Identifier for safe table name handling
             from psycopg.sql import SQL, Identifier
-            
+
             for table in tables:
                 table_name = table[0]
                 try:
-                    await connection.execute(
-                        SQL("TRUNCATE TABLE {} CASCADE").format(Identifier(table_name))
-                    )
+                    await connection.execute(SQL("TRUNCATE TABLE {} CASCADE").format(Identifier(table_name)))
                 except Exception as e:
                     import logging
 
@@ -274,9 +314,9 @@ async def _truncate_all_tables(pool):
             for table in tables:
                 table_name = table[0]
                 # Validate table name to ensure it came from sqlite_master
-                if not table_name.startswith('nodetool_'):
+                if not table_name.startswith("nodetool_"):
                     continue
-                    
+
                 try:
                     await connection.execute(f"DELETE FROM {table_name}")
                 except Exception as e:
@@ -317,19 +357,28 @@ async def setup_and_teardown(request, test_db_pool):
         yield
         return
 
+    from nodetool.runtime.resources import ResourceScope
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    # Use ResourceScope with the shared test database
-    async with ResourceScope(pool=test_db_pool):
-        try:
-            yield
-        finally:
-            # Clean up JobExecutionManager after test
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+    if use_postgres:
+        ResourceScope._test_pool = test_db_pool
+
+    try:
+        # Use ResourceScope with the shared test database
+        async with ResourceScope(pool=test_db_pool):
             try:
-                if JobExecutionManager._instance is not None:
-                    await JobExecutionManager.get_instance().shutdown()
-            except Exception:
-                pass
+                yield
+            finally:
+                # Clean up JobExecutionManager after test
+                try:
+                    if JobExecutionManager._instance is not None:
+                        await JobExecutionManager.get_instance().shutdown()
+                except Exception:
+                    pass
+    finally:
+        if use_postgres:
+            ResourceScope._test_pool = None
 
     # Truncate all tables to reset state for next test
     # Retry truncation if it fails due to lock (can happen during parallel execution)
