@@ -49,12 +49,12 @@ async def pool(temp_db_path):
 async def test_pool_initialization(temp_db_path):
     """Test that pool initializes with lazy slots."""
     pool = SQLiteConnectionPool(temp_db_path, pool_size=5)
-    
+
     # Pool should have 5 slots (all None initially)
     assert pool.pool_size == 5
     assert pool._slots.qsize() == 5
     assert not pool._closed
-    
+
     await pool.close_all()
 
 
@@ -88,11 +88,11 @@ async def test_connection_reuse(pool):
     # Get a connection ID by checking object identity
     async with pool.acquire_context() as conn1:
         conn1_id = id(conn1)
-    
+
     # The connection should be returned to the pool and reused
     async with pool.acquire_context() as conn2:
         conn2_id = id(conn2)
-    
+
     # Same connection should be reused (though this is not guaranteed)
     # We just verify that both work correctly
     assert conn1_id is not None
@@ -124,22 +124,22 @@ async def test_concurrent_acquisitions(temp_db_path):
     """Test that concurrent acquisitions work correctly."""
     pool = SQLiteConnectionPool(temp_db_path, pool_size=3)
     results = []
-    
+
     async def worker(task_id):
         async with pool.acquire_context() as conn:
             await asyncio.sleep(0.01)  # Small delay to simulate work
             cursor = await conn.execute("SELECT ?", (task_id,))
             row = await cursor.fetchone()
             results.append((task_id, row[0]))
-    
+
     # Run 10 concurrent tasks with only 3 slots
     tasks = [worker(i) for i in range(10)]
     await asyncio.gather(*tasks)
-    
+
     # All tasks should complete successfully
     assert len(results) == 10
     assert all(r[0] == r[1] for r in results)
-    
+
     await pool.close_all()
 
 
@@ -150,12 +150,12 @@ async def test_rollback_on_release(pool):
     async with pool.acquire_context() as conn:
         await conn.execute("CREATE TABLE IF NOT EXISTS test_rollback (id INTEGER)")
         await conn.commit()
-    
+
     # Start a transaction but don't commit
     async with pool.acquire_context() as conn:
         await conn.execute("INSERT INTO test_rollback VALUES (1)")
         # Don't commit - should be rolled back on release
-    
+
     # Verify the insert was rolled back
     async with pool.acquire_context() as conn:
         cursor = await conn.execute("SELECT COUNT(*) FROM test_rollback")
@@ -167,18 +167,18 @@ async def test_rollback_on_release(pool):
 async def test_close_all(temp_db_path):
     """Test that close_all properly closes all connections."""
     pool = SQLiteConnectionPool(temp_db_path, pool_size=3)
-    
+
     # Acquire and release a few connections to create them
     for _ in range(2):
         async with pool.acquire_context() as conn:
             await conn.execute("SELECT 1")
-    
+
     # Close all
     await pool.close_all()
-    
+
     # Pool should be marked as closed
     assert pool._closed
-    
+
     # Acquiring should raise RuntimeError
     with pytest.raises(RuntimeError, match="Pool is closed"):
         async with pool.acquire_context() as conn:
@@ -196,7 +196,7 @@ async def test_exception_handling_in_context(pool):
             raise ValueError("Test exception")
     except ValueError:
         pass
-    
+
     # Pool should still work after exception
     async with pool.acquire_context() as conn:
         cursor = await conn.execute("SELECT 1")
@@ -208,23 +208,23 @@ async def test_exception_handling_in_context(pool):
 async def test_memory_database():
     """Test pool with in-memory database."""
     pool = SQLiteConnectionPool(":memory:", pool_size=2)
-    
+
     async with pool.acquire_context() as conn:
         # For in-memory databases, SQLite may report 'memory' or 'delete' for journal mode
         # depending on the version. The important thing is it's not 'wal'.
         cursor = await conn.execute("PRAGMA journal_mode")
         row = await cursor.fetchone()
         assert row[0].lower() in ("delete", "memory")
-        
+
         # Verify connection works
         await conn.execute("CREATE TABLE test (id INTEGER)")
         await conn.execute("INSERT INTO test VALUES (1)")
         await conn.commit()
-        
+
         cursor = await conn.execute("SELECT * FROM test")
         row = await cursor.fetchone()
         assert row[0] == 1
-    
+
     await pool.close_all()
 
 
@@ -232,26 +232,26 @@ async def test_memory_database():
 async def test_pool_exhaustion_blocking(temp_db_path):
     """Test that acquire blocks when pool is exhausted."""
     pool = SQLiteConnectionPool(temp_db_path, pool_size=2)
-    
+
     acquired_connections = []
-    
+
     # Acquire all connections
     conn1 = await pool.acquire()
     conn2 = await pool.acquire()
     acquired_connections.extend([conn1, conn2])
-    
+
     # Try to acquire another - should block
     async def delayed_release():
         await asyncio.sleep(0.1)
         await pool.release(conn1)
-    
+
     # Start a task that releases a connection after delay
     release_task = asyncio.create_task(delayed_release())
-    
+
     # This should block until the release happens
     conn3 = await asyncio.wait_for(pool.acquire(), timeout=1.0)
     assert conn3 is not None
-    
+
     # Cleanup
     await release_task
     await pool.release(conn2)

@@ -144,8 +144,10 @@ class SQLiteConnectionPool:
                 if "locked" in error_msg or "busy" in error_msg:
                     if attempt < max_retries - 1:
                         # Wait with exponential backoff before retrying
-                        delay = 0.05 * (2 ** attempt)  # 50ms, 100ms, 200ms, 400ms
-                        log.debug(f"PRAGMA setup locked, retrying in {delay:.3f}s (attempt {attempt + 1}/{max_retries})")
+                        delay = 0.05 * (2**attempt)  # 50ms, 100ms, 200ms, 400ms
+                        log.debug(
+                            f"PRAGMA setup locked, retrying in {delay:.3f}s (attempt {attempt + 1}/{max_retries})"
+                        )
                         await asyncio.sleep(delay)
                         continue
                 # For non-lock errors or final attempt, close and raise
