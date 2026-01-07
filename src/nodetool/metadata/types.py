@@ -1246,6 +1246,259 @@ class REMBGSession(ComfyData):
     type: Literal["comfy.rembg_session"] = "comfy.rembg_session"
 
 
+# ============================================================================
+# ComfyUI Template Model Types
+# ============================================================================
+# Type-safe model file references for ComfyUI template nodes.
+# Each subclass represents a specific model category and defines the ComfyUI
+# folder where models are stored and the file extensions supported.
+
+comfy_template_model_types = set()
+
+
+class ComfyModelFile(BaseType):
+    """
+    Base class for all ComfyUI template model types.
+
+    Each subclass represents a specific model category and defines:
+    - The ComfyUI folder where models are stored (model_folder class var)
+    - File extensions supported (extensions class var)
+    - Optional validation rules
+
+    These types are used in ComfyTemplateNode subclasses to provide type-safe
+    model file references with proper validation and UI rendering.
+    """
+
+    type: Literal["comfy.model_file"] = "comfy.model_file"
+    model_folder: str = "checkpoints"  # Override in subclasses
+    extensions: list[str] = [".safetensors", ".ckpt", ".pt", ".pth"]
+
+    value: str = Field(
+        default="",
+        description="Model filename (e.g., 'flux1-dev.safetensors')"
+    )
+
+    def is_set(self) -> bool:
+        return self.value != ""
+
+    def is_empty(self) -> bool:
+        return self.value == ""
+
+    def get_comfy_path(self, comfy_base_dir: str) -> str:
+        """Get full path in ComfyUI directory."""
+        return f"{comfy_base_dir}/models/{self.model_folder}/{self.value}"
+
+    @classmethod
+    def get_folder_path(cls, comfy_base_dir: str) -> str:
+        """Get folder path for this model type."""
+        # Access model_folder from the class
+        model_folder = getattr(cls, "model_folder", "checkpoints")
+        return f"{comfy_base_dir}/models/{model_folder}"
+
+    @classmethod
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        if hasattr(cls, "type"):
+            comfy_template_model_types.add(cls.type)
+
+
+# ============================================================================
+# Checkpoint Models (Full Models)
+# ============================================================================
+
+
+class ComfyCheckpoint(ComfyModelFile):
+    """Generic checkpoint model (SD1.5/SD2.x/SDXL)."""
+    type: Literal["comfy.checkpoint"] = "comfy.checkpoint"
+    model_folder: str = "checkpoints"
+
+
+class ComfyCheckpointSDXL(ComfyModelFile):
+    """SDXL checkpoint model."""
+    type: Literal["comfy.checkpoint.sdxl"] = "comfy.checkpoint.sdxl"
+    model_folder: str = "checkpoints"
+
+
+class ComfyCheckpointSD15(ComfyModelFile):
+    """Stable Diffusion 1.5 checkpoint."""
+    type: Literal["comfy.checkpoint.sd15"] = "comfy.checkpoint.sd15"
+    model_folder: str = "checkpoints"
+
+
+# ============================================================================
+# UNET Models (Diffusion Models)
+# ============================================================================
+
+
+class ComfyUNET(ComfyModelFile):
+    """Generic UNET diffusion model."""
+    type: Literal["comfy.unet"] = "comfy.unet"
+    model_folder: str = "unet"
+
+
+class FluxUNET(ComfyModelFile):
+    """Flux UNET model (flux1-dev, flux1-schnell)."""
+    type: Literal["comfy.unet.flux"] = "comfy.unet.flux"
+    model_folder: str = "unet"
+
+
+class SDXLUNET(ComfyModelFile):
+    """SDXL UNET model."""
+    type: Literal["comfy.unet.sdxl"] = "comfy.unet.sdxl"
+    model_folder: str = "unet"
+
+
+class SD3UNET(ComfyModelFile):
+    """Stable Diffusion 3 UNET."""
+    type: Literal["comfy.unet.sd3"] = "comfy.unet.sd3"
+    model_folder: str = "unet"
+
+
+# ============================================================================
+# VAE Models (Autoencoders)
+# ============================================================================
+
+
+class ComfyVAE(ComfyModelFile):
+    """Generic VAE model."""
+    type: Literal["comfy.vae"] = "comfy.vae"
+    model_folder: str = "vae"
+
+
+class FluxVAE(ComfyModelFile):
+    """Flux VAE (ae.safetensors)."""
+    type: Literal["comfy.vae.flux"] = "comfy.vae.flux"
+    model_folder: str = "vae"
+
+
+class SDXLVAE(ComfyModelFile):
+    """SDXL VAE."""
+    type: Literal["comfy.vae.sdxl"] = "comfy.vae.sdxl"
+    model_folder: str = "vae"
+
+
+class SD15VAE(ComfyModelFile):
+    """SD 1.5 VAE."""
+    type: Literal["comfy.vae.sd15"] = "comfy.vae.sd15"
+    model_folder: str = "vae"
+
+
+# ============================================================================
+# CLIP Models (Text Encoders)
+# ============================================================================
+
+
+class ComfyCLIP(ComfyModelFile):
+    """Generic CLIP text encoder."""
+    type: Literal["comfy.clip"] = "comfy.clip"
+    model_folder: str = "clip"
+
+
+class FluxCLIP(ComfyModelFile):
+    """Flux CLIP (dual CLIP - T5 + CLIP-L)."""
+    type: Literal["comfy.clip.flux"] = "comfy.clip.flux"
+    model_folder: str = "clip"
+
+
+class SDXLCLIP(ComfyModelFile):
+    """SDXL CLIP (dual CLIP)."""
+    type: Literal["comfy.clip.sdxl"] = "comfy.clip.sdxl"
+    model_folder: str = "clip"
+
+
+class T5TextEncoder(ComfyModelFile):
+    """T5 text encoder."""
+    type: Literal["comfy.clip.t5"] = "comfy.clip.t5"
+    model_folder: str = "clip"
+    extensions: list[str] = [".safetensors"]
+
+
+# ============================================================================
+# ControlNet Models
+# ============================================================================
+
+
+class ComfyControlNet(ComfyModelFile):
+    """Generic ControlNet model."""
+    type: Literal["comfy.controlnet"] = "comfy.controlnet"
+    model_folder: str = "controlnet"
+
+
+class CannyControlNet(ComfyModelFile):
+    """Canny edge ControlNet."""
+    type: Literal["comfy.controlnet.canny"] = "comfy.controlnet.canny"
+    model_folder: str = "controlnet"
+
+
+class DepthControlNet(ComfyModelFile):
+    """Depth ControlNet."""
+    type: Literal["comfy.controlnet.depth"] = "comfy.controlnet.depth"
+    model_folder: str = "controlnet"
+
+
+class PoseControlNet(ComfyModelFile):
+    """OpenPose ControlNet."""
+    type: Literal["comfy.controlnet.pose"] = "comfy.controlnet.pose"
+    model_folder: str = "controlnet"
+
+
+# ============================================================================
+# LoRA Models
+# ============================================================================
+
+
+class ComfyLoRA(ComfyModelFile):
+    """Generic LoRA model."""
+    type: Literal["comfy.lora"] = "comfy.lora"
+    model_folder: str = "loras"
+
+
+class FluxLoRA(ComfyModelFile):
+    """Flux LoRA."""
+    type: Literal["comfy.lora.flux"] = "comfy.lora.flux"
+    model_folder: str = "loras"
+
+
+class SDXLLoRA(ComfyModelFile):
+    """SDXL LoRA."""
+    type: Literal["comfy.lora.sdxl"] = "comfy.lora.sdxl"
+    model_folder: str = "loras"
+
+
+# ============================================================================
+# Upscale Models
+# ============================================================================
+
+
+class ComfyUpscaleModel(ComfyModelFile):
+    """Upscale model (ESRGAN, RealESRGAN, etc.)."""
+    type: Literal["comfy.upscale"] = "comfy.upscale"
+    model_folder: str = "upscale_models"
+
+
+# ============================================================================
+# Video Models
+# ============================================================================
+
+
+class ComfyVideoModel(ComfyModelFile):
+    """Generic video generation model."""
+    type: Literal["comfy.video"] = "comfy.video"
+    model_folder: str = "video_models"
+
+
+class LTXVideoModel(ComfyModelFile):
+    """LTX Video model."""
+    type: Literal["comfy.video.ltxv"] = "comfy.video.ltxv"
+    model_folder: str = "video_models"
+
+
+class CogVideoModel(ComfyModelFile):
+    """CogVideo model."""
+    type: Literal["comfy.video.cogvideo"] = "comfy.video.cogvideo"
+    model_folder: str = "video_models"
+
+
 #######################
 # Output and Data Types
 #######################
