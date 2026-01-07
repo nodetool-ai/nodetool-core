@@ -169,8 +169,8 @@ class TestClassifyListInputs:
         runner._classify_list_inputs(graph)
         assert runner.multi_edge_list_inputs == {}
 
-    def test_single_edge_to_list_not_classified(self):
-        """Single edge to list property should not be classified as multi-edge."""
+    def test_single_edge_to_list_classified(self):
+        """Single edge to list property should be classified for list aggregation."""
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
         edges = [
@@ -187,8 +187,9 @@ class TestClassifyListInputs:
         runner = WorkflowRunner(job_id="test")
         runner._classify_list_inputs(graph)
 
-        # Single edge should not be classified
-        assert runner.multi_edge_list_inputs == {}
+        # Single edge to list property should now be classified
+        assert "c1" in runner.multi_edge_list_inputs
+        assert "items" in runner.multi_edge_list_inputs["c1"]
 
     def test_multiple_edges_to_list_classified(self):
         """Multiple edges to list property should be classified."""
@@ -599,8 +600,8 @@ class TestActorGetListHandles:
         assert list_handles == {"items"}
 
     @pytest.mark.asyncio
-    async def test_get_list_handles_empty_when_no_multi_edge(self):
-        """_get_list_handles should return empty set when no multi-edge inputs."""
+    async def test_get_list_handles_returns_single_edge_list(self):
+        """_get_list_handles should return handles for single-edge list inputs too."""
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
         edges = [
@@ -624,4 +625,4 @@ class TestActorGetListHandles:
         actor = NodeActor(runner, consumer, ctx, inbox)
 
         list_handles = actor._get_list_handles()
-        assert list_handles == set()
+        assert list_handles == {"items"}

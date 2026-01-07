@@ -262,12 +262,12 @@ class WorkflowRunner:
                     queue.append(target_id)
 
     def _classify_list_inputs(self, graph: Graph) -> None:
-        """Identify properties that require multi-edge list aggregation.
+        """Identify properties that require list aggregation.
 
         Populates ``self.multi_edge_list_inputs`` with a mapping from node IDs to
         the set of handle names that:
         1. Have type ``list[T]``
-        2. Have multiple incoming edges on the same targetHandle
+        2. Have one or more incoming edges on the same targetHandle
 
         For these handles, the actor will collect all incoming values into a list
         before invoking the node's process method, rather than using the default
@@ -284,9 +284,9 @@ class WorkflowRunner:
             key = (edge.target, edge.targetHandle)
             edges_by_target_handle[key].append(edge)
 
-        # Check each target handle with multiple edges
+        # Check each target handle
         for (node_id, handle), edges in edges_by_target_handle.items():
-            if len(edges) <= 1:
+            if len(edges) == 0:
                 continue
 
             node = graph.find_node(node_id)
@@ -302,7 +302,7 @@ class WorkflowRunner:
                 # Multiple edges to non-list property will be caught during validation
                 continue
 
-            # Mark this handle for list aggregation
+            # Mark this handle for list aggregation (single or multiple edges)
             if node_id not in self.multi_edge_list_inputs:
                 self.multi_edge_list_inputs[node_id] = set()
             self.multi_edge_list_inputs[node_id].add(handle)
