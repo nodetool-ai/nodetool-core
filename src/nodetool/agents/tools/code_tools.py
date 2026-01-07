@@ -41,7 +41,7 @@ def _docker_available() -> bool:
     try:
         import docker
 
-        client = docker.from_env()
+        client = docker.from_env()  # type: ignore[attr-defined]
         client.ping()
         return True
     except Exception:

@@ -330,7 +330,7 @@ class BrowserTool(Tool):
         try:
             # Initialize browser using the helper function
             browser = await context.get_browser()
-            browser_context = await browser.new_context(
+            browser_context = await browser.new_context(  # type: ignore[unresolved-attribute]
                 locale="en-US",
                 timezone_id="America/New_York",
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
@@ -430,7 +430,7 @@ class ScreenshotTool(Tool):
         try:
             # Initialize browser
             browser = await context.get_browser()
-            browser_context = await browser.new_context(
+            browser_context = await browser.new_context(  # type: ignore[unresolved-attribute]
                 bypass_csp=True,
             )
             page = await browser_context.new_page()

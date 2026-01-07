@@ -650,7 +650,7 @@ class DockerJobExecution(JobExecution):
         )
 
         # Set status to running
-        job_instance._status = "running"
+        job_instance._update_status("running")
 
         # Start execution task
         job_instance._execution_task = asyncio.create_task(job_instance._execute_workflow(request_json))

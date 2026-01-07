@@ -271,7 +271,7 @@ def build_docker_image(
             discovered: list[dict] = []
             for dist in importlib_metadata.distributions():
                 try:
-                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
+                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""  # type: ignore[union-attr]
                 except Exception:
                     continue
                 if not raw_name:

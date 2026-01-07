@@ -29,9 +29,13 @@ from nodetool.ml.models.model_cache import ModelCache
 log = get_logger(__name__)
 
 
-def filter_repo_paths(*args, **kwargs):
+def filter_repo_paths(
+    items: list[RepoFile],
+    allow_patterns: list[str] | None = None,
+    ignore_patterns: list[str] | None = None,
+) -> list[RepoFile]:
     """Back-compat wrapper for tests and callers patching this symbol."""
-    return hf_cache.filter_repo_paths(*args, **kwargs)
+    return hf_cache.filter_repo_paths(items, allow_patterns, ignore_patterns)
 
 
 async def async_hf_download(*args, **kwargs):

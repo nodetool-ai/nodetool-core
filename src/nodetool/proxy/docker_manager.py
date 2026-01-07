@@ -44,7 +44,7 @@ class DockerManager:
             network_name: Optional Docker network to ensure and use for managed containers.
             connect_mode: How the proxy reaches services ("docker_dns" or "host_port").
         """
-        self.docker = docker.from_env()
+        self.docker = docker.from_env()  # type: ignore[attr-defined]
         self.idle_timeout = idle_timeout
         self.runtime: Dict[str, ServiceRuntime] = {}
         self.idle_task: Optional[asyncio.Task] = None
