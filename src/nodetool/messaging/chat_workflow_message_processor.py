@@ -89,7 +89,6 @@ def _serialize_message(msg: Message) -> dict:
     """
     msg_dict = msg.model_dump()
 
-
     return msg_dict
 
 
@@ -166,7 +165,14 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
 
             # Signal completion with job_id and workflow_id
             await self.send_message(
-                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id, "thread_id": last_message.thread_id}
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
             )
             response_msg = self._create_response_message(result, last_message).model_dump()
             response_msg["job_id"] = job_id
@@ -187,7 +193,14 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
             )
             # Send completion even on error with job_id and workflow_id
             await self.send_message(
-                {"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id, "thread_id": last_message.thread_id}
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
             )
             raise
         finally:
