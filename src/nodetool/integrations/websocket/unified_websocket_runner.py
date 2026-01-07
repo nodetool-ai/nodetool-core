@@ -705,22 +705,37 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     current_status = run_state.status if run_state else None
 
                     if current_status in {"running", "scheduled", "queued", None}:
-                        log.warning(
-                            "UnifiedWebSocketRunner: Job missing from manager; marking as failed",
-                            extra={"job_id": job_id},
+                        log.info(
+                            "UnifiedWebSocketRunner: Job not in memory but running in DB, attempting recovery",
+                            extra={"job_id": job_id, "status": current_status},
                         )
-                        if run_state:
-                            await run_state.mark_failed(error="Job worker was unavailable")
-                        if db_job:
-                            await db_job.update(
-                                error="Job worker was unavailable during reconnect",
-                                finished_at=datetime.now(),
+                        recovered = await job_manager.resume_run(job_id)
+                        if recovered:
+                            job_execution = job_manager.get_job(job_id)
+                            if job_execution:
+                                log.info(
+                                    "UnifiedWebSocketRunner: Successfully recovered job",
+                                    extra={"job_id": job_id},
+                                )
+                        if job_execution is None:
+                            log.warning(
+                                "UnifiedWebSocketRunner: Job recovery failed; marking as failed",
+                                extra={"job_id": job_id},
                             )
-                log.warning(
-                    "UnifiedWebSocketRunner: Job not found during reconnect",
-                    extra={"job_id": job_id},
-                )
-                raise ValueError(f"Job {job_id} not found")
+                            if run_state:
+                                await run_state.mark_failed(error="Job worker was unavailable")
+                            if db_job:
+                                await db_job.update(
+                                    error="Job worker was unavailable during reconnect",
+                                    finished_at=datetime.now(),
+                                )
+
+                if job_execution is None:
+                    log.warning(
+                        "UnifiedWebSocketRunner: Job not found during reconnect",
+                        extra={"job_id": job_id},
+                    )
+                    raise ValueError(f"Job {job_id} not found")
 
             log.info(
                 "UnifiedWebSocketRunner.reconnect_job obtained job execution",
@@ -733,6 +748,28 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     "is_completed": job_execution.is_completed(),
                 },
             )
+
+            async with ResourceScope():
+                from nodetool.models.run_state import RunState
+
+                run_state = await RunState.get(job_id)
+                current_status = run_state.status if run_state else None
+
+                if current_status in {"running", "scheduled", "queued"} and not job_execution.is_running():
+                    log.warning(
+                        "UnifiedWebSocketRunner: Job in memory shows completed but DB shows running, attempting recovery",
+                        extra={"job_id": job_id, "in_memory_status": job_execution.status, "db_status": current_status},
+                    )
+                    recovered = await job_manager.resume_run(job_id)
+                    if recovered:
+                        job_execution = job_manager.get_job(job_id)
+                        if job_execution:
+                            log.info(
+                                "UnifiedWebSocketRunner: Successfully recovered job after finding stale in-memory job",
+                                extra={"job_id": job_id},
+                            )
+                    if job_execution is None:
+                        raise ValueError(f"Job {job_id} recovery failed")
 
             # Use workflow_id from the job execution if not provided
             if not workflow_id:
