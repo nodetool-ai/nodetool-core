@@ -7,7 +7,9 @@ This subpackage provides nodes for various Flux model workflows:
 """
 
 from nodetool.nodes.comfy.flux.flux_dev_simple import FluxDevSimple
+from nodetool.nodes.comfy.flux.flux_schnell_simple import FluxSchnellSimple
 
 __all__ = [
     "FluxDevSimple",
+    "FluxSchnellSimple",
 ]

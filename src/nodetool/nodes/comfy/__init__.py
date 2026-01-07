@@ -15,4 +15,25 @@ The nodes in this package use the ComfyTemplateNode base class which handles:
 
 Subpackages:
 - flux/: Flux model nodes (FluxDevSimple, FluxSchnell, etc.)
+- sdxl/: SDXL model nodes (SDXLBaseTextToImage, etc.)
+- video/: Video generation nodes (LTXVTextToVideo, etc.)
 """
+
+# Import subpackages to register nodes
+from nodetool.nodes.comfy import flux, sdxl, video
+from nodetool.nodes.comfy.base import ComfyTemplateNode
+from nodetool.nodes.comfy.mapping import (
+    ModelNodeMapping,
+    NodeInputMapping,
+    NodeOutputMapping,
+)
+
+__all__ = [
+    "ComfyTemplateNode",
+    "ModelNodeMapping",
+    "NodeInputMapping",
+    "NodeOutputMapping",
+    "flux",
+    "sdxl",
+    "video",
+]

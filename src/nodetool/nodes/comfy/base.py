@@ -74,10 +74,21 @@ class ComfyTemplateNode(BaseNode, ABC):
 
         Returns the path to workflow_templates/templates/ directory,
         which should contain the JSON template files.
+
+        The path can be configured via COMFY_WORKFLOW_TEMPLATES_DIR environment
+        variable for flexibility in different deployment scenarios.
         """
-        # Navigate from src/nodetool/nodes/comfy/base.py to repo root
+        import os
+
+        # First check environment variable
+        env_dir = os.environ.get("COMFY_WORKFLOW_TEMPLATES_DIR")
+        if env_dir:
+            return Path(env_dir)
+
+        # Default: find relative to this file's location
+        # Go from src/nodetool/nodes/comfy/base.py to repo root
         current_file = Path(__file__)
-        # Go up: base.py -> comfy -> nodes -> nodetool -> src -> repo_root
+        # Navigate up: base.py -> comfy -> nodes -> nodetool -> src -> repo_root
         repo_root = current_file.parent.parent.parent.parent.parent
         return repo_root / "workflow_templates" / "templates"
 
@@ -326,8 +337,8 @@ class ComfyTemplateNode(BaseNode, ABC):
         provider = await get_provider(ProviderEnum.ComfyTemplate, context.user_id)
         assert isinstance(provider, ComfyTemplateProvider)
 
-        # Execute graph
-        images = await provider._execute_graph(
+        # Execute graph via public interface
+        images = await provider.execute_graph(
             graph,
             template_id=self.__class__.__name__
         )

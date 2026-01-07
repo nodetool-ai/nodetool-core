@@ -25,9 +25,9 @@ class NodeInputMapping(BaseModel):
         description="Input field name in the ComfyUI node (e.g., 'text', 'seed')"
     )
 
-    transform: Literal["direct", "image_upload", "int", "float", "bool"] | None = Field(
+    transform: Literal["direct", "image_upload", "int", "float", "bool"] = Field(
         default="direct",
-        description="Optional value transformation before injection"
+        description="Value transformation before injection"
     )
 
 
