@@ -664,8 +664,6 @@ class NodeActor:
 
                 if not handle_streaming.get(handle, False):
                     self.inbox.mark_source_done(handle)
-        await node.handle_eos()
-        await self._mark_downstream_eos()
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.
