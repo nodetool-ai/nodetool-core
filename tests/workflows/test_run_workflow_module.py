@@ -140,7 +140,7 @@ async def test_run_workflow_propagates_initialization_error():
         await agen.aclose()
 
     assert isinstance(messages[0], Error)
-    assert messages[0].error == "test.missing.module"
+    assert messages[0].message == "test.missing.module"
 
     assert isinstance(messages[1], JobUpdate)
     assert messages[1].status == "failed"

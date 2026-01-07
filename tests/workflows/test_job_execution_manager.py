@@ -55,19 +55,19 @@ pytestmark = pytest.mark.timeout(30)
 async def cleanup_jobs():
     """Cleanup jobs after each test."""
     yield
-    # Clear any jobs created during the test
     manager = JobExecutionManager.get_instance()
 
-    for job_id, job in list(manager._jobs.items()):
+    jobs_to_cleanup = list(manager._jobs.items())
+    for job_id, job in jobs_to_cleanup:
         try:
-            job.cleanup_resources()
             if not job.is_completed():
-                job.cancel()
+                await job.cancel()
+            await job.cleanup_resources()
         except Exception as e:
             print(f"Error cleaning up job {job_id}: {e}")
 
     manager._jobs.clear()
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.5)
 
 
 @pytest.fixture
@@ -223,8 +223,6 @@ async def test_manager_list_jobs(simple_workflow, cleanup_jobs):
     """Test listing jobs from the manager."""
     manager = JobExecutionManager.get_instance()
 
-    # Start multiple jobs
-    jobs = []
     for i in range(3):
         request = RunJobRequest(
             workflow_id=simple_workflow.id,
@@ -241,17 +239,14 @@ async def test_manager_list_jobs(simple_workflow, cleanup_jobs):
             workflow_id=simple_workflow.id,
         )
 
-        job = await manager.start_job(request, context)
-        jobs.append(job)
+        await manager.start_job(request, context)
 
-    # List all jobs
     all_jobs = manager.list_jobs()
-    assert len(all_jobs) >= 3
+    assert len(all_jobs) == 3
 
-    # List jobs for specific user
     user_jobs = manager.list_jobs(user_id="user_0")
-    assert len(user_jobs) >= 1
-    assert all(j.request.user_id == "user_0" for j in user_jobs)
+    assert len(user_jobs) == 1
+    assert user_jobs[0].request.user_id == "user_0"
 
 
 @pytest.mark.asyncio
@@ -322,7 +317,7 @@ async def test_manager_cleanup_completed_jobs(simple_workflow, cleanup_jobs):
     if not job.is_completed():
         if job.runner:
             job.runner.status = "completed"
-        job.cancel()
+        await job.cancel()
 
     # Cleanup with max_age_seconds=0 should remove it
     await manager.cleanup_completed_jobs(max_age_seconds=0)

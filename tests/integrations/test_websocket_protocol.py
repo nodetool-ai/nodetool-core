@@ -233,11 +233,10 @@ class TestWebSocketRoutingKeys:
 
     def test_chunk_has_thread_id_field(self, ws):
         """Test that chunk messages can include thread_id."""
-        # Send a message that will produce a response with thread_id
-        ws.send_command("chat_message", {"content": "test", "thread_id": "test-thread"})
-        # Should get acknowledgment with thread_id
-        msg = ws.receive()
-        # The acknowledgment should include thread_id in some form
+        from nodetool.metadata.types import Chunk
+        chunk = Chunk(content="test", thread_id="test-thread-123")
+        assert hasattr(chunk, "thread_id")
+        assert chunk.thread_id == "test-thread-123"
 
 
 if __name__ == "__main__":
