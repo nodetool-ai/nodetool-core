@@ -236,7 +236,7 @@ class TestWebSocketRoutingKeys:
         # Send a message that will produce a response with thread_id
         ws.send_command("chat_message", {"content": "test", "thread_id": "test-thread"})
         # Should get acknowledgment with thread_id
-        msg = ws.receive()
+        ws.receive()
         # The acknowledgment should include thread_id in some form
 
 

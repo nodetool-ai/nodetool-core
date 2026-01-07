@@ -1694,9 +1694,7 @@ def _is_component_only_repo(repo_id: str) -> bool:
     """
     repo_lower = repo_id.lower()
     # Nunchaku repos are component-only (transformers, T5 encoders)
-    if "nunchaku" in repo_lower:
-        return True
-    return False
+    return "nunchaku" in repo_lower
 
 
 async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
