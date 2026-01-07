@@ -348,6 +348,30 @@ class ComfyTemplateProvider(BaseProvider):
         if not available:
             raise RuntimeError(f"ComfyUI server {_server_addr()} not reachable")
 
+    async def execute_graph(
+        self,
+        graph: dict[str, Any],
+        template_id: str | None = None,
+    ) -> list[bytes]:
+        """Execute a ComfyUI graph and return the generated images.
+
+        Public interface for executing ComfyUI workflow graphs. Used by
+        ComfyTemplateNode subclasses and other callers that build their
+        own graphs.
+
+        Args:
+            graph: ComfyUI workflow graph.
+            template_id: Optional template ID for logging.
+
+        Returns:
+            List of generated image bytes.
+
+        Raises:
+            RuntimeError: If the server is not reachable or execution fails.
+        """
+        await self._ensure_server()
+        return await self._execute_graph(graph, template_id)
+
     async def _execute_graph(
         self,
         graph: dict[str, Any],
