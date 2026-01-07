@@ -1114,6 +1114,32 @@ def comfy_model_to_folder(type_name: str) -> str:
     return folder_mapping.get(type_name, type_name)
 
 
+COMFY_MODEL_TYPE_FOLDERS: dict[str, list[str]] = {
+    "checkpoints": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "unet": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "vae": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "clip": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "controlnet": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "loras": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "upscale_models": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "video_models": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "clip_vision": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "gligen": [".safetensors", ".ckpt", ".pt", ".pth"],
+    "ipadapter": [".safetensors", ".bin"],
+    "instantid": [".safetensors", ".bin"],
+    "style_models": [".safetensors", ".ckpt"],
+    "embeddings": [".pt", ".pth", ".bin"],
+    "hypernetworks": [".pt", ".pth"],
+    "controlnet_preprocessor": [".pt", ".pth", ".safetensors"],
+    "diffusers": [".bin", ".safetensors"],
+}
+
+
+def get_comfy_model_folders() -> dict[str, list[str]]:
+    """Get all available ComfyUI model type folders with their extensions."""
+    return COMFY_MODEL_TYPE_FOLDERS.copy()
+
+
 comfy_model_types = set()
 
 

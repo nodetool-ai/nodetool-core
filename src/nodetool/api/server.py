@@ -139,6 +139,7 @@ def _load_default_routers() -> List[APIRouter]:
         admin_secrets,
         asset,
         collection,
+        comfy,
         cost,
         debug,
         file,
@@ -157,6 +158,7 @@ def _load_default_routers() -> List[APIRouter]:
     routers: list[APIRouter] = [
         admin_secrets.router,
         asset.router,
+        comfy.router,
         cost.router,
         message.router,
         thread.router,
