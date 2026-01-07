@@ -25,27 +25,20 @@ pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group(name="job_executi
 async def cleanup_jobs():
     """Cleanup jobs after each test."""
     yield
-    # Clear any jobs created during the test
     manager = JobExecutionManager.get_instance()
 
-    # Just stop all event loops - they're daemon threads so they'll die
-    for job_id, job in list(manager._jobs.items()):
+    jobs_to_cleanup = list(manager._jobs.items())
+    for job_id, job in jobs_to_cleanup:
         try:
-            # Use the cleanup_resources method
-            await job.cleanup_resources()
-
-            # Cancel if not completed
             if not job.is_completed():
                 await job.cancel()
-
+            await job.cleanup_resources()
         except Exception as e:
             print(f"Error cleaning up job {job_id}: {e}")
 
-    # Clear the registry immediately - daemon threads will clean themselves up
     manager._jobs.clear()
 
-    # Brief sleep to let daemon threads finish (but don't wait for join)
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.5)
 
 
 @pytest.fixture
