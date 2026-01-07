@@ -71,9 +71,7 @@ class TestRegularChatProcessorThreadId:
     """Tests for regular_chat_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_regular_chat_processor_sets_thread_id(
-        self, test_thread_id, test_user_id, processing_context
-    ):
+    async def test_regular_chat_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
         """Test that RegularChatProcessor sets thread_id on chunks."""
         from nodetool.messaging.regular_chat_processor import RegularChatProcessor
 
@@ -115,18 +113,14 @@ class TestRegularChatProcessorThreadId:
 
         for i, msg in enumerate(chunk_messages):
             # Thread_id should be present in the sent message
-            assert (
-                "thread_id" in msg
-            ), f"Chunk message {i} should include thread_id. Message: {msg}"
+            assert "thread_id" in msg, f"Chunk message {i} should include thread_id. Message: {msg}"
 
 
 class TestAgentMessageProcessorThreadId:
     """Tests for agent_message_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_agent_message_processor_sets_thread_id(
-        self, test_thread_id, test_user_id, processing_context
-    ):
+    async def test_agent_message_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
         """Test that AgentMessageProcessor sets thread_id on chunks."""
         from nodetool.messaging.agent_message_processor import (
             AgentMessageProcessor,
@@ -173,21 +167,15 @@ class TestAgentMessageProcessorThreadId:
         assert len(chunk_messages) > 0, "Should have sent chunk messages"
 
         for msg in chunk_messages:
-            assert (
-                "thread_id" in msg
-            ), "Chunk message should include thread_id"
-            assert (
-                msg["thread_id"] == test_thread_id
-            ), f"Chunk thread_id should be {test_thread_id}"
+            assert "thread_id" in msg, "Chunk message should include thread_id"
+            assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
 class TestHelpMessageProcessorThreadId:
     """Tests for help_message_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_help_message_processor_sets_thread_id(
-        self, test_thread_id, test_user_id, processing_context
-    ):
+    async def test_help_message_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
         """Test that HelpMessageProcessor sets thread_id on chunks."""
         from nodetool.messaging.help_message_processor import (
             HelpMessageProcessor,
@@ -230,23 +218,17 @@ class TestHelpMessageProcessorThreadId:
         assert len(chunk_messages) > 0, "Should have sent chunk messages"
 
         for msg in chunk_messages:
-            assert (
-                "thread_id" in msg
-            ), "Chunk message should include thread_id"
+            assert "thread_id" in msg, "Chunk message should include thread_id"
             # The thread_id in help processor is set, verify it's present
             if msg.get("thread_id") is not None:
-                assert (
-                    msg["thread_id"] == test_thread_id
-                ), f"Chunk thread_id should be {test_thread_id}"
+                assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
 class TestClaudeAgentMessageProcessorThreadId:
     """Tests for claude_agent_message_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_claude_agent_processor_sets_thread_id(
-        self, test_thread_id, processing_context
-    ):
+    async def test_claude_agent_processor_sets_thread_id(self, test_thread_id, processing_context):
         """Test that ClaudeAgentMessageProcessor sets thread_id on chunks."""
         from nodetool.messaging.claude_agent_message_processor import (
             ClaudeAgentMessageProcessor,
@@ -282,14 +264,10 @@ class TestClaudeAgentMessageProcessorThreadId:
 
         async def mock_receive_response():
             # Yield text blocks
-            yield AssistantMessage(
-                content=[TextBlock(text="Processing your request")]
-            )
+            yield AssistantMessage(content=[TextBlock(text="Processing your request")])
             yield ResultMessage(duration_ms=100)
 
-        with patch(
-            "nodetool.messaging.claude_agent_message_processor.ClaudeSDKClient"
-        ) as MockClient:
+        with patch("nodetool.messaging.claude_agent_message_processor.ClaudeSDKClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.query = mock_query
             mock_client.receive_response = mock_receive_response
@@ -305,21 +283,15 @@ class TestClaudeAgentMessageProcessorThreadId:
         assert len(chunk_messages) > 0, "Should have sent chunk messages"
 
         for msg in chunk_messages:
-            assert (
-                "thread_id" in msg
-            ), "Chunk message should include thread_id"
-            assert (
-                msg["thread_id"] == test_thread_id
-            ), f"Chunk thread_id should be {test_thread_id}"
+            assert "thread_id" in msg, "Chunk message should include thread_id"
+            assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
 class TestWorkflowMessageProcessorThreadId:
     """Tests for workflow_message_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_workflow_processor_sets_thread_id(
-        self, test_thread_id, test_user_id, processing_context
-    ):
+    async def test_workflow_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
         """Test that WorkflowMessageProcessor sets thread_id on completion chunks."""
         from nodetool.messaging.workflow_message_processor import (
             WorkflowMessageProcessor,
@@ -364,27 +336,19 @@ class TestWorkflowMessageProcessorThreadId:
             await processor.process([test_message], processing_context)
 
         # Check that completion chunk has thread_id set
-        chunk_messages = [
-            msg for msg in sent_messages if msg.get("type") == "chunk" and msg.get("done")
-        ]
+        chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk" and msg.get("done")]
         assert len(chunk_messages) > 0, "Should have sent completion chunk"
 
         for msg in chunk_messages:
-            assert (
-                "thread_id" in msg
-            ), "Completion chunk should include thread_id"
-            assert (
-                msg["thread_id"] == test_thread_id
-            ), f"Chunk thread_id should be {test_thread_id}"
+            assert "thread_id" in msg, "Completion chunk should include thread_id"
+            assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
 class TestChatWorkflowMessageProcessorThreadId:
     """Tests for chat_workflow_message_processor setting thread_id on chunks."""
 
     @pytest.mark.asyncio
-    async def test_chat_workflow_processor_sets_thread_id(
-        self, test_thread_id, test_user_id, processing_context
-    ):
+    async def test_chat_workflow_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
         """Test that ChatWorkflowMessageProcessor sets thread_id on completion chunks."""
         from nodetool.messaging.chat_workflow_message_processor import (
             ChatWorkflowMessageProcessor,
@@ -429,18 +393,12 @@ class TestChatWorkflowMessageProcessorThreadId:
             await processor.process([test_message], processing_context)
 
         # Check that completion chunk has thread_id set
-        chunk_messages = [
-            msg for msg in sent_messages if msg.get("type") == "chunk" and msg.get("done")
-        ]
+        chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk" and msg.get("done")]
         assert len(chunk_messages) > 0, "Should have sent completion chunk"
 
         for msg in chunk_messages:
-            assert (
-                "thread_id" in msg
-            ), "Completion chunk should include thread_id"
-            assert (
-                msg["thread_id"] == test_thread_id
-            ), f"Chunk thread_id should be {test_thread_id}"
+            assert "thread_id" in msg, "Completion chunk should include thread_id"
+            assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
 if __name__ == "__main__":

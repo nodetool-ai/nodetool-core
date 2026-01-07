@@ -862,7 +862,9 @@ class HelpMessageProcessor(MessageProcessor):
                         else:
                             # Try to process as regular server tool, with graceful error handling
                             try:
-                                tool_result = await self._run_tool(processing_context, chunk, last_message.thread_id, last_message.workflow_id)
+                                tool_result = await self._run_tool(
+                                    processing_context, chunk, last_message.thread_id, last_message.workflow_id
+                                )
                             except ValueError:
                                 # Tool not found - return error to model instead of crashing
                                 # This helps smaller models that may hallucinate tool names
