@@ -3105,7 +3105,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 if model_type.startswith("hf."):
                     repo_id = model.get("repo_id")
                     if not repo_id:
-                        console.print(f"  [red]Error: repo_id is required for HF models[/]")
+                        console.print("  [red]Error: repo_id is required for HF models[/]")
                         continue
                     console.print(f"  [cyan]Downloading HF model: {repo_id}[/]")
 
@@ -3137,7 +3137,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 elif model_type == "language_model" and model.get("provider") == "ollama":
                     model_id = model.get("id")
                     if not model_id:
-                        console.print(f"  [red]Error: model id is required for Ollama models[/]")
+                        console.print("  [red]Error: model id is required for Ollama models[/]")
                         continue
                     console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
 
