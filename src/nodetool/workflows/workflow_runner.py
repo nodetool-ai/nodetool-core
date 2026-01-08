@@ -205,6 +205,10 @@ class WorkflowRunner:
         # State manager for queue-based updates (eliminates DB write contention)
         self.state_manager: StateManager | None = None
 
+        # Multi-edge list inputs: {node_id: {handle_names requiring aggregation}}
+        # Populated during graph analysis to track list-typed properties with multiple incoming edges
+        self.multi_edge_list_inputs: dict[str, set[str]] = {}
+
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
 
@@ -256,6 +260,55 @@ class WorkflowRunner:
                 if target_id not in visited:
                     visited.add(target_id)
                     queue.append(target_id)
+
+    def _classify_list_inputs(self, graph: Graph) -> None:
+        """Identify properties that require list aggregation.
+
+        Populates ``self.multi_edge_list_inputs`` with a mapping from node IDs to
+        the set of handle names that:
+        1. Have type ``list[T]``
+        2. Have one or more incoming edges on the same targetHandle
+
+        For these handles, the actor will collect all incoming values into a list
+        before invoking the node's process method, rather than using the default
+        behavior of taking the first/latest value.
+        """
+        self.multi_edge_list_inputs.clear()
+
+        if not graph.edges:
+            return
+
+        # Group edges by (target_node_id, targetHandle)
+        edges_by_target_handle: dict[tuple[str, str], list[Edge]] = defaultdict(list)
+        for edge in graph.edges:
+            key = (edge.target, edge.targetHandle)
+            edges_by_target_handle[key].append(edge)
+
+        # Check each target handle
+        for (node_id, handle), edges in edges_by_target_handle.items():
+            if len(edges) == 0:
+                continue
+
+            node = graph.find_node(node_id)
+            if node is None:
+                continue
+
+            prop = node.find_property(handle)
+            if prop is None:
+                continue
+
+            # Check if the property type is a list type
+            if not prop.type.is_list_type():
+                # Multiple edges to non-list property will be caught during validation
+                continue
+
+            # Mark this handle for list aggregation (single or multiple edges)
+            if node_id not in self.multi_edge_list_inputs:
+                self.multi_edge_list_inputs[node_id] = set()
+            self.multi_edge_list_inputs[node_id].add(handle)
+
+        if self.multi_edge_list_inputs:
+            log.debug(f"Multi-edge list inputs detected: {self.multi_edge_list_inputs}")
 
     # --- Streaming Input support for InputNode(is_streaming=True) ---
     def _enqueue_input_event(self, event: dict[str, Any]) -> None:
@@ -503,6 +556,7 @@ class WorkflowRunner:
 
         context.graph = graph
         self._analyze_streaming(graph)
+        self._classify_list_inputs(graph)
         self._initialize_inboxes(context, graph)
         self.context = context
         context.device = self.device

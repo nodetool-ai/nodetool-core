@@ -16,6 +16,8 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     - list[str] is a subtype of list[any]
     - str is a subtype of union[str, int]
     - enum with values [1, 2] is a subtype of enum with values [1, 2, 3]
+    - float is a subtype of list[float] (single value can be wrapped into list)
+    - int is a subtype of list[int] (single value can be wrapped into list)
 
     Args:
         type1: The subtype to check.
@@ -54,6 +56,13 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     # Handle union types in type1 - check if type2 accepts all members of the union
     if type1.type == "union":
         return all(typecheck(t1, type2) for t1 in type1.type_args)
+
+    # Special case: T -> list[T] (single value can be wrapped into a list)
+    # This allows edges where source outputs T but target expects list[T]
+    # Only apply when list has specific type args (not list[Any])
+    if type2.type == "list" and type1.type != "list" and len(type2.type_args) > 0:
+        element_type = type2.type_args[0]
+        return typecheck(type1, element_type)
 
     # From here on, we need the base types to match for most cases
     if type1.type != type2.type:
