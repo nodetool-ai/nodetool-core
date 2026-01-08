@@ -336,7 +336,15 @@ def create_chat_server(
     """
     # Authentication strategy is configured via AUTH_PROVIDER env var
 
-    app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        console.print("Chat server started successfully")
+        yield
+        console.print("Chat server shutting down...")
+
+    app = FastAPI(title="NodeTool Chat Server", version="1.0.0", lifespan=lifespan)
     tools = tools or []
     workflows = workflows or []
 
@@ -355,15 +363,6 @@ def create_chat_server(
     async def health_check():
         """Health check endpoint."""
         return {"status": "healthy"}
-
-    # Add graceful shutdown
-    @app.on_event("startup")
-    async def startup_event():
-        console.print("Chat server started successfully")
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        console.print("Chat server shutting down...")
 
     return app
 
