@@ -145,10 +145,10 @@ from nodetool.metadata.utils import (
     is_tuple_type,
     is_union_type,
 )
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.inbox import NodeInbox
-from nodetool.workflows.types import NodeUpdate
+from nodetool.workflows.workflow_types import NodeUpdate
 
 try:
     import torch
@@ -1684,7 +1684,7 @@ class ToolResultNode(BaseNode):
         result: Any
 
     async def gen_process(self, context: Any) -> AsyncGenerator[OutputType, None]:
-        from nodetool.workflows.types import ToolResultUpdate
+        from nodetool.workflows.workflow_types import ToolResultUpdate
 
         if self.has_input():
             async for handle, value in self.iter_any_input():
@@ -1735,7 +1735,7 @@ class OutputNode(BaseNode):
         This avoids race conditions with the actor's pre-gather stage and ensures
         we don't miss later arrivals by only checking the immediate buffer.
         """
-        from nodetool.workflows.types import OutputUpdate
+        from nodetool.workflows.workflow_types import OutputUpdate
 
         yielded = False
         async for _handle, value in self.iter_any_input():
@@ -1848,7 +1848,7 @@ class Preview(BaseNode):
         Mirrors the stream-first pattern used by `OutputNode`. If no inbound
         sources or no items are available, falls back to previewing `self.value`.
         """
-        from nodetool.workflows.types import PreviewUpdate
+        from nodetool.workflows.workflow_types import PreviewUpdate
 
         async for _handle, value in self.iter_any_input():
             result = await context.normalize_output_value(value)

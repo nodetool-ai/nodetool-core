@@ -8,7 +8,7 @@ from nodetool.providers.fake_provider import (
     create_streaming_fake_provider,
     create_tool_calling_fake_provider,
 )
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 
 class TestFakeProvider:

@@ -100,7 +100,7 @@ from nodetool.types.job import (
 from nodetool.types.prediction import Prediction
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import Error, ProcessingMessage
+from nodetool.workflows.workflow_types import Error, ProcessingMessage
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])

@@ -77,8 +77,8 @@ from nodetool.integrations.huggingface.huggingface_models import (
     size_on_disk,
 )
 from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
-from nodetool.packages.types import AssetInfo, PackageInfo
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.packages.package_types import AssetInfo, PackageInfo
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.model import UnifiedModel
 from nodetool.types.workflow import Workflow
 

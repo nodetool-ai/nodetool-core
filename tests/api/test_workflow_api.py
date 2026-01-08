@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Node
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Edge, Node
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.workflow import WorkflowList, WorkflowRequest
 
 

@@ -24,7 +24,7 @@ _progress_manager: Optional[ProgressManager] = None
 
 if TYPE_CHECKING:
     from nodetool.deploy.progress import ProgressManager
-    from nodetool.types.graph import Graph as ApiGraph
+    from nodetool.types.api_graph import Graph as ApiGraph
     from nodetool.types.model import UnifiedModel
 
 
@@ -60,7 +60,7 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     """
     from nodetool.models.workflow import Workflow as WorkflowModel
     from nodetool.packages.registry import Registry
-    from nodetool.types.graph import Graph as ApiGraph
+    from nodetool.types.api_graph import Graph as ApiGraph
 
     async def _load() -> ApiGraph:
         workflow = await WorkflowModel.find(user_id, workflow_id)
@@ -426,7 +426,7 @@ def run(
     import traceback
     from typing import Any
 
-    from nodetool.types.graph import Graph
+    from nodetool.types.api_graph import Graph
     from nodetool.types.job import JobUpdate
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.run_job_request import RunJobRequest
@@ -3105,7 +3105,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 if model_type.startswith("hf."):
                     repo_id = model.get("repo_id")
                     if not repo_id:
-                        console.print(f"  [red]Error: repo_id is required for HF models[/]")
+                        console.print("  [red]Error: repo_id is required for HF models[/]")
                         continue
                     console.print(f"  [cyan]Downloading HF model: {repo_id}[/]")
 
@@ -3137,7 +3137,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 elif model_type == "language_model" and model.get("provider") == "ollama":
                     model_id = model.get("id")
                     if not model_id:
-                        console.print(f"  [red]Error: model id is required for Ollama models[/]")
+                        console.print("  [red]Error: model id is required for Ollama models[/]")
                         continue
                     console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
 

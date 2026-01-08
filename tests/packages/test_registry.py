@@ -5,9 +5,9 @@ import pytest
 
 from nodetool.metadata.node_metadata import ExampleMetadata, PackageModel
 from nodetool.packages.registry import Registry
-from nodetool.types.graph import Edge as APIEdge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge as APIEdge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode
 

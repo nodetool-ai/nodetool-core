@@ -19,7 +19,7 @@ from nodetool.metadata.types import (
     VideoRef,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import OutputUpdate
+from nodetool.workflows.workflow_types import OutputUpdate
 
 from .message_processor import MessageProcessor
 

@@ -6,7 +6,7 @@ from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.metadata.types import Message, Provider
 from nodetool.providers.base import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 
 @pytest.mark.asyncio

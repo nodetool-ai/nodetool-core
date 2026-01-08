@@ -122,7 +122,7 @@ if TYPE_CHECKING:
 
     from nodetool.providers.base import BaseProvider
     from nodetool.workflows.base_node import BaseNode
-    from nodetool.workflows.types import Chunk
+    from nodetool.workflows.workflow_types import Chunk
 
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.help_tools import SearchNodesTool
@@ -130,7 +130,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.typecheck import typecheck
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.packages.registry import Registry
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.utils.message_parsing import extract_json_from_message
 from nodetool.workflows.base_node import (
     InputNode,
@@ -139,7 +139,7 @@ from nodetool.workflows.base_node import (
     get_node_class,
 )
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.workflows.workflow_types import Chunk, PlanningUpdate
 
 # Set up logger for this module
 logger = get_logger(__name__)

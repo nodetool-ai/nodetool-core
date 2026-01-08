@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import OutputSlot
-from nodetool.packages.types import AssetInfo
+from nodetool.packages.package_types import AssetInfo
 from nodetool.types.model import ModelPack, UnifiedModel
 from nodetool.workflows.base_node import (
     BaseNode,

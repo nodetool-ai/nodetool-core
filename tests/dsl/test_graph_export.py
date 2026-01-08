@@ -1,8 +1,8 @@
 from nodetool.dsl.export import graph_to_dsl_py
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Edge as ApiEdge
-from nodetool.types.graph import Graph as ApiGraph
-from nodetool.types.graph import Node as ApiNode
+from nodetool.types.api_graph import Edge as ApiEdge
+from nodetool.types.api_graph import Graph as ApiGraph
+from nodetool.types.api_graph import Node as ApiNode
 
 
 def test_export_minimal_single_node():

@@ -30,10 +30,10 @@ if TYPE_CHECKING:
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator
 
-    from nodetool.types.chat import MessageCreateRequest
+    from nodetool.types.message_types import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.property import Property
-    from nodetool.workflows.types import ProcessingMessage
+    from nodetool.workflows.workflow_types import ProcessingMessage
 
 
 try:  # Optional dependency used by browser helpers
@@ -598,7 +598,7 @@ class ProcessingContext:
         self.message_queue.put_nowait(message)
 
         # Store latest status for each node and edge for reconnection replay
-        from nodetool.workflows.types import EdgeUpdate, NodeUpdate
+        from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate
 
         if isinstance(message, NodeUpdate):
             self.node_statuses[message.node_id] = message

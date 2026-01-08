@@ -18,7 +18,7 @@ from nodetool.metadata.types import Message as ApiMessage
 from nodetool.metadata.types import Provider, Step, Task
 from nodetool.models.message import Message as DBMessage
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Chunk,
     PlanningUpdate,
     StepResult,

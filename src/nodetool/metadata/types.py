@@ -12,7 +12,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 #######################
 # Type Name Mappings

@@ -5,7 +5,7 @@ Tests for graph utilities.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.graph_utils import (
     find_node,
     get_downstream_subgraph,

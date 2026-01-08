@@ -19,7 +19,7 @@ from nodetool.models.workflow_version import WorkflowVersion as WorkflowVersionM
 from nodetool.packages.registry import Registry
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import require_scope
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
+from nodetool.types.api_graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
     AutosaveResponse,
     AutosaveWorkflowRequest,
@@ -36,7 +36,7 @@ from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import Error, OutputUpdate
+from nodetool.workflows.workflow_types import Error, OutputUpdate
 
 log = get_logger(__name__)
 

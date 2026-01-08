@@ -48,7 +48,7 @@ from nodetool.models.run_node_state import RunNodeState
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
-from nodetool.workflows.types import EdgeUpdate, NodeUpdate
+from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode

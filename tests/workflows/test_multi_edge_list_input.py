@@ -18,9 +18,9 @@ from typing import Any, AsyncGenerator, ClassVar, TypedDict
 import pytest
 from pydantic import Field
 
-from nodetool.types.graph import Edge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.graph import Graph

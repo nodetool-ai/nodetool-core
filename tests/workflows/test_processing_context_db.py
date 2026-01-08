@@ -16,7 +16,7 @@ from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
 from nodetool.models.workflow import Workflow
-from nodetool.types.chat import MessageCreateRequest
+from nodetool.types.message_types import MessageCreateRequest
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -323,7 +323,7 @@ class TestErrorCases:
         """Test message queue functionality."""
         assert not context.has_messages()
 
-        from nodetool.workflows.types import NodeProgress
+        from nodetool.workflows.workflow_types import NodeProgress
 
         message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)
@@ -333,7 +333,7 @@ class TestErrorCases:
     @pytest.mark.asyncio
     async def test_pop_message_async(self, context: ProcessingContext):
         """Test async message popping."""
-        from nodetool.workflows.types import NodeProgress
+        from nodetool.workflows.workflow_types import NodeProgress
 
         message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)

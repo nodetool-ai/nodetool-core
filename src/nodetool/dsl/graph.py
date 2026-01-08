@@ -10,7 +10,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.dsl.handles import DynamicOutputsProxy, OutputHandle, OutputsProxy
 from nodetool.metadata.types import OutputSlot, ToolCall
 from nodetool.runtime.resources import ResourceScope
-from nodetool.types.graph import Graph, Node
+from nodetool.types.api_graph import Graph, Node
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import (
@@ -19,7 +19,7 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Error,
     NodeUpdate,
     OutputUpdate,
