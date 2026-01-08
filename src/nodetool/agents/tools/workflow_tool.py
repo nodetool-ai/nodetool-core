@@ -14,7 +14,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
+from nodetool.types.api_graph import Edge, Node, get_input_schema, get_output_schema
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
@@ -24,7 +24,7 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     JobUpdate,
     OutputUpdate,
     ToolResultUpdate,
@@ -108,7 +108,7 @@ class GraphTool(Tool):
         }
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
-        from nodetool.types.graph import Graph as ApiGraph
+        from nodetool.types.api_graph import Graph as ApiGraph
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}

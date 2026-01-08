@@ -42,7 +42,7 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.run_node_state import RunNodeState
 from nodetool.models.run_state import RunState
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
     BaseNode,
@@ -63,7 +63,7 @@ from nodetool.workflows.torch_support import (
     is_cuda_available,
     torch,
 )
-from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
+from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate, OutputUpdate
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)

@@ -18,9 +18,9 @@ from typing import Any, AsyncGenerator, ClassVar, TypedDict
 import pytest
 from pydantic import Field
 
-from nodetool.types.graph import Edge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.graph import Graph
@@ -135,9 +135,7 @@ class IntOutput(OutputNode):
 # --- Helper Functions ---
 
 
-def create_graph_with_nodes_and_edges(
-    nodes: list[BaseNode], edges: list[Edge]
-) -> Graph:
+def create_graph_with_nodes_and_edges(nodes: list[BaseNode], edges: list[Edge]) -> Graph:
     """Create a Graph object from nodes and edges."""
     return Graph(nodes=nodes, edges=edges)
 
@@ -429,9 +427,7 @@ class TestMultiEdgeListAggregation:
             ),
         ]
 
-        runner = await run_workflow_with_api_graph(
-            api_nodes, api_edges, params={"in1": 10, "in2": 20, "in3": 30}
-        )
+        runner = await run_workflow_with_api_graph(api_nodes, api_edges, params={"in1": 10, "in2": 20, "in3": 30})
 
         assert runner.status == "completed"
         # The list consumer should have received a list with all three values

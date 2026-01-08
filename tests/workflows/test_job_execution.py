@@ -6,8 +6,8 @@ import pytest
 from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Graph
-from nodetool.types.graph import Node as GraphNode
+from nodetool.types.api_graph import Edge, Graph
+from nodetool.types.api_graph import Node as GraphNode
 from nodetool.workflows.job_execution_manager import (
     JobExecutionManager,
     SubprocessJobExecution,

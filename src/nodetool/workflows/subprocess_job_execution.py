@@ -23,10 +23,10 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Error as WorkflowError,
 )
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     ProcessingMessage,
 )
 

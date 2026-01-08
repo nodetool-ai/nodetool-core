@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Tuple
 
-from nodetool.types.graph import Edge, Node
+from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import get_comfy_class_by_name, get_node_class
 
 """

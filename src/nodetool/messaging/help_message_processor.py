@@ -128,7 +128,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Chunk,
     ToolCallUpdate,
 )

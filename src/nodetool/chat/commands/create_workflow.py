@@ -10,7 +10,7 @@ from nodetool.agents.graph_planner import GraphPlanner, print_visual_graph
 from nodetool.chat.chat_cli import ChatCLI
 from nodetool.models.workflow import Workflow
 from nodetool.providers import get_provider
-from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.workflows.workflow_types import Chunk, PlanningUpdate
 
 from .base import Command
 

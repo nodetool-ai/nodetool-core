@@ -6,7 +6,7 @@ from nodetool.dsl.graph import GraphNode
 from nodetool.dsl.handles import OutputHandle
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode, type_metadata
 
 

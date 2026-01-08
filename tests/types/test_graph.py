@@ -1,4 +1,4 @@
-from nodetool.types.graph import (
+from nodetool.types.api_graph import (
     Edge,
     Graph,
     Node,

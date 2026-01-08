@@ -9,8 +9,8 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-from nodetool.workflows.types import Error, ProcessingMessage
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.workflow_types import Error, ProcessingMessage
 
 log = get_logger(__name__)
 

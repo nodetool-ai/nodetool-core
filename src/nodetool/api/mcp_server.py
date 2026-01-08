@@ -56,7 +56,7 @@ from nodetool.packages.registry import Registry
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope, maybe_scope, require_scope
 from nodetool.security.secret_helper import get_secret
-from nodetool.types.graph import (
+from nodetool.types.api_graph import (
     Graph,
     get_input_schema,
     get_output_schema,
@@ -68,7 +68,7 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Chunk,
     Error,
     LogUpdate,
@@ -401,7 +401,7 @@ async def run_graph(graph: dict[str, Any], params: dict[str, Any] | None = None)
             params={"text": "Hello, how are you?"}
         )
     """
-    from nodetool.types.graph import remove_connected_slots
+    from nodetool.types.api_graph import remove_connected_slots
 
     # Parse and validate graph
     graph_obj = Graph.model_validate(graph)
@@ -1982,7 +1982,7 @@ async def list_storage_files(
     # Try to list files (not all storage backends support this)
     try:
         if hasattr(storage, "list_files"):
-            files = await getattr(storage, "list_files")(limit=limit)  # ty: ignore  # type: ignore[call-overload]
+            files = await storage.list_files(limit=limit)
             return {
                 "files": [
                     {
@@ -4567,7 +4567,7 @@ async def list_run_states(
         conditions.append(Field("status").equals(status))
 
     if not include_stale:
-        conditions.append(Field("heartbeat_at") != None)
+        conditions.append(Field("heartbeat_at") is not None)
 
     from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, LogicalOperator
 

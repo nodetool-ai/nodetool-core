@@ -1,9 +1,9 @@
 import pytest
 
 from nodetool.dsl.graph import graph_result, run_graph
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import AssetOutputMode
-from nodetool.workflows.types import OutputUpdate
+from nodetool.workflows.workflow_types import OutputUpdate
 
 
 @pytest.mark.asyncio

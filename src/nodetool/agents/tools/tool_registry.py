@@ -1,6 +1,6 @@
+import logging
 from importlib import import_module
 from typing import Type
-import logging
 
 log = logging.getLogger(__name__)
 

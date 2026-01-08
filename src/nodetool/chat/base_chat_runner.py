@@ -14,9 +14,9 @@ Subclasses should implement transport-specific methods for:
 - Message sending/receiving
 - Protocol-specific formatting
 """
-import logging
 
 import asyncio
+import logging
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
@@ -44,7 +44,7 @@ from nodetool.metadata.types import Provider
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.providers import get_provider
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)

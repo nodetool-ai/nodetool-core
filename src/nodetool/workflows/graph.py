@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import (
     BaseNode,
     GroupNode,
@@ -358,11 +358,7 @@ class Graph(BaseModel):
                     continue
 
                 # For list properties with multiple edges, validate each source against element type
-                element_type = (
-                    target_type.type_args[0]
-                    if target_type.type_args
-                    else TypeMetadata(type="any")
-                )
+                element_type = target_type.type_args[0] if target_type.type_args else TypeMetadata(type="any")
 
                 for edge in edges:
                     source_node = self.find_node(edge.source)

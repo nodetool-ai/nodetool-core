@@ -22,7 +22,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 logger = get_logger(__name__)
 

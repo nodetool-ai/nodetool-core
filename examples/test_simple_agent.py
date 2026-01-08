@@ -1,6 +1,7 @@
 import asyncio
 
 import dotenv
+from nodetool.workflows.types import Chunk
 
 from nodetool.agents.simple_agent import SimpleAgent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
@@ -9,7 +10,6 @@ from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 dotenv.load_dotenv()
 

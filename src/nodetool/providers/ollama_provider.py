@@ -36,7 +36,7 @@ from nodetool.metadata.types import (
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)

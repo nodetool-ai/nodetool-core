@@ -8,8 +8,8 @@ import subprocess
 import pytest
 
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Graph
-from nodetool.types.graph import Node as GraphNode
+from nodetool.types.api_graph import Edge, Graph
+from nodetool.types.api_graph import Node as GraphNode
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.processing_context import ProcessingContext

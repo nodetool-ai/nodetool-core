@@ -8,8 +8,8 @@ import pytest
 
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Graph
-from nodetool.types.graph import Node as GraphNode
+from nodetool.types.api_graph import Edge, Graph
+from nodetool.types.api_graph import Node as GraphNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution

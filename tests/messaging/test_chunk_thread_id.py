@@ -318,7 +318,7 @@ class TestWorkflowMessageProcessorThreadId:
         processor.send_message = capture_send
 
         # Mock run_workflow
-        from nodetool.workflows.types import OutputUpdate
+        from nodetool.workflows.workflow_types import OutputUpdate
 
         async def mock_run_workflow(*args, **kwargs):
             yield OutputUpdate(
@@ -375,7 +375,7 @@ class TestChatWorkflowMessageProcessorThreadId:
         processor.send_message = capture_send
 
         # Mock run_workflow
-        from nodetool.workflows.types import OutputUpdate
+        from nodetool.workflows.workflow_types import OutputUpdate
 
         async def mock_run_workflow(*args, **kwargs):
             yield OutputUpdate(

@@ -16,7 +16,7 @@ from nodetool.agents.graph_planner import (
 from nodetool.metadata.types import TypeMetadata
 from nodetool.workflows.base_node import InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 
 class StringInputNode(InputNode):

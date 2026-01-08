@@ -11,9 +11,9 @@ import pytest
 
 from nodetool.models.run_event import RunEvent
 from nodetool.models.run_lease import RunLease
-from nodetool.types.graph import Edge as APIEdge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge as APIEdge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.processing_context import ProcessingContext

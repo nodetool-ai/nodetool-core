@@ -72,8 +72,8 @@ from nodetool.metadata.types import (
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import OutputUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.workflow_types import OutputUpdate
 
 from .message_processor import MessageProcessor
 

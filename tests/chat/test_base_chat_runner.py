@@ -10,7 +10,7 @@ from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.metadata.types import Message as ApiMessage
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 
 class TestChatRunner(BaseChatRunner):

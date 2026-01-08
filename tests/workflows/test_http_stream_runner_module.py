@@ -6,8 +6,8 @@ import pytest
 
 from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import NodeUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.workflow_types import NodeUpdate
 
 
 @pytest.mark.asyncio

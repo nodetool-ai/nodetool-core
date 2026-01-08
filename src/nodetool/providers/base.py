@@ -39,7 +39,7 @@ from nodetool.metadata.types import (
     Provider as ProviderEnum,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 log = get_logger(__name__)
 

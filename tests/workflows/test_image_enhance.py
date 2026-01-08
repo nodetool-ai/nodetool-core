@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from nodetool.types.graph import Graph as ApiGraph
+from nodetool.types.api_graph import Graph as ApiGraph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import OutputUpdate
+from nodetool.workflows.workflow_types import OutputUpdate
 
 """
 Image Enhance
