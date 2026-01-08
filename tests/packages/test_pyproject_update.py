@@ -1,8 +1,8 @@
 import os
 
 from nodetool.metadata.node_metadata import PackageModel
+from nodetool.packages.package_types import AssetInfo
 from nodetool.packages.registry import update_pyproject_include
-from nodetool.packages.types import AssetInfo
 
 
 def test_update_pyproject_include_adds_assets(tmp_path):

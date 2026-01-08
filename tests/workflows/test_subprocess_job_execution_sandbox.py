@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nodetool.types.graph import Edge, Graph, Node
+from nodetool.types.api_graph import Edge, Graph, Node
 from nodetool.workflows.subprocess_job_execution import (
     _create_macos_sandbox_profile,
     _should_use_sandbox,

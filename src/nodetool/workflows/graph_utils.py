@@ -6,7 +6,7 @@ from collections import deque
 from contextlib import suppress
 
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 

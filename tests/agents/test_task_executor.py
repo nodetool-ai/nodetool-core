@@ -6,7 +6,7 @@ from nodetool.agents import task_executor
 from nodetool.agents.task_executor import TaskExecutor
 from nodetool.metadata.types import Step, Task
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 
 class DummyStepExecutor:

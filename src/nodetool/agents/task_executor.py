@@ -26,7 +26,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Step, Task, ToolCall
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, StepResult, TaskUpdateEvent
+from nodetool.workflows.workflow_types import Chunk, StepResult, TaskUpdateEvent
 
 log = get_logger(__name__)
 

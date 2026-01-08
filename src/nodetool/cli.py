@@ -24,7 +24,7 @@ _progress_manager: Optional[ProgressManager] = None
 
 if TYPE_CHECKING:
     from nodetool.deploy.progress import ProgressManager
-    from nodetool.types.graph import Graph as ApiGraph
+    from nodetool.types.api_graph import Graph as ApiGraph
     from nodetool.types.model import UnifiedModel
 
 
@@ -60,7 +60,7 @@ def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
     """
     from nodetool.models.workflow import Workflow as WorkflowModel
     from nodetool.packages.registry import Registry
-    from nodetool.types.graph import Graph as ApiGraph
+    from nodetool.types.api_graph import Graph as ApiGraph
 
     async def _load() -> ApiGraph:
         workflow = await WorkflowModel.find(user_id, workflow_id)
@@ -426,7 +426,7 @@ def run(
     import traceback
     from typing import Any
 
-    from nodetool.types.graph import Graph
+    from nodetool.types.api_graph import Graph
     from nodetool.types.job import JobUpdate
     from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.run_job_request import RunJobRequest

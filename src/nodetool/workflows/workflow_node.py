@@ -2,14 +2,14 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Chunk,
     Error,
     LogUpdate,

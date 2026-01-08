@@ -11,7 +11,7 @@ from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import LogUpdate, Notification
+from nodetool.workflows.workflow_types import LogUpdate, Notification
 
 log = get_logger(__name__)
 

@@ -3,13 +3,13 @@ from typing import AsyncGenerator, ClassVar, TypedDict
 
 import pytest
 
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import NodeUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.workflow_types import NodeUpdate
 
 ASYNC_TEST_TIMEOUT = 2.0
 

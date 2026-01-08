@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from nodetool.metadata.types import Message
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 
 class ResourceLimits(BaseModel):

@@ -80,7 +80,7 @@ from nodetool.metadata.types import (
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.runtime.resources import maybe_scope, require_scope
-from nodetool.workflows.types import Chunk, NodeProgress
+from nodetool.workflows.workflow_types import Chunk, NodeProgress
 
 log = get_logger(__name__)
 

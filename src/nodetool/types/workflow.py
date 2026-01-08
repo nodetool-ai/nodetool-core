@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 
 class Workflow(BaseModel):

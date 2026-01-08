@@ -16,6 +16,7 @@ Subclasses should implement transport-specific methods for:
 """
 
 import asyncio
+import logging
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
@@ -43,10 +44,11 @@ from nodetool.metadata.types import Provider
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.providers import get_provider
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
 
 ollama_models: list[str] = []
 
@@ -154,7 +156,6 @@ class BaseChatRunner(ABC):
             tool_calls=db_message.tool_calls,
             collections=db_message.collections,
             input_files=db_message.input_files,
-            output_files=db_message.output_files,
             created_at=(db_message.created_at.isoformat() if db_message.created_at else None),
             provider=db_message.provider,
             model=db_message.model,

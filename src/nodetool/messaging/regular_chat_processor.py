@@ -127,9 +127,9 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import require_scope
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import (
+from nodetool.workflows.workflow_types import (
     Chunk,
 )
 
@@ -307,9 +307,10 @@ class RegularChatProcessor(MessageProcessor):
         unprocessed_messages = []
 
         if last_message.tools:
-            tools = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
+            tools = [t for t in resolved_tools if t is not None]
         else:
             tools = []
 
@@ -361,6 +362,10 @@ class RegularChatProcessor(MessageProcessor):
                     elif isinstance(chunk, ToolCall):
                         # Resolve tool and prepare message
                         tool = await resolve_tool_by_name(chunk.name, processing_context.user_id)
+                        if not tool:
+                            log.warning(f"LLM called unknown tool: {chunk.name}")
+                            continue
+
                         message_text = tool.user_message(chunk.args)
 
                         # Create assistant message with tool call
@@ -478,6 +483,48 @@ class RegularChatProcessor(MessageProcessor):
                 Message(
                     role="assistant",
                     content=f"I encountered a connection error: {error_msg}. Please check your network connection and try again.",
+                    thread_id=last_message.thread_id,
+                    workflow_id=last_message.workflow_id,
+                    provider=last_message.provider,
+                    model=last_message.model,
+                    agent_mode=last_message.agent_mode or False,
+                ).model_dump()
+            )
+
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP status errors (4xx, 5xx)
+            status_code = e.response.status_code if e.response else 0
+            error_details = self._format_http_status_error(e)
+            log.error(f"httpx.HTTPStatusError in process: {e}", exc_info=True)
+
+            # Send structured error message to client
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_details,
+                    "error_type": "http_status_error",
+                    "status_code": status_code,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
+
+            # Signal completion even on error
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
+
+            # Return an error message
+            await self.send_message(
+                Message(
+                    role="assistant",
+                    content=f"I encountered an API error (HTTP {status_code}): {error_details}",
                     thread_id=last_message.thread_id,
                     workflow_id=last_message.workflow_id,
                     provider=last_message.provider,
@@ -690,6 +737,38 @@ class RegularChatProcessor(MessageProcessor):
             return "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
         else:
             return f"Connection error: {error_msg}"
+
+    def _format_http_status_error(self, e: httpx.HTTPStatusError) -> str:
+        """Format HTTP status error message."""
+        status_code = e.response.status_code if e.response else 0
+        error_msg = str(e)
+
+        try:
+            if e.response and e.response.content:
+                import json
+
+                body = e.response.json()
+                if isinstance(body, dict) and "error" in body:
+                    error_detail = body["error"]
+                    if isinstance(error_detail, dict) and "message" in error_detail:
+                        return str(error_detail["message"])
+        except Exception:
+            pass
+
+        if status_code == 400:
+            return f"Bad request: {error_msg}"
+        elif status_code == 401:
+            return "Authentication failed: Invalid API key or token"
+        elif status_code == 403:
+            return "Access forbidden: You don't have permission for this resource"
+        elif status_code == 404:
+            return "Not found: The requested resource was not found"
+        elif status_code == 429:
+            return "Rate limited: Too many requests, please slow down"
+        elif status_code >= 500:
+            return f"Server error ({status_code}): The service is temporarily unavailable"
+        else:
+            return f"HTTP error ({status_code}): {error_msg}"
 
     async def _log_provider_call(
         self,

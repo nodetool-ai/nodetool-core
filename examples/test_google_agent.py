@@ -15,6 +15,7 @@ This example shows how to:
 import asyncio
 
 import dotenv
+from nodetool.workflows.types import Chunk, PlanningUpdate
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
@@ -24,7 +25,6 @@ from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, PlanningUpdate
 
 dotenv.load_dotenv()
 

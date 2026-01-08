@@ -1,11 +1,12 @@
 import logging
-from collections import deque
+from collections import defaultdict, deque
 from typing import Any, List, Sequence
 
 from pydantic import BaseModel, Field
 
+from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import (
     BaseNode,
     GroupNode,
@@ -292,64 +293,119 @@ class Graph(BaseModel):
         """
         Validate that edge connections have compatible types.
 
+        Multi-edge list input validation:
+        - Multiple edges targeting the same property are allowed ONLY if the
+          property type is ``list[T]``.
+        - When multiple edges target a list property, each source type must be
+          compatible with the list element type ``T``.
+        - Multiple edges targeting a non-list property result in an error.
+
         Returns:
             List[str]: List of validation error messages. Empty list if all edges are valid.
         """
         validation_errors = []
 
+        # Group edges by (target_node_id, targetHandle) to detect multi-edge scenarios
+        edges_by_target_handle: dict[tuple[str, str], list[Edge]] = defaultdict(list)
         for edge in self.edges:
-            try:
-                # Find source and target nodes
-                source_node = self.find_node(edge.source)
-                target_node = self.find_node(edge.target)
+            key = (edge.target, edge.targetHandle)
+            edges_by_target_handle[key].append(edge)
 
+        # Validate each target handle
+        for (target_id, handle), edges in edges_by_target_handle.items():
+            target_node = self.find_node(target_id)
+            if not target_node:
+                validation_errors.append(f"Target node '{target_id}' not found for edge")
+                continue
+
+            target_node_class = target_node.__class__
+
+            # Get target input type (find_property is an instance method)
+            target_property = target_node.find_property(handle)
+            if not target_property:
+                # Respect dynamic nodes that can accept arbitrary properties
+                if type(target_node).is_dynamic():
+                    # Still validate source outputs exist for dynamic nodes
+                    for edge in edges:
+                        source_node = self.find_node(edge.source)
+                        if not source_node:
+                            validation_errors.append(f"Source node '{edge.source}' not found for edge")
+                            continue
+                        source_output = source_node.find_output_instance(edge.sourceHandle)
+                        if not source_output:
+                            validation_errors.append(
+                                f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
+                            )
+                    continue
+
+                # Align error message format with test expectations ("Property ... not found")
+                validation_errors.append(
+                    f"{target_id}: Property '{handle}' not found on target node {target_node_class.__name__}"
+                )
+                continue
+
+            target_type = target_property.type
+
+            # Check for multi-edge scenarios
+            if len(edges) > 1:
+                # Multiple edges to the same property - only allowed for list types
+                if not target_type.is_list_type():
+                    validation_errors.append(
+                        f"{target_id}: Multiple edges target non-list property '{handle}' "
+                        f"(type: {target_type.type}). Either change property type to list "
+                        f"or use a Collect node."
+                    )
+                    continue
+
+                # For list properties with multiple edges, validate each source against element type
+                element_type = target_type.type_args[0] if target_type.type_args else TypeMetadata(type="any")
+
+                for edge in edges:
+                    source_node = self.find_node(edge.source)
+                    if not source_node:
+                        validation_errors.append(f"Source node '{edge.source}' not found for edge")
+                        continue
+
+                    source_output = source_node.find_output_instance(edge.sourceHandle)
+                    if not source_output:
+                        validation_errors.append(
+                            f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
+                        )
+                        continue
+
+                    source_type = source_output.type
+
+                    # For multi-edge list inputs, source type must be compatible with element type
+                    if not typecheck(source_type, element_type):
+                        validation_errors.append(
+                            f"{target_id}: Edge from {edge.source}.{edge.sourceHandle} "
+                            f"has incompatible type '{source_type.type}' for list element type '{element_type.type}' "
+                            f"on property '{handle}'"
+                        )
+            else:
+                # Single edge - standard validation
+                edge = edges[0]
+                source_node = self.find_node(edge.source)
                 if not source_node:
                     validation_errors.append(f"Source node '{edge.source}' not found for edge")
                     continue
 
-                if not target_node:
-                    validation_errors.append(f"Target node '{edge.target}' not found for edge")
-                    continue
-
-                # Get node classes to access type metadata
-                # Since nodes are already instances, we can use their classes directly
-                source_node_class = source_node.__class__
-                target_node_class = target_node.__class__
-
-                # Get source output type (use instance method to support dynamic outputs)
                 source_output = source_node.find_output_instance(edge.sourceHandle)
                 if not source_output:
                     validation_errors.append(
-                        f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node_class.__name__}"
+                        f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
                     )
                     continue
 
-                # Get target input type (find_property is an instance method)
-                target_property = target_node.find_property(edge.targetHandle)
-                if not target_property:
-                    # Respect dynamic nodes that can accept arbitrary properties
-                    if type(target_node).is_dynamic():
-                        continue
-
-                    # Align error message format with test expectations ("Property ... not found")
-                    validation_errors.append(
-                        f"{edge.target}: Property '{edge.targetHandle}' not found on target node {target_node_class.__name__}"
-                    )
-                    continue
+                source_type = source_output.type
 
                 # Check type compatibility
-                source_type = source_output.type
-                target_type = target_property.type
-
                 if not typecheck(source_type, target_type):
                     validation_errors.append(
                         f"{edge.target}: Type mismatch for property '{edge.targetHandle}' - "
                         f"{edge.source}.{edge.sourceHandle} outputs {source_type.type} "
                         f"but {edge.target}.{edge.targetHandle} expects {target_type.type}"
                     )
-
-            except Exception as e:
-                validation_errors.append(f"Error validating edge {edge.source}->{edge.target}: {str(e)}")
 
         return validation_errors
 

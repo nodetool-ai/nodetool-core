@@ -24,7 +24,7 @@ from nodetool.metadata.types import (
     Message as ApiMessage,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import OutputUpdate
+from nodetool.workflows.workflow_types import OutputUpdate
 
 
 @pytest.fixture

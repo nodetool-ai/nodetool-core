@@ -26,7 +26,7 @@ from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.storage.memory_storage import MemoryStorage
-from nodetool.types.graph import Edge, Node
+from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 

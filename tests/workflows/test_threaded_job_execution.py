@@ -9,7 +9,7 @@ import pytest
 from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution

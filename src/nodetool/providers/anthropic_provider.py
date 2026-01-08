@@ -39,7 +39,7 @@ from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.workflow_types import Chunk
 
 log = get_logger(__name__)
 
@@ -431,34 +431,37 @@ class AnthropicProvider(BaseProvider):
         log.debug("Streaming response initialized")
         log.debug("Streaming response initialized")
         client = self.get_client()
-        async with client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
-            async for event in ctx_stream:  # type: ignore
-                etype = getattr(event, "type", "")
-                if etype == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    # Prefer text; fall back to partial_json/thinking if present
-                    text = getattr(delta, "text", None)
-                    getattr(delta, "partial_json", None)
-                    thinking = getattr(delta, "thinking", None)
-                    if isinstance(text, str):
-                        yield Chunk(content=text, done=False)
-                    # Note: partial_json contains tool call input fragments and should NOT
-                    # be yielded as message content. The complete tool call is emitted
-                    # at content_block_stop event.
-                    elif isinstance(thinking, str):
-                        yield Chunk(content=thinking, done=False)
-                elif etype == "content_block_stop":
-                    # Tool use may appear here in real SDK; tests often omit attributes
-                    content_block = getattr(event, "content_block", None)
-                    if content_block is not None and getattr(content_block, "type", "") == "tool_use":
-                        tool_call = ToolCall(
-                            id=str(getattr(content_block, "id", "")),
-                            name=getattr(content_block, "name", ""),
-                            args=getattr(content_block, "input", {}) or {},  # type: ignore
-                        )
-                        yield tool_call
-                elif etype == "message_stop":
-                    yield Chunk(content="", done=True)
+        try:
+            async with client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
+                async for event in ctx_stream:  # type: ignore
+                    etype = getattr(event, "type", "")
+                    if etype == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        # Prefer text; fall back to partial_json/thinking if present
+                        text = getattr(delta, "text", None)
+                        getattr(delta, "partial_json", None)
+                        thinking = getattr(delta, "thinking", None)
+                        if isinstance(text, str):
+                            yield Chunk(content=text, done=False)
+                        # Note: partial_json contains tool call input fragments and should NOT
+                        # be yielded as message content. The complete tool call is emitted
+                        # at content_block_stop event.
+                        elif isinstance(thinking, str):
+                            yield Chunk(content=thinking, done=False)
+                    elif etype == "content_block_stop":
+                        # Tool use may appear here in real SDK; tests often omit attributes
+                        content_block = getattr(event, "content_block", None)
+                        if content_block is not None and getattr(content_block, "type", "") == "tool_use":
+                            tool_call = ToolCall(
+                                id=str(getattr(content_block, "id", "")),
+                                name=getattr(content_block, "name", ""),
+                                args=getattr(content_block, "input", {}) or {},  # type: ignore
+                            )
+                            yield tool_call
+                    elif etype == "message_stop":
+                        yield Chunk(content="", done=True)
+        except anthropic.AnthropicError as exc:
+            raise self._as_httpx_status_error(exc) from exc
 
     async def generate_message(
         self,

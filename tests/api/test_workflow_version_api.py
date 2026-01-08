@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 
 from nodetool.models.workflow import Workflow
 from nodetool.models.workflow_version import WorkflowVersion
-from nodetool.types.graph import Edge, Node
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Edge, Node
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.workflow import (
     AutosaveWorkflowRequest,
     CreateWorkflowVersionRequest,

@@ -1,5 +1,8 @@
+import logging
 from importlib import import_module
 from typing import Type
+
+log = logging.getLogger(__name__)
 
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.node_tool import NodeTool
@@ -153,7 +156,8 @@ async def resolve_tool_by_name(
         else:
             raise ValueError(f"Workflow tool with tool name {name} not found")
 
-    raise ValueError(f"Tool {name} not found")
+    log.warning(f"Tool {name} not found in registry")
+    return None
 
 
 if __name__ == "__main__":

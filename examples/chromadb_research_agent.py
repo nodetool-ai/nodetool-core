@@ -13,6 +13,7 @@ import os
 
 import pymupdf
 import pymupdf4llm
+from nodetool.workflows.types import Chunk
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.chroma_tools import (
@@ -29,7 +30,6 @@ from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 
 async def test_chromadb_research_agent(provider: BaseProvider, model: str):

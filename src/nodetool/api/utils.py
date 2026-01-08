@@ -8,7 +8,7 @@ from nodetool.security.auth_provider import TokenType
 log = get_logger(__name__)
 
 
-async def current_user(request: Request = None) -> str:
+async def current_user(request: Request | None = None) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """

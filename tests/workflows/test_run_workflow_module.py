@@ -3,14 +3,14 @@ import types
 
 import pytest
 
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import Error
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.workflow_types import Error
 
 
 class DummyRunner(WorkflowRunner):

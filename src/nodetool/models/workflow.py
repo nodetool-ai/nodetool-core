@@ -14,7 +14,7 @@ from nodetool.models.condition_builder import (
     Field,
     LogicalOperator,
 )
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 

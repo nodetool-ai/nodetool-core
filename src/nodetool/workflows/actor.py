@@ -48,7 +48,7 @@ from nodetool.models.run_node_state import RunNodeState
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
-from nodetool.workflows.types import EdgeUpdate, NodeUpdate
+from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -83,6 +83,10 @@ class NodeActor:
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
         self.logger.setLevel(logging.DEBUG)
+
+    def _get_list_handles(self) -> set[str]:
+        """Return handles that require multi-edge list aggregation for this node."""
+        return self.runner.multi_edge_list_inputs.get(self.node._id, set())
 
     def _filter_result(self, result: dict[str, Any]) -> dict[str, Any]:
         """Filter out chunk data from the result since chunks are streamed separately.
@@ -476,7 +480,13 @@ class NodeActor:
         self,
         processor_override: Callable[[dict[str, Any]], Awaitable[None]] | None,
     ) -> None:
-        """Run a non-streaming-input node with fan-out per arriving input message."""
+        """Run a non-streaming-input node with fan-out per arriving input message.
+
+        Special handling for multi-edge list inputs:
+        - Handles marked for list aggregation collect ALL values from ALL upstream
+          sources until EOS, then pass the aggregated list to the processor.
+        - Non-list handles use standard on_any/zip_all semantics.
+        """
         node = self.node
 
         self.logger.debug(f"Running batched node {node.get_title()} ({node._id})")
@@ -493,83 +503,163 @@ class NodeActor:
         if not handles:
             await processor({})
         else:
-            handle_streaming: dict[str, bool] = {}
-            for handle in handles:
-                edge = next(
-                    (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
-                    None,
-                )
-                handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
+            # Identify handles that need list aggregation (multi-edge to list[T])
+            list_handles = self._get_list_handles() & handles
 
-            sync_mode = node.get_sync_mode()
-
-            if sync_mode == "zip_all" and any(handle_streaming.values()):
-                from collections import deque
-
-                buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
-                sticky_values: dict[str, Any] = {}
-                is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
-                seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
-
-                def ready_to_zip() -> bool:
-                    for handle in handles:
-                        if is_sticky.get(handle, False):
-                            if handle not in sticky_values and not buffers[handle]:
-                                return False
-                        elif not buffers[handle]:
-                            return False
-                    return True
-
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in buffers:
-                        continue
-
-                    buffers[handle].append(item)
-                    seen_counts[handle] = seen_counts.get(handle, 0) + 1
-
-                    if is_sticky.get(handle, False):
-                        sticky_values[handle] = item
-
-                    while ready_to_zip():
-                        batch: dict[str, Any] = {}
-                        for h in handles:
-                            if is_sticky.get(h, False):
-                                if buffers[h]:
-                                    sticky_values[h] = buffers[h].popleft()
-                                batch[h] = sticky_values[h]
-                                # Restore the sticky value for future batches
-                                if sticky_values[h] is not None:
-                                    buffers[h].appendleft(sticky_values[h])
-                            else:
-                                batch[h] = buffers[h].popleft()
-
-                        await processor(dict(batch))
-
-                        for h in handles:
-                            if is_sticky.get(h, False) and sticky_values.get(h) is None:
-                                sticky_values.pop(h, None)
+            # If there are list handles that require full aggregation, use list aggregation mode
+            if list_handles:
+                await self._run_with_list_aggregation(handles, list_handles, processor)
             else:
-                current: dict[str, Any] = {}
-                pending_handles: set[str] = set(handles)
-                initial_fired: bool = False
+                # Standard behavior for non-list handles
+                await self._run_standard_batching(handles, processor)
 
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in handles:
-                        continue
-                    current[handle] = item
-                    if not initial_fired:
-                        pending_handles.discard(handle)
-                        if pending_handles:
-                            continue
-                        await processor(dict(current))
-                        initial_fired = True
-                    else:
-                        await processor(dict(current))
-
-                    if not handle_streaming.get(handle, False):
-                        self.inbox.mark_source_done(handle)
         await node.handle_eos()
         await self._mark_downstream_eos()
+
+    async def _run_with_list_aggregation(
+        self,
+        handles: set[str],
+        list_handles: set[str],
+        processor: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Handle multi-edge list input aggregation.
+
+        For handles in `list_handles`, collect ALL values from ALL upstream sources
+        until EOS, then aggregate into a list. For other handles, collect the first
+        value (or use on_any semantics).
+
+        The processor is called once with aggregated lists for list handles and
+        single values for non-list handles.
+        """
+        node = self.node
+        self.logger.debug(
+            f"Running with list aggregation for node {node.get_title()} ({node._id}), "
+            f"list_handles={list_handles}, all_handles={handles}"
+        )
+
+        # Buffers for list handles - collect all values
+        list_buffers: dict[str, list[Any]] = {h: [] for h in list_handles}
+        # Values for non-list handles - take first value
+        non_list_values: dict[str, Any] = {}
+        non_list_handles = handles - list_handles
+        pending_non_list: set[str] = set(non_list_handles)
+
+        # Drain all inputs until EOS on all handles
+        async for handle, item in self.inbox.iter_any():
+            if handle not in handles:
+                continue
+
+            if handle in list_handles:
+                # Aggregate into list buffer
+                list_buffers[handle].append(item)
+                self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
+            else:
+                # Non-list handle: take first value (like standard on_any)
+                if handle not in non_list_values:
+                    non_list_values[handle] = item
+                    pending_non_list.discard(handle)
+                else:
+                    # Update with latest value (combineLatest semantics)
+                    non_list_values[handle] = item
+
+        # Build final inputs dict: lists for list handles, single values for others
+        inputs: dict[str, Any] = {}
+
+        # Add aggregated lists
+        for handle in list_handles:
+            inputs[handle] = list_buffers[handle]
+            self.logger.debug(f"List aggregation complete for {handle}: {len(list_buffers[handle])} items")
+
+        # Add non-list values
+        for handle, value in non_list_values.items():
+            inputs[handle] = value
+
+        # Call processor once with all aggregated inputs
+        self.logger.debug(f"Calling processor with aggregated inputs: {list(inputs.keys())}")
+        await processor(inputs)
+
+    async def _run_standard_batching(
+        self,
+        handles: set[str],
+        processor: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Standard batching behavior without list aggregation."""
+        node = self.node
+        handle_streaming: dict[str, bool] = {}
+        for handle in handles:
+            edge = next(
+                (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
+                None,
+            )
+            handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
+
+        sync_mode = node.get_sync_mode()
+
+        if sync_mode == "zip_all" and any(handle_streaming.values()):
+            from collections import deque
+
+            buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
+            sticky_values: dict[str, Any] = {}
+            is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
+            seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
+
+            def ready_to_zip() -> bool:
+                for handle in handles:
+                    if is_sticky.get(handle, False):
+                        if handle not in sticky_values and not buffers[handle]:
+                            return False
+                    elif not buffers[handle]:
+                        return False
+                return True
+
+            async for handle, item in self.inbox.iter_any():
+                if handle not in buffers:
+                    continue
+
+                buffers[handle].append(item)
+                seen_counts[handle] = seen_counts.get(handle, 0) + 1
+
+                if is_sticky.get(handle, False):
+                    sticky_values[handle] = item
+
+                while ready_to_zip():
+                    batch: dict[str, Any] = {}
+                    for h in handles:
+                        if is_sticky.get(h, False):
+                            if buffers[h]:
+                                sticky_values[h] = buffers[h].popleft()
+                            batch[h] = sticky_values[h]
+                            # Restore the sticky value for future batches
+                            if sticky_values[h] is not None:
+                                buffers[h].appendleft(sticky_values[h])
+                        else:
+                            batch[h] = buffers[h].popleft()
+
+                    await processor(dict(batch))
+
+                    for h in handles:
+                        if is_sticky.get(h, False) and sticky_values.get(h) is None:
+                            sticky_values.pop(h, None)
+        else:
+            current: dict[str, Any] = {}
+            pending_handles: set[str] = set(handles)
+            initial_fired: bool = False
+
+            async for handle, item in self.inbox.iter_any():
+                if handle not in handles:
+                    continue
+                current[handle] = item
+                if not initial_fired:
+                    pending_handles.discard(handle)
+                    if pending_handles:
+                        continue
+                    await processor(dict(current))
+                    initial_fired = True
+                else:
+                    await processor(dict(current))
+
+                if not handle_streaming.get(handle, False):
+                    self.inbox.mark_source_done(handle)
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.

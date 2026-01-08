@@ -22,7 +22,7 @@ from nodetool.integrations.websocket.unified_websocket_runner import (
     WebSocketMode,
 )
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 
