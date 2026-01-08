@@ -358,11 +358,7 @@ class Graph(BaseModel):
                     continue
 
                 # For list properties with multiple edges, validate each source against element type
-                element_type = (
-                    target_type.type_args[0]
-                    if target_type.type_args
-                    else TypeMetadata(type="any")
-                )
+                element_type = target_type.type_args[0] if target_type.type_args else TypeMetadata(type="any")
 
                 for edge in edges:
                     source_node = self.find_node(edge.source)

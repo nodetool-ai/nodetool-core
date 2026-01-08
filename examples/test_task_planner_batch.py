@@ -16,6 +16,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from nodetool.workflows.types import Chunk, TaskUpdate
+
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider
@@ -23,7 +25,6 @@ from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate
 
 # Objective designed to trigger batch processing
 objective = """

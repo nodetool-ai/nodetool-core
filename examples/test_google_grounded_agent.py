@@ -15,6 +15,8 @@ This example shows how to:
 
 import asyncio
 
+from nodetool.workflows.types import Chunk
+
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleGroundedSearchTool
 from nodetool.metadata.types import Provider
@@ -22,7 +24,6 @@ from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI industry intelligence. Your role is to:
 """
