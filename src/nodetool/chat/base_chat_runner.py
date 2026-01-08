@@ -14,9 +14,9 @@ Subclasses should implement transport-specific methods for:
 - Message sending/receiving
 - Protocol-specific formatting
 """
-import logging
 
 import asyncio
+import logging
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress

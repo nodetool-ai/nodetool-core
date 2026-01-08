@@ -1,8 +1,6 @@
+import logging
 from importlib import import_module
 from typing import Type
-import logging
-
-log = logging.getLogger(__name__)
 
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.node_tool import NodeTool
@@ -10,6 +8,8 @@ from nodetool.agents.tools.workflow_tool import WorkflowTool
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.models.workflow import Workflow
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
+
+log = logging.getLogger(__name__)
 
 # Tool registry to keep track of all tool subclasses
 _tool_node_registry: dict[str, NodeMetadata] = {}
