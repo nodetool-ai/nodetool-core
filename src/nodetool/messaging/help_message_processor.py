@@ -679,9 +679,10 @@ class HelpMessageProcessor(MessageProcessor):
             ]
             help_tools_by_name = {t.name: t for t in help_tools}
             if last_message.tools:
-                tools = await asyncio.gather(
+                resolved_tools = await asyncio.gather(
                     *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
                 )
+                tools = [t for t in resolved_tools if t is not None]
             else:
                 tools = []
 

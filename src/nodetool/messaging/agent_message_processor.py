@@ -108,9 +108,10 @@ class AgentMessageProcessor(MessageProcessor):
         selected_tools: list[Tool] = []
         if last_message.tools:
             tool_names = set(last_message.tools)
-            selected_tools = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in tool_names]
             )
+            selected_tools = [t for t in resolved_tools if t is not None]
             log.debug(f"Selected tools for agent: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
