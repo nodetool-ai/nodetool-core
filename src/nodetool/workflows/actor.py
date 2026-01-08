@@ -552,9 +552,7 @@ class NodeActor:
             if handle in list_handles:
                 # Aggregate into list buffer
                 list_buffers[handle].append(item)
-                self.logger.debug(
-                    f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}"
-                )
+                self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
             else:
                 # Non-list handle: take first value (like standard on_any)
                 if handle not in non_list_values:
@@ -570,9 +568,7 @@ class NodeActor:
         # Add aggregated lists
         for handle in list_handles:
             inputs[handle] = list_buffers[handle]
-            self.logger.debug(
-                f"List aggregation complete for {handle}: {len(list_buffers[handle])} items"
-            )
+            self.logger.debug(f"List aggregation complete for {handle}: {len(list_buffers[handle])} items")
 
         # Add non-list values
         for handle, value in non_list_values.items():
