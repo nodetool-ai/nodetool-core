@@ -4609,7 +4609,7 @@ def inference_image_to_image(
     "--output",
     "-o",
     default=None,
-    help="Output file path (default: UUID-named .mp3 file)",
+    help="Output file path (default: UUID-named .wav file)",
 )
 @click.option(
     "--user-id",
