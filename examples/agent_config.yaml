@@ -1,0 +1,47 @@
+# Example Agent Configuration
+# This file demonstrates how to configure an agent using YAML
+
+name: "Research Assistant"
+
+description: |
+  A research assistant agent that can search the web, analyze content,
+  and provide well-researched summaries.
+
+# Custom system prompt (optional)
+system_prompt: |
+  You are a helpful research assistant. Your goal is to:
+  1. Gather accurate and reliable information
+  2. Analyze sources critically
+  3. Provide clear, well-cited summaries
+  4. Be transparent about limitations and uncertainties
+
+# LLM Provider and Model Configuration
+provider: "openai"  # Options: openai, anthropic, ollama, huggingface, google
+model: "gpt-4o"
+
+# You can specify different models for planning and reasoning (optional)
+# planning_model: "gpt-4o"
+# reasoning_model: "gpt-4o-mini"
+
+# Tools available to the agent
+# Uncomment tools you want to enable
+tools:
+  - "google_search"      # Web search capability
+  - "browser"            # Browser navigation and content extraction
+  # - "read_file"        # Read files from filesystem
+  # - "write_file"       # Write files to filesystem
+  # - "list_directory"   # List directory contents
+  # - "python"           # Execute Python code
+  # - "calculator"       # Mathematical calculations
+
+# Execution limits
+max_steps: 15              # Maximum number of steps the agent can execute
+max_step_iterations: 5     # Maximum iterations per step
+# max_token_limit: 100000  # Maximum tokens before summarization (optional)
+
+# Output settings
+verbose: true              # Enable detailed console output
+
+# Advanced: Isolation settings (optional)
+# docker_image: "nodetool"  # Run agent in Docker container
+# use_sandbox: false        # Use macOS sandbox for subprocess execution
