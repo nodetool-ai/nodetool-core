@@ -686,7 +686,9 @@ def _is_downloaded_from_files(
 
 
 @router.post("/huggingface/check_cache")
-async def check_huggingface_cache(body: HFCacheCheckRequest, user: str = Depends(CurrentUser())) -> HFCacheCheckResponse:
+async def check_huggingface_cache(
+    body: HFCacheCheckRequest, user: str = Depends(CurrentUser())
+) -> HFCacheCheckResponse:
     """
     Check if all files in a Hugging Face repo that match allow/ignore patterns
     exist in the local HF cache.
