@@ -1,0 +1,62 @@
+template_id: flux2_dev_text_to_image
+template_type: text_to_image
+template_name: Flux.2 Dev Text to Image
+description: Flux.2 Dev model for advanced text-to-image generation with subgraph
+inputs:
+  prompt:
+    node_id: 6
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: true
+  width:
+    node_id: 47
+    node_type: EmptyFlux2LatentImage
+    input_field: width
+    input_type: INT
+    required: false
+    default: 1008
+  height:
+    node_id: 47
+    node_type: EmptyFlux2LatentImage
+    input_field: height
+    input_type: INT
+    required: false
+    default: 1024
+  seed:
+    node_id: 25
+    node_type: RandomNoise
+    input_field: noise_seed
+    input_type: INT
+    required: false
+    default: 0
+  guidance:
+    node_id: 26
+    node_type: FluxGuidance
+    input_field: guidance
+    input_type: FLOAT
+    required: false
+    default: 4.0
+outputs:
+  image:
+    node_id: 9
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+presets:
+  standard:
+    width: 1008
+    height: 1024
+    guidance: 4.0
+  wide:
+    width: 1344
+    height: 768
+    guidance: 4.0
+  tall:
+    width: 768
+    height: 1344
+    guidance: 4.0
+  portrait:
+    width: 896
+    height: 1152
+    guidance: 4.0

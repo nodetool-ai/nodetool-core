@@ -1,0 +1,56 @@
+# Sample image-to-image template mapping for testing
+
+template_id: sample_image_to_image
+template_name: "Sample Image to Image"
+template_type: image_to_image
+description: "Sample image to image workflow for testing the template loader"
+
+inputs:
+  image:
+    node_id: 78
+    node_type: LoadImage
+    input_field: image
+    input_type: IMAGE
+    required: true
+    description: "Input image to edit"
+
+  prompt:
+    node_id: 6
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: true
+    description: "Edit prompt"
+
+  strength:
+    node_id: 82
+    node_type: KSampler
+    input_field: denoise
+    input_type: FLOAT
+    required: false
+    default: 0.75
+    description: "Denoising strength"
+
+outputs:
+  image:
+    node_id: 60
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+    description: "Output edited image"
+
+nodes:
+  "78":
+    type: LoadImage
+    class_type: LoadImage
+    images_directory: "input"
+  "6":
+    type: CLIPTextEncode
+    class_type: CLIPTextEncode
+  "82":
+    type: KSampler
+    class_type: KSampler
+  "60":
+    type: SaveImage
+    class_type: SaveImage
+    filename_prefix: "ComfyUI"

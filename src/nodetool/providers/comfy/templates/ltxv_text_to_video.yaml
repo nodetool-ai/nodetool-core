@@ -1,0 +1,89 @@
+template_id: ltxv_text_to_video
+template_type: text_to_video
+template_name: LTX-Video Text to Video
+description: LTX-Video model for text-to-video generation
+inputs:
+  prompt:
+    node_id: 6
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: true
+  negative_prompt:
+    node_id: 7
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: false
+    default: "low quality, worst quality, deformed, distorted, disfigured, motion smear, motion artifacts, fused fingers, bad anatomy, weird hand, ugly"
+  width:
+    node_id: 70
+    node_type: EmptyLTXVLatentVideo
+    input_field: width
+    input_type: INT
+    required: false
+    default: 768
+  height:
+    node_id: 70
+    node_type: EmptyLTXVLatentVideo
+    input_field: height
+    input_type: INT
+    required: false
+    default: 512
+  frames:
+    node_id: 70
+    node_type: EmptyLTXVLatentVideo
+    input_field: frames
+    input_type: INT
+    required: false
+    default: 97
+  seed:
+    node_id: 72
+    node_type: SamplerCustom
+    input_field: seed
+    input_type: INT
+    required: false
+    default: 0
+  steps:
+    node_id: 71
+    node_type: LTXVScheduler
+    input_field: steps
+    input_type: INT
+    required: false
+    default: 30
+  cfg:
+    node_id: 69
+    node_type: LTXVConditioning
+    input_field: cfg
+    input_type: FLOAT
+    required: false
+    default: 25.0
+  sampler:
+    node_id: 73
+    node_type: KSamplerSelect
+    input_field: sampler_name
+    input_type: STRING
+    required: false
+    default: "euler"
+outputs:
+  video:
+    node_id: 79
+    node_type: SaveVideo
+    output_field: video
+    output_type: VIDEO
+presets:
+  standard:
+    width: 768
+    height: 512
+    frames: 97
+    steps: 30
+  short:
+    width: 512
+    height: 512
+    frames: 49
+    steps: 20
+  long:
+    width: 1024
+    height: 576
+    frames: 121
+    steps: 40
