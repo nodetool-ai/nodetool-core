@@ -1,7 +1,5 @@
-from __future__ import annotations
-
-from datetime import datetime  # noqa: TC003  # Required at runtime for Pydantic field evaluation
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,7 +24,7 @@ router = APIRouter(prefix="/admin/secrets", tags=["admin-secrets"])
 async def import_secrets(
     secrets_payload: List[EncryptedSecretPayload],
     __user: str = Depends(current_user),
-) -> dict[str, int]:
+) -> Dict[str, int]:
     """Import encrypted secrets (requires shared master key)."""
     try:
         imported = 0
