@@ -15,7 +15,6 @@ from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Step,
     Task,
-    ToolCall,
 )
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext

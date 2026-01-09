@@ -107,8 +107,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from jinja2 import BaseLoader, Environment
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -131,7 +130,6 @@ from nodetool.metadata.typecheck import typecheck
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.packages.registry import Registry
 from nodetool.types.api_graph import Graph as APIGraph
-from nodetool.utils.message_parsing import extract_json_from_message
 from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
