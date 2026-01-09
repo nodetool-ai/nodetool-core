@@ -376,6 +376,17 @@ def create_app(
         max_age=3600,
     )
 
+    from nodetool.api.utils import _request_context_var
+
+    @app.middleware("http")
+    async def request_context_middleware(request: Request, call_next):
+        token = _request_context_var.set(request)
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            _request_context_var.reset(token)
+
     from nodetool.api.middleware import ResourceScopeMiddleware
     from nodetool.api.openai import create_openai_compatible_router
     from nodetool.integrations.huggingface.hf_websocket import (

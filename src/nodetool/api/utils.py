@@ -1,4 +1,7 @@
-from fastapi import HTTPException, Request, status
+from contextvars import ContextVar
+from typing import Optional
+
+from fastapi import HTTPException, status
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -7,35 +10,38 @@ from nodetool.security.auth_provider import TokenType
 
 log = get_logger(__name__)
 
+_request_context_var: ContextVar[Optional[object]] = ContextVar("request", default=None)
 
-async def current_user(request: Request | None = None) -> str:
+
+async def current_user() -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
+    from nodetool.runtime.resources import get_static_auth_provider
+
+    request = _request_context_var.get()
+
     if request is not None:
         user_id = getattr(request.state, "user_id", None)
         if user_id:
             return str(user_id)
-
-    from nodetool.runtime.resources import get_static_auth_provider
 
     static_provider = get_static_auth_provider()
     token = None
     if request is not None:
         token = static_provider.extract_token_from_headers(request.headers)
 
-    # Local development fallback when authentication is not enforced.
     if not Environment.enforce_auth():
         if token:
             static_result = await static_provider.verify_token(token)
             if static_result.ok and static_result.user_id:
-                request.state.user_id = static_result.user_id
-                request.state.token_type = static_result.token_type or TokenType.STATIC
+                if request is not None:
+                    request.state.user_id = static_result.user_id
+                    request.state.token_type = static_result.token_type or TokenType.STATIC
                 return static_result.user_id
         return "1"
 
     if request is None and Environment.enforce_auth():
-        # In enforced mode a Request is required to read headers
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
@@ -49,8 +55,9 @@ async def current_user(request: Request | None = None) -> str:
 
     static_result = await static_provider.verify_token(token)
     if static_result.ok and static_result.user_id:
-        request.state.user_id = static_result.user_id
-        request.state.token_type = static_result.token_type or TokenType.STATIC
+        if request is not None:
+            request.state.user_id = static_result.user_id
+            request.state.token_type = static_result.token_type or TokenType.STATIC
         return static_result.user_id
 
     from nodetool.runtime.resources import get_user_auth_provider
@@ -65,8 +72,9 @@ async def current_user(request: Request | None = None) -> str:
     try:
         user_result = await user_provider.verify_token(token)
         if user_result.ok and user_result.user_id:
-            request.state.user_id = user_result.user_id
-            request.state.token_type = user_result.token_type or TokenType.USER
+            if request is not None:
+                request.state.user_id = user_result.user_id
+                request.state.token_type = user_result.token_type or TokenType.USER
             return user_result.user_id
     except Exception as exc:
         log.error(f"Error validating remote authentication token: {exc}")
