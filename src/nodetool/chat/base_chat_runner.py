@@ -48,7 +48,6 @@ from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
 
 ollama_models: list[str] = []
 

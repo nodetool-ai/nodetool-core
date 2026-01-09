@@ -14,7 +14,7 @@ from nodetool.types.api_graph import Edge, Graph, Node
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.workflow_types import PreviewUpdate
+from nodetool.workflows.types import PreviewUpdate
 
 
 def check_docker_available() -> bool:

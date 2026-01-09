@@ -63,7 +63,7 @@ from nodetool.workflows.torch_support import (
     is_cuda_available,
     torch,
 )
-from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate, OutputUpdate
+from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)

@@ -29,7 +29,7 @@ from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.providers.base import _PROVIDER_REGISTRY, BaseProvider, get_registered_provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 
 class MockTool(Tool):

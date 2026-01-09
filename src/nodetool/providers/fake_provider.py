@@ -39,7 +39,7 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.providers.base import BaseProvider
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 
 class FakeProvider(BaseProvider):

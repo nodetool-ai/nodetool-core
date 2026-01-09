@@ -9,7 +9,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.workflow_types import (
+from nodetool.workflows.types import (
     Chunk,
     Error,
     LogUpdate,

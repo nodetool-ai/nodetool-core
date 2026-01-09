@@ -11,7 +11,7 @@ import inspect
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from .workflow_types import EdgeUpdate
+from .types import EdgeUpdate
 
 if TYPE_CHECKING:
     from .inbox import NodeInbox

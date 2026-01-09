@@ -382,9 +382,39 @@ class NodeRef(BaseType):
     id: str = ""
 
 
+class FontSource(str, enum.Enum):
+    """Source of a font file."""
+
+    SYSTEM = "system"  # Local system font
+    GOOGLE_FONTS = "google_fonts"  # Google Fonts (auto-downloaded)
+    URL = "url"  # Custom URL to a TTF/OTF file
+
+
 class FontRef(BaseType):
+    """Reference to a font for text rendering.
+
+    Supports three sources:
+    - system: Local system fonts (default, backwards compatible)
+    - google_fonts: Google Fonts that are auto-downloaded and cached
+    - url: Custom URL to a TTF/OTF font file
+
+    Examples:
+        # System font (default behavior)
+        FontRef(name="Arial")
+
+        # Google Font
+        FontRef(name="Roboto", source=FontSource.GOOGLE_FONTS)
+        FontRef(name="Open Sans", source=FontSource.GOOGLE_FONTS, weight="bold")
+
+        # Custom URL
+        FontRef(name="CustomFont", source=FontSource.URL, url="https://example.com/font.ttf")
+    """
+
     type: Literal["font"] = "font"
     name: str = ""
+    source: FontSource = FontSource.SYSTEM
+    url: str = ""  # Custom URL for URL source
+    weight: str = "regular"  # Font weight: regular, bold, italic, etc.
 
 
 class Provider(str, enum.Enum):

@@ -9,7 +9,7 @@ from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate
+from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 
 class _SlowNode(BaseNode):

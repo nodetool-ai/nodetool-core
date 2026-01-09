@@ -304,10 +304,14 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
         from langchain_core.documents import Document
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+        separators = params.get("separators", ["\n\n", "\n", "."])
+        if isinstance(separators, str):
+            separators = [separators]
+
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=params.get("chunk_size", 1000),
             chunk_overlap=params.get("chunk_overlap", 200),
-            separators=params.get("separators", ["\n\n", "\n", "."]),
+            separators=separators,
             length_function=len,
             is_separator_regex=False,
             add_start_index=True,
@@ -530,6 +534,8 @@ class ChromaBatchIndexTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
         chunks = params["chunks"]
+        if isinstance(chunks, str):
+            chunks = [chunks]
         base_metadata = params.get("base_metadata", {})
 
         if not chunks:

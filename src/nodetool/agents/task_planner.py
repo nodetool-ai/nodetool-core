@@ -58,7 +58,7 @@ from nodetool.utils.message_parsing import (
     remove_think_tags,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk, PlanningUpdate
+from nodetool.workflows.types import Chunk, PlanningUpdate
 
 log = get_logger(__name__)
 

@@ -623,7 +623,12 @@ def create_dsl_modules(source_path: str, target_path: str):
 
         source_code = ""
         for _, obj in inspect.getmembers(module, inspect.isclass):
-            if issubclass(obj, BaseNode) and obj is not BaseNode and obj.is_visible():
+            if (
+                issubclass(obj, BaseNode)
+                and obj is not BaseNode
+                and obj.is_visible()
+                and "[" not in obj.__name__  # Skip generic type aliases like TriggerNode[OutputType]
+            ):
                 source_code += generate_class_source(obj)
                 source_code += "\n\n"
 

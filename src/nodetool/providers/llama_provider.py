@@ -31,7 +31,7 @@ from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
 from nodetool.security.secret_helper import get_secret_sync
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 

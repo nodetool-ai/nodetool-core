@@ -21,7 +21,7 @@ from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 if TYPE_CHECKING:
     from nodetool.agents.tools.base import Tool

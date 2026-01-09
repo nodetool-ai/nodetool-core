@@ -6,7 +6,7 @@ from nodetool.agents.agent import Agent
 from nodetool.metadata.types import Step, Task, TaskPlan
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import (
+from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,
     StepResult,

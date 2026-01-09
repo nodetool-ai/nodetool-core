@@ -6,7 +6,7 @@ from nodetool.agents.base_agent import BaseAgent
 from nodetool.metadata.types import LanguageModel
 from nodetool.providers.base import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 
 class DummyProvider(BaseProvider):

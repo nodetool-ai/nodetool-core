@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from nodetool.types.message_types import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.property import Property
-    from nodetool.workflows.workflow_types import ProcessingMessage
+    from nodetool.workflows.types import ProcessingMessage
 
 
 try:  # Optional dependency used by browser helpers
@@ -61,6 +61,7 @@ from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
     DataframeRef,
+    FontRef,
     ImageRef,
     Model3DRef,
     ModelRef,
@@ -598,7 +599,7 @@ class ProcessingContext:
         self.message_queue.put_nowait(message)
 
         # Store latest status for each node and edge for reconnection replay
-        from nodetool.workflows.workflow_types import EdgeUpdate, NodeUpdate
+        from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
         if isinstance(message, NodeUpdate):
             self.node_statuses[message.node_id] = message
@@ -2763,6 +2764,42 @@ class ProcessingContext:
         from nodetool.media.image.font_utils import get_system_font_path
 
         return get_system_font_path(font_name, self.environment)
+
+    def get_font_path(self, font_ref: FontRef) -> str:
+        """
+        Get the path to a font file, handling both system fonts and web fonts.
+
+        This method supports three font sources:
+        - system: Uses the local system font path (default, backwards compatible)
+        - google_fonts: Downloads and caches fonts from Google Fonts
+        - url: Downloads and caches fonts from a custom URL
+
+        Args:
+            font_ref (FontRef): The font reference containing name, source, and optional URL.
+
+        Returns:
+            str: Full path to the font file
+
+        Raises:
+            FileNotFoundError: If a system font cannot be found
+            ValueError: If a Google Font is not in the catalog or URL is invalid
+            ConnectionError: If downloading a web font fails
+        """
+        from nodetool.metadata.types import FontSource
+
+        # Handle backwards compatibility - if no source specified, treat as system font
+        if not hasattr(font_ref, "source") or font_ref.source == FontSource.SYSTEM:
+            return self.get_system_font_path(font_ref.name)
+
+        # Handle web fonts (Google Fonts or custom URL)
+        from nodetool.media.image.web_font_utils import get_web_font_path
+
+        return get_web_font_path(
+            font_name=font_ref.name,
+            source=font_ref.source.value,
+            url=getattr(font_ref, "url", ""),
+            weight=getattr(font_ref, "weight", "regular"),
+        )
 
     def resolve_workspace_path(self, path: str) -> str:
         """

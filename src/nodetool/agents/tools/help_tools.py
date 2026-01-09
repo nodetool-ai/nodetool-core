@@ -99,6 +99,8 @@ class SearchNodesTool(Tool):
     async def process(self, context: ProcessingContext, params: dict[str, Any]):
         assert "query" in params, "query is required"
         query = params["query"]
+        if isinstance(query, str):
+            query = [query]
         include_description = bool(params.get("include_description", False))
         include_properties = bool(params.get("include_properties", False))
         input_type = params.get("input_type")
@@ -171,6 +173,8 @@ class SearchExamplesTool(Tool):
     async def process(self, context: ProcessingContext, params: dict[str, Any]):
         assert "query" in params, "query is required"
         query = params["query"]
+        if isinstance(query, str):
+            query = [query]
         log.info(f"Executing SearchExamplesTool with query: {query}")
         # Import here to avoid circular imports
         from nodetool.chat.search_examples import search_examples

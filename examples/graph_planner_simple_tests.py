@@ -3,8 +3,6 @@
 import asyncio
 from typing import Any
 
-from nodetool.workflows.types import Chunk, PlanningUpdate
-
 from nodetool.agents.graph_planner import (
     GraphPlanner,
     print_visual_graph,
@@ -18,6 +16,7 @@ from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.types import Chunk, PlanningUpdate
 
 logger = get_logger(__name__)
 

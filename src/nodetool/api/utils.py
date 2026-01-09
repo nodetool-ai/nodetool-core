@@ -10,7 +10,7 @@ from nodetool.security.auth_provider import TokenType
 log = get_logger(__name__)
 
 
-async def current_user(request: Request) -> str:
+async def current_user(request: Request = None) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
@@ -23,7 +23,6 @@ async def current_user(request: Request) -> str:
     static_provider = get_static_auth_provider()
     token = static_provider.extract_token_from_headers(request.headers)
 
-    # Local development fallback when authentication is not enforced.
     if not Environment.enforce_auth():
         if token:
             static_result = await static_provider.verify_token(token)
@@ -33,11 +32,13 @@ async def current_user(request: Request) -> str:
                 return static_result.user_id
         return "1"
 
-    if not token:
+    if request is None and Environment.enforce_auth():
+        )
+
+    if not token and request is not None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
-        )
 
     static_result = await static_provider.verify_token(token)
     if static_result.ok and static_result.user_id:

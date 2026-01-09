@@ -28,7 +28,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import register_provider
 from nodetool.providers.openai_provider import OpenAIProvider
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 

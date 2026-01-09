@@ -10,8 +10,8 @@ from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import JobUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.workflow_types import JobUpdate
 
 ASYNC_TEST_TIMEOUT = 3.0
 
