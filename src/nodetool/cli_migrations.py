@@ -11,7 +11,7 @@ Provides commands for managing database schema migrations including:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -342,7 +342,7 @@ def create(name: str):
     from nodetool.migrations.runner import MIGRATIONS_DIR
 
     # Generate timestamp-based version
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     version = timestamp
 
     # Sanitize name (replace spaces with underscores, lowercase)
