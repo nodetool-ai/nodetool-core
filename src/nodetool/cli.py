@@ -4259,9 +4259,7 @@ def _write_file_bytes(path: str, data: bytes) -> None:
         f.write(data)
 
 
-def _validate_provider_capability(
-    provider: Any, capability: str, provider_name: str
-) -> None:
+def _validate_provider_capability(provider: Any, capability: str, provider_name: str) -> None:
     """Validate that the provider supports the required capability."""
     from nodetool.providers.base import ProviderCapability
 
@@ -4270,8 +4268,7 @@ def _validate_provider_capability(
     if capability_enum not in capabilities:
         supported = ", ".join(c.value for c in capabilities)
         raise click.ClickException(
-            f"Provider '{provider_name}' does not support '{capability}'. "
-            f"Supported capabilities: {supported or 'none'}"
+            f"Provider '{provider_name}' does not support '{capability}'. Supported capabilities: {supported or 'none'}"
         )
 
 
