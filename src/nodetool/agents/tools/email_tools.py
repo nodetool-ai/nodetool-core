@@ -329,7 +329,10 @@ class ArchiveEmailTool(Tool):
                 imap.select("INBOX")
 
                 archived_ids = []
-                for message_id in params["message_ids"]:
+                message_ids = params["message_ids"]
+                if isinstance(message_ids, str):
+                    message_ids = [message_ids]
+                for message_id in message_ids:
                     # Moving to archive in Gmail is done by removing the INBOX label
                     result = imap.store(message_id, "-X-GM-LABELS", "\\Inbox")
                     if result[0] == "OK":
@@ -367,14 +370,9 @@ class AddLabelToEmailTool(Tool):
 
     def user_message(self, params: dict) -> str:
         label = params.get("label", "a label")
-        ids = params.get("message_ids", [])
-        count = len(ids)
-        if count == 1:
-            msg = f"Adding label '{label}' to email {ids[0]}..."
-        else:
-            msg = f"Adding label '{label}' to {count} emails..."
+        msg = f"Adding label '{label}' to email {params.get('message_id')}..."
         if len(msg) > 80:
-            msg = f"Adding label '{label}' to emails..."
+            msg = f"Adding label '{label}' to email..."
         return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:

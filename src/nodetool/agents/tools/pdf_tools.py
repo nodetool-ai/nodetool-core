@@ -309,13 +309,17 @@ class ConvertDocumentTool(Tool):
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+            extra_args = params.get("extra_args", [])
+            if isinstance(extra_args, str):
+                extra_args = [extra_args]
+
             # Convert using pypandoc
             pypandoc.convert_file(
                 str(input_file),
                 params.get("to_format", "pdf"),
                 format=params.get("from_format", "markdown"),
                 outputfile=str(output_file),
-                extra_args=params.get("extra_args", []),
+                extra_args=extra_args,
             )
 
             return {"output_file": output_file, "status": "success"}
