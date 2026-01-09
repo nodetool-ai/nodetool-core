@@ -1,14 +1,15 @@
 """
-Tests for Provider Capabilities API endpoints.
+Tests for Provider API endpoints.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi.testclient import TestClient
-from fastapi import FastAPI
 from typing import AsyncIterator
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from nodetool.api.capabilities import router
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from nodetool.api.providers import router
 from nodetool.api.schemas.common import UsageInfo
 from nodetool.api.schemas.requests import (
     AudioSynthesizeRequest,
@@ -83,10 +84,10 @@ async def async_iter(data):
 
 
 class TestProviderListEndpoint:
-    """Tests for GET /api/capabilities/providers"""
+    """Tests for GET /api/providers/providers"""
 
     def test_list_providers_returns_valid_response(self, test_client):
-        with patch("nodetool.api.capabilities._get_provider_info_list") as mock_get_providers:
+        with patch("nodetool.api.providers._get_provider_info_list") as mock_get_providers:
             mock_get_providers.return_value = [
                 ProviderInfo(
                     provider=Provider.OpenAI,
@@ -95,16 +96,16 @@ class TestProviderListEndpoint:
                     is_available=True,
                 )
             ]
-            response = test_client.get("/api/capabilities/providers")
+            response = test_client.get("/api/providers/providers")
             assert response.status_code == 200
             data = response.json()
             assert "providers" in data
             assert isinstance(data["providers"], list)
 
     def test_list_providers_empty(self, test_client):
-        with patch("nodetool.api.capabilities._get_provider_info_list") as mock_get_providers:
+        with patch("nodetool.api.providers._get_provider_info_list") as mock_get_providers:
             mock_get_providers.return_value = []
-            response = test_client.get("/api/capabilities/providers")
+            response = test_client.get("/api/providers/providers")
             assert response.status_code == 200
             data = response.json()
             assert data["providers"] == []
@@ -114,7 +115,7 @@ class TestModelListEndpoints:
     """Tests for model listing endpoints"""
 
     def test_list_models_endpoint(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_models = AsyncMock(
                 return_value=[
@@ -124,14 +125,14 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/openai/models")
+            response = test_client.get("/api/providers/providers/openai/models")
             assert response.status_code == 200
             data = response.json()
             assert "models" in data
             assert "pagination" in data
 
     def test_list_language_models(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_language_models = AsyncMock(
                 return_value=[
@@ -140,14 +141,14 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/openai/models/language")
+            response = test_client.get("/api/providers/providers/openai/models/language")
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
             assert len(data) == 1
 
     def test_list_image_models(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_image_models = AsyncMock(
                 return_value=[
@@ -156,13 +157,13 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/openai/models/image")
+            response = test_client.get("/api/providers/providers/openai/models/image")
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
 
     def test_list_tts_models(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_tts_models = AsyncMock(
                 return_value=[
@@ -171,13 +172,13 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/openai/models/tts")
+            response = test_client.get("/api/providers/providers/openai/models/tts")
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
 
     def test_list_asr_models(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_asr_models = AsyncMock(
                 return_value=[
@@ -186,13 +187,13 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/openai/models/asr")
+            response = test_client.get("/api/providers/providers/openai/models/asr")
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
 
     def test_list_video_models(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_available_video_models = AsyncMock(
                 return_value=[
@@ -201,17 +202,17 @@ class TestModelListEndpoints:
             )
             mock_get_provider.return_value = mock_provider
 
-            response = test_client.get("/api/capabilities/providers/ollama/models/video")
+            response = test_client.get("/api/providers/providers/ollama/models/video")
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
 
 
 class TestChatCompletionEndpoint:
-    """Tests for POST /api/capabilities/completions"""
+    """Tests for POST /api/providers/completions"""
 
     def test_create_completion_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.GENERATE_MESSAGE}
             mock_provider.generate_message = AsyncMock(
@@ -226,7 +227,7 @@ class TestChatCompletionEndpoint:
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/completions",
+                "/api/providers/completions",
                 json={
                     "provider": "openai",
                     "model": "gpt-4",
@@ -240,13 +241,13 @@ class TestChatCompletionEndpoint:
             assert "message" in data
 
     def test_create_completion_unsupported_provider(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = set()
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/completions",
+                "/api/providers/completions",
                 json={
                     "provider": "openai",
                     "model": "gpt-4",
@@ -258,7 +259,7 @@ class TestChatCompletionEndpoint:
 
     def test_create_completion_invalid_provider(self, test_client):
         response = test_client.post(
-            "/api/capabilities/completions",
+            "/api/providers/completions",
             json={
                 "provider": "invalid_provider",
                 "model": "gpt-4",
@@ -269,10 +270,10 @@ class TestChatCompletionEndpoint:
 
 
 class TestStreamingCompletionEndpoint:
-    """Tests for POST /api/capabilities/completions/stream"""
+    """Tests for POST /api/providers/completions/stream"""
 
     def test_streaming_completion_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.GENERATE_MESSAGES}
 
@@ -284,7 +285,7 @@ class TestStreamingCompletionEndpoint:
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/completions/stream",
+                "/api/providers/completions/stream",
                 json={
                     "provider": "openai",
                     "model": "gpt-4",
@@ -296,17 +297,17 @@ class TestStreamingCompletionEndpoint:
 
 
 class TestImageGenerationEndpoint:
-    """Tests for POST /api/capabilities/images/generate"""
+    """Tests for POST /api/providers/images/generate"""
 
     def test_generate_image_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.TEXT_TO_IMAGE}
             mock_provider.text_to_image = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n\x00\x00")
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/images/generate",
+                "/api/providers/images/generate",
                 json={
                     "provider": "openai",
                     "params": {
@@ -324,20 +325,20 @@ class TestImageGenerationEndpoint:
 
 
 class TestImageTransformEndpoint:
-    """Tests for POST /api/capabilities/images/transform"""
+    """Tests for POST /api/providers/images/transform"""
 
     def test_transform_image_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.IMAGE_TO_IMAGE}
             mock_provider.image_to_image = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n\x00\x00")
             mock_get_provider.return_value = mock_provider
 
-            with patch("nodetool.api.capabilities.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
+            with patch("nodetool.api.providers.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("image/png", b"image_data")
 
                 response = test_client.post(
-                    "/api/capabilities/images/transform",
+                    "/api/providers/images/transform",
                     json={
                         "provider": "openai",
                         "image_uri": "data:image/png;base64,abc123",
@@ -354,10 +355,10 @@ class TestImageTransformEndpoint:
 
 
 class TestAudioSynthesisEndpoint:
-    """Tests for POST /api/capabilities/audio/synthesize"""
+    """Tests for POST /api/providers/audio/synthesize"""
 
     def test_synthesize_audio_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.TEXT_TO_SPEECH}
 
@@ -371,7 +372,7 @@ class TestAudioSynthesisEndpoint:
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/audio/synthesize",
+                "/api/providers/audio/synthesize",
                 json={
                     "provider": "openai",
                     "model": {"provider": "openai", "id": "tts-1", "type": "tts_model"},
@@ -385,20 +386,20 @@ class TestAudioSynthesisEndpoint:
 
 
 class TestAudioTranscriptionEndpoint:
-    """Tests for POST /api/capabilities/audio/transcribe"""
+    """Tests for POST /api/providers/audio/transcribe"""
 
     def test_transcribe_audio_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION}
             mock_provider.automatic_speech_recognition = AsyncMock(return_value="Hello, world!")
             mock_get_provider.return_value = mock_provider
 
-            with patch("nodetool.api.capabilities.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
+            with patch("nodetool.api.providers.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("audio/mp3", b"audio_data")
 
                 response = test_client.post(
-                    "/api/capabilities/audio/transcribe",
+                    "/api/providers/audio/transcribe",
                     json={
                         "provider": "openai",
                         "model": {"provider": "openai", "id": "whisper-1", "type": "asr_model"},
@@ -412,17 +413,17 @@ class TestAudioTranscriptionEndpoint:
 
 
 class TestVideoGenerationEndpoint:
-    """Tests for POST /api/capabilities/video/generate"""
+    """Tests for POST /api/providers/video/generate"""
 
     def test_generate_video_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.TEXT_TO_VIDEO}
             mock_provider.text_to_video = AsyncMock(return_value=b"video_data")
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/video/generate",
+                "/api/providers/video/generate",
                 json={
                     "provider": "ollama",
                     "params": {
@@ -438,20 +439,20 @@ class TestVideoGenerationEndpoint:
 
 
 class TestVideoTransformEndpoint:
-    """Tests for POST /api/capabilities/video/transform"""
+    """Tests for POST /api/providers/video/transform"""
 
     def test_transform_video_success(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = {ProviderCapability.IMAGE_TO_VIDEO}
             mock_provider.image_to_video = AsyncMock(return_value=b"video_data")
             mock_get_provider.return_value = mock_provider
 
-            with patch("nodetool.api.capabilities.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
+            with patch("nodetool.api.providers.fetch_uri_bytes_and_mime", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("image/png", b"image_data")
 
                 response = test_client.post(
-                    "/api/capabilities/video/transform",
+                    "/api/providers/video/transform",
                     json={
                         "provider": "ollama",
                         "image_uri": "data:image/png;base64,abc123",
@@ -517,7 +518,7 @@ class TestPagination:
     """Tests for pagination in list endpoints"""
 
     def test_pagination_calculation(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider_obj = MagicMock()
             mock_provider_obj.get_available_models = AsyncMock(
                 return_value=[
@@ -527,7 +528,7 @@ class TestPagination:
             )
             mock_get_provider.return_value = mock_provider_obj
 
-            response = test_client.get("/api/capabilities/providers/openai/models?page=1&per_page=10")
+            response = test_client.get("/api/providers/providers/openai/models?page=1&per_page=10")
             assert response.status_code == 200
             data = response.json()
             assert data["pagination"]["total"] == 25
@@ -537,7 +538,7 @@ class TestPagination:
             assert len(data["models"]) == 10
 
     def test_pagination_second_page(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider_obj = MagicMock()
             mock_provider_obj.get_available_models = AsyncMock(
                 return_value=[
@@ -547,7 +548,7 @@ class TestPagination:
             )
             mock_get_provider.return_value = mock_provider_obj
 
-            response = test_client.get("/api/capabilities/providers/openai/models?page=2&per_page=10")
+            response = test_client.get("/api/providers/providers/openai/models?page=2&per_page=10")
             assert response.status_code == 200
             data = response.json()
             assert data["pagination"]["page"] == 2
@@ -560,17 +561,17 @@ class TestErrorHandling:
     """Tests for error handling"""
 
     def test_invalid_provider_error(self, test_client):
-        response = test_client.get("/api/capabilities/providers/invalid_provider/models")
+        response = test_client.get("/api/providers/providers/invalid_provider/models")
         assert response.status_code == 422
 
     def test_unsupported_capability_error(self, test_client):
-        with patch("nodetool.api.capabilities.get_provider") as mock_get_provider:
+        with patch("nodetool.api.providers.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.get_capabilities.return_value = set()
             mock_get_provider.return_value = mock_provider
 
             response = test_client.post(
-                "/api/capabilities/completions",
+                "/api/providers/completions",
                 json={
                     "provider": "openai",
                     "model": "gpt-4",

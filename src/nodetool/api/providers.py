@@ -1,5 +1,5 @@
 """
-Provider Capabilities API endpoints.
+Provider API endpoints.
 
 This module exposes all provider capabilities (text generation, image generation,
 speech synthesis, video generation, etc.) as RESTful endpoints. All request and
@@ -56,7 +56,7 @@ from nodetool.providers import get_provider, import_providers
 from nodetool.providers.base import ProviderCapability
 from nodetool.providers.types import ImageToImageParams, ImageToVideoParams, TextToImageParams, TextToVideoParams
 
-router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
+router = APIRouter(prefix="/api/providers", tags=["providers"])
 
 
 def _generate_id() -> str:
