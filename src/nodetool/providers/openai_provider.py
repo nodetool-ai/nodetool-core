@@ -651,6 +651,50 @@ class OpenAIProvider(BaseProvider):
             raise ValueError(f"Failed to resize image: {e}") from e
 
     @staticmethod
+    def _prepare_image_for_openai(image: bytes) -> tuple[str, bytes, str]:
+        """Convert image bytes to PNG format and return as OpenAI-compatible tuple.
+
+        OpenAI's image API requires files to be sent with proper MIME types.
+        The SDK accepts a tuple of (filename, contents, media_type) for explicit
+        control over the file format.
+
+        Supported formats: 'image/jpeg', 'image/png', 'image/webp'
+
+        Args:
+            image: Raw image data as bytes
+
+        Returns:
+            Tuple of (filename, png_bytes, mimetype) suitable for OpenAI API
+
+        Raises:
+            ValueError: If image cannot be processed
+        """
+        try:
+            with Image.open(io.BytesIO(image)) as img:
+                # Convert to RGB for JPEG compatibility, or RGBA for PNG with transparency
+                if img.mode == "RGBA":
+                    # Keep transparency for PNG
+                    output_mode = "RGBA"
+                elif img.mode in ("RGB", "L", "LA"):
+                    output_mode = "RGB"
+                else:
+                    output_mode = "RGB"
+
+                if img.mode != output_mode:
+                    img = img.convert(output_mode)
+
+                # Convert to PNG bytes
+                output = io.BytesIO()
+                img.save(output, format="PNG")
+                png_bytes = output.getvalue()
+
+                log.debug(f"Prepared image for OpenAI: {img.size[0]}x{img.size[1]}, {len(png_bytes)} bytes")
+                return ("image.png", png_bytes, "image/png")
+        except Exception as e:
+            log.error(f"Failed to prepare image for OpenAI: {e}")
+            raise ValueError(f"Failed to prepare image for OpenAI: {e}") from e
+
+    @staticmethod
     def _seconds_from_params(
         params: TextToVideoParams | ImageToVideoParams,
     ) -> int | None:
@@ -1544,11 +1588,15 @@ class OpenAIProvider(BaseProvider):
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
             client = self.get_client()
 
+            # Convert image to OpenAI-compatible format (filename, bytes, mimetype tuple)
+            # This ensures proper MIME type is sent to avoid 'unsupported_file_mimetype' errors
+            image_tuple = self._prepare_image_for_openai(image)
+
             # Build API parameters
             # Note: GPT Image models return base64 data by default
             api_params: dict[str, Any] = {
                 "model": model_id,
-                "image": image,  # Pass bytes directly
+                "image": image_tuple,
                 "prompt": prompt,
             }
 
@@ -1560,7 +1608,8 @@ class OpenAIProvider(BaseProvider):
 
             # Add mask if provided for inpainting
             if mask:
-                api_params["mask"] = mask
+                mask_tuple = self._prepare_image_for_openai(mask)
+                api_params["mask"] = mask_tuple
                 log.debug("Using mask for inpainting edit")
 
             self._log_api_request("image_to_image", params=params)
