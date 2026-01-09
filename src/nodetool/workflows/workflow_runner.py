@@ -1144,6 +1144,15 @@ class WorkflowRunner:
         """Actor-based processing: start one actor per node and await completion.
 
         OutputNodes are not driven by actors (outputs are captured in send_messages).
+
+        Completion Detection:
+        Due to the streaming nature of the workflow, completion is determined by:
+        1. All actor tasks have finished (either successfully or with exceptions)
+        2. All node inboxes are fully drained (no pending messages, no open sources)
+        3. The message queue has been processed
+
+        This ensures that workflows don't hang due to race conditions between task
+        completion and message delivery.
         """
         from nodetool.models.condition_builder import Field
         from nodetool.models.run_node_state import RunNodeState
@@ -1174,6 +1183,7 @@ class WorkflowRunner:
                 log.warning(f"Failed to load node states for resumption: {e}")
 
         tasks = []
+        task_to_node: dict[asyncio.Task, str] = {}  # Map tasks to node IDs for debugging
         for node in graph.nodes:
             inbox = self.node_inboxes.get(node._id)
             assert inbox is not None, f"No inbox found for node {node._id}"
@@ -1207,7 +1217,9 @@ class WorkflowRunner:
                         log.error(f"Failed to restore resuming state for node {node._id}: {e}")
 
             actor = NodeActor(self, node, context, inbox)
-            tasks.append(asyncio.create_task(actor.run()))
+            task = asyncio.create_task(actor.run())
+            tasks.append(task)
+            task_to_node[task] = node._id
 
         # Smart wait loop:
         # - If WorkflowSuspendedException occurs, cancel all other tasks and exit immediately (Fast Suspend).
@@ -1218,13 +1230,14 @@ class WorkflowRunner:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_EXCEPTION)
             log.info(f"Wait loop iteration: {len(done)} done, {len(pending)} pending")
             for t in done:
+                node_id = task_to_node.get(t, "unknown")
                 # Check for suspension
                 if t.exception():
-                    log.info(f"Task finished with exception: {type(t.exception())} - {t.exception()}")
+                    log.info(f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}")
                     if isinstance(t.exception(), WorkflowSuspendedException):
                         exc = t.exception()
                         log.info(
-                            f"Detected WorkflowSuspendedException in task {t}. Cancelling {len(pending)} pending tasks."
+                            f"Detected WorkflowSuspendedException in task for node {node_id}. Cancelling {len(pending)} pending tasks."
                         )
                         # Cancel remaining tasks
                         for p in pending:
@@ -1235,9 +1248,28 @@ class WorkflowRunner:
                             await asyncio.gather(*pending, return_exceptions=True)
                             log.info("Cancellations complete.")
                         raise exc
+                else:
+                    log.debug(f"Task for node {node_id} completed successfully")
 
-        log.info("Wait loop completed naturally (no suspension raised).")
-        # If we reach here, all tasks completed without suspension (or suspension happened but was masked? No, we check done).
+        log.info("All actor tasks completed. Verifying completion state...")
+
+        # Verify all inboxes are fully drained
+        # This is critical for correct completion detection in streaming workflows
+        inboxes_with_pending = self._check_pending_inbox_work(graph)
+        if inboxes_with_pending:
+            log.warning(
+                f"Detected {len(inboxes_with_pending)} inboxes with pending work after tasks completed: {inboxes_with_pending}"
+            )
+            # Give a brief moment for any in-flight messages to settle
+            # This handles race conditions where EOS signals are being processed
+            await asyncio.sleep(0.01)
+            # Re-check after brief delay
+            inboxes_with_pending = self._check_pending_inbox_work(graph)
+            if inboxes_with_pending:
+                log.warning(
+                    f"Still have {len(inboxes_with_pending)} inboxes with pending work after delay: {inboxes_with_pending}"
+                )
+
         # Propagate first error if any (preserving original priority)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         first_error: Exception | None = None
@@ -1249,6 +1281,30 @@ class WorkflowRunner:
             raise first_error
 
         log.info("process_graph finished successfully (no errors/suspensions).")
+
+    def _check_pending_inbox_work(self, graph: Graph) -> list[str]:
+        """Check all inboxes for pending work and return list of node IDs with pending messages.
+
+        This method is used to verify that all streaming work has completed before
+        considering the workflow done. It helps detect race conditions where tasks
+        complete but messages are still being processed.
+
+        Returns:
+            List of node IDs that have inboxes with pending work (buffered items or open sources).
+        """
+        pending_nodes = []
+        for node in graph.nodes:
+            inbox = self.node_inboxes.get(node._id)
+            if inbox is not None and inbox.has_pending_work():
+                pending_nodes.append(node._id)
+                # Log detailed state for debugging
+                log.debug(
+                    f"Inbox for node {node._id} has pending work: "
+                    f"has_any={inbox.has_any()}, "
+                    f"buffers={[(h, len(b)) for h, b in inbox._buffers.items() if len(b) > 0]}, "
+                    f"open_counts={[(h, c) for h, c in inbox._open_counts.items() if c > 0]}"
+                )
+        return pending_nodes
 
     def log_vram_usage(self, message=""):
         """

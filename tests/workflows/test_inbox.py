@@ -151,3 +151,121 @@ async def test_mark_source_done_from_thread_with_data():
 
     assert eos_signaled.is_set()
     assert collected == ["item1", "item2"]
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_empty_inbox():
+    """Test that a new inbox is fully drained."""
+    inbox = NodeInbox()
+    # Fresh inbox with no upstreams should be fully drained
+    assert inbox.is_fully_drained() is True
+    assert inbox.has_pending_work() is False
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_with_open_sources():
+    """Test that inbox with open sources is not fully drained."""
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+
+    # Inbox has open source, so not fully drained
+    assert inbox.is_fully_drained() is False
+    assert inbox.has_pending_work() is True
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_with_buffered_items():
+    """Test that inbox with buffered items is not fully drained."""
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+
+    # Add items but don't mark done
+    await inbox.put("a", 1)
+    await inbox.put("a", 2)
+
+    # Has buffered items and open source
+    assert inbox.is_fully_drained() is False
+    assert inbox.has_pending_work() is True
+
+    # Mark source done but items still buffered
+    inbox.mark_source_done("a")
+    assert inbox.is_fully_drained() is False
+    assert inbox.has_pending_work() is True
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_after_consumption():
+    """Test that inbox is fully drained after all items consumed and EOS reached."""
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+
+    # Add items
+    await inbox.put("a", 1)
+    await inbox.put("a", 2)
+    inbox.mark_source_done("a")
+
+    # Not drained yet
+    assert inbox.is_fully_drained() is False
+
+    # Consume all items
+    collected = []
+    async for item in inbox.iter_input("a"):
+        collected.append(item)
+
+    # Now fully drained
+    assert inbox.is_fully_drained() is True
+    assert inbox.has_pending_work() is False
+    assert collected == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_multiple_handles():
+    """Test fully drained detection with multiple handles."""
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+    inbox.add_upstream("b", 1)
+
+    # Add items to both handles
+    await inbox.put("a", "a1")
+    await inbox.put("b", "b1")
+
+    # Not drained - both have items and open sources
+    assert inbox.is_fully_drained() is False
+
+    # Mark one handle done
+    inbox.mark_source_done("a")
+    # Still not drained - a has buffered items, b is still open
+    assert inbox.is_fully_drained() is False
+
+    # Drain handle a
+    item_a = inbox.try_pop_any()
+    assert item_a == ("a", "a1")
+    # Still not drained - b has items
+    assert inbox.is_fully_drained() is False
+
+    # Mark b done and drain it
+    inbox.mark_source_done("b")
+    item_b = inbox.try_pop_any()
+    assert item_b == ("b", "b1")
+
+    # Now fully drained
+    assert inbox.is_fully_drained() is True
+    assert inbox.has_pending_work() is False
+
+
+@pytest.mark.asyncio
+async def test_is_fully_drained_after_close():
+    """Test that closed inbox is considered fully drained."""
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+    await inbox.put("a", 1)
+
+    # Not drained yet
+    assert inbox.is_fully_drained() is False
+
+    # Close the inbox
+    await inbox.close_all()
+
+    # Closed inbox is fully drained regardless of buffer state
+    assert inbox.is_fully_drained() is True
+    assert inbox.has_pending_work() is False

@@ -256,6 +256,35 @@ class NodeInbox:
         """
         return self._open_counts.get(handle, 0) > 0
 
+    def is_fully_drained(self) -> bool:
+        """Return True if inbox is fully drained: no buffered items and all sources done.
+
+        This is the definitive check for whether a node's inbox has completed
+        all its work - both buffered messages have been consumed AND all upstream
+        sources have signaled end-of-stream.
+
+        Returns:
+            True if the inbox is completely drained and finished.
+        """
+        if self._closed:
+            return True
+        # Check if any buffers have items
+        any_buffered = any(len(buf) > 0 for buf in self._buffers.values())
+        # Check if any sources are still open
+        any_open = any(v > 0 for v in self._open_counts.values())
+        return not any_buffered and not any_open
+
+    def has_pending_work(self) -> bool:
+        """Return True if inbox has pending work: buffered items or open sources.
+
+        This is the inverse of is_fully_drained(), useful for checking if there's
+        still work to be done.
+
+        Returns:
+            True if there are buffered items or open upstream sources.
+        """
+        return not self.is_fully_drained()
+
     # Non-blocking pop of any available item in arrival order
     def try_pop_any(self) -> tuple[str, Any] | None:
         """Pop one buffered arrival in cross-handle order without blocking.
