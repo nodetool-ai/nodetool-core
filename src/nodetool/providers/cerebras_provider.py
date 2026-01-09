@@ -279,7 +279,6 @@ class CerebrasProvider(OpenAIProvider):
                 return json.loads(args)
             except Exception:
                 log.warning(f"Error parsing tool call arguments: {args}")
-                print(f"Warning: Error parsing tool call arguments: {args}")
                 return {}
 
         # Create tool calls if present
