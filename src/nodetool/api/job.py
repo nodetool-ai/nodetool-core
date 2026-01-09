@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
@@ -88,7 +88,7 @@ async def get_run_state_response(job_id: str) -> Optional[RunStateResponse]:
 
 @router.get("/", response_model=JobListResponse)
 async def list_jobs(
-    user_id: str = Depends(current_user),
+    user_id: CurrentUserDep,
     workflow_id: Optional[str] = None,
     limit: int = 100,
     start_key: Optional[str] = None,
@@ -145,7 +145,7 @@ async def list_jobs(
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str, user_id: str = Depends(current_user)):
+async def get_job(job_id: str, user_id: CurrentUserDep):
     """
     Get a specific job by ID.
 
@@ -178,7 +178,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
 
 
 @router.get("/running/all", response_model=List[BackgroundJobResponse])
-async def list_running_jobs(user_id: str = Depends(current_user)):
+async def list_running_jobs(user_id: CurrentUserDep):
     """
     List all currently running background jobs for the current user.
 
@@ -205,7 +205,7 @@ async def list_running_jobs(user_id: str = Depends(current_user)):
 
 
 @router.post("/{job_id}/cancel")
-async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> BackgroundJobResponse:
+async def cancel_job(job_id: str, user_id: CurrentUserDep) -> BackgroundJobResponse:
     """
     Cancel a running job.
 
@@ -248,7 +248,7 @@ class TriggerWorkflowListResponse(BaseModel):
 
 
 @router.get("/triggers/running", response_model=TriggerWorkflowListResponse)
-async def list_running_trigger_workflows(user_id: str = Depends(current_user)):
+async def list_running_trigger_workflows(user_id: CurrentUserDep):
     """
     List all currently running trigger workflows.
 
@@ -277,7 +277,7 @@ async def list_running_trigger_workflows(user_id: str = Depends(current_user)):
 
 
 @router.post("/triggers/{workflow_id}/start", response_model=TriggerWorkflowResponse)
-async def start_trigger_workflow(workflow_id: str, user_id: str = Depends(current_user)):
+async def start_trigger_workflow(workflow_id: str, user_id: CurrentUserDep):
     """
     Start a trigger workflow in the background.
 
@@ -318,7 +318,7 @@ async def start_trigger_workflow(workflow_id: str, user_id: str = Depends(curren
 
 
 @router.post("/triggers/{workflow_id}/stop", response_model=TriggerWorkflowResponse)
-async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current_user)):
+async def stop_trigger_workflow(workflow_id: str, user_id: CurrentUserDep):
     """
     Stop a running trigger workflow.
 

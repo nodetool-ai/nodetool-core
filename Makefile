@@ -4,7 +4,7 @@ lint:
 	ruff check .
 
 typecheck:
-	ty check src \
+	pyright src \
 	  --warn unresolved-import \
 	  --warn invalid-method-override \
 	  --warn invalid-argument-type \

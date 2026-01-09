@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.environment import Environment
@@ -33,7 +33,7 @@ def create_openai_compatible_router(
     tools = tools or []
 
     @router.post("/chat/completions")
-    async def openai_chat_completions(request: Request, user: str = Depends(current_user)):
+    async def openai_chat_completions(request: Request, user: CurrentUserDep):
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
         try:
             data = await request.json()
@@ -81,7 +81,7 @@ def create_openai_compatible_router(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/models")
-    async def openai_models(user: str = Depends(current_user)):
+    async def openai_models(user: CurrentUserDep):
         """Returns list of models in OpenAI format."""
         try:
             all_models = await get_all_language_models(user)

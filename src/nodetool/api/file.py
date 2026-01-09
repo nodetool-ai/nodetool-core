@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -66,7 +66,7 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
 
 
 @router.get("/list")
-async def list_files(path: str = ".", __user: str = Depends(current_user)) -> List[FileInfo]:
+async def list_files(__user: CurrentUserDep, path: str = ".") -> List[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
@@ -144,7 +144,7 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> Li
 
 
 @router.get("/info")
-async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
+async def get_file(path: str, __user: CurrentUserDep) -> FileInfo:
     """
     Get information about a specific file or directory
     """
@@ -162,7 +162,7 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
 
 
 @router.get("/download/{path:path}")
-async def download_file(path: str, __user: str = Depends(current_user)):
+async def download_file(path: str, __user: CurrentUserDep):
     """
     Download a file from the specified path
     """
@@ -193,7 +193,7 @@ async def download_file(path: str, __user: str = Depends(current_user)):
 
 
 @router.post("/upload/{path:path}")
-async def upload_file(path: str, file: UploadFile, __user: str = Depends(current_user)):
+async def upload_file(path: str, file: UploadFile, __user: CurrentUserDep):
     """
     Upload a file to the specified path
     """
@@ -265,7 +265,7 @@ async def get_workspace_info_from_path(workspace_path: str, workspace_id: str) -
 
 
 @router.get("/workspaces")
-async def list_workspaces(__user: str = Depends(current_user)) -> List[WorkspaceInfo]:
+async def list_workspaces(__user: CurrentUserDep) -> List[WorkspaceInfo]:
     """
     List all workspaces in ~/.nodetool-workspaces
     """
@@ -304,7 +304,7 @@ async def list_workspaces(__user: str = Depends(current_user)) -> List[Workspace
 
 
 @router.get("/workspaces/{workspace_id}/info")
-async def get_workspace_info(workspace_id: str, __user: str = Depends(current_user)) -> WorkspaceInfo:
+async def get_workspace_info(workspace_id: str, __user: CurrentUserDep) -> WorkspaceInfo:
     """
     Get information about a specific workspace
     """
@@ -325,9 +325,7 @@ async def get_workspace_info(workspace_id: str, __user: str = Depends(current_us
 
 
 @router.get("/workspaces/{workspace_id}/list")
-async def list_workspace_files(
-    workspace_id: str, path: str = ".", __user: str = Depends(current_user)
-) -> List[FileInfo]:
+async def list_workspace_files(workspace_id: str, __user: CurrentUserDep, path: str = ".") -> List[FileInfo]:
     """
     List files and directories in a workspace, including hidden entries.
     """
@@ -367,7 +365,7 @@ async def list_workspace_files(
 
 
 @router.get("/workspaces/{workspace_id}/download/{file_path:path}")
-async def download_workspace_file(workspace_id: str, file_path: str, __user: str = Depends(current_user)):
+async def download_workspace_file(workspace_id: str, file_path: str, __user: CurrentUserDep):
     """
     Download a file from a workspace
     """
@@ -414,7 +412,7 @@ async def upload_workspace_file(
     workspace_id: str,
     file_path: str,
     file: UploadFile,
-    __user: str = Depends(current_user),
+    __user: CurrentUserDep,
 ):
     """
     Upload a file to a workspace

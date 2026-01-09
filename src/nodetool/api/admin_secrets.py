@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.models.secret import Secret
 
 
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/admin/secrets", tags=["admin-secrets"])
 @router.post("/import")
 async def import_secrets(
     secrets_payload: List[EncryptedSecretPayload],
-    __user: str = Depends(current_user),
+    __user: CurrentUserDep,
 ) -> dict[str, int]:
     """Import encrypted secrets (requires shared master key)."""
     try:

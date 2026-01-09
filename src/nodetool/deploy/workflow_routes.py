@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.api.workflow import WorkflowList, WorkflowRequest, from_model
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -53,7 +53,7 @@ def create_workflow_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/workflows")
-    async def list_workflows(user: str = Depends(current_user)) -> WorkflowList:
+    async def list_workflows(user: CurrentUserDep) -> WorkflowList:
         """List all workflows in the database."""
         # List all workflows without user restriction (admin mode)
         # Use paginate to get all workflows
@@ -63,37 +63,37 @@ def create_workflow_router() -> APIRouter:
         )
         return WorkflowList(workflows=[from_model(w) for w in workflows], next=next_key)
 
-    @router.put("/workflows/{id}")
-    async def update_workflow(
-        id: str,
-        workflow_request: WorkflowRequest,
-        user: str = Depends(current_user),
-    ) -> Workflow:
-        workflow = await WorkflowModel.get(id)
-        if workflow and workflow.user_id != user:
-            raise HTTPException(status_code=403, detail="Workflow access denied")
-        if not workflow:
-            workflow = WorkflowModel(id=id, user_id=user)
-        if workflow_request.graph is None:
-            raise HTTPException(status_code=400, detail="Invalid workflow")
-        workflow.name = workflow_request.name
-        workflow.description = workflow_request.description
-        workflow.tags = workflow_request.tags
-        workflow.package_name = workflow_request.package_name
-        if workflow_request.thumbnail is not None:
-            workflow.thumbnail = workflow_request.thumbnail
-        workflow.access = workflow_request.access
-        workflow.graph = workflow_request.graph.model_dump()
-        workflow.settings = workflow_request.settings
-        workflow.run_mode = workflow_request.run_mode
-        workflow.updated_at = workflow.updated_at
-        await workflow.save()
-        updated_workflow = from_model(workflow)
+        @router.put("/workflows/{id}")
+        async def update_workflow(
+            id: str,
+            workflow_request: WorkflowRequest,
+            user: CurrentUserDep,
+        ) -> Workflow:
+            workflow = await WorkflowModel.get(id)
+            if workflow and workflow.user_id != user:
+                raise HTTPException(status_code=403, detail="Workflow access denied")
+            if not workflow:
+                workflow = WorkflowModel(id=id, user_id=user)
+            if workflow_request.graph is None:
+                raise HTTPException(status_code=400, detail="Invalid workflow")
+            workflow.name = workflow_request.name
+            workflow.description = workflow_request.description
+            workflow.tags = workflow_request.tags
+            workflow.package_name = workflow_request.package_name
+            if workflow_request.thumbnail is not None:
+                workflow.thumbnail = workflow_request.thumbnail
+            workflow.access = workflow_request.access
+            workflow.graph = workflow_request.graph.model_dump()
+            workflow.settings = workflow_request.settings
+            workflow.run_mode = workflow_request.run_mode
+            workflow.updated_at = workflow.updated_at
+            await workflow.save()
+            updated_workflow = from_model(workflow)
 
-        return updated_workflow
+            return updated_workflow
 
     @router.delete("/workflows/{id}")
-    async def delete_workflow(id: str, user: str = Depends(current_user)):
+    async def delete_workflow(id: str, user: CurrentUserDep):
         """Delete a workflow from the database."""
         workflow = await WorkflowModel.get(id)
         if not workflow:
@@ -104,7 +104,7 @@ def create_workflow_router() -> APIRouter:
         return {"status": "ok", "message": f"Workflow {id} deleted"}
 
     @router.post("/workflows/{id}/run")
-    async def execute_workflow(id: str, request: Request, user: str = Depends(current_user)):
+    async def execute_workflow(id: str, request: Request, user: CurrentUserDep):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)
@@ -132,7 +132,7 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/workflows/{id}/run/stream")
-    async def execute_workflow_stream(id: str, request: Request, user: str = Depends(current_user)):
+    async def execute_workflow_stream(id: str, request: Request, user: CurrentUserDep):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)

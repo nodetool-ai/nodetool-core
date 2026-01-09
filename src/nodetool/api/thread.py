@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUserDep
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider
 from nodetool.models.message import Message as MessageModel
@@ -30,7 +30,7 @@ class ThreadSummarizeRequest(BaseModel):
 
 
 @router.post("/")
-async def create(req: ThreadCreateRequest, user: str = Depends(current_user)) -> Thread:
+async def create(req: ThreadCreateRequest, user: CurrentUserDep) -> Thread:
     """Create a new thread for the current user."""
     thread = await ThreadModel.create(
         user_id=user,
@@ -42,7 +42,7 @@ async def create(req: ThreadCreateRequest, user: str = Depends(current_user)) ->
 
 
 @router.get("/{thread_id}")
-async def get(thread_id: str, user: str = Depends(current_user)) -> Thread:
+async def get(thread_id: str, user: CurrentUserDep) -> Thread:
     """Get a specific thread by ID."""
     thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
@@ -52,10 +52,10 @@ async def get(thread_id: str, user: str = Depends(current_user)) -> Thread:
 
 @router.get("/")
 async def index(
+    user: CurrentUserDep,
     cursor: Optional[str] = None,
     limit: int = 10,
     reverse: bool = False,
-    user: str = Depends(current_user),
 ) -> ThreadList:
     """List all threads for the current user with pagination."""
     threads, next_cursor = await ThreadModel.paginate(
@@ -74,7 +74,7 @@ async def index(
 async def update(
     thread_id: str,
     req: ThreadUpdateRequest,
-    user: str = Depends(current_user),
+    user: CurrentUserDep,
 ) -> Thread:
     """Update a thread's title."""
     thread = await ThreadModel.find(user_id=user, id=thread_id)
@@ -89,7 +89,7 @@ async def update(
 
 
 @router.delete("/{thread_id}")
-async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
+async def delete(thread_id: str, user: CurrentUserDep) -> None:
     """Delete a thread and all its associated messages."""
     thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
@@ -118,7 +118,7 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
 
 
 @router.post("/{thread_id}/summarize")
-async def summarize_thread(thread_id: str, req: ThreadSummarizeRequest, user: str = Depends(current_user)) -> Thread:
+async def summarize_thread(thread_id: str, req: ThreadSummarizeRequest, user: CurrentUserDep) -> Thread:
     """Summarize thread content and update the thread title."""
     thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
