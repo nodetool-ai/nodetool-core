@@ -42,7 +42,6 @@ This implements Phase 4 of the architectural refactor:
 - Recovery service handles actual resumption
 """
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
@@ -87,7 +86,7 @@ class TriggerWakeupService:
             True if input was newly created, False if it already existed
         """
         # Check if input already exists (idempotency)
-        existing = await TriggerInput.find_one({"input_id": input_id})
+        existing = await TriggerInput.get_by_input_id(input_id)
         if existing:
             log.debug(f"Trigger input {input_id} already exists (idempotent)")
             return False
@@ -97,7 +96,7 @@ class TriggerWakeupService:
             run_id=run_id,
             node_id=node_id,
             input_id=input_id,
-            payload_json=json.dumps(payload),
+            payload_json=payload,
             cursor=cursor,
             processed=False,
             created_at=datetime.now(),
@@ -135,13 +134,9 @@ class TriggerWakeupService:
         Returns:
             List of pending trigger inputs in creation order
         """
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": False,
-            },
-            sort=[("created_at", 1)],
+        inputs = await TriggerInput.get_pending_inputs(
+            run_id=run_id,
+            node_id=node_id,
             limit=limit,
         )
 
@@ -168,8 +163,11 @@ class TriggerWakeupService:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
         # Find runs in suspended state
-        suspended_runs = await RunState.find(
-            {"status": "suspended"},
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(ConditionGroup([Field("status").equals("suspended")], LogicalOperator.AND))
+        suspended_runs, _ = await RunState.query(
+            condition=condition,
             limit=1000,
         )
 
@@ -254,15 +252,21 @@ class TriggerWakeupService:
 
         cutoff = datetime.now() - timedelta(hours=older_than_hours)
 
-        # Find old processed inputs
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": True,
-                "processed_at": {"$lt": cutoff},
-            }
+        # Find old processed inputs using query
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(True),
+                    Field("processed_at").less_than(cutoff),
+                ],
+                LogicalOperator.AND,
+            )
         )
+        inputs, _ = await TriggerInput.query(condition=condition, limit=1000)
 
         # Delete them
         count = 0

@@ -3,7 +3,10 @@ import contextvars
 import threading
 from asyncio import AbstractEventLoop
 from concurrent.futures import Future, InvalidStateError
-from typing import Any, Callable, Coroutine, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, TypeVar, cast
+
+if TYPE_CHECKING:
+    from asyncio import Task
 
 from nodetool.config.logging_config import get_logger
 
@@ -277,9 +280,11 @@ class ThreadedEventLoop:
         def run_with_context():
             """Wrapper to run the coroutine with the captured context."""
             # Create and schedule the task with the captured context
-            task = self._loop.create_task(coro)
+            loop = self._loop
+            assert loop is not None, "Event loop should be started before running coroutines"
+            task = loop.create_task(coro)
             # Attach task to future for access by ThreadedJobExecution.cancel()
-            result_future.task = task
+            cast("Future", result_future).task = task  # type: ignore[attr-defined]
 
             def on_done(t):
                 """Callback when the task completes."""
