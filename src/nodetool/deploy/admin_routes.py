@@ -21,7 +21,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
@@ -383,7 +383,7 @@ def create_admin_router() -> APIRouter:
     # Asset management endpoints
     @router.get("/admin/assets", response_model=AssetList)
     async def list_assets(
-        user: str = Depends(current_user),
+        user: str = Depends(CurrentUser()),
         user_id: Optional[str] = "1",
         parent_id: Optional[str] = None,
         content_type: Optional[str] = None,
@@ -415,7 +415,7 @@ def create_admin_router() -> APIRouter:
 
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
-        user: str = Depends(current_user),
+        user: str = Depends(CurrentUser()),
         data: Dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
@@ -442,7 +442,7 @@ def create_admin_router() -> APIRouter:
     @router.get("/admin/assets/{asset_id}", response_model=Asset)
     async def get_asset(
         asset_id: str,
-        user: str = Depends(current_user),
+        user: str = Depends(CurrentUser()),
         user_id: Optional[str] = "1",
     ) -> Asset:
         """Get a single asset by ID (admin endpoint - no user restrictions)."""
@@ -474,7 +474,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/assets/{asset_id}")
-    async def delete_asset(asset_id: str, user: str = Depends(current_user)):
+    async def delete_asset(asset_id: str, user: str = Depends(CurrentUser())):
         """Delete an asset (recursive for folders) (admin endpoint - no user restrictions)."""
         try:
             asset = await AssetModel.get(asset_id)

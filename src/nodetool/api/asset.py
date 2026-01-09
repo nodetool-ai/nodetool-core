@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.media.common.media_utils import (
     create_image_thumbnail,
@@ -93,7 +93,7 @@ async def index(
     content_type: Optional[str] = None,
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     _duration: Optional[int] = None,
 ) -> AssetList:
     """
@@ -124,7 +124,7 @@ async def search_assets_global(
     content_type: Optional[str] = None,
     page_size: Optional[int] = 100,
     cursor: Optional[str] = None,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> AssetSearchResult:
     """
     **Global Asset Search**
@@ -326,7 +326,7 @@ async def get_package_asset(package_name: str, asset_name: str):
 
 
 @router.get("/{id}")
-async def get(id: str, user: str = Depends(current_user)) -> Asset:
+async def get(id: str, user: str = Depends(CurrentUser())) -> Asset:
     """
     Returns the asset for the given id.
     """
@@ -354,7 +354,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
 async def update(
     id: str,
     req: AssetUpdateRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> Asset:
     """
     Updates the asset for the given id.
@@ -384,7 +384,7 @@ async def update(
 
 
 @router.delete("/{id}")
-async def delete(id: str, user: str = Depends(current_user)):
+async def delete(id: str, user: str = Depends(CurrentUser())):
     """
     Deletes the asset for the given id. If the asset is a folder, it deletes all contents recursively.
     """
@@ -453,7 +453,7 @@ async def delete_single_asset(asset: AssetModel):
 async def create(
     file: UploadFile | None = None,
     json: str | None = Form(None),
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> Asset:
     """
     Create a new asset.
@@ -517,7 +517,7 @@ async def create(
 @router.post("/download")
 async def download_assets(
     req: AssetDownloadRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ):
     """
     Create a ZIP file containing the requested assets and return it for download.
@@ -659,7 +659,7 @@ async def download_assets(
 
 
 @router.get("/{folder_id}/recursive")
-async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)):
+async def get_assets_recursive(folder_id: str, user: str = Depends(CurrentUser())):
     """
     Get all assets in a folder recursively, including the folder structure.
     """
@@ -668,7 +668,7 @@ async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)
 
 
 @router.get("/by-filename/{filename}")
-async def get_by_filename(filename: str, user: str = Depends(current_user)) -> Asset:
+async def get_by_filename(filename: str, user: str = Depends(CurrentUser())) -> Asset:
     """
     Returns the asset for the given filename.
     """

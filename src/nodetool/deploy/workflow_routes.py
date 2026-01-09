@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.api.workflow import WorkflowList, WorkflowRequest, from_model
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -53,7 +53,7 @@ def create_workflow_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/workflows")
-    async def list_workflows(user: str = Depends(current_user)) -> WorkflowList:
+    async def list_workflows(user: str = Depends(CurrentUser())) -> WorkflowList:
         """List all workflows in the database."""
         # List all workflows without user restriction (admin mode)
         # Use paginate to get all workflows
@@ -67,7 +67,7 @@ def create_workflow_router() -> APIRouter:
     async def update_workflow(
         id: str,
         workflow_request: WorkflowRequest,
-        user: str = Depends(current_user),
+        user: str = Depends(CurrentUser()),
     ) -> Workflow:
         workflow = await WorkflowModel.get(id)
         if workflow and workflow.user_id != user:
@@ -93,7 +93,7 @@ def create_workflow_router() -> APIRouter:
         return updated_workflow
 
     @router.delete("/workflows/{id}")
-    async def delete_workflow(id: str, user: str = Depends(current_user)):
+    async def delete_workflow(id: str, user: str = Depends(CurrentUser())):
         """Delete a workflow from the database."""
         workflow = await WorkflowModel.get(id)
         if not workflow:
@@ -104,7 +104,7 @@ def create_workflow_router() -> APIRouter:
         return {"status": "ok", "message": f"Workflow {id} deleted"}
 
     @router.post("/workflows/{id}/run")
-    async def execute_workflow(id: str, request: Request, user: str = Depends(current_user)):
+    async def execute_workflow(id: str, request: Request, user: str = Depends(CurrentUser())):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)
@@ -132,7 +132,7 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/workflows/{id}/run/stream")
-    async def execute_workflow_stream(id: str, request: Request, user: str = Depends(current_user)):
+    async def execute_workflow_stream(id: str, request: Request, user: str = Depends(CurrentUser())):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id, user_id=user)

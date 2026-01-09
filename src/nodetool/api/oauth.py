@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
 from nodetool.models.oauth_credential import OAuthCredential
@@ -316,7 +316,7 @@ def oauth_html_response(
 @router.get("/hf/start", response_model=OAuthStartResponse)
 async def start_huggingface_oauth(
     request: Request,
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthStartResponse:
     """
     Start Hugging Face OAuth flow.
@@ -543,7 +543,7 @@ async def huggingface_oauth_callback(
 
 @router.get("/hf/tokens", response_model=OAuthTokensResponse)
 async def list_huggingface_tokens(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthTokensResponse:
     """
     List all stored Hugging Face OAuth tokens for the current user.
@@ -578,7 +578,7 @@ async def list_huggingface_tokens(
 @router.post("/hf/refresh", response_model=OAuthRefreshResponse)
 async def refresh_huggingface_token(
     account_id: str = Query(..., description="Account ID to refresh token for"),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthRefreshResponse:
     """
     Refresh a Hugging Face OAuth token using the stored refresh token.
@@ -689,7 +689,7 @@ async def refresh_huggingface_token(
 @router.get("/hf/whoami", response_model=OAuthWhoamiResponse)
 async def get_huggingface_whoami_endpoint(
     account_id: str = Query(..., description="Account ID to get information for"),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthWhoamiResponse:
     """
     Get Hugging Face account information using the stored OAuth token.
@@ -784,7 +784,7 @@ async def get_huggingface_whoami_endpoint(
 @router.get("/github/start", response_model=OAuthStartResponse)
 async def start_github_oauth(
     request: Request,
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthStartResponse:
     """
     Start GitHub OAuth flow with PKCE.
@@ -1028,7 +1028,7 @@ async def github_oauth_callback(
 
 @router.get("/github/tokens", response_model=OAuthTokensResponse)
 async def list_github_tokens(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> OAuthTokensResponse:
     """
     List all stored GitHub OAuth tokens for the current user.
@@ -1084,7 +1084,7 @@ class GitHubUserResponse(BaseModel):
 @router.get("/github/user", response_model=GitHubUserResponse)
 async def get_github_user(
     account_id: str = Query(..., description="Account ID to get information for"),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ) -> GitHubUserResponse:
     """
     Get GitHub account information using the stored OAuth token.

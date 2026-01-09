@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import require_scope
 from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
@@ -172,7 +172,7 @@ async def get(key: str, request: Request):
 
 
 @router.put("/{key}")
-async def update(key: str, request: Request, _user: str = Depends(current_user)):
+async def update(key: str, request: Request, _user: str = Depends(CurrentUser())):
     """
     Updates or creates the file for the given key.
     """
@@ -181,7 +181,7 @@ async def update(key: str, request: Request, _user: str = Depends(current_user))
 
 
 @router.delete("/{key}")
-async def delete(key: str, _user: str = Depends(current_user)):
+async def delete(key: str, _user: str = Depends(CurrentUser())):
     """
     Deletes the asset for the given key.
     """
@@ -209,7 +209,7 @@ async def temp_get(key: str, request: Request):
 
 
 @temp_router.put("/{key}")
-async def temp_update(key: str, request: Request, _user: str = Depends(current_user)):
+async def temp_update(key: str, request: Request, _user: str = Depends(CurrentUser())):
     """
     Updates or creates the temp file for the given key.
     """
@@ -218,7 +218,7 @@ async def temp_update(key: str, request: Request, _user: str = Depends(current_u
 
 
 @temp_router.delete("/{key}")
-async def temp_delete(key: str, _user: str = Depends(current_user)):
+async def temp_delete(key: str, _user: str = Depends(CurrentUser())):
     """
     Deletes the temp asset for the given key.
     """
