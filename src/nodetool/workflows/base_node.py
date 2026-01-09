@@ -1020,6 +1020,44 @@ class BaseNode(BaseModel):
             Dict[str, Any]: A modified version of the result suitable for status updates.
         """
 
+        # Upper bound for inlining asset bytes into websocket UI updates.
+        # Large payloads can easily crash browser tabs or blow websocket limits.
+        # Keep this generous for images/audio previews, but avoid multi-MB blobs.
+        MAX_INLINE_ASSET_BYTES = 4 * 1024 * 1024  # 4 MiB
+
+        def _maybe_strip_large_asset_data(result_dict: dict[str, Any]) -> dict[str, Any]:
+            """Best-effort: drop huge `data` blobs from an AssetRef payload."""
+            data = result_dict.get("data")
+            total_len: int | None = None
+
+            if isinstance(data, (bytes, bytearray)):
+                total_len = len(data)
+            elif isinstance(data, list) and data and all(
+                isinstance(x, (bytes, bytearray)) for x in data
+            ):
+                total_len = sum(len(x) for x in data)
+
+            if total_len is None or total_len <= MAX_INLINE_ASSET_BYTES:
+                return result_dict
+
+            # Drop data and annotate metadata so the frontend can react gracefully.
+            metadata = result_dict.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata = dict(metadata)
+            metadata.update(
+                {
+                    "inlined_data": False,
+                    "inlined_data_size": total_len,
+                    "inlined_data_max": MAX_INLINE_ASSET_BYTES,
+                }
+            )
+
+            result_dict = dict(result_dict)
+            result_dict["data"] = None
+            result_dict["metadata"] = metadata
+            return result_dict
+
         def _scrub(obj):
             if isinstance(obj, str | int | float | bool | type(None)):
                 return obj
@@ -1060,15 +1098,15 @@ class BaseNode(BaseModel):
                         # Return dict with data field populated
                         result_dict = obj.model_dump()
                         result_dict["data"] = data_bytes
-                        return result_dict
+                        return _maybe_strip_large_asset_data(result_dict)
                     except Exception as e:
                         # If memory fetch fails, fall through to regular model dump
                         log.warning(f"Failed to populate data from memory URI {obj.uri}: {e}")
-                        return obj.model_dump()
+                        return _maybe_strip_large_asset_data(obj.model_dump())
                 else:
                     # Data already present or no memory URI - convert to dict
                     # Note: data field with bytes will be preserved as-is in the dict
-                    return obj.model_dump()
+                    return _maybe_strip_large_asset_data(obj.model_dump())
             if isinstance(obj, dict):
                 return {k: _scrub(v) for k, v in obj.items()}
             if isinstance(obj, list | tuple):
