@@ -174,6 +174,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="CEREBRAS_API_KEY",
+    group="Cerebras",
+    description="Cerebras API key for accessing fast LLM inference on Cerebras hardware",
+)
+register_secret(
+    package_name="nodetool",
     env_var="MINIMAX_API_KEY",
     group="MiniMax",
     description="MiniMax API key for accessing MiniMax AI models via their Anthropic-compatible API",

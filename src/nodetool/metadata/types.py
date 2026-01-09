@@ -422,6 +422,7 @@ class Provider(str, enum.Enum):
     OpenAI = "openai"
     OpenRouter = "openrouter"
     Anthropic = "anthropic"
+    Cerebras = "cerebras"
     MiniMax = "minimax"
     Replicate = "replicate"
     Ollama = "ollama"
