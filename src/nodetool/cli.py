@@ -4215,5 +4215,1006 @@ def proxy_validate_config(config: str):
         raise SystemExit(1) from e
 
 
+# ---- Inference Commands ----
+
+
+@cli.group()
+def inference():
+    """Run provider inference operations from the command line.
+
+    Supports various AI inference tasks like text-to-image, image-to-image,
+    text-to-speech, speech-to-text, and video generation.
+
+    Examples:
+      # Generate an image from text
+      nodetool inference text-to-image --provider openai --model dall-e-3 --prompt "A sunset over mountains"
+
+      # Convert text to speech
+      nodetool inference text-to-speech --provider openai --model tts-1 --text "Hello world" --output speech.mp3
+
+      # Transcribe audio to text
+      nodetool inference speech-to-text --provider openai --model whisper-1 --input audio.mp3
+    """
+    pass
+
+
+def _get_output_path(output: Optional[str], extension: str) -> str:
+    """Get output file path, generating a UUID-based name if not provided."""
+    import uuid
+
+    if output:
+        return output
+    return f"{uuid.uuid4()}.{extension}"
+
+
+def _read_file_bytes(path: str) -> bytes:
+    """Read file bytes from the given path."""
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def _write_file_bytes(path: str, data: bytes) -> None:
+    """Write bytes to the given file path."""
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def _validate_provider_capability(
+    provider: Any, capability: str, provider_name: str
+) -> None:
+    """Validate that the provider supports the required capability."""
+    from nodetool.providers.base import ProviderCapability
+
+    capability_enum = ProviderCapability(capability)
+    capabilities = provider.get_capabilities()
+    if capability_enum not in capabilities:
+        supported = ", ".join(c.value for c in capabilities)
+        raise click.ClickException(
+            f"Provider '{provider_name}' does not support '{capability}'. "
+            f"Supported capabilities: {supported or 'none'}"
+        )
+
+
+@inference.command("text-to-image")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., openai, fal_ai, gemini, comfy_local)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID (e.g., dall-e-3, flux-pro)",
+)
+@click.option(
+    "--prompt",
+    required=True,
+    help="Text prompt describing the desired image",
+)
+@click.option(
+    "--negative-prompt",
+    default=None,
+    help="Text describing what to avoid in the image",
+)
+@click.option(
+    "--width",
+    type=int,
+    default=1024,
+    help="Width of the generated image (default: 1024)",
+)
+@click.option(
+    "--height",
+    type=int,
+    default=1024,
+    help="Height of the generated image (default: 1024)",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="Classifier-free guidance scale",
+)
+@click.option(
+    "--num-inference-steps",
+    type=int,
+    default=None,
+    help="Number of denoising steps",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for reproducibility",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: UUID-named .png file)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_text_to_image(
+    provider: str,
+    model: str,
+    prompt: str,
+    negative_prompt: Optional[str],
+    width: int,
+    height: int,
+    guidance_scale: Optional[float],
+    num_inference_steps: Optional[int],
+    seed: Optional[int],
+    output: Optional[str],
+    user_id: str,
+):
+    """Generate an image from a text prompt.
+
+    Examples:
+      # Generate with OpenAI DALL-E
+      nodetool inference text-to-image -p openai -m dall-e-3 --prompt "A cat in space"
+
+      # Generate with custom dimensions
+      nodetool inference text-to-image -p openai -m dall-e-3 --prompt "Sunset" --width 1792 --height 1024
+
+      # Generate with specific output file
+      nodetool inference text-to-image -p openai -m dall-e-3 --prompt "Abstract art" -o my_image.png
+    """
+    import asyncio
+
+    from nodetool.metadata.types import ImageModel
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.providers import get_provider
+    from nodetool.providers.types import TextToImageParams
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_text_to_image():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🎨 Generating image with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Prompt: {prompt}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "text_to_image", provider)
+
+                # Build params
+                image_model = ImageModel(provider=provider_enum, id=model, name=model)
+                params = TextToImageParams(
+                    model=image_model,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    width=width,
+                    height=height,
+                    guidance_scale=guidance_scale,
+                    num_inference_steps=num_inference_steps,
+                    seed=seed,
+                )
+
+                # Generate image
+                image_bytes = await provider_instance.text_to_image(params)
+
+                # Write output
+                output_path = _get_output_path(output, "png")
+                _write_file_bytes(output_path, image_bytes)
+
+                console.print(f"[green]✅ Image saved to: {output_path}[/]")
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_text_to_image())
+
+
+@inference.command("image-to-image")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., openai, fal_ai, comfy_local)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID for image-to-image transformation",
+)
+@click.option(
+    "--input",
+    "-i",
+    "input_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input image file path",
+)
+@click.option(
+    "--prompt",
+    required=True,
+    help="Text prompt describing the desired transformation",
+)
+@click.option(
+    "--negative-prompt",
+    default=None,
+    help="Text describing what to avoid",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="Classifier-free guidance scale",
+)
+@click.option(
+    "--strength",
+    type=float,
+    default=None,
+    help="Transformation strength (0.0 = original, 1.0 = completely new)",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for reproducibility",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: UUID-named .png file)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_image_to_image(
+    provider: str,
+    model: str,
+    input_file: str,
+    prompt: str,
+    negative_prompt: Optional[str],
+    guidance_scale: Optional[float],
+    strength: Optional[float],
+    seed: Optional[int],
+    output: Optional[str],
+    user_id: str,
+):
+    """Transform an image based on a text prompt.
+
+    Examples:
+      # Transform an image
+      nodetool inference image-to-image -p fal_ai -m flux-pro -i input.png --prompt "Make it a painting"
+
+      # Transform with specific strength
+      nodetool inference image-to-image -p fal_ai -m flux-pro -i input.png --prompt "Add snow" --strength 0.7
+    """
+    import asyncio
+
+    from nodetool.metadata.types import ImageModel
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.providers import get_provider
+    from nodetool.providers.types import ImageToImageParams
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_image_to_image():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🖼️ Transforming image with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Input: {input_file}[/]")
+                console.print(f"[cyan]Prompt: {prompt}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "image_to_image", provider)
+
+                # Read input image
+                image_bytes = _read_file_bytes(input_file)
+
+                # Build params
+                image_model = ImageModel(provider=provider_enum, id=model, name=model)
+                params = ImageToImageParams(
+                    model=image_model,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    guidance_scale=guidance_scale,
+                    strength=strength,
+                    seed=seed,
+                )
+
+                # Transform image
+                output_bytes = await provider_instance.image_to_image(image_bytes, params)
+
+                # Write output
+                output_path = _get_output_path(output, "png")
+                _write_file_bytes(output_path, output_bytes)
+
+                console.print(f"[green]✅ Image saved to: {output_path}[/]")
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_image_to_image())
+
+
+@inference.command("text-to-speech")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., openai, elevenlabs)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID (e.g., tts-1, tts-1-hd)",
+)
+@click.option(
+    "--text",
+    "-t",
+    required=True,
+    help="Text to convert to speech",
+)
+@click.option(
+    "--voice",
+    default=None,
+    help="Voice identifier (provider-specific)",
+)
+@click.option(
+    "--speed",
+    type=float,
+    default=1.0,
+    help="Speech speed multiplier (default: 1.0)",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: UUID-named .mp3 file)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_text_to_speech(
+    provider: str,
+    model: str,
+    text: str,
+    voice: Optional[str],
+    speed: float,
+    output: Optional[str],
+    user_id: str,
+):
+    """Generate speech audio from text.
+
+    Examples:
+      # Generate speech with OpenAI
+      nodetool inference text-to-speech -p openai -m tts-1 -t "Hello world"
+
+      # Generate with specific voice and output file
+      nodetool inference text-to-speech -p openai -m tts-1 -t "Hello" --voice alloy -o speech.mp3
+    """
+    import asyncio
+    import wave
+
+    import numpy as np
+
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.providers import get_provider
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_text_to_speech():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🔊 Generating speech with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Text: {text[:50]}{'...' if len(text) > 50 else ''}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "text_to_speech", provider)
+
+                # Generate speech - collect all audio chunks
+                audio_chunks = []
+                async for chunk in provider_instance.text_to_speech(
+                    text=text,
+                    model=model,
+                    voice=voice,
+                    speed=speed,
+                ):
+                    audio_chunks.append(chunk)
+
+                # Combine all chunks into a single numpy array
+                if not audio_chunks:
+                    raise click.ClickException("No audio generated")
+
+                combined_audio = np.concatenate(audio_chunks)
+
+                # Write output as WAV file (24kHz mono int16)
+                output_path = _get_output_path(output, "wav")
+
+                with wave.open(output_path, "wb") as wav_file:
+                    wav_file.setnchannels(1)  # Mono
+                    wav_file.setsampwidth(2)  # 16-bit (2 bytes)
+                    wav_file.setframerate(24000)  # 24kHz
+                    wav_file.writeframes(combined_audio.tobytes())
+
+                console.print(f"[green]✅ Audio saved to: {output_path}[/]")
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_text_to_speech())
+
+
+@inference.command("speech-to-text")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., openai)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID (e.g., whisper-1)",
+)
+@click.option(
+    "--input",
+    "-i",
+    "input_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input audio file path (mp3, mp4, mpeg, mpga, m4a, wav, webm)",
+)
+@click.option(
+    "--language",
+    default=None,
+    help="ISO-639-1 language code (optional, improves accuracy)",
+)
+@click.option(
+    "--prompt",
+    default=None,
+    help="Optional text to guide transcription style",
+)
+@click.option(
+    "--temperature",
+    type=float,
+    default=0.0,
+    help="Sampling temperature (0.0 to 1.0, default: 0.0)",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output text file path (default: print to stdout)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_speech_to_text(
+    provider: str,
+    model: str,
+    input_file: str,
+    language: Optional[str],
+    prompt: Optional[str],
+    temperature: float,
+    output: Optional[str],
+    user_id: str,
+):
+    """Transcribe audio to text using automatic speech recognition.
+
+    Examples:
+      # Transcribe audio with OpenAI Whisper
+      nodetool inference speech-to-text -p openai -m whisper-1 -i audio.mp3
+
+      # Transcribe with language hint and save to file
+      nodetool inference speech-to-text -p openai -m whisper-1 -i audio.mp3 --language en -o transcript.txt
+    """
+    import asyncio
+
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.providers import get_provider
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_speech_to_text():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🎤 Transcribing audio with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Input: {input_file}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "automatic_speech_recognition", provider)
+
+                # Read input audio
+                audio_bytes = _read_file_bytes(input_file)
+
+                # Transcribe
+                transcription = await provider_instance.automatic_speech_recognition(
+                    audio=audio_bytes,
+                    model=model,
+                    language=language,
+                    prompt=prompt,
+                    temperature=temperature,
+                )
+
+                # Output result
+                if output:
+                    with open(output, "w", encoding="utf-8") as f:
+                        f.write(transcription)
+                    console.print(f"[green]✅ Transcription saved to: {output}[/]")
+                else:
+                    console.print()
+                    console.print("[bold]Transcription:[/]")
+                    console.print(transcription)
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_speech_to_text())
+
+
+@inference.command("text-to-video")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., fal_ai, gemini)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID for video generation",
+)
+@click.option(
+    "--prompt",
+    required=True,
+    help="Text prompt describing the desired video",
+)
+@click.option(
+    "--negative-prompt",
+    default=None,
+    help="Text describing what to avoid in the video",
+)
+@click.option(
+    "--num-frames",
+    type=int,
+    default=None,
+    help="Number of frames to generate",
+)
+@click.option(
+    "--aspect-ratio",
+    default=None,
+    help="Aspect ratio (e.g., '16:9', '9:16')",
+)
+@click.option(
+    "--resolution",
+    default=None,
+    help="Video resolution (e.g., '720p', '1080p')",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="Classifier-free guidance scale",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for reproducibility",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: UUID-named .mp4 file)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_text_to_video(
+    provider: str,
+    model: str,
+    prompt: str,
+    negative_prompt: Optional[str],
+    num_frames: Optional[int],
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    guidance_scale: Optional[float],
+    seed: Optional[int],
+    output: Optional[str],
+    user_id: str,
+):
+    """Generate a video from a text prompt.
+
+    Examples:
+      # Generate video
+      nodetool inference text-to-video -p fal_ai -m kling --prompt "A cat playing piano"
+
+      # Generate with specific settings
+      nodetool inference text-to-video -p fal_ai -m kling --prompt "Ocean waves" --aspect-ratio 16:9 -o video.mp4
+    """
+    import asyncio
+
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.metadata.types import VideoModel
+    from nodetool.providers import get_provider
+    from nodetool.providers.types import TextToVideoParams
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_text_to_video():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🎬 Generating video with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Prompt: {prompt}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "text_to_video", provider)
+
+                # Build params
+                video_model = VideoModel(provider=provider_enum, id=model, name=model)
+                params = TextToVideoParams(
+                    model=video_model,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    num_frames=num_frames,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    guidance_scale=guidance_scale,
+                    seed=seed,
+                )
+
+                # Generate video
+                video_bytes = await provider_instance.text_to_video(params)
+
+                # Write output
+                output_path = _get_output_path(output, "mp4")
+                _write_file_bytes(output_path, video_bytes)
+
+                console.print(f"[green]✅ Video saved to: {output_path}[/]")
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_text_to_video())
+
+
+@inference.command("image-to-video")
+@click.option(
+    "--provider",
+    "-p",
+    required=True,
+    help="Provider name (e.g., fal_ai, gemini)",
+)
+@click.option(
+    "--model",
+    "-m",
+    required=True,
+    help="Model ID for video generation",
+)
+@click.option(
+    "--input",
+    "-i",
+    "input_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input image file path",
+)
+@click.option(
+    "--prompt",
+    default=None,
+    help="Optional text prompt to guide video generation",
+)
+@click.option(
+    "--negative-prompt",
+    default=None,
+    help="Text describing what to avoid in the video",
+)
+@click.option(
+    "--num-frames",
+    type=int,
+    default=None,
+    help="Number of frames to generate",
+)
+@click.option(
+    "--aspect-ratio",
+    default=None,
+    help="Aspect ratio (e.g., '16:9', '9:16')",
+)
+@click.option(
+    "--resolution",
+    default=None,
+    help="Video resolution (e.g., '720p', '1080p')",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="Classifier-free guidance scale",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for reproducibility",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: UUID-named .mp4 file)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_image_to_video(
+    provider: str,
+    model: str,
+    input_file: str,
+    prompt: Optional[str],
+    negative_prompt: Optional[str],
+    num_frames: Optional[int],
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    guidance_scale: Optional[float],
+    seed: Optional[int],
+    output: Optional[str],
+    user_id: str,
+):
+    """Generate a video from an input image.
+
+    Examples:
+      # Generate video from image
+      nodetool inference image-to-video -p fal_ai -m kling -i input.png
+
+      # Generate with prompt guidance
+      nodetool inference image-to-video -p fal_ai -m kling -i input.png --prompt "Make it move gently"
+    """
+    import asyncio
+
+    from nodetool.metadata.types import Provider as ProviderEnum
+    from nodetool.metadata.types import VideoModel
+    from nodetool.providers import get_provider
+    from nodetool.providers.types import ImageToVideoParams
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_image_to_video():
+        async with ResourceScope():
+            try:
+                # Get provider enum from string
+                try:
+                    provider_enum = ProviderEnum(provider)
+                except ValueError:
+                    valid_providers = ", ".join(p.value for p in ProviderEnum if p != ProviderEnum.Empty)
+                    raise click.ClickException(
+                        f"Invalid provider '{provider}'. Valid providers: {valid_providers}"
+                    ) from None
+
+                console.print(f"[cyan]🎬 Generating video from image with {provider}...[/]")
+                console.print(f"[cyan]Model: {model}[/]")
+                console.print(f"[cyan]Input: {input_file}[/]")
+                if prompt:
+                    console.print(f"[cyan]Prompt: {prompt}[/]")
+
+                # Get provider instance
+                provider_instance = await get_provider(provider_enum, user_id=user_id)
+
+                # Validate capability
+                _validate_provider_capability(provider_instance, "image_to_video", provider)
+
+                # Read input image
+                image_bytes = _read_file_bytes(input_file)
+
+                # Build params
+                video_model = VideoModel(provider=provider_enum, id=model, name=model)
+                params = ImageToVideoParams(
+                    model=video_model,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    num_frames=num_frames,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    guidance_scale=guidance_scale,
+                    seed=seed,
+                )
+
+                # Generate video
+                video_bytes = await provider_instance.image_to_video(image_bytes, params)
+
+                # Write output
+                output_path = _get_output_path(output, "mp4")
+                _write_file_bytes(output_path, video_bytes)
+
+                console.print(f"[green]✅ Video saved to: {output_path}[/]")
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_image_to_video())
+
+
+@inference.command("list-providers")
+@click.option(
+    "--capability",
+    "-c",
+    default=None,
+    help="Filter by capability (e.g., text_to_image, text_to_speech)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for provider authentication (default: 1)",
+)
+def inference_list_providers(capability: Optional[str], user_id: str):
+    """List available providers and their capabilities.
+
+    Examples:
+      # List all providers
+      nodetool inference list-providers
+
+      # List providers with text-to-image capability
+      nodetool inference list-providers -c text_to_image
+    """
+    import asyncio
+
+    from nodetool.providers import list_providers
+    from nodetool.providers.base import ProviderCapability
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_list_providers():
+        async with ResourceScope():
+            try:
+                providers = await list_providers(user_id)
+
+                # Optionally filter by capability
+                capability_filter = None
+                if capability:
+                    try:
+                        capability_filter = ProviderCapability(capability)
+                    except ValueError:
+                        valid_caps = ", ".join(c.value for c in ProviderCapability)
+                        raise click.ClickException(
+                            f"Invalid capability '{capability}'. Valid capabilities: {valid_caps}"
+                        ) from None
+
+                table = Table(title="Available Providers")
+                table.add_column("Provider", style="cyan")
+                table.add_column("Capabilities", style="green")
+
+                for provider_instance in providers:
+                    caps = provider_instance.get_capabilities()
+
+                    # Filter if capability specified
+                    if capability_filter and capability_filter not in caps:
+                        continue
+
+                    caps_str = ", ".join(sorted(c.value for c in caps)) if caps else "none"
+                    provider_name = getattr(provider_instance, "provider_name", provider_instance.__class__.__name__)
+                    table.add_row(provider_name, caps_str)
+
+                console.print(table)
+
+            except click.ClickException:
+                raise
+            except Exception as e:
+                console.print(f"[red]❌ Error: {e}[/]")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+    asyncio.run(run_list_providers())
+
+
 if __name__ == "__main__":
     cli()
