@@ -36,7 +36,7 @@ from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.workflow_types import Error, OutputUpdate
+from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
 

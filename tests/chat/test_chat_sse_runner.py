@@ -152,7 +152,7 @@ class TestChatSSERunner:
 
     def test_convert_internal_to_openai_chunk(self):
         """Test converting internal messages to OpenAI chunks"""
-        from nodetool.workflows.workflow_types import Chunk
+        from nodetool.workflows.types import Chunk
 
         # Test content chunk
         internal_chunk = Chunk(content="Hello world")

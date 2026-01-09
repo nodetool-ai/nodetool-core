@@ -7,8 +7,8 @@ import os
 import re
 from pathlib import Path
 from typing import Optional
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from nodetool.config.logging_config import get_logger
 
@@ -203,7 +203,7 @@ def download_google_font(font_name: str, weight: str = "regular") -> str:
     # Look up font in catalog
     font_key = font_name.lower().strip()
     if font_key not in GOOGLE_FONTS_CATALOG:
-        available = ", ".join(sorted(set(k for k in GOOGLE_FONTS_CATALOG.keys() if " " in k or k == font_key.replace(" ", ""))))
+        available = ", ".join(sorted({k for k in GOOGLE_FONTS_CATALOG if " " in k or k == font_key.replace(" ", "")}))
         raise ValueError(
             f"Font '{font_name}' not found in Google Fonts catalog. "
             f"Available fonts include: {available[:200]}... "
@@ -214,10 +214,7 @@ def download_google_font(font_name: str, weight: str = "regular") -> str:
 
     # Normalize weight
     weight_normalized = weight.lower().strip()
-    if weight_normalized in WEIGHT_MAP:
-        weight_value = WEIGHT_MAP[weight_normalized]
-    else:
-        weight_value = weight_normalized
+    weight_value = WEIGHT_MAP.get(weight_normalized, weight_normalized)
 
     # Handle italic
     is_italic = "italic" in weight_value.lower()
@@ -232,30 +229,34 @@ def download_google_font(font_name: str, weight: str = "regular") -> str:
 
     if is_italic:
         # Italic variants - try various variable font naming patterns
-        filename_patterns.extend([
-            f"{font_base}-Italic[wdth,wght].ttf",  # Variable with width and weight
-            f"{font_base}-Italic[wght].ttf",  # Variable with just weight
-            f"{font_base}[wdth,wght].ttf",  # Variable font with both axes (may contain italic)
-            f"{font_base}[wght].ttf",  # Variable font may contain italic
-            f"{font_base}-Italic.ttf",  # Static italic
-            f"{font_base}Italic-{weight_num}.ttf",
-            f"{font_base}-{weight_num}italic.ttf",
-        ])
+        filename_patterns.extend(
+            [
+                f"{font_base}-Italic[wdth,wght].ttf",  # Variable with width and weight
+                f"{font_base}-Italic[wght].ttf",  # Variable with just weight
+                f"{font_base}[wdth,wght].ttf",  # Variable font with both axes (may contain italic)
+                f"{font_base}[wght].ttf",  # Variable font may contain italic
+                f"{font_base}-Italic.ttf",  # Static italic
+                f"{font_base}Italic-{weight_num}.ttf",
+                f"{font_base}-{weight_num}italic.ttf",
+            ]
+        )
     else:
         # Regular variants - try various variable font naming patterns
-        filename_patterns.extend([
-            f"{font_base}[wdth,wght].ttf",  # Variable with width and weight (like Roboto)
-            f"{font_base}[wght].ttf",  # Variable with just weight
-            f"{font_base}-VariableFont_wght.ttf",  # Variable font alternate naming
-            f"{font_base}-Regular.ttf",  # Static regular
-            f"{font_base}-{weight_num}.ttf",  # Static weight
-            f"{font_base}.ttf",  # Simple naming
-        ])
+        filename_patterns.extend(
+            [
+                f"{font_base}[wdth,wght].ttf",  # Variable with width and weight (like Roboto)
+                f"{font_base}[wght].ttf",  # Variable with just weight
+                f"{font_base}-VariableFont_wght.ttf",  # Variable font alternate naming
+                f"{font_base}-Regular.ttf",  # Static regular
+                f"{font_base}-{weight_num}.ttf",  # Static weight
+                f"{font_base}.ttf",  # Simple naming
+            ]
+        )
 
     # Try each pattern
     for filename in filename_patterns:
         # URL-encode special characters in filenames (brackets, commas)
-        encoded_filename = quote(filename, safe='')
+        encoded_filename = quote(filename, safe="")
         url = f"{GOOGLE_FONTS_RAW_URL}/{font_dir}/{encoded_filename}"
         log.debug(f"Trying to download font from: {url}")
 

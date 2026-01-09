@@ -21,7 +21,6 @@ import asyncio
 from pathlib import Path
 
 import dotenv
-from nodetool.workflows.types import Chunk
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.code_tools import ExecutePythonTool
@@ -30,6 +29,7 @@ from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 # Load environment variables
 dotenv.load_dotenv()

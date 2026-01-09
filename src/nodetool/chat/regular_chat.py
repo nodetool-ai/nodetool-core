@@ -47,7 +47,7 @@ from nodetool.chat.chat import default_serializer
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.providers.base import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 
 async def run_tool(

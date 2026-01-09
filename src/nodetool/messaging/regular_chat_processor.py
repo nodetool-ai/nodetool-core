@@ -129,7 +129,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import require_scope
 from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import (
+from nodetool.workflows.types import (
     Chunk,
 )
 

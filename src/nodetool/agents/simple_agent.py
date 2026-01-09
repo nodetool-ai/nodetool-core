@@ -19,7 +19,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import StepResult
+from nodetool.workflows.types import StepResult
 
 
 class SimpleAgent(BaseAgent):

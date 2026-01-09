@@ -68,7 +68,7 @@ from nodetool.workflows.processing_context import (
     ProcessingContext,
 )
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
-from nodetool.workflows.workflow_types import Chunk, Error
+from nodetool.workflows.types import Chunk, Error
 
 log = get_logger(__name__)
 

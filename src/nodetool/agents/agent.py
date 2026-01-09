@@ -40,7 +40,7 @@ from nodetool.metadata.types import (
 from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import (
+from nodetool.workflows.types import (
     Chunk,
     LogUpdate,
     StepResult,

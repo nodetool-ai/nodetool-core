@@ -323,7 +323,7 @@ class TestErrorCases:
         """Test message queue functionality."""
         assert not context.has_messages()
 
-        from nodetool.workflows.workflow_types import NodeProgress
+        from nodetool.workflows.types import NodeProgress
 
         message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)
@@ -333,7 +333,7 @@ class TestErrorCases:
     @pytest.mark.asyncio
     async def test_pop_message_async(self, context: ProcessingContext):
         """Test async message popping."""
-        from nodetool.workflows.workflow_types import NodeProgress
+        from nodetool.workflows.types import NodeProgress
 
         message = NodeProgress(node_id="test", progress=50, total=100, type="node_progress")
         context.post_message(message)

@@ -43,7 +43,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_system_data_path
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import LogUpdate
+from nodetool.workflows.types import LogUpdate
 
 
 def _safe_download_to(path: Path, url: str) -> None:

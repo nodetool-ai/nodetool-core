@@ -107,7 +107,7 @@ class TestDownloadGoogleFont:
         # First download
         cache_dir = get_font_cache_dir()
         test_cache_file = cache_dir / "google_roboto_regular.ttf"
-        
+
         # Clean up if exists from previous test
         if test_cache_file.exists():
             test_cache_file.unlink()

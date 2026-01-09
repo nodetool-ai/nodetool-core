@@ -194,7 +194,7 @@ from nodetool.utils.message_parsing import (
     remove_think_tags,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_types import Chunk, LogUpdate, StepResult, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, LogUpdate, StepResult, TaskUpdate, TaskUpdateEvent
 
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)

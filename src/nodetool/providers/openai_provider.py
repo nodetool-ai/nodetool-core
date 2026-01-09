@@ -84,7 +84,7 @@ from nodetool.metadata.types import (
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.runtime.resources import maybe_scope, require_scope
-from nodetool.workflows.workflow_types import Chunk, NodeProgress
+from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
 
@@ -1416,9 +1416,7 @@ class OpenAIProvider(BaseProvider):
         # Get optional parameters from model_config extras
         quality = getattr(params, "quality", None)
 
-        log.debug(
-            f"Generating image with model={model_id}, size={size}, quality={quality}"
-        )
+        log.debug(f"Generating image with model={model_id}, size={size}, quality={quality}")
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
@@ -1455,9 +1453,8 @@ class OpenAIProvider(BaseProvider):
                 # Fallback to URL if b64_json not available (e.g., older models)
                 import aiohttp
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(response.data[0].url) as resp:
-                        image_bytes = await resp.read()
+                async with aiohttp.ClientSession() as session, session.get(response.data[0].url) as resp:
+                    image_bytes = await resp.read()
             else:
                 raise RuntimeError("OpenAI image generation returned no image data.")
 
@@ -1541,9 +1538,7 @@ class OpenAIProvider(BaseProvider):
         # Get optional parameters from model_config extras
         quality = getattr(params, "quality", None)
 
-        log.debug(
-            f"Editing image with model={model_id}, size={size}, quality={quality}"
-        )
+        log.debug(f"Editing image with model={model_id}, size={size}, quality={quality}")
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
@@ -1583,9 +1578,8 @@ class OpenAIProvider(BaseProvider):
                 # Fallback to URL if b64_json not available
                 import aiohttp
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(response.data[0].url) as resp:
-                        result_bytes = await resp.read()
+                async with aiohttp.ClientSession() as session, session.get(response.data[0].url) as resp:
+                    result_bytes = await resp.read()
             else:
                 raise RuntimeError("OpenAI image editing returned no image data.")
 

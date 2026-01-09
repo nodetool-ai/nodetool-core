@@ -16,7 +16,7 @@ import numpy as np
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
-from nodetool.workflows.workflow_types import NodeProgress
+from nodetool.workflows.types import NodeProgress
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from PIL import Image

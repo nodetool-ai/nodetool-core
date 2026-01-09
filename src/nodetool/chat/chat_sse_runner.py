@@ -60,7 +60,7 @@ from nodetool.metadata.types import (
     Message as ApiMessage,
 )
 from nodetool.types.workflow import Workflow
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)

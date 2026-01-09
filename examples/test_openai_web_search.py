@@ -16,8 +16,6 @@ This example shows how to:
 import asyncio
 import json
 
-from nodetool.workflows.types import Chunk
-
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
 from nodetool.metadata.types import Provider
@@ -25,6 +23,7 @@ from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def run_web_search_example():

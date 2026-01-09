@@ -14,7 +14,7 @@ from nodetool.workflows.subprocess_job_execution import (
 from nodetool.workflows.subprocess_job_execution import (
     _deserialize_processing_message as subprocess_deserialize,
 )
-from nodetool.workflows.workflow_types import (
+from nodetool.workflows.types import (
     JobUpdate,
     LogUpdate,
     NodeUpdate,

@@ -37,7 +37,7 @@ from nodetool.providers.fake_provider import (
     create_tool_calling_fake_provider,
 )
 from nodetool.security.secret_helper import get_secret, get_secrets_batch
-from nodetool.workflows.workflow_types import Chunk
+from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 

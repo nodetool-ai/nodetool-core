@@ -8,7 +8,7 @@ from nodetool.security.auth_provider import TokenType
 log = get_logger(__name__)
 
 
-async def current_user(request: Request | None = None) -> str:
+async def current_user(request: Request = None) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
@@ -24,7 +24,6 @@ async def current_user(request: Request | None = None) -> str:
     if request is not None:
         token = static_provider.extract_token_from_headers(request.headers)
 
-    # Local development fallback when authentication is not enforced.
     if not Environment.enforce_auth():
         if token:
             static_result = await static_provider.verify_token(token)
@@ -35,7 +34,6 @@ async def current_user(request: Request | None = None) -> str:
         return "1"
 
     if request is None and Environment.enforce_auth():
-        # In enforced mode a Request is required to read headers
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
