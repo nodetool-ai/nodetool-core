@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.models.prediction import Prediction
 
@@ -74,7 +74,7 @@ class ModelAggregateResponse(AggregateResponse):
 
 @router.get("/", response_model=PredictionListResponse)
 async def list_provider_calls(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
     provider: Optional[str] = Query(None, description="Filter by provider"),
     model: Optional[str] = Query(None, description="Filter by model"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
@@ -139,7 +139,7 @@ async def list_provider_calls(
 
 @router.get("/aggregate", response_model=UserAggregateResponse)
 async def aggregate_costs(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
     provider: Optional[str] = Query(None, description="Filter by provider"),
     model: Optional[str] = Query(None, description="Filter by model"),
 ):
@@ -175,7 +175,7 @@ async def aggregate_costs(
 
 @router.get("/aggregate/by-provider", response_model=List[ProviderAggregateResponse])
 async def aggregate_costs_by_provider(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ):
     """
     Get cost statistics aggregated by provider for the current user.
@@ -201,7 +201,7 @@ async def aggregate_costs_by_provider(
 
 @router.get("/aggregate/by-model", response_model=List[ModelAggregateResponse])
 async def aggregate_costs_by_model(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
     provider: Optional[str] = Query(None, description="Filter by provider"),
 ):
     """
@@ -233,7 +233,7 @@ async def aggregate_costs_by_model(
 
 @router.get("/summary", response_model=dict[str, Any])
 async def get_cost_summary(
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(CurrentUser()),
 ):
     """
     Get a comprehensive cost summary for the current user.

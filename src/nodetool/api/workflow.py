@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider
@@ -120,7 +120,7 @@ def _graph_has_input_and_output(graph: Graph):
 @router.post("/")
 async def create(
     workflow_request: WorkflowRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     from_example_package: Optional[str] = None,
     from_example_name: Optional[str] = None,
 ) -> Workflow:
@@ -196,7 +196,7 @@ async def create(
 
 @router.get("/")
 async def index(
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     cursor: Optional[str] = None,
     limit: int = 100,
     columns: Optional[str] = None,
@@ -240,7 +240,7 @@ async def get_public_workflow(id: str) -> Workflow:
 
 @router.get("/tools")
 async def get_workflow_tools(
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     cursor: Optional[str] = None,
     limit: int = 100,
 ) -> WorkflowToolList:
@@ -450,7 +450,7 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
 
 
 @router.get("/{id}")
-async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
+async def get_workflow(id: str, user: str = Depends(CurrentUser())) -> Workflow:
     workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -463,7 +463,7 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
 async def update_workflow(
     id: str,
     workflow_request: WorkflowRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> Workflow:
     """
     Update an existing workflow.
@@ -504,7 +504,7 @@ async def update_workflow(
 @router.delete("/{id}")
 async def delete_workflow(
     id: str,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> None:
     workflow = await WorkflowModel.get(id)
     if not workflow:
@@ -566,7 +566,7 @@ async def run_workflow_by_id(
     run_workflow_request: RunWorkflowRequest,
     request: Request,
     stream: bool = False,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     authentication: Optional[str] = Header(None),
 ):
     """
@@ -624,7 +624,7 @@ async def run_workflow_by_id(
 async def generate_workflow_name(
     id: str,
     req: WorkflowGenerateNameRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> Workflow:
     """
     Generate a name for a workflow using an LLM based on its content.
@@ -726,7 +726,7 @@ def from_version_model(version: WorkflowVersionModel) -> WorkflowVersion:
 async def create_version(
     id: str,
     version_request: CreateWorkflowVersionRequest,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> WorkflowVersion:
     """
     Create a new version of a workflow.
@@ -757,7 +757,7 @@ async def create_version(
 @router.get("/{id}/versions")
 async def list_versions(
     id: str,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     cursor: Optional[int] = None,
     limit: int = 100,
 ) -> WorkflowVersionList:
@@ -792,7 +792,7 @@ async def list_versions(
 async def get_version(
     id: str,
     version: int,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> WorkflowVersion:
     """
     Get a specific version of a workflow.
@@ -814,7 +814,7 @@ async def get_version(
 async def restore_version(
     id: str,
     version: int,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> Workflow:
     """
     Restore a workflow to a specific version.
@@ -845,7 +845,7 @@ async def autosave_workflow(
     id: str,
     autosave_request: AutosaveWorkflowRequest,
     background_tasks: BackgroundTasks,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
 ) -> AutosaveResponse:
     """
     Create an autosave version of a workflow.

@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
 @router.post("/")
-async def create(req: MessageCreateRequest, user: str = Depends(current_user)) -> Message:
+async def create(req: MessageCreateRequest, user: str = Depends(CurrentUser())) -> Message:
     thread_id = (await Thread.create(user_id=user)).id if req.thread_id is None else req.thread_id
     return Message.from_model(
         await MessageModel.create(
@@ -50,7 +50,7 @@ class HelpRequest(BaseModel):
 
 
 @router.get("/{message_id}")
-async def get(message_id: str, user: str = Depends(current_user)) -> Message:
+async def get(message_id: str, user: str = Depends(CurrentUser())) -> Message:
     message = await MessageModel.get(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Message not found")
@@ -63,7 +63,7 @@ async def get(message_id: str, user: str = Depends(current_user)) -> Message:
 async def index(
     thread_id: str,
     reverse: bool = False,
-    user: str = Depends(current_user),
+    user: str = Depends(CurrentUser()),
     cursor: Optional[str] = None,
     limit: int = 100,
 ) -> MessageList:

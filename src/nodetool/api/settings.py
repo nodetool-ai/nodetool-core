@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
+from nodetool.api.utils import CurrentUser, current_user
 from nodetool.config.configuration import get_secrets_registry, get_settings_registry
 from nodetool.config.environment import Environment
 from nodetool.config.settings import load_settings, save_settings
@@ -59,7 +59,7 @@ class SecretsListResponse(BaseModel):
 
 
 @router.get("/")
-async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
+async def get_settings(user: str = Depends(CurrentUser())) -> SettingsResponse:
     if Environment.is_production():
         raise HTTPException(status_code=403, detail="Settings cannot be read in production")
 
@@ -117,7 +117,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
 
 
 @router.put("/")
-async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> Dict[str, str]:
+async def update_settings(req: SettingsUpdateRequest, user: str = Depends(CurrentUser())) -> Dict[str, str]:
     if Environment.is_production():
         raise HTTPException(status_code=403, detail="Settings cannot be updated in production")
 
@@ -151,7 +151,7 @@ async def update_settings(req: SettingsUpdateRequest, user: str = Depends(curren
 
 @router.get("/secrets")
 async def list_secrets(
-    limit: int = 100, start_key: Optional[str] = None, user: str = Depends(current_user)
+    limit: int = 100, start_key: Optional[str] = None, user: str = Depends(CurrentUser())
 ) -> SecretsListResponse:
     """
     List all possible secrets from the settings registry.
@@ -196,7 +196,7 @@ async def list_secrets(
 
 
 @router.get("/secrets/{key}")
-async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> Dict[str, Any]:
+async def get_secret(key: str, decrypt: bool = False, user: str = Depends(CurrentUser())) -> Dict[str, Any]:
     """
     Get a specific secret by key.
 
@@ -225,7 +225,7 @@ async def get_secret(key: str, decrypt: bool = False, user: str = Depends(curren
 
 
 @router.put("/secrets/{key}")
-async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(current_user)) -> SecretResponse:
+async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(CurrentUser())) -> SecretResponse:
     """
     Update or create a secret.
 
@@ -262,7 +262,7 @@ async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(
 
 
 @router.delete("/secrets/{key}")
-async def delete_secret(key: str, user: str = Depends(current_user)) -> Dict[str, str]:
+async def delete_secret(key: str, user: str = Depends(CurrentUser())) -> Dict[str, str]:
     """
     Delete a secret.
     """
