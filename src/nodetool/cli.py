@@ -673,6 +673,7 @@ def agent(
     from nodetool.workflows.workflow_types import Chunk
 
     async def run_agent():
+        agent_config = None  # Initialize to avoid potential NameError
         try:
             # Load configuration from YAML if provided
             if config:
