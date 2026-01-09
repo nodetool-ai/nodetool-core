@@ -5,7 +5,6 @@ This module provides utilities for managing deployment state with atomic operati
 locking, and timestamp tracking to ensure safe concurrent access.
 """
 
-import fcntl
 import secrets
 import threading
 import time
@@ -13,6 +12,18 @@ from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional
+
+# Cross-platform file locking:
+# - Unix: fcntl.flock
+# - Windows: msvcrt.locking
+try:  # pragma: no cover - platform-specific
+    import fcntl  # type: ignore
+
+    _HAS_FCNTL = True
+except ModuleNotFoundError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore
+    _HAS_FCNTL = False
+    import msvcrt  # type: ignore
 
 from nodetool.config.deployment import (
     DeploymentConfig,
@@ -83,7 +94,20 @@ class StateManager:
                     # Try to acquire lock with timeout
                     while time.time() - start_time < timeout:
                         try:
-                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            if _HAS_FCNTL:
+                                # Unix-style advisory lock
+                                fcntl.flock(  # type: ignore[union-attr]
+                                    lock_file.fileno(),
+                                    fcntl.LOCK_EX | fcntl.LOCK_NB,  # type: ignore[union-attr]
+                                )
+                            else:
+                                # Windows: lock 1 byte in the lock file (non-blocking)
+                                lock_file.seek(0, 2)
+                                if lock_file.tell() == 0:
+                                    lock_file.write("0")
+                                    lock_file.flush()
+                                lock_file.seek(0)
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[name-defined]
                             acquired = True
                             break
                         except OSError:
@@ -97,7 +121,11 @@ class StateManager:
                 finally:
                     if acquired:
                         with suppress(OSError):
-                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                            if _HAS_FCNTL:
+                                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # type: ignore[union-attr]
+                            else:
+                                lock_file.seek(0)
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[name-defined]
                 lock_file.close()
 
                 # Clean up lock file
