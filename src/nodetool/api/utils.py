@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException, Request, status
 
 from nodetool.config.environment import Environment
@@ -5,26 +7,25 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import HuggingFaceModel
 from nodetool.security.auth_provider import TokenType
 
+if TYPE_CHECKING:
+    from fastapi import Depends
+
 log = get_logger(__name__)
 
 
-async def current_user(request: Request | None = None) -> str:
+async def _resolve_user_from_request(request: Request) -> str:
     """
-    Resolve the current user ID using the configured authentication providers.
+    Resolve the current user ID from a Request object.
     """
-    if request is not None:
-        user_id = getattr(request.state, "user_id", None)
-        if user_id:
-            return str(user_id)
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return str(user_id)
 
     from nodetool.runtime.resources import get_static_auth_provider
 
     static_provider = get_static_auth_provider()
-    token = None
-    if request is not None:
-        token = static_provider.extract_token_from_headers(request.headers)
+    token = static_provider.extract_token_from_headers(request.headers)
 
-    # Local development fallback when authentication is not enforced.
     if not Environment.enforce_auth():
         if token:
             static_result = await static_provider.verify_token(token)
@@ -34,14 +35,7 @@ async def current_user(request: Request | None = None) -> str:
                 return static_result.user_id
         return "1"
 
-    if request is None and Environment.enforce_auth():
-        # In enforced mode a Request is required to read headers
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required.",
-        )
-
-    if not token and request is not None:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
@@ -81,19 +75,26 @@ async def current_user(request: Request | None = None) -> str:
     )
 
 
-async def abort(status_code: int, detail: str | None = None) -> None:
+async def current_user(request: Request) -> str:
     """
-    Abort the current request with the given status code and detail.
+    Resolve the current user ID using the configured authentication providers.
+
+    This function is intended to be used with FastAPI's Depends() dependency injection.
+
+    For direct calls (e.g., in tests or local development without a request context),
+    use the get_current_user_dependency function instead.
     """
-    raise HTTPException(status_code=status_code, detail=detail)
+    return await _resolve_user_from_request(request)
 
 
-def flatten_models(
-    models: list[list[HuggingFaceModel]],
-) -> list[HuggingFaceModel]:
-    """Flatten a list of models that may contain nested lists."""
-    flat_list = []
-    for item in models:
-        for model in item:
-            flat_list.append(model)
-    return flat_list
+async def get_current_user_direct() -> str:
+    """
+    Get the current user without requiring a Request object.
+    Only works in local development mode where authentication is not enforced.
+    """
+    if not Environment.enforce_auth():
+        return "1"
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )

@@ -39,6 +39,7 @@ Usage:
 import datetime
 import os
 import platform
+from contextlib import asynccontextmanager
 from typing import List
 
 import uvicorn
@@ -68,6 +69,14 @@ from nodetool.types.workflow import Workflow
 
 console = Console()
 log = get_logger(__name__)
+
+
+@asynccontextmanager
+async def worker_lifespan(app: FastAPI):
+    """Lifespan context manager for worker startup and shutdown events."""
+    console.print("NodeTool worker started successfully")
+    yield
+    console.print("NodeTool worker shutting down...")
 
 
 def create_worker_app(
@@ -107,6 +116,7 @@ def create_worker_app(
         title="NodeTool Worker",
         version="1.0.0",
         description="Deployable NodeTool worker with OpenAI-compatible API, workflow execution, and admin operations",
+        lifespan=worker_lifespan,
     )
 
     # Add authentication middleware
@@ -116,37 +126,25 @@ def create_worker_app(
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
         user_provider=user_provider,
-        use_remote_auth=(Environment.get_auth_provider_kind() == "supabase"),
         enforce_auth=enforce_auth,
     )
     app.middleware("http")(auth_middleware)
 
-    @app.on_event("startup")
-    async def startup_event():
-        """Initialize worker on startup."""
-        console.print("NodeTool worker started successfully")
-        # Include routers after initialization
-        try:
-            app.include_router(
-                create_openai_compatible_router(
-                    provider=provider,
-                    default_model=default_model,
-                    tools=tools,
-                )
+    try:
+        app.include_router(
+            create_openai_compatible_router(
+                provider=provider,
+                default_model=default_model,
+                tools=tools,
             )
-            # Include lightweight workflow, admin, and collection routers
-            app.include_router(create_workflow_router())
-            app.include_router(create_admin_router())
-            app.include_router(create_collection_router())
-            # Include storage routers (admin and public)
-            app.include_router(create_admin_storage_router())
-            app.include_router(create_public_storage_router())
-        except Exception as e:
-            log.error(f"Failed to include routers: {e}")
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        console.print("NodeTool worker shutting down...")
+        )
+        app.include_router(create_workflow_router())
+        app.include_router(create_admin_router())
+        app.include_router(create_collection_router())
+        app.include_router(create_admin_storage_router())
+        app.include_router(create_public_storage_router())
+    except Exception as e:
+        log.error(f"Failed to include routers: {e}")
 
     @app.get("/health")
     async def health_check():
