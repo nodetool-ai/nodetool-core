@@ -33,12 +33,16 @@ from openai import Omit
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
     ChatCompletionContentPartParam,
+    ChatCompletionContentPartTextParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+from openai.types.chat.chat_completion_content_part_image_param import ImageURL
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
     ChatCompletionMessageFunctionToolCallParam,
     Function,
@@ -353,11 +357,11 @@ class OpenAIProvider(BaseProvider):
         """
         Get available OpenAI image generation models.
 
-        Returns DALL-E models for image generation.
+        Returns GPT Image models for image generation and editing.
         Returns an empty list if no API key is configured.
 
         Returns:
-            List of ImageModel instances for OpenAI DALL-E
+            List of ImageModel instances for OpenAI GPT Image models
         """
         if not self.api_key:
             log.debug("No OpenAI API key configured, returning empty image model list")
@@ -365,26 +369,26 @@ class OpenAIProvider(BaseProvider):
 
         # OpenAI image generation models
         # Source: https://platform.openai.com/docs/guides/images
+        # GPT Image models support both text-to-image and image-to-image (edits)
         image_models_config = [
+            {
+                "id": "gpt-image-1.5",
+                "name": "GPT Image 1.5",
+            },
             {
                 "id": "gpt-image-1",
                 "name": "GPT Image 1",
             },
             {
-                "id": "dall-e-3",
-                "name": "DALL-E 3 (legacy)",
-            },
-            {
-                "id": "dall-e-2",
-                "name": "DALL-E 2 (legacy)",
+                "id": "gpt-image-1-mini",
+                "name": "GPT Image 1 Mini",
             },
         ]
 
         models: List[ImageModel] = []
         for config in image_models_config:
             model_id = config["id"]
-            # Heuristic: GPT-Image-1 supports both generate and edit; DALL-E legacy considered text-to-image only
-            tasks = ["text_to_image", "image_to_image"] if model_id == "gpt-image-1" else ["text_to_image"]
+            tasks = ["text_to_image", "image_to_image"]
             models.append(
                 ImageModel(
                     id=model_id,
@@ -400,7 +404,7 @@ class OpenAIProvider(BaseProvider):
     def _resolve_image_size(self, width: int | None, height: int | None) -> str | None:
         """Convert requested dimensions to OpenAI-supported image sizes.
 
-        OpenAI DALL-E API supports: '1024x1024', '1024x1536', '1536x1024', 'auto'
+        OpenAI GPT Image API supports: '1024x1024', '1024x1536', '1536x1024', 'auto'
 
         Args:
             width: Requested width
@@ -779,31 +783,31 @@ class OpenAIProvider(BaseProvider):
             content: Internal message content variant (text, image, audio).
 
         Returns:
-            A content part dictionary per OpenAI's chat API specification.
+            A content part Pydantic model per OpenAI's chat API specification.
         """
         log.debug(f"Converting message content type: {type(content)}")
 
         if isinstance(content, MessageTextContent):
             log.debug(f"Converting text content: {content.text[:50]}...")
-            return {"type": "text", "text": content.text}
+            return ChatCompletionContentPartTextParam(
+                type="text",
+                text=content.text,
+            )
         elif isinstance(content, MessageAudioContent):
             log.debug("Converting audio content")
             if content.audio.uri:
-                # uri_to_base64 now handles conversion and returns MP3 data URI
                 data_uri = await self.uri_to_base64(content.audio.uri)
-                # Extract base64 data part for OpenAI API
                 base64_data = data_uri.split(",", 1)[1]
                 log.debug(f"Audio URI processed, data length: {len(base64_data)}")
-                return {
-                    "type": "input_audio",
-                    "input_audio": {
+                return ChatCompletionContentPartInputAudioParam(
+                    type="input_audio",
+                    input_audio={
                         "format": "mp3",
                         "data": base64_data,
                     },
-                }
+                )
             else:
                 log.debug("Converting raw audio data to MP3")
-                # Convert raw bytes data to MP3 using pydub
                 try:
                     audio = AudioSegment.from_file(io.BytesIO(content.audio.data))
                     with io.BytesIO() as buffer:
@@ -814,36 +818,33 @@ class OpenAIProvider(BaseProvider):
                 except Exception as e:
                     log.warning(f"Failed to convert raw audio data to MP3: {e}. Sending original data.")
                     print(f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data.")
-                    # Fallback to sending original data if conversion fails
                     data = base64.b64encode(content.audio.data).decode("utf-8")
 
-                return {
-                    "type": "input_audio",
-                    "input_audio": {
+                return ChatCompletionContentPartInputAudioParam(
+                    type="input_audio",
+                    input_audio={
                         "format": "mp3",
                         "data": data,
                     },
-                }
+                )
         elif isinstance(content, MessageImageContent):
             log.debug("Converting image content")
             if content.image.uri:
-                # For images, use the original uri_to_base64 logic (implicitly called)
                 image_url = await self.uri_to_base64(content.image.uri)
                 log.debug(f"Image URI processed: {image_url[:50]}...")
-                return {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
+                return ChatCompletionContentPartImageParam(
+                    type="image_url",
+                    image_url=ImageURL(url=image_url),
+                )
             else:
                 log.debug("Converting raw image data")
-                # Normalize to JPEG base64 using shared helper
                 data = image_data_to_base64_jpeg(content.image.data)
                 image_url = f"data:image/jpeg;base64,{data}"
                 log.debug(f"Raw image data processed, length: {len(data)}")
-                return {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
+                return ChatCompletionContentPartImageParam(
+                    type="image_url",
+                    image_url=ImageURL(url=image_url),
+                )
         else:
             log.error(f"Unknown content type {content}")
             raise ValueError(f"Unknown content type {content}")
@@ -1372,7 +1373,29 @@ class OpenAIProvider(BaseProvider):
         context: ProcessingContext | None = None,
         node_id: str | None = None,
     ) -> bytes:
-        """Generate an image from a text prompt using OpenAI's Images API."""
+        """Generate an image from a text prompt using OpenAI's Image API.
+
+        Uses the images.generate endpoint which supports GPT Image models
+        (gpt-image-1.5, gpt-image-1, gpt-image-1-mini) as well as DALL-E models.
+
+        Args:
+            params: Text-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "gpt-image-1")
+                - prompt: Text description of the desired image
+                - negative_prompt: Elements to exclude (appended to prompt)
+                - width/height: Desired dimensions (mapped to OpenAI supported sizes)
+                - quality: Optional quality setting
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
         if not params.prompt:
             raise ValueError("The input prompt cannot be empty.")
 
@@ -1387,40 +1410,59 @@ class OpenAIProvider(BaseProvider):
         if params.negative_prompt:
             prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
 
-        size = None
-        if params.width and params.height:
-            if params.width <= 0 or params.height <= 0:
-                raise ValueError("width and height must be positive integers.")
-            size = self._resolve_image_size(int(params.width), int(params.height))
+        # Resolve size from width/height parameters
+        size = self._resolve_image_size(params.width, params.height)
+
+        # Get optional parameters from model_config extras
+        quality = getattr(params, "quality", None)
+
+        log.debug(
+            f"Generating image with model={model_id}, size={size}, quality={quality}"
+        )
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
             client = self.get_client()
 
+            # Build API parameters
+            # Note: GPT Image models return base64 data in b64_json by default
+            api_params: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+            }
+
+            if size:
+                api_params["size"] = size
+
+            # Quality options: "low", "medium", "high", "hd", "standard"
+            # For GPT Image models, use low/medium/high
+            # For DALL-E 3, use "standard" or "hd"
+            if quality:
+                api_params["quality"] = quality
+
+            self._log_api_request("text_to_image", params=params)
+
             response = await client.images.generate(
-                model=model_id,
-                prompt=prompt,
-                n=1,
-                size=size if size else Omit,  # type: ignore
+                **api_params,
                 timeout=request_timeout,
             )
 
-            data = response.data or []
-            if len(data) == 0:
-                raise RuntimeError("OpenAI image generation returned no data.")
+            # Extract image data - GPT Image models use b64_json, DALL-E uses url
+            if response.data and response.data[0].b64_json:
+                image_b64 = response.data[0].b64_json
+                image_bytes = base64.b64decode(image_b64)
+            elif response.data and response.data[0].url:
+                # Fallback to URL if b64_json not available (e.g., older models)
+                import aiohttp
 
-            image_entry = data[0]
-            image_bytes: bytes | None = None
-            b64_data = image_entry.b64_json
-            if b64_data:
-                image_bytes = base64.b64decode(b64_data)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(response.data[0].url) as resp:
+                        image_bytes = await resp.read()
             else:
-                image_url = image_entry.url
-                if image_url:
-                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+                raise RuntimeError("OpenAI image generation returned no image data.")
 
-            if not image_bytes:
-                raise RuntimeError("OpenAI image generation returned no image bytes.")
+            log.debug(f"Generated image, size: {len(image_bytes)} bytes")
+            self._log_api_response("text_to_image", image_bytes=len(image_bytes))
 
             return image_bytes
 
@@ -1444,8 +1486,38 @@ class OpenAIProvider(BaseProvider):
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
         node_id: str | None = None,
+        mask: bytes | None = None,
     ) -> bytes:
-        """Transform an image based on a prompt using OpenAI's image editing API."""
+        """Edit or transform an image using OpenAI's Image API.
+
+        Uses the images.edit endpoint which supports GPT Image models
+        (gpt-image-1.5, gpt-image-1, gpt-image-1-mini) for high-quality image editing.
+
+        This endpoint can:
+        - Edit existing images using prompts
+        - Perform inpainting with a mask
+
+        Args:
+            image: Primary input image as bytes
+            params: Image-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "gpt-image-1")
+                - prompt: Text description of the desired transformation
+                - negative_prompt: Elements to exclude (appended to prompt)
+                - target_width/target_height: Desired output dimensions
+                - quality: Optional quality setting
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+            mask: Optional mask image for inpainting (PNG with alpha channel).
+                Masked areas (transparent) will be replaced.
+
+        Returns:
+            Raw edited image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If editing fails
+        """
         if not image:
             raise ValueError("image must not be empty.")
 
@@ -1463,41 +1535,64 @@ class OpenAIProvider(BaseProvider):
         if params.negative_prompt:
             prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
 
-        size = None
-        if params.target_width and params.target_height:
-            if params.target_width <= 0 or params.target_height <= 0:
-                raise ValueError("target_width and target_height must be positive integers.")
-            size = self._resolve_image_size(int(params.target_width), int(params.target_height))
+        # Resolve size from target dimensions if provided
+        size = self._resolve_image_size(params.target_width, params.target_height)
+
+        # Get optional parameters from model_config extras
+        quality = getattr(params, "quality", None)
+
+        log.debug(
+            f"Editing image with model={model_id}, size={size}, quality={quality}"
+        )
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
             client = self.get_client()
+
+            # Build API parameters
+            # Note: GPT Image models return base64 data by default
+            api_params: dict[str, Any] = {
+                "model": model_id,
+                "image": image,  # Pass bytes directly
+                "prompt": prompt,
+            }
+
+            if size:
+                api_params["size"] = size
+
+            if quality:
+                api_params["quality"] = quality
+
+            # Add mask if provided for inpainting
+            if mask:
+                api_params["mask"] = mask
+                log.debug("Using mask for inpainting edit")
+
+            self._log_api_request("image_to_image", params=params)
+
             response = await client.images.edit(
-                model=model_id,
-                prompt=prompt,
-                image=("image.png", image, "image/png"),
-                size=size if size else Omit,  # type: ignore
+                **api_params,
                 timeout=request_timeout,
             )
 
-            data_list = response.data or []
-            if len(data_list) == 0:
-                raise RuntimeError("OpenAI image editing returned no data.")
+            # Extract image data - GPT Image models use b64_json, older models use url
+            if response.data and response.data[0].b64_json:
+                result_b64 = response.data[0].b64_json
+                result_bytes = base64.b64decode(result_b64)
+            elif response.data and response.data[0].url:
+                # Fallback to URL if b64_json not available
+                import aiohttp
 
-            entry = data_list[0]
-            image_bytes: bytes | None = None
-            b64_data = entry.b64_json
-            if b64_data:
-                image_bytes = base64.b64decode(b64_data)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(response.data[0].url) as resp:
+                        result_bytes = await resp.read()
             else:
-                image_url = entry.url
-                if image_url:
-                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+                raise RuntimeError("OpenAI image editing returned no image data.")
 
-            if not image_bytes:
-                raise RuntimeError("OpenAI image editing returned no image bytes.")
+            log.debug(f"Edited image, size: {len(result_bytes)} bytes")
+            self._log_api_response("image_to_image", image_bytes=len(result_bytes))
 
-            return image_bytes
+            return result_bytes
 
         except openai.APIStatusError as api_error:
             log.error(
