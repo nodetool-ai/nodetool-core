@@ -14,14 +14,14 @@ async def current_user(request: Request = None) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
-    user_id = getattr(request.state, "user_id", None)
+    user_id = getattr(request.state, "user_id", None) if request else None
     if user_id:
         return str(user_id)
 
     from nodetool.runtime.resources import get_static_auth_provider
 
     static_provider = get_static_auth_provider()
-    token = static_provider.extract_token_from_headers(request.headers)
+    token = static_provider.extract_token_from_headers(request.headers) if request else None
 
     if not Environment.enforce_auth():
         if token:
@@ -33,12 +33,16 @@ async def current_user(request: Request = None) -> str:
         return "1"
 
     if request is None and Environment.enforce_auth():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
         )
 
     if not token and request is not None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
+        )
 
     static_result = await static_provider.verify_token(token)
     if static_result.ok and static_result.user_id:
