@@ -15,7 +15,6 @@ The implementation provides:
 """
 
 import asyncio
-import datetime
 import json
 import os
 import platform
