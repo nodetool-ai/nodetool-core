@@ -72,6 +72,11 @@ MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds
 MAX_DELAY = 60  # seconds
 
+# Brief delay (in seconds) for completion detection race condition handling.
+# After all tasks complete, we wait briefly and re-check for pending inbox work
+# to handle race conditions where EOS signals are still being processed.
+COMPLETION_CHECK_DELAY = 0.01
+
 
 # Define a process-wide GPU lock that is safe across event loops/threads
 gpu_lock = threading.Lock()
@@ -1262,7 +1267,7 @@ class WorkflowRunner:
             )
             # Give a brief moment for any in-flight messages to settle
             # This handles race conditions where EOS signals are being processed
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(COMPLETION_CHECK_DELAY)
             # Re-check after brief delay
             inboxes_with_pending = self._check_pending_inbox_work(graph)
             if inboxes_with_pending:
