@@ -37,6 +37,89 @@ jobs:
         with:
           model: minimax/MiniMax-M2.1
           prompt: |
-            Scan the codebase for bad practices.
-            If you find anything worth addressing, submit a coherent PR to fix it.
-            make lint, make test and make typecheck have to pass.
+            # Task: Proactive Code Quality Improvement
+            
+            ## Important Context
+            You are working on **nodetool-core**, a Python 3.11+ AI workflow engine with async-first architecture.
+            
+            Before starting work:
+            1. Read `.github/opencode-memory/repository-context.md` for project structure and conventions
+            2. Check `.github/opencode-memory/common-issues.md` for patterns to look for
+            3. Review `.github/opencode-memory/insights.md` for architectural patterns
+            
+            ## Your Task
+            Scan the codebase for code quality issues and bad practices. Look for:
+            
+            ### Code Quality Issues
+            - **Type Safety**: Missing type hints in new/changed code
+            - **Error Handling**: Bare except clauses, missing error context
+            - **Async Patterns**: Blocking calls in async functions, missing await keywords
+            - **Resource Management**: Missing context managers for files/connections
+            - **Security**: Hardcoded secrets, SQL injection risks, XSS vulnerabilities
+            - **Performance**: Inefficient loops, unnecessary copying, memory leaks
+            
+            ### Code Smells
+            - Dead code or unused imports
+            - Overly complex functions (consider refactoring if >50 lines)
+            - Duplicate code that could be extracted
+            - Inconsistent naming or style
+            - Missing docstrings for public APIs
+            - TODO/FIXME comments that should be addressed
+            
+            ### Testing Gaps
+            - New features without tests
+            - Low coverage areas that are critical
+            - Brittle tests with hard dependencies
+            - Missing edge case coverage
+            
+            ## Guidelines for Improvements
+            
+            ### Code Quality Standards
+            - **Python Style**: Follow Black formatting, use type hints, prefer f-strings
+            - **Naming**: `snake_case` for functions, `PascalCase` for classes, `SCREAMING_SNAKE_CASE` for constants
+            - **Async Patterns**: Prefer async/await, avoid blocking calls in async code
+            - **Architecture**: Follow Dependency Injection, Factory, Strategy, and Observer patterns
+            
+            ### Making Changes
+            - ✅ Make **minimal, focused changes** - one coherent improvement per PR
+            - ✅ Fix only what you identify as a clear issue
+            - ✅ Ensure improvements don't break existing functionality
+            - ✅ Add tests if fixing bugs or adding features
+            - ✅ Follow Conventional Commits: `refactor:`, `fix:`, `feat:`, `test:`, etc.
+            - ❌ Don't refactor working code just for style preferences
+            - ❌ Don't remove or modify working tests
+            - ❌ Don't make multiple unrelated changes in one PR
+            - ❌ Don't introduce new dependencies without strong justification
+            
+            ### Validation Requirements
+            ALL of these must pass before submitting:
+            ```bash
+            make lint      # ruff check .
+            make test      # pytest -q
+            make typecheck # basedpyright
+            ```
+            
+            ### Memory System
+            - Check `.github/opencode-memory/common-issues.md` before fixing recurring issues
+            - Document new patterns discovered in `.github/opencode-memory/insights.md`
+            - Update common issues with solutions to non-trivial problems
+            
+            ## PR Requirements
+            - **Title**: Clear, concise description following Conventional Commits
+            - **Description**: Explain what issue you found, why it's a problem, and how you fixed it
+            - **Scope**: One coherent improvement - don't mix multiple unrelated fixes
+            - **Testing**: Describe how you verified the fix works
+            - **Breaking Changes**: Call out any API or behavior changes
+            
+            ## Success Criteria
+            - Identified a genuine code quality issue or bad practice
+            - Fixed it with minimal, surgical changes
+            - All validation commands pass
+            - PR is focused and coherent
+            - Changes improve code quality without breaking functionality
+            
+            ## Environment Notes
+            - Dependencies are already installed via `uv sync --all-extras --dev`
+            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
+            - You're running in GitHub CI with Python 3.11 (not conda)
+            - Tests use `ENV=test` with in-memory storage automatically

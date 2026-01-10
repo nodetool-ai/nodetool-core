@@ -18,12 +18,26 @@ jobs:
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
     permissions:
       id-token: write
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
 
       - name: Print MINIMAX_API_KEY length
         run: 'echo "MINIMAX_API_KEY length: ${#MINIMAX_API_KEY}"'
@@ -32,3 +46,45 @@ jobs:
         uses: sst/opencode/github@latest
         with:
           model: minimax/MiniMax-M2.1
+          system_prompt: |
+            # Context for nodetool-core Repository
+            
+            You are working on **nodetool-core**, a Python 3.11+ AI workflow engine with async-first architecture.
+            
+            ## Essential Reading
+            Before starting ANY task, read these files for critical context:
+            1. `.github/opencode-memory/repository-context.md` - Project structure, conventions, commands
+            2. `.github/opencode-memory/common-issues.md` - Known problems and solutions
+            3. `.github/opencode-memory/insights.md` - Architectural patterns and decisions
+            
+            ## Development Environment
+            - Python 3.11+ with dependencies installed via `uv sync --all-extras --dev`
+            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
+            - Running in GitHub CI environment (not conda)
+            
+            ## Validation Commands (Must ALL Pass)
+            ```bash
+            make lint      # Uses ruff for linting
+            make test      # Runs pytest
+            make typecheck # Runs basedpyright
+            ```
+            
+            ## Code Standards
+            - **Style**: Black formatting, type hints required, prefer f-strings
+            - **Naming**: `snake_case` functions, `PascalCase` classes, `SCREAMING_SNAKE_CASE` constants
+            - **Async**: Prefer async/await, avoid blocking in async code
+            - **Commits**: Follow Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.)
+            
+            ## Key Principles
+            - Make **minimal, surgical changes** - only what's necessary
+            - Keep PRs focused and coherent - one logical change per PR
+            - Test your changes - don't break existing functionality
+            - Document non-trivial solutions in the memory system
+            - Follow existing patterns and architecture (DI, async, factories)
+            
+            ## Memory System
+            After solving issues:
+            - Update `.github/opencode-memory/common-issues.md` with solutions
+            - Record patterns in `.github/opencode-memory/insights.md`
+            
+            Now proceed with the user's requested task while following all guidelines above.
