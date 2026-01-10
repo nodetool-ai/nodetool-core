@@ -27,6 +27,7 @@ from google.genai.types import (
     Part,
     PrebuiltVoiceConfig,
     SpeechConfig,
+    ThinkingConfig,
     Tool,
     ToolListUnion,
     VoiceConfig,
@@ -46,6 +47,7 @@ from nodetool.metadata.types import (
     MessageFile,
     MessageImageContent,
     MessageTextContent,
+    MessageThoughtContent,
     Provider,
     ToolCall,
     TTSModel,
@@ -314,6 +316,16 @@ class GeminiProvider(BaseProvider):
             elif isinstance(content, MessageAudioContent):
                 log.error("Audio content is not supported")
                 raise NotImplementedError("Audio content is not supported")
+            elif isinstance(content, MessageThoughtContent):
+                # Handle thought content - pass back with thought_signature for multi-turn
+                log.debug(f"Adding thought content with signature: {content.thought_signature is not None}")
+                result.append(
+                    Part(
+                        text=content.text,
+                        thought=True,
+                        thought_signature=content.thought_signature,
+                    )
+                )
             else:
                 # Skip unsupported content types
                 log.warning(f"Skipping unsupported content type: {type(content)}")
@@ -383,7 +395,20 @@ class GeminiProvider(BaseProvider):
         if content_parts:
             for i, part in enumerate(content_parts):
                 log.debug(f"Processing part {i + 1}/{len(content_parts)}")
-                if part.text:
+
+                # Check for thought parts (Gemini thinking mode)
+                # Thought parts have thought=True and may have thought_signature
+                is_thought = getattr(part, "thought", False) is True
+                if is_thought and part.text:
+                    thought_signature = getattr(part, "thought_signature", None)
+                    log.debug(f"Found thought content with signature: {thought_signature is not None}")
+                    content.append(
+                        MessageThoughtContent(
+                            text=part.text,
+                            thought_signature=thought_signature,
+                        )
+                    )
+                elif part.text:
                     log.debug(f"Found text content: {part.text[:30]}...")
                     content.append(MessageTextContent(text=part.text))
                 elif part.function_call:
@@ -414,7 +439,7 @@ class GeminiProvider(BaseProvider):
                 else:
                     log.debug(f"Unknown part type: {type(part)}")
 
-        # Multiple content parts can be merged into a single string
+        # Multiple content parts can be merged into a single string only if all are text (not thoughts)
         if all(isinstance(c, MessageTextContent) for c in content):
             merged_content = "".join([c.text for c in content if isinstance(c, MessageTextContent)])
             log.debug(f"Merged {len(content)} text parts into single string")
@@ -469,6 +494,7 @@ class GeminiProvider(BaseProvider):
             max_output_tokens=max_tokens,
             response_mime_type="application/json" if response_format else None,
             response_json_schema=response_format,
+            thinking_config=kwargs.get("thinking_config"),
         )
         log.debug(f"Generated config with response format: {'json' if response_format else 'text'}")
 
@@ -574,6 +600,7 @@ class GeminiProvider(BaseProvider):
             system_instruction=system_instruction,
             max_output_tokens=max_tokens,
             response_modalities=["text"],
+            thinking_config=kwargs.get("thinking_config"),
         )
 
         contents = await self._prepare_messages(messages)
@@ -598,7 +625,24 @@ class GeminiProvider(BaseProvider):
                     if parts:
                         log.debug(f"Processing {len(parts)} parts in chunk")
                         for part in parts:
+                            # Check for thought parts (Gemini thinking mode)
+                            is_thought = getattr(part, "thought", False) is True
                             text_value = getattr(part, "text", None)
+
+                            if is_thought and isinstance(text_value, str):
+                                # Thought content - include metadata to indicate it's a thought
+                                thought_signature = getattr(part, "thought_signature", None)
+                                log.debug(f"Found thought content in stream, signature present: {thought_signature is not None}")
+                                yield Chunk(
+                                    content=text_value,
+                                    done=False,
+                                    content_metadata={
+                                        "thought": True,
+                                        "thought_signature": thought_signature,
+                                    },
+                                )
+                                continue
+
                             if isinstance(text_value, str):
                                 yield Chunk(content=text_value, done=False)
                                 continue

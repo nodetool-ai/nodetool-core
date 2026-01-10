@@ -1693,8 +1693,34 @@ class MessageDocumentContent(BaseModel):
     document: DocumentRef = DocumentRef()
 
 
+class MessageThoughtContent(BaseModel):
+    """
+    A message content type for storing Gemini thinking/thought content.
+
+    When Gemini's thinking mode is enabled, the model returns thought parts
+    with a cryptographic signature. This signature must be preserved and
+    passed back to the API for multi-turn conversations to verify the
+    authenticity of the thought content.
+
+    See: https://ai.google.dev/gemini-api/docs/thought-signatures
+    """
+
+    type: Literal["thought"] = "thought"
+    text: str = ""
+    thought_signature: bytes | None = None
+    """
+    Cryptographic signature of the thought content from Gemini API.
+    Must be preserved for multi-turn conversations.
+    """
+
+
 MessageContent = (
-    MessageTextContent | MessageImageContent | MessageAudioContent | MessageVideoContent | MessageDocumentContent
+    MessageTextContent
+    | MessageImageContent
+    | MessageAudioContent
+    | MessageVideoContent
+    | MessageDocumentContent
+    | MessageThoughtContent
 )
 
 
