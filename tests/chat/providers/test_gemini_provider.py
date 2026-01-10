@@ -375,6 +375,7 @@ class TestGeminiProvider(BaseProviderTest):
     async def test_thought_signatures_extraction(self):
         """Test extraction of thought parts and thought signatures from response."""
         from google.genai.types import Part
+
         from nodetool.metadata.types import MessageThoughtContent
 
         provider = self.create_provider()
@@ -400,7 +401,7 @@ class TestGeminiProvider(BaseProviderTest):
         text_part.inline_data = None
 
         # Test extraction
-        content, tool_calls, output_files = provider._extract_content_from_parts([thought_part, text_part])
+        content, _tool_calls, _output_files = provider._extract_content_from_parts([thought_part, text_part])
 
         # Should be a list because of mixed content types
         assert isinstance(content, list)
@@ -421,6 +422,7 @@ class TestGeminiProvider(BaseProviderTest):
     async def test_thought_content_preparation(self):
         """Test that thought content is properly prepared for multi-turn conversations."""
         from google.genai.types import Part
+
         from nodetool.metadata.types import MessageThoughtContent
 
         provider = self.create_provider()
