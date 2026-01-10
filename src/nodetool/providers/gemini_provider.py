@@ -398,7 +398,7 @@ class GeminiProvider(BaseProvider):
 
                 # Check for thought parts (Gemini thinking mode)
                 # Thought parts have thought=True and may have thought_signature
-                is_thought = getattr(part, "thought", None) is True
+                is_thought = getattr(part, "thought", False) is True
                 if is_thought and part.text:
                     thought_signature = getattr(part, "thought_signature", None)
                     log.debug(f"Found thought content with signature: {thought_signature is not None}")
@@ -626,7 +626,7 @@ class GeminiProvider(BaseProvider):
                         log.debug(f"Processing {len(parts)} parts in chunk")
                         for part in parts:
                             # Check for thought parts (Gemini thinking mode)
-                            is_thought = getattr(part, "thought", None) is True
+                            is_thought = getattr(part, "thought", False) is True
                             text_value = getattr(part, "text", None)
 
                             if is_thought and isinstance(text_value, str):

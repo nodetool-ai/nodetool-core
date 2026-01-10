@@ -567,7 +567,7 @@ class TestGeminiProvider(BaseProviderTest):
         # Second should be regular text
         assert isinstance(results[1], Chunk)
         assert results[1].content == "The answer is 42."
-        assert results[1].content_metadata.get("thought") is not True
+        assert not results[1].content_metadata.get("thought")
 
         # Third should be done marker
         assert isinstance(results[2], Chunk)
