@@ -46,7 +46,7 @@ class GoogleGroundedSearchTool(Tool):
         key = Environment.get_environment().get("GEMINI_API_KEY")
         return {"GEMINI_API_KEY": key} if key else {}
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Execute a web search using Gemini API with grounding.
 
@@ -195,7 +195,7 @@ class GoogleImageGenerationTool(Tool):
             "required": ["prompt", "output_file"],
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Generate an image using the Gemini API based on the provided prompt.
 

@@ -68,7 +68,7 @@ class TriggerWakeupService:
         node_id: str,
         input_id: str,
         payload: Any,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> bool:
         """
         Deliver a trigger input to a trigger node.

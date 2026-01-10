@@ -18,7 +18,8 @@ import socket as _socket
 import time as _time
 from contextlib import suppress
 from threading import Thread
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterator
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode

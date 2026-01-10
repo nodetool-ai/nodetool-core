@@ -438,7 +438,7 @@ If workflow context is provided, use exact `workflow_id`, `thread_id`, node IDs,
 """
 
 
-def _get_encoding_for_model(model: Optional[str]):
+def _get_encoding_for_model(model: str | None):
     try:
         import tiktoken  # type: ignore
 
@@ -453,7 +453,7 @@ def _get_encoding_for_model(model: Optional[str]):
     return get_default_encoding()
 
 
-def _log_context_token_breakdown(messages: list[Message], model: Optional[str]) -> None:
+def _log_context_token_breakdown(messages: list[Message], model: str | None) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -490,7 +490,7 @@ def _log_context_token_breakdown(messages: list[Message], model: Optional[str]) 
         log.debug("Help context tokens: %5d  #%d  role=%s  %s", tokens, idx, role, label)
 
 
-def _log_tool_definition_token_breakdown(tools: list[Tool], model: Optional[str]) -> None:
+def _log_tool_definition_token_breakdown(tools: list[Tool], model: str | None) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -659,7 +659,7 @@ class HelpMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -1081,7 +1081,7 @@ class HelpMessageProcessor(MessageProcessor):
             # Log unexpected errors but don't fail the chat
             log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
-    def _sanitize_chat_history(self, history: List[Message]) -> List[Message]:
+    def _sanitize_chat_history(self, history: list[Message]) -> list[Message]:
         """
         Sanitize chat history to ensure valid tool call sequences.
         Removes assistant messages with dangling tool calls and orphan tool messages.

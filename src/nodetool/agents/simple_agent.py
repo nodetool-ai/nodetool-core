@@ -4,7 +4,8 @@ Chain of Thought (CoT) Agent implementation with tool calling capabilities.
 """
 
 import json
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any
+from collections.abc import AsyncGenerator, Sequence
 
 from jinja2 import BaseLoader
 from jinja2 import Environment as JinjaEnvironment

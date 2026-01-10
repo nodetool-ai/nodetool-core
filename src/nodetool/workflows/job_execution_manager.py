@@ -39,9 +39,9 @@ class JobExecutionManager:
     """
 
     _instance: Optional["JobExecutionManager"] = None
-    _jobs: Dict[str, JobExecution]
-    _cleanup_task: Optional[asyncio.Task]
-    _heartbeat_task: Optional[asyncio.Task]
+    _jobs: dict[str, JobExecution]
+    _cleanup_task: asyncio.Task | None
+    _heartbeat_task: asyncio.Task | None
     _finalizing_jobs: set[str]
 
     def __new__(cls):
@@ -161,7 +161,7 @@ class JobExecutionManager:
 
         return job
 
-    def get_job(self, job_id: str) -> Optional[JobExecution]:
+    def get_job(self, job_id: str) -> JobExecution | None:
         """Get a job by ID, scheduling persistence if it has finished."""
         job = self._jobs.get(job_id)
 
@@ -204,7 +204,7 @@ class JobExecutionManager:
                 await stored_job.cleanup_resources()
             self._finalizing_jobs.discard(job_id)
 
-    def list_jobs(self, user_id: Optional[str] = None) -> list[JobExecution]:
+    def list_jobs(self, user_id: str | None = None) -> list[JobExecution]:
         """
         List all jobs, optionally filtered by user.
 

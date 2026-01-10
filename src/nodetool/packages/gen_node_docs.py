@@ -157,7 +157,7 @@ namespace: "{namespace}"
     return content
 
 
-def get_namespace_path(node_type: str) -> List[str]:
+def get_namespace_path(node_type: str) -> list[str]:
     """Get the directory path components for a node type.
 
     Args:
@@ -171,7 +171,7 @@ def get_namespace_path(node_type: str) -> List[str]:
     return parts[:-1]
 
 
-def create_namespace_index(namespace_path: Path, namespace_name: str, nodes: List[NodeMetadata]) -> None:
+def create_namespace_index(namespace_path: Path, namespace_name: str, nodes: list[NodeMetadata]) -> None:
     """Create an index page for a namespace.
 
     Args:
@@ -210,7 +210,7 @@ This namespace contains {len(nodes)} node(s).
 
 
 def generate_node_docs(
-    output_dir: str | Path, package_filter: Optional[str] = None, verbose: bool = False
+    output_dir: str | Path, package_filter: str | None = None, verbose: bool = False
 ) -> tuple[int, int]:
     """Generate documentation for all nodes from the registry.
 
@@ -255,7 +255,7 @@ def generate_node_docs(
         log.info(f"Found {len(all_nodes)} nodes to document")
 
     # Group nodes by namespace
-    namespace_nodes: Dict[str, List[NodeMetadata]] = {}
+    namespace_nodes: dict[str, list[NodeMetadata]] = {}
 
     for node in all_nodes:
         namespace_parts = get_namespace_path(node.node_type)
@@ -306,7 +306,7 @@ def generate_node_docs(
     return len(all_nodes), created_files
 
 
-def create_root_index(output_path: Path, namespace_nodes: Dict[str, List[NodeMetadata]]) -> None:
+def create_root_index(output_path: Path, namespace_nodes: dict[str, list[NodeMetadata]]) -> None:
     """Create the root index page for all node documentation.
 
     Args:
@@ -329,7 +329,7 @@ Complete reference documentation for all {total_nodes} NodeTool nodes across {le
 """
 
     # Group by top-level namespace
-    top_level: Dict[str, List[tuple[str, List[NodeMetadata]]]] = {}
+    top_level: dict[str, list[tuple[str, list[NodeMetadata]]]] = {}
 
     for namespace, nodes in sorted(namespace_nodes.items()):
         top = namespace.split(".")[0]

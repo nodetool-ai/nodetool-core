@@ -19,7 +19,7 @@ log = get_logger(__name__)
 def create_openai_compatible_router(
     provider: str,
     default_model: str = "gpt-oss:20b",
-    tools: List[str] | None = None,
+    tools: list[str] | None = None,
 ) -> APIRouter:
     """Create an APIRouter exposing OpenAI-compatible endpoints.
 
@@ -57,7 +57,7 @@ def create_openai_compatible_router(
             stream = data.get("stream", True)
             if not stream:
                 # Collect the streamed chunks into a single response object
-                chunks: List[str] = []
+                chunks: list[str] = []
                 async for event in runner.process_single_request(data):
                     if event.startswith("data: "):
                         payload = event[len("data: ") :].strip()

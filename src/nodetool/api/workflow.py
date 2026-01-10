@@ -121,8 +121,8 @@ def _graph_has_input_and_output(graph: Graph):
 async def create(
     workflow_request: WorkflowRequest,
     user: str = Depends(current_user),
-    from_example_package: Optional[str] = None,
-    from_example_name: Optional[str] = None,
+    from_example_package: str | None = None,
+    from_example_name: str | None = None,
 ) -> Workflow:
     # If creating from an example
     if from_example_package and from_example_name:
@@ -197,10 +197,10 @@ async def create(
 @router.get("/")
 async def index(
     user: str = Depends(current_user),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     limit: int = 100,
-    columns: Optional[str] = None,
-    run_mode: Optional[str] = None,
+    columns: str | None = None,
+    run_mode: str | None = None,
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
@@ -218,8 +218,8 @@ async def index(
 @router.get("/public")
 async def public(
     limit: int = 100,
-    cursor: Optional[str] = None,
-    columns: Optional[str] = None,
+    cursor: str | None = None,
+    columns: str | None = None,
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
@@ -241,7 +241,7 @@ async def get_public_workflow(id: str) -> Workflow:
 @router.get("/tools")
 async def get_workflow_tools(
     user: str = Depends(current_user),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     limit: int = 100,
 ) -> WorkflowToolList:
     """
@@ -567,7 +567,7 @@ async def run_workflow_by_id(
     request: Request,
     stream: bool = False,
     user: str = Depends(current_user),
-    authentication: Optional[str] = Header(None),
+    authentication: str | None = Header(None),
 ):
     """
     Run a specific workflow by ID.
@@ -758,7 +758,7 @@ async def create_version(
 async def list_versions(
     id: str,
     user: str = Depends(current_user),
-    cursor: Optional[int] = None,
+    cursor: int | None = None,
     limit: int = 100,
 ) -> WorkflowVersionList:
     """

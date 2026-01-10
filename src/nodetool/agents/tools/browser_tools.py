@@ -70,7 +70,7 @@ class ReaderTool:
         return f"Calling ReaderLM-v2 for input: {params.get('message', '')[:60]}..."
 
 
-def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> str:
+def generate_css_path(element_info: dict[str, Any], parent_path: str = "") -> str:
     """
     Generate a CSS selector path for an element based on its properties.
 
@@ -104,7 +104,7 @@ def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> st
     return selector
 
 
-async def get_element_info(element: "ElementHandle") -> Dict[str, Any]:
+async def get_element_info(element: "ElementHandle") -> dict[str, Any]:
     """
     Extract comprehensive information about a DOM element.
 
@@ -980,7 +980,7 @@ IMPORTANT: When you find elements:
 
 Always be systematic and thorough. Return structured data when possible."""
 
-    async def extract_content(self, url: str, objective: str, selector_hint: Optional[str] = None) -> Dict[str, Any]:
+    async def extract_content(self, url: str, objective: str, selector_hint: str | None = None) -> dict[str, Any]:
         """
         Extract content from a web page based on the given objective.
 

@@ -98,9 +98,6 @@ from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    AsyncIterator,
-    Callable,
     ClassVar,
     Optional,
     Type,
@@ -110,6 +107,7 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -260,7 +258,7 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
         add_comfy_classname(node_class)
 
 
-def type_metadata(python_type: Type | UnionType, allow_optional: bool = True) -> TypeMetadata:
+def type_metadata(python_type: type | UnionType, allow_optional: bool = True) -> TypeMetadata:
     """Generate `TypeMetadata` for a given Python type.
 
     Supports basic types, lists, tuples, dicts, optional types, unions,
@@ -758,7 +756,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def get_metadata(cls: Type["BaseNode"], include_model_info: bool = False):
+    def get_metadata(cls: type["BaseNode"], include_model_info: bool = False):
         """
         Generate comprehensive metadata for the node class.
 
@@ -1322,7 +1320,7 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
-    def return_type(cls) -> Type | None:
+    def return_type(cls) -> type | None:
         """
         Get the return type of the node's process function.
 
@@ -1414,7 +1412,7 @@ class BaseNode(BaseModel):
         dynamic_unique = [o for o in dynamic_outputs if o.name not in existing]
         return [*class_outputs, *dynamic_unique]
 
-    def add_output(self, name: str, python_type: Type | UnionType | None = None) -> None:
+    def add_output(self, name: str, python_type: type | UnionType | None = None) -> None:
         """
         Add a dynamic output to this instance (only effective if node is dynamic).
         """

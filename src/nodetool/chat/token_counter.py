@@ -9,7 +9,8 @@ unless a custom encoding is provided.
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
+from collections.abc import Iterable
 
 try:
     import tiktoken  # type: ignore
@@ -49,7 +50,7 @@ def get_default_encoding():
     return _ENCODING_CACHE
 
 
-def count_text_tokens(text: Optional[str], *, encoding=None) -> int:
+def count_text_tokens(text: str | None, *, encoding=None) -> int:
     """Count tokens in a plain text string.
 
     Args:

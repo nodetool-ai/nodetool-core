@@ -1,7 +1,8 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import IO, AsyncIterator
+from typing import IO
+from collections.abc import AsyncIterator
 
 import aiofiles
 

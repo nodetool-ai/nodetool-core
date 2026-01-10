@@ -24,7 +24,7 @@ def create_collection_router() -> APIRouter:
     async def index(
         name: str,
         file: UploadFile = File(...),
-        authorization: Optional[str] = Header(None),
+        authorization: str | None = Header(None),
     ):
         token = "local_token"
 

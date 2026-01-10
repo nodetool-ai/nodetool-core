@@ -517,7 +517,7 @@ class GoogleShoppingTool(Tool):
 # Helper function to get a configured SERP provider
 async def _get_configured_serp_provider(
     context: ProcessingContext,
-) -> tuple[Optional[SerpProvider], Optional[ErrorResponse]]:
+) -> tuple[SerpProvider | None, ErrorResponse | None]:
     """
     Selects and returns a configured SERP provider based on environment variables.
     Prioritizes SerpApi, then DataForSEO.

@@ -37,7 +37,7 @@ log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
 
-def _get_encoding_for_model(model: Optional[str]):
+def _get_encoding_for_model(model: str | None):
     try:
         import tiktoken  # type: ignore
 
@@ -52,7 +52,7 @@ def _get_encoding_for_model(model: Optional[str]):
     return get_default_encoding()
 
 
-def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> None:
+def _log_tool_definition_token_breakdown(tools: list, model: str | None) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -90,7 +90,7 @@ class AgentMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):

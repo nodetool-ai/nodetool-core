@@ -8,7 +8,7 @@ files represent shards of the same model or independent variants.
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from safetensors import safe_open
 

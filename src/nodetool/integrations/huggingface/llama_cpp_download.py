@@ -26,7 +26,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
 log = get_logger(__name__)
 
@@ -80,7 +80,7 @@ async def download_llama_cpp_model(
     filename: str,
     token: str | None = None,
     progress_callback: Callable[[int, int | None], None] | None = None,
-    cancel_event: Optional[asyncio.Event] = None,
+    cancel_event: asyncio.Event | None = None,
     tag: str = "latest",
 ) -> Path:
     """Download a GGUF model to the llama.cpp cache directory.

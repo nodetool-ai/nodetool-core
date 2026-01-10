@@ -56,11 +56,11 @@ class OAuthTokenMetadata(BaseModel):
     id: str
     provider: str
     account_id: str
-    username: Optional[str]
+    username: str | None
     token_type: str
-    scope: Optional[str]
+    scope: str | None
     received_at: str
-    expires_at: Optional[str]
+    expires_at: str | None
     created_at: str
     updated_at: str
 
@@ -76,7 +76,7 @@ class OAuthCallbackResponse(BaseModel):
 
     success: bool
     account_id: str
-    username: Optional[str]
+    username: str | None
     message: str
 
 
@@ -91,17 +91,17 @@ class OAuthWhoamiResponse(BaseModel):
     """Response for Hugging Face whoami endpoint."""
 
     id: str
-    name: Optional[str] = None
-    email: Optional[str] = None
-    type: Optional[str] = None
-    orgs: Optional[list[dict]] = None
+    name: str | None = None
+    email: str | None = None
+    type: str | None = None
+    orgs: list[dict] | None = None
 
 
 class OAuthErrorResponse(BaseModel):
     """Standard error response for OAuth endpoints."""
 
     error: str
-    error_description: Optional[str] = None
+    error_description: str | None = None
 
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -132,9 +132,9 @@ def generate_state() -> str:
 def oauth_html_response(
     title: str,
     success: bool,
-    username: Optional[str] = None,
-    error: Optional[str] = None,
-    error_description: Optional[str] = None,
+    username: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
     auto_close: bool = False,
 ) -> HTMLResponse:
     """
@@ -374,10 +374,10 @@ async def start_huggingface_oauth(
 
 @router.get("/hf/callback")
 async def huggingface_oauth_callback(
-    code: Optional[str] = Query(None, description="Authorization code from Hugging Face"),
-    state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
-    error: Optional[str] = Query(None, description="Error from OAuth provider"),
-    error_description: Optional[str] = Query(None, description="Error description"),
+    code: str | None = Query(None, description="Authorization code from Hugging Face"),
+    state: str | None = Query(None, description="State parameter to prevent CSRF"),
+    error: str | None = Query(None, description="Error from OAuth provider"),
+    error_description: str | None = Query(None, description="Error description"),
 ) -> HTMLResponse:
     """
     Handle Hugging Face OAuth callback.
@@ -847,10 +847,10 @@ async def start_github_oauth(
 
 @router.get("/github/callback")
 async def github_oauth_callback(
-    code: Optional[str] = Query(None, description="Authorization code from GitHub"),
-    state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
-    error: Optional[str] = Query(None, description="Error from OAuth provider"),
-    error_description: Optional[str] = Query(None, description="Error description"),
+    code: str | None = Query(None, description="Authorization code from GitHub"),
+    state: str | None = Query(None, description="State parameter to prevent CSRF"),
+    error: str | None = Query(None, description="Error from OAuth provider"),
+    error_description: str | None = Query(None, description="Error description"),
 ) -> HTMLResponse:
     """
     Handle GitHub OAuth callback.
@@ -1066,19 +1066,19 @@ class GitHubUserResponse(BaseModel):
     login: str
     id: int
     node_id: str
-    avatar_url: Optional[str] = None
-    name: Optional[str] = None
-    email: Optional[str] = None
-    bio: Optional[str] = None
-    company: Optional[str] = None
-    location: Optional[str] = None
-    blog: Optional[str] = None
-    public_repos: Optional[int] = None
-    public_gists: Optional[int] = None
-    followers: Optional[int] = None
-    following: Optional[int] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    avatar_url: str | None = None
+    name: str | None = None
+    email: str | None = None
+    bio: str | None = None
+    company: str | None = None
+    location: str | None = None
+    blog: str | None = None
+    public_repos: int | None = None
+    public_gists: int | None = None
+    followers: int | None = None
+    following: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 @router.get("/github/user", response_model=GitHubUserResponse)

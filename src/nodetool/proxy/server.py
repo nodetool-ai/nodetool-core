@@ -41,14 +41,14 @@ class AsyncReverseProxy:
         )
 
         # Precompute longest-prefix route index
-        self.services_by_name: Dict[str, ServiceConfig] = {s.name: s for s in config.services}
-        self.prefix_index: List[Tuple[str, ServiceConfig]] = sorted(
+        self.services_by_name: dict[str, ServiceConfig] = {s.name: s for s in config.services}
+        self.prefix_index: list[tuple[str, ServiceConfig]] = sorted(
             [(s.path, s) for s in config.services],
             key=lambda x: (-len(x[0]), x[1].name),  # Sort by length desc, then name
         )
 
         # HTTP client for upstream requests
-        self.httpx_client: Optional[httpx.AsyncClient] = None
+        self.httpx_client: httpx.AsyncClient | None = None
 
     async def startup(self):
         """Initialize the proxy (async startup)."""
@@ -77,7 +77,7 @@ class AsyncReverseProxy:
         await self.docker_manager.shutdown()
         log.info("Async proxy shutdown")
 
-    def match_service(self, incoming_path: str) -> Tuple[Optional[ServiceConfig], Optional[str]]:
+    def match_service(self, incoming_path: str) -> tuple[ServiceConfig | None, str | None]:
         """
         Match incoming path to service using longest-prefix matching.
 

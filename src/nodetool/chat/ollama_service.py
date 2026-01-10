@@ -1,5 +1,5 @@
 import json
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from ollama import AsyncClient
 

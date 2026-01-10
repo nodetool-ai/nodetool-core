@@ -30,7 +30,7 @@ log = get_logger(__name__)
 class DBResources(Protocol):
     """Protocol for database resources (connection + adapters)."""
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> DatabaseAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> DatabaseAdapter:
         """Get or create an adapter for the given model class.
 
         Args:
@@ -47,7 +47,7 @@ class DBResources(Protocol):
 
 
 # ContextVar to store the current scope
-_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar("_current_scope", default=None)
+_current_scope: contextvars.ContextVar[ResourceScope | None] = contextvars.ContextVar("_current_scope", default=None)
 
 
 def require_scope() -> ResourceScope:
@@ -65,7 +65,7 @@ def require_scope() -> ResourceScope:
     return scope
 
 
-def maybe_scope() -> Optional[ResourceScope]:
+def maybe_scope() -> ResourceScope | None:
     """Get the current resource scope or None if not bound.
 
     Returns:
@@ -164,7 +164,7 @@ class ResourceScope:
         Args:
             pool: The SQLite connection pool to use
         """
-        self._token: Optional[contextvars.Token] = None
+        self._token: contextvars.Token | None = None
         self.pool = pool
         self._owns_db = False  # Track if we own the db resources (vs borrowed from parent)
         self._owns_http_client = False  # Track if we own the HTTP client (vs borrowed from parent)
@@ -179,7 +179,7 @@ class ResourceScope:
             # Borrowed from parent, don't own
             self._owns_http_client = False
         else:
-            self.db: Optional[DBResources] = None
+            self.db: DBResources | None = None
             self._asset_storage: AbstractStorage | None = None
             self._temp_storage: AbstractStorage | None = None
             self._node_cache: AbstractNodeCache | None = None

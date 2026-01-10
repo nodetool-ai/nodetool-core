@@ -40,7 +40,7 @@ async def list_huggingface_accounts(user_id: str) -> list[dict]:
     ]
 
 
-async def get_huggingface_token(user_id: str, account_id: str) -> Optional[str]:
+async def get_huggingface_token(user_id: str, account_id: str) -> str | None:
     """
     Get a Hugging Face access token for a specific account.
 
@@ -145,7 +145,7 @@ async def refresh_huggingface_token(user_id: str, account_id: str) -> bool:
         return False
 
 
-async def get_huggingface_whoami(user_id: str, account_id: str) -> Optional[dict]:
+async def get_huggingface_whoami(user_id: str, account_id: str) -> dict | None:
     """
     Get Hugging Face account information using the stored token.
 
@@ -210,7 +210,7 @@ async def list_github_accounts(user_id: str) -> list[dict]:
     ]
 
 
-async def get_github_token(user_id: str, account_id: str) -> Optional[str]:
+async def get_github_token(user_id: str, account_id: str) -> str | None:
     """
     Get a GitHub access token for a specific account.
 
@@ -234,7 +234,7 @@ async def get_github_token(user_id: str, account_id: str) -> Optional[str]:
         return None
 
 
-async def get_github_user_info(user_id: str, account_id: str) -> Optional[dict]:
+async def get_github_user_info(user_id: str, account_id: str) -> dict | None:
     """
     Get GitHub account information using the stored token.
 

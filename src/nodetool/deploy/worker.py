@@ -74,8 +74,8 @@ log = get_logger(__name__)
 def create_worker_app(
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] | None = None,
-    workflows: List[Workflow] | None = None,
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ) -> FastAPI:
     """Create a FastAPI worker application for NodeTool operations.
 
@@ -168,8 +168,8 @@ def run_worker(
     port: int = 8000,
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] | None = None,
-    workflows: List[Workflow] | None = None,
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ):
     """Run the NodeTool worker.
 

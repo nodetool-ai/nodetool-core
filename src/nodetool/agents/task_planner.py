@@ -16,17 +16,10 @@ ensure the generated plan is robust and executable.
 import json
 import re  # Added import re
 import traceback
+from collections.abc import AsyncGenerator, Sequence  # Add Optional
 from copy import deepcopy
 from pathlib import Path
-from typing import (
-    Any,
-    AsyncGenerator,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Set,
-)  # Add Optional
+from typing import Any
 
 import networkx as nx
 import yaml
@@ -282,7 +275,7 @@ class TaskPlanner:
         self.system_prompt: str = system_prompt or DEFAULT_PLANNING_SYSTEM_PROMPT
         self.execution_tools: Sequence[Tool] = execution_tools or []
         self._planning_context: ProcessingContext | None = None
-        self.output_schema: Optional[dict] = output_schema
+        self.output_schema: dict | None = output_schema
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = display_manager
@@ -313,7 +306,7 @@ class TaskPlanner:
                 return False
         return False
 
-    def _get_prompt_context(self) -> Dict[str, str]:
+    def _get_prompt_context(self) -> dict[str, str]:
         """Helper to build the context for Jinja2 prompt rendering.
 
         This method assembles a dictionary of common variables required by
@@ -351,7 +344,7 @@ class TaskPlanner:
             "step_schema": STEP_JSON_SCHEMA,
         }
 
-    def _render_prompt(self, template_string: str, context: Optional[Dict[str, str]] = None) -> str:
+    def _render_prompt(self, template_string: str, context: dict[str, str] | None = None) -> str:
         """Renders a prompt template using Jinja2.
 
         Args:
@@ -367,7 +360,7 @@ class TaskPlanner:
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
 
-    def _build_dependency_graph(self, steps: List[Step]) -> nx.DiGraph:
+    def _build_dependency_graph(self, steps: list[Step]) -> nx.DiGraph:
         """
             Build a directed graph of dependencies between steps.
 
@@ -403,8 +396,8 @@ class TaskPlanner:
 
     def _check_inputs(
         self,
-        steps: List[Step],
-    ) -> List[str]:
+        steps: list[Step],
+    ) -> list[str]:
         """Checks if all input task dependencies for steps are available.
 
         An input task dependency is considered available if it:
@@ -417,7 +410,7 @@ class TaskPlanner:
         Returns:
             A list of string error messages for any missing task dependencies.
         """
-        validation_errors: List[str] = []
+        validation_errors: list[str] = []
         tasks_by_id = {task.id: task for task in steps}
 
         for step in steps:
@@ -430,7 +423,7 @@ class TaskPlanner:
                         )
         return validation_errors
 
-    def _validate_dependencies(self, steps: List[Step]) -> List[str]:
+    def _validate_dependencies(self, steps: list[Step]) -> list[str]:
         """
         Validate task dependencies and DAG structure for steps.
 
@@ -451,7 +444,7 @@ class TaskPlanner:
             all dependency checks passed.
         """
         log.debug("Starting dependency validation for %d steps", len(steps))
-        validation_errors: List[str] = []
+        validation_errors: list[str] = []
 
         # Log step summary for debugging
         step_ids = [task.id for task in steps]
@@ -529,7 +522,7 @@ class TaskPlanner:
             )
         return validation_errors
 
-    def _validate_plan_semantics(self, steps: List[Step]) -> List[str]:
+    def _validate_plan_semantics(self, steps: list[Step]) -> list[str]:
         """
         Enforce semantic rules beyond DAG validation.
 
@@ -537,7 +530,7 @@ class TaskPlanner:
         """
         return []
 
-    def _apply_schema_overrides(self, steps: List[Step]) -> None:
+    def _apply_schema_overrides(self, steps: list[Step]) -> None:
         """
         Normalize output schemas for steps.
 
@@ -574,7 +567,7 @@ class TaskPlanner:
         #         if not agg_step.output_schema:
         #             agg_step.output_schema = output_schema_str
 
-    def _validate_legacy_plan_semantics(self, steps: List[Step]) -> List[str]:
+    def _validate_legacy_plan_semantics(self, steps: list[Step]) -> list[str]:
         """Legacy validation for plans that enumerate per-item steps."""
         errors: list[str] = []
 
@@ -686,7 +679,7 @@ class TaskPlanner:
 
     async def _run_phase(
         self,
-        history: List[Message],
+        history: list[Message],
         phase_name: str,
         phase_display_name: str,
         is_enabled: bool,
@@ -694,7 +687,7 @@ class TaskPlanner:
         phase_result_name: str,
         skip_reason: str | None = None,
     ) -> AsyncGenerator[
-        Chunk | ToolCall | PlanningUpdate | tuple[List[Message], Optional[PlanningUpdate]],
+        Chunk | ToolCall | PlanningUpdate | tuple[list[Message], PlanningUpdate | None],
         None,
     ]:
         """Generic method to run a planning phase.
@@ -835,11 +828,11 @@ class TaskPlanner:
 
     async def _run_plan_creation_phase(
         self,
-        history: List[Message],
+        history: list[Message],
         objective: str,
         max_retries: int,
     ) -> AsyncGenerator[
-        Chunk | ToolCall | PlanningUpdate | tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]],
+        Chunk | ToolCall | PlanningUpdate | tuple[Task | None, Exception | None, PlanningUpdate | None],
         None,
     ]:
         """Handles Phase 2: Plan Creation.
@@ -869,8 +862,8 @@ class TaskPlanner:
         if self.display_manager:
             self.display_manager.debug(f"Starting plan creation phase with max_retries={max_retries}")
 
-        task: Optional[Task] = None
-        plan_creation_error: Optional[Exception] = None
+        task: Task | None = None
+        plan_creation_error: Exception | None = None
         phase_status: str = "Failed"
         phase_content: str | Text = "N/A"
         current_phase_name: str = "3. Plan Creation"
@@ -1097,13 +1090,13 @@ class TaskPlanner:
         if self.display_manager:
             self.display_manager.start_live(self.display_manager.create_planning_tree("Task Planner"))
 
-        history: List[Message] = [
+        history: list[Message] = [
             Message(role="system", content=self.system_prompt),
         ]
 
-        error_message: Optional[str] = None
-        plan_creation_error: Optional[Exception] = None
-        task: Optional[Task] = None
+        error_message: str | None = None
+        plan_creation_error: Exception | None = None
+        task: Task | None = None
         current_phase = "Initialization"
 
         try:
@@ -1217,7 +1210,7 @@ class TaskPlanner:
                 self.display_manager.stop_live()
             self._planning_context = None
 
-    def _format_message_content(self, message: Optional[Message]) -> str | Text:
+    def _format_message_content(self, message: Message | None) -> str | Text:
         """Formats message content for table display.
 
         Handles `None` messages, summarizes tool calls, and cleans `<think>`
@@ -1236,7 +1229,7 @@ class TaskPlanner:
 
         if message.tool_calls:
             # Summarize tool calls
-            calls_summary: List[str] = []
+            calls_summary: list[str] = []
             for tc in message.tool_calls:
                 # Truncate args if too long for table display
                 args_str = json.dumps(tc.args)
@@ -1244,7 +1237,7 @@ class TaskPlanner:
             # Use Text object for potential future styling
             return Text("\\n".join(calls_summary))  # No <think> tag removal for tool call summaries
 
-        raw_content_str: Optional[str] = None
+        raw_content_str: str | None = None
         if message.content:
             if isinstance(message.content, list):
                 # Attempt to join list items; handle potential non-string items
@@ -1258,7 +1251,7 @@ class TaskPlanner:
                 # Handle other unexpected content types
                 raw_content_str = f"Unexpected content type: {type(message.content).__name__}"
 
-        cleaned_content: Optional[str] = remove_think_tags(raw_content_str)
+        cleaned_content: str | None = remove_think_tags(raw_content_str)
 
         if cleaned_content:  # If cleaned_content is not None and not empty
             return Text(cleaned_content)
@@ -1267,7 +1260,7 @@ class TaskPlanner:
         else:  # No message.content to begin with
             return Text("Empty message content.", style="dim")
 
-    def _format_message_content_for_update(self, message: Optional[Message]) -> Optional[str]:
+    def _format_message_content_for_update(self, message: Message | None) -> str | None:
         """Formats message content into a simple string for PlanningUpdate.
 
         This method is similar to `_format_message_content` but specifically
@@ -1285,7 +1278,7 @@ class TaskPlanner:
         if not message:
             return None
 
-        raw_str_content: Optional[str] = None
+        raw_str_content: str | None = None
         if message.content:  # This method primarily processes .instructions
             if isinstance(message.content, list):
                 try:
@@ -1303,10 +1296,10 @@ class TaskPlanner:
         self,
         tool_calls: Sequence[ToolCall],
         phase_name: str,
-    ) -> List[Message]:
+    ) -> list[Message]:
         """Executes tool calls issued during planning phases."""
 
-        tool_messages: List[Message] = []
+        tool_messages: list[Message] = []
         context = self._planning_context
         if not context:
             log.warning(
@@ -1372,9 +1365,9 @@ class TaskPlanner:
         step_data: dict,
         tool_name: str,
         content: Any,
-        available_execution_tools: Dict[str, Tool],
+        available_execution_tools: dict[str, Tool],
         sub_context: str,
-    ) -> tuple[Optional[dict], List[str]]:
+    ) -> tuple[dict | None, list[str]]:
         """Validates a step intended as a direct tool call.
 
         This involves:
@@ -1399,8 +1392,8 @@ class TaskPlanner:
                 - A list of string error messages encountered during validation.
         """
         log.debug("%s: Starting tool task validation for tool '%s'", sub_context, tool_name)
-        validation_errors: List[str] = []
-        parsed_content: Optional[dict] = None
+        validation_errors: list[str] = []
+        parsed_content: dict | None = None
 
         # Check if tool exists
         if tool_name not in available_execution_tools:
@@ -1493,7 +1486,7 @@ class TaskPlanner:
         )
         return parsed_content, validation_errors
 
-    def _validate_agent_task(self, content: Any, sub_context: str) -> List[str]:
+    def _validate_agent_task(self, content: Any, sub_context: str) -> list[str]:
         """Validates a step intended for agent execution.
 
         Ensures that the `instructions` for an agent task (which represents
@@ -1507,7 +1500,7 @@ class TaskPlanner:
             A list of string error messages. An empty list means validation passed.
         """
         log.debug("%s: Starting agent task validation", sub_context)
-        validation_errors: List[str] = []
+        validation_errors: list[str] = []
 
         log.debug(
             "%s: Validating content type: %s, length: %d",
@@ -1529,7 +1522,7 @@ class TaskPlanner:
 
         return validation_errors
 
-    def _process_step_schema(self, step_data: dict, sub_context: str) -> tuple[Optional[str], List[str]]:
+    def _process_step_schema(self, step_data: dict, sub_context: str) -> tuple[str | None, list[str]]:
         """Processes and validates the output_schema for a step.
 
         Accepts schema definitions provided as JSON strings or already-parsed
@@ -1550,10 +1543,10 @@ class TaskPlanner:
                 - A list of string error messages encountered.
         """
         log.debug("%s: Starting schema processing", sub_context)
-        validation_errors: List[str] = []
+        validation_errors: list[str] = []
         raw_schema: Any = step_data.get("output_schema")
-        final_schema_str: Optional[str] = None
-        schema_dict: Optional[dict] = None
+        final_schema_str: str | None = None
+        schema_dict: dict | None = None
 
         def default_schema(reason: str) -> dict:
             """Return a default schema and log why it was needed."""
@@ -1655,10 +1648,10 @@ class TaskPlanner:
         self,
         step_data: dict,
         final_schema_str: str,
-        parsed_tool_content: Optional[dict],
+        parsed_tool_content: dict | None,
         sub_context: str,
-        available_execution_tools: Dict[str, Tool],
-    ) -> tuple[Optional[dict], List[str]]:
+        available_execution_tools: dict[str, Tool],
+    ) -> tuple[dict | None, list[str]]:
         """Prepares the final data dictionary for Step creation.
 
         This method takes the raw step data, the validated `final_schema_str`,
@@ -1683,7 +1676,7 @@ class TaskPlanner:
                   if a fatal error occurred.
                 - A list of string error messages.
         """
-        validation_errors: List[str] = []
+        validation_errors: list[str] = []
         processed_data = step_data.copy()  # Work on a copy
 
         try:
@@ -1771,7 +1764,7 @@ class TaskPlanner:
     def _sanitize_tools_list(
         self,
         requested_tools: Any,
-        available_execution_tools: Dict[str, Tool],
+        available_execution_tools: dict[str, Tool],
         sub_context: str,
     ) -> list[str] | None:
         """Validate the optional `tools` list for a step."""
@@ -1814,15 +1807,15 @@ class TaskPlanner:
         step_data: dict,
         index: int,
         context_prefix: str,
-        available_execution_tools: Dict[str, Tool],
-    ) -> tuple[Optional[Step], List[str]]:
+        available_execution_tools: dict[str, Tool],
+    ) -> tuple[Step | None, list[str]]:
         """
         Processes and validates data for a single step by delegating steps.
         """
         sub_context = f"{context_prefix} step {index}"
         log.debug("Processing %s", sub_context)
-        all_validation_errors: List[str] = []
-        parsed_tool_content: Optional[dict] = None  # To store parsed JSON for tool tasks
+        all_validation_errors: list[str] = []
+        parsed_tool_content: dict | None = None  # To store parsed JSON for tool tasks
 
         try:
             # --- Validate Tool Call vs Agent Instruction ---
@@ -1922,14 +1915,14 @@ class TaskPlanner:
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
 
-    async def _process_step_list(self, raw_steps: list, context_prefix: str) -> tuple[List[Step], List[str]]:
+    async def _process_step_list(self, raw_steps: list, context_prefix: str) -> tuple[list[Step], list[str]]:
         """
         Processes a list of raw step data dictionaries using the helper method.
         """
-        processed_steps: List[Step] = []
-        all_validation_errors: List[str] = []
+        processed_steps: list[Step] = []
+        all_validation_errors: list[str] = []
         # Build tool map once
-        available_execution_tools: Dict[str, Tool] = {tool.name: tool for tool in self.execution_tools}
+        available_execution_tools: dict[str, Tool] = {tool.name: tool for tool in self.execution_tools}
 
         for i, step_data in enumerate(raw_steps):
             sub_context = f"{context_prefix} step {i}"
@@ -1955,9 +1948,7 @@ class TaskPlanner:
 
         return processed_steps, all_validation_errors
 
-    async def _validate_structured_output_plan(
-        self, task_data: dict, objective: str
-    ) -> tuple[Optional[Task], List[str]]:
+    async def _validate_structured_output_plan(self, task_data: dict, objective: str) -> tuple[Task | None, list[str]]:
         """Validates the plan data received from structured output.
 
         This method is used when the LLM generates the plan as direct JSON
@@ -1976,7 +1967,7 @@ class TaskPlanner:
                 - A `Task` object if the plan is valid, otherwise None.
                 - A list of all validation error messages encountered.
         """
-        all_validation_errors: List[str] = []
+        all_validation_errors: list[str] = []
 
         # Validate the steps first
         steps, step_validation_errors = await self._process_step_list(task_data.get("steps", []), "structured output")
@@ -2043,8 +2034,8 @@ class TaskPlanner:
         )  # Return task and any non-fatal errors
 
     async def _validate_and_build_task_from_tool_calls(
-        self, tool_calls: List[ToolCall], history: List[Message]
-    ) -> tuple[Optional[Task], List[str]]:
+        self, tool_calls: list[ToolCall], history: list[Message]
+    ) -> tuple[Task | None, list[str]]:
         """Processes 'create_task' tool calls, validates steps and dependencies.
 
         This method handles the arguments from one or more `create_task` tool
@@ -2080,10 +2071,10 @@ class TaskPlanner:
                         of steps or overall plan dependencies, or if a
                         `create_task` call results in no valid steps.
         """
-        all_steps: List[Step] = []
-        all_validation_errors: List[str] = []
+        all_steps: list[Step] = []
+        all_validation_errors: list[str] = []
         task_title: str = self.objective  # Default title
-        tool_responses_added: Set[str] = set()  # Track processed tool call IDs
+        tool_responses_added: set[str] = set()  # Track processed tool call IDs
 
         for tool_call in tool_calls:
             if tool_call.id in tool_responses_added:
@@ -2167,7 +2158,7 @@ class TaskPlanner:
             all_validation_errors,
         )  # Return task and empty error list
 
-    async def _process_tool_calls(self, message: Message, history: List[Message]) -> Task:
+    async def _process_tool_calls(self, message: Message, history: list[Message]) -> Task:
         """
         Helper method to process tool calls, create task, and handle validation.
         Delegates validation logic to _validate_and_build_task_from_tool_calls.
@@ -2188,8 +2179,8 @@ class TaskPlanner:
         return task
 
     async def _generate_with_retry(
-        self, history: List[Message], tools: List[Tool], max_retries: int = 3
-    ) -> tuple[Optional[Task], Optional[Message]]:
+        self, history: list[Message], tools: list[Tool], max_retries: int = 3
+    ) -> tuple[Task | None, Message | None]:
         """
         Generates response, processes tool calls with validation and retry logic.
 
@@ -2203,7 +2194,7 @@ class TaskPlanner:
             [t.name for t in tools],
         )
         current_retry: int = 0
-        last_message: Optional[Message] = None
+        last_message: Message | None = None
 
         while current_retry < max_retries:
             attempt = current_retry + 1
@@ -2399,7 +2390,7 @@ class TaskPlanner:
         """
         return "No file-based inputs (data flows through task dependencies)"
 
-    def _detect_list_processing(self, objective: str, input_files: List[str]) -> tuple[bool, int]:
+    def _detect_list_processing(self, objective: str, input_files: list[str]) -> tuple[bool, int]:
         """
         Detects if the objective involves processing a list of items.
 

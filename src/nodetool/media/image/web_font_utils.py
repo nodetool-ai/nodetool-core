@@ -18,7 +18,7 @@ log = get_logger(__name__)
 GOOGLE_FONTS_RAW_URL = "https://raw.githubusercontent.com/google/fonts/main"
 
 # Cache directory for downloaded web fonts
-_FONT_CACHE_DIR: Optional[Path] = None
+_FONT_CACHE_DIR: Path | None = None
 
 
 def get_font_cache_dir() -> Path:

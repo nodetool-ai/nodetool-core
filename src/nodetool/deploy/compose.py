@@ -65,14 +65,14 @@ class ComposeGenerator:
         content = self.generate()
         return hashlib.sha256(content.encode()).hexdigest()
 
-    def _build_compose_dict(self) -> Dict[str, Any]:
+    def _build_compose_dict(self) -> dict[str, Any]:
         """
         Build the compose dictionary structure.
 
         Returns:
             Dictionary representing docker-compose.yml structure
         """
-        compose: Dict[str, Any] = {
+        compose: dict[str, Any] = {
             "version": "3.8",
             "services": {},
         }
@@ -101,7 +101,7 @@ class ComposeGenerator:
             sanitized = "c" + sanitized
         return sanitized.lower()
 
-    def _build_service(self, container: ContainerConfig) -> Dict[str, Any]:
+    def _build_service(self, container: ContainerConfig) -> dict[str, Any]:
         """
         Build service definition for a container.
 
@@ -111,7 +111,7 @@ class ComposeGenerator:
         Returns:
             Service definition dictionary
         """
-        service: Dict[str, Any] = {
+        service: dict[str, Any] = {
             "image": self.deployment.image.full_name,
             "container_name": f"nodetool-{container.name}",
             "ports": [f"{container.port}:{INTERNAL_API_PORT}"],
@@ -138,7 +138,7 @@ class ComposeGenerator:
 
         return service
 
-    def _build_volumes(self, container: ContainerConfig) -> List[str]:
+    def _build_volumes(self, container: ContainerConfig) -> list[str]:
         """
         Build volume mounts for a container.
 
@@ -158,7 +158,7 @@ class ComposeGenerator:
 
         return volumes
 
-    def _build_environment(self, container: ContainerConfig) -> List[str]:
+    def _build_environment(self, container: ContainerConfig) -> list[str]:
         """
         Build environment variables for a container.
 
@@ -182,7 +182,7 @@ class ComposeGenerator:
         # Convert to KEY=value format
         return [f"{key}={value}" for key, value in env.items()]
 
-    def _build_deploy_config(self, container: ContainerConfig) -> Dict[str, Any]:
+    def _build_deploy_config(self, container: ContainerConfig) -> dict[str, Any]:
         """
         Build deployment configuration for GPU resources.
 
@@ -214,7 +214,7 @@ class ComposeGenerator:
         }
 
 
-def generate_compose_file(deployment: SelfHostedDeployment, output_path: Optional[str] = None) -> str:
+def generate_compose_file(deployment: SelfHostedDeployment, output_path: str | None = None) -> str:
     """
     Generate docker-compose.yml file from deployment configuration.
 

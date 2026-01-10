@@ -18,11 +18,11 @@ from rich.progress import (
 class ProgressManager:
     """Manages persistent progress bars for different operations."""
 
-    def __init__(self, console: Optional[Console] = None):
+    def __init__(self, console: Console | None = None):
         self.console: Console = console or Console()
-        self.progress: Optional[Progress] = None
-        self.tasks: Dict[str, TaskID] = {}  # Maps operation IDs to task IDs
-        self.current_operations: Dict[str, Dict[str, Any]] = {}  # operation info
+        self.progress: Progress | None = None
+        self.tasks: dict[str, TaskID] = {}  # Maps operation IDs to task IDs
+        self.current_operations: dict[str, dict[str, Any]] = {}  # operation info
 
     def start(self) -> None:
         """Start the progress display."""
@@ -47,7 +47,7 @@ class ProgressManager:
             self.tasks.clear()
             self.current_operations.clear()
 
-    def add_task(self, operation_id: str, description: str, total: Optional[float] = None) -> int:
+    def add_task(self, operation_id: str, description: str, total: float | None = None) -> int:
         """Add a new progress task."""
         self.start()
         assert self.progress is not None
@@ -64,14 +64,14 @@ class ProgressManager:
     def update_task(
         self,
         operation_id: str,
-        completed: Optional[float] = None,
-        description: Optional[str] = None,
+        completed: float | None = None,
+        description: str | None = None,
     ) -> None:
         """Update a progress task."""
         if operation_id in self.tasks and self.progress:
             assert self.progress is not None
             task_id = self.tasks[operation_id]
-            update_kwargs: Dict[str, Any] = {}
+            update_kwargs: dict[str, Any] = {}
 
             if completed is not None:
                 # Calculate advance amount

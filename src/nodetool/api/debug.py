@@ -117,10 +117,10 @@ router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 
 class DebugBundleRequest(BaseModel):
-    workflow_id: Optional[str] = Field(default=None)
-    graph: Optional[Dict[str, Any]] = Field(default=None)
-    errors: Optional[List[str]] = Field(default=None)
-    preferred_save: Optional[str] = Field(default=None, description="desktop or downloads preference")
+    workflow_id: str | None = Field(default=None)
+    graph: dict[str, Any] | None = Field(default=None)
+    errors: list[str] | None = Field(default=None)
+    preferred_save: str | None = Field(default=None, description="desktop or downloads preference")
 
 
 class DebugBundleResponse(BaseModel):
@@ -129,9 +129,9 @@ class DebugBundleResponse(BaseModel):
     message: str
 
 
-def _get_default_save_dir(preferred: Optional[str]) -> Path:
+def _get_default_save_dir(preferred: str | None) -> Path:
     home = Path.home()
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     if preferred == "desktop":
         candidates = [home / "Desktop", home / "Downloads", home]
     elif preferred == "downloads":
@@ -168,7 +168,7 @@ def _get_nodetool_version() -> str:
     return f"dev-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
 
 
-def _get_gpu_name() -> Optional[str]:
+def _get_gpu_name() -> str | None:
     nvml = system_stats.nvml
     if nvml is None:
         return None
@@ -190,7 +190,7 @@ def _get_gpu_name() -> Optional[str]:
                 nvml.nvmlShutdown()
 
 
-def _collect_env_info() -> Dict[str, Any]:
+def _collect_env_info() -> dict[str, Any]:
     stats = system_stats.get_system_stats()
     import shutil as _shutil
 
@@ -215,7 +215,7 @@ def _collect_env_info() -> Dict[str, Any]:
     }
 
 
-def _collect_config_info() -> Dict[str, Any]:
+def _collect_config_info() -> dict[str, Any]:
     from nodetool.config.environment import Environment
     from nodetool.security.secret_helper import get_secret_sync
 
@@ -303,7 +303,7 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
         (staging_logs_dir / "nodetool.log").write_text(f"Log file not found at {log_file_path}", encoding="utf-8")
 
     # Workflow info -> workflow/last-template.json
-    workflow_payload: Dict[str, Any] = {}
+    workflow_payload: dict[str, Any] = {}
     if payload.graph is not None:
         workflow_payload["graph"] = payload.graph
     if payload.workflow_id:

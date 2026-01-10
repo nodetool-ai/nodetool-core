@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from collections.abc import Callable
 
 from pydantic import Field
 from pydantic.fields import PydanticUndefined

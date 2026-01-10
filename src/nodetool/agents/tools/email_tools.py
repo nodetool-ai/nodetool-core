@@ -91,7 +91,7 @@ def decode_bytes(byte_data: bytes, charset: str = "utf-8") -> str:
     return byte_data.decode("utf-8", errors="replace")
 
 
-def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
+def parse_email_message(msg_data: tuple) -> dict[str, Any]:
     """Helper function to parse email message data"""
     import email
     import email.header

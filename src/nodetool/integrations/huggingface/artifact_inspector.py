@@ -11,7 +11,7 @@ import json
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 try:
     import torch

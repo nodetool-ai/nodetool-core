@@ -57,7 +57,7 @@ class ComfyRunpodProvider(BaseProvider):
         base = self._base_url()
         headers = self._headers()
         start = time.time()
-        last_status: Optional[str] = None
+        last_status: str | None = None
         while True:
             status_url = f"{base}/status/{request_id}"
             resp = requests.get(status_url, headers=headers, timeout=30)
@@ -75,7 +75,7 @@ class ComfyRunpodProvider(BaseProvider):
                 raise TimeoutError(f"RunPod request {request_id} timed out after {timeout_s}s")
             time.sleep(poll_interval_s)
 
-    def _execute(self, workflow: dict[str, Any], images: Optional[list[dict[str, str]]] = None) -> list[bytes]:
+    def _execute(self, workflow: dict[str, Any], images: list[dict[str, str]] | None = None) -> list[bytes]:
         base = self._base_url()
         headers = self._headers()
         body: dict[str, Any] = {"input": {"workflow": workflow}}
@@ -123,7 +123,7 @@ class ComfyRunpodProvider(BaseProvider):
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         return [
             ImageModel(
                 id="flux1-dev-fp8.safetensors",

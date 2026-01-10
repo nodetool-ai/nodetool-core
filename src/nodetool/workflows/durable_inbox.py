@@ -87,8 +87,8 @@ class DurableInbox:
         self,
         handle: str,
         payload: Any,
-        message_id: Optional[str] = None,
-        payload_ref: Optional[str] = None,
+        message_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> RunInboxMessage:
         """
         Append a message to the inbox (idempotent).

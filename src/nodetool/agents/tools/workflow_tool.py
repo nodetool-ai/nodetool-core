@@ -107,7 +107,7 @@ class GraphTool(Tool):
             },
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         from nodetool.types.api_graph import Graph as ApiGraph
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
@@ -344,7 +344,7 @@ class WorkflowTool(Tool):
         assert workflow.input_schema is not None, "Workflow input schema is required"
         self.input_schema = workflow.input_schema
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         """
         Execute the workflow with the provided parameters.
 
@@ -382,7 +382,7 @@ class WorkflowTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         """
         Returns a user message for the workflow tool.
         """

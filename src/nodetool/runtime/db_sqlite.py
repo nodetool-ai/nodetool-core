@@ -8,7 +8,8 @@ Uses the "Lazy Slot" algorithm for efficient connection management.
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, ClassVar, Dict, Optional, Type
+from typing import Any, ClassVar, Dict, Optional, Type
+from collections.abc import AsyncIterator
 
 import aiosqlite
 
@@ -35,8 +36,8 @@ class SQLiteConnectionPool:
     """
 
     # Class-level pools per database path and event loop
-    _pools: ClassVar[Dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
-    _loop_locks: ClassVar[Dict[int, asyncio.Lock]] = {}
+    _pools: ClassVar[dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
+    _loop_locks: ClassVar[dict[int, asyncio.Lock]] = {}
 
     def __init__(self, db_path: str, pool_size: int = 10):
         """Initialize the connection pool with lazy slots.
@@ -48,7 +49,7 @@ class SQLiteConnectionPool:
         self.db_path = db_path
         self.pool_size = pool_size
         # Initialize queue with None values (lazy slots)
-        self._slots: asyncio.Queue[Optional[aiosqlite.Connection]] = asyncio.Queue(maxsize=pool_size)
+        self._slots: asyncio.Queue[aiosqlite.Connection | None] = asyncio.Queue(maxsize=pool_size)
         for _ in range(pool_size):
             self._slots.put_nowait(None)
         self._closed = False
@@ -103,7 +104,7 @@ class SQLiteConnectionPool:
             Exception: If connection creation or configuration fails after retries.
         """
         # Determine connection settings
-        connect_kwargs: Dict[str, Any] = {"timeout": 30}
+        connect_kwargs: dict[str, Any] = {"timeout": 30}
         if ":memory:" in self.db_path:
             connect_kwargs["check_same_thread"] = False
 
@@ -211,7 +212,7 @@ class SQLiteConnectionPool:
             raise RuntimeError("Pool is closed")
 
         # Pop a slot from the queue (blocks if all slots are in use)
-        slot: Optional[aiosqlite.Connection] = await self._slots.get()
+        slot: aiosqlite.Connection | None = await self._slots.get()
 
         try:
             if slot is None:
@@ -415,9 +416,9 @@ class SQLiteScopeResources(DBResources):
             pool: The pool to return connection to on cleanup
         """
         self.pool = pool
-        self._adapters: Dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> SQLiteAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> SQLiteAdapter:
         """Get or create an adapter for the given model class.
 
         Memoizes adapters per table within this scope.

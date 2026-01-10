@@ -21,12 +21,12 @@ class ServiceConfig(BaseModel):
     name: str = Field(..., description="Unique service name")
     path: str = Field(..., description="Path prefix for routing (e.g., /app1)")
     image: str = Field(..., description="Docker image name (e.g., myregistry/myapp:latest)")
-    host_port: Optional[int] = Field(None, ge=1, le=65535, description="Fixed host port (optional)")
-    auth_token: Optional[str] = Field(None, description="Bearer token for upstream service authentication")
-    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for container")
-    volumes: Optional[Dict[str, str | Dict[str, str]]] = Field(None, description="Volume mounts for container")
-    mem_limit: Optional[str] = Field(None, description="Memory limit (e.g., '1g', '512m')")
-    cpus: Optional[float] = Field(None, gt=0, description="CPU limit (e.g., 0.5, 1.0)")
+    host_port: int | None = Field(None, ge=1, le=65535, description="Fixed host port (optional)")
+    auth_token: str | None = Field(None, description="Bearer token for upstream service authentication")
+    environment: dict[str, str] | None = Field(None, description="Environment variables for container")
+    volumes: dict[str, str | dict[str, str]] | None = Field(None, description="Volume mounts for container")
+    mem_limit: str | None = Field(None, description="Memory limit (e.g., '1g', '512m')")
+    cpus: float | None = Field(None, gt=0, description="CPU limit (e.g., 0.5, 1.0)")
 
     @field_validator("path")
     @classmethod
@@ -64,8 +64,8 @@ class GlobalConfig(BaseModel):
     listen_http: int = Field(80, ge=1, le=65535, description="HTTP port (for ACME)")
     listen_https: int = Field(443, ge=1, le=65535, description="HTTPS port")
     acme_webroot: str = Field("/var/www/acme", description="Path to ACME webroot directory")
-    tls_certfile: Optional[str] = Field(None, description="Path to TLS certificate file")
-    tls_keyfile: Optional[str] = Field(None, description="Path to TLS key file")
+    tls_certfile: str | None = Field(None, description="Path to TLS certificate file")
+    tls_keyfile: str | None = Field(None, description="Path to TLS key file")
     log_level: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR)")
     docker_network: str = Field("nodetool-net", description="Docker network for proxy/services")
     connect_mode: Literal["docker_dns", "host_port"] = Field(
@@ -88,11 +88,11 @@ class ProxyConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     global_: GlobalConfig = Field(alias="global", description="Global configuration")
-    services: List[ServiceConfig] = Field(..., description="List of services to proxy")
+    services: list[ServiceConfig] = Field(..., description="List of services to proxy")
 
     @field_validator("services")
     @classmethod
-    def validate_services(cls, v: List[ServiceConfig]) -> List[ServiceConfig]:
+    def validate_services(cls, v: list[ServiceConfig]) -> list[ServiceConfig]:
         """Validate service configurations."""
         if not v:
             raise ValueError("At least one service must be defined")

@@ -30,7 +30,8 @@ Example usage:
 """
 
 import uuid
-from typing import Any, AsyncGenerator, Callable, List, Sequence, Union
+from typing import Any, List, Union
+from collections.abc import AsyncGenerator, Callable, Sequence
 
 from nodetool.metadata.types import (
     LanguageModel,
@@ -97,7 +98,7 @@ class FakeProvider(BaseProvider):
         """Reset the call count to 0."""
         self.call_count = 0
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Fake provider has no models."""
         return []
 

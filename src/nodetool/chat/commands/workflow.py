@@ -25,7 +25,7 @@ class RunWorkflowCommand(Command):
             ["wf"],
         )
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             cli.console.print("[bold red]Usage:[/bold red] /workflow <workflow_name> [input_values_json]")
             cli.console.print('Example: /workflow "My Workflow" \'{"input1": 5, "input2": 3}\'')

@@ -33,8 +33,8 @@ class MasterKeyManager:
     4. Auto-generated and stored in keychain if not found
     """
 
-    _cached_master_key: Optional[str] = None
-    _logger: Optional[logging.Logger] = None
+    _cached_master_key: str | None = None
+    _logger: logging.Logger | None = None
 
     @classmethod
     def _get_logger(cls) -> logging.Logger:
@@ -46,7 +46,7 @@ class MasterKeyManager:
         return cls._logger
 
     @classmethod
-    def _get_from_aws_secrets(cls, secret_name: str) -> Optional[str]:
+    def _get_from_aws_secrets(cls, secret_name: str) -> str | None:
         """
         Retrieve master key from AWS Secrets Manager.
 

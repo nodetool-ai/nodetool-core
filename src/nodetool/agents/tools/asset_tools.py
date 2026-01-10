@@ -33,7 +33,7 @@ class SaveAssetTool(Tool):
         "required": ["text", "filename"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         try:
             text = params["text"]
             filename = params.get("filename")
@@ -83,7 +83,7 @@ class ReadAssetTool(Tool):
         "required": ["filename"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         try:
             filename = params["filename"]
             asset = await context.find_asset_by_filename(filename)
@@ -110,7 +110,7 @@ class ReadAssetTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         filename = params.get("filename", "an asset")
         msg = f"Reading asset {filename}..."
         if len(msg) > 80:
@@ -137,7 +137,7 @@ class ListAssetsDirectoryTool(Tool):
         "required": [],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         try:
             parent_id = params.get("parent_id")
             recursive = params.get("recursive", False)
@@ -171,5 +171,5 @@ class ListAssetsDirectoryTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         return "Listing assets..."

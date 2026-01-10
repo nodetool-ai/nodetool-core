@@ -13,7 +13,7 @@ class DebugCommand(Command):
     def __init__(self):
         super().__init__("debug", "Toggle debug mode (on/off)", ["d"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         new_state = None
         if not args:
             current_state = "[bold green]ON[/bold green]" if cli.debug_mode else "[bold red]OFF[/bold red]"

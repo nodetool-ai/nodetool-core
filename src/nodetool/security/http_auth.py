@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Optional
+from collections.abc import Iterable
 
 from fastapi.responses import JSONResponse
 
@@ -20,7 +21,7 @@ def _make_response(detail: str, status_code: int = 401) -> JSONResponse:
 
 def create_http_auth_middleware(
     static_provider: AuthProvider,
-    user_provider: Optional[AuthProvider],
+    user_provider: AuthProvider | None,
     exempt_paths: Iterable[str] = ("/health", "/ping"),
     enforce_auth: bool = True,
 ):

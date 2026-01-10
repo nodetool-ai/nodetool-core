@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Any, AsyncIterator
+from typing import Any
+from collections.abc import AsyncIterator
 
 from nodetool.config.logging_config import get_logger
 

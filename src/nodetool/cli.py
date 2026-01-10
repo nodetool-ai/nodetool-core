@@ -20,7 +20,7 @@ from rich.text import Text
 # Create console instance
 console = Console()
 
-_progress_manager: Optional[ProgressManager] = None
+_progress_manager: ProgressManager | None = None
 
 if TYPE_CHECKING:
     from nodetool.deploy.progress import ProgressManager
@@ -932,12 +932,12 @@ def chat_server(
     help="AI provider when connecting to local server (e.g., openai, anthropic, ollama).",
 )
 def chat_client(
-    server_url: Optional[str],
-    auth_token: Optional[str],
-    message: Optional[str],
-    model: Optional[str],
-    provider: Optional[str],
-    runpod_endpoint: Optional[str],
+    server_url: str | None,
+    auth_token: str | None,
+    message: str | None,
+    model: str | None,
+    provider: str | None,
+    runpod_endpoint: str | None,
 ):
     """Interactive or non-interactive client for connecting to chat services.
 
@@ -1040,7 +1040,7 @@ def secrets_list(user_id: str, limit: int) -> None:
 def secrets_store(
     key: str,
     user_id: str,
-    description: Optional[str],
+    description: str | None,
 ) -> None:
     """Store or update a secret value by securely prompting for input."""
     import asyncio
@@ -2252,7 +2252,7 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         SelfHostedDeployment,
     )
 
-    def _inject(env: Optional[Dict[str, str]]) -> Dict[str, str]:
+    def _inject(env: dict[str, str] | None) -> dict[str, str]:
         env = dict(env) if env else {}
         env["SECRETS_MASTER_KEY"] = master_key
         return env
@@ -2266,11 +2266,11 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
 
-async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str, Any]]:
+async def _export_encrypted_secrets_payload(limit: int = 1000) -> list[dict[str, Any]]:
     from nodetool.models.secret import Secret
 
     secrets = await Secret.list_all(limit=limit)
-    payload: List[Dict[str, Any]] = []
+    payload: list[dict[str, Any]] = []
     for secret in secrets:
         payload.append(
             {
@@ -2285,7 +2285,7 @@ async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str,
     return payload
 
 
-async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: list[dict[str, Any]]) -> dict[str, Any]:
     from nodetool.deploy.admin_client import AdminHTTPClient
 
     client = AdminHTTPClient(server_url, auth_token)
@@ -2300,7 +2300,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
 
     auth_token = getattr(deployment, "worker_auth_token", None)
     if not auth_token:
-        env: Optional[Dict[str, str]] = None
+        env: dict[str, str] | None = None
         if hasattr(deployment, "environment") and deployment.environment:
             env = deployment.environment
         elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
@@ -2671,7 +2671,7 @@ def deploy_add(name: str, deployment_type: str):
 
 @deploy.command("edit")
 @click.argument("name", required=False)
-def deploy_edit(name: Optional[str]):
+def deploy_edit(name: str | None):
     """Edit deployment configuration file.
 
     If a deployment name is provided, opens the file and shows the deployment location.
@@ -2985,7 +2985,7 @@ def deploy_status(name: str):
 @click.option("--service", help="Specific service/container name")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output")
 @click.option("--tail", default=100, type=int, help="Number of lines from end (default: 100)")
-def deploy_logs(name: str, service: Optional[str], follow: bool, tail: int):
+def deploy_logs(name: str, service: str | None, follow: bool, tail: int):
     """View logs from deployed containers."""
     from nodetool.deploy.manager import DeploymentManager
 
