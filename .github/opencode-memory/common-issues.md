@@ -36,6 +36,27 @@ When adding a new issue, use this format:
 **Related Files**: `pyproject.toml`
 **Prevention**: Document dependency installation in PR description
 
+### Ruff Import Sorting in Test Files
+**Date Discovered**: 2026-01-10
+**Context**: Imports inside test functions need to follow isort order: standard library → third-party → local
+**Solution**: Use `ruff check --fix` to auto-fix, or manually order imports correctly
+**Related Files**: `tests/chat/providers/test_gemini_provider.py`
+**Prevention**: Run `ruff check` before committing, use IDE integration for real-time feedback
+
+### graph_result Function Calling Pattern
+**Date Discovered**: 2026-01-10
+**Context**: `graph_result` called `run_graph_async` directly, bypassing `run_graph` wrapper that tests mock
+**Solution**: Changed `graph_result` to call `run_graph` instead, which handles sync/async properly
+**Related Files**: `src/nodetool/dsl/graph.py`, `tests/dsl/test_graph_process.py`
+**Prevention**: When creating convenience wrappers, ensure they use the same entry points that tests mock
+
+### Async Test Fixtures for Sync Functions
+**Date Discovered**: 2026-01-10
+**Context**: Test fixture was async but patched function (`run_graph`) is sync, causing coroutine objects to be returned
+**Solution**: Remove `async` from fake function definition since `run_graph` is not async
+**Related Files**: `tests/dsl/test_graph_process.py`
+**Prevention**: Match the async/sync nature of the function being mocked in test fixtures
+
 ---
 
 ## Historical Patterns
