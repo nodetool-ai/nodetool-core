@@ -23,6 +23,9 @@ def test_split_camel_case():
     # acronyms should stay intact
     assert split_camel_case("HTTPResponseCode") == "HTTPResponse Code"
     assert split_camel_case("wifi2Connection") == "wifi 2 Connection"
+    # digit+acronym chunks should stay intact
+    assert split_camel_case("Model3D") == "Model 3D"
+    assert split_camel_case("Model3DViewer") == "Model 3D Viewer"
 
 
 def test_generate_node_cache_key():

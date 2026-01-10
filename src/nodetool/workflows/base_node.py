@@ -205,7 +205,8 @@ def sanitize_node_name(node_name: str) -> str:
 def split_camel_case(text: str) -> str:
     """Splits a camelCase or PascalCase string into space-separated words.
 
-    Uppercase sequences are kept together. Numbers are treated as separate words.
+    Uppercase sequences are kept together. Numbers are treated as separate words,
+    except when they form common digit+acronym tokens like "3D" or "4K".
 
     Args:
         text: The input string to split.
@@ -213,8 +214,9 @@ def split_camel_case(text: str) -> str:
     Returns:
         A string with words separated by spaces.
     """
-    # Split the string into parts, keeping uppercase sequences together
-    parts = re.findall(r"[A-Z]+[a-z]*|\d+|[a-z]+", text)
+    # Split the string into parts, keeping uppercase sequences together.
+    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D".
+    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
     # Join the parts with spaces
     return " ".join(parts)
