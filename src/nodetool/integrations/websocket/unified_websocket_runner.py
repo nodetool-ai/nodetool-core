@@ -204,7 +204,7 @@ async def process_message(
     """
     msg = await context.pop_message_async()
     if isinstance(msg, Error):
-        raise RuntimeError(msg.error)
+        raise RuntimeError(msg.message)
     msg_dict: dict[str, Any] = msg if isinstance(msg, dict) else msg.model_dump()
 
     if explicit_types and "result" in msg_dict:

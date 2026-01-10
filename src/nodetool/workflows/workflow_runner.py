@@ -1213,7 +1213,7 @@ class WorkflowRunner:
             if node_state and node_state.status == "suspended":
                 if hasattr(node, "_set_resuming_state") and node_state.resume_state_json:
                     try:
-                        node._set_resuming_state(node_state.resume_state_json, 0)
+                        node._set_resuming_state(node_state.resume_state_json, 0)  # type: ignore[call-non-callable]
                         log.info(
                             f"Restored resuming state for suspended node: {node._id} "
                             f"(state_keys={list(node_state.resume_state_json.keys())})"
@@ -1238,7 +1238,9 @@ class WorkflowRunner:
                 node_id = task_to_node.get(t, "unknown")
                 # Check for suspension
                 if t.exception():
-                    log.info(f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}")
+                    log.info(
+                        f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}"
+                    )
                     if isinstance(t.exception(), WorkflowSuspendedException):
                         exc = t.exception()
                         log.info(

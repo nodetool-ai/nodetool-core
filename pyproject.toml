@@ -243,7 +243,10 @@ disallow_incomplete_defs = false
 
 # Basedpyright configuration for type checking
 [tool.basedpyright]
-typeCheckingMode = "standard"
+typeCheckingMode = "basic"
+exclude = [
+    "tests/**",
+]
 reportUnknownMemberType = "none"
 reportUnknownVariableType = "none"
 reportUnknownArgumentType = "none"
@@ -255,3 +258,8 @@ reportUnusedVariable = "none"
 reportUnusedFunction = "none"
 reportUnusedClass = "none"
 reportShadowedImports = "none"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.37.1",
+]

@@ -1034,9 +1034,7 @@ class BaseNode(BaseModel):
 
             if isinstance(data, (bytes, bytearray)):
                 total_len = len(data)
-            elif isinstance(data, list) and data and all(
-                isinstance(x, (bytes, bytearray)) for x in data
-            ):
+            elif isinstance(data, list) and data and all(isinstance(x, (bytes, bytearray)) for x in data):
                 total_len = sum(len(x) for x in data)
 
             if total_len is None or total_len <= MAX_INLINE_ASSET_BYTES:

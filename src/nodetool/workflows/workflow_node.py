@@ -60,7 +60,7 @@ class WorkflowNode(BaseNode):
         )
         async for msg in run_workflow(req):
             if isinstance(msg, Error):
-                raise Exception(msg.error)
+                raise Exception(msg.message)
             if isinstance(msg, OutputUpdate):
                 yield msg.output_name, msg.value
             if isinstance(msg, NodeProgress):
