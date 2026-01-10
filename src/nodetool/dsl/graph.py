@@ -260,4 +260,4 @@ async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
     Convenience helper that forwards kwargs to `run_graph`.
     """
     g = graph(node)
-    return await run_graph_async(g, **kwargs)
+    return run_graph(g, **kwargs)

@@ -51,6 +51,13 @@ When adding a new insight, use this format:
 **Impact**: When adding new source files, create corresponding test files in mirrored location.
 **Examples**: `tests/agents/` mirrors `src/nodetool/agents/`
 
+### Test Suite Timeout Issue
+**Date**: 2026-01-10
+**Category**: Testing
+**Insight**: Full test suite consistently times out due to resource cleanup issues in async test teardown. Individual test modules pass successfully.
+**Impact**: Run specific test modules instead of full suite when checking changes. Use `--timeout=60` to limit wait time.
+**Examples**: `pytest tests/dsl/ -q` passes; full `pytest -q` times out
+
 ---
 
 ## Code Quality Insights
