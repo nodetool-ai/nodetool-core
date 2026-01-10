@@ -37,6 +37,59 @@ jobs:
         with:
           model: minimax/MiniMax-M2.1
           prompt: |
-            Run make lint, make test and make typecheck.
-            If you find issues worth addressing, open a PR to fix them.
-            Make small and coherent PRs.
+            # Task: Automated Quality Assurance
+            
+            ## Important Context
+            You are working on **nodetool-core**, a Python 3.11+ AI workflow engine with async-first architecture.
+            
+            Before starting work:
+            1. Read `.github/opencode-memory/repository-context.md` for project structure and conventions
+            2. Check `.github/opencode-memory/common-issues.md` for known problems
+            3. Review `.github/opencode-memory/insights.md` for architectural guidance
+            
+            ## Your Task
+            Run the validation commands and fix any issues:
+            
+            ```bash
+            make lint      # Uses ruff for linting
+            make test      # Runs pytest
+            make typecheck # Runs basedpyright
+            ```
+            
+            ## Guidelines for Fixes
+            
+            ### Code Quality Standards
+            - **Python Style**: Follow Black formatting, use type hints, prefer f-strings
+            - **Naming**: `snake_case` for functions, `PascalCase` for classes, `SCREAMING_SNAKE_CASE` for constants
+            - **Async Patterns**: Prefer async/await, avoid blocking calls in async code
+            - **Imports**: Standard library → third-party → local, keep organized
+            
+            ### Testing Requirements
+            - Tests are in `tests/` mirroring `src/` structure
+            - Test files: `test_*.py`, functions: `test_*`, classes: `Test*`
+            - Tests use `ENV=test` with in-memory storage automatically
+            - Don't remove or modify unrelated tests
+            
+            ### Making Changes
+            - ✅ Make **minimal, surgical changes** - only fix what's broken
+            - ✅ Keep PRs small and focused on one issue type
+            - ✅ Follow Conventional Commits: `fix:`, `test:`, `refactor:`, etc.
+            - ✅ Ensure ALL validation commands pass before submitting
+            - ❌ Don't make unrelated improvements or refactoring
+            - ❌ Don't modify working code unless fixing a specific issue
+            
+            ### Memory System
+            After solving non-trivial issues:
+            - Document the problem and solution in `.github/opencode-memory/common-issues.md`
+            - Record important patterns in `.github/opencode-memory/insights.md`
+            
+            ## Success Criteria
+            - All three commands (`make lint`, `make test`, `make typecheck`) pass cleanly
+            - Changes are minimal and directly address the issues
+            - PR description clearly explains what was fixed and why
+            - Commit messages follow Conventional Commits format
+            
+            ## Environment Notes
+            - Dependencies are already installed via `uv sync --all-extras --dev`
+            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
+            - You're running in GitHub CI with Python 3.11 (not conda)
