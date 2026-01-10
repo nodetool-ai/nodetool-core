@@ -77,6 +77,19 @@ When adding a new issue, use this format:
 - For regular file reads: Use `aiofiles` library for async file operations
 **Related Files**: `src/nodetool/agents/agent_evaluator.py`
 **Prevention**: Use `aiofiles` for async file operations; use `asyncio.to_thread()` or `run_in_executor()` for blocking file I/O that must remain sync
+### Overly Broad Exception Handling
+**Date Discovered**: 2026-01-10
+**Context**: Multiple files use `except Exception:` or `except Exception as exc:` which catches all exceptions including system-exiting ones (KeyboardInterrupt, SystemExit) and makes debugging difficult.
+**Solution**: Replace `except Exception:` with specific exception types:
+- `except (TypeError, ValueError):` for JSON serialization errors
+- `except (KeyError, ValueError, base64.binascii.Error):` for data parsing errors
+- `except requests.RequestException:` for HTTP request errors
+- `except (OSError, ValueError):` for file I/O and audio conversion errors
+**Related Files**:
+- `src/nodetool/providers/comfy_runpod_provider.py` (lines 118, 122)
+- `src/nodetool/providers/openai_compat.py` (lines 72, 108)
+- `src/nodetool/providers/llama_provider.py` (lines 162, 276, 579, 618)
+**Prevention**: Use ruff rule `TRY302` (raise from) and `TRY201` (bare raise) when appropriate, and be specific about exception types. Log exceptions instead of silently swallowing them.
 
 ---
 
