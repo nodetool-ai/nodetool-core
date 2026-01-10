@@ -115,11 +115,11 @@ class ComfyRunpodProvider(BaseProvider):
                             results.append(r.content)
                         else:
                             log.warning("Failed to fetch S3 URL (%s): %s", r.status_code, data)
-                    except Exception as exc:
+                    except requests.RequestException as exc:
                         log.warning("Error fetching S3 URL %s: %s", data, exc)
                 else:
                     log.debug("Ignoring unsupported image type from RunPod: %s", t)
-            except Exception as exc:
+            except (KeyError, ValueError, base64.binascii.Error) as exc:
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 

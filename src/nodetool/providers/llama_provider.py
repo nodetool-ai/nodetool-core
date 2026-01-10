@@ -159,7 +159,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 else:
                     try:
                         content_str = json.dumps(msg.content)  # type: ignore[arg-type]
-                    except Exception:
+                    except (TypeError, ValueError):
                         content_str = str(msg.content)
 
                 # For Gemma models, avoid adding empty assistant messages as they break the chat template
@@ -273,7 +273,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                         try:
                             args_str = json.dumps(tool_call.args)
                             num_tokens += self._count_tokens_in_text(args_str)
-                        except Exception:
+                        except (TypeError, ValueError):
                             pass
 
         # Add tokens for the assistant reply primer
@@ -576,7 +576,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         def try_parse_args(args: Any) -> Any:
             try:
                 return json.loads(args)
-            except Exception:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 return {}
 
         tool_calls = None
@@ -615,7 +615,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     try:
                         args_str = json.dumps(tc.args)
                         completion_tokens += self._count_tokens_in_text(args_str)
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
         log.debug(

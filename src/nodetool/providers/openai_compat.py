@@ -69,7 +69,8 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError) as exc:
+                log.warning("Failed to convert audio to MP3, falling back to original format: %s", exc)
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(data_bytes).decode("utf-8")
@@ -104,7 +105,8 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError) as exc:
+                log.warning("Failed to convert audio to MP3, falling back to original format: %s", exc)
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
