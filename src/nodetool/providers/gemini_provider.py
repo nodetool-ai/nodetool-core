@@ -632,7 +632,9 @@ class GeminiProvider(BaseProvider):
                             if is_thought and isinstance(text_value, str):
                                 # Thought content - include metadata to indicate it's a thought
                                 thought_signature = getattr(part, "thought_signature", None)
-                                log.debug(f"Found thought content in stream, signature present: {thought_signature is not None}")
+                                log.debug(
+                                    f"Found thought content in stream, signature present: {thought_signature is not None}"
+                                )
                                 yield Chunk(
                                     content=text_value,
                                     done=False,
