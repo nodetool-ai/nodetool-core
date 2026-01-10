@@ -1,0 +1,15 @@
+# Simple Agent Configuration
+# Minimal configuration for basic agent tasks
+
+name: "Simple Agent"
+description: "A basic agent for general tasks"
+
+provider: "openai"
+model: "gpt-4o-mini"
+
+tools:
+  - "calculator"
+  - "python"
+
+max_steps: 10
+verbose: true
