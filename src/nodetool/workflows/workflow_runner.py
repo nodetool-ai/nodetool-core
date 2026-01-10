@@ -1238,7 +1238,9 @@ class WorkflowRunner:
                 node_id = task_to_node.get(t, "unknown")
                 # Check for suspension
                 if t.exception():
-                    log.info(f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}")
+                    log.info(
+                        f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}"
+                    )
                     if isinstance(t.exception(), WorkflowSuspendedException):
                         exc = t.exception()
                         log.info(
