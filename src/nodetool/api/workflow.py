@@ -615,7 +615,7 @@ async def run_workflow_by_id(
                             )
                         value["data"] = None
                 elif isinstance(msg, Error):
-                    raise HTTPException(status_code=500, detail=msg.error)
+                    raise HTTPException(status_code=500, detail=msg.message)
                 result[name] = value
         return result
 

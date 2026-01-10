@@ -346,7 +346,7 @@ async def run_workflow_tool(workflow_id: str, ctx: Context, params: dict[str, An
         elif isinstance(msg, LogUpdate):
             await ctx.info(msg.content)
         elif isinstance(msg, Error):
-            raise Exception(msg.error)
+            raise Exception(msg.message)
 
     return {
         "workflow_id": workflow_id,
@@ -426,7 +426,7 @@ async def run_graph(graph: dict[str, Any], params: dict[str, Any] | None = None)
             result[msg.node_name] = value
 
         elif isinstance(msg, Error):
-            raise Exception(msg.error)
+            raise Exception(msg.message)
 
     return {
         "status": "completed",
