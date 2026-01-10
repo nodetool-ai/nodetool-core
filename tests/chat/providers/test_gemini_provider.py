@@ -370,3 +370,205 @@ class TestGeminiProvider(BaseProviderTest):
             with self.mock_api_call(ResponseFixtures.simple_text_response(f"Response from {model}")):
                 response = await provider.generate_message(self.create_simple_messages(f"Test {model}"), model)
             assert response.role == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_thought_signatures_extraction(self):
+        """Test extraction of thought parts and thought signatures from response."""
+        from google.genai.types import Part
+        from nodetool.metadata.types import MessageThoughtContent
+
+        provider = self.create_provider()
+
+        # Create mock parts with thought content
+        thought_signature = b"test_signature_bytes"
+        thought_part = MagicMock(spec=Part)
+        thought_part.text = "Let me think about this problem step by step."
+        thought_part.thought = True
+        thought_part.thought_signature = thought_signature
+        thought_part.function_call = None
+        thought_part.executable_code = None
+        thought_part.code_execution_result = None
+        thought_part.inline_data = None
+
+        text_part = MagicMock(spec=Part)
+        text_part.text = "Here is my answer."
+        text_part.thought = False
+        text_part.thought_signature = None
+        text_part.function_call = None
+        text_part.executable_code = None
+        text_part.code_execution_result = None
+        text_part.inline_data = None
+
+        # Test extraction
+        content, tool_calls, output_files = provider._extract_content_from_parts([thought_part, text_part])
+
+        # Should be a list because of mixed content types
+        assert isinstance(content, list)
+        assert len(content) == 2
+
+        # First part should be thought content
+        assert isinstance(content[0], MessageThoughtContent)
+        assert content[0].text == "Let me think about this problem step by step."
+        assert content[0].thought_signature == thought_signature
+
+        # Second part should be text content
+        from nodetool.metadata.types import MessageTextContent
+
+        assert isinstance(content[1], MessageTextContent)
+        assert content[1].text == "Here is my answer."
+
+    @pytest.mark.asyncio
+    async def test_thought_content_preparation(self):
+        """Test that thought content is properly prepared for multi-turn conversations."""
+        from google.genai.types import Part
+        from nodetool.metadata.types import MessageThoughtContent
+
+        provider = self.create_provider()
+
+        # Create a message with thought content
+        thought_signature = b"preserved_signature"
+        message = Message(
+            role="assistant",
+            content=[
+                MessageThoughtContent(
+                    text="My reasoning process...",
+                    thought_signature=thought_signature,
+                ),
+                MessageTextContent(text="The final answer."),
+            ],
+        )
+
+        # Prepare the message content
+        parts = await provider._prepare_message_content(message)
+
+        # Should have 2 parts
+        assert len(parts) == 2
+
+        # First part should be a thought with signature
+        assert parts[0].text == "My reasoning process..."
+        assert parts[0].thought is True
+        assert parts[0].thought_signature == thought_signature
+
+        # Second part should be regular text
+        assert parts[1].text == "The final answer."
+
+    @pytest.mark.asyncio
+    async def test_thinking_config_passed_to_generate_message(self):
+        """Test that thinking_config is passed through to the API config."""
+        from google.genai.types import ThinkingConfig
+
+        provider = self.create_provider()
+
+        thinking_config = ThinkingConfig(include_thoughts=True, thinking_budget=1000)
+
+        # Create a mock response
+        mock_response = MagicMock()
+        mock_response.candidates = [
+            MagicMock(content=MagicMock(parts=[MagicMock(text="Response", thought=False, thought_signature=None)]))
+        ]
+        # Set the additional attributes needed
+        mock_response.candidates[0].content.parts[0].function_call = None
+        mock_response.candidates[0].content.parts[0].executable_code = None
+        mock_response.candidates[0].content.parts[0].code_execution_result = None
+        mock_response.candidates[0].content.parts[0].inline_data = None
+
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content = AsyncMock(return_value=mock_response)
+        mock_client.models = mock_models
+
+        with patch.object(GeminiProvider, "get_client", return_value=mock_client):
+            await provider.generate_message(
+                self.create_simple_messages("Test"),
+                "gemini-2.5-pro",
+                thinking_config=thinking_config,
+            )
+
+        # Verify generate_content was called
+        mock_models.generate_content.assert_called_once()
+
+        # Get the config argument
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+        assert "config" in call_kwargs
+        assert call_kwargs["config"].thinking_config == thinking_config
+
+    @pytest.mark.asyncio
+    async def test_streaming_with_thought_parts(self):
+        """Test streaming handles thought parts correctly."""
+        from nodetool.workflows.types import Chunk
+
+        provider = self.create_provider()
+
+        thought_signature = b"stream_thought_sig"
+
+        async def mock_stream():
+            # First chunk: thought
+            thought_part = MagicMock()
+            thought_part.text = "Thinking..."
+            thought_part.thought = True
+            thought_part.thought_signature = thought_signature
+            thought_part.function_call = None
+            thought_part.executable_code = None
+            thought_part.code_execution_result = None
+            thought_part.inline_data = None
+
+            mock_content = MagicMock()
+            mock_content.parts = [thought_part]
+
+            mock_candidate = MagicMock()
+            mock_candidate.content = mock_content
+
+            mock_chunk = MagicMock()
+            mock_chunk.candidates = [mock_candidate]
+            yield mock_chunk
+
+            # Second chunk: regular text
+            text_part = MagicMock()
+            text_part.text = "The answer is 42."
+            text_part.thought = False
+            text_part.thought_signature = None
+            text_part.function_call = None
+            text_part.executable_code = None
+            text_part.code_execution_result = None
+            text_part.inline_data = None
+
+            mock_content2 = MagicMock()
+            mock_content2.parts = [text_part]
+
+            mock_candidate2 = MagicMock()
+            mock_candidate2.content = mock_content2
+
+            mock_chunk2 = MagicMock()
+            mock_chunk2.candidates = [mock_candidate2]
+            yield mock_chunk2
+
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content_stream = AsyncMock(return_value=mock_stream())
+        mock_client.models = mock_models
+
+        with patch.object(GeminiProvider, "get_client", return_value=mock_client):
+            results = []
+            async for item in provider.generate_messages(
+                self.create_simple_messages("What is 6 times 7?"),
+                "gemini-2.5-pro",
+            ):
+                results.append(item)
+
+        # Should have 3 items: thought chunk, text chunk, done chunk
+        assert len(results) == 3
+
+        # First should be thought content with metadata
+        assert isinstance(results[0], Chunk)
+        assert results[0].content == "Thinking..."
+        assert results[0].content_metadata.get("thought") is True
+        assert results[0].content_metadata.get("thought_signature") == thought_signature
+
+        # Second should be regular text
+        assert isinstance(results[1], Chunk)
+        assert results[1].content == "The answer is 42."
+        assert results[1].content_metadata.get("thought") is not True
+
+        # Third should be done marker
+        assert isinstance(results[2], Chunk)
+        assert results[2].done is True
