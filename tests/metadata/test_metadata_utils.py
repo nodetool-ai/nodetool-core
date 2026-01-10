@@ -23,7 +23,7 @@ def test_get_return_annotation_falls_back_to_annotations_dict():
     def _metafunc():
         return ""
 
-    _metafunc.__annotations__ = {"return": str}  # type: ignore[attr-defined]
+    _metafunc.__annotations__ = {"return": str}
     _metafunc.__module__ = "tests.metadata.test_metadata_utils"
     assert get_return_annotation(_metafunc) is str
 
