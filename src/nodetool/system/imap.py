@@ -94,7 +94,7 @@ def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
     )
 
 
-def fetch_emails(imap, message_ids: List[str], batch_size: int = 100) -> List[Email]:
+def fetch_emails(imap, message_ids: list[str], batch_size: int = 100) -> list[Email]:
     """
     Fetches email details for the given message IDs in batches.
 
@@ -202,7 +202,7 @@ def build_imap_query(criteria: EmailSearchCriteria) -> str:
     return " ".join(query_parts)
 
 
-def search_emails(imap: imaplib.IMAP4_SSL, criteria: EmailSearchCriteria, max_results: int = 50) -> List[str]:
+def search_emails(imap: imaplib.IMAP4_SSL, criteria: EmailSearchCriteria, max_results: int = 50) -> list[str]:
     """
     Searches emails using IMAP search criteria.
 

@@ -22,7 +22,7 @@ async def index_file_to_collection(
     file_path: str,
     mime_type: str,
     token: str = "local_token",
-) -> Optional[str]:
+) -> str | None:
     """Index a file into the specified collection.
 
     If the collection metadata contains a workflow ID, the workflow is executed

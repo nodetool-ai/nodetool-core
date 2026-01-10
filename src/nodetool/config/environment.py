@@ -186,7 +186,7 @@ class Environment:
     development purposes.
     """
 
-    settings: Optional[Dict[str, Any]] = None
+    settings: dict[str, Any] | None = None
     _sqlite_connection: Any = None
 
     @classmethod
@@ -642,7 +642,7 @@ class Environment:
         # This method exists to prevent errors when called from threaded_event_loop
         pass
 
-    _worker_id: Optional[str] = None
+    _worker_id: str | None = None
 
     @classmethod
     def get_worker_id(cls) -> str:

@@ -7,7 +7,8 @@ and optional workflow association.
 """
 
 from datetime import datetime
-from typing import Dict, Literal, Optional, Sequence
+from typing import Dict, Literal, Optional
+from collections.abc import Sequence
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
@@ -39,10 +40,10 @@ class Asset(DBModel):
     file_id: str | None = DBField(default="")
     name: str = DBField(default="")
     content_type: str = DBField(default="")
-    size: Optional[int] = DBField(default=None)  # File size in bytes (None for folders)
+    size: int | None = DBField(default=None)  # File size in bytes (None for folders)
     metadata: dict | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
-    duration: Optional[float] = DBField(default=None)
+    duration: float | None = DBField(default=None)
 
     @property
     def file_extension(self) -> str:
@@ -84,7 +85,7 @@ class Asset(DBModel):
         parent_id: str | None = None,
         workflow_id: str | None = None,
         duration: float | None = None,
-        size: Optional[int] = None,
+        size: int | None = None,
         **kwargs,
     ):
         """Creates a new asset record in the database.
@@ -137,9 +138,9 @@ class Asset(DBModel):
     async def paginate(
         cls,
         user_id: str,
-        parent_id: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        content_type: Optional[str] = None,
+        parent_id: str | None = None,
+        workflow_id: str | None = None,
+        content_type: str | None = None,
         limit: int = 100,
         start_key: str | None = None,
         reverse: bool = False,
@@ -173,7 +174,7 @@ class Asset(DBModel):
         return items
 
     @classmethod
-    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> Dict:
+    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> dict:
         """Recursively fetches all assets within a given folder for a user.
 
         Args:
@@ -215,9 +216,9 @@ class Asset(DBModel):
         cls,
         user_id: str,
         query: str,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
         limit: int = 100,
-        start_key: Optional[str] = None,
+        start_key: str | None = None,
     ):
         """
         **Global Asset Search (Model Layer)**
@@ -284,7 +285,7 @@ class Asset(DBModel):
         return assets, next_cursor, folder_path_list
 
     @classmethod
-    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Get folder path information for given asset IDs using batch queries to avoid N+1 problem.
 
@@ -411,7 +412,7 @@ class Asset(DBModel):
         return result
 
     @classmethod
-    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Fallback method for get_asset_path_info when batch queries fail.
         Uses individual queries but with better error handling.

@@ -35,7 +35,8 @@ import time
 import zipfile
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator
 from urllib.parse import urlparse
 from urllib.request import urlopen
 

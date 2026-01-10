@@ -19,16 +19,16 @@ class Tool:
     # Class attributes expected to be defined by subclasses
     name: str = "base_tool"  # Provide a default or make abstract
     description: str = "Base tool description"
-    input_schema: Dict[str, Any] = {}  # noqa: RUF012  # Mutable default is intentional; overridden by subclasses
+    input_schema: dict[str, Any] = {}  # noqa: RUF012  # Mutable default is intentional; overridden by subclasses
     example: str = ""
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         """
         Returns a user message for the tool.
         """
         return f"Running {self.name}"
 
-    def tool_param(self) -> Dict[str, Any]:
+    def tool_param(self) -> dict[str, Any]:
         """
         Returns the tool's definition in a format suitable for LLM function calling.
         """
@@ -41,7 +41,7 @@ class Tool:
             },
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         """
         Process the tool's action. Subclasses MUST override this method.
 
@@ -56,6 +56,6 @@ class Tool:
         # Default implementation returns params, but subclasses should override
         return params
 
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables needed when running inside Docker."""
         return {}

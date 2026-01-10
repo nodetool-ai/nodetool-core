@@ -75,8 +75,8 @@ class SuspendableNode(BaseNode):
     """
 
     _is_resuming_from_suspension: bool = False
-    _saved_suspension_state: Optional[dict[str, Any]] = None
-    _suspension_event_seq: Optional[int] = None
+    _saved_suspension_state: dict[str, Any] | None = None
+    _suspension_event_seq: int | None = None
 
     def is_suspendable(self) -> bool:
         """
@@ -116,7 +116,7 @@ class SuspendableNode(BaseNode):
         return self._saved_suspension_state
 
     async def suspend_workflow(
-        self, reason: str, state: dict[str, Any], metadata: Optional[dict[str, Any]] = None
+        self, reason: str, state: dict[str, Any], metadata: dict[str, Any] | None = None
     ) -> None:
         """
         Suspend workflow execution at this node.
@@ -159,7 +159,7 @@ class SuspendableNode(BaseNode):
         raise WorkflowSuspendedException(node_id=self._id, reason=reason, state=state, metadata=metadata or {})
 
     async def update_suspended_state(
-        self, state_updates: dict[str, Any], context: Optional[ProcessingContext] = None
+        self, state_updates: dict[str, Any], context: ProcessingContext | None = None
     ) -> None:
         """
         Update the state of a suspended workflow (called externally).

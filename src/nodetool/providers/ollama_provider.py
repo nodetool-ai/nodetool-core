@@ -11,7 +11,8 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
+from typing import Any, Dict, List
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 
 import tiktoken
 from ollama import AsyncClient, Client
@@ -142,7 +143,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
-        self._model_info_cache: Dict[str, Any] = {}
+        self._model_info_cache: dict[str, Any] = {}
         log.debug(
             f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}"
         )
@@ -213,7 +214,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.debug(f"Defaulting to True for model {model} due to error")
             return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Ollama models.
 
@@ -226,7 +227,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         try:
             async with get_ollama_client(self.api_url) as client:
                 models_response = await client.list()
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 # The Ollama client returns an object with a .models attribute
                 for model in models_response.models:
                     model_name = model.model
@@ -250,7 +251,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
+    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -300,7 +301,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
-            message_dict: Dict[str, Any] = {"role": "user"}
+            message_dict: dict[str, Any] = {"role": "user"}
 
             if isinstance(message.content, str):
                 message_dict["content"] = message.content
@@ -374,7 +375,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         response_format: dict | None = None,
         max_tokens: int = 4096,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Prepare common parameters for Ollama API requests.
 

@@ -64,7 +64,7 @@ def save_deployment_config(config: dict) -> None:
     DEPLOYMENT_CONFIG_FILE.chmod(0o600)
 
 
-def get_worker_auth_token() -> Optional[str]:
+def get_worker_auth_token() -> str | None:
     """
     Get the worker authentication token.
 
@@ -125,7 +125,7 @@ def get_token_source() -> str:
 
 
 async def verify_worker_token(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
 ) -> str:
     """
     Verify the worker authentication token from Authorization header.

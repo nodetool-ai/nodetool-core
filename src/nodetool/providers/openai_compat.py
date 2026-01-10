@@ -12,7 +12,8 @@ import ast
 import base64
 import io
 import json
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
+from collections.abc import Sequence
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,

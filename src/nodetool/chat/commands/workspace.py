@@ -15,7 +15,7 @@ class ChangeToWorkspaceCommand(Command):
     def __init__(self):
         super().__init__("cdw", "Change directory to the defined workspace root")
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         workspace_dir = Path(cli.context.workspace_dir).resolve()
         if not workspace_dir.is_dir():
             cli.console.print(

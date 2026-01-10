@@ -40,7 +40,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager

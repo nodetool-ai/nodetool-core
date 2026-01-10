@@ -10,7 +10,8 @@ import os
 import threading
 import traceback
 from dataclasses import dataclass, field
-from typing import Callable, Literal
+from typing import Literal
+from collections.abc import Callable
 
 import httpx
 from fastapi import WebSocket

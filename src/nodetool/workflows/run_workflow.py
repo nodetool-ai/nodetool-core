@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import suppress
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger

@@ -44,7 +44,7 @@ def _ws_client_id() -> str:
 class ComfyLocalProvider(BaseProvider):
     provider_name = "comfy_local"
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Query local ComfyUI for available checkpoints via /models/checkpoints."""
         url = f"http://{_server_addr()}/models/checkpoints"
 

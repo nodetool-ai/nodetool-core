@@ -3,7 +3,8 @@ import contextvars
 import threading
 from asyncio import AbstractEventLoop
 from concurrent.futures import Future, InvalidStateError
-from typing import Any, Callable, Coroutine, Optional, TypeVar
+from typing import Any, Optional, TypeVar
+from collections.abc import Callable, Coroutine
 
 from nodetool.config.logging_config import get_logger
 
@@ -92,8 +93,8 @@ class ThreadedEventLoop:
     def __init__(self):
         # Lazily create the loop on start to avoid leaking FDs
         # when instances are constructed but never started.
-        self._loop: Optional[AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._loop: AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._running: bool = False
         self._stop_initiated: bool = False  # New flag
 

@@ -10,7 +10,7 @@ from nodetool.providers import list_providers
 log = get_logger(__name__)
 
 
-async def get_all_image_models(user_id: str) -> List[ImageModel]:
+async def get_all_image_models(user_id: str) -> list[ImageModel]:
     """
     Get all image models from all registered providers.
     Results are cached for 6 hours to reduce API calls.

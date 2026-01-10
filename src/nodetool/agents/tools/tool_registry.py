@@ -13,11 +13,11 @@ from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 
 # Tool registry to keep track of all tool subclasses
 _tool_node_registry: dict[str, NodeMetadata] = {}
-_tool_class_registry: dict[str, Type[Tool]] = {}
+_tool_class_registry: dict[str, type[Tool]] = {}
 _builtin_tool_classes_loaded = False
 
 
-def register_tool_class(tool_cls: Type[Tool]) -> None:
+def register_tool_class(tool_cls: type[Tool]) -> None:
     """Register a Tool subclass so it can be resolved by name."""
     name = getattr(tool_cls, "name", None)
     if not name:

@@ -1,8 +1,8 @@
 import abc
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Define a type for error responses
-ErrorResponse = Dict[str, Any]  # Typically {"error": str, "details": Optional[Any]}
+ErrorResponse = dict[str, Any]  # Typically {"error": str, "details": Optional[Any]}
 
 
 class SerpProvider(abc.ABC):
@@ -37,8 +37,8 @@ class SerpProvider(abc.ABC):
     @abc.abstractmethod
     async def search_images(
         self,
-        keyword: Optional[str] = None,
-        image_url: Optional[str] = None,
+        keyword: str | None = None,
+        image_url: str | None = None,
         num_results: int = 10,
     ) -> Any:
         """
@@ -54,14 +54,14 @@ class SerpProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def search_finance(self, query: str, window: Optional[str] = None) -> Any:
+    async def search_finance(self, query: str, window: str | None = None) -> Any:
         """
         Retrieves financial data.
         """
         pass
 
     @abc.abstractmethod
-    async def search_jobs(self, query: str, location: Optional[str] = None, num_results: int = 10) -> Any:
+    async def search_jobs(self, query: str, location: str | None = None, num_results: int = 10) -> Any:
         """
         Perform a job search.
         """
@@ -71,7 +71,7 @@ class SerpProvider(abc.ABC):
     async def search_lens(
         self,
         image_url: str,
-        country: Optional[str] = None,
+        country: str | None = None,
         num_results: int = 10,
     ) -> Any:
         """
@@ -83,9 +83,9 @@ class SerpProvider(abc.ABC):
     async def search_maps(
         self,
         query: str,
-        ll: Optional[str] = None,
+        ll: str | None = None,
         map_type: str = "search",
-        data_id: Optional[str] = None,
+        data_id: str | None = None,
         num_results: int = 10,
     ) -> Any:
         """
@@ -97,12 +97,12 @@ class SerpProvider(abc.ABC):
     async def search_shopping(
         self,
         query: str,
-        country: Optional[str] = None,
-        domain: Optional[str] = None,
-        min_price: Optional[int] = None,
-        max_price: Optional[int] = None,
-        condition: Optional[str] = None,
-        sort_by: Optional[str] = None,
+        country: str | None = None,
+        domain: str | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        condition: str | None = None,
+        sort_by: str | None = None,
         num_results: int = 10,
     ) -> Any:
         """

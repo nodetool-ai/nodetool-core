@@ -94,8 +94,8 @@ async def _get_file(storage, key: str, request: Request):
     }
 
     range_header = request.headers.get("Range")
-    start: Optional[int] = 0
-    end: Optional[int] = None
+    start: int | None = 0
+    end: int | None = None
 
     if range_header:
         try:

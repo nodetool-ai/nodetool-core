@@ -79,10 +79,10 @@ class PackageModel(BaseModel):
     authors: list[str] = Field(description="Authors of the package")
     namespaces: list[str] = Field(default_factory=list, description="Namespaces provided by this package")
     repo_id: str | None = Field(default=None, description="Repository ID in the format <owner>/<project>")
-    nodes: List[NodeMetadata] | None = Field(default_factory=list, description="List of nodes provided by this package")
+    nodes: list[NodeMetadata] | None = Field(default_factory=list, description="List of nodes provided by this package")
     git_hash: str | None = Field(default=None, description="Git commit hash of the package")
-    assets: List[AssetInfo] | None = Field(default_factory=list, description="List of assets provided by this package")
-    examples: List[ExampleMetadata] | None = Field(
+    assets: list[AssetInfo] | None = Field(default_factory=list, description="List of assets provided by this package")
+    examples: list[ExampleMetadata] | None = Field(
         default_factory=list, description="List of examples provided by this package"
     )
 
@@ -101,7 +101,7 @@ class EnumEncoder(json.JSONEncoder):
             raise TypeError(f"Error encoding {o}: {e}") from e
 
 
-def get_submodules(package_name: str, verbose: bool = False) -> List[str]:
+def get_submodules(package_name: str, verbose: bool = False) -> list[str]:
     """
     Get all submodules of a package recursively.
 
@@ -132,7 +132,7 @@ def get_submodules(package_name: str, verbose: bool = False) -> List[str]:
         return []
 
 
-def get_node_classes_from_module(module_name: str, verbose: bool = False) -> List[type[BaseNode]]:
+def get_node_classes_from_module(module_name: str, verbose: bool = False) -> list[type[BaseNode]]:
     """
     Find all classes in the given module that derive from BaseNode.
 
@@ -164,7 +164,7 @@ def get_node_classes_from_module(module_name: str, verbose: bool = False) -> Lis
     return node_classes
 
 
-def get_node_classes_from_namespace(namespace: str, verbose: bool = False) -> List[type[BaseNode]]:
+def get_node_classes_from_namespace(namespace: str, verbose: bool = False) -> list[type[BaseNode]]:
     """
     Find all classes in the given namespace and its submodules that derive from BaseNode.
 

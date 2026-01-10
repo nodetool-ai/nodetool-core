@@ -111,7 +111,7 @@ def get_nodetool_package_source_folders() -> list[str]:
 
 class ExtensionRouterRegistry:
     _instance = None
-    _routers: ClassVar[List[APIRouter]] = []
+    _routers: ClassVar[list[APIRouter]] = []
 
     def __new__(cls):
         if cls._instance is None:
@@ -125,12 +125,12 @@ class ExtensionRouterRegistry:
             cls._routers.append(router)
 
     @classmethod
-    def get_routers(cls) -> List[APIRouter]:
+    def get_routers(cls) -> list[APIRouter]:
         """Get all registered extension routers."""
         return cls._routers.copy()
 
 
-def _load_default_routers() -> List[APIRouter]:
+def _load_default_routers() -> list[APIRouter]:
     """
     Lazily import and assemble the default routers to avoid heavy imports at
     module import time.

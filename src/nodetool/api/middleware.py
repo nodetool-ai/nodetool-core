@@ -4,7 +4,8 @@ Provides per-request resource isolation for API endpoints using ResourceScope.
 Each request gets its own database connections from shared pools.
 """
 
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,7 +38,7 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: Callable,
-        exempt_paths: Optional[set[str]] = None,
+        exempt_paths: set[str] | None = None,
     ):
         """Initialize the middleware.
 

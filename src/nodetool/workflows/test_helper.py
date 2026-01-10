@@ -1,4 +1,5 @@
-from typing import Any, AsyncGenerator, TypedDict
+from typing import Any, TypedDict
+from collections.abc import AsyncGenerator
 
 from pydantic import Field
 

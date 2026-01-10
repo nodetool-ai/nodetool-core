@@ -58,7 +58,7 @@ class ConditionGroup:
 
     def __init__(
         self,
-        conditions: List[Union["ConditionGroup", Condition, "ConditionBuilder"]],
+        conditions: list[Union["ConditionGroup", Condition, "ConditionBuilder"]],
         operator: LogicalOperator,
     ):
         """
@@ -123,7 +123,7 @@ class Field:
         """Creates a 'less than or equal to' (<=) condition."""
         return self._create_condition(Operator.LTE, value)
 
-    def in_list(self, values: List[Any] | Variable) -> "ConditionBuilder":
+    def in_list(self, values: list[Any] | Variable) -> "ConditionBuilder":
         """Creates an 'in list' (IN) condition."""
         return self._create_condition(Operator.IN, values)
 
@@ -157,7 +157,7 @@ class Field:
         """Overloads the '<=' operator to create a 'less than or equal to' condition."""
         return self.less_than_or_equal(value)
 
-    def __contains__(self, value: List[Any] | Variable) -> "ConditionBuilder":
+    def __contains__(self, value: list[Any] | Variable) -> "ConditionBuilder":
         """
         Overloads the 'in' operator (used as `value in field`)
         to create an 'in list' condition.

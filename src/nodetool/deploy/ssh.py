@@ -56,8 +56,8 @@ class SSHConnection:
         self,
         host: str,
         user: str,
-        key_path: Optional[str] = None,
-        password: Optional[str] = None,
+        key_path: str | None = None,
+        password: str | None = None,
         port: int = 22,
         timeout: int = 30,
         retry_attempts: int = 3,
@@ -91,8 +91,8 @@ class SSHConnection:
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
 
-        self._client: Optional[SSHClient] = None
-        self._sftp: Optional[SFTPClient] = None
+        self._client: SSHClient | None = None
+        self._sftp: SFTPClient | None = None
 
     def connect(self) -> None:
         """
@@ -108,7 +108,7 @@ class SSHConnection:
                 self._client = SSHClient()
                 self._client.set_missing_host_key_policy(AutoAddPolicy())
 
-                connect_kwargs: Dict[str, Any] = {
+                connect_kwargs: dict[str, Any] = {
                     "hostname": self.host,
                     "port": self.port,
                     "username": self.user,
@@ -170,8 +170,8 @@ class SSHConnection:
         self,
         command: str,
         check: bool = True,
-        timeout: Optional[int] = None,
-    ) -> Tuple[int, str, str]:
+        timeout: int | None = None,
+    ) -> tuple[int, str, str]:
         """
         Execute a command on the remote host.
 
@@ -213,8 +213,8 @@ class SSHConnection:
         self,
         script: str,
         check: bool = True,
-        timeout: Optional[int] = None,
-    ) -> Tuple[int, str, str]:
+        timeout: int | None = None,
+    ) -> tuple[int, str, str]:
         """
         Execute a multi-line shell script on the remote host.
 
@@ -241,7 +241,7 @@ class SSHConnection:
 
         return self._sftp
 
-    def upload_file(self, local_path: str, remote_path: str, mode: Optional[int] = None) -> None:
+    def upload_file(self, local_path: str, remote_path: str, mode: int | None = None) -> None:
         """
         Upload a file to the remote host.
 
@@ -264,7 +264,7 @@ class SSHConnection:
         if mode is not None:
             sftp.chmod(remote_path, mode)
 
-    def upload_string(self, content: str, remote_path: str, mode: Optional[int] = None) -> None:
+    def upload_string(self, content: str, remote_path: str, mode: int | None = None) -> None:
         """
         Upload string content as a file to the remote host.
 
@@ -375,8 +375,8 @@ class SSHConnection:
 def ssh_connection(
     host: str,
     user: str,
-    key_path: Optional[str] = None,
-    password: Optional[str] = None,
+    key_path: str | None = None,
+    password: str | None = None,
     port: int = 22,
     **kwargs,
 ):

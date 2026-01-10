@@ -33,7 +33,7 @@ class NodeTool(Tool):
         node_instance: An instance of the node class (created on demand)
     """
 
-    def __init__(self, node_class: Type[BaseNode] | str):
+    def __init__(self, node_class: type[BaseNode] | str):
         """
         Initialize the NodeTool with a specific node class.
 
@@ -96,7 +96,7 @@ class NodeTool(Tool):
         if required:
             self.input_schema["required"] = required
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         """
         Execute the node with provided parameters.
 
@@ -171,7 +171,7 @@ class NodeTool(Tool):
             if node is not None:
                 await node.finalize(context)
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         """
         Returns a user message describing what the tool is doing.
 

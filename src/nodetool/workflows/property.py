@@ -28,12 +28,12 @@ class Property(BaseModel):
 
     name: str
     type: TypeMetadata
-    default: Optional[Any] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    min: Optional[float] = None
-    max: Optional[float] = None
-    json_schema_extra: Optional[dict[str, Any]] = None
+    default: Any | None = None
+    title: str | None = None
+    description: str | None = None
+    min: float | None = None
+    max: float | None = None
+    json_schema_extra: dict[str, Any] | None = None
     required: bool = False
 
     @field_serializer("default")

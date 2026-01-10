@@ -10,7 +10,8 @@ import asyncio
 import gc
 import random
 from contextlib import contextmanager, suppress
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
+from collections.abc import Generator
 
 import numpy as np
 

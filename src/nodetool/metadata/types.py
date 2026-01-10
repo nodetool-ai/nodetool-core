@@ -23,7 +23,7 @@ TypeToName = {}
 NameToType = {}
 
 
-def add_type_name(type: Type, name: str):
+def add_type_name(type: type, name: str):
     """
     Adds a type name to the TypeToEnum and EnumToType mappings.
     """
@@ -249,7 +249,7 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
-    metadata: Dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
 
     @staticmethod
     def from_file(path: str):
@@ -324,8 +324,8 @@ class VideoRef(AssetRef):
     """A reference to a video asset."""
 
     type: Literal["video"] = "video"
-    duration: Optional[float] = None  # Duration in seconds
-    format: Optional[str] = None
+    duration: float | None = None  # Duration in seconds
+    format: str | None = None
 
 
 class TextRef(AssetRef):
@@ -360,7 +360,7 @@ class Model3DRef(AssetRef):
     """
 
     type: Literal["model_3d"] = "model_3d"
-    format: Optional[str] = None  # The 3D format (glb, gltf, obj, fbx, stl, ply, usdz)
+    format: str | None = None  # The 3D format (glb, gltf, obj, fbx, stl, ply, usdz)
 
 
 class RSSEntry(BaseType):
@@ -1415,7 +1415,7 @@ class TaskPlan(BaseType):
 
 class TorchTensor(BaseType):
     type: Literal["torch_tensor"] = "torch_tensor"
-    value: Optional[bytes] = None  # raw bytes in row-major order
+    value: bytes | None = None  # raw bytes in row-major order
     dtype: str = "<i8"  # NumPy dtype string, includes endianness
     shape: tuple[int, ...] = (1,)  # logical shape (row-major)
 
@@ -2216,34 +2216,34 @@ class ColorRef(BaseType):
 class DataSeriesSchema(BaseModel):
     name: str
     x: str
-    y: Optional[str] = None
-    hue: Optional[str] = None
-    size: Optional[str] = None
-    style: Optional[str] = None
-    weight: Optional[str] = None
-    color: Optional[str] = None
+    y: str | None = None
+    hue: str | None = None
+    size: str | None = None
+    style: str | None = None
+    weight: str | None = None
+    color: str | None = None
     plot_type: SeabornPlotType
-    estimator: Optional[SeabornEstimator] = None
-    ci: Optional[float] = None
+    estimator: SeabornEstimator | None = None
+    ci: float | None = None
     n_boot: int = 1000
-    units: Optional[str] = None
-    seed: Optional[int] = None
-    stat: Optional[SeabornStatistic] = None
-    bins: Optional[int] = None
-    binwidth: Optional[float] = None
-    binrange: Optional[tuple[float, float]] = None
-    discrete: Optional[bool] = None
+    units: str | None = None
+    seed: int | None = None
+    stat: SeabornStatistic | None = None
+    bins: int | None = None
+    binwidth: float | None = None
+    binrange: tuple[float, float] | None = None
+    discrete: bool | None = None
     line_style: str = "solid"
     marker: str = "."
     alpha: float = 1.0
-    orient: Optional[Literal["v", "h"]] = None
+    orient: Literal["v", "h"] | None = None
 
 
 class ChartDataSchema(BaseModel):
     series: list[DataSeriesSchema] = []
-    row: Optional[str] = None
-    col: Optional[str] = None
-    col_wrap: Optional[int] = None
+    row: str | None = None
+    col: str | None = None
+    col_wrap: int | None = None
 
 
 class ChartConfigSchema(BaseModel):
@@ -2252,27 +2252,27 @@ class ChartConfigSchema(BaseModel):
     y_label: str
     legend: bool = True
     data: ChartDataSchema = Field(default=ChartDataSchema())
-    height: Optional[float] = None
-    aspect: Optional[float] = None
-    x_lim: Optional[tuple[float, float]] = None
-    y_lim: Optional[tuple[float, float]] = None
-    x_scale: Optional[Literal["linear", "log"]] = None
-    y_scale: Optional[Literal["linear", "log"]] = None
-    legend_position: Optional[Literal["auto", "right", "left", "top", "bottom"]] = None
-    palette: Optional[str] = None
-    hue_order: Optional[list[str]] = None
-    hue_norm: Optional[tuple[float, float]] = None
-    sizes: Optional[tuple[float, float]] = None
-    size_order: Optional[list[str]] = None
-    size_norm: Optional[tuple[float, float]] = None
-    marginal_kws: Optional[dict] = None
-    joint_kws: Optional[dict] = None
-    diag_kind: Optional[Literal["auto", "hist", "kde"]] = None
+    height: float | None = None
+    aspect: float | None = None
+    x_lim: tuple[float, float] | None = None
+    y_lim: tuple[float, float] | None = None
+    x_scale: Literal["linear", "log"] | None = None
+    y_scale: Literal["linear", "log"] | None = None
+    legend_position: Literal["auto", "right", "left", "top", "bottom"] | None = None
+    palette: str | None = None
+    hue_order: list[str] | None = None
+    hue_norm: tuple[float, float] | None = None
+    sizes: tuple[float, float] | None = None
+    size_order: list[str] | None = None
+    size_norm: tuple[float, float] | None = None
+    marginal_kws: dict | None = None
+    joint_kws: dict | None = None
+    diag_kind: Literal["auto", "hist", "kde"] | None = None
     corner: bool = False
-    center: Optional[float] = None
-    vmin: Optional[float] = None
-    vmax: Optional[float] = None
-    cmap: Optional[str] = None
+    center: float | None = None
+    vmin: float | None = None
+    vmax: float | None = None
+    cmap: str | None = None
     annot: bool = False
     fmt: str = ".2g"
     square: bool = False
@@ -2316,17 +2316,17 @@ class DateSearchCondition(BaseType):
 
 class EmailSearchCriteria(BaseType):
     type: Literal["email_search_criteria"] = "email_search_criteria"
-    from_address: Optional[str] = None
-    to_address: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
-    cc: Optional[str] = None
-    bcc: Optional[str] = None
-    date_condition: Optional[DateSearchCondition] = None
+    from_address: str | None = None
+    to_address: str | None = None
+    subject: str | None = None
+    body: str | None = None
+    cc: str | None = None
+    bcc: str | None = None
+    date_condition: DateSearchCondition | None = None
     flags: list[EmailFlag] = []
     keywords: list[str] = []
-    folder: Optional[str] = None
-    text: Optional[str] = None
+    folder: str | None = None
+    text: str | None = None
 
 
 class IMAPConnection(BaseType):
@@ -2383,12 +2383,12 @@ class OrganicResult(BaseType):
     position: int
     title: str
     link: str
-    redirect_link: Optional[str] = None
+    redirect_link: str | None = None
     displayed_link: str
-    date: Optional[str] = None
+    date: str | None = None
     snippet: str
-    snippet_highlighted_words: Optional[list[str]] = None
-    thumbnail: Optional[str] = None
+    snippet_highlighted_words: list[str] | None = None
+    thumbnail: str | None = None
 
 
 class NewsResult(BaseType):

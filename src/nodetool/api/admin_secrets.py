@@ -12,9 +12,9 @@ class EncryptedSecretPayload(BaseModel):
     user_id: str
     key: str
     encrypted_value: str
-    description: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    description: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 router = APIRouter(prefix="/admin/secrets", tags=["admin-secrets"])
@@ -22,9 +22,9 @@ router = APIRouter(prefix="/admin/secrets", tags=["admin-secrets"])
 
 @router.post("/import")
 async def import_secrets(
-    secrets_payload: List[EncryptedSecretPayload],
+    secrets_payload: list[EncryptedSecretPayload],
     __user: str = Depends(current_user),
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Import encrypted secrets (requires shared master key)."""
     try:
         imported = 0

@@ -38,7 +38,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 
@@ -71,8 +71,8 @@ async def create_collection(
 
 @router.get("/", response_model=CollectionList)
 async def list_collections(
-    _offset: Optional[int] = None,
-    _limit: Optional[int] = None,
+    _offset: int | None = None,
+    _limit: int | None = None,
 ) -> CollectionList:
     """List all collections"""
     client = await get_async_chroma_client()
@@ -158,7 +158,7 @@ async def delete_collection(name: str):
 
 class IndexResponse(BaseModel):
     path: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
@@ -172,7 +172,7 @@ def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
 async def index(
     name: str,
     file: UploadFile = File(...),
-    _authorization: Optional[str] = Header(None),
+    _authorization: str | None = Header(None),
 ) -> IndexResponse:
     try:
         await get_async_collection(name)

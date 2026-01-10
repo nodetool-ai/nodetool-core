@@ -23,7 +23,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
+from collections.abc import Callable, Coroutine
 
 from nodetool.config.logging_config import get_logger
 from nodetool.migrations.db_adapter import (

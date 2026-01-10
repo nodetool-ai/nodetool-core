@@ -42,8 +42,8 @@ class OpenAIChatClient:
     def __init__(
         self,
         server_url: str,
-        auth_token: Optional[str] = None,
-        model: Optional[str] = None,
+        auth_token: str | None = None,
+        model: str | None = None,
     ):
         """
         Initialize the chat client.
@@ -55,7 +55,7 @@ class OpenAIChatClient:
         """
         self.server_url = server_url.rstrip("/")
         self.auth_token = auth_token
-        self.history: List[ChatCompletionMessageParam] = []
+        self.history: list[ChatCompletionMessageParam] = []
         self.current_model = model or "gpt-oss:20b"  # Default model
 
         # Initialize OpenAI client with custom base URL
@@ -68,7 +68,7 @@ class OpenAIChatClient:
         self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_chat_history")
 
         # Initialize prompt session (will be set up in setup_prompt_session)
-        self.session: Optional[PromptSession] = None
+        self.session: PromptSession | None = None
 
     async def setup_prompt_session(self) -> None:
         """Set up prompt_toolkit session with completers and styling."""
@@ -76,7 +76,7 @@ class OpenAIChatClient:
         commands = ["clear", "help", "history", "model", "quit", "exit"]
 
         # Create nested completer for commands
-        command_completer: Dict[str, Optional[Completer]] = {f"/{cmd}": None for cmd in commands}
+        command_completer: dict[str, Completer | None] = {f"/{cmd}": None for cmd in commands}
 
         # Create the main completer
         completer = NestedCompleter(command_completer)
@@ -325,9 +325,9 @@ class OpenAIChatClient:
 
 async def run_chat_client(
     server_url: str,
-    auth_token: Optional[str] = None,
-    message: Optional[str] = None,
-    model: Optional[str] = None,
+    auth_token: str | None = None,
+    message: str | None = None,
+    model: str | None = None,
 ) -> None:
     """
     Run the chat client.

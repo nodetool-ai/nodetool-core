@@ -66,15 +66,15 @@ class ChatWebSocketClient:
     def __init__(
         self,
         url: str,
-        auth_token: Optional[str] = None,
+        auth_token: str | None = None,
         message_format: MessageFormat = MessageFormat.TEXT,
     ):
         self.url = url + "?api_key=" + auth_token if auth_token else url
         self.auth_token = auth_token
         self.message_format = message_format
-        self.websocket: Optional[ClientConnection] = None
+        self.websocket: ClientConnection | None = None
         self.running = False
-        self.receive_task: Optional[asyncio.Task] = None
+        self.receive_task: asyncio.Task | None = None
         self.current_assistant_message = ""
         self.prompt_needed = False
 
@@ -183,7 +183,7 @@ class ChatWebSocketClient:
                 f"Error sending message: {e}",
             )
 
-    async def send_command(self, command: str, data: Dict[str, Any]):
+    async def send_command(self, command: str, data: dict[str, Any]):
         """Send a generic command to the WebSocket server."""
         if not self.websocket:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
@@ -235,7 +235,7 @@ class ChatWebSocketClient:
             )
             self.running = False
 
-    async def process_message(self, data: Dict[str, Any]):
+    async def process_message(self, data: dict[str, Any]):
         """Process received message based on type."""
         msg_type = data.get("type", "unknown")
         timestamp = datetime.now().strftime("%H:%M:%S")

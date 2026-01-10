@@ -20,8 +20,8 @@ log = get_logger(__name__)
 class PostgresConnectionPool:
     """Async connection pool for PostgreSQL."""
 
-    _pools: ClassVar[Dict[str, "PostgresConnectionPool"]] = {}
-    _pool_locks: ClassVar[Dict[str, asyncio.Lock]] = {}
+    _pools: ClassVar[dict[str, "PostgresConnectionPool"]] = {}
+    _pool_locks: ClassVar[dict[str, asyncio.Lock]] = {}
 
     def __init__(self, conninfo: str, min_size: int = 1, max_size: int = 10):
         """Initialize the connection pool.
@@ -34,7 +34,7 @@ class PostgresConnectionPool:
         self.conninfo = conninfo
         self.min_size = min_size
         self.max_size = max_size
-        self._pool: Optional[AsyncConnectionPool] = None
+        self._pool: AsyncConnectionPool | None = None
         self._lock = asyncio.Lock()
 
     @classmethod
@@ -115,9 +115,9 @@ class PostgresScopeResources(DBResources):
             pool: The PostgreSQL connection pool
         """
         self.pool = pool
-        self._adapters: Dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> PostgresAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> PostgresAdapter:
         """Get or create an adapter for the given model class.
 
         Memoizes adapters per table within this scope.

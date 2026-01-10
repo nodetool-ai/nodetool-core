@@ -12,7 +12,8 @@ import hashlib
 import json
 import os
 import time
-from typing import Any, AsyncGenerator, List, Sequence, Union
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any
 
 from nodetool.agents.step_executor import (
     StepExecutor,
@@ -184,7 +185,7 @@ class TaskExecutor:
                             )
                         yield message
 
-    def _get_all_executable_tasks(self) -> List[Step]:
+    def _get_all_executable_tasks(self) -> list[Step]:
         """
         Get all executable tasks from the task list, respecting file dependencies.
 
@@ -210,7 +211,7 @@ class TaskExecutor:
 
         return executable_tasks
 
-    def _check_depends_on(self, depends_on: List[str], workspace_dir: str) -> bool:
+    def _check_depends_on(self, depends_on: list[str], workspace_dir: str) -> bool:
         """
         Check if all file dependencies exist in the workspace.
 
@@ -248,7 +249,7 @@ class TaskExecutor:
             return step.id == self._finish_step_id
         return bool(self.task.steps) and step == self.task.steps[-1]
 
-    def _maybe_defer_finish_step(self, executable_tasks: List[Step]) -> List[Step]:
+    def _maybe_defer_finish_step(self, executable_tasks: list[Step]) -> list[Step]:
         if not self._finish_step_id:
             return executable_tasks
 

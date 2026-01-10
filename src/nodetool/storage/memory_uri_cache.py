@@ -74,7 +74,7 @@ class MemoryUriCache(AbstractNodeCache):
             log.debug(f"Cache HIT for key '{key}' on thread {thread_id} (raw value)")
             return item
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None):
+    def set(self, key: str, value: Any, ttl: int | None = None):
         if not key:
             return
         thread_id = threading.get_ident()

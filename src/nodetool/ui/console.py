@@ -26,7 +26,7 @@ class AgentConsole:
     Manages Rich library components for displaying Agent planning and execution status.
     """
 
-    def __init__(self, verbose: bool = True, console: Optional[Console] = None):
+    def __init__(self, verbose: bool = True, console: Console | None = None):
         """
         Initialize the AgentConsole.
 
@@ -35,18 +35,18 @@ class AgentConsole:
             console (Optional[Console]): Existing Rich console to use.
         """
         self.verbose: bool = verbose
-        self.console: Optional[Console] = console or (Console() if verbose else None)
-        self.live: Optional[Live] = None
-        self.current_table: Optional[Table] = None
-        self.current_tree: Optional[Tree] = None
-        self.phase_nodes: Dict[str, Any] = {}
-        self.step_nodes: Dict[str, Any] = {}
-        self.current_step: Optional[Step] = None
-        self.task: Optional[Task] = None
+        self.console: Console | None = console or (Console() if verbose else None)
+        self.live: Live | None = None
+        self.current_table: Table | None = None
+        self.current_tree: Tree | None = None
+        self.phase_nodes: dict[str, Any] = {}
+        self.step_nodes: dict[str, Any] = {}
+        self.current_step: Step | None = None
+        self.task: Task | None = None
 
         # Phase-specific logging storage
-        self.phase_logs: Dict[str, List[Dict[str, Any]]] = {}
-        self.current_phase: Optional[str] = None
+        self.phase_logs: dict[str, list[dict[str, Any]]] = {}
+        self.current_phase: str | None = None
 
     def start_live(self, initial_content: Table | Tree) -> None:
         """
@@ -162,7 +162,7 @@ class AgentConsole:
                 node.add(f"[dim]{content_str}[/]")
                 self.phase_nodes[phase_name] = node
 
-    def create_execution_tree(self, title: str, task: "Task", tool_calls: List["ToolCall"]) -> Tree:
+    def create_execution_tree(self, title: str, task: "Task", tool_calls: list["ToolCall"]) -> Tree:
         """Create a rich tree for displaying steps and their tool calls."""
         tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
         self.step_nodes = {}
@@ -214,7 +214,7 @@ class AgentConsole:
 
         return tree
 
-    def print(self, message: object, style: Optional[str] = None) -> None:
+    def print(self, message: object, style: str | None = None) -> None:
         """
         Print a message to the console if verbose mode is enabled.
 
@@ -243,7 +243,7 @@ class AgentConsole:
         if phase_name not in self.phase_logs:
             self.phase_logs[phase_name] = []
 
-    def log_to_phase(self, level: str, message: str, phase_name: Optional[str] = None) -> None:
+    def log_to_phase(self, level: str, message: str, phase_name: str | None = None) -> None:
         """
         Add a log entry to a specific phase.
 
@@ -263,7 +263,7 @@ class AgentConsole:
         log_entry = {"level": level, "message": message, "timestamp": int(time.time())}
         self.phase_logs[target_phase].append(log_entry)
 
-    def get_phase_logs(self, phase_name: str) -> List[Dict[str, Any]]:
+    def get_phase_logs(self, phase_name: str) -> list[dict[str, Any]]:
         """
         Get all log entries for a specific phase.
 
@@ -275,7 +275,7 @@ class AgentConsole:
         """
         return self.phase_logs.get(phase_name, [])
 
-    def get_all_phase_logs(self) -> Dict[str, List[Dict[str, Any]]]:
+    def get_all_phase_logs(self) -> dict[str, list[dict[str, Any]]]:
         """
         Get all log entries organized by phase.
 
@@ -284,7 +284,7 @@ class AgentConsole:
         """
         return self.phase_logs.copy()
 
-    def clear_phase_logs(self, phase_name: Optional[str] = None) -> None:
+    def clear_phase_logs(self, phase_name: str | None = None) -> None:
         """
         Clear log entries for a specific phase or all phases.
 
@@ -424,7 +424,7 @@ class AgentConsole:
 
         return f"[{color}]{icon} {log.message}[/]"
 
-    def debug(self, message: object, style: Optional[str] = None) -> None:
+    def debug(self, message: object, style: str | None = None) -> None:
         """
         Add a debug log entry to the current step and current phase.
 
@@ -436,7 +436,7 @@ class AgentConsole:
         self.log_to_step("debug", msg_str)
         self.log_to_phase("debug", msg_str)
 
-    def info(self, message: object, style: Optional[str] = None) -> None:
+    def info(self, message: object, style: str | None = None) -> None:
         """
         Add an info log entry to the current step and current phase.
 
@@ -448,7 +448,7 @@ class AgentConsole:
         self.log_to_step("info", msg_str)
         self.log_to_phase("info", msg_str)
 
-    def warning(self, message: object, style: Optional[str] = None) -> None:
+    def warning(self, message: object, style: str | None = None) -> None:
         """
         Add a warning log entry to the current step and current phase.
 
@@ -460,7 +460,7 @@ class AgentConsole:
         self.log_to_step("warning", msg_str)
         self.log_to_phase("warning", msg_str)
 
-    def error(self, message: object, style: Optional[str] = None, exc_info: bool = False) -> None:
+    def error(self, message: object, style: str | None = None, exc_info: bool = False) -> None:
         """
         Add an error log entry to the current step and current phase.
 
@@ -664,7 +664,7 @@ class AgentConsole:
         bar = f"[{color}]{'█' * filled}[/][dim]{'░' * empty}[/]"
         return f"{bar} {percentage:.1f}%"
 
-    def display_task_update(self, event: str, details: Optional[str] = None) -> None:
+    def display_task_update(self, event: str, details: str | None = None) -> None:
         """
         Display a task update event with appropriate styling.
 

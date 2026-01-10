@@ -22,7 +22,7 @@ from rich.table import Table
 console = Console()
 
 
-async def _get_db_connection(postgres_url: Optional[str] = None):
+async def _get_db_connection(postgres_url: str | None = None):
     """Get a database connection based on configuration.
 
     Args:
@@ -119,7 +119,7 @@ def migrations():
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool, postgres_url: Optional[str]):
+def upgrade(dry_run: bool, target: str | None, skip_checksum_validation: bool, postgres_url: str | None):
     """Apply pending migrations.
 
     Detects the database state and applies the appropriate migrations:
@@ -198,7 +198,7 @@ def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def downgrade(steps: int, force: bool, postgres_url: Optional[str]):
+def downgrade(steps: int, force: bool, postgres_url: str | None):
     """Rollback migrations.
 
     Rolls back the specified number of most recently applied migrations.
@@ -255,7 +255,7 @@ def downgrade(steps: int, force: bool, postgres_url: Optional[str]):
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def status(postgres_url: Optional[str]):
+def status(postgres_url: str | None):
     """Show migration status.
 
     Displays the current database state, applied migrations, and pending migrations.
@@ -415,7 +415,7 @@ async def down(db: "MigrationDBAdapter") -> None:
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def validate(postgres_url: Optional[str]):
+def validate(postgres_url: str | None):
     """Validate migration checksums.
 
     Checks that the checksums of applied migrations match the current
@@ -481,7 +481,7 @@ def validate(postgres_url: Optional[str]):
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def baseline(force: bool, postgres_url: Optional[str]):
+def baseline(force: bool, postgres_url: str | None):
     """Manually baseline migrations.
 
     Marks migrations as applied without executing them, based on which

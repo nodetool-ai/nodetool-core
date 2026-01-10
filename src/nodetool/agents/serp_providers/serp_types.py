@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +36,7 @@ class GoogleSearchResponse(BaseModel):
     search_metadata: "SearchMetadata"
     search_parameters: "SearchParameters"
     search_information: "SearchInformation"
-    organic_results: Optional[List["OrganicResult"]] = None
+    organic_results: list["OrganicResult"] | None = None
 
 
 # =============================================================================
@@ -53,7 +52,7 @@ class SearchMetadata(BaseModel):
     json_endpoint: str
     created_at: str
     processed_at: str
-    google_url: Optional[str] = None
+    google_url: str | None = None
     raw_html_file: str
     total_time_taken: float
 
@@ -63,8 +62,8 @@ class SearchParameters(BaseModel):
 
     engine: str
     q: str
-    location_requested: Optional[str] = None
-    location_used: Optional[str] = None
+    location_requested: str | None = None
+    location_used: str | None = None
     google_domain: str
     hl: str
     gl: str
@@ -76,8 +75,8 @@ class SearchInformation(BaseModel):
 
     organic_results_state: str
     query_displayed: str
-    total_results: Optional[int] = None
-    time_taken_displayed: Optional[float] = None
+    total_results: int | None = None
+    time_taken_displayed: float | None = None
 
 
 class Pagination(BaseModel):
@@ -85,16 +84,16 @@ class Pagination(BaseModel):
 
     current: int
     next: str
-    other_pages: Dict[str, str]
+    other_pages: dict[str, str]
 
 
 class SerpapiPagination(BaseModel):
     """Path: serpapi_pagination (top-level field)"""
 
     current: int
-    next_link: Optional[str] = None
+    next_link: str | None = None
     next: str
-    other_pages: Optional[Dict[str, str]] = None
+    other_pages: dict[str, str] | None = None
 
 
 class GoogleShoppingResponse(BaseModel):

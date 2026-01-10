@@ -104,9 +104,9 @@ class HfFastCache:
         """
         self.cache_dir = Path(cache_dir) if cache_dir else get_default_hf_cache_dir()
         # Lazy-initialized lock to handle multiple event loops
-        self._lock: Optional[asyncio.Lock] = None
-        self._lock_loop_id: Optional[int] = None
-        self._repos: Dict[str, _RepoState] = {}
+        self._lock: asyncio.Lock | None = None
+        self._lock_loop_id: int | None = None
+        self._repos: dict[str, _RepoState] = {}
         # Share the model info cache between callers so metadata lookups can leverage the disk cache.
         self.model_info_cache = model_info_cache or ModelCache("model_info")
 
@@ -133,9 +133,9 @@ class HfFastCache:
         self,
         repo_id: str,
         relpath: str,
-        repo_type: Optional[str] = None,
+        repo_type: str | None = None,
         follow_symlinks: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Resolve a repo-relative path into the local cache.
 
         This performs a constant-time join inside the active snapshot for the
@@ -179,7 +179,7 @@ class HfFastCache:
             return str(resolved)
         return str(candidate)
 
-    async def exists(self, repo_id: str, relpath: str, repo_type: Optional[str] = None) -> bool:
+    async def exists(self, repo_id: str, relpath: str, repo_type: str | None = None) -> bool:
         """Return whether a repo-relative path exists in the cache.
 
         Args:
@@ -195,7 +195,7 @@ class HfFastCache:
         """
         return (await self.resolve(repo_id, relpath, repo_type=repo_type)) is not None
 
-    async def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> List[str]:
+    async def list_files(self, repo_id: str, repo_type: str | None = None) -> list[str]:
         """List files in the active snapshot for a repo.
 
         The first call for a given repo walks only that repo's active snapshot
@@ -219,7 +219,7 @@ class HfFastCache:
             state.snapshot_file_count = len(state.file_index)
             return list(state.file_index.keys())
 
-        files: List[str] = []
+        files: list[str] = []
         for path in await _rglob_files_async(state.snapshot_dir):
             files.append(path.relative_to(state.snapshot_dir).as_posix())
 
@@ -227,7 +227,7 @@ class HfFastCache:
         state.snapshot_file_count = len(files)
         return files
 
-    async def invalidate(self, repo_id: Optional[str] = None, repo_type: Optional[str] = None) -> None:
+    async def invalidate(self, repo_id: str | None = None, repo_type: str | None = None) -> None:
         """Forget cached state for one repo or all repos.
 
         Args:
@@ -244,7 +244,7 @@ class HfFastCache:
             for key in key_candidates:
                 self._repos.pop(key, None)
 
-    async def repo_root(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
+    async def repo_root(self, repo_id: str, repo_type: str | None = None) -> str | None:
         """Return the cache directory for a given repo.
 
         Args:
@@ -259,7 +259,7 @@ class HfFastCache:
         state = await self._ensure_repo_state(repo_id, repo_type, create_if_missing=False)
         return str(state.repo_dir) if state is not None else None
 
-    async def active_snapshot_dir(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
+    async def active_snapshot_dir(self, repo_id: str, repo_type: str | None = None) -> str | None:
         """Return the active snapshot directory for a given repo.
 
         Args:
@@ -275,7 +275,7 @@ class HfFastCache:
         state = await self._ensure_repo_state(repo_id, repo_type)
         return str(state.snapshot_dir) if state and state.snapshot_dir else None
 
-    async def discover_repos(self, repo_type: str = "model") -> List[Tuple[str, Path]]:
+    async def discover_repos(self, repo_type: str = "model") -> list[tuple[str, Path]]:
         """Discover cached Hugging Face repos by listing the cache directory.
 
         This is lightweight compared to scan_cache_dir as it only lists directories
@@ -291,7 +291,7 @@ class HfFastCache:
             return []
 
         type_prefix = f"{repo_type}s" if not repo_type.endswith("s") else repo_type
-        repos: List[Tuple[str, Path]] = []
+        repos: list[tuple[str, Path]] = []
 
         try:
             for name in await aiofiles.os.listdir(str(self.cache_dir)):
@@ -312,9 +312,9 @@ class HfFastCache:
     async def _ensure_repo_state(
         self,
         repo_id: str,
-        repo_type: Optional[str],
+        repo_type: str | None,
         create_if_missing: bool = True,
-    ) -> Optional[_RepoState]:
+    ) -> _RepoState | None:
         """Load or refresh cached state for a repo.
 
         This method is responsible for creating and maintaining the in-memory
@@ -417,15 +417,15 @@ class _RepoState:
     repo_id: str
     repo_type: str
     repo_dir: Path
-    commit: Optional[str] = None
-    refs_mtime: Optional[float] = None
-    snapshot_dir: Optional[Path] = None
-    snapshot_mtime: Optional[float] = None
-    snapshot_file_count: Optional[int] = None
-    file_index: Optional[Dict[str, Path]] = field(default=None)
+    commit: str | None = None
+    refs_mtime: float | None = None
+    snapshot_dir: Path | None = None
+    snapshot_mtime: float | None = None
+    snapshot_file_count: int | None = None
+    file_index: dict[str, Path] | None = field(default=None)
 
 
-def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
+def _candidate_repo_keys(repo_id: str, repo_type: str | None) -> list[str]:
     """Return ordered cache keys to try for locating a repo.
 
     The function normalizes the repo identifier and type and produces keys of
@@ -435,17 +435,17 @@ def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
     norm_type, norm_repo = _normalize_repo_id_and_type(repo_id, repo_type)
     types_to_try = [norm_type] if norm_type else ["models", "datasets", "spaces"]
 
-    keys: List[str] = []
+    keys: list[str] = []
     for repo_type_candidate in types_to_try:
         keys.append(f"{repo_type_candidate}:{norm_repo}")
     return keys
 
 
-def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple[Optional[str], str]:
+def _normalize_repo_id_and_type(repo_id: str, repo_type: str | None) -> tuple[str | None, str]:
     """Normalize repo ID and type into a canonical pair."""
     repo_id = repo_id.strip().strip("/")
     parts = repo_id.split("/")
-    inferred_type: Optional[str] = None
+    inferred_type: str | None = None
     if parts and parts[0] in {
         "model",
         "dataset",
@@ -462,7 +462,7 @@ def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple
     return norm_type, repo_id
 
 
-def _normalize_repo_type(repo_type: Optional[str]) -> Optional[str]:
+def _normalize_repo_type(repo_type: str | None) -> str | None:
     """Normalize a repo type string to the internal form."""
     if repo_type is None:
         return None
@@ -476,14 +476,14 @@ def _normalize_repo_type(repo_type: Optional[str]) -> Optional[str]:
     raise ValueError(f"Unknown repo_type: {repo_type}")
 
 
-async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) -> Optional[Path]:
+async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) -> Path | None:
     """Translate a repo ID into an on-disk directory under the cache."""
     assert repo_type in {"models", "datasets", "spaces"}
     repo_bits = [bit for bit in repo_id.split("/") if bit]
     if not repo_bits:
         return None
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     if len(repo_bits) == 1:
         candidates.append(f"{repo_type}--{repo_bits[0]}")
     else:
@@ -498,7 +498,7 @@ async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) ->
 
 async def _read_current_ref_async(
     repo_dir: Path,
-) -> Tuple[Optional[float], Optional[str]]:
+) -> tuple[float | None, str | None]:
     """Return the mtime and commit hash for the preferred ref."""
     refs_dir = repo_dir / "refs"
     if not await _exists(refs_dir):
@@ -508,8 +508,8 @@ async def _read_current_ref_async(
     if await _exists(main):
         return await _mtime_or_none_async(main), await _read_first_line_async(main)
 
-    newest_mtime: Optional[float] = None
-    newest_commit: Optional[str] = None
+    newest_mtime: float | None = None
+    newest_commit: str | None = None
     try:
         for name in await aiofiles.os.listdir(str(refs_dir)):
             file = refs_dir / name
@@ -528,7 +528,7 @@ async def _read_current_ref_async(
     )
 
 
-async def _snapshot_dir_for_commit_async(repo_dir: Path, commit: Optional[str]) -> Optional[Path]:
+async def _snapshot_dir_for_commit_async(repo_dir: Path, commit: str | None) -> Path | None:
     """Return the snapshot directory for a given commit hash."""
     if not commit:
         return None
@@ -536,13 +536,13 @@ async def _snapshot_dir_for_commit_async(repo_dir: Path, commit: Optional[str]) 
     return snapshot if await _exists(snapshot) else None
 
 
-async def _pick_latest_snapshot_async(repo_dir: Path) -> Optional[Path]:
+async def _pick_latest_snapshot_async(repo_dir: Path) -> Path | None:
     """Return the newest snapshot directory for a repo by mtime."""
     snapshots_dir = repo_dir / "snapshots"
     if not await _exists(snapshots_dir):
         return None
-    newest_path: Optional[Path] = None
-    newest_mtime: Optional[float] = None
+    newest_path: Path | None = None
+    newest_mtime: float | None = None
     try:
         for name in await aiofiles.os.listdir(str(snapshots_dir)):
             path = snapshots_dir / name
@@ -557,7 +557,7 @@ async def _pick_latest_snapshot_async(repo_dir: Path) -> Optional[Path]:
     return newest_path
 
 
-async def _read_first_line_async(path: Path) -> Optional[str]:
+async def _read_first_line_async(path: Path) -> str | None:
     """Read and return the first line of a text file."""
     try:
         async with aiofiles.open(path, encoding="utf-8") as handle:
@@ -568,7 +568,7 @@ async def _read_first_line_async(path: Path) -> Optional[str]:
         return None
 
 
-async def _mtime_or_none_async(path: Optional[Path]) -> Optional[float]:
+async def _mtime_or_none_async(path: Path | None) -> float | None:
     """Return the mtime for a path, or ``None`` on error."""
     if path is None:
         return None
@@ -579,7 +579,7 @@ async def _mtime_or_none_async(path: Optional[Path]) -> Optional[float]:
         return None
 
 
-async def _exists(path: Optional[Path]) -> bool:
+async def _exists(path: Path | None) -> bool:
     if path is None:
         return False
     try:
@@ -604,9 +604,9 @@ async def _is_file(path: Path) -> bool:
         return False
 
 
-async def _rglob_files_async(root: Path) -> List[Path]:
+async def _rglob_files_async(root: Path) -> list[Path]:
     """Recursively collect files and symlinks under root without blocking the loop."""
-    results: List[Path] = []
+    results: list[Path] = []
 
     async def _walk(dir_path: Path) -> None:
         try:
@@ -665,7 +665,7 @@ def _normalize_relpath(path: str) -> Path:
     return Path(path)
 
 
-def _changed(now: Optional[float], old: Optional[float]) -> bool:
+def _changed(now: float | None, old: float | None) -> bool:
     """Return whether two timestamps represent a change."""
     if now is None and old is None:
         return False

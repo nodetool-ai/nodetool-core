@@ -1,5 +1,6 @@
 import asyncio
-from typing import IO, Any, AsyncIterator
+from typing import IO, Any
+from collections.abc import AsyncIterator
 
 from botocore.exceptions import ClientError
 

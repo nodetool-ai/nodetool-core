@@ -166,8 +166,8 @@ class WorkflowRunner:
         """
         self.job_id = job_id
         self.status = "running"
-        self.current_node: Optional[str] = None
-        self.context: Optional[ProcessingContext] = None
+        self.current_node: str | None = None
+        self.context: ProcessingContext | None = None
         self.outputs: dict[str, Any] = {}
         self.active_processing_node_ids: set[str] = set()  # Track nodes currently in an async task
         self.node_inboxes: dict[str, NodeInbox] = {}

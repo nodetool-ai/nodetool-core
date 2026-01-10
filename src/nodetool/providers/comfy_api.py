@@ -35,7 +35,7 @@ COMFY_HOST: str = os.environ.get("COMFYUI_ADDR", "127.0.0.1:8188")
 REFRESH_WORKER: bool = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
 
 
-def _comfy_server_status() -> Dict[str, Any]:
+def _comfy_server_status() -> dict[str, Any]:
     """Return a dictionary with basic reachability info for the ComfyUI HTTP server."""
     try:
         resp = requests.get(f"http://{COMFY_HOST}/", timeout=5)
@@ -99,7 +99,7 @@ def _attempt_websocket_reconnect(
     )
 
 
-def validate_input(job_input: Dict[str, Any] | str | None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def validate_input(job_input: dict[str, Any] | str | None) -> tuple[dict[str, Any] | None, str | None]:
     """
     Validates the input for the handler function.
 
@@ -130,7 +130,7 @@ def validate_input(job_input: Dict[str, Any] | str | None) -> Tuple[Optional[Dic
         ):
             return None, "'images' must be a list of objects with 'name' and 'image' keys"
 
-    comfy_org_api_key: Optional[str] = job_input.get("comfy_org_api_key")
+    comfy_org_api_key: str | None = job_input.get("comfy_org_api_key")
 
     return {"workflow": workflow, "images": images, "comfy_org_api_key": comfy_org_api_key}, None
 
@@ -156,15 +156,15 @@ def check_server(url: str, retries: int = 500, delay: int = 50) -> bool:
     return False
 
 
-def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
+def upload_images(images: list[dict[str, str]]) -> dict[str, Any]:
     """
     Upload a list of base64 encoded images to the ComfyUI server using the /upload/image endpoint.
     """
     if not images:
         return {"status": "success", "message": "No images to upload", "details": []}
 
-    responses: List[str] = []
-    upload_errors: List[str] = []
+    responses: list[str] = []
+    upload_errors: list[str] = []
 
     print(f"worker-comfyui - Uploading {len(images)} image(s)...")
 
@@ -213,14 +213,14 @@ def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
     return {"status": "success", "message": "All images uploaded successfully", "details": responses}
 
 
-def get_available_models() -> Dict[str, List[str]]:
+def get_available_models() -> dict[str, list[str]]:
     """Get list of available models from ComfyUI."""
     try:
         response = requests.get(f"http://{COMFY_HOST}/object_info", timeout=10)
         response.raise_for_status()
         object_info = response.json()
 
-        available_models: Dict[str, List[str]] = {}
+        available_models: dict[str, list[str]] = {}
         if "CheckpointLoaderSimple" in object_info:
             checkpoint_info = object_info["CheckpointLoaderSimple"]
             if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
@@ -234,11 +234,11 @@ def get_available_models() -> Dict[str, List[str]]:
         return {}
 
 
-def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: Optional[str] = None) -> Dict[str, Any]:
+def queue_workflow(workflow: dict[str, Any], client_id: str, comfy_org_api_key: str | None = None) -> dict[str, Any]:
     """
     Queue a workflow to be processed by ComfyUI.
     """
-    payload: Dict[str, Any] = {"prompt": workflow, "client_id": client_id}
+    payload: dict[str, Any] = {"prompt": workflow, "client_id": client_id}
 
     key_from_env = os.environ.get("COMFY_ORG_API_KEY")
     effective_key = comfy_org_api_key if comfy_org_api_key else key_from_env
@@ -256,7 +256,7 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
             print(f"worker-comfyui - Parsed error data: {error_data}")
 
             error_message = "Workflow validation failed"
-            error_details: List[str] = []
+            error_details: list[str] = []
 
             if "error" in error_data:
                 error_info = error_data["error"]
@@ -314,14 +314,14 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
     return response.json()
 
 
-def get_history(prompt_id: str) -> Dict[str, Any]:
+def get_history(prompt_id: str) -> dict[str, Any]:
     """Retrieve the history for a given prompt ID."""
     response = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
     response.raise_for_status()
     return response.json()
 
 
-def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[bytes]:
+def get_image_data(filename: str, subfolder: str, image_type: str) -> bytes | None:
     """Fetch image bytes from the ComfyUI /view endpoint."""
     print(f"worker-comfyui - Fetching image data: type={image_type}, subfolder={subfolder}, filename={filename}")
     data = {"filename": filename, "subfolder": subfolder, "type": image_type}
@@ -342,7 +342,7 @@ def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[b
         return None
 
 
-def handler(job: Dict[str, Any]) -> Dict[str, Any]:
+def handler(job: dict[str, Any]) -> dict[str, Any]:
     """Handle a job using ComfyUI via websockets for status and image retrieval."""
     job_input = job["input"]
 
@@ -365,11 +365,11 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         if upload_result["status"] == "error":
             return {"error": "Failed to upload one or more input images", "details": upload_result["details"]}
 
-    ws: Optional[websocket.WebSocket] = None
+    ws: websocket.WebSocket | None = None
     client_id = str(uuid.uuid4())
-    prompt_id: Optional[str] = None
-    output_data: List[Dict[str, str]] = []
-    errors: List[str] = []
+    prompt_id: str | None = None
+    output_data: list[dict[str, str]] = []
+    errors: list[str] = []
 
     try:
         ws_url = f"ws://{COMFY_HOST}/ws?clientId={client_id}"
@@ -552,7 +552,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             print("worker-comfyui - Closing websocket connection.")
             ws.close()
 
-    final_result: Dict[str, Any] = {}
+    final_result: dict[str, Any] = {}
 
     if output_data:
         final_result["images"] = output_data

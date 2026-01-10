@@ -12,7 +12,8 @@ import asyncio
 import gc
 import time
 from contextlib import asynccontextmanager, suppress
-from typing import Any, AsyncIterator, ClassVar, Dict, NamedTuple
+from typing import Any, ClassVar, Dict, NamedTuple
+from collections.abc import AsyncIterator
 
 import psutil
 
@@ -65,15 +66,15 @@ class ModelManager:
         _model_size_bytes (Dict[str, int]): Approximate model size in bytes when available
     """
 
-    _models: ClassVar[Dict[str, Any]] = {}
-    _models_by_node: ClassVar[Dict[str, str]] = {}
-    _locks: ClassVar[Dict[str, asyncio.Lock]] = {}
+    _models: ClassVar[dict[str, Any]] = {}
+    _models_by_node: ClassVar[dict[str, str]] = {}
+    _locks: ClassVar[dict[str, asyncio.Lock]] = {}
     _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
     _last_memory_cleanup: ClassVar[float] = 0.0
-    _model_last_used: ClassVar[Dict[str, float]] = {}
-    _node_last_used: ClassVar[Dict[str, float]] = {}
-    _model_device: ClassVar[Dict[str, str]] = {}
-    _model_size_bytes: ClassVar[Dict[str, int]] = {}
+    _model_last_used: ClassVar[dict[str, float]] = {}
+    _node_last_used: ClassVar[dict[str, float]] = {}
+    _model_device: ClassVar[dict[str, str]] = {}
+    _model_size_bytes: ClassVar[dict[str, int]] = {}
     _last_vram_cleanup: ClassVar[float] = 0.0
     _DEFAULT_MAX_MEMORY_PERCENT: ClassVar[float] = 92.0
     _DEFAULT_MIN_AVAILABLE_GB: ClassVar[float] = 1.0

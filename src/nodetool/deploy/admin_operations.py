@@ -23,7 +23,7 @@ import asyncio
 import inspect
 import os
 from contextlib import suppress
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from huggingface_hub import (
     HfApi,

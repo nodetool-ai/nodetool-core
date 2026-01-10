@@ -14,7 +14,7 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-def get_node_label(node: Dict[str, Any]) -> str:
+def get_node_label(node: dict[str, Any]) -> str:
     """Extract a readable label for a node.
 
     Args:
@@ -50,7 +50,7 @@ def sanitize_mermaid_id(text: str) -> str:
     return sanitized.lower()
 
 
-def generate_mermaid_diagram(graph: Dict[str, Any]) -> str:
+def generate_mermaid_diagram(graph: dict[str, Any]) -> str:
     """Generate a Mermaid diagram from a workflow graph.
 
     Args:
@@ -164,7 +164,7 @@ def extract_text_from_lexical(lexical_data: Any) -> str:
     return ""
 
 
-def extract_description(graph: Dict[str, Any]) -> str:
+def extract_description(graph: dict[str, Any]) -> str:
     """Extract description from Comment node if available.
 
     Args:
@@ -204,7 +204,7 @@ def extract_description(graph: Dict[str, Any]) -> str:
     return ""
 
 
-def create_jekyll_page(workflow_file: Path, output_dir: Path, package_filter: Optional[str] = None) -> bool:
+def create_jekyll_page(workflow_file: Path, output_dir: Path, package_filter: str | None = None) -> bool:
     """Create a Jekyll documentation page for a workflow.
 
     Args:
@@ -283,7 +283,7 @@ Browse other [workflow examples](/cookbook.md) to discover more capabilities.
 
 
 def generate_workflow_docs(
-    examples_dir: str | Path, output_dir: str | Path, package_filter: Optional[str] = None, verbose: bool = False
+    examples_dir: str | Path, output_dir: str | Path, package_filter: str | None = None, verbose: bool = False
 ) -> tuple[int, int]:
     """Generate documentation for all workflow examples in a directory.
 

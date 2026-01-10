@@ -100,8 +100,8 @@ class TriggerNode(SuspendableNode):
     """
 
     _inactivity_timeout_seconds: int = DEFAULT_INACTIVITY_TIMEOUT
-    _last_activity_time: Optional[datetime] = None
-    _trigger_event_queue: Optional[asyncio.Queue] = None
+    _last_activity_time: datetime | None = None
+    _trigger_event_queue: asyncio.Queue | None = None
     _is_trigger_node: bool = True
 
     def is_trigger_node(self) -> bool:
@@ -137,7 +137,7 @@ class TriggerNode(SuspendableNode):
         """Update the last activity timestamp."""
         self._last_activity_time = datetime.now()
 
-    def get_last_activity_time(self) -> Optional[datetime]:
+    def get_last_activity_time(self) -> datetime | None:
         """
         Get the last activity timestamp.
 
@@ -146,7 +146,7 @@ class TriggerNode(SuspendableNode):
         """
         return self._last_activity_time
 
-    def get_inactivity_duration(self) -> Optional[timedelta]:
+    def get_inactivity_duration(self) -> timedelta | None:
         """
         Get the duration since last activity.
 
@@ -159,7 +159,7 @@ class TriggerNode(SuspendableNode):
 
     async def wait_for_trigger_event(
         self,
-        timeout_seconds: Optional[int] = None,
+        timeout_seconds: int | None = None,
     ) -> dict[str, Any]:
         """
         Wait for a trigger event with timeout.
@@ -290,7 +290,7 @@ class TriggerNode(SuspendableNode):
 
     async def suspend_for_inactivity(
         self,
-        additional_state: Optional[dict[str, Any]] = None,
+        additional_state: dict[str, Any] | None = None,
     ) -> None:
         """
         Suspend workflow due to trigger inactivity.

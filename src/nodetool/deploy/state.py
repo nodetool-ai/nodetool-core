@@ -11,7 +11,8 @@ import time
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Optional
+from collections.abc import Generator
 
 # Cross-platform file locking:
 # - Unix: fcntl.flock
@@ -47,7 +48,7 @@ class StateManager:
 
     _thread_lock = threading.Lock()
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the StateManager.
 
@@ -134,7 +135,7 @@ class StateManager:
         finally:
             self._thread_lock.release()
 
-    def read_state(self, deployment_name: str) -> Optional[Dict[str, Any]]:
+    def read_state(self, deployment_name: str) -> dict[str, Any] | None:
         """
         Read the state for a specific deployment.
 
@@ -167,7 +168,7 @@ class StateManager:
     def write_state(
         self,
         deployment_name: str,
-        state_updates: Dict[str, Any],
+        state_updates: dict[str, Any],
         update_timestamp: bool = True,
     ) -> None:
         """
@@ -231,7 +232,7 @@ class StateManager:
         """
         self.write_state(deployment_name, {"status": status}, update_timestamp=update_timestamp)
 
-    def get_all_states(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_states(self) -> dict[str, dict[str, Any]]:
         """
         Get state for all deployments.
 
@@ -342,7 +343,7 @@ class StateManager:
                 )
             temp_path.replace(self.config_path)
 
-    def get_last_deployed(self, deployment_name: str) -> Optional[datetime]:
+    def get_last_deployed(self, deployment_name: str) -> datetime | None:
         """
         Get the last deployment timestamp for a deployment.
 
@@ -374,7 +375,7 @@ class StateManager:
         return self.get_last_deployed(deployment_name) is not None
 
 
-def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> Dict[str, Any]:
+def create_state_snapshot(config: DeploymentConfig, config_path: Path | str | None = None) -> dict[str, Any]:
     """
     Create a snapshot of the current state of all deployments.
 
@@ -386,7 +387,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
     Returns:
         Dictionary containing snapshot of all deployment states
     """
-    snapshot: Dict[str, Any] = {
+    snapshot: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
         "version": config.version,
         "deployments": {},
@@ -406,9 +407,9 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
 
 
 def restore_state_from_snapshot(
-    snapshot: Dict[str, Any],
-    deployment_name: Optional[str] = None,
-    config_path: Optional[Path | str] = None,
+    snapshot: dict[str, Any],
+    deployment_name: str | None = None,
+    config_path: Path | str | None = None,
 ) -> None:
     """
     Restore deployment state from a snapshot.

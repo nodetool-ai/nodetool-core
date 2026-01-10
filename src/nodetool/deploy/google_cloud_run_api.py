@@ -174,7 +174,7 @@ def ensure_gcloud_auth() -> None:
             sys.exit(1)
 
 
-def get_default_project() -> Optional[str]:
+def get_default_project() -> str | None:
     """
     Get the default Google Cloud project.
 
@@ -194,7 +194,7 @@ def get_default_project() -> Optional[str]:
         return None
 
 
-def ensure_cloud_run_permissions(project_id: str, service_account: Optional[str] = None) -> None:
+def ensure_cloud_run_permissions(project_id: str, service_account: str | None = None) -> None:
     """
     Ensure the current user has the required permissions for Cloud Run deployment.
 
@@ -263,7 +263,7 @@ def ensure_cloud_run_permissions(project_id: str, service_account: Optional[str]
             )
 
 
-def ensure_project_set(project_id: Optional[str] = None) -> str:
+def ensure_project_set(project_id: str | None = None) -> str:
     """
     Ensure a Google Cloud project is set.
 
@@ -333,11 +333,11 @@ def deploy_to_cloud_run(
     concurrency: int = 80,
     timeout: int = 3600,
     allow_unauthenticated: bool = True,
-    env_vars: Optional[Dict[str, str]] = None,
-    service_account: Optional[str] = None,
-    gcs_bucket: Optional[str] = None,
+    env_vars: dict[str, str] | None = None,
+    service_account: str | None = None,
+    gcs_bucket: str | None = None,
     gcs_mount_path: str = "/mnt/gcs",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Deploy a service to Google Cloud Run.
 
@@ -564,7 +564,7 @@ def delete_cloud_run_service(service_name: str, region: str, project_id: str) ->
         return False
 
 
-def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Optional[Dict[str, Any]]:
+def get_cloud_run_service(service_name: str, region: str, project_id: str) -> dict[str, Any] | None:
     """
     Get information about a Cloud Run service.
 
@@ -602,7 +602,7 @@ def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Op
         return None
 
 
-def list_cloud_run_services(region: str, project_id: str) -> List[Dict[str, Any]]:
+def list_cloud_run_services(region: str, project_id: str) -> list[dict[str, Any]]:
     """
     List all Cloud Run services in a region.
 

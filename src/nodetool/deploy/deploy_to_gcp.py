@@ -280,11 +280,11 @@ def deploy_to_gcp(
 def print_gcp_deployment_summary(
     image_name: str,
     image_tag: str,
-    gcp_image_url: Optional[str],
+    gcp_image_url: str | None,
     service_name: str,
     region: str,
     project_id: str,
-    deployment_info: Optional[Dict[str, Any]] = None,
+    deployment_info: dict[str, Any] | None = None,
 ) -> None:
     """
     Print a summary of the Google Cloud Run deployment results.
@@ -321,7 +321,7 @@ def print_gcp_deployment_summary(
     console.print("\n[bold green]✅ Deployment ready for use![/]")
 
 
-def delete_gcp_service(service_name: str, region: str = "us-central1", project_id: Optional[str] = None) -> bool:
+def delete_gcp_service(service_name: str, region: str = "us-central1", project_id: str | None = None) -> bool:
     """
     Delete a Google Cloud Run service.
 
@@ -345,7 +345,7 @@ def delete_gcp_service(service_name: str, region: str = "us-central1", project_i
     return delete_cloud_run_service(service_name, region, project_id)
 
 
-def list_gcp_services(region: str = "us-central1", project_id: Optional[str] = None) -> list:
+def list_gcp_services(region: str = "us-central1", project_id: str | None = None) -> list:
     """
     List Google Cloud Run services.
 

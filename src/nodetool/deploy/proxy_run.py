@@ -22,7 +22,7 @@ class ProxyRunGenerator:
 
     def generate_command(self) -> str:
         """Render the docker run command for the proxy container."""
-        parts: List[str] = ["docker run", "-d"]
+        parts: list[str] = ["docker run", "-d"]
 
         container_name = self.get_container_name()
         parts.extend(
