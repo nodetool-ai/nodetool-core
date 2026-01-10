@@ -11,6 +11,7 @@ from nodetool.models.workflow import Workflow
 from nodetool.types.api_graph import get_input_schema, get_output_schema
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.types import Error
 
 from .base import Command
 
@@ -131,7 +132,9 @@ class RunWorkflowCommand(Command):
 
             # Run the workflow
             async for msg in run_workflow(req, context=cli.context, use_thread=False):
-                if hasattr(msg, "content"):
+                if isinstance(msg, Error):
+                    cli.console.print(msg.message)
+                elif hasattr(msg, "content"):
                     cli.console.print(msg.content)  # type: ignore
                 else:
                     cli.console.print(str(msg))

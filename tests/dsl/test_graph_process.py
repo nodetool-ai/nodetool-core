@@ -64,11 +64,11 @@ async def test_run_graph_without_mode_uses_default(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_graph_result_allows_asset_mode(monkeypatch):
-    async def fake_run_graph(g, user_id="1", auth_token="token", asset_output_mode=None):
+    async def fake_run_graph_async(g, user_id="1", auth_token="token", asset_output_mode=None):
         assert asset_output_mode == AssetOutputMode.WORKSPACE
         return {"Output": {"type": "image", "path": "/tmp/example.png"}}
 
-    monkeypatch.setattr("nodetool.dsl.graph.run_graph", fake_run_graph)
+    monkeypatch.setattr("nodetool.dsl.graph.run_graph_async", fake_run_graph_async)
 
     sentinel = Graph(nodes=[], edges=[])
 
