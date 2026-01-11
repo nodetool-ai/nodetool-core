@@ -228,11 +228,7 @@ class ModelRegistry:
         """
         with self._registry_lock:
             # Select models to clear: all if forced, otherwise only those not in use
-            to_clear = (
-                list(self._models.keys())
-                if force
-                else [k for k, v in self._models.items() if not v.in_use]
-            )
+            to_clear = list(self._models.keys()) if force else [k for k, v in self._models.items() if not v.in_use]
 
             memory_freed = 0.0
             models_cleared = 0
