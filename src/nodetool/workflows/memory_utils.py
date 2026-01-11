@@ -16,9 +16,6 @@ import psutil
 
 from nodetool.config.logging_config import get_logger
 
-if TYPE_CHECKING:
-    pass
-
 log = get_logger(__name__)
 
 

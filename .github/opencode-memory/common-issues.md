@@ -64,10 +64,18 @@ When adding a new issue, use this format:
 
 ### Parallel Test Race Conditions
 **Date Discovered**: 2026-01-10
-**Context**: 5 job execution tests fail when run with `pytest -n auto` but pass individually
-**Solution**: Tests need shared state isolation for parallel execution (pre-existing issue)
-**Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
-**Prevention**: Use unique test databases/resources for each test
+**Context**: Tests timeout during teardown when using `pytest -n auto`. The issue is in async fixture cleanup where:
+- `setup_and_teardown` fixture shuts down `JobExecutionManager`
+- `pytest_asyncio` plugin runs async finalizers that get stuck
+- `aiosqlite` connections block waiting for transactions
+- Threaded event loops don't properly close
+**Solution**: 
+- Tests pass during execution but timeout during teardown
+- This is a pre-existing infrastructure issue, not a code bug
+- Run tests without parallelization: `uv run pytest -n 0`
+- Individual test files pass without issues
+**Related Files**: `tests/conftest.py`, `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
+**Prevention**: Consider refactoring async fixtures to avoid blocking in teardown; use `asyncio.timeout()` for cleanup operations
 
 ---
 
