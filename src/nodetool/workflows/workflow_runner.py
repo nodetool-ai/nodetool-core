@@ -52,6 +52,12 @@ from nodetool.workflows.base_node import (
 from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.memory_utils import (
+    clear_memory_uri_cache,
+    log_memory,
+    log_memory_summary,
+    run_gc,
+)
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.state_manager import StateManager
@@ -80,6 +86,12 @@ COMPLETION_CHECK_DELAY = 0.01
 
 # Define a process-wide GPU lock that is safe across event loops/threads
 gpu_lock = threading.Lock()
+# Track which node/thread holds the lock for debugging
+_gpu_lock_holder: str | None = None
+_gpu_lock_holder_time: float = 0.0
+
+# Maximum time to wait for GPU lock before giving up (seconds)
+GPU_LOCK_TIMEOUT = 300  # 5 minutes
 
 
 async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
@@ -94,30 +106,123 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
     Args:
         node (BaseNode): The node attempting to acquire the GPU lock.
         context (ProcessingContext): The processing context, used for sending updates.
+
+    Raises:
+        RuntimeError: If lock cannot be acquired within GPU_LOCK_TIMEOUT seconds.
+        asyncio.CancelledError: If the task is cancelled while waiting.
     """
-    if gpu_lock.locked():  # Check if the lock is currently held by another task
-        log.debug(f"Node {node.get_title()} is waiting for GPU lock as it is currently held.")
+    global _gpu_lock_holder, _gpu_lock_holder_time
+
+    if gpu_lock.locked():
+        holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+        hold_time = time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0
+        log.warning(f"Node {node.get_title()} is waiting for GPU lock{holder_info}, held for {hold_time:.1f}s")
         await node.send_update(context, status="waiting")
+
     # Acquire the threading lock without blocking the event loop.
     # Use short timeouts so task cancellation does not leak a held lock.
     loop = asyncio.get_running_loop()
-    while True:
-        acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=0.2))
-        if acquired:
-            break
-        # Yield briefly before retrying to avoid busy-waiting
-        await asyncio.sleep(0.05)
+    start_time = time.time()
+    attempts = 0
+
+    try:
+        while True:
+            # Check for cancellation before trying to acquire
+            # This allows clean shutdown when workflow is cancelled
+            try:
+                acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=0.2))
+            except asyncio.CancelledError:
+                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
+                raise
+
+            if acquired:
+                _gpu_lock_holder = f"{node.get_title()} ({node.id})"
+                _gpu_lock_holder_time = time.time()
+                break
+
+            attempts += 1
+            elapsed = time.time() - start_time
+
+            # Log progress every 10 seconds
+            if attempts % 40 == 0:  # 40 * 0.25s = 10s
+                holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                log.warning(f"Node {node.get_title()} still waiting for GPU lock after {elapsed:.1f}s{holder_info}")
+
+            # Timeout after GPU_LOCK_TIMEOUT seconds
+            if elapsed > GPU_LOCK_TIMEOUT:
+                holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                error_msg = (
+                    f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
+                    f"{node.get_title()}{holder_info}. This may indicate a stuck previous run. "
+                    f"Try restarting the nodetool server."
+                )
+                log.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Yield briefly before retrying - also check for cancellation here
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
+                raise
+
+    except asyncio.CancelledError:
+        # Make sure we don't hold the lock if we were cancelled after acquiring
+        # This shouldn't happen given the structure, but be safe
+        log.debug(f"GPU lock acquisition cancelled for {node.get_title()}")
+        raise
+
     log.debug(f"Node {node.get_title()} acquired GPU lock")
 
 
 def release_gpu_lock():
     """
     Releases the global GPU lock.
-
-    This function is a simple wrapper around `gpu_lock.release()`.
     """
-    log.debug("Releasing GPU lock from node")
+    global _gpu_lock_holder, _gpu_lock_holder_time
+    log.debug(f"Releasing GPU lock (was held by: {_gpu_lock_holder})")
+    _gpu_lock_holder = None
+    _gpu_lock_holder_time = 0.0
     gpu_lock.release()
+
+
+def force_release_gpu_lock():
+    """
+    Force-release the GPU lock if it appears stuck.
+
+    This should only be called as a last resort when debugging stuck workflows.
+    Returns True if the lock was released, False if it wasn't held.
+    """
+    global _gpu_lock_holder, _gpu_lock_holder_time
+    if gpu_lock.locked():
+        log.warning(f"Force-releasing GPU lock (was held by: {_gpu_lock_holder})")
+        try:
+            gpu_lock.release()
+            _gpu_lock_holder = None
+            _gpu_lock_holder_time = 0.0
+            return True
+        except RuntimeError:
+            # Lock wasn't held by this thread
+            log.error("Cannot force-release GPU lock - not held by current thread")
+            return False
+    else:
+        log.info("GPU lock is not currently held")
+        return False
+
+
+def get_gpu_lock_status() -> dict:
+    """
+    Get the current status of the GPU lock for debugging.
+
+    Returns:
+        Dict with lock status information.
+    """
+    return {
+        "locked": gpu_lock.locked(),
+        "holder": _gpu_lock_holder,
+        "held_since": _gpu_lock_holder_time,
+        "held_for_seconds": time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0,
+    }
 
 
 class WorkflowRunner:
@@ -530,6 +635,7 @@ class WorkflowRunner:
             - Posts a final JobUpdate message with results or error information.
         """
         log.info("Starting workflow run: job_id=%s", self.job_id)
+        log_memory(f"WorkflowRunner.run START job_id={self.job_id}")
         self._edge_counters.clear()
         self.status = "running"
         log.debug("Run parameters: params=%s messages=%s", request.params, request.messages)
@@ -732,6 +838,18 @@ class WorkflowRunner:
                         except Exception as e:
                             log.error(f"Failed to mark run_state as completed: {e}")
 
+                    # Send completion JobUpdate BEFORE finally block
+                    # The WebSocket processor may close during finally, so send this early
+                    if send_job_updates:
+                        context.post_message(
+                            JobUpdate(
+                                job_id=self.job_id,
+                                status="completed",
+                                result=self.outputs,
+                                message=f"Workflow {self.job_id} completed",
+                            )
+                        )
+
             except asyncio.CancelledError:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
@@ -903,8 +1021,8 @@ class WorkflowRunner:
                         await self._input_queue.put({"op": "shutdown"})
                     if self._input_task is not None:
                         await self._input_task
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug(f"Error stopping input dispatcher: {e}")
                 if graph and graph.nodes:  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
                         try:
@@ -919,8 +1037,10 @@ class WorkflowRunner:
                             )
                         inbox = self.node_inboxes.get(node._id)
                         if inbox is not None:
-                            with suppress(Exception):
+                            try:
                                 await inbox.close_all()
+                            except Exception as e:
+                                log.debug(f"Error closing inbox for node {node._id}: {e}")
                 log.debug("Nodes finalized in finally block.")
 
                 # Ensure downstream consumers mark all edges as drained as part of teardown
@@ -928,13 +1048,24 @@ class WorkflowRunner:
                 self._torch_support.empty_cuda_cache()
                 log.debug("CUDA cache emptied if available.")
 
+                # Clear memory URI cache to free up RAM from images/audio stored during workflow
+                log_memory(f"WorkflowRunner.run cleanup START job_id={self.job_id}")
+                cache_cleared = clear_memory_uri_cache(log_stats=True)
+                log.info(f"Cleared {cache_cleared} items from memory URI cache")
+
+                # Run garbage collection to free unreferenced objects
+                run_gc(f"WorkflowRunner.run cleanup job_id={self.job_id}", log_before_after=True)
+
+                # Log final memory state
+                log_memory_summary(f"WorkflowRunner.run END job_id={self.job_id}")
+
                 # No legacy generator state to clear in actor mode
 
             # This part is reached ONLY IF no exception propagated from the try-except block.
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
                 total_time = time.time() - start_time
-                log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
+                log.info(f"Job {self.job_id} completed successfully")
                 log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
 
                 # Log RunCompleted event (audit-only, non-fatal)
@@ -947,15 +1078,8 @@ class WorkflowRunner:
                     except Exception as e:
                         log.warning(f"Failed to log RunCompleted event (non-fatal): {e}")
 
-                if send_job_updates:
-                    context.post_message(
-                        JobUpdate(
-                            job_id=self.job_id,
-                            status="completed",
-                            result=self.outputs,
-                            message=f"Workflow {self.job_id} completed in {total_time:.2f} seconds",
-                        )
-                    )
+                # Note: JobUpdate(status="completed") is sent in the try block before finally
+                # to ensure it's received before the WebSocket closes
             # If self.status became "error" and the exception was re-raised, we don't reach here.
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
