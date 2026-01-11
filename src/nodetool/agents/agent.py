@@ -33,6 +33,7 @@ from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    Chunk,
     Task,
     ToolCall,
 )
@@ -40,7 +41,6 @@ from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
-    Chunk,
     LogUpdate,
     StepResult,
     TaskUpdate,
