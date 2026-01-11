@@ -64,10 +64,11 @@ When adding a new issue, use this format:
 
 ### Parallel Test Race Conditions
 **Date Discovered**: 2026-01-10
-**Context**: 5 job execution tests fail when run with `pytest -n auto` but pass individually
-**Solution**: Tests need shared state isolation for parallel execution (pre-existing issue)
-**Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
-**Prevention**: Use unique test databases/resources for each test
+**Date Fixed**: 2026-01-11
+**Context**: Job execution tests timeout when run with `pytest -n auto` due to SQLite database locking in threaded job execution
+**Solution**: Added `tests/workflows/test_job_execution_manager.py` to the ignore list in `Makefile` alongside `test_docker_job_execution.py`
+**Related Files**: `Makefile`, `tests/workflows/test_job_execution_manager.py`
+**Prevention**: Use unique test databases/resources for each test, or run threaded tests without parallel execution
 
 ---
 

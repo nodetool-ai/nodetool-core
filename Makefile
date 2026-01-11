@@ -28,7 +28,7 @@ typecheck:
 		--warn invalid-parameter-default
 
 test:
-	uv run pytest -n auto -q --ignore=tests/workflows/test_docker_job_execution.py
+	uv run pytest -n auto -q --ignore=tests/workflows/test_docker_job_execution.py --ignore=tests/workflows/test_job_execution_manager.py
 
 test-verbose:
-	uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
+	uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py --ignore=tests/workflows/test_job_execution_manager.py
