@@ -170,7 +170,6 @@ from typing import (
     List,
     Optional,
     Sequence,
-    Union,
 )
 
 import tiktoken
