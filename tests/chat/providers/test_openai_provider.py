@@ -48,7 +48,7 @@ Error Handling:
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import openai
@@ -89,7 +89,7 @@ class TestOpenAIProvider(BaseProviderTest):
         return "openai"
 
     def create_openai_completion_response(
-        self, content: str = "Hello, world!", tool_calls: List[Dict] | None = None
+        self, content: str = "Hello, world!", tool_calls: list[dict] | None = None
     ) -> ChatCompletion:
         """Create a realistic OpenAI ChatCompletion response."""
         message_kwargs: dict[str, Any] = {
@@ -126,7 +126,7 @@ class TestOpenAIProvider(BaseProviderTest):
 
     def create_openai_streaming_responses(
         self, text: str = "Hello world!", chunk_size: int = 5
-    ) -> List[ChatCompletionChunk]:
+    ) -> list[ChatCompletionChunk]:
         """Create realistic OpenAI streaming response chunks."""
         chunks = []
 
@@ -194,7 +194,7 @@ class TestOpenAIProvider(BaseProviderTest):
         else:
             return openai.APIError(message="Unknown error", request=MagicMock(), body={})
 
-    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
+    def mock_api_call(self, response_data: dict[str, Any]) -> MagicMock:
         """Mock OpenAI API call with structured response."""
         if "tool_calls" in response_data:
             # Tool calling response
@@ -216,7 +216,7 @@ class TestOpenAIProvider(BaseProviderTest):
             side_effect=mock_create,
         )  # type: ignore[return-value]
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]) -> MagicMock:
         """Mock OpenAI streaming API call."""
         # Convert generic chunks to OpenAI format
         text = "".join(chunk.get("content", "") for chunk in chunks)

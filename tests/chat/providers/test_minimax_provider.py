@@ -11,7 +11,7 @@ MiniMax Anthropic API Documentation:
 URL: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import anthropic
@@ -36,7 +36,7 @@ class TestMiniMaxProvider(BaseProviderTest):
         return "minimax"
 
     def create_anthropic_message_response(
-        self, content: str = "Hello, world!", tool_uses: List[Dict] | None = None
+        self, content: str = "Hello, world!", tool_uses: list[dict] | None = None
     ) -> AnthropicMessage:
         """Create a realistic Anthropic Message response."""
         content_blocks = []
@@ -66,7 +66,7 @@ class TestMiniMaxProvider(BaseProviderTest):
             usage=Usage(input_tokens=10, output_tokens=25),
         )
 
-    def create_anthropic_streaming_responses(self, text: str = "Hello world!", chunk_size: int = 5) -> List[Dict]:
+    def create_anthropic_streaming_responses(self, text: str = "Hello world!", chunk_size: int = 5) -> list[dict]:
         """Create realistic Anthropic streaming response events."""
         events = []
 
@@ -148,7 +148,7 @@ class TestMiniMaxProvider(BaseProviderTest):
         else:
             return anthropic.APIError(message="Unknown error")
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: dict[str, Any]):
         """Mock Anthropic API call with structured response."""
         if "tool_calls" in response_data:
             # Tool use response
@@ -173,7 +173,7 @@ class TestMiniMaxProvider(BaseProviderTest):
             side_effect=mock_create,
         )
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]):
         """Mock Anthropic streaming API call."""
         # Convert generic chunks to Anthropic streaming events
         text = "".join(chunk.get("content", "") for chunk in chunks)

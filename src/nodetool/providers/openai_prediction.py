@@ -2,8 +2,9 @@ import asyncio
 import base64
 import os
 import traceback
+from collections.abc import AsyncGenerator
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict
+from typing import TYPE_CHECKING, Any
 
 import openai
 import pydub
@@ -569,7 +570,7 @@ async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> floa
 
 
 async def calculate_image_cost(  # Changed signature
-    model_params: Dict[str, Any],  # model_id is in params or implicit, params has quality & n
+    model_params: dict[str, Any],  # model_id is in params or implicit, params has quality & n
 ) -> float:
     """Calculates cost in CREDITS for image generation."""
     cost = 0.0

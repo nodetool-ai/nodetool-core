@@ -132,7 +132,7 @@ Model Management:
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -156,13 +156,13 @@ class TestHuggingFaceProvider(BaseProviderTest):
     def provider_name(self):
         return "huggingface"
 
-    def _get_custom_test_secrets(self) -> Dict[str, str]:
+    def _get_custom_test_secrets(self) -> dict[str, str]:
         """Override to provide HuggingFace-specific test secrets."""
         return {
             "HF_TOKEN": "hf_test_token_12345",
         }
 
-    def _get_provider_kwargs(self) -> Dict[str, Any]:
+    def _get_provider_kwargs(self) -> dict[str, Any]:
         """Override to add HuggingFace-specific kwargs."""
         # Get the base kwargs from registration
         kwargs = super()._get_provider_kwargs()
@@ -172,7 +172,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
             kwargs["inference_provider"] = "hf-inference"
         return kwargs
 
-    def create_huggingface_response(self, content: str = "Hello, world!") -> Dict[str, Any]:
+    def create_huggingface_response(self, content: str = "Hello, world!") -> dict[str, Any]:
         """Create a realistic HuggingFace TGI API response."""
         return {
             "id": "chatcmpl-123",
@@ -189,7 +189,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
             "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
         }
 
-    def create_huggingface_streaming_responses(self, text: str = "Hello world!") -> List[str]:
+    def create_huggingface_streaming_responses(self, text: str = "Hello world!") -> list[str]:
         """Create realistic HuggingFace TGI streaming response chunks."""
         chunks = []
         words = text.split()
@@ -247,7 +247,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         else:
             raise Exception("unknown error type")
 
-    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
+    def mock_api_call(self, response_data: dict[str, Any]) -> MagicMock:
         """Mock HuggingFace chat_completion call on AsyncInferenceClient."""
         content = response_data.get("text", "Hello, world!")
 
@@ -277,7 +277,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
 
         return patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion)  # type: ignore[return-value]
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]):
         """Mock HuggingFace TGI streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
         self.create_huggingface_streaming_responses(text)

@@ -109,7 +109,7 @@ Performance Optimizations:
 - Regional deployment options
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -133,8 +133,8 @@ class TestGeminiProvider(BaseProviderTest):
         return "gemini"
 
     def create_gemini_response(
-        self, content: str = "Hello, world!", function_calls: List[Dict] | None = None
-    ) -> Dict[str, Any]:
+        self, content: str = "Hello, world!", function_calls: list[dict] | None = None
+    ) -> dict[str, Any]:
         """Create a realistic Gemini API response."""
         parts: list[dict[str, Any]] = [{"text": content}] if content else []
 
@@ -183,7 +183,7 @@ class TestGeminiProvider(BaseProviderTest):
             },
         }
 
-    def create_gemini_streaming_responses(self, text: str = "Hello world!") -> List[Dict[str, Any]]:
+    def create_gemini_streaming_responses(self, text: str = "Hello world!") -> list[dict[str, Any]]:
         """Create realistic Gemini streaming response chunks."""
         chunks = []
         words = text.split()
@@ -224,7 +224,7 @@ class TestGeminiProvider(BaseProviderTest):
         else:
             return Exception("Invalid request format or parameters.")
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: dict[str, Any]):
         """Mock Gemini API call with structured response."""
         if "tool_calls" in response_data:
             # Function calling response
@@ -251,7 +251,7 @@ class TestGeminiProvider(BaseProviderTest):
 
         return patch.object(GeminiProvider, "get_client", return_value=mock_client)
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]):
         """Mock Gemini streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
         gemini_chunks = self.create_gemini_streaming_responses(text)

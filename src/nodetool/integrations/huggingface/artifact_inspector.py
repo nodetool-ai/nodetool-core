@@ -11,12 +11,13 @@ import json
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 try:
     import torch
 except Exception:  # pragma: no cover - optional dependency
     torch = None
+
+from typing import TYPE_CHECKING
 
 from nodetool.integrations.huggingface.safetensors_inspector import (
     DetectionResult as STFDetectionResult,
@@ -24,6 +25,9 @@ from nodetool.integrations.huggingface.safetensors_inspector import (
 from nodetool.integrations.huggingface.safetensors_inspector import (
     detect_model as detect_safetensors_model,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @dataclass

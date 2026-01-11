@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import time
 from collections import OrderedDict
-from typing import Optional
 
 from supabase import AsyncClient, create_async_client  # type: ignore
 
@@ -25,7 +24,7 @@ class SupabaseAuthProvider(AuthProvider):
         self.supabase_key = supabase_key
         self.cache_ttl = max(cache_ttl, 0)
         self.cache_max = max(cache_max, 0)
-        self._client: Optional[AsyncClient] = None
+        self._client: AsyncClient | None = None
         self._client_lock = asyncio.Lock()
         self._token_cache: dict[str, tuple[str, float]] = {}
         self._token_cache_order: OrderedDict[str, None] = OrderedDict()
@@ -42,7 +41,7 @@ class SupabaseAuthProvider(AuthProvider):
     def _make_cache_key(self, token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def _get_cached_user(self, token: str) -> Optional[str]:
+    def _get_cached_user(self, token: str) -> str | None:
         if self.cache_ttl <= 0:
             return None
         key = self._make_cache_key(token)

@@ -13,7 +13,8 @@ Test scenarios:
 
 import asyncio
 import queue
-from typing import Any, AsyncGenerator, ClassVar, TypedDict
+from collections.abc import AsyncGenerator
+from typing import Any, ClassVar, TypedDict
 
 import pytest
 from pydantic import Field

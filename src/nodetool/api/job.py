@@ -1,6 +1,5 @@
 import asyncio
-from datetime import UTC, datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -20,10 +19,10 @@ class RunStateResponse(BaseModel):
     """Subset of RunState for API responses."""
 
     status: str
-    suspended_node_id: Optional[str] = None
-    suspension_reason: Optional[str] = None
-    error_message: Optional[str] = None
-    execution_strategy: Optional[str] = None
+    suspended_node_id: str | None = None
+    suspension_reason: str | None = None
+    error_message: str | None = None
+    execution_strategy: str | None = None
     is_resumable: bool = False
 
 
@@ -33,11 +32,11 @@ class JobResponse(BaseModel):
     job_type: str
     status: str
     workflow_id: str
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    error: Optional[str] = None
-    cost: Optional[float] = None
-    run_state: Optional[RunStateResponse] = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+    cost: float | None = None
+    run_state: RunStateResponse | None = None
 
     class Config:
         from_attributes = True
@@ -47,14 +46,14 @@ class BackgroundJobResponse(BaseModel):
     job_id: str
     status: str
     workflow_id: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     is_running: bool
     is_completed: bool
 
 
 class JobListResponse(BaseModel):
-    jobs: List[JobResponse]
-    next_start_key: Optional[str] = None
+    jobs: list[JobResponse]
+    next_start_key: str | None = None
 
 
 async def get_job_status(job_id: str, job: Job) -> str:
@@ -68,7 +67,7 @@ async def get_job_status(job_id: str, job: Job) -> str:
     return "unknown"
 
 
-async def get_run_state_response(job_id: str) -> Optional[RunStateResponse]:
+async def get_run_state_response(job_id: str) -> RunStateResponse | None:
     """Get run state details for API response."""
     try:
         run_state = await RunState.get(job_id)
@@ -89,9 +88,9 @@ async def get_run_state_response(job_id: str) -> Optional[RunStateResponse]:
 @router.get("/", response_model=JobListResponse)
 async def list_jobs(
     user_id: str = Depends(current_user),
-    workflow_id: Optional[str] = None,
+    workflow_id: str | None = None,
     limit: int = 100,
-    start_key: Optional[str] = None,
+    start_key: str | None = None,
 ):
     """
     List jobs for the current user.
@@ -177,7 +176,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
     )
 
 
-@router.get("/running/all", response_model=List[BackgroundJobResponse])
+@router.get("/running/all", response_model=list[BackgroundJobResponse])
 async def list_running_jobs(user_id: str = Depends(current_user)):
     """
     List all currently running background jobs for the current user.
@@ -238,13 +237,13 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
 
 class TriggerWorkflowResponse(BaseModel):
     workflow_id: str
-    job_id: Optional[str] = None
+    job_id: str | None = None
     status: str
     is_running: bool
 
 
 class TriggerWorkflowListResponse(BaseModel):
-    workflows: List[TriggerWorkflowResponse]
+    workflows: list[TriggerWorkflowResponse]
 
 
 @router.get("/triggers/running", response_model=TriggerWorkflowListResponse)
@@ -349,12 +348,11 @@ async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current
     )
 
 
-async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
+async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
     """
     Ensure job status reflects the background execution manager.
     Syncs completed/failed states from RunState and background manager.
     """
-    from nodetool.models.condition_builder import Field
 
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}

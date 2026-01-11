@@ -35,7 +35,7 @@ import time
 import zipfile
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -44,6 +44,9 @@ from nodetool.config.settings import get_system_data_path
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import LogUpdate
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, AsyncIterator
 
 
 def _safe_download_to(path: Path, url: str) -> None:

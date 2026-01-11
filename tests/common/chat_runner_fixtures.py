@@ -3,7 +3,7 @@ Test fixtures and utilities for chat runner tests
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -164,7 +164,7 @@ class ChatHistoryBuilder:
     """Helper class to build chat histories for testing"""
 
     def __init__(self):
-        self.messages: List[ApiMessage] = []
+        self.messages: list[ApiMessage] = []
 
     def add_user_message(self, content: str, **kwargs) -> "ChatHistoryBuilder":
         self.messages.append(create_api_message(role="user", content=content, **kwargs))
@@ -194,7 +194,7 @@ class ChatHistoryBuilder:
         self.messages.append(create_api_message(role="tool", instructions=result, tool_call_id=call_id))
         return self
 
-    def build(self) -> List[ApiMessage]:
+    def build(self) -> list[ApiMessage]:
         return self.messages
 
 
@@ -235,7 +235,7 @@ def mock_supabase_client():
 # Helper functions for common test scenarios
 
 
-async def simulate_chat_interaction(runner, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+async def simulate_chat_interaction(runner, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Simulate a chat interaction and collect responses
 
@@ -260,7 +260,7 @@ async def simulate_chat_interaction(runner, messages: List[Dict[str, Any]]) -> L
     return responses
 
 
-def assert_message_contains(message: dict, expected_type: str, expected_content: Optional[str] = None):
+def assert_message_contains(message: dict, expected_type: str, expected_content: str | None = None):
     """Assert that a message has expected type and optionally content"""
     assert message.get("type") == expected_type, f"Expected type {expected_type}, got {message.get('type')}"
 

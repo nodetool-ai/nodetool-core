@@ -40,17 +40,18 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
-from nodetool.models.run_node_state import RunNodeState
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.inbox import NodeInbox
     from nodetool.workflows.processing_context import ProcessingContext

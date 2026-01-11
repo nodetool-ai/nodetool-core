@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from nodetool.config.logging_config import get_logger
 from nodetool.types.wrap_primitive_types import wrap_primitive_types

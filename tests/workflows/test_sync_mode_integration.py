@@ -1,4 +1,5 @@
-from typing import AsyncGenerator, TypedDict
+from collections.abc import AsyncGenerator
+from typing import TypedDict
 
 import pytest
 

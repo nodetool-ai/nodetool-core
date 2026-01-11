@@ -1,4 +1,3 @@
-from typing import List, Optional
 
 from fastapi import HTTPException, Request, status
 
@@ -72,7 +71,7 @@ async def current_user(request: Request) -> str:
     )
 
 
-async def abort(status_code: int, detail: Optional[str] = None) -> None:
+async def abort(status_code: int, detail: str | None = None) -> None:
     """
     Abort the current request with the given status code and detail.
     """
@@ -80,8 +79,8 @@ async def abort(status_code: int, detail: Optional[str] = None) -> None:
 
 
 def flatten_models(
-    models: List[List[HuggingFaceModel]],
-) -> List[HuggingFaceModel]:
+    models: list[list[HuggingFaceModel]],
+) -> list[HuggingFaceModel]:
     """Flatten a list of models that may contain nested lists."""
     flat_list = []
     for item in models:

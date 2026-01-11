@@ -1,7 +1,8 @@
 import asyncio
 import mimetypes
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
@@ -23,18 +24,15 @@ from google.genai.types import (
     GenerateContentConfig,
     GenerateImagesConfig,
     GenerateVideosConfig,
-    ImageOrDict,
     Part,
     PrebuiltVoiceConfig,
     SpeechConfig,
-    ThinkingConfig,
     Tool,
     ToolListUnion,
     VoiceConfig,
 )
 from pydantic import BaseModel
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.metadata.types import (
@@ -80,7 +78,6 @@ class GeminiProvider(BaseProvider):
 
     def get_client(self) -> AsyncClient:
         """Return an async Gemini client for the current event loop."""
-        from weakref import WeakKeyDictionary  # Lazy import for type hint if needed above
 
         loop = asyncio.get_running_loop()
         if loop not in self._clients:
@@ -105,7 +102,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling (all Gemini models do)")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Gemini language models.
 
@@ -130,7 +127,7 @@ class GeminiProvider(BaseProvider):
                 payload = await response.json()
                 items = payload.get("models") or payload.get("data") or []
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in items:
                     # Filter for models that support generating content (exclude embeddings, etc.)
                     methods = item.get("supportedGenerationMethods") or []
@@ -156,7 +153,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Error fetching Gemini models: {e}")
             return []
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available Gemini image models.
 
@@ -957,7 +954,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-speech failed: {e}")
             raise RuntimeError(f"Gemini text-to-speech generation failed: {e}") from e
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """Get available Gemini TTS models.
 
         Returns:
@@ -1019,7 +1016,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Returning {len(models)} Gemini TTS models")
         return models
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """Get available Gemini ASR models.
 
         According to Gemini API docs, all Gemini models support audio input natively.
@@ -1055,7 +1052,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Returning {len(models)} Gemini ASR models")
         return models
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get available Gemini video generation models.
 
         Returns Veo video models only if GEMINI_API_KEY is configured.

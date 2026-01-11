@@ -20,11 +20,13 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any
 
 from .chroma_client import get_chroma_client
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from chromadb.api import ClientAPI
 
 
@@ -67,11 +69,11 @@ class AsyncChromaCollection:
 
     async def get(
         self,
-        ids: Optional[Iterable[str]] = None,
-        where: Optional[dict] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
-        include: Optional[Iterable] = None,
+        ids: Iterable[str] | None = None,
+        where: dict | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        include: Iterable | None = None,
     ) -> dict:
         kwargs = {
             "ids": ids,
@@ -83,7 +85,7 @@ class AsyncChromaCollection:
             kwargs["include"] = include
         return await self._executor.run(self._collection.get, **kwargs)
 
-    async def peek(self, limit: int = 10, include: Optional[Iterable] = None) -> dict:
+    async def peek(self, limit: int = 10, include: Iterable | None = None) -> dict:
         kwargs = {"limit": limit}
         if include is not None:
             kwargs["include"] = include
@@ -91,13 +93,13 @@ class AsyncChromaCollection:
 
     async def query(
         self,
-        query_texts: Optional[Iterable[str]] = None,
-        query_embeddings: Optional[Iterable[Iterable[float]]] = None,
-        query_images: Optional[Iterable] = None,
+        query_texts: Iterable[str] | None = None,
+        query_embeddings: Iterable[Iterable[float]] | None = None,
+        query_images: Iterable | None = None,
         n_results: int = 10,
-        where: Optional[dict] = None,
-        where_document: Optional[dict] = None,
-        include: Optional[Iterable] = None,
+        where: dict | None = None,
+        where_document: dict | None = None,
+        include: Iterable | None = None,
     ) -> dict:
         kwargs = {
             "query_texts": query_texts,
@@ -115,10 +117,10 @@ class AsyncChromaCollection:
     async def add(
         self,
         ids: Iterable[str],
-        documents: Optional[Iterable[str]] = None,
-        embeddings: Optional[Iterable[Iterable[float]]] = None,
-        metadatas: Optional[Iterable[dict]] = None,
-        images: Optional[Iterable] = None,
+        documents: Iterable[str] | None = None,
+        embeddings: Iterable[Iterable[float]] | None = None,
+        metadatas: Iterable[dict] | None = None,
+        images: Iterable | None = None,
     ) -> None:
         await self._executor.run(
             self._collection.add,
@@ -132,10 +134,10 @@ class AsyncChromaCollection:
     async def upsert(
         self,
         ids: Iterable[str],
-        documents: Optional[Iterable[str]] = None,
-        embeddings: Optional[Iterable[Iterable[float]]] = None,
-        metadatas: Optional[Iterable[dict]] = None,
-        images: Optional[Iterable] = None,
+        documents: Iterable[str] | None = None,
+        embeddings: Iterable[Iterable[float]] | None = None,
+        metadatas: Iterable[dict] | None = None,
+        images: Iterable | None = None,
     ) -> None:
         await self._executor.run(
             self._collection.upsert,
@@ -148,8 +150,8 @@ class AsyncChromaCollection:
 
     async def modify(
         self,
-        name: Optional[str] = None,
-        metadata: Optional[dict[str, str]] = None,
+        name: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         await self._executor.run(self._collection.modify, name=name, metadata=metadata)
         # Update cached values on success
@@ -158,7 +160,7 @@ class AsyncChromaCollection:
         if metadata is not None:
             self.metadata = metadata
 
-    async def delete(self, ids: Optional[Iterable[str]] = None, where: Optional[dict] = None) -> None:
+    async def delete(self, ids: Iterable[str] | None = None, where: dict | None = None) -> None:
         await self._executor.run(self._collection.delete, ids=ids, where=where)
 
 
@@ -195,12 +197,12 @@ class AsyncChromaClient:
         return AsyncChromaCollection(collection, self._executor)
 
     async def get_or_create_collection(
-        self, name: str, metadata: Optional[dict[str, Any]] = None
+        self, name: str, metadata: dict[str, Any] | None = None
     ) -> AsyncChromaCollection:
         collection = await self._executor.run(self._client.get_or_create_collection, name=name, metadata=metadata)
         return AsyncChromaCollection(collection, self._executor)
 
-    async def create_collection(self, name: str, metadata: Optional[dict[str, Any]] = None) -> AsyncChromaCollection:
+    async def create_collection(self, name: str, metadata: dict[str, Any] | None = None) -> AsyncChromaCollection:
         collection = await self._executor.run(self._client.create_collection, name=name, metadata=metadata)
         return AsyncChromaCollection(collection, self._executor)
 

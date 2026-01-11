@@ -127,7 +127,8 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 from claude_agent_sdk import (
@@ -316,7 +317,7 @@ def create_sdk_tool_from_frontend(
 
 
 async def create_mcp_server_from_tools(
-    tools: List[Tool], context: ProcessingContext, server_name: str = "nodetool"
+    tools: list[Tool], context: ProcessingContext, server_name: str = "nodetool"
 ) -> Any:
     """
     Create an MCP server from a list of nodetool tools.
@@ -482,7 +483,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -519,7 +520,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
         # Resolve custom tools from nodetool registry
         mcp_servers = {}
-        custom_tools: List[Tool] = []
+        custom_tools: list[Tool] = []
 
         if last_message.tools:
             log.debug(f"User selected tools: {last_message.tools}")
@@ -539,7 +540,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                     allowed_tools.append(f"mcp__nodetool__{tool.name}")
 
         # Resolve frontend tools from client manifest/tool bridge
-        frontend_tool_queues: Dict[str, asyncio.Queue] = {}
+        frontend_tool_queues: dict[str, asyncio.Queue] = {}
 
         if processing_context.client_tools_manifest:
             frontend_tools = []
@@ -730,7 +731,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
                     return content_item.text
         return "Complete the requested task"
 
-    def _format_chat_history(self, chat_history: List[Message]) -> str:
+    def _format_chat_history(self, chat_history: list[Message]) -> str:
         """Format chat history into a readable context string."""
         if len(chat_history) <= 1:
             return ""
@@ -754,7 +755,7 @@ class ClaudeAgentMessageProcessor(MessageProcessor):
 
         return "\n".join(formatted_lines)
 
-    def _build_system_prompt(self, objective: str, chat_history: List[Message]) -> str:
+    def _build_system_prompt(self, objective: str, chat_history: list[Message]) -> str:
         """Build a system prompt for the Claude Agent SDK with conversation context."""
         return f"""You are an AI assistant powered by the Claude Agent SDK.
 Your objective is to help the user with their request: {objective}
@@ -850,7 +851,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -882,13 +883,13 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
         # Always include help tools for workflow assistance
         from nodetool.agents.tools.help_tools import SearchExamplesTool, SearchNodesTool
 
-        help_tools: List[Tool] = [
+        help_tools: list[Tool] = [
             SearchNodesTool(),
             SearchExamplesTool(),
         ]
 
         # Resolve additional custom tools from nodetool registry
-        custom_tools: List[Tool] = []
+        custom_tools: list[Tool] = []
 
         if last_message.tools:
             log.debug(f"User selected tools: {last_message.tools}")
@@ -909,7 +910,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
             allowed_tools.append(f"mcp__nodetool__{tool.name}")
 
         # Resolve frontend tools from client manifest/tool bridge
-        frontend_tool_queues: Dict[str, asyncio.Queue] = {}
+        frontend_tool_queues: dict[str, asyncio.Queue] = {}
 
         if processing_context.client_tools_manifest:
             frontend_tools = []
@@ -1098,7 +1099,7 @@ class ClaudeAgentHelpMessageProcessor(MessageProcessor):
                     return content_item.text
         return "Help me with my workflow"
 
-    def _format_chat_history(self, chat_history: List[Message]) -> str:
+    def _format_chat_history(self, chat_history: list[Message]) -> str:
         """Format chat history into a readable context string."""
         if len(chat_history) <= 1:
             return ""

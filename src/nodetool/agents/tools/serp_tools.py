@@ -1,12 +1,11 @@
 import json
 import time
-from typing import Any, ClassVar, Dict, Optional, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 
 T = TypeVar("T")
@@ -517,7 +516,7 @@ class GoogleShoppingTool(Tool):
 # Helper function to get a configured SERP provider
 async def _get_configured_serp_provider(
     context: ProcessingContext,
-) -> tuple[Optional[SerpProvider], Optional[ErrorResponse]]:
+) -> tuple[SerpProvider | None, ErrorResponse | None]:
     """
     Selects and returns a configured SERP provider based on environment variables.
     Prioritizes SerpApi, then DataForSEO.

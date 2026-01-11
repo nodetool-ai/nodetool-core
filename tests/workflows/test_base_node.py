@@ -1,7 +1,8 @@
 import asyncio
 import enum
 import os
-from typing import AsyncGenerator, ClassVar, Optional, TypedDict, Union
+from collections.abc import AsyncGenerator
+from typing import ClassVar, Optional, TypedDict, Union
 
 import pytest
 
@@ -273,7 +274,7 @@ def test_type_metadata_union():
 
 
 def test_type_metadata_optional():
-    assert type_metadata(Optional[int]) == TypeMetadata(type="int", optional=True)
+    assert type_metadata(int | None) == TypeMetadata(type="int", optional=True)
 
 
 def test_type_metadata_enum():

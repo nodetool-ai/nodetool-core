@@ -30,9 +30,12 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 from nodetool.config.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 log = get_logger(__name__)
 

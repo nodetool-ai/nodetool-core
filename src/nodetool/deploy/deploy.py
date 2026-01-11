@@ -14,7 +14,6 @@ Key Features:
 
 import os
 import sys
-from typing import Optional
 
 from rich.console import Console
 
@@ -55,11 +54,11 @@ def run_local_docker(
 
 
 def get_docker_username(
-    docker_username: Optional[str] = None,
+    docker_username: str | None = None,
     docker_registry: str = "docker.io",
     skip_build: bool = False,
     skip_push: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """
     Get Docker username from multiple sources with validation.
 
@@ -97,8 +96,8 @@ def print_deployment_summary(
     full_image_name: str,
     image_tag: str,
     platform: str,
-    template_id: Optional[str] = None,
-    endpoint_id: Optional[str] = None,
+    template_id: str | None = None,
+    endpoint_id: str | None = None,
     deployment_platform: str = "RunPod",
 ) -> None:
     """

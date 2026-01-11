@@ -37,7 +37,6 @@ Environment Variables:
 
 import re
 import sys
-from typing import Optional
 
 from nodetool.config.deployment import RunPodDeployment
 from nodetool.deploy.runpod_api import create_runpod_endpoint_graphql
@@ -97,7 +96,7 @@ def deploy_to_runpod(
     skip_endpoint: bool = False,
     no_cache: bool = False,
     no_auto_push: bool = False,
-    name: Optional[str] = None,
+    name: str | None = None,
     env: dict[str, str] | None = None,
 ) -> None:
     """
@@ -137,7 +136,7 @@ def deploy_to_runpod(
     gpu_types = tuple(gpu_types) if gpu_types is not None else tuple(deployment.gpu_types)
     gpu_count = gpu_count if gpu_count is not None else deployment.gpu_count
     cpu_flavors: tuple = ()  # Not in the model
-    vcpu_count: Optional[int] = None  # Not in the model
+    vcpu_count: int | None = None  # Not in the model
     data_centers = tuple(data_centers) if data_centers is not None else tuple(deployment.data_centers)
     workers_min = workers_min if workers_min is not None else deployment.workers_min
     workers_max = workers_max if workers_max is not None else deployment.workers_max

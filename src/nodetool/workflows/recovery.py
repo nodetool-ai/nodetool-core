@@ -12,7 +12,7 @@ for correctness - all recovery decisions are based on run_state and run_node_sta
 import asyncio
 import os
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from nodetool.config.logging_config import get_logger

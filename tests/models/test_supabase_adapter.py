@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from types import SimpleNamespace
-from typing import Dict, List, Optional
+from typing import Optional
 from unittest.mock import patch
 
 import pytest
@@ -29,11 +29,11 @@ class TestModel(DBModel):
     age: int = DBField()
     height: float = DBField()
     is_active: bool = DBField()
-    tags: List[str] = DBField()
-    metadata: Dict[str, str] = DBField()
+    tags: list[str] = DBField()
+    metadata: dict[str, str] = DBField()
     created_at: datetime = DBField()
     enum_field: TestEnum = DBField()
-    optional_field: Optional[str] = DBField(default=None)
+    optional_field: str | None = DBField(default=None)
 
     @classmethod
     def get_table_schema(cls) -> dict:

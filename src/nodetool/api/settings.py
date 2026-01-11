@@ -1,5 +1,4 @@
-import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,44 +17,44 @@ class SettingWithValue(BaseModel):
     env_var: str
     group: str
     description: str
-    enum: Optional[List[str]] = None
-    value: Optional[Any] = None
+    enum: list[str] | None = None
+    value: Any | None = None
     is_secret: bool = False
 
 
 class SettingsResponse(BaseModel):
-    settings: List[SettingWithValue]
+    settings: list[SettingWithValue]
 
 
 class SettingsUpdateRequest(BaseModel):
-    settings: Dict[str, Any]
-    secrets: Dict[str, Any]
+    settings: dict[str, Any]
+    secrets: dict[str, Any]
 
 
 class SecretCreateRequest(BaseModel):
     key: str
     value: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class SecretUpdateRequest(BaseModel):
     value: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class SecretResponse(BaseModel):
-    id: Optional[str] = None
-    user_id: Optional[str] = None
+    id: str | None = None
+    user_id: str | None = None
     key: str
-    description: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    description: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
     is_configured: bool = False
 
 
 class SecretsListResponse(BaseModel):
-    secrets: List[SecretResponse]
-    next_key: Optional[str] = None
+    secrets: list[SecretResponse]
+    next_key: str | None = None
 
 
 @router.get("/")
@@ -117,7 +116,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
 
 
 @router.put("/")
-async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> Dict[str, str]:
+async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> dict[str, str]:
     if Environment.is_production():
         raise HTTPException(status_code=403, detail="Settings cannot be updated in production")
 
@@ -151,7 +150,7 @@ async def update_settings(req: SettingsUpdateRequest, user: str = Depends(curren
 
 @router.get("/secrets")
 async def list_secrets(
-    limit: int = 100, start_key: Optional[str] = None, user: str = Depends(current_user)
+    limit: int = 100, start_key: str | None = None, user: str = Depends(current_user)
 ) -> SecretsListResponse:
     """
     List all possible secrets from the settings registry.
@@ -196,7 +195,7 @@ async def list_secrets(
 
 
 @router.get("/secrets/{key}")
-async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> Dict[str, Any]:
+async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> dict[str, Any]:
     """
     Get a specific secret by key.
 
@@ -262,7 +261,7 @@ async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(
 
 
 @router.delete("/secrets/{key}")
-async def delete_secret(key: str, user: str = Depends(current_user)) -> Dict[str, str]:
+async def delete_secret(key: str, user: str = Depends(current_user)) -> dict[str, str]:
     """
     Delete a secret.
     """

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
@@ -165,9 +165,9 @@ class Workflow(DBModel):
         cls,
         user_id: str | None = None,
         limit: int = 100,
-        start_key: Optional[str] = None,
+        start_key: str | None = None,
         columns: list[str] | None = None,
-        run_mode: Optional[str] = None,
+        run_mode: str | None = None,
     ) -> tuple[list["Workflow"], str]:
         """Paginate through workflows, optionally filtering by user.
 
@@ -237,7 +237,7 @@ class Workflow(DBModel):
         return workflows, last_evaluated_key if len(results) > limit else ""
 
     @classmethod
-    async def paginate_tools(cls, user_id: str, limit: int = 100, start_key: Optional[str] = None):
+    async def paginate_tools(cls, user_id: str, limit: int = 100, start_key: str | None = None):
         """Paginate through tools, optionally filtering by user."""
         conditions = []
 

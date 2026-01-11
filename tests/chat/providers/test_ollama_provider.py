@@ -92,7 +92,7 @@ Error Handling:
 - Connection errors: Server not running
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -114,7 +114,7 @@ class TestOllamaProvider(BaseProviderTest):
     def provider_name(self):
         return "ollama"
 
-    def create_ollama_response(self, content: str = "Hello, world!") -> Dict[str, Any]:
+    def create_ollama_response(self, content: str = "Hello, world!") -> dict[str, Any]:
         """Create a realistic Ollama API response."""
         return {
             "model": "test-model",
@@ -129,7 +129,7 @@ class TestOllamaProvider(BaseProviderTest):
             "eval_duration": 700000000,
         }
 
-    def create_ollama_streaming_responses(self, text: str = "Hello world!") -> List[Dict[str, Any]]:
+    def create_ollama_streaming_responses(self, text: str = "Hello world!") -> list[dict[str, Any]]:
         """Create realistic Ollama streaming response chunks."""
         chunks = []
         words = text.split()
@@ -166,7 +166,7 @@ class TestOllamaProvider(BaseProviderTest):
                 response=MagicMock(status_code=500, text="Internal server error"),
             )
 
-    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
+    def mock_api_call(self, response_data: dict[str, Any]) -> MagicMock:
         """Mock Ollama AsyncClient.chat for non-streaming responses."""
         content = response_data.get("text", "Hello, world!")
 
@@ -190,7 +190,7 @@ class TestOllamaProvider(BaseProviderTest):
 
         return patch.object(ollama.AsyncClient, "chat", side_effect=mock_chat)  # type: ignore[return-value]
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]) -> MagicMock:
         """Mock Ollama streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
         self.create_ollama_streaming_responses(text)

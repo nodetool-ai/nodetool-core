@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -30,11 +30,11 @@ class TestModel(DBModel):
     age: int = DBField()
     height: float = DBField()
     is_active: bool = DBField()
-    tags: List[str] = DBField()
-    metadata: Dict[str, str] = DBField()
+    tags: list[str] = DBField()
+    metadata: dict[str, str] = DBField()
     created_at: datetime = DBField()
     enum_field: TestEnum = DBField()
-    optional_field: Optional[str] = DBField(default=None)
+    optional_field: str | None = DBField(default=None)
 
     @classmethod
     def get_table_schema(cls) -> dict:
@@ -176,8 +176,8 @@ def test_convert_to_sqlite_format():
     assert convert_to_sqlite_format(123, int) == 123
     assert convert_to_sqlite_format(1.23, float) == 1.23
     assert convert_to_sqlite_format(True, bool) == 1
-    assert convert_to_sqlite_format(["a", "b"], List[str]) == '["a", "b"]'
-    assert convert_to_sqlite_format({"a": 1}, Dict[str, int]) == '{"a": 1}'
+    assert convert_to_sqlite_format(["a", "b"], list[str]) == '["a", "b"]'
+    assert convert_to_sqlite_format({"a": 1}, dict[str, int]) == '{"a": 1}'
     assert convert_to_sqlite_format(datetime(2023, 1, 1), datetime) == "2023-01-01T00:00:00"
     assert convert_to_sqlite_format(TestEnum.VALUE1, TestEnum) == "value1"
 
@@ -187,8 +187,8 @@ def test_convert_from_sqlite_format():
     assert convert_from_sqlite_format(123, int) == 123
     assert convert_from_sqlite_format(1.23, float) == 1.23
     assert convert_from_sqlite_format(1, bool) is True
-    assert convert_from_sqlite_format('["a", "b"]', List[str]) == ["a", "b"]
-    assert convert_from_sqlite_format('{"a": 1}', Dict[str, int]) == {"a": 1}
+    assert convert_from_sqlite_format('["a", "b"]', list[str]) == ["a", "b"]
+    assert convert_from_sqlite_format('{"a": 1}', dict[str, int]) == {"a": 1}
     assert convert_from_sqlite_format("2023-01-01T00:00:00", datetime) == datetime(2023, 1, 1)
     assert convert_from_sqlite_format("value1", TestEnum) == TestEnum.VALUE1
 

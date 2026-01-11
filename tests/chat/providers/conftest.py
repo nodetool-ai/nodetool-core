@@ -10,7 +10,7 @@ This module provides:
 
 import asyncio
 import os
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -76,13 +76,13 @@ def event_loop():
 
 
 @pytest.fixture
-def simple_messages() -> List[Message]:
+def simple_messages() -> list[Message]:
     """Fixture providing simple test messages."""
     return [Message(role="user", content=[MessageTextContent(text="Hello, how are you?")])]
 
 
 @pytest.fixture
-def conversation_messages() -> List[Message]:
+def conversation_messages() -> list[Message]:
     """Fixture providing a multi-turn conversation."""
     return [
         Message(role="user", content=[MessageTextContent(text="What's the weather like?")]),
@@ -95,7 +95,7 @@ def conversation_messages() -> List[Message]:
 
 
 @pytest.fixture
-def tool_messages() -> List[Message]:
+def tool_messages() -> list[Message]:
     """Fixture providing messages that should trigger tool calls."""
     return [
         Message(
@@ -121,7 +121,7 @@ def mock_tool():
             "required": ["query"],
         }
 
-        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
             return {
                 "results": [
                     {
@@ -154,7 +154,7 @@ def calculator_tool():
             "required": ["expression"],
         }
 
-        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
             expression = params.get("expression", "")
             try:
                 # Simple evaluation for testing (in real implementation, use safe evaluation)

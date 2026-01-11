@@ -10,15 +10,16 @@ import asyncio
 import gc
 import random
 from contextlib import contextmanager, suppress
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
-from nodetool.workflows.types import NodeProgress
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
+    from collections.abc import Generator
+
     from PIL import Image
 
     from nodetool.metadata.types import TorchTensor

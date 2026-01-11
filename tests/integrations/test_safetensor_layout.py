@@ -1,7 +1,7 @@
 """Tests for safetensors layout detection."""
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 from safetensors.numpy import save_file

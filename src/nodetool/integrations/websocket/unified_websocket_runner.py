@@ -39,10 +39,11 @@ import asyncio
 import gc
 import json
 import time
+from collections.abc import AsyncGenerator
 from contextlib import suppress
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
 
 import msgpack
 from fastapi import WebSocket, WebSocketDisconnect
@@ -442,7 +443,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         except Exception as e:
             log.error(f"Error sending message: {e}", exc_info=True)
 
-    async def receive_message(self) -> Optional[dict]:
+    async def receive_message(self) -> dict | None:
         """
         Receive a message from the WebSocket client.
 
@@ -684,7 +685,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             # Clean up
             self.active_jobs.pop(job_ctx.job_id, None)
 
-    async def reconnect_job(self, job_id: str, workflow_id: Optional[str] = None):
+    async def reconnect_job(self, job_id: str, workflow_id: str | None = None):
         """Reconnect to an existing background job and stream remaining messages."""
         try:
             if not self.websocket:
@@ -878,7 +879,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 ).model_dump()
             )
 
-    async def resume_job(self, job_id: str, workflow_id: Optional[str] = None):
+    async def resume_job(self, job_id: str, workflow_id: str | None = None):
         """Resume a suspended or recovering job from persistence."""
         try:
             if not self.websocket:
@@ -942,7 +943,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 ).model_dump()
             )
 
-    async def cancel_job(self, job_id: str, workflow_id: Optional[str] = None):
+    async def cancel_job(self, job_id: str, workflow_id: str | None = None):
         """
         Cancel the specified job.
 

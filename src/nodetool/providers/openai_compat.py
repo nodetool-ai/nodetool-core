@@ -12,7 +12,7 @@ import ast
 import base64
 import io
 import json
-from typing import TYPE_CHECKING, Any, Sequence, cast
+from typing import TYPE_CHECKING, Any
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -43,6 +43,8 @@ from nodetool.metadata.types import (
 log = get_logger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from nodetool.agents.tools.base import Tool
 
 

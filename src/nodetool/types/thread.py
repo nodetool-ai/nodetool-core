@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -9,7 +8,7 @@ from pydantic import BaseModel
 class ThreadCreateRequest(BaseModel):
     """Request model for creating a new thread."""
 
-    title: Optional[str] = None
+    title: str | None = None
 
 
 class ThreadUpdateRequest(BaseModel):
@@ -42,5 +41,5 @@ class Thread(BaseModel):
 class ThreadList(BaseModel):
     """Paginated list of threads."""
 
-    next: Optional[str] = None
+    next: str | None = None
     threads: list[Thread]

@@ -17,7 +17,7 @@ import ast
 import math
 import operator
 import statistics
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
@@ -33,7 +33,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
     """
 
     # Allowed binary operators
-    OPERATORS: ClassVar[Dict[type, Any]] = {
+    OPERATORS: ClassVar[dict[type, Any]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -44,13 +44,13 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
     }
 
     # Allowed unary operators
-    UNARY_OPERATORS: ClassVar[Dict[type, Any]] = {
+    UNARY_OPERATORS: ClassVar[dict[type, Any]] = {
         ast.UAdd: operator.pos,
         ast.USub: operator.neg,
     }
 
     # Safe math functions
-    SAFE_FUNCTIONS: ClassVar[Dict[str, Any]] = {
+    SAFE_FUNCTIONS: ClassVar[dict[str, Any]] = {
         "sqrt": math.sqrt,
         "abs": abs,
         "round": round,
@@ -68,7 +68,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
     }
 
     # Safe constants
-    SAFE_CONSTANTS: ClassVar[Dict[str, float]] = {
+    SAFE_CONSTANTS: ClassVar[dict[str, float]] = {
         "pi": math.pi,
         "e": math.e,
         "tau": math.tau,
@@ -151,7 +151,7 @@ class CalculatorTool(Tool):
         "Supports +, -, *, /, **, sqrt, abs, round, and parentheses. "
         "Use for evaluating mathematical expressions safely."
     )
-    input_schema: ClassVar[Dict[str, Any]] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "expression": {
@@ -162,7 +162,7 @@ class CalculatorTool(Tool):
         "required": ["expression"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         expression = params["expression"].strip()
 
         try:
@@ -189,7 +189,7 @@ class StatisticsTool(Tool):
         "Performs statistical calculations on numerical data. "
         "Calculates mean, median, mode, standard deviation, variance, min, max, sum, and count."
     )
-    input_schema: ClassVar[Dict[str, Any]] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "data": {
@@ -221,7 +221,7 @@ class StatisticsTool(Tool):
         "required": ["data"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         data = params["data"]
         calculations = params.get("calculations", ["all"])
 
@@ -285,7 +285,7 @@ class GeometryTool(Tool):
         "Supports area and perimeter for 2D shapes, volume and surface area for 3D shapes, "
         "and distance calculations."
     )
-    input_schema: ClassVar[Dict[str, Any]] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "shape": {
@@ -326,7 +326,7 @@ class GeometryTool(Tool):
         "required": ["shape", "dimensions"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         shape = params["shape"]
         dims = params["dimensions"]
 
@@ -396,7 +396,7 @@ class TrigonometryTool(Tool):
         "Performs trigonometric calculations. "
         "Supports sin, cos, tan, asin, acos, atan, and angle conversions between degrees and radians."
     )
-    input_schema: ClassVar[Dict[str, Any]] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "function": {
@@ -427,7 +427,7 @@ class TrigonometryTool(Tool):
         "required": ["function", "value"],
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         function = params["function"]
         value = params["value"]
         angle_unit = params.get("angle_unit", "degrees")
@@ -485,7 +485,7 @@ class ConversionTool(Tool):
         "Converts between different units of measurement. "
         "Supports length, weight, temperature, area, and volume conversions."
     )
-    input_schema: ClassVar[Dict[str, Any]] = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "value": {"type": "number", "description": "Value to convert"},
@@ -550,7 +550,7 @@ class ConversionTool(Tool):
             "fl_oz": 0.0295735,
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         value = params["value"]
         from_unit = params["from_unit"].lower()
         to_unit = params["to_unit"].lower()

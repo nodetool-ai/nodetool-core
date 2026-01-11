@@ -1,21 +1,9 @@
-from typing import TYPE_CHECKING, Any, Dict
-
-if TYPE_CHECKING:
-    # Keep imports type-only to avoid heavy module loading during CLI startup
-    from google.genai import Client
-    from google.genai.client import AsyncClient
-    from google.genai.types import (
-        GenerateContentConfig,
-        GenerateImagesConfig,
-        GoogleSearch,
-    )
-    from google.genai.types import Tool as GenAITool
+from typing import TYPE_CHECKING, Any
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import Provider
 from nodetool.providers.gemini_provider import GeminiProvider
-from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -46,7 +34,7 @@ class GoogleGroundedSearchTool(Tool):
         key = Environment.get_environment().get("GEMINI_API_KEY")
         return {"GEMINI_API_KEY": key} if key else {}
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Execute a web search using Gemini API with grounding.
 
@@ -195,7 +183,7 @@ class GoogleImageGenerationTool(Tool):
             "required": ["prompt", "output_file"],
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Generate an image using the Gemini API based on the provided prompt.
 

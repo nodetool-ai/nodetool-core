@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from nodetool.agents.tools.base import Tool
 from nodetool.code_runners.bash_runner import BashDockerRunner

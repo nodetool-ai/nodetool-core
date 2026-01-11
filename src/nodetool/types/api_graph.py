@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -26,8 +26,8 @@ class Edge(BaseModel):
 
 
 class Graph(BaseModel):
-    nodes: List[Node]
-    edges: List[Edge]
+    nodes: list[Node]
+    edges: list[Edge]
 
 
 def remove_connected_slots(graph: Graph) -> Graph:
@@ -63,8 +63,8 @@ def remove_connected_slots(graph: Graph) -> Graph:
     return graph
 
 
-def get_input_schema(graph: Graph) -> Dict[str, Any]:
-    input_schema: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+def get_input_schema(graph: Graph) -> dict[str, Any]:
+    input_schema: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
 
     for node in graph.nodes:
         if node.type.startswith(("nodetool.input.", "nodetool.workflows.test_helper.")):
@@ -119,8 +119,8 @@ def get_input_schema(graph: Graph) -> Dict[str, Any]:
     return input_schema
 
 
-def get_output_schema(graph: Graph) -> Dict[str, Any]:
-    output_schema: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+def get_output_schema(graph: Graph) -> dict[str, Any]:
+    output_schema: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
 
     for node in graph.nodes:
         if node.type.startswith("nodetool.output."):

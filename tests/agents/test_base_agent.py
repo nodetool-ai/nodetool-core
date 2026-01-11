@@ -1,4 +1,5 @@
-from typing import Any, AsyncGenerator, List
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ class DummyProvider(BaseProvider):
         self.calls += 1
         return 42
 
-    async def get_available_models(self) -> List[LanguageModel]:
+    async def get_available_models(self) -> list[LanguageModel]:
         """Return empty list for testing."""
         return []
 

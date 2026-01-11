@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from datetime import UTC, datetime, timezone
-from typing import IO, TYPE_CHECKING, Any, AsyncIterator
+from datetime import UTC, datetime
+from typing import IO, TYPE_CHECKING
 
 from .abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from nodetool.models.supabase_adapter import SupabaseAsyncClient
 
 

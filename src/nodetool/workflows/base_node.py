@@ -91,19 +91,15 @@ import asyncio
 import functools
 import importlib
 import inspect
-import logging
 import re
 import traceback
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    AsyncIterator,
-    Callable,
     ClassVar,
     Optional,
-    Type,
     TypedDict,
     TypeVar,
     get_args,
@@ -123,17 +119,13 @@ from nodetool.metadata.typecheck import (
 )
 from nodetool.metadata.types import (
     AssetRef,
-    AudioRef,
     ComfyData,
     ComfyModel,
     HuggingFaceModel,
-    ImageRef,
     NameToType,
     NPArray,
     OutputSlot,
-    TextRef,
     TypeToName,
-    VideoRef,
 )
 from nodetool.metadata.utils import (
     async_generator_item_type,
@@ -167,7 +159,6 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
-    from .property import Property
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -262,7 +253,7 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
         add_comfy_classname(node_class)
 
 
-def type_metadata(python_type: Type | UnionType, allow_optional: bool = True) -> TypeMetadata:
+def type_metadata(python_type: type | UnionType, allow_optional: bool = True) -> TypeMetadata:
     """Generate `TypeMetadata` for a given Python type.
 
     Supports basic types, lists, tuples, dicts, optional types, unions,
@@ -710,7 +701,6 @@ class BaseNode(BaseModel):
         Returns:
             list[ModelPack]: List of model packs for this node.
         """
-        from nodetool.types.model import ModelPack
 
         return []
 
@@ -760,7 +750,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def get_metadata(cls: Type["BaseNode"], include_model_info: bool = False):
+    def get_metadata(cls: type["BaseNode"], include_model_info: bool = False):
         """
         Generate comprehensive metadata for the node class.
 
@@ -1322,7 +1312,7 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
-    def return_type(cls) -> Type | None:
+    def return_type(cls) -> type | None:
         """
         Get the return type of the node's process function.
 
@@ -1414,7 +1404,7 @@ class BaseNode(BaseModel):
         dynamic_unique = [o for o in dynamic_outputs if o.name not in existing]
         return [*class_outputs, *dynamic_unique]
 
-    def add_output(self, name: str, python_type: Type | UnionType | None = None) -> None:
+    def add_output(self, name: str, python_type: type | UnionType | None = None) -> None:
         """
         Add a dynamic output to this instance (only effective if node is dynamic).
         """
@@ -1500,7 +1490,6 @@ class BaseNode(BaseModel):
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        from .property import Property
 
         # Get properties from parent classes
         parent_properties = {}

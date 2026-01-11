@@ -18,7 +18,6 @@ Usage:
 import argparse
 import os
 import sys
-from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 
@@ -29,7 +28,7 @@ class AWSSecretsUtil:
     """Utility for managing master keys in AWS Secrets Manager."""
 
     @staticmethod
-    def get_aws_client(region: Optional[str] = None):
+    def get_aws_client(region: str | None = None):
         """
         Create and return an AWS Secrets Manager client.
 
@@ -50,7 +49,7 @@ class AWSSecretsUtil:
         return session.client(service_name="secretsmanager", region_name=region)
 
     @staticmethod
-    def store_master_key(secret_name: str, master_key: str, region: Optional[str] = None) -> bool:
+    def store_master_key(secret_name: str, master_key: str, region: str | None = None) -> bool:
         """
         Store a master key in AWS Secrets Manager.
 
@@ -90,7 +89,7 @@ class AWSSecretsUtil:
             return False
 
     @staticmethod
-    def retrieve_master_key(secret_name: str, region: Optional[str] = None) -> Optional[str]:
+    def retrieve_master_key(secret_name: str, region: str | None = None) -> str | None:
         """
         Retrieve a master key from AWS Secrets Manager.
 
@@ -102,7 +101,6 @@ class AWSSecretsUtil:
             The master key if found, None otherwise.
         """
         try:
-            from botocore.exceptions import ClientError
 
             client = AWSSecretsUtil.get_aws_client(region)
 
@@ -121,7 +119,7 @@ class AWSSecretsUtil:
             return None
 
     @staticmethod
-    def delete_master_key(secret_name: str, region: Optional[str] = None, force: bool = False) -> bool:
+    def delete_master_key(secret_name: str, region: str | None = None, force: bool = False) -> bool:
         """
         Delete a master key from AWS Secrets Manager.
 
@@ -156,7 +154,7 @@ class AWSSecretsUtil:
             return False
 
     @staticmethod
-    def generate_and_store(secret_name: str, region: Optional[str] = None) -> Optional[str]:
+    def generate_and_store(secret_name: str, region: str | None = None) -> str | None:
         """
         Generate a new master key and store it in AWS Secrets Manager.
 

@@ -18,7 +18,7 @@ API Documentation References (2024):
 
 import json
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, List, Type
+from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
 import httpx
@@ -47,7 +47,7 @@ class MockTool(Tool):
             "required": ["query"],
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         """Process the tool call with mock response."""
         return {
             "result": f"Mock result for: {params.get('query', 'unknown')}",
@@ -67,7 +67,7 @@ class ResponseFixtures:
     """
 
     @staticmethod
-    def simple_text_response(text: str = "Hello, world!") -> Dict[str, Any]:
+    def simple_text_response(text: str = "Hello, world!") -> dict[str, Any]:
         """Standard text response fixture."""
         return {
             "text": text,
@@ -76,7 +76,7 @@ class ResponseFixtures:
         }
 
     @staticmethod
-    def streaming_response_chunks(text: str = "Hello world!", chunk_size: int = 5) -> List[Dict[str, Any]]:
+    def streaming_response_chunks(text: str = "Hello world!", chunk_size: int = 5) -> list[dict[str, Any]]:
         """Generate streaming response chunks."""
         chunks = []
         for i in range(0, len(text), chunk_size):
@@ -86,7 +86,7 @@ class ResponseFixtures:
         return chunks
 
     @staticmethod
-    def tool_call_response(tool_name: str = "search", args: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def tool_call_response(tool_name: str = "search", args: dict[str, Any] | None = None) -> dict[str, Any]:
         """Tool call response fixture."""
         if args is None:
             args = {"query": "test query"}
@@ -100,7 +100,7 @@ class ResponseFixtures:
     @staticmethod
     def tool_result_response(
         result: str = "Tool execution completed",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Response after tool execution."""
         return {
             "text": result,
@@ -109,7 +109,7 @@ class ResponseFixtures:
         }
 
     @staticmethod
-    def error_response(error_type: str = "rate_limit", message: str = "Rate limit exceeded") -> Dict[str, Any]:
+    def error_response(error_type: str = "rate_limit", message: str = "Rate limit exceeded") -> dict[str, Any]:
         """Error response fixtures."""
         error_templates = {
             "rate_limit": {
@@ -172,7 +172,7 @@ class BaseProviderTest(ABC):
 
     @property
     @abstractmethod
-    def provider_class(self) -> Type[BaseProvider]:
+    def provider_class(self) -> type[BaseProvider]:
         """Return the provider class to test."""
         pass
 
@@ -206,7 +206,7 @@ class BaseProviderTest(ABC):
         # Generate a generic test value if not found
         return f"test-{secret_name.lower()}"
 
-    def _get_custom_test_secrets(self) -> Dict[str, str]:
+    def _get_custom_test_secrets(self) -> dict[str, str]:
         """
         Get custom test secrets for this provider.
 
@@ -217,7 +217,7 @@ class BaseProviderTest(ABC):
         """
         return {}
 
-    def _get_required_secrets_dict(self) -> Dict[str, str]:
+    def _get_required_secrets_dict(self) -> dict[str, str]:
         """
         Build a secrets dict with test values for all required secrets.
 
@@ -229,7 +229,7 @@ class BaseProviderTest(ABC):
             secrets[secret_name] = self.get_test_secret(secret_name)
         return secrets
 
-    def _get_provider_kwargs(self) -> Dict[str, Any]:
+    def _get_provider_kwargs(self) -> dict[str, Any]:
         """
         Get provider-specific kwargs from the registration system.
 
@@ -281,11 +281,11 @@ class BaseProviderTest(ABC):
         # Create and return the provider
         return self.provider_class(secrets=secrets, **provider_kwargs)
 
-    def create_simple_messages(self, content: str = "Hello") -> List[Message]:
+    def create_simple_messages(self, content: str = "Hello") -> list[Message]:
         """Create simple test messages."""
         return [Message(role="user", content=[MessageTextContent(text=content)])]
 
-    def create_conversation_messages(self) -> List[Message]:
+    def create_conversation_messages(self) -> list[Message]:
         """Create a multi-turn conversation."""
         return [
             Message(
@@ -302,7 +302,7 @@ class BaseProviderTest(ABC):
             ),
         ]
 
-    def create_tool_messages(self) -> List[Message]:
+    def create_tool_messages(self) -> list[Message]:
         """Create messages that should trigger tool calls."""
         return [
             Message(
@@ -474,12 +474,12 @@ class BaseProviderTest(ABC):
     # Abstract methods that subclasses must implement for provider-specific mocking
 
     @abstractmethod
-    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
+    def mock_api_call(self, response_data: dict[str, Any]) -> MagicMock:
         """Mock a single API call with the given response data."""
         pass
 
     @abstractmethod
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]) -> MagicMock:
         """Mock a streaming API call with the given chunks."""
         pass
 
@@ -492,7 +492,7 @@ class BaseProviderTest(ABC):
 # Utility functions for test data management
 
 
-def create_test_conversation(turns: int = 3) -> List[Message]:
+def create_test_conversation(turns: int = 3) -> list[Message]:
     """Create a multi-turn conversation for testing."""
     messages = []
     for i in range(turns):
@@ -513,7 +513,7 @@ def create_test_conversation(turns: int = 3) -> List[Message]:
     return messages
 
 
-def create_tool_calling_scenario() -> Dict[str, Any]:
+def create_tool_calling_scenario() -> dict[str, Any]:
     """Create a complete tool calling scenario."""
     return {
         "initial_message": Message(

@@ -1,5 +1,5 @@
 import os
-from typing import Iterator, List, Tuple
+from collections.abc import Iterator
 
 import pytest
 
@@ -55,7 +55,7 @@ def test_get_system_font_path_search_linux_without_extension(monkeypatch):
     def fake_exists(path: str) -> bool:
         return path == linux_base
 
-    def fake_walk(path: str) -> Iterator[Tuple[str, List[str], List[str]]]:
+    def fake_walk(path: str) -> Iterator[tuple[str, list[str], list[str]]]:
         assert path == linux_base
         yield linux_base, [], ["DejaVuSans.otf", "Arial.ttf"]
 
@@ -76,7 +76,7 @@ def test_get_system_font_path_search_windows_case_insensitive(monkeypatch):
     def fake_exists(path: str) -> bool:
         return path == win_base
 
-    def fake_walk(path: str) -> Iterator[Tuple[str, List[str], List[str]]]:
+    def fake_walk(path: str) -> Iterator[tuple[str, list[str], list[str]]]:
         assert path == win_base
         yield win_base, [], ["arial.TTC", "Calibri.ttf"]
 
@@ -97,7 +97,7 @@ def test_get_system_font_path_search_macos_dfont(monkeypatch):
     def fake_exists(path: str) -> bool:
         return path == mac_base
 
-    def fake_walk(path: str) -> Iterator[Tuple[str, List[str], List[str]]]:
+    def fake_walk(path: str) -> Iterator[tuple[str, list[str], list[str]]]:
         assert path == mac_base
         yield mac_base, [], ["Helvetica.dfont", "Menlo.ttc"]
 
@@ -115,7 +115,7 @@ def test_get_system_font_path_not_found_raises(monkeypatch):
     def fake_exists(path: str) -> bool:
         return False
 
-    def fake_walk(path: str) -> Iterator[Tuple[str, List[str], List[str]]]:
+    def fake_walk(path: str) -> Iterator[tuple[str, list[str], list[str]]]:
         if False:
             yield "", [], []  # pragma: no cover
         return  # never yields

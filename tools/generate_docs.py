@@ -1,5 +1,4 @@
 import os
-from typing import List
 
 import nodetool.cli
 import nodetool.workflows
@@ -8,7 +7,7 @@ from nodetool.packages.gen_docs import process_module
 
 def generate_cli_docs(output_path: str) -> None:
     """Generate documentation for the nodetool CLI."""
-    lines: List[str] = ["# nodetool CLI", ""]
+    lines: list[str] = ["# nodetool CLI", ""]
     lines.append("Available commands:")
     lines.append("")
     for cmd_name, cmd in nodetool.cli.cli.commands.items():

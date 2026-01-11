@@ -104,11 +104,8 @@ import hashlib
 import json
 import logging
 import mimetypes
-import tempfile
 from datetime import date, datetime
 from io import BytesIO
-from pathlib import Path
-from typing import List, Optional
 
 import httpx
 from pydantic import BaseModel
@@ -203,7 +200,7 @@ Date and time are objects with following structure:
 """
 
 
-def _get_encoding_for_model(model: Optional[str]):
+def _get_encoding_for_model(model: str | None):
     try:
         import tiktoken  # type: ignore
 
@@ -218,7 +215,7 @@ def _get_encoding_for_model(model: Optional[str]):
     return get_default_encoding()
 
 
-def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> None:
+def _log_tool_definition_token_breakdown(tools: list, model: str | None) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -295,10 +292,10 @@ class RegularChatProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
-        collections: Optional[List[str]] = None,
-        graph: Optional[Graph] = None,
+        collections: list[str] | None = None,
+        graph: Graph | None = None,
         **kwargs,
     ):
         """Process regular chat messages with optional collection context."""
@@ -547,7 +544,7 @@ class RegularChatProcessor(MessageProcessor):
                     return content_item.text
         return ""
 
-    async def _query_collections(self, collections: List[str], query_text: str, n_results: int) -> str:
+    async def _query_collections(self, collections: list[str], query_text: str, n_results: int) -> str:
         """Query ChromaDB collections and return concatenated results."""
         if not collections or not query_text:
             return ""
@@ -580,7 +577,7 @@ class RegularChatProcessor(MessageProcessor):
 
         return "\n".join(all_results) if all_results else ""
 
-    def _add_collection_context(self, messages: List[Message], collection_context: str) -> List[Message]:
+    def _add_collection_context(self, messages: list[Message], collection_context: str) -> list[Message]:
         """Add collection context as a system message before the last user message."""
         # Find the last user message index
         last_user_index = -1
@@ -606,7 +603,7 @@ class RegularChatProcessor(MessageProcessor):
         self,
         context: ProcessingContext,
         tool_call: ToolCall,
-        graph: Optional[Graph] = None,
+        graph: Graph | None = None,
     ) -> tuple[ToolCall, str]:
         """Execute a tool call and return the result."""
         tool = await resolve_tool_by_name(tool_call.name, context.user_id)
@@ -745,7 +742,6 @@ class RegularChatProcessor(MessageProcessor):
 
         try:
             if e.response and e.response.content:
-                import json
 
                 body = e.response.json()
                 if isinstance(body, dict) and "error" in body:

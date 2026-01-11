@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Union
+from typing import ClassVar
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(
@@ -22,11 +22,11 @@ def _supports_color() -> bool:
 
 
 def configure_logging(
-    level: Optional[str | int] = None,
-    fmt: Optional[str] = None,
-    datefmt: Optional[str] = None,
+    level: str | int | None = None,
+    fmt: str | None = None,
+    datefmt: str | None = None,
     propagate_root: bool = False,
-    log_file: Optional[str | Path] = None,
+    log_file: str | Path | None = None,
     console_output: bool = True,
 ) -> str | int:
     """Configure root logging with consistent format, file logging, and console control.

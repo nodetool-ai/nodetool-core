@@ -89,7 +89,7 @@ Local Advantages:
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -136,7 +136,7 @@ class TestLlamaProvider(BaseProviderTest):
             yield
 
     def create_llama_completion_response(
-        self, content: str = "Hello, world!", tool_calls: List[Dict] | None = None
+        self, content: str = "Hello, world!", tool_calls: list[dict] | None = None
     ) -> ChatCompletion:
         """Create a realistic llama-server ChatCompletion response."""
         message_kwargs: dict[str, Any] = {
@@ -173,7 +173,7 @@ class TestLlamaProvider(BaseProviderTest):
 
     def create_llama_streaming_responses(
         self, text: str = "Hello world!", chunk_size: int = 5
-    ) -> List[ChatCompletionChunk]:
+    ) -> list[ChatCompletionChunk]:
         """Create realistic llama-server streaming response chunks."""
         chunks = []
 
@@ -226,7 +226,7 @@ class TestLlamaProvider(BaseProviderTest):
             return_value=AsyncMock(return_value=base_url),
         )
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: dict[str, Any]):
         """Mock llama-server API call with structured response."""
         if "tool_calls" in response_data:
             # Tool calling response
@@ -247,7 +247,7 @@ class TestLlamaProvider(BaseProviderTest):
             side_effect=mock_create,
         )
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: list[dict[str, Any]]):
         """Mock llama-server streaming API call."""
         # Convert generic chunks to llama-server format
         text = "".join(chunk.get("content", "") for chunk in chunks)

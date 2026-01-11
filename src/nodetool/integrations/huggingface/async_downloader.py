@@ -1,9 +1,9 @@
 import asyncio
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -19,7 +19,7 @@ HF_HEADER_X_LINKED_ETAG = "X-Linked-Etag"
 HF_HEADER_X_LINKED_SIZE = "X-Linked-Size"
 
 # Simple in-process cache for the resolved HF token
-_CACHED_HF_TOKEN: Optional[str] = None
+_CACHED_HF_TOKEN: str | None = None
 
 
 @dataclass
@@ -27,8 +27,8 @@ class HfFileMeta:
     # Metadata returned by HEAD
     url: str  # final download URL (possibly CDN)
     etag: str  # normalized without quotes
-    size: Optional[int]  # bytes, None if unknown
-    commit_hash: Optional[str]
+    size: int | None  # bytes, None if unknown
+    commit_hash: str | None
     accept_ranges: bool
     original_url: str  # original /resolve url
 
@@ -56,7 +56,7 @@ def _hf_home_dir() -> Path:
     return Path.home() / ".cache" / "huggingface"
 
 
-def _get_hf_token_from_env() -> Optional[str]:
+def _get_hf_token_from_env() -> str | None:
     """
     Resolve token from env, preferring HF_TOKEN, but also
     accepting some common alternatives.
@@ -68,7 +68,7 @@ def _get_hf_token_from_env() -> Optional[str]:
     return None
 
 
-def _get_hf_token_from_file() -> Optional[str]:
+def _get_hf_token_from_file() -> str | None:
     """
     Resolve token from token file:
       - HF_TOKEN_PATH, or
@@ -86,7 +86,7 @@ def _get_hf_token_from_file() -> Optional[str]:
     return txt or None
 
 
-def _get_cached_hf_token() -> Optional[str]:
+def _get_cached_hf_token() -> str | None:
     global _CACHED_HF_TOKEN
     if _CACHED_HF_TOKEN is not None:
         return _CACHED_HF_TOKEN
@@ -96,7 +96,7 @@ def _get_cached_hf_token() -> Optional[str]:
     return token
 
 
-def _resolve_hf_token(token: str | bool | None) -> Optional[str]:
+def _resolve_hf_token(token: str | bool | None) -> str | None:
     """
     Hugging Face style semantics:
 
@@ -158,7 +158,7 @@ def _hf_cache_root() -> Path:
 def _hf_repo_cache_dir(
     repo_id: str,
     repo_type: str = "model",
-    cache_dir: Optional[Path] = None,
+    cache_dir: Path | None = None,
 ) -> Path:
     """
     Layout: <cache_dir>/<repo_type>s--namespace--name
@@ -200,7 +200,7 @@ def hf_hub_file_url(
 async def hf_head_metadata(
     client: httpx.AsyncClient,
     url: str,
-    token: Optional[str] = None,
+    token: str | None = None,
     timeout: float = 10.0,
     user_agent: str = "custom-hf-downloader",
 ) -> HfFileMeta:
@@ -276,14 +276,14 @@ async def _download_with_resume(
     url: str,
     dest: Path,
     *,
-    token: Optional[str],
-    expected_size: Optional[int],
+    token: str | None,
+    expected_size: int | None,
     accept_ranges: bool,
     chunk_size: int = 1024 * 1024,
     max_retries: int = 5,
     timeout: float = 60.0,
-    progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
-    cancel_event: Optional[asyncio.Event] = None,
+    progress_callback: Callable[[int, int | None], None] | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> None:
     """
     Stream a file to disk with resume support using HTTP Range.
@@ -394,11 +394,11 @@ async def async_hf_download(
     revision: str = "main",
     repo_type: str = "model",  # "model", "dataset", or "space"
     token: str | bool | None = None,
-    cache_dir: Optional[Path] = None,
-    client: Optional[httpx.AsyncClient] = None,
+    cache_dir: Path | None = None,
+    client: httpx.AsyncClient | None = None,
     chunk_size: int = 1024 * 1024,
-    progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
-    cancel_event: Optional[asyncio.Event] = None,
+    progress_callback: Callable[[int, int | None], None] | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> Path:
     """
     Async, minimal clone of huggingface_hub.hf_hub_download using bare httpx.

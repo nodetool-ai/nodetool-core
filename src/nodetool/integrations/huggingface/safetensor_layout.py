@@ -5,10 +5,10 @@ They never load full weight payloads. The goal is to classify whether multiple
 files represent shards of the same model or independent variants.
 """
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from safetensors import safe_open
 

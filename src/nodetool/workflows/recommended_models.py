@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 import platform
 import time
-from typing import Iterable
+from typing import TYPE_CHECKING
 
 from nodetool.types.model import UnifiedModel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Server availability cache (TTL 30 seconds)
 _server_status_cache: dict[str, tuple[bool, float]] = {}

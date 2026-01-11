@@ -20,20 +20,19 @@ import importlib.util
 import socket
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.migrations.db_adapter import (
     MigrationDBAdapter,
-    SQLiteMigrationAdapter,
     create_migration_adapter,
 )
 from nodetool.migrations.exceptions import (
     BaselineError,
-    ChecksumError,
     LockError,
     MigrationDiscoveryError,
     MigrationError,

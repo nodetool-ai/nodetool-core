@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from nodetool.config.deployment import (
     DeploymentStatus,
@@ -41,7 +41,7 @@ class LocalExecutor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-    def execute(self, command: str, check: bool = True, timeout: Optional[int] = None) -> Tuple[int, str, str]:
+    def execute(self, command: str, check: bool = True, timeout: int | None = None) -> tuple[int, str, str]:
         """Execute a command locally."""
         try:
             result = subprocess.run(
@@ -90,7 +90,7 @@ class SelfHostedDeployer:
         self,
         deployment_name: str,
         deployment: SelfHostedDeployment,
-        state_manager: Optional[StateManager] = None,
+        state_manager: StateManager | None = None,
     ):
         """
         Initialize the self-hosted deployer.
@@ -118,7 +118,7 @@ class SelfHostedDeployer:
                 port=self.deployment.ssh.port,
             )
 
-    def plan(self) -> Dict[str, Any]:
+    def plan(self) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
 
@@ -168,7 +168,7 @@ class SelfHostedDeployer:
 
         return plan
 
-    def apply(self, dry_run: bool = False) -> Dict[str, Any]:
+    def apply(self, dry_run: bool = False) -> dict[str, Any]:
         """
         Apply the deployment to the host (remote or localhost).
 
@@ -239,7 +239,7 @@ class SelfHostedDeployer:
 
         return results
 
-    def _create_directories(self, ssh: SSHConnection, results: Dict[str, Any]) -> None:
+    def _create_directories(self, ssh: SSHConnection, results: dict[str, Any]) -> None:
         """Create required directories on remote host."""
         results["steps"].append("Creating directories...")
 
@@ -259,7 +259,7 @@ class SelfHostedDeployer:
         ssh.mkdir(self.deployment.paths.hf_cache, parents=True)
         results["steps"].append(f"  Created: {self.deployment.paths.hf_cache}")
 
-    def _write_proxy_yaml(self, ssh, results: Dict[str, Any]) -> str:
+    def _write_proxy_yaml(self, ssh, results: dict[str, Any]) -> str:
         """Render proxy.yaml to the workspace and return the bearer token."""
         import yaml
 
@@ -302,7 +302,7 @@ class SelfHostedDeployer:
         results["steps"].append(f"  Wrote proxy config: {proxy_path}")
         return token
 
-    def _sync_tls_files(self, ssh, results: Dict[str, Any]) -> None:
+    def _sync_tls_files(self, ssh, results: dict[str, Any]) -> None:
         """Copy TLS files from the deployer machine to the remote host when configured."""
         if not self.deployment.proxy:
             return
@@ -336,14 +336,14 @@ class SelfHostedDeployer:
         if proxy.auto_certbot:
             self._ensure_certbot_certs(ssh, results)
 
-    def _copy_file_local(self, src: Path, dest: Path, results: Dict[str, Any], label: str) -> None:
+    def _copy_file_local(self, src: Path, dest: Path, results: dict[str, Any], label: str) -> None:
         dest = dest.expanduser()
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         os.chmod(dest, 0o600)
         results["steps"].append(f"  Synced TLS {label}: {dest}")
 
-    def _copy_file_to_remote(self, ssh, src: Path, dest: str, results: Dict[str, Any], label: str) -> None:
+    def _copy_file_to_remote(self, ssh, src: Path, dest: str, results: dict[str, Any], label: str) -> None:
         ssh_config = self.deployment.ssh
         if not ssh_config:
             raise RuntimeError("SSH configuration required to copy TLS files to remote host")
@@ -365,7 +365,7 @@ class SelfHostedDeployer:
         ssh.execute(f"chmod 600 {shlex.quote(dest)}", check=False, timeout=30)
         results["steps"].append(f"  Synced TLS {label}: {dest}")
 
-    def _ensure_certbot_certs(self, ssh, results: Dict[str, Any]) -> None:
+    def _ensure_certbot_certs(self, ssh, results: dict[str, Any]) -> None:
         proxy = self.deployment.proxy
         if not proxy or not proxy.auto_certbot:
             return
@@ -411,14 +411,14 @@ class SelfHostedDeployer:
         command = f'umask 077 && cat <<\'{sentinel}\' > "{path}"\n{content}\n{sentinel}\nchmod {mode} "{path}"'
         ssh.execute(command, check=True, timeout=30)
 
-    def _ensure_network(self, ssh, results: Dict[str, Any]) -> None:
+    def _ensure_network(self, ssh, results: dict[str, Any]) -> None:
         """Ensure the proxy network exists."""
         network = self.deployment.proxy.docker_network
         command = f"docker network inspect {network} >/dev/null 2>&1 || docker network create {network}"
         ssh.execute(command, check=False, timeout=30)
         results["steps"].append(f"  Ensured docker network: {network}")
 
-    def _ensure_proxy_image(self, ssh, results: Dict[str, Any]) -> None:
+    def _ensure_proxy_image(self, ssh, results: dict[str, Any]) -> None:
         """Ensure the proxy image exists on the target host, pushing it if necessary."""
         image = self.deployment.proxy.image
         if not image:
@@ -485,7 +485,7 @@ class SelfHostedDeployer:
         if load_proc.returncode != 0:
             raise RuntimeError(f"Failed to push proxy image to remote host: {stderr.decode().strip()}")
 
-    def _stop_existing_proxy(self, ssh, results: Dict[str, Any]) -> None:
+    def _stop_existing_proxy(self, ssh, results: dict[str, Any]) -> None:
         """Stop and remove the existing proxy container if present."""
         results["steps"].append("Checking for existing proxy container...")
 
@@ -505,7 +505,7 @@ class SelfHostedDeployer:
         except Exception as exc:
             results["steps"].append(f"  Warning: could not inspect proxy container: {exc}")
 
-    def _start_proxy_container(self, ssh, results: Dict[str, Any]) -> str:
+    def _start_proxy_container(self, ssh, results: dict[str, Any]) -> str:
         """Start the proxy container."""
         results["steps"].append("Starting proxy container...")
 
@@ -524,7 +524,7 @@ class SelfHostedDeployer:
 
         return proxy_hash
 
-    def _check_health(self, ssh, results: Dict[str, Any], bearer_token: Optional[str]) -> None:
+    def _check_health(self, ssh, results: dict[str, Any], bearer_token: str | None) -> None:
         """Check proxy container health and HTTP endpoints."""
         results["steps"].append("Checking proxy health...")
 
@@ -567,7 +567,7 @@ class SelfHostedDeployer:
             except SSHCommandError as exc:
                 results["steps"].append(f"  Warning: HTTPS status check failed: {exc.stderr.strip()}")
 
-    def destroy(self) -> Dict[str, Any]:
+    def destroy(self) -> dict[str, Any]:
         """
         Destroy the deployment (stop and remove container).
 
@@ -612,7 +612,7 @@ class SelfHostedDeployer:
 
         return results
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """
         Get current deployment status.
 
@@ -655,7 +655,7 @@ class SelfHostedDeployer:
 
     def logs(
         self,
-        service: Optional[str] = None,
+        service: str | None = None,
         follow: bool = False,
         tail: int = 100,
     ) -> str:

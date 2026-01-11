@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import inspect
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 from .types import EdgeUpdate
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from .inbox import NodeInbox
 
 

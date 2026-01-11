@@ -1,5 +1,6 @@
 import asyncio
-from typing import AsyncGenerator, ClassVar, TypedDict
+from collections.abc import AsyncGenerator
+from typing import ClassVar, TypedDict
 
 import pytest
 

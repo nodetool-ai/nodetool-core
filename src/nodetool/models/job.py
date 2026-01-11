@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
@@ -43,9 +42,9 @@ class Job(DBModel):
     async def paginate(
         cls,
         user_id: str,
-        workflow_id: Optional[str] = None,
+        workflow_id: str | None = None,
         limit: int = 10,
-        start_key: Optional[str] = None,
+        start_key: str | None = None,
     ):
         if workflow_id:
             items, key = await cls.query(

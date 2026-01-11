@@ -1,8 +1,8 @@
 import inspect
-from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator, Sequence
 from enum import EnumMeta
 from types import UnionType
-from typing import Any, Callable, Sequence, Union, get_args, get_origin, get_type_hints
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 
 def get_return_annotation(func: Callable[..., Any]) -> Any | None:

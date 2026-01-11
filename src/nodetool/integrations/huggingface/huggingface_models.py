@@ -22,11 +22,10 @@ import asyncio
 import json
 import os
 import shutil
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Callable, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
 
@@ -47,7 +46,6 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.runtime.resources import maybe_scope
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -629,7 +627,6 @@ async def fetch_model_readme(model_id: str) -> str | None:
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
-        hf_hub_download,
         try_to_load_from_cache,
     )
 
@@ -884,7 +881,7 @@ async def _build_cached_repo_entry(
     return repo_model, file_entries
 
 
-async def read_cached_hf_models() -> List[UnifiedModel]:
+async def read_cached_hf_models() -> list[UnifiedModel]:
     """
     Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
     """
@@ -1411,7 +1408,7 @@ async def iter_cached_model_files(
 async def search_cached_hf_models(
     repo_patterns: Sequence[str] | None = None,
     filename_patterns: Sequence[str] | None = None,
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Search the local HF cache for repos/files using offline data only.
 
@@ -1493,7 +1490,7 @@ SUPPORTED_MODEL_TYPES = [
 ]
 
 
-async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_hf_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos containing language models.
     """
@@ -1518,7 +1515,7 @@ async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_llamacpp_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos containing GGUF files
     that look suitable for llama.cpp.
@@ -1552,7 +1549,7 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
+async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     """
     Enumerate GGUF models in the llama.cpp native cache directory.
 
@@ -1626,7 +1623,7 @@ async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
     return models
 
 
-async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_vllm_language_models_from_hf_cache() -> list[LanguageModel]:
     """Return LanguageModel entries based on cached weight files (hub-free)."""
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
@@ -1649,7 +1646,7 @@ async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_mlx_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos that look suitable
     for MLX runtime (Apple Silicon).
@@ -1697,7 +1694,7 @@ def _is_component_only_repo(repo_id: str) -> bool:
     return "nunchaku" in repo_lower
 
 
-async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
+async def _get_diffusion_models_from_hf_cache(task: str) -> list[ImageModel]:
     """
     Shared helper to discover cached diffusion models for a specific task.
 
@@ -1751,7 +1748,7 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
     return list(result.values())
 
 
-async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_text_to_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root.
@@ -1759,7 +1756,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     return await _get_diffusion_models_from_hf_cache("text_to_image")
 
 
-async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_image_to_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
@@ -1767,7 +1764,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     return await _get_diffusion_models_from_hf_cache("image_to_image")
 
 
-async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_mlx_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are mflux models
     (MLX-compatible image generation models).
@@ -1823,7 +1820,7 @@ async def get_gguf_language_models_from_authors(
     limit: int = 200,
     sort: str = "downloads",
     tags: str = "gguf",
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Fetch all HF repos authored by the given authors that include GGUF files/tags.
 
@@ -1892,7 +1889,7 @@ async def get_mlx_language_models_from_authors(
     limit: int = 200,
     sort: str = "trending_score",
     tags: str = "mlx",
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Fetch MLX-friendly repos authored by the given authors/orgs and return
     one LanguageModel per repo id.

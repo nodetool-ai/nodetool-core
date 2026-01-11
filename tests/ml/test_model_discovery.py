@@ -8,7 +8,6 @@ This test file ensures that:
 4. API endpoints have correct response validation
 """
 
-from typing import List
 
 import pytest
 
@@ -19,14 +18,14 @@ from nodetool.providers.base import BaseProvider
 class MockMultiModalProvider(BaseProvider):
     """Mock provider that supports both chat and image capabilities (like Gemini)."""
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Return mock language models."""
         return [
             LanguageModel(id="mock-llm-1", name="Mock LLM 1", provider=Provider.Empty),
             LanguageModel(id="mock-llm-2", name="Mock LLM 2", provider=Provider.Empty),
         ]
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Return mock image models."""
         return [
             ImageModel(id="mock-img-1", name="Mock Image 1", provider=Provider.Empty),
@@ -50,7 +49,7 @@ class MockMultiModalProvider(BaseProvider):
 class MockLanguageOnlyProvider(BaseProvider):
     """Mock provider that only supports language capabilities."""
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Return mock language models."""
         return [
             LanguageModel(id="lang-only-1", name="Language Only 1", provider=Provider.Empty),
@@ -69,7 +68,7 @@ class MockImageOnlyProvider(BaseProvider):
 
     provider_name = "mock_image"
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Return mock image models."""
         return [
             ImageModel(id="img-only-1", name="Image Only 1", provider=Provider.Empty),

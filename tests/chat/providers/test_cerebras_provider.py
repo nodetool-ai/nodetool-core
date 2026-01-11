@@ -8,7 +8,7 @@ This test suite verifies that the Cerebras provider correctly:
 - Handles function calling
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import openai

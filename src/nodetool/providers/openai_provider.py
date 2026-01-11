@@ -15,15 +15,11 @@ import math
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    AsyncIterator,
-    Dict,
-    List,
-    Sequence,
-    cast,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+
     import httpx
 from urllib.parse import unquote_to_bytes
 
@@ -83,7 +79,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
-from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
@@ -156,7 +152,6 @@ class OpenAIProvider(BaseProvider):
         Returns:
             An initialized ``openai.AsyncClient`` with reasonable timeouts.
         """
-        import httpx
 
         log.debug("Creating OpenAI async client")
 
@@ -193,7 +188,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available OpenAI models.
 
@@ -224,7 +219,7 @@ class OpenAIProvider(BaseProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:
@@ -242,7 +237,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"Error fetching OpenAI models: {e}")
             return []
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available OpenAI TTS models.
 
@@ -271,7 +266,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[TTSModel] = []
+        models: list[TTSModel] = []
         for config in tts_models_config:
             models.append(
                 TTSModel(
@@ -285,7 +280,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI TTS models")
         return models
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """
         Get available OpenAI ASR models.
 
@@ -308,7 +303,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[ASRModel] = []
+        models: list[ASRModel] = []
         for config in asr_models_config:
             models.append(
                 ASRModel(
@@ -321,7 +316,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI ASR models")
         return models
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """
         Get available OpenAI video generation models.
 
@@ -353,7 +348,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI video models")
         return models
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available OpenAI image generation models.
 
@@ -385,7 +380,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[ImageModel] = []
+        models: list[ImageModel] = []
         for config in image_models_config:
             model_id = config["id"]
             tasks = ["text_to_image", "image_to_image"]

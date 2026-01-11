@@ -44,7 +44,7 @@ This implements Phase 4 of the architectural refactor:
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.run_state import RunState
@@ -68,7 +68,7 @@ class TriggerWakeupService:
         node_id: str,
         input_id: str,
         payload: Any,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> bool:
         """
         Deliver a trigger input to a trigger node.
