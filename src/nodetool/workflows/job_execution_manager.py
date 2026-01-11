@@ -65,7 +65,15 @@ class JobExecutionManager:
         await self._reconcile_on_startup()
 
     async def _reconcile_on_startup(self):
-        """Reconcile in-memory state with persisted RunState."""
+        """Reconcile in-memory state with persisted RunState.
+
+        By default, stale "running" jobs are marked as failed instead of recovered.
+        Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable automatic job recovery.
+        """
+        import os
+
+        auto_recover = os.environ.get("NODETOOL_AUTO_RECOVER_JOBS", "0") == "1"
+
         try:
             worker_id = Environment.get_worker_id()
             async with ResourceScope():
@@ -74,21 +82,41 @@ class JobExecutionManager:
                     Field("status").in_list(["scheduled", "running", "suspended", "paused", "recovering"])
                 )
 
-                log.info(f"Reconciling {len(runs)} active runs on startup")
+                log.info(f"Reconciling {len(runs)} active runs on startup (auto_recover={auto_recover})")
 
                 for run in runs:
                     if run.worker_id == worker_id:
                         # Owned by us - normally we'd rehydrate, but since we just restarted,
-                        # the in-memory state is lost. Use resume logic or mark failed.
-                        # For now, mark as recovering to let resume logic handle it
-                        log.info(f"Checking owned run {run.run_id}")
+                        # the in-memory state is lost.
+                        log.info(f"Found owned run {run.run_id} with status={run.status}")
                         if run.status == "running":
-                            # It was running when we died. Mark recovering.
-                            await run.mark_recovering()
+                            if auto_recover:
+                                # Mark as recovering to let resume logic handle it
+                                await run.mark_recovering()
+                                log.info(f"Marked run {run.run_id} as recovering")
+                            else:
+                                # Mark as failed - server died while running
+                                run.status = "failed"
+                                run.error_message = "Server shutdown while job was running"
+                                await run.save()
+                                log.warning(
+                                    f"Marked run {run.run_id} as failed (server died during execution). "
+                                    f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."
+                                )
                     elif self._is_heartbeat_stale(run):
                         # Owned by dead worker
                         log.info(f"Found stale run {run.run_id} from worker {run.worker_id}")
-                        await self.claim_and_recover(run)
+                        if auto_recover:
+                            await self.claim_and_recover(run)
+                        else:
+                            # Mark as failed instead of recovering
+                            run.status = "failed"
+                            run.error_message = "Worker died while job was running"
+                            await run.save()
+                            log.warning(
+                                f"Marked stale run {run.run_id} as failed. "
+                                f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."
+                            )
         except Exception as e:
             log.error(f"Error during startup reconciliation: {e}")
 
