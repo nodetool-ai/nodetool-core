@@ -144,6 +144,7 @@ def _load_default_routers() -> List[APIRouter]:
         file,
         font,
         job,
+        memory,
         message,
         model,
         node,
@@ -170,6 +171,7 @@ def _load_default_routers() -> List[APIRouter]:
         debug.router,
         job.router,
         settings.router,
+        memory.router,
     ]
 
     if not Environment.is_production():
