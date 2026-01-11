@@ -52,6 +52,12 @@ from nodetool.workflows.base_node import (
 from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.memory_utils import (
+    clear_memory_uri_cache,
+    log_memory,
+    log_memory_summary,
+    run_gc,
+)
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.state_manager import StateManager
@@ -530,6 +536,7 @@ class WorkflowRunner:
             - Posts a final JobUpdate message with results or error information.
         """
         log.info("Starting workflow run: job_id=%s", self.job_id)
+        log_memory(f"WorkflowRunner.run START job_id={self.job_id}")
         self._edge_counters.clear()
         self.status = "running"
         log.debug("Run parameters: params=%s messages=%s", request.params, request.messages)
@@ -927,6 +934,17 @@ class WorkflowRunner:
                 self.drain_active_edges(context, graph)
                 self._torch_support.empty_cuda_cache()
                 log.debug("CUDA cache emptied if available.")
+
+                # Clear memory URI cache to free up RAM from images/audio stored during workflow
+                log_memory(f"WorkflowRunner.run cleanup START job_id={self.job_id}")
+                cache_cleared = clear_memory_uri_cache(log_stats=True)
+                log.info(f"Cleared {cache_cleared} items from memory URI cache")
+
+                # Run garbage collection to free unreferenced objects
+                run_gc(f"WorkflowRunner.run cleanup job_id={self.job_id}", log_before_after=True)
+
+                # Log final memory state
+                log_memory_summary(f"WorkflowRunner.run END job_id={self.job_id}")
 
                 # No legacy generator state to clear in actor mode
 
