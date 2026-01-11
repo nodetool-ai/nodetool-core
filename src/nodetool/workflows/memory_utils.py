@@ -7,6 +7,7 @@ garbage collection to help diagnose memory leaks and reduce RAM usage.
 
 from __future__ import annotations
 
+import asyncio
 import gc
 import os
 
@@ -57,9 +58,7 @@ def log_memory(label: str, include_gpu: bool = True) -> None:
         gpu_mem = get_gpu_memory_usage_mb()
         if gpu_mem:
             allocated, reserved = gpu_mem
-            log.info(
-                f"[MEMORY] {label}: GPU allocated={allocated:.1f}MB, reserved={reserved:.1f}MB"
-            )
+            log.info(f"[MEMORY] {label}: GPU allocated={allocated:.1f}MB, reserved={reserved:.1f}MB")
 
 
 def run_gc(label: str = "", log_before_after: bool = True) -> float:
@@ -100,9 +99,7 @@ def run_gc(label: str = "", log_before_after: bool = True) -> float:
         gpu_mem = get_gpu_memory_usage_mb()
         if gpu_mem:
             allocated, reserved = gpu_mem
-            log.info(
-                f"[GC] {label} - GPU after: allocated={allocated:.1f}MB, reserved={reserved:.1f}MB"
-            )
+            log.info(f"[GC] {label} - GPU after: allocated={allocated:.1f}MB, reserved={reserved:.1f}MB")
 
     return freed_mb
 
@@ -128,12 +125,13 @@ def get_memory_uri_cache_stats() -> dict[str, int]:
     return {"count": 0}
 
 
-def clear_memory_uri_cache(log_stats: bool = True) -> int:
+def clear_memory_uri_cache(log_stats: bool = True, timeout_seconds: float = 5.0) -> int:
     """
     Clear the memory URI cache to free up RAM.
 
     Args:
         log_stats: Whether to log cache stats before clearing.
+        timeout_seconds: Maximum time to wait for cache clear.
 
     Returns:
         Number of items cleared from cache.
@@ -150,7 +148,15 @@ def clear_memory_uri_cache(log_stats: bool = True) -> int:
                     count = len(cache._cache)
                 if log_stats:
                     log.info(f"[MEMORY CACHE] Clearing {count} items from memory URI cache")
-                cache.clear()
+
+                async def clear_with_timeout():
+                    loop = asyncio.get_running_loop()
+                    await asyncio.wait_for(loop.run_in_executor(None, lambda: cache.clear()), timeout=timeout_seconds)
+
+                try:
+                    asyncio.run(clear_with_timeout())
+                except TimeoutError:
+                    log.warning(f"Memory URI cache clear timed out after {timeout_seconds}s")
                 return count
     except Exception as e:
         log.debug(f"Failed to clear memory URI cache: {e}")
