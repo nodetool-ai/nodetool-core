@@ -142,3 +142,6 @@ tmp/
 *.bak2
 *.backup
 *.old
+
+# Agent
+__plans__/
