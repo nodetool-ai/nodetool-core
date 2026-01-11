@@ -26,7 +26,7 @@ import asyncio
 import json
 import time
 from contextlib import suppress
-from typing import AsyncGenerator, Iterable, List, Optional, Union
+from typing import AsyncGenerator, Iterable, List, Optional, Union, cast
 
 from openai.types.chat import (
     ChatCompletionChunk,
@@ -41,6 +41,12 @@ from openai.types.chat.chat_completion_assistant_message_param import (
 from openai.types.chat.chat_completion_chunk import (
     Choice,
     ChoiceDelta,
+)
+from openai.types.chat.chat_completion_message_custom_tool_call_param import (
+    ChatCompletionMessageCustomToolCallParam,
+)
+from openai.types.chat.chat_completion_message_function_tool_call_param import (
+    ChatCompletionMessageFunctionToolCallParam,
 )
 
 from nodetool.chat.base_chat_runner import BaseChatRunner
@@ -266,9 +272,13 @@ class ChatSSERunner(BaseChatRunner):
                     # Handle typed objects from OpenAI SDK
                     if hasattr(part, "type"):
                         if part.type == "text" and hasattr(part, "text"):
-                            message_contents.append(MessageTextContent(text=part.text))
+                            text_content = cast("str", part.text)
+                            message_contents.append(MessageTextContent(text=text_content))
                         elif part.type == "image_url" and hasattr(part, "image_url"):
-                            url = part.image_url.url if hasattr(part.image_url, "url") else str(part.image_url)
+                            image_url_obj = part.image_url
+                            url = (
+                                cast("str", image_url_obj.url) if hasattr(image_url_obj, "url") else str(image_url_obj)
+                            )
                             message_contents.append(MessageImageContent(image=ImageRef(uri=url)))
                         elif part.type == "input_audio":
                             message_contents.append(MessageAudioContent(audio=AudioRef()))
@@ -304,15 +314,19 @@ class ChatSSERunner(BaseChatRunner):
             )
 
             # Convert tool calls if present
-            if msg.get("tool_calls"):
-                api_message.tool_calls = self._convert_openai_tool_calls(msg["tool_calls"])
+            tool_calls_data = msg.get("tool_calls")
+            if tool_calls_data:
+                api_message.tool_calls = self._convert_openai_tool_calls(tool_calls_data)
 
             history.append(api_message)
 
         return history
 
     def _convert_openai_tool_calls(
-        self, openai_tool_calls: Iterable[ChatCompletionMessageToolCallParam]
+        self,
+        openai_tool_calls: Iterable[
+            ChatCompletionMessageFunctionToolCallParam | ChatCompletionMessageCustomToolCallParam
+        ],
     ) -> List[ToolCall]:
         """
         Convert OpenAI tool calls to internal ToolCall format.
@@ -325,22 +339,15 @@ class ChatSSERunner(BaseChatRunner):
         """
         tool_calls = []
         for tc in openai_tool_calls:
-            if tc.get("type") == "function" and "function" in tc:
-                function = tc["function"]
+            if tc.get("type") == "function":
+                function = tc.get("function")
                 if isinstance(function, dict):
                     tool_call = ToolCall(
                         id=tc.get("id", ""),
                         name=function.get("name", ""),
                         args=json.loads(function.get("arguments", "{}")),
                     )
-                else:
-                    # Handle typed Function object
-                    tool_call = ToolCall(
-                        id=tc.get("id", ""),
-                        name=function.name,
-                        args=json.loads(function.arguments),
-                    )
-                tool_calls.append(tool_call)
+                    tool_calls.append(tool_call)
         return tool_calls
 
     def _convert_openai_tools(self, openai_tools: List[ChatCompletionToolParam]) -> List[str]:
@@ -355,13 +362,10 @@ class ChatSSERunner(BaseChatRunner):
         """
         tool_names = []
         for tool in openai_tools:
-            if tool.get("type") == "function" and "function" in tool:
-                function = tool["function"]
+            if tool.get("type") == "function":
+                function = tool.get("function")
                 if isinstance(function, dict):
                     tool_names.append(function.get("name", ""))
-                else:
-                    # Handle typed object
-                    tool_names.append(function.name)
         return tool_names
 
     def _convert_internal_to_openai_chunk(self, chunk: Chunk, model: str) -> ChatCompletionChunk:
