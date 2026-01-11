@@ -12,7 +12,7 @@ import ast
 import base64
 import io
 import json
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -113,29 +113,29 @@ class OpenAICompat:
 
     async def message_content_to_openai_content_part(self, content: MessageContent) -> ChatCompletionContentPartParam:
         if isinstance(content, MessageTextContent):
-            return {"type": "text", "text": content.text}
+            return {"type": "text", "text": content.text}  # type: ignore[return-value]
         elif isinstance(content, MessageAudioContent):
             if content.audio.uri:
                 data_uri = await self.uri_to_base64(content.audio.uri)
                 base64_data = data_uri.split(",", 1)[1]
-                return {
+                return {  # type: ignore[return-value]
                     "type": "input_audio",
                     "input_audio": {"format": "mp3", "data": base64_data},
                 }
             else:
                 data = base64.b64encode(content.audio.data).decode("utf-8")
-                return {
+                return {  # type: ignore[return-value]
                     "type": "input_audio",
                     "input_audio": {"format": "mp3", "data": data},
                 }
         elif isinstance(content, MessageImageContent):
             if content.image.uri:
                 image_url = await self.uri_to_base64(content.image.uri)
-                return {"type": "image_url", "image_url": {"url": image_url}}
+                return {"type": "image_url", "image_url": {"url": image_url}}  # type: ignore[return-value]
             else:
                 data = image_data_to_base64_jpeg(content.image.data)
                 image_url = f"data:image/jpeg;base64,{data}"
-                return {"type": "image_url", "image_url": {"url": image_url}}
+                return {"type": "image_url", "image_url": {"url": image_url}}  # type: ignore[return-value]
         else:
             raise ValueError(f"Unknown content type {content}")
 

@@ -244,7 +244,7 @@ class AnthropicProvider(BaseProvider):
                 content = json.dumps(message.content)
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
-            return {
+            return {  # type: ignore[return-value]
                 "role": "user",
                 "content": [
                     {
@@ -256,7 +256,7 @@ class AnthropicProvider(BaseProvider):
             }
         elif message.role == "system":
             log.debug("Converting system message")
-            return {
+            return {  # type: ignore[return-value]
                 "role": "assistant",
                 "content": str(message.content),
             }
@@ -265,7 +265,7 @@ class AnthropicProvider(BaseProvider):
             assert message.content is not None, "User message content must not be None"
             if isinstance(message.content, str):
                 log.debug("User message has string content")
-                return {"role": "user", "content": message.content}
+                return {"role": "user", "content": message.content}  # type: ignore[return-value]
             else:
                 log.debug(f"Converting {len(message.content)} content parts")
                 content = []
@@ -308,7 +308,7 @@ class AnthropicProvider(BaseProvider):
                             )
                         )
                 log.debug(f"Converted to {len(content)} content parts")
-                return {"role": "user", "content": content}
+                return {"role": "user", "content": content}  # type: ignore[return-value]
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             # Skip assistant messages with empty content
@@ -318,7 +318,7 @@ class AnthropicProvider(BaseProvider):
 
             if message.tool_calls:
                 log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
-                return {
+                return {  # type: ignore[return-value]
                     "role": "assistant",
                     "content": [
                         {
@@ -332,7 +332,7 @@ class AnthropicProvider(BaseProvider):
                 }
             elif isinstance(message.content, str):
                 log.debug("Assistant message has string content")
-                return {"role": "assistant", "content": message.content}
+                return {"role": "assistant", "content": message.content}  # type: ignore[return-value]
             elif isinstance(message.content, list):
                 log.debug(f"Assistant message has {len(message.content)} content parts")
                 content = []
@@ -340,7 +340,7 @@ class AnthropicProvider(BaseProvider):
                 for part in message.content:
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
-                return {"role": "assistant", "content": content}
+                return {"role": "assistant", "content": content}  # type: ignore[return-value]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")

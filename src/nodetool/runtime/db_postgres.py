@@ -82,7 +82,7 @@ class PostgresConnectionPool:
                         open=True,
                     )
                     log.debug("Opened PostgreSQL connection pool")
-        return self._pool
+        return self._pool  # type: ignore[return-value]
 
     async def acquire(self):
         """Acquire a connection from the pool.

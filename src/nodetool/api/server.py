@@ -366,7 +366,7 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
 
-    app.add_middleware(
+    app.add_middleware(  # type: ignore[arg-type]
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
@@ -406,7 +406,7 @@ def create_app(
     app.middleware("http")(auth_middleware)
 
     if not RUNNING_PYTEST:
-        app.add_middleware(ResourceScopeMiddleware)
+        app.add_middleware(ResourceScopeMiddleware)  # type: ignore[arg-type]
 
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     if not Environment.is_production():
