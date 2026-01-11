@@ -850,6 +850,18 @@ class WorkflowRunner:
                         except Exception as e:
                             log.error(f"Failed to mark run_state as completed: {e}")
 
+                    # Send completion JobUpdate BEFORE finally block
+                    # The WebSocket processor may close during finally, so send this early
+                    if send_job_updates:
+                        context.post_message(
+                            JobUpdate(
+                                job_id=self.job_id,
+                                status="completed",
+                                result=self.outputs,
+                                message=f"Workflow {self.job_id} completed",
+                            )
+                        )
+
             except asyncio.CancelledError:
                 # Gracefully handle external cancellation.
                 # We do not emit synthetic per-edge "drained" UI messages.
@@ -1063,7 +1075,7 @@ class WorkflowRunner:
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
             if self.status == "completed":
                 total_time = time.time() - start_time
-                log.info(f"Job {self.job_id} completed successfully (post-try-finally processing)")
+                log.info(f"Job {self.job_id} completed successfully")
                 log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
 
                 # Log RunCompleted event (audit-only, non-fatal)
@@ -1076,15 +1088,8 @@ class WorkflowRunner:
                     except Exception as e:
                         log.warning(f"Failed to log RunCompleted event (non-fatal): {e}")
 
-                if send_job_updates:
-                    context.post_message(
-                        JobUpdate(
-                            job_id=self.job_id,
-                            status="completed",
-                            result=self.outputs,
-                            message=f"Workflow {self.job_id} completed in {total_time:.2f} seconds",
-                        )
-                    )
+                # Note: JobUpdate(status="completed") is sent in the try block before finally
+                # to ensure it's received before the WebSocket closes
             # If self.status became "error" and the exception was re-raised, we don't reach here.
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
