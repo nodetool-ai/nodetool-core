@@ -235,3 +235,21 @@ class RunState(DBModel):
     def is_complete(self) -> bool:
         """Check if run has reached terminal state."""
         return self.status in ["completed", "failed", "cancelled"]
+
+    @classmethod
+    async def find_by_status(cls, status: str, limit: int = 100) -> list["RunState"]:
+        """
+        Find runs by status.
+
+        Args:
+            status: The status to filter by
+            limit: Maximum number of runs to return
+
+        Returns:
+            List of runs with the specified status
+        """
+        from nodetool.models.condition_builder import Field
+
+        condition = Field("status").equals(status)
+        results, _ = await cls.query(condition, limit=limit)
+        return results

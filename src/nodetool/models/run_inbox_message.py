@@ -178,6 +178,7 @@ class RunInboxMessage(DBModel):
         node_id: str,
         handle: str,
         limit: int = 100,
+        min_seq: int = 0,
     ) -> list["RunInboxMessage"]:
         """
         Get pending messages for a node's input handle.
@@ -187,15 +188,13 @@ class RunInboxMessage(DBModel):
             node_id: The node identifier
             handle: The input handle name
             limit: Maximum messages to return
+            min_seq: Minimum sequence number to include
 
         Returns:
             List of pending messages ordered by sequence
         """
         adapter = await cls.adapter()
         from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
-
-        # Get pending or expired claims
-        now = datetime.now()
 
         condition = ConditionBuilder(
             ConditionGroup(
@@ -204,6 +203,7 @@ class RunInboxMessage(DBModel):
                     Field("node_id").equals(node_id),
                     Field("handle").equals(handle),
                     Field("status").equals("pending"),
+                    Field("msg_seq").greater_than_or_equal(min_seq),
                 ],
                 LogicalOperator.AND,
             )
@@ -225,6 +225,7 @@ class RunInboxMessage(DBModel):
                     Field("node_id").equals(node_id),
                     Field("handle").equals(handle),
                     Field("status").equals("claimed"),
+                    Field("msg_seq").greater_than_or_equal(min_seq),
                 ],
                 LogicalOperator.AND,
             )
@@ -237,6 +238,7 @@ class RunInboxMessage(DBModel):
         )
 
         # Filter expired claims
+        now = datetime.now()
         for row in claimed_results:
             msg = cls.from_dict(row)
             if msg.claim_expires_at and msg.claim_expires_at < now:
@@ -245,6 +247,86 @@ class RunInboxMessage(DBModel):
         # Sort by sequence
         messages.sort(key=lambda m: m.msg_seq)
         return messages[:limit]
+
+    @classmethod
+    async def get_max_seq(cls, run_id: str, node_id: str, handle: str) -> int:
+        """
+        Get the maximum sequence number for a (run_id, node_id, handle) tuple.
+
+        Args:
+            run_id: The workflow run identifier
+            node_id: The node identifier
+            handle: The input handle name
+
+        Returns:
+            Maximum sequence number (0 if no messages exist)
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [Field("run_id").equals(run_id), Field("node_id").equals(node_id), Field("handle").equals(handle)],
+                LogicalOperator.AND,
+            )
+        )
+
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            reverse=True,
+            limit=1,
+            columns=["msg_seq"],
+        )
+        if not results:
+            return 0
+        return results[0]["msg_seq"]
+
+    @classmethod
+    async def get_consumed_messages(
+        cls,
+        run_id: str,
+        node_id: str,
+        handle: str,
+        older_than_seq: int,
+        limit: int = 100,
+    ) -> list["RunInboxMessage"]:
+        """
+        Get consumed messages with sequence less than the cutoff.
+
+        Args:
+            run_id: The workflow run identifier
+            node_id: The node identifier
+            handle: The input handle name
+            older_than_seq: Only include messages with seq < this value
+            limit: Maximum messages to return
+
+        Returns:
+            List of consumed messages older than the sequence cutoff
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("handle").equals(handle),
+                    Field("status").equals("consumed"),
+                    Field("msg_seq").less_than(older_than_seq),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            limit=limit,
+        )
+
+        return [cls.from_dict(row) for row in results]
 
     async def claim(self, worker_id: str, ttl_seconds: int = 30) -> bool:
         """

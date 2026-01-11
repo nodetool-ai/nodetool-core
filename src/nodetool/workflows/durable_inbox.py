@@ -112,20 +112,10 @@ class DurableInbox:
             message_id = self.generate_message_id(self.run_id, self.node_id, handle, next_seq)
 
         # Check if message already exists (idempotency)
-        existing = await RunInboxMessage.find_one({"message_id": message_id})
+        existing = await RunInboxMessage.get_by_message_id(message_id)
         if existing:
             log.debug(f"Message {message_id} already exists (idempotent)")
             return existing
-
-        # Serialize payload
-        payload_json = json.dumps(payload) if payload is not None else None
-
-        # Detect large payloads (>1MB) and warn
-        if payload_json and len(payload_json) > 1_000_000:
-            log.warning(
-                f"Large payload ({len(payload_json)} bytes) in inbox message. "
-                f"Consider using payload_ref for large data."
-            )
 
         # Create message
         message = RunInboxMessage(
@@ -134,7 +124,7 @@ class DurableInbox:
             handle=handle,
             message_id=message_id,
             msg_seq=next_seq,
-            payload_json=payload_json,
+            payload_json=payload if payload is not None else {},
             payload_ref=payload_ref,
             status="pending",
             created_at=datetime.now(),
@@ -162,16 +152,12 @@ class DurableInbox:
         Returns:
             List of pending messages in sequence order
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "pending",
-                "msg_seq": {"$gte": min_seq},
-            },
-            sort=[("msg_seq", 1)],
+        messages = await RunInboxMessage.get_pending_messages(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
             limit=limit,
+            min_seq=min_seq,
         )
 
         return messages
@@ -202,19 +188,11 @@ class DurableInbox:
         Returns:
             Maximum sequence number (0 if no messages exist)
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-            },
-            sort=[("msg_seq", -1)],
-            limit=1,
+        return await RunInboxMessage.get_max_seq(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
         )
-
-        if messages:
-            return messages[0].msg_seq
-        return 0
 
     async def _get_next_seq(self, handle: str) -> int:
         """
@@ -243,14 +221,11 @@ class DurableInbox:
             Number of messages deleted
         """
         # Find consumed messages to delete
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "consumed",
-                "msg_seq": {"$lt": older_than_seq},
-            }
+        messages = await RunInboxMessage.get_consumed_messages(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
+            older_than_seq=older_than_seq,
         )
 
         # Delete them

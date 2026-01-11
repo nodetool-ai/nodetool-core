@@ -156,7 +156,7 @@ class WorkflowRecoveryService:
 
     async def find_stuck_runs(self, max_age_minutes: int = 10) -> list[str]:
         """Find runs that are stuck (running with expired lease)."""
-        runs = await RunState.find({"status": "running"}, limit=1000)
+        runs = await RunState.find_by_status("running", limit=1000)
 
         stuck_runs = []
         for run_state in runs:

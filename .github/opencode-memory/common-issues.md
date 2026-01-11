@@ -69,6 +69,24 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Non-existent Model Query Methods
+**Date Discovered**: 2026-01-11
+**Context**: Several files were calling `.find()` and `.find_one()` methods on models that don't have these methods. The base `DBModel` class only has `get()`, `query()`, and custom class methods.
+**Solution**: 
+- Added `TriggerInput.get_processed_inputs()` and `RunState.find_by_status()` methods
+- Added `RunInboxMessage.get_consumed_messages()` and `RunInboxMessage.get_max_seq()` methods
+- Updated `trigger_wakeup_service.py` to use `get_by_input_id()`, `get_pending_inputs()`, `get_processed_inputs()`, `find_by_status()`
+- Updated `durable_inbox.py` to use `get_by_message_id()`, `get_pending_messages()`, `get_max_seq()`, `get_consumed_messages()`
+- Updated `recovery.py` to use `find_by_status()`
+**Related Files**:
+- `src/nodetool/workflows/trigger_wakeup_service.py`
+- `src/nodetool/workflows/durable_inbox.py`
+- `src/nodetool/workflows/recovery.py`
+- `src/nodetool/models/trigger_input.py`
+- `src/nodetool/models/run_inbox_message.py`
+- `src/nodetool/models/run_state.py`
+**Prevention**: When adding new query patterns, add corresponding methods to the model classes rather than calling non-existent methods. Use the base `query()` method with `ConditionBuilder` for complex queries.
+
 ---
 
 ## Historical Patterns

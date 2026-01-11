@@ -200,6 +200,48 @@ class TriggerInput(DBModel):
         return runs
 
     @classmethod
+    async def get_processed_inputs(
+        cls,
+        run_id: str,
+        node_id: str,
+        older_than: datetime,
+        limit: int = 100,
+    ) -> list["TriggerInput"]:
+        """
+        Get processed trigger inputs older than a cutoff time.
+
+        Args:
+            run_id: The workflow run identifier
+            node_id: The trigger node identifier
+            older_than: Only include inputs processed before this time
+            limit: Maximum inputs to return
+
+        Returns:
+            List of processed trigger inputs older than the cutoff
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(True),
+                    Field("processed_at").less_than(older_than),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+
+        results, _ = await adapter.query(
+            condition=condition,
+            limit=limit,
+        )
+
+        return [cls.from_dict(row) for row in results]
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TriggerInput":
         """Create TriggerInput from dictionary."""
         return cls(

@@ -87,7 +87,7 @@ class TriggerWakeupService:
             True if input was newly created, False if it already existed
         """
         # Check if input already exists (idempotency)
-        existing = await TriggerInput.find_one({"input_id": input_id})
+        existing = await TriggerInput.get_by_input_id(input_id)
         if existing:
             log.debug(f"Trigger input {input_id} already exists (idempotent)")
             return False
@@ -97,7 +97,7 @@ class TriggerWakeupService:
             run_id=run_id,
             node_id=node_id,
             input_id=input_id,
-            payload_json=json.dumps(payload),
+            payload_json=payload,
             cursor=cursor,
             processed=False,
             created_at=datetime.now(),
@@ -135,13 +135,9 @@ class TriggerWakeupService:
         Returns:
             List of pending trigger inputs in creation order
         """
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": False,
-            },
-            sort=[("created_at", 1)],
+        inputs = await TriggerInput.get_pending_inputs(
+            run_id=run_id,
+            node_id=node_id,
             limit=limit,
         )
 
@@ -168,10 +164,7 @@ class TriggerWakeupService:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
         # Find runs in suspended state
-        suspended_runs = await RunState.find(
-            {"status": "suspended"},
-            limit=1000,
-        )
+        suspended_runs = await RunState.find_by_status("suspended", limit=1000)
 
         results = []
         for run_state in suspended_runs:
@@ -255,13 +248,10 @@ class TriggerWakeupService:
         cutoff = datetime.now() - timedelta(hours=older_than_hours)
 
         # Find old processed inputs
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": True,
-                "processed_at": {"$lt": cutoff},
-            }
+        inputs = await TriggerInput.get_processed_inputs(
+            run_id=run_id,
+            node_id=node_id,
+            older_than=cutoff,
         )
 
         # Delete them
