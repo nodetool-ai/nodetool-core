@@ -69,6 +69,23 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Print Statement Usage Instead of Proper Logging
+**Date Discovered**: 2026-01-11
+**Context**: Multiple files were using `print()` for error handling and status messages instead of proper Python logging
+**Solution**: Replace print statements with appropriate logger calls:
+- Add `import logging` and create module logger: `logger = logging.getLogger("nodetool.module_name")`
+- Replace `print(f"Error: {e}")` with `logger.error("Error: %s", e)`
+- Replace `print(f"Warning: {msg}")` with `logger.warning("%s", msg)`
+- Replace `print(f"Info: {msg}")` with `logger.info("%s", msg)`
+- Use `logger.exception()` for exceptions (automatically includes traceback)
+- Remove unused `traceback` imports when switching to `logger.exception()`
+**Related Files**:
+- `src/nodetool/providers/comfy_api.py` (~60 print statements converted)
+- `src/nodetool/deploy/runpod_api.py` (critical error logging fixed)
+- `src/nodetool/deploy/admin_routes.py` (5 print statements converted)
+- `src/nodetool/deploy/workflow_routes.py` (2 print statements converted)
+**Prevention**: Add linting rule (e.g., flake8-print) to detect print statements, or use mypy to discourage print in production code
+
 ---
 
 ## Historical Patterns

@@ -22,6 +22,7 @@ Usage:
 """
 
 import json
+import logging
 import os
 import sys
 import traceback
@@ -31,6 +32,8 @@ from typing import Any, List, Optional
 import requests
 from runpod import error
 from runpod.user_agent import USER_AGENT
+
+logger = logging.getLogger("nodetool.runpod")
 
 RUNPOD_REST_BASE_URL = "https://rest.runpod.io/v1"
 
@@ -142,10 +145,10 @@ def make_runpod_api_call(endpoint: str, method: str = "GET", data: dict | None =
             return {}
 
     except requests.exceptions.RequestException as e:
-        print(f"RunPod API call failed: {e}")
+        logger.error("RunPod API call failed: %s", e)
         if hasattr(e, "response") and e.response is not None:
-            print(f"Response status: {e.response.status_code}")
-            print(f"Response body: {e.response.text}")
+            logger.error("Response status: %s", e.response.status_code)
+            logger.error("Response body: %s", e.response.text)
         sys.exit(1)
 
 
