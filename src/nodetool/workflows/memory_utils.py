@@ -10,10 +10,14 @@ from __future__ import annotations
 import asyncio
 import gc
 import os
+from typing import TYPE_CHECKING
 
 import psutil
 
 from nodetool.config.logging_config import get_logger
+
+if TYPE_CHECKING:
+    pass
 
 log = get_logger(__name__)
 
@@ -78,10 +82,8 @@ def run_gc(label: str = "", log_before_after: bool = True) -> float:
     else:
         before_mb = get_memory_usage_mb()
 
-    # Run full garbage collection (all generations)
     gc.collect()
 
-    # Also clear CUDA cache if available
     try:
         import torch
 
@@ -190,3 +192,43 @@ def log_memory_summary(label: str = "Summary") -> dict:
     log.info(f"  Memory URI cache items: {stats['memory_cache_count']}")
 
     return stats
+
+
+class MemoryTracker:
+    """
+    Context manager for tracking memory usage during a block of code.
+
+    Usage:
+        with MemoryTracker("Loading model"):
+            # ... load model code ...
+    """
+
+    def __init__(self, label: str, run_gc_after: bool = True):
+        self.label = label
+        self.run_gc_after = run_gc_after
+        self.start_ram_mb = 0.0
+        self.start_gpu: tuple[float, float] | None = None
+
+    def __enter__(self):
+        self.start_ram_mb = get_memory_usage_mb()
+        self.start_gpu = get_gpu_memory_usage_mb()
+        log.info(f"[MEMORY TRACK] {self.label} - START: RAM={self.start_ram_mb:.1f}MB")
+        if self.start_gpu:
+            log.info(f"[MEMORY TRACK] {self.label} - START: GPU allocated={self.start_gpu[0]:.1f}MB")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        end_ram_mb = get_memory_usage_mb()
+        end_gpu = get_gpu_memory_usage_mb()
+
+        ram_delta = end_ram_mb - self.start_ram_mb
+        log.info(f"[MEMORY TRACK] {self.label} - END: RAM={end_ram_mb:.1f}MB (delta: {ram_delta:+.1f}MB)")
+
+        if end_gpu and self.start_gpu:
+            gpu_delta = end_gpu[0] - self.start_gpu[0]
+            log.info(f"[MEMORY TRACK] {self.label} - END: GPU allocated={end_gpu[0]:.1f}MB (delta: {gpu_delta:+.1f}MB)")
+
+        if self.run_gc_after:
+            run_gc(f"{self.label} cleanup", log_before_after=True)
+
+        return False
