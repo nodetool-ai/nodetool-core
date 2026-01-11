@@ -96,9 +96,7 @@ class JobExecutionManager:
                                 log.info(f"Marked run {run.run_id} as recovering")
                             else:
                                 # Mark as failed - server died while running
-                                run.status = "failed"
-                                run.error_message = "Server shutdown while job was running"
-                                await run.save()
+                                await run.mark_failed(error="Server shutdown while job was running")
                                 log.warning(
                                     f"Marked run {run.run_id} as failed (server died during execution). "
                                     f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."
@@ -110,9 +108,7 @@ class JobExecutionManager:
                             await self.claim_and_recover(run)
                         else:
                             # Mark as failed instead of recovering
-                            run.status = "failed"
-                            run.error_message = "Worker died while job was running"
-                            await run.save()
+                            await run.mark_failed(error="Worker died while job was running")
                             log.warning(
                                 f"Marked stale run {run.run_id} as failed. "
                                 f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."

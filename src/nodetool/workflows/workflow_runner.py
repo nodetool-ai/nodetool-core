@@ -116,10 +116,7 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
     if gpu_lock.locked():
         holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
         hold_time = time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0
-        log.warning(
-            f"Node {node.get_title()} is waiting for GPU lock{holder_info}, "
-            f"held for {hold_time:.1f}s"
-        )
+        log.warning(f"Node {node.get_title()} is waiting for GPU lock{holder_info}, held for {hold_time:.1f}s")
         await node.send_update(context, status="waiting")
 
     # Acquire the threading lock without blocking the event loop.
@@ -133,13 +130,9 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             # Check for cancellation before trying to acquire
             # This allows clean shutdown when workflow is cancelled
             try:
-                acquired = await loop.run_in_executor(
-                    None, lambda: gpu_lock.acquire(timeout=0.2)
-                )
+                acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=0.2))
             except asyncio.CancelledError:
-                log.info(
-                    f"Node {node.get_title()} cancelled while waiting for GPU lock"
-                )
+                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
                 raise
 
             if acquired:
@@ -153,10 +146,7 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             # Log progress every 10 seconds
             if attempts % 40 == 0:  # 40 * 0.25s = 10s
                 holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
-                log.warning(
-                    f"Node {node.get_title()} still waiting for GPU lock "
-                    f"after {elapsed:.1f}s{holder_info}"
-                )
+                log.warning(f"Node {node.get_title()} still waiting for GPU lock after {elapsed:.1f}s{holder_info}")
 
             # Timeout after GPU_LOCK_TIMEOUT seconds
             if elapsed > GPU_LOCK_TIMEOUT:
@@ -173,9 +163,7 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             try:
                 await asyncio.sleep(0.05)
             except asyncio.CancelledError:
-                log.info(
-                    f"Node {node.get_title()} cancelled while waiting for GPU lock"
-                )
+                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
                 raise
 
     except asyncio.CancelledError:
@@ -209,9 +197,9 @@ def force_release_gpu_lock():
     if gpu_lock.locked():
         log.warning(f"Force-releasing GPU lock (was held by: {_gpu_lock_holder})")
         try:
+            gpu_lock.release()
             _gpu_lock_holder = None
             _gpu_lock_holder_time = 0.0
-            gpu_lock.release()
             return True
         except RuntimeError:
             # Lock wasn't held by this thread
@@ -1033,8 +1021,8 @@ class WorkflowRunner:
                         await self._input_queue.put({"op": "shutdown"})
                     if self._input_task is not None:
                         await self._input_task
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug(f"Error stopping input dispatcher: {e}")
                 if graph and graph.nodes:  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
                         try:
@@ -1049,8 +1037,10 @@ class WorkflowRunner:
                             )
                         inbox = self.node_inboxes.get(node._id)
                         if inbox is not None:
-                            with suppress(Exception):
+                            try:
                                 await inbox.close_all()
+                            except Exception as e:
+                                log.debug(f"Error closing inbox for node {node._id}: {e}")
                 log.debug("Nodes finalized in finally block.")
 
                 # Ensure downstream consumers mark all edges as drained as part of teardown
@@ -1372,7 +1362,9 @@ class WorkflowRunner:
                 node_id = task_to_node.get(t, "unknown")
                 # Check for suspension
                 if t.exception():
-                    log.info(f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}")
+                    log.info(
+                        f"Task for node {node_id} finished with exception: {type(t.exception())} - {t.exception()}"
+                    )
                     if isinstance(t.exception(), WorkflowSuspendedException):
                         exc = t.exception()
                         log.info(
