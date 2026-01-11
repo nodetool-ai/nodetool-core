@@ -25,6 +25,8 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
 
+logger = get_logger("nodetool.deploy")
+
 if TYPE_CHECKING:
     from nodetool.types.workflow import Workflow
 
@@ -128,7 +130,7 @@ def create_workflow_router() -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
-            print(f"Workflow execution error: {e}")
+            logger.error("Workflow execution error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/workflows/{id}/run/stream")
@@ -190,7 +192,7 @@ def create_workflow_router() -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
-            print(f"Workflow streaming error: {e}")
+            logger.error("Workflow streaming error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -22,6 +23,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+
+logger = logging.getLogger("nodetool.admin")
 from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
@@ -159,7 +162,7 @@ def create_admin_router() -> APIRouter:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"HuggingFace download error: {e}")
+            logger.error("HuggingFace download error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/models/ollama/download")
@@ -195,7 +198,7 @@ def create_admin_router() -> APIRouter:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Ollama download error: {e}")
+            logger.error("Ollama download error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/scan")
@@ -207,7 +210,7 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "No cache data"}
         except Exception as e:
-            print(f"Cache scan error: {e}")
+            logger.error("Cache scan error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/size")
@@ -219,7 +222,7 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "No size data"}
         except Exception as e:
-            print(f"Cache size calculation error: {e}")
+            logger.error("Cache size calculation error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/models/huggingface/{repo_id:path}")
@@ -231,7 +234,7 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "Delete failed"}
         except Exception as e:
-            print(f"HuggingFace model deletion error: {e}")
+            logger.error("HuggingFace model deletion error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Database adapter operations
