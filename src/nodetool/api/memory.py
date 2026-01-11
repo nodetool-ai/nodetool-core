@@ -90,7 +90,10 @@ async def get_memory_stats(
 
     # Get GPU memory stats
     gpu_mem = get_gpu_memory_usage_mb()
-    gpu_allocated, gpu_reserved = (gpu_mem or (None, None))
+    if gpu_mem is not None:
+        gpu_allocated, gpu_reserved = gpu_mem
+    else:
+        gpu_allocated, gpu_reserved = None, None
 
     # Get cache stats
     cache_stats = get_memory_uri_cache_stats()

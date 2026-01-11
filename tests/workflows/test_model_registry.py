@@ -1,5 +1,7 @@
 """Tests for the model registry."""
 
+import gc
+
 import pytest
 
 from nodetool.workflows.model_registry import ModelRegistry, get_model_registry
@@ -310,8 +312,6 @@ def test_weak_reference_cleanup():
     del model
 
     # Force garbage collection
-    import gc
-
     gc.collect()
 
     # list_models should clean up dead references

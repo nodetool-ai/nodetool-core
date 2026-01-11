@@ -27,9 +27,9 @@ class RegisteredModel:
     memory_mb: float = 0.0
     offloaded: bool = False
     model_id: Optional[str] = None
-    # Weak reference to the actual model object
+    # Weak reference to the actual model object (allows GC when model is no longer used elsewhere)
     _model_ref: Optional[weakref.ref] = field(default=None, repr=False)
-    # Strong reference for cleanup purposes (optional)
+    # Strong reference to keep model alive (use when model should not be garbage collected)
     _model: Optional[Any] = field(default=None, repr=False)
     # Cleanup callback
     _cleanup_fn: Optional[Callable[[], None]] = field(default=None, repr=False)
@@ -227,10 +227,11 @@ class ModelRegistry:
             Tuple of (models_cleared, memory_freed_mb)
         """
         with self._registry_lock:
+            # Select models to clear: all if forced, otherwise only those not in use
             to_clear = (
-                [k for k, v in self._models.items() if not v.in_use]
-                if not force
-                else list(self._models.keys())
+                list(self._models.keys())
+                if force
+                else [k for k, v in self._models.items() if not v.in_use]
             )
 
             memory_freed = 0.0
