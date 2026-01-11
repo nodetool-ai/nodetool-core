@@ -177,14 +177,14 @@ class AsyncReverseProxy:
                         if False:
                             yield b""  # Never executes
 
-                    return StreamingResponse(
+                    return StreamingResponse(  # type: ignore[return-value]
                         empty_generator(),
                         status_code=upstream_response.status_code,
                         headers=response_headers,
                     )
 
                 content = await upstream_response.aread()
-                return Response(
+                return Response(  # type: ignore[return-value]
                     content,
                     status_code=upstream_response.status_code,
                     headers=response_headers,
@@ -270,7 +270,7 @@ class AsyncReverseProxy:
                             break
                         yield chunk
 
-            return StreamingResponse(stream_file(), media_type="text/plain")
+            return StreamingResponse(stream_file(), media_type="text/plain")  # type: ignore[return-value]
         except OSError as e:
             log.error(f"Failed to read ACME challenge {token}: {e}")
             return PlainTextResponse("Error reading file", status_code=500)

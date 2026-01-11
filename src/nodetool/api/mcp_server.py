@@ -1569,7 +1569,7 @@ async def list_models(
             if hasattr(m, "provider") and m.provider is not None:
                 try:
                     if hasattr(m.provider, "value"):
-                        if m.provider.value.lower() == provider.lower():
+                        if m.provider.value.lower() == provider.lower():  # type: ignore[union-attr]
                             matched = True
                     elif str(m.provider).lower() == provider.lower():
                         matched = True
@@ -1981,8 +1981,9 @@ async def list_storage_files(
 
     # Try to list files (not all storage backends support this)
     try:
-        if hasattr(storage, "list_files"):
-            files = await storage.list_files(limit=limit)
+        list_files_func = getattr(storage, "list_files", None)
+        if callable(list_files_func):
+            files = await list_files_func(limit=limit)
             return {
                 "files": [
                     {
