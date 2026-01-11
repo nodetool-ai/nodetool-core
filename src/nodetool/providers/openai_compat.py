@@ -12,6 +12,7 @@ import ast
 import base64
 import io
 import json
+import logging
 from typing import TYPE_CHECKING, Any, Sequence, cast
 
 from openai.types.chat import (
@@ -41,6 +42,7 @@ from nodetool.metadata.types import (
 )
 
 log = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from nodetool.agents.tools.base import Tool
@@ -69,7 +71,10 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError):
+                logger.exception(
+                    "Failed to convert audio to MP3 (uri=%s, mime_type=%s, size=%d)", uri, mime_type, len(data_bytes)
+                )
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(data_bytes).decode("utf-8")
@@ -104,7 +109,8 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError):
+                logger.exception("Failed to convert audio to MP3 (mime_type=%s, size=%d)", mime_type, len(raw_bytes))
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
