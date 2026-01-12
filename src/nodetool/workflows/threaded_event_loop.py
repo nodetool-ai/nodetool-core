@@ -277,9 +277,10 @@ class ThreadedEventLoop:
         def run_with_context():
             """Wrapper to run the coroutine with the captured context."""
             # Create and schedule the task with the captured context
+            assert self._loop is not None
             task = self._loop.create_task(coro)
             # Attach task to future for access by ThreadedJobExecution.cancel()
-            result_future.task = task
+            result_future.task = task  # type: ignore[attr-defined]
 
             def on_done(t):
                 """Callback when the task completes."""
