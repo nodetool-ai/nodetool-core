@@ -58,6 +58,13 @@ When adding a new insight, use this format:
 **Impact**: Use wait loops with timeouts when checking for status transitions. Accept multiple valid states in assertions for quick-completing operations.
 **Examples**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_threaded_job_execution.py`
 
+### Documentation Sync
+**Date**: 2026-01-12
+**Category**: Code Quality
+**Insight**: AGENTS.md was out of sync with Makefile and pyproject.toml - it documented `black .`, `mypy .` instead of `ruff format`, `ty check src`
+**Impact**: Updated AGENTS.md to use actual commands: `make lint`, `make typecheck`, `make test`
+**Examples**: `AGENTS.md`, `Makefile`, `pyproject.toml`
+
 ---
 
 ## Code Quality Insights
