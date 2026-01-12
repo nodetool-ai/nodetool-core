@@ -87,7 +87,7 @@ class TriggerWakeupService:
             True if input was newly created, False if it already existed
         """
         # Check if input already exists (idempotency)
-        existing = await TriggerInput.find_one({"input_id": input_id})
+        existing = await TriggerInput.get_by_input_id(input_id)
         if existing:
             log.debug(f"Trigger input {input_id} already exists (idempotent)")
             return False
@@ -97,7 +97,7 @@ class TriggerWakeupService:
             run_id=run_id,
             node_id=node_id,
             input_id=input_id,
-            payload_json=json.dumps(payload),
+            payload_json=payload,
             cursor=cursor,
             processed=False,
             created_at=datetime.now(),
@@ -135,17 +135,26 @@ class TriggerWakeupService:
         Returns:
             List of pending trigger inputs in creation order
         """
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": False,
-            },
-            sort=[("created_at", 1)],
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(False),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+
+        adapter = await TriggerInput.adapter()
+        results, _ = await adapter.query(
+            condition=condition,
             limit=limit,
         )
 
-        return inputs
+        return [TriggerInput.from_dict(row) for row in results]
 
     async def mark_processed(self, trigger_input: TriggerInput) -> None:
         """
@@ -167,15 +176,18 @@ class TriggerWakeupService:
         Returns:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
-        # Find runs in suspended state
-        suspended_runs = await RunState.find(
-            {"status": "suspended"},
+        from nodetool.models.condition_builder import ConditionBuilder, Field
+
+        condition = Field("status").equals("suspended")
+        adapter = await RunState.adapter()
+        suspended_runs, _ = await adapter.query(
+            condition=condition,
             limit=1000,
         )
 
         results = []
-        for run_state in suspended_runs:
-            # Check if this run has pending trigger inputs
+        for run_state_data in suspended_runs:
+            run_state = RunState.from_dict(run_state_data)
             if run_state.suspended_node_id:
                 pending = await self.get_pending_inputs(
                     run_id=run_state.run_id,
@@ -252,19 +264,30 @@ class TriggerWakeupService:
         """
         from datetime import timedelta
 
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         cutoff = datetime.now() - timedelta(hours=older_than_hours)
 
-        # Find old processed inputs
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": True,
-                "processed_at": {"$lt": cutoff},
-            }
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(True),
+                    Field("processed_at").less_than(cutoff),
+                ],
+                LogicalOperator.AND,
+            )
         )
 
-        # Delete them
+        adapter = await TriggerInput.adapter()
+        results, _ = await adapter.query(
+            condition=condition,
+            limit=1000,
+        )
+
+        inputs = [TriggerInput.from_dict(row) for row in results]
+
         count = 0
         for inp in inputs:
             await inp.delete()

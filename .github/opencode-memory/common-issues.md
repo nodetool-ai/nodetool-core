@@ -89,57 +89,53 @@ When adding a new issue, use this format:
 - `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
 **Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
 
-### Flaky Parallel Test Execution
+### Non-Existent Model Methods in trigger_wakeup_service.py
 **Date Discovered**: 2026-01-12
-**Context**: Job execution tests (`tests/workflows/test_job_execution.py`) occasionally fail when run with `pytest -n auto` due to race conditions with the `JobExecutionManager` singleton and threaded event loop cleanup. Tests pass individually or when run with `-n 0`.
-**Solution**: Tests are marked with `pytest.mark.xdist_group(name="job_execution")` to run in the same xdist group, but this doesn't fully isolate from other test files running in parallel. The issue is inherent to the singleton pattern and async cleanup.
-**Related Files**: `tests/workflows/test_job_execution.py`, `src/nodetool/workflows/job_execution_manager.py`
-**Prevention**: Re-run tests if they fail; the issue is flaky, not a code regression. Consider using process-level isolation for these tests in the future.
-### Span Auto-Started Events
-**Date Discovered**: 2026-01-12
-**Context**: The tracing Span automatically adds a "span_started" event when created
-**Solution**: Tests should check for expected event names rather than exact count
-**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
-**Prevention**: Document auto-generated events in span lifecycle
-### AGENTS.md Outdated Commands
-**Date Discovered**: 2026-01-12
-**Context**: AGENTS.md documented outdated commands (`black .`, `mypy .`) that don't match the Makefile or CI workflows
-**Solution**: Updated AGENTS.md to use:
-- `uv sync --all-extras --dev` for installation
-- `make lint` / `uv run ruff check .` for linting
-- `make typecheck` / `uv run ty check src` for type checking
-- `make test` / `uv run pytest -n auto -q` for tests
-**Related Files**: `AGENTS.md`
-**Prevention**: Keep AGENTS.md in sync with Makefile and CI workflows
-### Insecure Deserialization in Model Cache
-**Date Discovered**: 2026-01-12
-**Context**: `ModelCache` class used `pickle.load()` to deserialize cached data from disk. Pickle is insecure by design and can execute arbitrary code during deserialization if the cache file is tampered with.
-**Solution**: Replaced `pickle.load()`/`pickle.dump()` with JSON serialization using a custom `CacheJSONEncoder` that handles bytes, datetime, and set types.
-**Related Files**:
-- `src/nodetool/ml/models/model_cache.py`
-**Prevention**: Never use pickle for untrusted data. Use JSON or other safe serialization formats.
-
-### Shell Injection Risk in Docker Commands
-**Date Discovered**: 2026-01-12
-**Context**: Docker build and push commands used string interpolation with user-controlled variables (`image_name`, `tag`, `platform`) without proper escaping when calling `subprocess.run()` with `shell=True`.
-**Solution**: Added `_shell_escape()` helper function using `shlex.quote()` to properly escape all variables interpolated into shell commands.
-**Related Files**:
-- `src/nodetool/deploy/docker.py`
-**Prevention**: Always use `shlex.quote()` when interpolating variables into shell commands with `shell=True`, or prefer list-based subprocess calls.
-### Blocking HTTP Calls in Async Code
-**Date Discovered**: 2026-01-12
-**Context**: Several files use synchronous `requests` library for HTTP calls in modules that otherwise use async patterns. This blocks the event loop during network I/O.
-**Solution**: Convert blocking `requests.get/post` calls to async `httpx` calls:
-- `src/nodetool/providers/huggingface_provider.py:95-157` - Converted `get_remote_context_window()` from sync `requests.get` to async `httpx.client.AsyncClient.get`
+**Context**: `trigger_wakeup_service.py` called `TriggerInput.find_one()`, `TriggerInput.find()`, and `RunState.find()` which don't exist on the DBModel classes.
+**Solution**: 
+- Replaced `TriggerInput.find_one({"input_id": input_id})` with `TriggerInput.get_by_input_id(input_id)`
+- Replaced `TriggerInput.find()` and `RunState.find()` with proper queries using `ConditionBuilder`:
+  ```python
+  from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+  
+  condition = ConditionBuilder(
+      ConditionGroup(
+          [Field("field").equals(value), ...],
+          LogicalOperator.AND,
+      )
+  )
+  adapter = await Model.adapter()
+  results, _ = await adapter.query(condition=condition, limit=100)
+  ```
+- Added `from_dict` classmethod to `RunState` model for proper deserialization
 **Related Files**: 
-- `src/nodetool/providers/huggingface_provider.py`
-- `src/nodetool/providers/comfy_api.py` (still uses requests, could benefit from similar fix)
-- `src/nodetool/packages/registry.py` (still uses requests)
-- `src/nodetool/deploy/runpod_api.py` (still uses requests)
-**Prevention**: 
-- Use `httpx` for all HTTP operations in async modules
-- Run `ruff check` to verify no blocking patterns
-- Consider wrapping sync I/O with `asyncio.to_thread()` if async conversion is not feasible
+- `src/nodetool/workflows/trigger_wakeup_service.py`
+- `src/nodetool/models/run_state.py`
+**Prevention**: Check DBModel base class and existing model implementations for available methods before using non-standard ones
+
+### Payload JSON Type Mismatch
+**Date Discovered**: 2026-01-12
+**Context**: `payload_json` field in `TriggerInput` is typed as `dict[str, Any]` but `json.dumps(payload)` was being called, producing a string.
+**Solution**: Pass the payload dict directly without JSON serialization:
+```python
+# Wrong: payload_json=json.dumps(payload)
+# Correct: payload_json=payload
+```
+**Related Files**: `src/nodetool/workflows/trigger_wakeup_service.py:100`
+**Prevention**: Verify field types in model definitions before assigning values
+
+### Future.task Dynamic Attribute Type Error
+**Date Discovered**: 2026-01-12
+**Context**: `threaded_event_loop.py` set `result_future.task = task` on a `Future` object, which doesn't have this attribute in its type definition.
+**Solution**: Use `setattr` with `# noqa: B010` to suppress the lint warning:
+```python
+loop = self._loop
+assert loop is not None, "Event loop should be running"
+task = loop.create_task(coro)
+setattr(result_future, "task", task)  # noqa: B010
+```
+**Related Files**: `src/nodetool/workflows/threaded_event_loop.py:285`
+**Prevention**: For intentional dynamic attributes on standard library classes, use `setattr` with type ignore comments
 
 ---
 
