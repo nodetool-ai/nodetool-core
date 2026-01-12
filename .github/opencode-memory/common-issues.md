@@ -69,6 +69,23 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Deprecated Typing Patterns
+**Date Discovered**: 2026-01-12
+**Context**: Several files use deprecated typing patterns that trigger ruff warnings:
+  - `typing.Dict` instead of `dict`
+  - `typing.List` instead of `list`
+  - `typing.Optional[X]` instead of `X | None`
+  - `typing.ClassVar` unused imports
+**Solution**: Updated files to use modern Python 3.9+ typing patterns:
+  - `src/nodetool/agents/serp_providers/serp_providers.py` - Replaced `Dict`, `Optional` with modern syntax
+  - `src/nodetool/agents/task_executor.py` - Removed unused `Union`, `TaskUpdateEvent`
+  - `src/nodetool/agents/task_planner.py` - Removed unused `Provider`
+  - `src/nodetool/agents/tools/browser_tools.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/code_tools.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/finish_step_tool.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/google_tools.py` - Removed unused google.genai imports
+**Prevention**: Use `uv run ruff check --select=UP006,UP035,UP045,F401` to find and fix deprecated patterns
+
 ---
 
 ## Historical Patterns

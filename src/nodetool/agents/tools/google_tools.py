@@ -1,21 +1,9 @@
 from typing import TYPE_CHECKING, Any, Dict
 
-if TYPE_CHECKING:
-    # Keep imports type-only to avoid heavy module loading during CLI startup
-    from google.genai import Client
-    from google.genai.client import AsyncClient
-    from google.genai.types import (
-        GenerateContentConfig,
-        GenerateImagesConfig,
-        GoogleSearch,
-    )
-    from google.genai.types import Tool as GenAITool
-
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import Provider
 from nodetool.providers.gemini_provider import GeminiProvider
-from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 
 

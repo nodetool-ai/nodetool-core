@@ -42,7 +42,6 @@ from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
-    Provider,
     Step,
     Task,
     TaskPlan,
