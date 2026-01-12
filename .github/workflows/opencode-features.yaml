@@ -1,8 +1,8 @@
-name: Hourly OpenCode Test
+name: Hourly OpenCode Features
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # Every 6 hours
+    - cron: "45 */6 * * *" # Every 6 hours
 
 jobs:
   opencode:
@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-extras --dev
-        
+
       - name: Run OpenCode
         uses: anomalyco/opencode/github@latest
         env:
@@ -39,47 +39,33 @@ jobs:
         with:
           model: minimax/MiniMax-M2.1
           prompt: |
-            # NodeTool Core Quality Assurance (Scheduled)
-            
-            You are an autonomous agent ensuring code quality in **nodetool-core**, a Python 3.11+ async workflow engine.
-            
+            # NodeTool Core Feature Development (Scheduled)
+
+            You are an autonomous agent adding ONE focused feature to **nodetool-core**.
+
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
             2. Continue related branches instead of duplicating work
-            
+
             ## Step 1: Read Memory (Required)
             - `.github/opencode-memory/repository-context.md`
             - `.github/opencode-memory/common-issues.md`
             - `.github/opencode-memory/insights.md`
             - `.github/opencode-memory/README.md`
-            
-            ## Step 2: Run Validation Commands
+
+            ## Step 2: Feature Guidelines
+            - Choose a small, high-impact feature
+            - Stay within core Python architecture
+            - Follow async-first patterns and DI conventions
+            - Avoid unrelated refactors
+
+            ## Step 3: Quality Bar
             ```bash
             make typecheck
             make lint
             make test
             ```
-            
-            ## Step 3: Fix Failures (If Any)
-            - Make minimal, targeted changes only
-            - Follow Black formatting and Ruff rules
-            - Keep async code non-blocking
-            - Maintain test structure in `tests/`
-            - Do not refactor unrelated code
-            
-            ## Step 4: Verify
-            Re-run all three commands and ensure they pass.
-            
-            ## Step 5: Update Memory
-            - Document solved issues in `.github/opencode-memory/common-issues.md`
+
+            ## Step 4: Update Memory
             - Capture new patterns in `.github/opencode-memory/insights.md`
-            
-            ## Success Criteria
-            - `make typecheck`, `make lint`, and `make test` all pass
-            - Changes are minimal and focused on the failures
-            - PR description explains what failed and how it was fixed
-            
-            ## Environment Notes
-            - Dependencies installed via `uv sync --all-extras --dev`
-            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
-            - GitHub CI uses Python 3.11 (not conda)
+            - Document tricky fixes in `.github/opencode-memory/common-issues.md`
