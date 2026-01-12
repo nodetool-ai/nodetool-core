@@ -358,9 +358,11 @@ def get_system_data_path(filename: str) -> Path:
 
     os_name = platform.system()
     if os_name in {"Linux", "Darwin"}:
+        # This is safe (XDG standard)
         return Path.home() / ".local" / "share" / "nodetool" / filename
     elif os_name == "Windows":
-        appdata = os.getenv("LOCALAPPDATA")
+        # Use APPDATA (Roaming) instead of LOCALAPPDATA
+        appdata = os.getenv("APPDATA") 
         if appdata is not None:
             return Path(appdata) / "nodetool" / filename
         return Path("data") / filename
