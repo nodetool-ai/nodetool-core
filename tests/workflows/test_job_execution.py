@@ -112,9 +112,19 @@ async def test_start_job(simple_workflow, cleanup_jobs):
     assert db_job.id == bg_job.job_id
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
-    run_state = await RunState.get(bg_job.job_id)
+
+    # Wait for job to be in running state (with timeout)
+    for _ in range(50):
+        run_state = await RunState.get(bg_job.job_id)
+        if run_state and run_state.status == "running":
+            break
+        await asyncio.sleep(0.05)
+    else:
+        # If still not running, get the final state
+        run_state = await RunState.get(bg_job.job_id)
+
     assert run_state is not None
-    assert run_state.status == "running"
+    assert run_state.status in ("running", "completed")
     assert db_job.params == {}
 
     # Wait a moment for the job to potentially complete

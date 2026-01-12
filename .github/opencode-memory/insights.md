@@ -51,6 +51,13 @@ When adding a new insight, use this format:
 **Impact**: When adding new source files, create corresponding test files in mirrored location.
 **Examples**: `tests/agents/` mirrors `src/nodetool/agents/`
 
+### Timing-Sensitive Test Design
+**Date**: 2026-01-12
+**Category**: Testing
+**Insight**: Empty workflows (0 nodes) complete in milliseconds. Tests checking for "running" status may find "completed" or "scheduled" instead.
+**Impact**: Use wait loops with timeouts when checking for status transitions. Accept multiple valid states in assertions for quick-completing operations.
+**Examples**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_threaded_job_execution.py`
+
 ---
 
 ## Code Quality Insights
