@@ -236,44 +236,6 @@ Secrets are loaded in the following priority order:
    - **Not recommended**: Use database storage instead
    - Will be phased out in future versions
 
-### Migration from secrets.yaml
-
-If you have existing secrets in `~/.config/nodetool/secrets.yaml`, migrate them to the database:
-
-```python
-import yaml
-from pathlib import Path
-from nodetool.models.secret import Secret
-from nodetool.config.settings import get_system_file_path
-
-async def migrate_secrets_to_database(user_id: str):
-    """Migrate secrets from secrets.yaml to encrypted database."""
-    secrets_file = get_system_file_path("secrets.yaml")
-
-    if not secrets_file.exists():
-        print("No secrets.yaml found, nothing to migrate")
-        return
-
-    with open(secrets_file, "r") as f:
-        secrets = yaml.safe_load(f) or {}
-
-    for key, value in secrets.items():
-        if value:  # Skip empty values
-            await Secret.upsert(
-                user_id=user_id,
-                key=key,
-                value=str(value),
-                description=f"Migrated from secrets.yaml"
-            )
-            print(f"Migrated: {key}")
-
-    print(f"Migration complete! Migrated {len(secrets)} secrets")
-    print("You can now delete secrets.yaml")
-
-# Run migration
-await migrate_secrets_to_database("user_123")
-```
-
 ## Security Considerations
 
 ### Best Practices
