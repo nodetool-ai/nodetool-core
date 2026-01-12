@@ -69,6 +69,15 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Span Auto-Started Events
+**Date Discovered**: 2026-01-12
+**Context**: The tracing Span automatically adds a "span_started" event when created
+**Solution**: Tests should check for expected event names rather than exact count
+**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
+**Prevention**: Document auto-generated events in span lifecycle
+
+---
+
 ### Test Status Timing Issues
 **Date Discovered**: 2026-01-12
 **Context**: Tests checking job status fail when workflow completes faster than the test can check the status. Empty workflows (0 nodes) complete in milliseconds, so status checks for "running" may find "completed" or "scheduled" instead.
@@ -80,6 +89,12 @@ When adding a new issue, use this format:
 - `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
 **Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
 
+### Span Auto-Started Events
+**Date Discovered**: 2026-01-12
+**Context**: The tracing Span automatically adds a "span_started" event when created
+**Solution**: Tests should check for expected event names rather than exact count
+**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
+**Prevention**: Document auto-generated events in span lifecycle
 ### AGENTS.md Outdated Commands
 **Date Discovered**: 2026-01-12
 **Context**: AGENTS.md documented outdated commands (`black .`, `mypy .`) that don't match the Makefile or CI workflows
