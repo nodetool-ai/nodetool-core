@@ -408,20 +408,19 @@ class ChatSSERunner(BaseChatRunner):
         Returns:
             Properly typed OpenAI ChatCompletionChunk object
         """
-        chunk_data = {
-            "id": f"chatcmpl-{int(time.time())}",
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"content": f"Error: {error_message}"},
-                    "finish_reason": "stop",
-                }
+        return ChatCompletionChunk(
+            id=f"chatcmpl-{int(time.time())}",
+            object="chat.completion.chunk",
+            created=int(time.time()),
+            model=model,
+            choices=[
+                Choice(
+                    index=0,
+                    delta=ChoiceDelta(role="assistant", content=f"Error: {error_message}"),
+                    finish_reason="stop",
+                )
             ],
-        }
-        return ChatCompletionChunk(**chunk_data)
+        )
 
     async def stream_response(self, request_data: dict) -> AsyncGenerator[str, None]:
         """
