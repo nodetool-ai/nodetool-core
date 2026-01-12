@@ -135,9 +135,12 @@ class Channel:
             for q in self._subscribers.values():
                 try:
                     await q.put(_STOP_SIGNAL)
-                except Exception:
-                    # Queue might be full or closed; ignore
-                    pass
+                except asyncio.QueueFull:
+                    # Queue is full; subscriber will see closed flag on next iteration
+                    log.debug(f"Queue full when closing channel {self.name}, subscriber will exit on next poll")
+                except RuntimeError as e:
+                    # Queue might be closed or event loop issues
+                    log.debug(f"RuntimeError closing channel {self.name}: {e}")
 
     def get_stats(self) -> ChannelStats:
         """Get current statistics for this channel.
@@ -286,7 +289,7 @@ class ChannelManager:
                 try:
                     await channel.close()
                 except Exception as e:
-                    log.debug(f"Error closing channel {channel.name}: {e}")
+                    log.debug(f"Error closing channel {channel.name}: {type(e).__name__}: {e}")
             self._channels.clear()
 
     def list_channels(self) -> list[str]:
