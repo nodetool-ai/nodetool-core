@@ -32,25 +32,26 @@ pip install -e .
 
 ### Commands
 
-- Install dependencies: `pip install . && pip install -r requirements-dev.txt`
-- Run tests: `pytest -q` (quick) or `pytest -v` (verbose)
+- Install dependencies: `uv sync --all-extras --dev`
+- Run tests: `make test` (quick) or `make test-verbose` (verbose)
 - Run specific tests: `pytest tests/path/to/test_file.py`
 - Test with coverage: `pytest --cov=src`
-- Lint and format: `ruff check .`, `black .`, `mypy .`
+- Lint: `make lint` or `uv run ruff check .`
+- Type check: `make typecheck` or `uv run ty check src`
 
 ### Validating Changes
 
 Before submitting or committing changes, always run these validation steps:
 
-1. **Run linting:** `ruff check .` - Fix any issues reported
-2. **Run tests:** `pytest -q` - Ensure all tests pass
-3. **Type checking:** `mypy .` - Check for type errors (if making changes to typed code)
+1. **Run linting:** `make lint` or `uv run ruff check .` - Fix any issues reported
+2. **Run tests:** `make test` or `uv run pytest -n auto -q` - Ensure all tests pass
+3. **Type checking:** `make typecheck` or `uv run ty check src` - Check for type errors
 
 Example workflow:
 ```bash
-ruff check .  # Fix linting issues
-pytest -q     # Run quick tests
-mypy .        # Type check (optional for quick fixes)
+make lint   # Fix linting issues
+make test   # Run quick tests
+make typecheck  # Type check
 ```
 
 ## Coding Style & Naming Conventions
@@ -74,7 +75,7 @@ mypy .        # Type check (optional for quick fixes)
 
 - Commits: follow Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.); keep messages imperative and scoped.
 - PRs: include a clear description, linked issues, and screenshots/logs if UI/CLI behavior changes.
-- Checks: ensure `pytest`, `ruff`, `black`, and `mypy` pass locally; update documentation at docs.nodetool.ai when APIs change.
+- Checks: ensure `make lint`, `make test`, and `make typecheck` pass locally; update documentation at docs.nodetool.ai when APIs change.
 
 ## Security & Configuration Tips
 
