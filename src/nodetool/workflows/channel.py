@@ -151,6 +151,7 @@ class Channel(Generic[T]):
                 item = await queue.get()
                 if item is _STOP_SIGNAL:
                     break
+                # Type narrowing: item is T since we've excluded the sentinel object above
                 yield item  # type: ignore[misc]
         finally:
             async with self._lock:
