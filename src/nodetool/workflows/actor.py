@@ -245,7 +245,7 @@ class NodeActor:
     async def _process_node_with_inputs_impl(
         self,
         inputs: dict[str, Any],
-        span,
+        span: Any,  # Span | NoOpSpan from observability.tracing
     ) -> None:
         """Internal implementation of process_node_with_inputs."""
         context = self.context

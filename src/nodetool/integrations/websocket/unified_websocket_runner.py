@@ -1132,7 +1132,13 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             result = await self._process_command(command, job_id, workflow_id, span)
             return result
 
-    async def _process_command(self, command: WebSocketCommand, job_id: str | None, workflow_id: str | None, span):
+    async def _process_command(
+        self,
+        command: WebSocketCommand,
+        job_id: str | None,
+        workflow_id: str | None,
+        span: Any,  # Span | NoOpSpan from observability.tracing
+    ):
         """Internal method to process commands with tracing span context."""
 
         if command.command == CommandType.CLEAR_MODELS:
