@@ -87,6 +87,27 @@ When adding a new insight, use this format:
 **Impact**: Never commit `.env.*.local` files. Use them for actual API keys and secrets.
 **Examples**: `.env.example`, `.env.development`, `.env.test`
 
+### Avoid pickle for Disk Serialization
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: Python's `pickle` module is insecure by design - it can execute arbitrary code during deserialization. Never use it for data that could be tampered with (e.g., cache files, user-uploaded data).
+**Impact**: Replace pickle with JSON for disk serialization. Use custom encoders for special types (bytes, datetime, sets).
+**Examples**: `src/nodetool/ml/models/model_cache.py`
+
+### Shell Command Escaping
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: When using `subprocess.run()` with `shell=True`, any variables interpolated into the command string must be properly escaped to prevent shell injection. Even "trusted" values should be escaped.
+**Impact**: Use `shlex.quote()` for all variable interpolation, or prefer list-based subprocess calls with `shell=False`.
+**Examples**: `src/nodetool/deploy/docker.py`
+
+### ast.literal_eval is Safe
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: Unlike `eval()`, `ast.literal_eval()` only evaluates literal Python expressions (strings, numbers, tuples, lists, dicts, booleans, None). It cannot execute arbitrary code.
+**Impact**: Use `ast.literal_eval()` as a safe fallback for parsing JSON with single quotes or minor syntax issues.
+**Examples**: `src/nodetool/utils/message_parsing.py`
+
 ---
 
 ## Performance Insights

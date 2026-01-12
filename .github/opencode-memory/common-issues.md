@@ -72,13 +72,29 @@ When adding a new issue, use this format:
 ### Test Status Timing Issues
 **Date Discovered**: 2026-01-12
 **Context**: Tests checking job status fail when workflow completes faster than the test can check the status. Empty workflows (0 nodes) complete in milliseconds, so status checks for "running" may find "completed" or "scheduled" instead.
-**Solution**: 
+**Solution**:
 1. Added wait loop with timeout to allow job to transition to running state
 2. Updated status assertions to accept multiple valid states: "running", "completed", "failed", and "scheduled"
-**Related Files**: 
+**Related Files**:
 - `tests/workflows/test_job_execution.py:115-127` - test_start_job
 - `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
 **Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
+
+### Insecure Deserialization in Model Cache
+**Date Discovered**: 2026-01-12
+**Context**: `ModelCache` class used `pickle.load()` to deserialize cached data from disk. Pickle is insecure by design and can execute arbitrary code during deserialization if the cache file is tampered with.
+**Solution**: Replaced `pickle.load()`/`pickle.dump()` with JSON serialization using a custom `CacheJSONEncoder` that handles bytes, datetime, and set types.
+**Related Files**:
+- `src/nodetool/ml/models/model_cache.py`
+**Prevention**: Never use pickle for untrusted data. Use JSON or other safe serialization formats.
+
+### Shell Injection Risk in Docker Commands
+**Date Discovered**: 2026-01-12
+**Context**: Docker build and push commands used string interpolation with user-controlled variables (`image_name`, `tag`, `platform`) without proper escaping when calling `subprocess.run()` with `shell=True`.
+**Solution**: Added `_shell_escape()` helper function using `shlex.quote()` to properly escape all variables interpolated into shell commands.
+**Related Files**:
+- `src/nodetool/deploy/docker.py`
+**Prevention**: Always use `shlex.quote()` when interpolating variables into shell commands with `shell=True`, or prefer list-based subprocess calls.
 
 ---
 
