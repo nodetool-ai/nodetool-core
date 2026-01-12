@@ -60,10 +60,11 @@ jobs:
             3. Continue existing branches when appropriate
             
             ## Memory System (Read First)
+            - `.github/opencode-memory/README.md` - Folder-based memory usage
             - `.github/opencode-memory/repository-context.md` - Structure, conventions, commands
-            - `.github/opencode-memory/common-issues.md` - Known issues and solutions
-            - `.github/opencode-memory/insights.md` - Architectural patterns and decisions
-            - `.github/opencode-memory/README.md` - Memory workflow usage
+            - `.github/opencode-memory/project-context.md` - Recent changes
+            - `.github/opencode-memory/features.md` - Feature inventory
+            - List `issues/` and `insights/` to find descriptive files
             
             ## Development Environment
             - Python 3.11+ with dependencies installed via `uv sync --all-extras --dev`
@@ -90,7 +91,7 @@ jobs:
             - Keep PRs to one logical change
             
             ## Update Memory Afterward
-            - Document solutions in `.github/opencode-memory/common-issues.md`
-            - Capture new patterns in `.github/opencode-memory/insights.md`
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`
             
             Now proceed with the user's requested task while following all guidance above.
