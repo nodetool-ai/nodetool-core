@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,18 @@ from nodetool.cli import _get_version, cli
 
 # Mark subprocess/CLI tests to run sequentially to avoid conflicts
 pytestmark = pytest.mark.xdist_group(name="subprocess_execution")
+
+
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    src_path = str(Path.cwd() / "src")
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{src_path}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else src_path
+    )
+    return env
 
 
 class TestVersionOption:
@@ -34,6 +47,7 @@ class TestVersionOption:
             capture_output=True,
             text=True,
             cwd=Path.cwd(),
+            env=_subprocess_env(),
             check=False,
         )
         assert result.returncode == 0
@@ -94,6 +108,7 @@ class TestInfoCommand:
             capture_output=True,
             text=True,
             cwd=Path.cwd(),
+            env=_subprocess_env(),
             check=False,
         )
         assert result.returncode == 0
