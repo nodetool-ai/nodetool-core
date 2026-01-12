@@ -59,10 +59,11 @@ jobs:
             2. Continue related branches instead of duplicating work
 
             ## Step 1: Read Memory (Required)
-            - `.github/opencode-memory/repository-context.md`
-            - `.github/opencode-memory/common-issues.md`
-            - `.github/opencode-memory/insights.md`
             - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/project-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
 
             ## Step 2: Security Audit Areas
             - Secrets in code or logs
@@ -84,5 +85,5 @@ jobs:
             ```
 
             ## Step 5: Update Memory
-            - Document vulnerabilities fixed in `.github/opencode-memory/common-issues.md`
-            - Capture security patterns in `.github/opencode-memory/insights.md`
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`

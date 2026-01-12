@@ -58,6 +58,13 @@ When adding a new insight, use this format:
 **Impact**: Use wait loops with timeouts when checking for status transitions. Accept multiple valid states in assertions for quick-completing operations.
 **Examples**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_threaded_job_execution.py`
 
+### Documentation Sync
+**Date**: 2026-01-12
+**Category**: Code Quality
+**Insight**: AGENTS.md was out of sync with Makefile and pyproject.toml - it documented `black .`, `mypy .` instead of `ruff format`, `ty check src`
+**Impact**: Updated AGENTS.md to use actual commands: `make lint`, `make typecheck`, `make test`
+**Examples**: `AGENTS.md`, `Makefile`, `pyproject.toml`
+
 ---
 
 ## Code Quality Insights
@@ -87,6 +94,27 @@ When adding a new insight, use this format:
 **Impact**: Never commit `.env.*.local` files. Use them for actual API keys and secrets.
 **Examples**: `.env.example`, `.env.development`, `.env.test`
 
+### Avoid pickle for Disk Serialization
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: Python's `pickle` module is insecure by design - it can execute arbitrary code during deserialization. Never use it for data that could be tampered with (e.g., cache files, user-uploaded data).
+**Impact**: Replace pickle with JSON for disk serialization. Use custom encoders for special types (bytes, datetime, sets).
+**Examples**: `src/nodetool/ml/models/model_cache.py`
+
+### Shell Command Escaping
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: When using `subprocess.run()` with `shell=True`, any variables interpolated into the command string must be properly escaped to prevent shell injection. Even "trusted" values should be escaped.
+**Impact**: Use `shlex.quote()` for all variable interpolation, or prefer list-based subprocess calls with `shell=False`.
+**Examples**: `src/nodetool/deploy/docker.py`
+
+### ast.literal_eval is Safe
+**Date**: 2026-01-12
+**Category**: Security
+**Insight**: Unlike `eval()`, `ast.literal_eval()` only evaluates literal Python expressions (strings, numbers, tuples, lists, dicts, booleans, None). It cannot execute arbitrary code.
+**Impact**: Use `ast.literal_eval()` as a safe fallback for parsing JSON with single quotes or minor syntax issues.
+**Examples**: `src/nodetool/utils/message_parsing.py`
+
 ---
 
 ## Performance Insights
@@ -105,6 +133,17 @@ When adding a new insight, use this format:
 **Impact**: Enables better debugging and performance analysis for workflow execution. No existing tracing infrastructure was present.
 **Examples**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
 **Next Steps**: Full OTel integration would require adding opentelemetry-api and opentelemetry-exporter-otlp as optional dependencies
+### Async HTTP with httpx
+**Date**: 2026-01-12
+**Category**: Performance
+**Insight**: The codebase uses `httpx` for async HTTP operations. Synchronous `requests` library blocks the asyncio event loop, causing performance degradation in hot paths.
+**Impact**: 
+- Convert blocking `requests.get/post` to async `httpx` calls when in async modules
+- Wrap sync I/O with `asyncio.to_thread()` when async conversion is not feasible
+- `httpx` is already imported in many provider files, making conversion straightforward
+**Examples**: 
+- `src/nodetool/providers/huggingface_provider.py` - converted `get_remote_context_window()`
+- `src/nodetool/providers/comfy_local_provider.py` - uses `asyncio.to_thread()` pattern
 
 ---
 
