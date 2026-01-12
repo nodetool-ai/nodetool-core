@@ -652,9 +652,7 @@ class TestTypedChannelManager:
         received: list[str] = []
 
         async def subscriber():
-            async for item in manager.subscribe_typed(
-                "logs", "sub1", message_type=str
-            ):
+            async for item in manager.subscribe_typed("logs", "sub1", message_type=str):
                 received.append(item)
 
         sub_task = asyncio.create_task(subscriber())
@@ -689,9 +687,7 @@ class TestTypedChannelManager:
         received: list[int] = []
 
         async def subscriber():
-            async for item in manager.subscribe_typed(
-                "numbers", "sub1", message_type=int
-            ):
+            async for item in manager.subscribe_typed("numbers", "sub1", message_type=int):
                 received.append(item)
 
         sub_task = asyncio.create_task(subscriber())
