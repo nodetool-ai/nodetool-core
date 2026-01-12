@@ -21,11 +21,7 @@ def _subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     src_path = str(Path.cwd() / "src")
     existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        f"{src_path}{os.pathsep}{existing_pythonpath}"
-        if existing_pythonpath
-        else src_path
-    )
+    env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else src_path
     return env
 
 

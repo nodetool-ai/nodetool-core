@@ -357,11 +357,7 @@ def _build_subprocess_command() -> tuple[list[str], dict[str, str] | None]:
     src_path = Path(__file__).resolve().parents[3] / "src"
     if src_path.exists():
         existing_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (
-            f"{src_path}{os.pathsep}{existing_pythonpath}"
-            if existing_pythonpath
-            else str(src_path)
-        )
+        env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(src_path)
 
     return [sys.executable, "-m", "nodetool.cli", "run", "--stdin", "--jsonl"], env
 
