@@ -4004,7 +4004,7 @@ requires-dist = [
     { name = "pillow", specifier = "<11.0.0" },
     { name = "playwright", specifier = ">=1.40.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.50" },
-    { name = "protobuf", specifier = "<=3.20.3" },
+    { name = "protobuf", specifier = "<=6.33.4" },
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
