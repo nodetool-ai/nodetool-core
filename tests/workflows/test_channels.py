@@ -506,3 +506,298 @@ class TestMemoryStability:
         assert channel.get_stats().subscriber_count == 0
 
         await channel.close()
+
+
+class TestTypedChannels:
+    """Tests for typed channel functionality."""
+
+    @pytest.mark.asyncio
+    async def test_typed_channel_basic(self):
+        """Test basic typed channel with string messages."""
+        channel: Channel[str] = Channel("typed-str", message_type=str)
+        received: list[str] = []
+
+        async def subscriber():
+            async for item in channel.subscribe("sub1"):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        await channel.publish("hello")
+        await channel.publish("world")
+
+        await channel.close()
+        await asyncio.wait_for(sub_task, timeout=1.0)
+
+        assert received == ["hello", "world"]
+        assert channel.message_type is str
+
+    @pytest.mark.asyncio
+    async def test_typed_channel_rejects_wrong_type(self):
+        """Test that typed channel rejects messages of wrong type."""
+        channel: Channel[str] = Channel("typed-str", message_type=str)
+
+        with pytest.raises(TypeError, match="expects messages of type str"):
+            await channel.publish(123)  # type: ignore
+
+        await channel.close()
+
+    @pytest.mark.asyncio
+    async def test_typed_channel_dict_type(self):
+        """Test typed channel with dict messages."""
+        channel: Channel[dict] = Channel("typed-dict", message_type=dict)
+        received: list[dict] = []
+
+        async def subscriber():
+            async for item in channel.subscribe("sub1"):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        await channel.publish({"key": "value"})
+        await channel.publish({"num": 42})
+
+        await channel.close()
+        await asyncio.wait_for(sub_task, timeout=1.0)
+
+        assert received == [{"key": "value"}, {"num": 42}]
+
+    @pytest.mark.asyncio
+    async def test_untyped_channel_accepts_any(self):
+        """Test that untyped channel (no message_type) accepts any type."""
+        channel: Channel[object] = Channel("untyped")
+        received: list[object] = []
+
+        async def subscriber():
+            async for item in channel.subscribe("sub1"):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        await channel.publish("string")
+        await channel.publish(123)
+        await channel.publish({"dict": "value"})
+
+        await channel.close()
+        await asyncio.wait_for(sub_task, timeout=1.0)
+
+        assert received == ["string", 123, {"dict": "value"}]
+        assert channel.message_type is None
+
+    @pytest.mark.asyncio
+    async def test_channel_stats_includes_type(self):
+        """Test that ChannelStats includes message_type."""
+        typed_channel = Channel("typed", message_type=int)
+        untyped_channel = Channel("untyped")
+
+        typed_stats = typed_channel.get_stats()
+        untyped_stats = untyped_channel.get_stats()
+
+        assert typed_stats.message_type is int
+        assert untyped_stats.message_type is None
+
+        await typed_channel.close()
+        await untyped_channel.close()
+
+
+class TestTypedChannelManager:
+    """Tests for typed channel manager functionality."""
+
+    @pytest.mark.asyncio
+    async def test_create_typed_channel(self):
+        """Test creating a typed channel through manager."""
+        manager = ChannelManager()
+
+        channel = await manager.create_channel("typed-logs", message_type=str)
+
+        assert channel.message_type is str
+        assert manager.get_channel_type("typed-logs") is str
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_typed_channel(self):
+        """Test get_or_create with type enforcement."""
+        manager = ChannelManager()
+
+        # First call creates with type
+        channel1 = await manager.get_or_create_channel("events", message_type=dict)
+        assert channel1.message_type is dict
+
+        # Second call retrieves existing
+        channel2 = await manager.get_or_create_channel("events", message_type=dict)
+        assert channel2 is channel1
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_type_mismatch_raises(self):
+        """Test that type mismatch raises TypeError."""
+        manager = ChannelManager()
+
+        await manager.create_channel("typed", message_type=str)
+
+        with pytest.raises(TypeError, match="has type str"):
+            await manager.get_or_create_channel("typed", message_type=int)
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_publish_typed(self):
+        """Test publish_typed method."""
+        manager = ChannelManager()
+        received: list[str] = []
+
+        async def subscriber():
+            async for item in manager.subscribe_typed(
+                "logs", "sub1", message_type=str
+            ):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        await manager.publish_typed("logs", "message1", message_type=str)
+        await manager.publish_typed("logs", "message2", message_type=str)
+
+        await manager.close_all()
+        await sub_task
+
+        assert received == ["message1", "message2"]
+
+    @pytest.mark.asyncio
+    async def test_publish_typed_wrong_type_raises(self):
+        """Test that publish_typed rejects wrong type."""
+        manager = ChannelManager()
+
+        # Create channel with str type
+        await manager.create_channel("typed", message_type=str)
+
+        # publish_typed with wrong type should fail at the channel level
+        with pytest.raises(TypeError, match="expects messages of type str"):
+            await manager.publish_typed("typed", 123, message_type=str)  # type: ignore
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_subscribe_typed(self):
+        """Test subscribe_typed method."""
+        manager = ChannelManager()
+        received: list[int] = []
+
+        async def subscriber():
+            async for item in manager.subscribe_typed(
+                "numbers", "sub1", message_type=int
+            ):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        # Using publish_typed to ensure type consistency
+        await manager.publish_typed("numbers", 1, message_type=int)
+        await manager.publish_typed("numbers", 2, message_type=int)
+        await manager.publish_typed("numbers", 3, message_type=int)
+
+        await manager.close_all()
+        await sub_task
+
+        assert received == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_mixed_typed_untyped_usage(self):
+        """Test backwards compatibility with mixed typed/untyped usage."""
+        manager = ChannelManager()
+        received: list[object] = []
+
+        async def subscriber():
+            # Untyped subscriber
+            async for item in manager.subscribe("mixed", "sub1"):
+                received.append(item)
+
+        sub_task = asyncio.create_task(subscriber())
+        await asyncio.sleep(0.01)
+
+        # Untyped publish works
+        await manager.publish("mixed", "string")
+        await manager.publish("mixed", 123)
+        await manager.publish("mixed", {"key": "value"})
+
+        await manager.close_all()
+        await sub_task
+
+        assert received == ["string", 123, {"key": "value"}]
+
+    @pytest.mark.asyncio
+    async def test_close_channel_clears_type(self):
+        """Test that closing a channel clears its type registry."""
+        manager = ChannelManager()
+
+        await manager.create_channel("typed", message_type=str)
+        assert manager.get_channel_type("typed") is str
+
+        await manager.close_channel("typed")
+        assert manager.get_channel_type("typed") is None
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_close_all_clears_types(self):
+        """Test that close_all clears the type registry."""
+        manager = ChannelManager()
+
+        await manager.create_channel("ch1", message_type=str)
+        await manager.create_channel("ch2", message_type=int)
+
+        assert manager.get_channel_type("ch1") is str
+        assert manager.get_channel_type("ch2") is int
+
+        await manager.close_all()
+
+        assert manager.get_channel_type("ch1") is None
+        assert manager.get_channel_type("ch2") is None
+
+    @pytest.mark.asyncio
+    async def test_replace_channel_updates_type(self):
+        """Test that replacing a channel updates its type."""
+        manager = ChannelManager()
+
+        await manager.create_channel("replaceable", message_type=str)
+        assert manager.get_channel_type("replaceable") is str
+
+        await manager.create_channel("replaceable", message_type=int, replace=True)
+        assert manager.get_channel_type("replaceable") is int
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_replace_channel_clears_type_if_none(self):
+        """Test that replacing a typed channel with untyped clears the type."""
+        manager = ChannelManager()
+
+        await manager.create_channel("typed", message_type=str)
+        assert manager.get_channel_type("typed") is str
+
+        await manager.create_channel("typed", replace=True)  # No message_type
+        assert manager.get_channel_type("typed") is None
+
+        await manager.close_all()
+
+    @pytest.mark.asyncio
+    async def test_get_all_stats_includes_types(self):
+        """Test that get_all_stats includes message types."""
+        manager = ChannelManager()
+
+        await manager.create_channel("typed", message_type=str)
+        await manager.create_channel("untyped")
+
+        stats = manager.get_all_stats()
+        stats_dict = {s.name: s for s in stats}
+
+        assert stats_dict["typed"].message_type is str
+        assert stats_dict["untyped"].message_type is None
+
+        await manager.close_all()
