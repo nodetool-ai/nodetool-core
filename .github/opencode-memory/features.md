@@ -5,3 +5,4 @@
 - **Agent Framework**: LLM-backed planning and tool execution
 - **API Server**: FastAPI HTTP/WebSocket services
 - **Storage Layer**: Pluggable persistence backends
+- **Async Utilities**: `AsyncSemaphore` and `gather_with_concurrency` for async concurrency control
