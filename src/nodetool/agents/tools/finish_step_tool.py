@@ -5,7 +5,7 @@ This tool provides a reliable mechanism for Claude models to signal step complet
 with a validated result, replacing the error-prone JSON parsing approach.
 """
 
-from typing import Any, ClassVar, Dict
+from typing import Any, Dict
 
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.processing_context import ProcessingContext

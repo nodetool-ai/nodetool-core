@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:

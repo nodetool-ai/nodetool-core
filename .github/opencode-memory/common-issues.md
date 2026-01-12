@@ -69,73 +69,22 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
-### Span Auto-Started Events
+### Deprecated Typing Patterns
 **Date Discovered**: 2026-01-12
-**Context**: The tracing Span automatically adds a "span_started" event when created
-**Solution**: Tests should check for expected event names rather than exact count
-**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
-**Prevention**: Document auto-generated events in span lifecycle
-
----
-
-### Test Status Timing Issues
-**Date Discovered**: 2026-01-12
-**Context**: Tests checking job status fail when workflow completes faster than the test can check the status. Empty workflows (0 nodes) complete in milliseconds, so status checks for "running" may find "completed" or "scheduled" instead.
-**Solution**:
-1. Added wait loop with timeout to allow job to transition to running state
-2. Updated status assertions to accept multiple valid states: "running", "completed", "failed", and "scheduled"
-**Related Files**:
-- `tests/workflows/test_job_execution.py:115-127` - test_start_job
-- `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
-**Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
-
-### Non-Existent Model Methods in trigger_wakeup_service.py
-**Date Discovered**: 2026-01-12
-**Context**: `trigger_wakeup_service.py` called `TriggerInput.find_one()`, `TriggerInput.find()`, and `RunState.find()` which don't exist on the DBModel classes.
-**Solution**: 
-- Replaced `TriggerInput.find_one({"input_id": input_id})` with `TriggerInput.get_by_input_id(input_id)`
-- Replaced `TriggerInput.find()` and `RunState.find()` with proper queries using `ConditionBuilder`:
-  ```python
-  from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
-  
-  condition = ConditionBuilder(
-      ConditionGroup(
-          [Field("field").equals(value), ...],
-          LogicalOperator.AND,
-      )
-  )
-  adapter = await Model.adapter()
-  results, _ = await adapter.query(condition=condition, limit=100)
-  ```
-- Added `from_dict` classmethod to `RunState` model for proper deserialization
-**Related Files**: 
-- `src/nodetool/workflows/trigger_wakeup_service.py`
-- `src/nodetool/models/run_state.py`
-**Prevention**: Check DBModel base class and existing model implementations for available methods before using non-standard ones
-
-### Payload JSON Type Mismatch
-**Date Discovered**: 2026-01-12
-**Context**: `payload_json` field in `TriggerInput` is typed as `dict[str, Any]` but `json.dumps(payload)` was being called, producing a string.
-**Solution**: Pass the payload dict directly without JSON serialization:
-```python
-# Wrong: payload_json=json.dumps(payload)
-# Correct: payload_json=payload
-```
-**Related Files**: `src/nodetool/workflows/trigger_wakeup_service.py:100`
-**Prevention**: Verify field types in model definitions before assigning values
-
-### Future.task Dynamic Attribute Type Error
-**Date Discovered**: 2026-01-12
-**Context**: `threaded_event_loop.py` set `result_future.task = task` on a `Future` object, which doesn't have this attribute in its type definition.
-**Solution**: Use `setattr` with `# noqa: B010` to suppress the lint warning:
-```python
-loop = self._loop
-assert loop is not None, "Event loop should be running"
-task = loop.create_task(coro)
-setattr(result_future, "task", task)  # noqa: B010
-```
-**Related Files**: `src/nodetool/workflows/threaded_event_loop.py:285`
-**Prevention**: For intentional dynamic attributes on standard library classes, use `setattr` with type ignore comments
+**Context**: Several files use deprecated typing patterns that trigger ruff warnings:
+  - `typing.Dict` instead of `dict`
+  - `typing.List` instead of `list`
+  - `typing.Optional[X]` instead of `X | None`
+  - `typing.ClassVar` unused imports
+**Solution**: Updated files to use modern Python 3.9+ typing patterns:
+  - `src/nodetool/agents/serp_providers/serp_providers.py` - Replaced `Dict`, `Optional` with modern syntax
+  - `src/nodetool/agents/task_executor.py` - Removed unused `Union`, `TaskUpdateEvent`
+  - `src/nodetool/agents/task_planner.py` - Removed unused `Provider`
+  - `src/nodetool/agents/tools/browser_tools.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/code_tools.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/finish_step_tool.py` - Removed unused `ClassVar`
+  - `src/nodetool/agents/tools/google_tools.py` - Removed unused google.genai imports
+**Prevention**: Use `uv run ruff check --select=UP006,UP035,UP045,F401` to find and fix deprecated patterns
 
 ---
 
