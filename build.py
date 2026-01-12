@@ -37,7 +37,6 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 
 def _echo(message: str) -> None:

@@ -1,96 +1,109 @@
-# OpenCode Memory System
+# OpenCode Long-Term Memory
 
-This directory contains long-term memory for OpenCode AI agents working on the nodetool-core repository.
+This directory contains persistent knowledge for OpenCode workflows in **nodetool-core**. Content is organized into folders by topic, with individual files per issue/insight to keep context focused and reduce merge conflicts.
 
-## Purpose
+## Directory Structure
 
-The memory system helps AI agents:
-1. **Avoid redundant work** - Check if a problem has been solved before
-2. **Maintain consistency** - Follow established patterns and conventions
-3. **Learn from history** - Build on past insights and solutions
-4. **Work more efficiently** - Access repository context immediately
+```
+opencode-memory/
+├── README.md              # This file - overview and usage
+├── features.md            # List of user-facing features
+├── project-context.md     # Architecture and recent changes
+├── build-test-lint.md     # Quality requirements and commands
+├── tech-stack.md          # Key technologies and versions
+├── repository-context.md  # Project structure and conventions
+│
+├── issues/                # Known issues organized by topic
+│   ├── README.md          # How to add new issues
+│   ├── testing/
+│   ├── linting/
+│   ├── typing/
+│   ├── workflows/
+│   ├── api/
+│   ├── storage/
+│   ├── dependencies/
+│   ├── config/
+│   └── ci/
+│
+└── insights/              # Best practices organized by topic
+    ├── README.md          # How to add new insights
+    ├── architecture/
+    ├── performance/
+    ├── testing/
+    ├── code-quality/
+    ├── async/
+    ├── workflows/
+    ├── api/
+    ├── storage/
+    └── deployment/
+```
 
-## Memory Files
+## How to Use
 
-### `repository-context.md`
-Essential information about the repository structure, conventions, and development practices. Read this FIRST before starting any work.
+### Before Making Changes
 
-**When to use:**
-- Starting a new task
-- Unfamiliar with the codebase
-- Need to verify conventions or commands
-
-### `common-issues.md`
-Documented issues and their solutions. Saves time by providing proven fixes.
-
-**When to use:**
-- Before debugging a problem (check if it's already solved)
-- After solving a non-trivial issue (document it for others)
-- When encountering test/build failures
-
-### `insights.md`
-Important architectural decisions, patterns, and learnings about the codebase.
-
-**When to use:**
-- Before making architectural changes
-- When designing new features
-- To understand why things are structured a certain way
-
-## Usage Guidelines for AI Agents
-
-### Before Starting Work
-1. **ALWAYS read `repository-context.md`** for project setup and conventions
-2. Check `common-issues.md` for known problems related to your task
-3. Review `insights.md` for architectural guidance
-
-### During Work
-- Refer back to memory files when making decisions
-- Note any patterns or issues you discover
-- Validate your changes follow documented conventions
+1. Check `features.md` to avoid duplicate feature work
+2. List `issues/` to discover relevant topics, then read descriptive files
+3. List `insights/` to discover best practices, then read descriptive files
+4. Read `project-context.md` and `repository-context.md`
 
 ### After Completing Work
-1. **Document new issues** in `common-issues.md` if you solved something non-trivial
-2. **Record insights** in `insights.md` if you discovered important patterns
-3. **Update repository-context.md** if you added new major conventions
 
-## What to Document
+1. New feature? → Add ONE line to `features.md`
+2. Solved a tricky issue? → Create a file in `issues/<topic>/`
+3. Discovered a best practice? → Create a file in `insights/<topic>/`
+4. Significant change? → Add entry to `project-context.md`
 
-### DO Document
-✅ Non-obvious solutions to common problems
-✅ Architectural decisions and their rationale
-✅ Patterns that should be followed consistently
-✅ Environment-specific quirks or configurations
-✅ Commands that must be run for validation
-✅ Security considerations and pitfalls
+## File Naming Convention
 
-### DON'T Document
-❌ Temporary workarounds that should be fixed properly
-❌ Personal preferences without justification
-❌ Information that's already in official documentation
-❌ Overly specific details that change frequently
-❌ Secrets or sensitive information
+Use descriptive, kebab-case names that make the topic obvious at a glance:
+- `issues/testing/pytest-async-timeouts.md`
+- `issues/workflows/workflow-runner-state-leaks.md`
+- `insights/async/non-blocking-db-queries.md`
 
-## Maintenance
+## File Format
 
-- Review memory files monthly to keep them current
-- Archive outdated information
-- Consolidate duplicate or conflicting information
-- Keep entries concise and actionable
+### Issue Files (`issues/<topic>/*.md`)
 
-## Memory File Format
+```markdown
+# Issue Title
 
-Each entry should be:
-- **Dated**: Include when the information was added
-- **Categorized**: Use appropriate sections
-- **Actionable**: Provide clear guidance
-- **Referenced**: Include file paths or examples where relevant
-- **Concise**: Focus on key information
+**Problem**: One sentence describing the issue
+
+**Solution**: One sentence or brief code snippet
+
+**Why**: Brief explanation (optional)
+
+**Files**: Related files (optional)
+
+**Date**: YYYY-MM-DD
+```
+
+### Insight Files (`insights/<topic>/*.md`)
+
+```markdown
+# Insight Title
+
+**Insight**: What was learned or discovered
+
+**Rationale**: Why it matters
+
+**Example**: Code example (if applicable)
+
+**Impact**: Measurable benefit (if known)
+
+**Files**: Related files (optional)
+
+**Date**: YYYY-MM-DD
+```
+
+## Legacy Files
+
+`common-issues.md` and `insights.md` remain for historical context. Add all new entries under `issues/` and `insights/` going forward.
 
 ## Benefits
 
-By maintaining this memory system, we:
-- Reduce duplicate work across workflow runs
-- Maintain consistency in code quality
-- Build institutional knowledge
-- Speed up onboarding for new tasks
-- Improve overall code quality over time
+✅ Fewer merge conflicts with file-based entries
+✅ Focused context per issue or insight
+✅ Easier discovery by listing topic folders
+✅ Cleaner diffs for updates and removals

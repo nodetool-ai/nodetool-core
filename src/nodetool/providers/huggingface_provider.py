@@ -17,7 +17,6 @@ from weakref import WeakKeyDictionary
 import aiohttp
 import httpx
 import numpy as np
-import requests
 from huggingface_hub import AsyncInferenceClient
 from pydantic import BaseModel
 
@@ -92,13 +91,10 @@ HF_PROVIDER_MAPPING = {
 }
 
 
-def get_remote_context_window(model_id: str, token: str | None = None) -> int | None:
+async def get_remote_context_window(model_id: str, token: str | None = None) -> int | None:
     """Fetch context window info from the model's Hugging Face config, if available."""
-    # Note: We don't cache when token is provided since cache keys can't include tokens
-    # For public models (no token), we can use a simple cache
     cache_key = f"{model_id}:{bool(token)}"
 
-    # Try to get from cache if no token (public model)
     if not token:
         cached = _context_window_cache.get(cache_key)
         if cached is not None:
@@ -109,10 +105,52 @@ def get_remote_context_window(model_id: str, token: str | None = None) -> int | 
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        response = requests.get(url, headers=headers, timeout=5)
-    except Exception as exc:  # pragma: no cover - network failure fallback
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url, headers=headers)
+    except Exception as exc:
         log.debug("Failed to fetch remote config for %s: %s", model_id, exc)
         return None
+
+    if response.status_code != 200:
+        log.debug(
+            "Remote config request returned %s for model %s",
+            response.status_code,
+            model_id,
+        )
+        return None
+
+    try:
+        cfg = response.json()
+    except ValueError as exc:
+        log.debug("Invalid JSON in remote config for %s: %s", model_id, exc)
+        return None
+
+    for key in (
+        "max_position_embeddings",
+        "n_positions",
+        "sequence_length",
+        "context_length",
+    ):
+        if key in cfg:
+            value = cfg[key]
+            try:
+                result = int(value)
+                if not token:
+                    _context_window_cache[cache_key] = result
+                return result
+            except (TypeError, ValueError):
+                log.debug(
+                    "Context length key %s in %s was non-integer: %s",
+                    key,
+                    model_id,
+                    value,
+                )
+                continue
+
+    log.debug("No context length key found in remote config for %s", model_id)
+    if not token:
+        _context_window_cache[cache_key] = None
+    return None
 
     if response.status_code != 200:
         log.debug(

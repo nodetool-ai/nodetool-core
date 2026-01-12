@@ -69,13 +69,22 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Span Auto-Started Events
+**Date Discovered**: 2026-01-12
+**Context**: The tracing Span automatically adds a "span_started" event when created
+**Solution**: Tests should check for expected event names rather than exact count
+**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
+**Prevention**: Document auto-generated events in span lifecycle
+
+---
+
 ### Test Status Timing Issues
 **Date Discovered**: 2026-01-12
 **Context**: Tests checking job status fail when workflow completes faster than the test can check the status. Empty workflows (0 nodes) complete in milliseconds, so status checks for "running" may find "completed" or "scheduled" instead.
-**Solution**: 
+**Solution**:
 1. Added wait loop with timeout to allow job to transition to running state
 2. Updated status assertions to accept multiple valid states: "running", "completed", "failed", and "scheduled"
-**Related Files**: 
+**Related Files**:
 - `tests/workflows/test_job_execution.py:115-127` - test_start_job
 - `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
 **Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
@@ -86,6 +95,51 @@ When adding a new issue, use this format:
 **Solution**: Tests are marked with `pytest.mark.xdist_group(name="job_execution")` to run in the same xdist group, but this doesn't fully isolate from other test files running in parallel. The issue is inherent to the singleton pattern and async cleanup.
 **Related Files**: `tests/workflows/test_job_execution.py`, `src/nodetool/workflows/job_execution_manager.py`
 **Prevention**: Re-run tests if they fail; the issue is flaky, not a code regression. Consider using process-level isolation for these tests in the future.
+### Span Auto-Started Events
+**Date Discovered**: 2026-01-12
+**Context**: The tracing Span automatically adds a "span_started" event when created
+**Solution**: Tests should check for expected event names rather than exact count
+**Related Files**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
+**Prevention**: Document auto-generated events in span lifecycle
+### AGENTS.md Outdated Commands
+**Date Discovered**: 2026-01-12
+**Context**: AGENTS.md documented outdated commands (`black .`, `mypy .`) that don't match the Makefile or CI workflows
+**Solution**: Updated AGENTS.md to use:
+- `uv sync --all-extras --dev` for installation
+- `make lint` / `uv run ruff check .` for linting
+- `make typecheck` / `uv run ty check src` for type checking
+- `make test` / `uv run pytest -n auto -q` for tests
+**Related Files**: `AGENTS.md`
+**Prevention**: Keep AGENTS.md in sync with Makefile and CI workflows
+### Insecure Deserialization in Model Cache
+**Date Discovered**: 2026-01-12
+**Context**: `ModelCache` class used `pickle.load()` to deserialize cached data from disk. Pickle is insecure by design and can execute arbitrary code during deserialization if the cache file is tampered with.
+**Solution**: Replaced `pickle.load()`/`pickle.dump()` with JSON serialization using a custom `CacheJSONEncoder` that handles bytes, datetime, and set types.
+**Related Files**:
+- `src/nodetool/ml/models/model_cache.py`
+**Prevention**: Never use pickle for untrusted data. Use JSON or other safe serialization formats.
+
+### Shell Injection Risk in Docker Commands
+**Date Discovered**: 2026-01-12
+**Context**: Docker build and push commands used string interpolation with user-controlled variables (`image_name`, `tag`, `platform`) without proper escaping when calling `subprocess.run()` with `shell=True`.
+**Solution**: Added `_shell_escape()` helper function using `shlex.quote()` to properly escape all variables interpolated into shell commands.
+**Related Files**:
+- `src/nodetool/deploy/docker.py`
+**Prevention**: Always use `shlex.quote()` when interpolating variables into shell commands with `shell=True`, or prefer list-based subprocess calls.
+### Blocking HTTP Calls in Async Code
+**Date Discovered**: 2026-01-12
+**Context**: Several files use synchronous `requests` library for HTTP calls in modules that otherwise use async patterns. This blocks the event loop during network I/O.
+**Solution**: Convert blocking `requests.get/post` calls to async `httpx` calls:
+- `src/nodetool/providers/huggingface_provider.py:95-157` - Converted `get_remote_context_window()` from sync `requests.get` to async `httpx.client.AsyncClient.get`
+**Related Files**: 
+- `src/nodetool/providers/huggingface_provider.py`
+- `src/nodetool/providers/comfy_api.py` (still uses requests, could benefit from similar fix)
+- `src/nodetool/packages/registry.py` (still uses requests)
+- `src/nodetool/deploy/runpod_api.py` (still uses requests)
+**Prevention**: 
+- Use `httpx` for all HTTP operations in async modules
+- Run `ruff check` to verify no blocking patterns
+- Consider wrapping sync I/O with `asyncio.to_thread()` if async conversion is not feasible
 
 ---
 
