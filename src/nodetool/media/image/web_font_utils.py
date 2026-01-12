@@ -167,8 +167,14 @@ def _get_cache_filename(font_name: str, weight: str, url: str = "") -> str:
     """
     if url:
         # For URL-based fonts, use a hash of the URL
+        from urllib.parse import urlsplit
+
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        return f"url_{url_hash}.ttf"
+        url_path = urlsplit(url).path
+        extension = Path(url_path).suffix.lower()
+        if extension not in {".ttf", ".otf"}:
+            extension = ".ttf"
+        return f"url_{url_hash}{extension}"
     else:
         # For Google Fonts, use font name and weight
         clean_name = re.sub(r"[^a-zA-Z0-9]", "", font_name.lower())
