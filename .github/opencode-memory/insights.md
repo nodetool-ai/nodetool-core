@@ -98,6 +98,14 @@ When adding a new insight, use this format:
 **Impact**: Design new nodes to support streaming when dealing with large datasets or long-running operations.
 **Examples**: `src/nodetool/workflows/`
 
+### OpenTelemetry Tracing Integration
+**Date**: 2026-01-12
+**Category**: Observability
+**Insight**: Created an experimental observability module with OpenTelemetry-compatible distributed tracing. Provides span-based tracing with attributes, events, and status tracking.
+**Impact**: Enables better debugging and performance analysis for workflow execution. No existing tracing infrastructure was present.
+**Examples**: `src/nodetool/observability/tracing.py`, `tests/observability/test_tracing.py`
+**Next Steps**: Full OTel integration would require adding opentelemetry-api and opentelemetry-exporter-otlp as optional dependencies
+
 ---
 
 ## Notes
