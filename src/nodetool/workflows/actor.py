@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.run_node_state import RunNodeState
+from nodetool.observability.tracing import get_or_create_tracer, trace_node
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
@@ -227,7 +228,26 @@ class NodeActor:
         5. Cache results when appropriate.
         6. Emit completion updates and route outputs downstream.
         """
+        # Get tracer for this job if available
+        job_id = self.runner.job_id if hasattr(self.runner, "job_id") else None
 
+        async with trace_node(
+            node_id=self.node._id,
+            node_type=self.node.get_node_type(),
+            job_id=job_id,
+        ) as span:
+            span.set_attribute("nodetool.node.title", self.node.get_title())
+            span.set_attribute("nodetool.node.input_count", len(inputs))
+            span.set_attribute("nodetool.node.requires_gpu", self.node.requires_gpu())
+
+            await self._process_node_with_inputs_impl(inputs, span)
+
+    async def _process_node_with_inputs_impl(
+        self,
+        inputs: dict[str, Any],
+        span,
+    ) -> None:
+        """Internal implementation of process_node_with_inputs."""
         context = self.context
         node = self.node
 
@@ -267,8 +287,10 @@ class NodeActor:
                 node.get_title(),
                 node._id,
             )
+            span.set_attribute("nodetool.node.cache_hit", True)
             result = cached_result
         else:
+            span.set_attribute("nodetool.node.cache_hit", False)
             requires_gpu = node.requires_gpu()
             driven_by_stream = context.graph.has_streaming_upstream(node._id)
 
@@ -289,7 +311,9 @@ class NodeActor:
                     release_gpu_lock,
                 )
 
+                span.add_event("gpu_lock_waiting")
                 await acquire_gpu_lock(node, context)
+                span.add_event("gpu_lock_acquired")
                 try:
                     if is_cuda_available():
                         ModelManager.free_vram_if_needed(
@@ -304,6 +328,7 @@ class NodeActor:
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 finally:
                     release_gpu_lock()
+                    span.add_event("gpu_lock_released")
             else:
                 await node.preload_model(context)
                 await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
@@ -318,6 +343,7 @@ class NodeActor:
                 )
                 context.cache_result(node, result)
 
+        span.set_attribute("nodetool.node.output_count", len(result) if result else 0)
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
         # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
