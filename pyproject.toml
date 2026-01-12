@@ -136,7 +136,7 @@ dev = [
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.6.0",   # Parallel test execution
     "mypy>=1.0.0",           # Type checking
-    "ruff==0.14.1",           # Linting and formatting
+    "ruff==0.14.11",           # Linting and formatting
     "ty>=0.0.7",             # Fast type checking
 ]
 
