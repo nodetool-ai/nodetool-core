@@ -18,12 +18,14 @@ jobs:
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
     permissions:
       id-token: write
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
 
       - name: Install system dependencies
         run: |
@@ -47,44 +49,49 @@ jobs:
         with:
           model: minimax/MiniMax-M2.1
           system_prompt: |
-            # Context for nodetool-core Repository
+            # NodeTool Core OpenCode Assistant
             
-            You are working on **nodetool-core**, a Python 3.11+ AI workflow engine with async-first architecture.
+            You are helping with **nodetool-core**, a Python 3.11+ async-first workflow engine.
             
-            ## Essential Reading
-            Before starting ANY task, read these files for critical context:
-            1. `.github/opencode-memory/repository-context.md` - Project structure, conventions, commands
-            2. `.github/opencode-memory/common-issues.md` - Known problems and solutions
-            3. `.github/opencode-memory/insights.md` - Architectural patterns and decisions
+            ## Avoid Duplicate Work
+            Before starting:
+            1. Run `git branch -a` to check for existing work
+            2. Review related branches before creating new ones
+            3. Continue existing branches when appropriate
+            
+            ## Memory System (Read First)
+            - `.github/opencode-memory/README.md` - Folder-based memory usage
+            - `.github/opencode-memory/repository-context.md` - Structure, conventions, commands
+            - `.github/opencode-memory/project-context.md` - Recent changes
+            - `.github/opencode-memory/features.md` - Feature inventory
+            - List `issues/` and `insights/` to find descriptive files
             
             ## Development Environment
             - Python 3.11+ with dependencies installed via `uv sync --all-extras --dev`
             - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
             - Running in GitHub CI environment (not conda)
             
-            ## Validation Commands (Must ALL Pass)
+            ## Mandatory Validation Commands
             ```bash
-            make lint      # Uses ruff for linting
-            make test      # Runs pytest
-            make typecheck # Runs basedpyright
+            make typecheck # basedpyright
+            make lint      # ruff check .
+            make test      # pytest -q
             ```
             
-            ## Code Standards
-            - **Style**: Black formatting, type hints required, prefer f-strings
-            - **Naming**: `snake_case` functions, `PascalCase` classes, `SCREAMING_SNAKE_CASE` constants
-            - **Async**: Prefer async/await, avoid blocking in async code
-            - **Commits**: Follow Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.)
+            ## Code Quality Standards
+            - Use type hints for new/changed code
+            - Keep async code non-blocking; prefer async/await
+            - Follow Black formatting and Ruff linting rules
+            - Prefer f-strings and explicit error handling
             
-            ## Key Principles
-            - Make **minimal, surgical changes** - only what's necessary
-            - Keep PRs focused and coherent - one logical change per PR
-            - Test your changes - don't break existing functionality
-            - Document non-trivial solutions in the memory system
-            - Follow existing patterns and architecture (DI, async, factories)
+            ## Change Discipline
+            - Make minimal, focused changes
+            - Follow existing patterns (DI, factories, async workflows)
+            - Avoid refactoring unrelated code
+            - Keep PRs to one logical change
             
-            ## Memory System
-            After solving issues:
-            - Update `.github/opencode-memory/common-issues.md` with solutions
-            - Record patterns in `.github/opencode-memory/insights.md`
+            ## Update Memory Afterward
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`
             
-            Now proceed with the user's requested task while following all guidelines above.
+            Now proceed with the user's requested task while following all guidance above.

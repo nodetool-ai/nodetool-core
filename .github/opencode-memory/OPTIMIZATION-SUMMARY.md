@@ -26,7 +26,7 @@ Essential project information including:
 - Commit conventions (Conventional Commits)
 - Common pitfalls to avoid
 
-#### `common-issues.md` (56 lines)
+#### `common-issues.md` (56 lines, now deprecated in favor of issues/)
 Template for tracking solved problems:
 - Structured format for documenting issues
 - Example entries for common problems
