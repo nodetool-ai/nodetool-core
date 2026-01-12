@@ -76,9 +76,7 @@ class Channel(Generic[T]):
         await channel_dict.publish({"level": "info", "message": "Hello"})
     """
 
-    def __init__(
-        self, name: str, buffer_limit: int = 100, message_type: type[T] | None = None
-    ):
+    def __init__(self, name: str, buffer_limit: int = 100, message_type: type[T] | None = None):
         self.name = name
         self._buffer_limit = buffer_limit
         self._subscribers: dict[str, asyncio.Queue[T | object]] = {}
@@ -171,9 +169,7 @@ class Channel(Generic[T]):
                     await q.put(_STOP_SIGNAL)
                 except asyncio.QueueFull:
                     # Queue is full; subscriber will see closed flag on next iteration
-                    log.debug(
-                        f"Queue full when closing channel {self.name}, subscriber will exit on next poll"
-                    )
+                    log.debug(f"Queue full when closing channel {self.name}, subscriber will exit on next poll")
                 except RuntimeError as e:
                     # Queue might be closed or event loop issues
                     log.debug(f"RuntimeError closing channel {self.name}: {e}")
@@ -290,9 +286,7 @@ class ChannelManager:
                 old_channel = self._channels[name]
                 await old_channel.close()
 
-            channel: Channel[Any] = Channel(
-                name, buffer_limit=buffer_limit, message_type=message_type
-            )
+            channel: Channel[Any] = Channel(name, buffer_limit=buffer_limit, message_type=message_type)
             self._channels[name] = channel
             if message_type is not None:
                 self._channel_types[name] = message_type
@@ -328,23 +322,16 @@ class ChannelManager:
         """
         async with self._lock:
             if name not in self._channels:
-                channel: Channel[Any] = Channel(
-                    name, buffer_limit=buffer_limit, message_type=message_type
-                )
+                channel: Channel[Any] = Channel(name, buffer_limit=buffer_limit, message_type=message_type)
                 self._channels[name] = channel
                 if message_type is not None:
                     self._channel_types[name] = message_type
             else:
                 # Validate type consistency if both existing and requested have types
                 existing_type = self._channel_types.get(name)
-                if (
-                    message_type is not None
-                    and existing_type is not None
-                    and message_type != existing_type
-                ):
+                if message_type is not None and existing_type is not None and message_type != existing_type:
                     raise TypeError(
-                        f"Channel '{name}' has type {existing_type.__name__}, "
-                        f"but {message_type.__name__} was requested"
+                        f"Channel '{name}' has type {existing_type.__name__}, but {message_type.__name__} was requested"
                     )
             return self._channels[name]
 
@@ -373,9 +360,7 @@ class ChannelManager:
         channel = await self.get_or_create_channel(name, buffer_limit=buffer_limit)
         await channel.publish(item)
 
-    async def publish_typed(
-        self, name: str, item: T, *, message_type: type[T], buffer_limit: int = 100
-    ) -> None:
+    async def publish_typed(self, name: str, item: T, *, message_type: type[T], buffer_limit: int = 100) -> None:
         """Publish a typed item to a channel, creating it if necessary.
 
         This method ensures type consistency: if the channel doesn't exist,
@@ -391,14 +376,10 @@ class ChannelManager:
         Raises:
             TypeError: If the channel exists with a different type or item doesn't match type.
         """
-        channel = await self.get_or_create_channel(
-            name, buffer_limit=buffer_limit, message_type=message_type
-        )
+        channel = await self.get_or_create_channel(name, buffer_limit=buffer_limit, message_type=message_type)
         await channel.publish(item)
 
-    async def subscribe(
-        self, name: str, subscriber_id: str, buffer_limit: int = 100
-    ) -> AsyncIterator[Any]:
+    async def subscribe(self, name: str, subscriber_id: str, buffer_limit: int = 100) -> AsyncIterator[Any]:
         """Subscribe to a channel, creating it if necessary.
 
         This is the untyped subscribe method for backwards compatibility.
@@ -442,9 +423,7 @@ class ChannelManager:
         Raises:
             TypeError: If the channel exists with a different type.
         """
-        channel = await self.get_or_create_channel(
-            name, buffer_limit=buffer_limit, message_type=message_type
-        )
+        channel = await self.get_or_create_channel(name, buffer_limit=buffer_limit, message_type=message_type)
         async for item in channel.subscribe(subscriber_id):
             yield item
 
@@ -472,9 +451,7 @@ class ChannelManager:
                 try:
                     await channel.close()
                 except Exception as e:
-                    log.debug(
-                        f"Error closing channel {channel.name}: {type(e).__name__}: {e}"
-                    )
+                    log.debug(f"Error closing channel {channel.name}: {type(e).__name__}: {e}")
             self._channels.clear()
             self._channel_types.clear()
 
