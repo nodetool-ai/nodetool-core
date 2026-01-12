@@ -80,6 +80,7 @@ from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
+from nodetool.workflows.channel import ChannelManager
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
@@ -298,6 +299,8 @@ class ProcessingContext:
         # Store current status for each node and edge for reconnection
         self.node_statuses: dict[str, ProcessingMessage] = {}
         self.edge_statuses: dict[str, ProcessingMessage] = {}
+        # Streaming channels for named, many-to-many communication
+        self.channels = ChannelManager()
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
@@ -2963,8 +2966,12 @@ class ProcessingContext:
 
     async def cleanup(self):
         """
-        Cleanup the browser context and pages.
+        Cleanup the browser context, streaming channels, and memory.
         """
+        # Close all streaming channels
+        if hasattr(self, "channels"):
+            await self.channels.close_all()
+
         if getattr(self, "_browser", None):
             await self._browser.close()  # type: ignore
             self._browser = None
