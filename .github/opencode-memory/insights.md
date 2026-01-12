@@ -119,6 +119,18 @@ When adding a new insight, use this format:
 **Impact**: Design new nodes to support streaming when dealing with large datasets or long-running operations.
 **Examples**: `src/nodetool/workflows/`
 
+### Async HTTP with httpx
+**Date**: 2026-01-12
+**Category**: Performance
+**Insight**: The codebase uses `httpx` for async HTTP operations. Synchronous `requests` library blocks the asyncio event loop, causing performance degradation in hot paths.
+**Impact**: 
+- Convert blocking `requests.get/post` to async `httpx` calls when in async modules
+- Wrap sync I/O with `asyncio.to_thread()` when async conversion is not feasible
+- `httpx` is already imported in many provider files, making conversion straightforward
+**Examples**: 
+- `src/nodetool/providers/huggingface_provider.py` - converted `get_remote_context_window()`
+- `src/nodetool/providers/comfy_local_provider.py` - uses `asyncio.to_thread()` pattern
+
 ---
 
 ## Notes

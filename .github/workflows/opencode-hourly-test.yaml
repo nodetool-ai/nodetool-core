@@ -3,6 +3,7 @@ name: Hourly OpenCode Test
 on:
   schedule:
     - cron: "0 */6 * * *" # Every 6 hours
+  workflow_dispatch:
 
 jobs:
   opencode:
@@ -48,10 +49,11 @@ jobs:
             2. Continue related branches instead of duplicating work
             
             ## Step 1: Read Memory (Required)
-            - `.github/opencode-memory/repository-context.md`
-            - `.github/opencode-memory/common-issues.md`
-            - `.github/opencode-memory/insights.md`
             - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/project-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
             
             ## Step 2: Run Validation Commands
             ```bash
@@ -71,8 +73,8 @@ jobs:
             Re-run all three commands and ensure they pass.
             
             ## Step 5: Update Memory
-            - Document solved issues in `.github/opencode-memory/common-issues.md`
-            - Capture new patterns in `.github/opencode-memory/insights.md`
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`
             
             ## Success Criteria
             - `make typecheck`, `make lint`, and `make test` all pass
