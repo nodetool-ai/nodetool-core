@@ -42,6 +42,13 @@ class TestCacheFilename:
         assert filename.endswith(".ttf")
         assert len(filename) == 16  # "url_" + 8 chars + ".ttf"
 
+    def test_url_font_cache_filename_preserves_otf_extension(self):
+        """Test cache filename preserves OTF extension."""
+        filename = _get_cache_filename("", "", "https://example.com/font.otf")
+        assert filename.startswith("url_")
+        assert filename.endswith(".otf")
+        assert len(filename) == 16  # "url_" + 8 chars + ".otf"
+
 
 class TestFontCacheDir:
     """Tests for font cache directory."""

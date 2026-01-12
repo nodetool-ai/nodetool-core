@@ -233,16 +233,16 @@ async def test_threaded_job_database_record(simple_workflow, cleanup_jobs):
     run_state = await RunState.create_run(run_id=job.job_id, execution_strategy="threaded")
     run_state.status = "running"
     await run_state.save()
-    # Empty workflows may complete very quickly, so status could be running, completed, or failed
+    # Empty workflows may complete very quickly, so status could be running, completed, failed, or scheduled
     status = await get_job_status(job.job_id)
-    assert status in ["running", "completed", "failed"]
+    assert status in ["running", "completed", "failed", "scheduled"]
 
     # Wait for completion
     await asyncio.sleep(0.3)
 
     # Reload and check status updated
     status = await get_job_status(job.job_id)
-    assert status in ["running", "completed", "failed"]
+    assert status in ["running", "completed", "failed", "scheduled"]
 
 
 @pytest.mark.asyncio

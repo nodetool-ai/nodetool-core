@@ -53,9 +53,9 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     if type2.type == "union":
         return any(typecheck(type1, t2) for t2 in type2.type_args)
 
-    # Handle union types in type1 - check if type2 accepts all members of the union
+    # Handle union types in type1 - accept if any member matches
     if type1.type == "union":
-        return all(typecheck(t1, type2) for t1 in type1.type_args)
+        return any(typecheck(t1, type2) for t1 in type1.type_args)
 
     # Special case: T -> list[T] (single value can be wrapped into a list)
     # This allows edges where source outputs T but target expects list[T]

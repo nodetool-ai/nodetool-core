@@ -10,7 +10,7 @@ aggregate steps consume.
 import asyncio
 import hashlib
 import json
-from typing import Any, AsyncGenerator, List, Sequence, Union
+from typing import Any, AsyncGenerator, List, Sequence
 
 from nodetool.agents.step_executor import (
     StepExecutor,
@@ -24,7 +24,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Step, Task, ToolCall
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, StepResult, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, StepResult
 
 log = get_logger(__name__)
 

@@ -348,6 +348,20 @@ def _wrap_command_with_sandbox(
         return cmd, None
 
 
+def _build_subprocess_command() -> tuple[list[str], dict[str, str] | None]:
+    nodetool_path = shutil.which("nodetool")
+    if nodetool_path:
+        return [nodetool_path, "run", "--stdin", "--jsonl"], None
+
+    env = os.environ.copy()
+    src_path = Path(__file__).resolve().parents[3] / "src"
+    if src_path.exists():
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(src_path)
+
+    return [sys.executable, "-m", "nodetool.cli", "run", "--stdin", "--jsonl"], env
+
+
 def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
     """
     Get CPU limit percentage from RunJobRequest or environment.
@@ -732,7 +746,7 @@ class SubprocessJobExecution(JobExecution):
 
         # Spawn subprocess using 'nodetool run --stdin --jsonl' CLI command
         # This will read the request JSON from stdin and output JSONL
-        cmd = ["nodetool", "run", "--stdin", "--jsonl"]
+        cmd, subprocess_env = _build_subprocess_command()
 
         # Apply CPU limit using cpulimit if available
         cmd, resource_info = _wrap_command_with_cpu_limit(cmd, request.resource_limits)
@@ -752,6 +766,7 @@ class SubprocessJobExecution(JobExecution):
             stdout=aio_subprocess.PIPE,
             stderr=aio_subprocess.PIPE,
             stdin=aio_subprocess.PIPE,
+            env=subprocess_env,
         )
 
         # Write request JSON to stdin and close it

@@ -156,7 +156,13 @@ class WorkflowRecoveryService:
 
     async def find_stuck_runs(self, max_age_minutes: int = 10) -> list[str]:
         """Find runs that are stuck (running with expired lease)."""
-        runs = await RunState.find({"status": "running"}, limit=1000)
+        from nodetool.models.condition_builder import ConditionBuilder, Field
+
+        condition = Field("status").equals("running")
+        adapter = await RunState.adapter()
+        runs_data, _ = await adapter.query(condition=condition, limit=1000)
+
+        runs = [RunState.from_dict(row) for row in runs_data]
 
         stuck_runs = []
         for run_state in runs:

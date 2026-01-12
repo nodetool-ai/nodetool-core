@@ -1,0 +1,73 @@
+name: Hourly OpenCode Features
+
+on:
+  schedule:
+    - cron: "45 */6 * * *" # Every 6 hours
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        with:
+          model: minimax/MiniMax-M2.1
+          prompt: |
+            # NodeTool Core Feature Development (Scheduled)
+
+            You are an autonomous agent adding ONE focused feature to **nodetool-core**.
+
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/project-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+
+            ## Step 2: Feature Guidelines
+            - Choose a small, high-impact feature
+            - Stay within core Python architecture
+            - Follow async-first patterns and DI conventions
+            - Avoid unrelated refactors
+
+            ## Step 3: Quality Bar
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+
+            ## Step 4: Update Memory
+            - Add feature line in `.github/opencode-memory/features.md`
+            - Add insight files under `insights/<topic>/`
+            - Add issue files under `issues/<topic>/` if needed
