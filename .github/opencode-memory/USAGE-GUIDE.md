@@ -11,10 +11,10 @@ This guide explains how AI agents working on nodetool-core should use the OpenCo
    - Explains structure, conventions, and commands
    - Provides environment setup details
 
-2. **Check common-issues.md** (If encountering issues)
-   - See if your problem has been solved before
-   - Avoid redundant debugging
-   - Learn from past solutions
+2. **Check issues/ folder** (If encountering issues)
+    - See if your problem has been solved before
+    - Avoid redundant debugging
+    - Learn from past solutions
 
 3. **Review insights.md** (For architectural work)
    - Understand key design patterns
@@ -30,7 +30,7 @@ This guide explains how AI agents working on nodetool-core should use the OpenCo
 - Adding new core dependencies or system requirements
 - Documenting new architectural components
 
-### Update common-issues.md When:
+### Add files to issues/ When:
 - You solve a non-trivial problem that took >10 minutes
 - You encounter a confusing error with a clear solution
 - You fix an issue that's likely to recur
@@ -110,13 +110,13 @@ This is a workaround, not a proper solution.
 
 ### opencode-hourly-test.yaml
 - Reads memory before running tests
-- Updates common-issues.md if fixing recurring problems
-- Records test-specific patterns in insights.md
+- Adds files to issues/ if fixing recurring problems
+- Records test-specific patterns in insights/
 
 ### opencode-hourly-improve.yaml
 - Consults memory before scanning for issues
-- Documents discovered patterns in insights.md
-- Adds solutions to common-issues.md
+- Documents discovered patterns in insights/
+- Adds files to issues/
 
 ### opencode.yml (Comment-triggered)
 - System prompt directs agent to memory files
