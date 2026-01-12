@@ -54,10 +54,11 @@ jobs:
             2. Continue related branches instead of duplicating work
 
             ## Step 1: Read Memory (Required)
-            - `.github/opencode-memory/repository-context.md`
-            - `.github/opencode-memory/common-issues.md`
-            - `.github/opencode-memory/insights.md`
             - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/project-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
 
             ## Step 2: Analyze Coverage
             Coverage data is in `coverage.json` (if generated).
@@ -81,5 +82,5 @@ jobs:
             ```
 
             ## Step 5: Update Memory
-            - Document testing insights in `.github/opencode-memory/insights.md`
-            - Note tricky fixes in `.github/opencode-memory/common-issues.md`
+            - Add insight files under `insights/testing/`
+            - Add issue files under `issues/testing/`
