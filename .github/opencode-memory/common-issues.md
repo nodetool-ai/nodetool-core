@@ -80,6 +80,54 @@ When adding a new issue, use this format:
 - `tests/workflows/test_threaded_job_execution.py:236-245` - test_threaded_job_database_record
 **Prevention**: For quick-completing workflows, check status with a timeout or accept multiple valid terminal states in assertions
 
+### Non-Existent Model Methods in trigger_wakeup_service.py
+**Date Discovered**: 2026-01-12
+**Context**: `trigger_wakeup_service.py` called `TriggerInput.find_one()`, `TriggerInput.find()`, and `RunState.find()` which don't exist on the DBModel classes.
+**Solution**: 
+- Replaced `TriggerInput.find_one({"input_id": input_id})` with `TriggerInput.get_by_input_id(input_id)`
+- Replaced `TriggerInput.find()` and `RunState.find()` with proper queries using `ConditionBuilder`:
+  ```python
+  from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+  
+  condition = ConditionBuilder(
+      ConditionGroup(
+          [Field("field").equals(value), ...],
+          LogicalOperator.AND,
+      )
+  )
+  adapter = await Model.adapter()
+  results, _ = await adapter.query(condition=condition, limit=100)
+  ```
+- Added `from_dict` classmethod to `RunState` model for proper deserialization
+**Related Files**: 
+- `src/nodetool/workflows/trigger_wakeup_service.py`
+- `src/nodetool/models/run_state.py`
+**Prevention**: Check DBModel base class and existing model implementations for available methods before using non-standard ones
+
+### Payload JSON Type Mismatch
+**Date Discovered**: 2026-01-12
+**Context**: `payload_json` field in `TriggerInput` is typed as `dict[str, Any]` but `json.dumps(payload)` was being called, producing a string.
+**Solution**: Pass the payload dict directly without JSON serialization:
+```python
+# Wrong: payload_json=json.dumps(payload)
+# Correct: payload_json=payload
+```
+**Related Files**: `src/nodetool/workflows/trigger_wakeup_service.py:100`
+**Prevention**: Verify field types in model definitions before assigning values
+
+### Future.task Dynamic Attribute Type Error
+**Date Discovered**: 2026-01-12
+**Context**: `threaded_event_loop.py` set `result_future.task = task` on a `Future` object, which doesn't have this attribute in its type definition.
+**Solution**: Use `setattr` with `# noqa: B010` to suppress the lint warning:
+```python
+loop = self._loop
+assert loop is not None, "Event loop should be running"
+task = loop.create_task(coro)
+setattr(result_future, "task", task)  # noqa: B010
+```
+**Related Files**: `src/nodetool/workflows/threaded_event_loop.py:285`
+**Prevention**: For intentional dynamic attributes on standard library classes, use `setattr` with type ignore comments
+
 ---
 
 ## Historical Patterns

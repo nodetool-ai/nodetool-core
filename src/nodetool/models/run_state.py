@@ -235,3 +235,28 @@ class RunState(DBModel):
     def is_complete(self) -> bool:
         """Check if run has reached terminal state."""
         return self.status in ["completed", "failed", "cancelled"]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RunState":
+        """Create RunState from dictionary."""
+        return cls(
+            run_id=data["run_id"],
+            status=data["status"],
+            created_at=data.get("created_at", datetime.now()),
+            updated_at=data.get("updated_at", datetime.now()),
+            suspended_node_id=data.get("suspended_node_id"),
+            suspension_reason=data.get("suspension_reason"),
+            suspension_state_json=data.get("suspension_state_json", {}),
+            suspension_metadata_json=data.get("suspension_metadata_json", {}),
+            completed_at=data.get("completed_at"),
+            failed_at=data.get("failed_at"),
+            error_message=data.get("error_message"),
+            execution_strategy=data.get("execution_strategy"),
+            execution_id=data.get("execution_id"),
+            worker_id=data.get("worker_id"),
+            heartbeat_at=data.get("heartbeat_at"),
+            retry_count=data.get("retry_count", 0),
+            max_retries=data.get("max_retries", 3),
+            metadata_json=data.get("metadata_json", {}),
+            version=data.get("version", 0),
+        )

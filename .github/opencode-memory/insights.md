@@ -33,6 +33,23 @@ When adding a new insight, use this format:
 **Impact**: When adding new components, follow DI pattern. Makes testing easier and code more modular.
 **Examples**: Throughout `src/nodetool/agents/`, `src/nodetool/workflows/`
 
+### DBModel Query Pattern
+**Date**: 2026-01-12
+**Category**: Architecture
+**Insight**: DBModel classes don't have `find()` or `find_one()` methods. Instead, use the adapter's `query()` method with `ConditionBuilder` for complex queries, or specific methods like `get_by_input_id()` for simple lookups.
+**Impact**: When querying models, use the appropriate pattern:
+- Simple lookups: Use model-specific methods (e.g., `Model.get(key)`, `Model.get_by_field(value)`)
+- Complex queries: Use `ConditionBuilder` with the adapter:
+  ```python
+  from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+  
+  condition = ConditionBuilder(ConditionGroup([Field("field").equals(value)], LogicalOperator.AND))
+  adapter = await Model.adapter()
+  results, _ = await adapter.query(condition=condition, limit=100)
+  ```
+- For deserialization: Use `Model.from_dict(row)` if available, or `Model(**row)` for Pydantic models
+**Examples**: `src/nodetool/models/trigger_input.py`, `src/nodetool/models/run_state.py`
+
 ---
 
 ## Testing Insights
