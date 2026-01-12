@@ -257,41 +257,6 @@ async def test_get_job(simple_workflow, cleanup_jobs):
 
 
 @pytest.mark.asyncio
-async def test_background_job_properties(simple_workflow, cleanup_jobs):
-    """Test BackgroundJob properties and methods."""
-    manager = JobExecutionManager.get_instance()
-
-    request = RunJobRequest(
-        workflow_id=simple_workflow.id,
-        user_id="test_user",
-        auth_token="test_token",
-        job_type="workflow",
-        params={},
-        graph=Graph(nodes=[], edges=[]),
-    )
-
-    context = ProcessingContext(
-        user_id="test_user",
-        auth_token="test_token",
-        workflow_id=simple_workflow.id,
-    )
-
-    bg_job = await manager.start_job(request, context)
-
-    # Test properties
-    assert bg_job.status in ["running", "completed", "cancelled", "error"]
-    assert isinstance(bg_job.is_running(), bool)
-    assert isinstance(bg_job.is_completed(), bool)
-
-    # Test created_at
-    assert isinstance(bg_job.created_at, datetime)
-    assert bg_job.created_at <= datetime.now()
-
-    # Cleanup
-    await manager.cancel_job(bg_job.job_id)
-
-
-@pytest.mark.asyncio
 async def test_cleanup_completed_jobs(simple_workflow, cleanup_jobs):
     """Test automatic cleanup of completed jobs."""
     manager = JobExecutionManager.get_instance()

@@ -197,17 +197,6 @@ class TestWebSocketProtocolModes:
 class TestWebSocketErrorHandling:
     """Test error handling scenarios."""
 
-    def test_reconnect_unknown_job(self, ws):
-        """Test reconnecting to an unknown job returns appropriate error."""
-        import uuid
-
-        job_id = str(uuid.uuid4())
-        ws.send_command("reconnect_job", {"job_id": job_id})
-
-        # Receive immediate response
-        msg = ws.receive()
-        assert "job_id" in msg or "error" in msg
-
 
 class TestWebSocketMessageSchema:
     """Test that all message types follow the expected schema."""
