@@ -2571,6 +2571,12 @@ def deploy_add(name: str, deployment_type: str):
             ssh_user = click.prompt("SSH username", type=str)
             ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
 
+            # Image configuration
+            console.print()
+            console.print("[cyan]Image configuration:[/]")
+            image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
+            image_tag = click.prompt("  Docker image tag", type=str, default="latest")
+
             # Container configuration
             console.print()
             console.print("[cyan]Container configuration:[/]")
@@ -2601,6 +2607,7 @@ def deploy_add(name: str, deployment_type: str):
             deployment = SelfHostedDeployment(
                 host=host,
                 ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                image=ImageConfig(name=image_name, tag=image_tag),
                 container=container,
             )
 

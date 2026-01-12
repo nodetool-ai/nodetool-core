@@ -13,7 +13,6 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 from typing import Optional
 
 from nodetool.config.env_guard import RUNNING_PYTEST
