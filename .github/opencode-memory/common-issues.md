@@ -69,6 +69,15 @@ When adding a new issue, use this format:
 **Related Files**: `tests/workflows/test_job_execution.py`, `tests/workflows/test_job_execution_manager.py`
 **Prevention**: Use unique test databases/resources for each test
 
+### Async File I/O in Async Functions
+**Date Discovered**: 2026-01-12
+**Context**: Async functions using blocking `open()` calls trigger ASYNC230 lint errors and can block the event loop
+**Solution**: 
+- For subprocess file handles that require synchronous IO: Use `loop.run_in_executor()` with a sync helper function
+- For regular file reads: Use `aiofiles` library for async file operations
+**Related Files**: `src/nodetool/agents/agent_evaluator.py`
+**Prevention**: Use `aiofiles` for async file operations; use `asyncio.to_thread()` or `run_in_executor()` for blocking file I/O that must remain sync
+
 ---
 
 ## Historical Patterns
