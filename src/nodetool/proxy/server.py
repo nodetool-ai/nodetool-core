@@ -8,6 +8,7 @@ and Let's Encrypt ACME support.
 import asyncio
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -22,6 +23,8 @@ from nodetool.proxy.docker_manager import DockerManager
 from nodetool.proxy.filters import filter_request_headers, filter_response_headers
 
 log = logging.getLogger(__name__)
+
+ACME_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class AsyncReverseProxy:
@@ -255,10 +258,20 @@ class AsyncReverseProxy:
         Returns:
             PlainTextResponse with challenge file content or 404.
         """
-        acme_root = Path(self.config.global_.acme_webroot)
+        if not ACME_TOKEN_RE.match(token):
+            log.warning(f"Invalid ACME token format: {token}")
+            return PlainTextResponse("Invalid token", status_code=400)
+
+        acme_root = Path(self.config.global_.acme_webroot).resolve()
         challenge_path = acme_root / token
 
-        if not challenge_path.is_file():
+        try:
+            challenge_path = challenge_path.resolve()
+        except (OSError, ValueError):
+            log.warning(f"Invalid path for ACME token: {token}")
+            return PlainTextResponse("Invalid token", status_code=400)
+
+        if not challenge_path.is_file() or not challenge_path.is_relative_to(acme_root):
             return PlainTextResponse("Not found", status_code=404)
 
         try:
@@ -363,8 +376,13 @@ def create_acme_only_app(config: ProxyConfig) -> FastAPI:
 
     @app.get("/.well-known/acme-challenge/{token}", include_in_schema=False)
     async def acme_only(token: str):
-        challenge_path = acme_root / token
-        if not challenge_path.is_file():
+        if not ACME_TOKEN_RE.match(token):
+            return PlainTextResponse("Invalid token", status_code=400)
+
+        acme_root = Path(config.global_.acme_webroot).resolve()
+        challenge_path = (acme_root / token).resolve()
+
+        if not challenge_path.is_file() or not challenge_path.is_relative_to(acme_root):
             return PlainTextResponse("Not found", status_code=404)
 
         async def stream_file():
