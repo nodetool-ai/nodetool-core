@@ -3,7 +3,6 @@ import os
 from fastapi.testclient import TestClient
 
 
-
 def test_list_files_excludes_hidden(tmp_path, client: TestClient, headers: dict[str, str]):
     directory = tmp_path / "files"
     directory.mkdir()

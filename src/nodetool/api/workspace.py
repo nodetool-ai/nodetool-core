@@ -166,6 +166,19 @@ async def create_workspace(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get("/default", response_model=Optional[WorkspaceResponse])
+async def get_default_workspace(
+    user: str = Depends(current_user),
+) -> Optional[WorkspaceResponse]:
+    """
+    Get the default workspace for the current user.
+    """
+    workspace = await WorkspaceModel.get_default(user)
+    if workspace:
+        return workspace_to_response(workspace)
+    return None
+
+
 @router.get("/{workspace_id}", response_model=WorkspaceResponse)
 async def get_workspace(
     workspace_id: str,
@@ -258,19 +271,6 @@ async def delete_workspace(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/default", response_model=Optional[WorkspaceResponse])
-async def get_default_workspace(
-    user: str = Depends(current_user),
-) -> Optional[WorkspaceResponse]:
-    """
-    Get the default workspace for the current user.
-    """
-    workspace = await WorkspaceModel.get_default(user)
-    if workspace:
-        return workspace_to_response(workspace)
-    return None
-
-
 # --- File listing functionality ---
 
 
@@ -307,9 +307,7 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
     """
     normalized_root = os.path.normcase(os.path.abspath(root))
     normalized_path = os.path.normcase(os.path.abspath(path))
-    root_prefix = (
-        normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
-    )
+    root_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
     if normalized_path != normalized_root and not normalized_path.startswith(root_prefix):
         raise HTTPException(status_code=403, detail=error_message)
     return normalized_path

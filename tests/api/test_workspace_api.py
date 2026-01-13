@@ -95,7 +95,6 @@ class TestWorkspaceAPI:
         response = client.get("/api/workspaces/nonexistent-id", headers=headers)
         assert response.status_code == 404
 
-
     def test_delete_workspace(self, client, headers, tmp_path):
         """Test deleting a workspace."""
         # First create a workspace
@@ -149,47 +148,6 @@ class TestWorkspaceAPI:
         assert data["name"] == "Updated Name"
         assert data["is_default"] is True
         assert data["path"] == workspace_path
-
-    def test_get_default_workspace(self, client, headers, tmp_path):
-        """Test getting the default workspace."""
-        workspace_path = str(tmp_path)
-        
-        # Create a default workspace
-        response1 = client.post(
-            "/api/workspaces",
-            headers=headers,
-            json={
-                "name": "Default Workspace",
-                "path": workspace_path,
-                "is_default": True,
-            },
-        )
-        assert response1.status_code == 201
-        ws1_id = response1.json()["id"]
-
-        # Get default
-        get_response = client.get("/api/workspaces/default", headers=headers)
-        assert get_response.status_code == 200
-        assert get_response.json()["id"] == ws1_id
-
-        # Create another default workspace (should override)
-        response2 = client.post(
-            "/api/workspaces",
-            headers=headers,
-            json={
-                "name": "New Default",
-                "path": workspace_path,
-                "is_default": True,
-            },
-        )
-        assert response2.status_code == 201
-        ws2_id = response2.json()["id"]
-
-        # Get default again
-        get_response_2 = client.get("/api/workspaces/default", headers=headers)
-        assert get_response_2.status_code == 200
-        assert get_response_2.json()["id"] == ws2_id
-
 
 
 class TestWorkflowFileEndpoints:

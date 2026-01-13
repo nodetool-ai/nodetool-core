@@ -32,7 +32,6 @@ dependencies = [
     "psycopg[binary]>=3.2.9",
     "psycopg-pool>=3.2.6",
     "docker==7.1.0",
-    "traceloop=0.50.1",
 
     # Utils dependencies
     "watchdog>=4.0.0",
