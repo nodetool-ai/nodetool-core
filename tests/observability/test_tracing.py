@@ -10,10 +10,12 @@ from nodetool.observability.tracing import (
     TracingConfig,
     WorkflowTracer,
     configure_tracing,
+    get_or_create_tracer,
     get_tracer,
     init_tracing,
     is_tracing_enabled,
     record_cost,
+    remove_tracer,
     trace_agent_task,
     trace_api_call,
     trace_node,
@@ -273,9 +275,7 @@ class TestToolExecutionTracing:
     async def test_trace_tool_execution(self):
         """Test trace_tool_execution context manager."""
         configure_tracing(TracingConfig(enabled=True))
-        async with trace_tool_execution(
-            "browser", step_id="step-1", params={"url": "http://example.com"}
-        ) as span:
+        async with trace_tool_execution("browser", step_id="step-1", params={"url": "http://example.com"}) as span:
             assert span.context.attributes["nodetool.tool.name"] == "browser"
             assert span.context.attributes["nodetool.tool.step_id"] == "step-1"
             assert span.context.attributes["nodetool.tool.param_keys"] == ["url"]
@@ -297,9 +297,7 @@ class TestTaskPlanningTracing:
     async def test_trace_task_planning(self):
         """Test trace_task_planning context manager."""
         configure_tracing(TracingConfig(enabled=True))
-        async with trace_task_planning(
-            "Generate a summary of documents", model="gpt-4o"
-        ) as span:
+        async with trace_task_planning("Generate a summary of documents", model="gpt-4o") as span:
             assert span.context.attributes["nodetool.planning.objective"] == "Generate a summary of documents"
             assert span.context.attributes["nodetool.planning.model"] == "gpt-4o"
             assert span.context.kind == SpanKind.INTERNAL
@@ -320,9 +318,7 @@ class TestTaskExecutionTracing:
     async def test_trace_task_execution(self):
         """Test trace_task_execution context manager."""
         configure_tracing(TracingConfig(enabled=True))
-        async with trace_task_execution(
-            "task-123", "Process files", step_count=5
-        ) as span:
+        async with trace_task_execution("task-123", "Process files", step_count=5) as span:
             assert span.context.attributes["nodetool.task.id"] == "task-123"
             assert span.context.attributes["nodetool.task.title"] == "Process files"
             assert span.context.attributes["nodetool.task.step_count"] == 5
@@ -336,9 +332,7 @@ class TestStepExecutionTracing:
     async def test_trace_step_execution(self):
         """Test trace_step_execution context manager."""
         configure_tracing(TracingConfig(enabled=True))
-        async with trace_step_execution(
-            "step-1", "Search for documents", task_id="task-123"
-        ) as span:
+        async with trace_step_execution("step-1", "Search for documents", task_id="task-123") as span:
             assert span.context.attributes["nodetool.step.id"] == "step-1"
             assert span.context.attributes["nodetool.step.instructions"] == "Search for documents"
             assert span.context.attributes["nodetool.step.task_id"] == "task-123"
@@ -398,3 +392,38 @@ class TestTracingConfig:
         assert config.exporter == "otlp"
         assert config.endpoint == "http://localhost:4317"
         assert config.sample_rate == 0.5
+
+
+class TestConsoleExporter:
+    """Tests for the console exporter functionality."""
+
+    def test_remove_tracer_exports_to_console(self, capsys):
+        """Test that remove_tracer prints traces to console when exporter is 'console'."""
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+
+        tracer = get_or_create_tracer("test-job-123")
+        with tracer.start_span_sync("test-span") as span:
+            span.set_attribute("test.key", "test.value")
+
+        removed_tracer = remove_tracer("test-job-123")
+
+        assert removed_tracer is not None
+        captured = capsys.readouterr()
+        assert "TRACES (console exporter)" in captured.out
+        assert "test-job-123" in captured.out
+        assert "test-span" in captured.out
+        assert "test.value" in captured.out
+
+    def test_remove_tracer_no_console_when_other_exporter(self, capsys):
+        """Test that remove_tracer doesn't print to console when exporter is not 'console'."""
+        configure_tracing(TracingConfig(enabled=True, exporter="otlp"))
+
+        tracer = get_or_create_tracer("test-job-456")
+        with tracer.start_span_sync("test-span") as span:
+            span.set_attribute("test.key", "test.value")
+
+        removed_tracer = remove_tracer("test-job-456")
+
+        assert removed_tracer is not None
+        captured = capsys.readouterr()
+        assert "TRACES" not in captured.out

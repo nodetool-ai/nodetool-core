@@ -606,16 +606,6 @@ _tracing_initialized = False
 _global_tracer: Optional["WorkflowTracer"] = None
 
 
-@dataclass
-class TracingConfig:
-    enabled: bool = True
-    exporter: Optional[str] = None
-    service_version: Optional[str] = None
-
-
-_tracing_config = TracingConfig()
-
-
 def _is_truthy(value: Optional[str]) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -820,7 +810,32 @@ def remove_tracer(job_id: str) -> Optional[WorkflowTracer]:
     Returns:
         The removed tracer or None if not found
     """
-    return _global_tracers.pop(job_id, None)
+    tracer = _global_tracers.pop(job_id, None)
+    if tracer and _tracing_config.exporter == "console":
+        _export_traces_to_console(tracer)
+    return tracer
+
+
+def _export_traces_to_console(tracer: WorkflowTracer) -> None:
+    """Export traces to console for the console exporter."""
+    import json
+    from datetime import datetime
+
+    trace_tree = tracer.get_trace_tree()
+    console_output = {
+        "timestamp": datetime.now().isoformat(),
+        "trace_id": trace_tree["trace_id"],
+        "job_id": trace_tree["job_id"],
+        "total_spans": trace_tree["total_spans"],
+        "total_cost": trace_tree["total_cost"],
+        "spans": trace_tree["root_spans"],
+    }
+
+    print("\n" + "=" * 80)
+    print("TRACES (console exporter)")
+    print("=" * 80)
+    print(json.dumps(console_output, indent=2, default=str))
+    print("=" * 80 + "\n")
 
 
 # ---------------------------------------------------------------------------
