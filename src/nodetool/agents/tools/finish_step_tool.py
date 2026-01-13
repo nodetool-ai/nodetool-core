@@ -5,7 +5,7 @@ This tool provides a reliable mechanism for Claude models to signal step complet
 with a validated result, replacing the error-prone JSON parsing approach.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.processing_context import ProcessingContext
@@ -40,10 +40,10 @@ When to use:
 The result must conform to the step's declared output schema."""
 
     # Will be set dynamically based on step's output_schema
-    _result_schema: Dict[str, Any] | None
-    _input_schema: Dict[str, Any]
+    _result_schema: dict[str, Any] | None
+    _input_schema: dict[str, Any]
 
-    def __init__(self, result_schema: Dict[str, Any] | None = None):
+    def __init__(self, result_schema: dict[str, Any] | None = None):
         """
         Initialize the finish_step tool with the expected result schema.
 
@@ -54,7 +54,7 @@ The result must conform to the step's declared output schema."""
         self._result_schema = result_schema
         self._input_schema = self._build_input_schema()
 
-    def _build_input_schema(self) -> Dict[str, Any]:
+    def _build_input_schema(self) -> dict[str, Any]:
         """Build the tool's input schema based on the result schema."""
         if self._result_schema is None:
             # If no schema, accept any object
@@ -88,20 +88,20 @@ The result must conform to the step's declared output schema."""
         }
 
     @property
-    def input_schema(self) -> Dict[str, Any]:
+    def input_schema(self) -> dict[str, Any]:
         """Return the dynamically generated input schema."""
         return self._input_schema
 
     @input_schema.setter
-    def input_schema(self, value: Dict[str, Any]) -> None:
+    def input_schema(self, value: dict[str, Any]) -> None:
         """Allow setting input_schema (for compatibility)."""
         self._input_schema = value
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         """Return a user-facing message for this tool call."""
         return "Completing step with result..."
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Process the finish_step tool call.
 

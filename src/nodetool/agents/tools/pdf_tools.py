@@ -2,12 +2,7 @@
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, ClassVar
-
-if TYPE_CHECKING:
-    import pymupdf
-    import pymupdf4llm
-    import pypandoc
+from typing import Any, ClassVar
 
 from nodetool.workflows.processing_context import ProcessingContext
 

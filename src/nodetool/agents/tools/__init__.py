@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Type
+from typing import Any
 
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 
@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-def get_tool_by_name(name: str) -> Optional[Type[Tool]]:
+def get_tool_by_name(name: str) -> type[Tool] | None:
     """Retrieve a zero-argument tool class for the given registered name."""
 
     if not _tool_node_registry:

@@ -10,7 +10,8 @@ aggregate steps consume.
 import asyncio
 import hashlib
 import json
-from typing import Any, AsyncGenerator, List, Sequence
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any
 
 from nodetool.agents.step_executor import (
     StepExecutor,
@@ -61,7 +62,7 @@ class TaskExecutor:
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
             processing_context (ProcessingContext): The processing context
-            tools (List[Tool]): List of tools available for task execution
+            tools (list[Tool]): List of tools available for task execution
             task (Task): The task to execute
             system_prompt (str, optional): Custom system prompt
             inputs (dict[str, Any], optional): Inputs to use for the task
@@ -182,7 +183,7 @@ class TaskExecutor:
                             )
                         yield message
 
-    def _get_all_executable_tasks(self) -> List[Step]:
+    def _get_all_executable_tasks(self) -> list[Step]:
         """
         Get all executable tasks from the task list, respecting file dependencies.
 
@@ -192,7 +193,7 @@ class TaskExecutor:
         3. All its file dependencies (if any) exist in the workspace
 
         Returns:
-            List[Step]: All executable steps
+            list[Step]: All executable steps
         """
         executable_tasks = []
 
@@ -208,7 +209,7 @@ class TaskExecutor:
 
         return executable_tasks
 
-    def _check_depends_on(self, depends_on: List[str], workspace_dir: str) -> bool:
+    def _check_depends_on(self, depends_on: list[str], workspace_dir: str) -> bool:
         """
         Check if all file dependencies exist in the workspace.
 
@@ -246,7 +247,7 @@ class TaskExecutor:
             return step.id == self._finish_step_id
         return bool(self.task.steps) and step == self.task.steps[-1]
 
-    def _maybe_defer_finish_step(self, executable_tasks: List[Step]) -> List[Step]:
+    def _maybe_defer_finish_step(self, executable_tasks: list[Step]) -> list[Step]:
         if not self._finish_step_id:
             return executable_tasks
 
