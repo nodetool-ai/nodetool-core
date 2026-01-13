@@ -460,15 +460,25 @@ class Environment:
     @classmethod
     def get_storage_api_url(cls):
         """
-        The storage API endpoint.
+        The storage API endpoint path or full URL if domain is configured.
         """
-        return f"{cls.get_nodetool_api_url()}/api/storage"
+        storage_domain = cls.get_asset_domain()
+        if storage_domain:
+            storage_domain = storage_domain.rstrip("/")
+        if cls.is_production() and storage_domain:
+            return storage_domain
+        return "/api/storage"
 
     @classmethod
     def get_temp_storage_api_url(cls):
         """
         The temp storage API endpoint.
         """
+        temp_domain = cls.get_asset_temp_domain()
+        if temp_domain:
+            temp_domain = temp_domain.rstrip("/")
+        if cls.is_production() and temp_domain:
+            return temp_domain
         return f"{cls.get_nodetool_api_url()}/api/storage/temp"
 
     @classmethod
