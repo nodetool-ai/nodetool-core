@@ -102,14 +102,26 @@ class SupabaseStorage(AbstractStorage):
     async def _write_temp_file(self, content: IO) -> str:
         import tempfile
 
+        import aiofiles
+
         content.seek(0)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+
+        # Create temp file in a thread (blocking operation)
+        def _create_temp():
+            return tempfile.NamedTemporaryFile(delete=False)
+
+        tmp = await asyncio.to_thread(_create_temp)
+        tmp_path = tmp.name
+        tmp.close()  # Close the sync file handle
+
+        # Write content asynchronously
+        async with aiofiles.open(tmp_path, "wb") as f:
             while True:
                 chunk = content.read(8192)
                 if not chunk:
                     break
-                tmp.write(chunk)
-            tmp_path = tmp.name
+                await f.write(chunk)
+
         content.seek(0)
         return tmp_path
 

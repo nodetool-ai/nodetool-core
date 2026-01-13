@@ -1,8 +1,11 @@
 """PDF tools module."""
 
+import asyncio
 import json
 import os
 from typing import TYPE_CHECKING, Any, ClassVar
+
+import aiofiles
 
 if TYPE_CHECKING:
     import pymupdf
@@ -43,17 +46,24 @@ class ExtractPDFTextTool(Tool):
             import pymupdf
 
             path = context.resolve_workspace_path(params["path"])
-            doc = pymupdf.open(path)
 
-            end = params.get("end_page", -1)
-            if end == -1:
-                end = doc.page_count - 1
+            # Offload blocking PDF operations to a thread
+            def _extract_text():
+                doc = pymupdf.open(path)
+                try:
+                    end = params.get("end_page", -1)
+                    if end == -1:
+                        end = doc.page_count - 1
 
-            text = ""
-            for page_num in range(params.get("start_page", 0), end + 1):
-                page = doc[page_num]
-                text += page.get_text()  # type: ignore
+                    text = ""
+                    for page_num in range(params.get("start_page", 0), end + 1):
+                        page = doc[page_num]
+                        text += page.get_text()  # type: ignore
+                    return text
+                finally:
+                    doc.close()
 
+            text = await asyncio.to_thread(_extract_text)
             return {"text": text}
         except Exception as e:
             return {"error": str(e)}
@@ -99,39 +109,48 @@ class ExtractPDFTablesTool(Tool):
             import pymupdf
 
             path = context.resolve_workspace_path(params["path"])
-            doc = pymupdf.open(path)
-
-            end = params.get("end_page", -1)
-            if end == -1:
-                end = doc.page_count - 1
-
-            all_tables = []
-            for page_num in range(params.get("start_page", 0), end + 1):
-                page = doc[page_num]
-                tables = page.find_tables()  # type: ignore
-
-                for table in tables:
-                    table_data = {
-                        "page": page_num,
-                        "bbox": {
-                            "x0": table.bbox[0],
-                            "y0": table.bbox[1],
-                            "x1": table.bbox[2],
-                            "y1": table.bbox[3],
-                        },
-                        "rows": table.row_count,
-                        "columns": table.col_count,
-                        "header": {
-                            "names": table.header.names if table.header else [],
-                            "external": (table.header.external if table.header else False),
-                        },
-                        "content": table.extract(),
-                    }
-                    all_tables.append(table_data)
-
             output_file = context.resolve_workspace_path(params["output_file"])
-            with open(output_file, "w") as f:
-                json.dump(all_tables, f)
+
+            # Offload blocking PDF operations to a thread
+            def _extract_tables():
+                doc = pymupdf.open(path)
+                try:
+                    end = params.get("end_page", -1)
+                    if end == -1:
+                        end = doc.page_count - 1
+
+                    all_tables = []
+                    for page_num in range(params.get("start_page", 0), end + 1):
+                        page = doc[page_num]
+                        tables = page.find_tables()  # type: ignore
+
+                        for table in tables:
+                            table_data = {
+                                "page": page_num,
+                                "bbox": {
+                                    "x0": table.bbox[0],
+                                    "y0": table.bbox[1],
+                                    "x1": table.bbox[2],
+                                    "y1": table.bbox[3],
+                                },
+                                "rows": table.row_count,
+                                "columns": table.col_count,
+                                "header": {
+                                    "names": table.header.names if table.header else [],
+                                    "external": (table.header.external if table.header else False),
+                                },
+                                "content": table.extract(),
+                            }
+                            all_tables.append(table_data)
+                    return all_tables
+                finally:
+                    doc.close()
+
+            all_tables = await asyncio.to_thread(_extract_tables)
+
+            # Write output using aiofiles
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(json.dumps(all_tables))
 
             return {"output_file": output_file}
         except Exception as e:
@@ -184,21 +203,28 @@ class ConvertPDFToMarkdownTool(Tool):
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
-            doc = pymupdf.open(input_file)
+            # Offload blocking PDF operations to a thread
+            def _convert_pdf():
+                doc = pymupdf.open(input_file)
+                try:
+                    md_text = pymupdf4llm.to_markdown(doc)
 
-            md_text = pymupdf4llm.to_markdown(doc)
+                    # If page range is specified, split and extract relevant pages
+                    start_page = params.get("start_page", 0)
+                    end_page = params.get("end_page", -1)
+                    if start_page != 0 or end_page != -1:
+                        pages = md_text.split("\f")  # Split by form feed character
+                        end = end_page if end_page != -1 else len(pages) - 1
+                        md_text = "\f".join(pages[start_page : end + 1])
+                    return md_text
+                finally:
+                    doc.close()
 
-            # If page range is specified, split and extract relevant pages
-            start_page = params.get("start_page", 0)
-            end_page = params.get("end_page", -1)
-            if start_page != 0 or end_page != -1:
-                pages = md_text.split("\f")  # Split by form feed character
-                end = end_page if end_page != -1 else len(pages) - 1
-                md_text = "\f".join(pages[start_page : end + 1])
+            md_text = await asyncio.to_thread(_convert_pdf)
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, "w") as f:
-                f.write(md_text)
+            await asyncio.to_thread(os.makedirs, os.path.dirname(output_file), exist_ok=True)
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(md_text)
 
             return {"output_file": output_file}
         except Exception as e:
@@ -240,15 +266,18 @@ class ConvertMarkdownToPDFTool(Tool):
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            await asyncio.to_thread(os.makedirs, os.path.dirname(output_file), exist_ok=True)
 
-            # Convert using pypandoc
-            pypandoc.convert_file(
-                str(input_file),
-                "pdf",
-                format=params.get("format_from", "markdown"),
-                outputfile=str(output_file),
-            )
+            # Offload blocking pypandoc conversion to a thread
+            def _convert():
+                pypandoc.convert_file(
+                    str(input_file),
+                    "pdf",
+                    format=params.get("format_from", "markdown"),
+                    outputfile=str(output_file),
+                )
+
+            await asyncio.to_thread(_convert)
 
             return {"output_file": output_file, "status": "success"}
 
@@ -307,20 +336,23 @@ class ConvertDocumentTool(Tool):
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            await asyncio.to_thread(os.makedirs, os.path.dirname(output_file), exist_ok=True)
 
             extra_args = params.get("extra_args", [])
             if isinstance(extra_args, str):
                 extra_args = [extra_args]
 
-            # Convert using pypandoc
-            pypandoc.convert_file(
-                str(input_file),
-                params.get("to_format", "pdf"),
-                format=params.get("from_format", "markdown"),
-                outputfile=str(output_file),
-                extra_args=extra_args,
-            )
+            # Offload blocking pypandoc conversion to a thread
+            def _convert():
+                pypandoc.convert_file(
+                    str(input_file),
+                    params.get("to_format", "pdf"),
+                    format=params.get("from_format", "markdown"),
+                    outputfile=str(output_file),
+                    extra_args=extra_args,
+                )
+
+            await asyncio.to_thread(_convert)
 
             return {"output_file": output_file, "status": "success"}
 

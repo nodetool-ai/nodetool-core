@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import aiofiles
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
@@ -263,9 +264,9 @@ class AsyncReverseProxy:
         try:
 
             async def stream_file():
-                with open(challenge_path, "rb") as f:
+                async with aiofiles.open(challenge_path, "rb") as f:
                     while True:
-                        chunk = f.read(8192)
+                        chunk = await f.read(8192)
                         if not chunk:
                             break
                         yield chunk
@@ -366,10 +367,10 @@ def create_acme_only_app(config: ProxyConfig) -> FastAPI:
         if not challenge_path.is_file():
             return PlainTextResponse("Not found", status_code=404)
 
-        def stream_file():
-            with open(challenge_path, "rb") as fh:
+        async def stream_file():
+            async with aiofiles.open(challenge_path, "rb") as fh:
                 while True:
-                    chunk = fh.read(8192)
+                    chunk = await fh.read(8192)
                     if not chunk:
                         break
                     yield chunk

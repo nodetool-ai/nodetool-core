@@ -1,6 +1,8 @@
+import asyncio
 import os
 from typing import Any, ClassVar
 
+import aiofiles
 import aiohttp
 
 from nodetool.agents.tools.base import Tool
@@ -71,7 +73,7 @@ class DownloadFileTool(Tool):
 
             # Ensure the directory exists
             full_path = context.resolve_workspace_path(output_file)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
 
             async with (
                 aiohttp.ClientSession() as session,
@@ -91,9 +93,9 @@ class DownloadFileTool(Tool):
                 content_length = response.headers.get("Content-Length")
                 file_size = int(content_length) if content_length else None
 
-                # Read the file data and write to disk
-                with open(full_path, "wb") as f:
-                    f.write(await response.read())
+                # Read the file data and write to disk using aiofiles
+                async with aiofiles.open(full_path, "wb") as f:
+                    await f.write(await response.read())
 
                 return {
                     "url": url,
