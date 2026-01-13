@@ -66,6 +66,12 @@ class TestPathUtils(unittest.TestCase):
             resolve_workspace_path("", "test.txt")
         self.assertIn("Workspace directory is required", str(context.exception))
 
+    def test_resolve_workspace_path_with_none_workspace_dir(self):
+        """Test that None workspace directory raises PermissionError."""
+        with self.assertRaises(PermissionError) as context:
+            resolve_workspace_path(None, "test.txt")
+        self.assertIn("No workspace is assigned", str(context.exception))
+
     def test_resolve_workspace_path_creates_absolute_path(self):
         """Test that result is always an absolute path."""
         result = resolve_workspace_path(self.workspace_dir, "test.txt")

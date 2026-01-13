@@ -153,6 +153,7 @@ def _load_default_routers() -> List[APIRouter]:
         storage,
         thread,
         workflow,
+        workspace,
     )
 
     routers: list[APIRouter] = [
@@ -165,6 +166,7 @@ def _load_default_routers() -> List[APIRouter]:
         node.router,
         oauth.router,
         workflow.router,
+        workspace.router,
         storage.router,
         storage.temp_router,
         font.router,
