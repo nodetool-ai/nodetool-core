@@ -997,6 +997,7 @@ class StepExecutor:
 
                     if finish_step_call:
                         # Handle finish_step tool for step completion
+                        tool_calls_count += 1
                         tool_message = self._generate_tool_call_message(finish_step_call)
                         yield ToolCall(
                             id=finish_step_call.id,

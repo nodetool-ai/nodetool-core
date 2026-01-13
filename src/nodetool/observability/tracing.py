@@ -63,6 +63,19 @@ _current_trace_context: contextvars.ContextVar[Optional["TraceContext"]] = conte
 )
 
 
+def _truncate_text(text: str, max_length: int = 200) -> str:
+    """Truncate text to a maximum length for span attributes.
+
+    Args:
+        text: The text to truncate
+        max_length: Maximum length (default: 200)
+
+    Returns:
+        Truncated text if longer than max_length, otherwise original text
+    """
+    return text[:max_length] if len(text) > max_length else text
+
+
 class SpanKind(str, Enum):
     """OpenTelemetry-compatible span kinds."""
 
@@ -1177,13 +1190,10 @@ async def trace_task_planning(
     else:
         _tracer = tracer or WorkflowTracer(f"planning-{_generate_span_id()}")
 
-    # Truncate objective for span attribute
-    truncated_objective = objective[:200] if len(objective) > 200 else objective
-
     async with _tracer.start_span(
         "agent.planning",
         attributes={
-            "nodetool.planning.objective": truncated_objective,
+            "nodetool.planning.objective": _truncate_text(objective),
             "nodetool.planning.model": model,
         },
         kind=SpanKind.INTERNAL,
@@ -1273,14 +1283,11 @@ async def trace_step_execution(
     else:
         _tracer = tracer or WorkflowTracer(f"step-{_generate_span_id()}")
 
-    # Truncate instructions for span attribute
-    truncated_instructions = step_instructions[:200] if len(step_instructions) > 200 else step_instructions
-
     async with _tracer.start_span(
         "agent.step_execution",
         attributes={
             "nodetool.step.id": step_id,
-            "nodetool.step.instructions": truncated_instructions,
+            "nodetool.step.instructions": _truncate_text(step_instructions),
             "nodetool.step.task_id": task_id,
         },
         kind=SpanKind.INTERNAL,
