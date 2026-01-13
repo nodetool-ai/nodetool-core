@@ -8,6 +8,7 @@ and utility functions used by multiple tools.
 from typing import Any, Dict
 
 from nodetool.config.logging_config import get_logger
+from nodetool.observability.tracing import trace_tool_execution
 from nodetool.workflows.processing_context import ProcessingContext
 
 logger = get_logger(__name__)
@@ -55,6 +56,40 @@ class Tool:
         logger.warning(f"Process method not implemented for tool: {self.name}")
         # Default implementation returns params, but subclasses should override
         return params
+
+    async def process_with_tracing(
+        self,
+        context: ProcessingContext,
+        params: Dict[str, Any],
+        step_id: str | None = None,
+    ) -> Any:
+        """
+        Process the tool's action with OpenTelemetry tracing.
+
+        This wrapper method adds tracing around tool execution for observability.
+        Subclasses should override `process()`, not this method.
+
+        Args:
+            context: The processing context containing shared state.
+            params: A dictionary of parameters matching the tool's input_schema.
+            step_id: Optional step ID for attribution in traces.
+
+        Returns:
+            The result of the tool's execution. The type depends on the tool.
+        """
+        async with trace_tool_execution(
+            tool_name=self.name,
+            step_id=step_id,
+            params=params,
+        ) as span:
+            try:
+                result = await self.process(context, params)
+                span.set_attribute("nodetool.tool.success", True)
+                return result
+            except Exception as e:
+                span.set_attribute("nodetool.tool.success", False)
+                span.set_attribute("nodetool.tool.error", str(e)[:500])
+                raise
 
     def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
         """Return environment variables needed when running inside Docker."""

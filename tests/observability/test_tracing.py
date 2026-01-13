@@ -18,6 +18,10 @@ from nodetool.observability.tracing import (
     trace_api_call,
     trace_node,
     trace_provider_call,
+    trace_step_execution,
+    trace_task_execution,
+    trace_task_planning,
+    trace_tool_execution,
     trace_websocket_message,
     trace_workflow,
 )
@@ -260,6 +264,93 @@ class TestContextManagers:
         async with trace_api_call("GET", "/test") as span:
             # Should be a NoOpSpan when disabled
             span.set_attribute("test", "value")  # Should not raise
+
+
+class TestToolExecutionTracing:
+    """Tests for trace_tool_execution context manager."""
+
+    @pytest.mark.asyncio
+    async def test_trace_tool_execution(self):
+        """Test trace_tool_execution context manager."""
+        configure_tracing(TracingConfig(enabled=True))
+        async with trace_tool_execution(
+            "browser", step_id="step-1", params={"url": "http://example.com"}
+        ) as span:
+            assert span.context.attributes["nodetool.tool.name"] == "browser"
+            assert span.context.attributes["nodetool.tool.step_id"] == "step-1"
+            assert span.context.attributes["nodetool.tool.param_keys"] == ["url"]
+            assert span.context.kind == SpanKind.INTERNAL
+
+    @pytest.mark.asyncio
+    async def test_trace_tool_execution_no_params(self):
+        """Test trace_tool_execution with no parameters."""
+        configure_tracing(TracingConfig(enabled=True))
+        async with trace_tool_execution("file_reader") as span:
+            assert span.context.attributes["nodetool.tool.name"] == "file_reader"
+            assert span.context.attributes["nodetool.tool.param_keys"] == []
+
+
+class TestTaskPlanningTracing:
+    """Tests for trace_task_planning context manager."""
+
+    @pytest.mark.asyncio
+    async def test_trace_task_planning(self):
+        """Test trace_task_planning context manager."""
+        configure_tracing(TracingConfig(enabled=True))
+        async with trace_task_planning(
+            "Generate a summary of documents", model="gpt-4o"
+        ) as span:
+            assert span.context.attributes["nodetool.planning.objective"] == "Generate a summary of documents"
+            assert span.context.attributes["nodetool.planning.model"] == "gpt-4o"
+            assert span.context.kind == SpanKind.INTERNAL
+
+    @pytest.mark.asyncio
+    async def test_trace_task_planning_truncates_long_objective(self):
+        """Test that long objectives are truncated."""
+        configure_tracing(TracingConfig(enabled=True))
+        long_objective = "x" * 300
+        async with trace_task_planning(long_objective) as span:
+            assert len(span.context.attributes["nodetool.planning.objective"]) == 200
+
+
+class TestTaskExecutionTracing:
+    """Tests for trace_task_execution context manager."""
+
+    @pytest.mark.asyncio
+    async def test_trace_task_execution(self):
+        """Test trace_task_execution context manager."""
+        configure_tracing(TracingConfig(enabled=True))
+        async with trace_task_execution(
+            "task-123", "Process files", step_count=5
+        ) as span:
+            assert span.context.attributes["nodetool.task.id"] == "task-123"
+            assert span.context.attributes["nodetool.task.title"] == "Process files"
+            assert span.context.attributes["nodetool.task.step_count"] == 5
+            assert span.context.kind == SpanKind.INTERNAL
+
+
+class TestStepExecutionTracing:
+    """Tests for trace_step_execution context manager."""
+
+    @pytest.mark.asyncio
+    async def test_trace_step_execution(self):
+        """Test trace_step_execution context manager."""
+        configure_tracing(TracingConfig(enabled=True))
+        async with trace_step_execution(
+            "step-1", "Search for documents", task_id="task-123"
+        ) as span:
+            assert span.context.attributes["nodetool.step.id"] == "step-1"
+            assert span.context.attributes["nodetool.step.instructions"] == "Search for documents"
+            assert span.context.attributes["nodetool.step.task_id"] == "task-123"
+            assert span.context.kind == SpanKind.INTERNAL
+
+    @pytest.mark.asyncio
+    async def test_trace_step_execution_truncates_long_instructions(self):
+        """Test that long instructions are truncated."""
+        configure_tracing(TracingConfig(enabled=True))
+        long_instructions = "y" * 300
+        async with trace_step_execution("step-1", long_instructions) as span:
+            assert len(span.context.attributes["nodetool.step.instructions"]) == 200
 
 
 class TestRecordCost:

@@ -114,6 +114,10 @@ Trace context flows automatically through:
 | `workflow.node` | node_id, node_type, duration_ms | Node processing |
 | `provider.call` | provider, model, tokens, cost | AI provider calls |
 | `agent.task` | task_id, agent_type, tools_used | Agent execution |
+| `tool.execute` | tool_name, step_id, param_keys | Tool execution in agents |
+| `agent.planning` | objective, model, step_count | Task planning phase |
+| `agent.task_execution` | task_id, task_title, step_count | Task execution lifecycle |
+| `agent.step_execution` | step_id, instructions, task_id | Individual step execution |
 
 ---
 
@@ -367,6 +371,88 @@ async def trace_agent_task(
         agent_type: Type of agent (cot, simple, etc.)
         task_description: Brief task description
         tools: List of available tool names
+    """
+```
+
+### Tool Execution Tracing
+
+```python
+@asynccontextmanager
+async def trace_tool_execution(
+    tool_name: str,
+    *,
+    job_id: str | None = None,
+    step_id: str | None = None,
+    params: dict[str, Any] | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace tool execution in an agent workflow.
+    
+    Args:
+        tool_name: Name of the tool being executed
+        job_id: Optional job ID to link to workflow tracer
+        step_id: Optional step ID for attribution
+        params: Optional tool parameters (keys only for privacy)
+    """
+```
+
+### Task Planning Tracing
+
+```python
+@asynccontextmanager
+async def trace_task_planning(
+    objective: str,
+    *,
+    job_id: str | None = None,
+    model: str | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent task planning phase.
+    
+    Args:
+        objective: The objective being planned (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        model: Optional model used for planning
+    """
+```
+
+### Task Execution Tracing
+
+```python
+@asynccontextmanager
+async def trace_task_execution(
+    task_id: str,
+    task_title: str,
+    *,
+    job_id: str | None = None,
+    step_count: int | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent task execution.
+    
+    Args:
+        task_id: Unique task identifier
+        task_title: Task title/description
+        job_id: Optional job ID to link to workflow tracer
+        step_count: Number of steps in the task
+    """
+```
+
+### Step Execution Tracing
+
+```python
+@asynccontextmanager
+async def trace_step_execution(
+    step_id: str,
+    step_instructions: str,
+    *,
+    job_id: str | None = None,
+    task_id: str | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent step execution.
+    
+    Args:
+        step_id: Unique step identifier
+        step_instructions: Step instructions (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        task_id: Optional parent task ID
     """
 ```
 

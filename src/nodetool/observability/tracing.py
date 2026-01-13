@@ -1099,6 +1099,195 @@ async def trace_agent_task(
         yield span
 
 
+@asynccontextmanager
+async def trace_tool_execution(
+    tool_name: str,
+    *,
+    job_id: Optional[str] = None,
+    step_id: Optional[str] = None,
+    params: Optional[dict[str, Any]] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace tool execution in an agent workflow.
+
+    Usage:
+        async with trace_tool_execution("browser", params={"url": "..."}) as span:
+            result = await tool.process(context, params)
+
+    Args:
+        tool_name: Name of the tool being executed
+        job_id: Optional job ID to link to workflow tracer
+        step_id: Optional step ID for attribution
+        params: Optional tool parameters (keys only for privacy)
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("tool.execute")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"tool-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        "tool.execute",
+        attributes={
+            "nodetool.tool.name": tool_name,
+            "nodetool.tool.step_id": step_id,
+            "nodetool.tool.param_keys": list(params.keys()) if params else [],
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_task_planning(
+    objective: str,
+    *,
+    job_id: Optional[str] = None,
+    model: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace agent task planning phase.
+
+    Usage:
+        async with trace_task_planning("Generate image from description") as span:
+            plan = await planner.create_task(context, objective)
+
+    Args:
+        objective: The objective being planned (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        model: Optional model used for planning
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("agent.planning")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"planning-{_generate_span_id()}")
+
+    # Truncate objective for span attribute
+    truncated_objective = objective[:200] if len(objective) > 200 else objective
+
+    async with _tracer.start_span(
+        "agent.planning",
+        attributes={
+            "nodetool.planning.objective": truncated_objective,
+            "nodetool.planning.model": model,
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_task_execution(
+    task_id: str,
+    task_title: str,
+    *,
+    job_id: Optional[str] = None,
+    step_count: Optional[int] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace agent task execution.
+
+    Usage:
+        async with trace_task_execution("task_123", "Process files") as span:
+            async for result in executor.execute_tasks(context):
+                yield result
+
+    Args:
+        task_id: Unique task identifier
+        task_title: Task title/description
+        job_id: Optional job ID to link to workflow tracer
+        step_count: Number of steps in the task
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("agent.task_execution")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"task-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        "agent.task_execution",
+        attributes={
+            "nodetool.task.id": task_id,
+            "nodetool.task.title": task_title,
+            "nodetool.task.step_count": step_count,
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_step_execution(
+    step_id: str,
+    step_instructions: str,
+    *,
+    job_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace agent step execution.
+
+    Usage:
+        async with trace_step_execution("step_1", "Search for documents") as span:
+            async for item in step_executor.execute():
+                yield item
+
+    Args:
+        step_id: Unique step identifier
+        step_instructions: Step instructions (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        task_id: Optional parent task ID
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("agent.step_execution")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"step-{_generate_span_id()}")
+
+    # Truncate instructions for span attribute
+    truncated_instructions = step_instructions[:200] if len(step_instructions) > 200 else step_instructions
+
+    async with _tracer.start_span(
+        "agent.step_execution",
+        attributes={
+            "nodetool.step.id": step_id,
+            "nodetool.step.instructions": truncated_instructions,
+            "nodetool.step.task_id": task_id,
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
 # ---------------------------------------------------------------------------
 # Synchronous Context Managers
 # ---------------------------------------------------------------------------

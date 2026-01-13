@@ -186,6 +186,7 @@ from nodetool.chat.token_counter import (
 )
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Step, Task, ToolCall
+from nodetool.observability.tracing import trace_step_execution
 from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.utils.message_parsing import (
@@ -864,236 +865,260 @@ class StepExecutor:
         Yields:
             Union[Chunk, ToolCall, TaskUpdate, StepResult]: Live updates during task execution
         """
-        # Record the start time of the step
-        current_time = int(time.time())
-        self.step.start_time = current_time
+        # Wrap step execution in tracing context
+        async with trace_step_execution(
+            step_id=self.step.id,
+            step_instructions=self.step.instructions,
+            task_id=self.task.id if self.task else None,
+        ) as span:
+            span.set_attribute("nodetool.step.tool_count", len(self.tools))
+            span.set_attribute("nodetool.step.model", self.model)
+            span.set_attribute("nodetool.step.max_token_limit", self.max_token_limit)
 
-        # Ensure step logs are initialized
-        if not hasattr(self.step, "logs") or self.step.logs is None:
-            self.step.logs = []
+            # Record the start time of the step
+            current_time = int(time.time())
+            self.step.start_time = current_time
 
-        # Set the current step for the display manager
-        if self.display_manager:
-            self.display_manager.set_current_step(self.step)
+            # Ensure step logs are initialized
+            if not hasattr(self.step, "logs") or self.step.logs is None:
+                self.step.logs = []
 
-        self._log_initial_state()
+            # Set the current step for the display manager
+            if self.display_manager:
+                self.display_manager.set_current_step(self.step)
 
-        # Display beautiful step start panel
-        if self.display_manager:
-            self.display_manager.display_step_start(self.step)
+            self._log_initial_state()
 
-        # --- LLM-based Execution Logic ---
-        prompt_parts = [
-            self.step.instructions,
-        ]
-        if self.step.depends_on:
-            # Fetch and inject input results directly into the prompt
-            for input_task_id in self.step.depends_on:
-                result = self.processing_context.load_step_result(input_task_id)
-                if result is not None:
-                    prompt_parts.append(
-                        f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
-                    )
+            # Display beautiful step start panel
+            if self.display_manager:
+                self.display_manager.display_step_start(self.step)
 
-        prompt_parts.append(
-            "Please perform the step based on the provided context, instructions, and upstream task results."
-        )
-        task_prompt = "\n".join(prompt_parts)
-
-        # Add the task prompt to this step's history
-        self.history.append(Message(role="user", content=task_prompt))
-
-        # Yield task update for step start
-        yield TaskUpdate(
-            task=self.task,
-            step=self.step,
-            event=TaskUpdateEvent.STEP_STARTED,
-        )
-
-        # Display task update event
-        if self.display_manager:
-            self.display_manager.display_task_update("SUBTASK_STARTED", self.step.instructions)
-
-        # Continue executing until the task is completed (token budget enforces termination)
-        while not self.step.completed:
-            self.iterations += 1
-            token_count = self._count_tokens(self.history)
-            log.debug(
-                "%s | iteration %d | history=%d msgs | tokens=%d/%d",
-                self.step.id,
-                self.iterations,
-                len(self.history),
-                token_count,
-                self.max_token_limit,
-            )
-
-            # Display beautiful iteration status
-            # self.display_manager.display_iteration_status(
-            #     self.iterations, token_count, self.max_token_limit
-            # )
-
-            # Check if we need to transition to conclusion stage
-            if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
-                # Log and display token warning
-                log.warning(f"Token usage: {token_count}/{self.max_token_limit}")
-                await self._transition_to_conclusion_stage()
-                # Yield the event after transitioning
-                yield TaskUpdate(
-                    task=self.task,
-                    step=self.step,
-                    event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
-                )
-                if self.display_manager:
-                    self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
-
-            # Process current iteration
-            yield LogUpdate(
-                node_id=self.step.id,
-                node_name=f"Step: {self.step.id}",
-                content="Generating next steps..." if not self.in_conclusion_stage else "Synthesizing final answer...",
-                severity="info",
-            )
-            message = None
-            async for update in self._process_iteration():
-                if isinstance(update, Message):
-                    message = update
-                else:
-                    yield update
-
-            if message is None:
-                log.error("Iteration failed to produce a message")
-                break
-
-            # If there was any final content that wasn't streamed (e.g. buffered), yield it now
-            if message.content and not message.tool_calls:
-                # This is a fallback in case streaming didn't catch everything or provider buffered
-                # Note: if streaming worked, this will redundant but Chunk(done=False) is fast.
-                pass
-
-            message.tool_calls = self._filter_tool_calls_for_current_stage(message.tool_calls)
-
-            # Add assistant message to history after any tool-call adjustments so the
-            # stored conversation precisely matches what we'll execute/respond to.
-            self.history.append(message)
-
-            if message.tool_calls:
-                # Check for finish_step tool call - handle specially for completion
-                finish_step_call = next((tc for tc in message.tool_calls if tc.name == "finish_step"), None)
-
-                if finish_step_call:
-                    # Handle finish_step tool for step completion
-                    tool_message = self._generate_tool_call_message(finish_step_call)
-                    yield ToolCall(
-                        id=finish_step_call.id,
-                        name=finish_step_call.name,
-                        args=finish_step_call.args,
-                        step_id=self.step.id,
-                        message=tool_message,
-                    )
-
-                    # Extract and validate result from tool call args
-                    result_payload = (
-                        finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
-                    )
-                    if result_payload is not None:
-                        is_valid, error_detail, normalized_result = self._validate_result_payload(result_payload)
-                        if is_valid and normalized_result is not None:
-                            # Add tool result to history
-                            self.history.append(
-                                Message(
-                                    role="tool",
-                                    tool_call_id=finish_step_call.id,
-                                    name="finish_step",
-                                    content='{"status": "completed"}',
-                                )
-                            )
-                            self._store_completion_result(normalized_result)
-                            log.debug(
-                                f"StepExecutor: {self.step.id} completed via tool. use_finish_task={self.use_finish_task}"
-                            )
-                            for event in self._emit_completion_events(normalized_result):
-                                if isinstance(event, StepResult):
-                                    log.debug(
-                                        f"StepExecutor: Yielding tool StepResult. is_task_result={event.is_task_result}"
-                                    )
-                                yield event
-                            break
-                        else:
-                            # Invalid result - add feedback and continue loop
-                            log.warning(f"finish_step result validation failed: {error_detail}")
-                            self.history.append(
-                                Message(
-                                    role="tool",
-                                    tool_call_id=finish_step_call.id,
-                                    name="finish_step",
-                                    content=f'{{"error": "Result validation failed: {error_detail}"}}',
-                                )
-                            )
-                            self._append_completion_feedback(
-                                error_detail or "Result failed schema validation.", result_payload
-                            )
-                    else:
-                        log.warning("finish_step called without result")
-                        self.history.append(
-                            Message(
-                                role="tool",
-                                tool_call_id=finish_step_call.id,
-                                name="finish_step",
-                                content='{"error": "Missing result in finish_step call"}',
-                            )
+            # --- LLM-based Execution Logic ---
+            prompt_parts = [
+                self.step.instructions,
+            ]
+            if self.step.depends_on:
+                # Fetch and inject input results directly into the prompt
+                for input_task_id in self.step.depends_on:
+                    result = self.processing_context.load_step_result(input_task_id)
+                    if result is not None:
+                        prompt_parts.append(
+                            f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
                         )
-                else:
-                    # Process non-finish_step tool calls normally
-                    for tool_call in message.tool_calls:
-                        tool_message = self._generate_tool_call_message(tool_call)
+
+            prompt_parts.append(
+                "Please perform the step based on the provided context, instructions, and upstream task results."
+            )
+            task_prompt = "\n".join(prompt_parts)
+
+            # Add the task prompt to this step's history
+            self.history.append(Message(role="user", content=task_prompt))
+
+            # Yield task update for step start
+            yield TaskUpdate(
+                task=self.task,
+                step=self.step,
+                event=TaskUpdateEvent.STEP_STARTED,
+            )
+
+            # Display task update event
+            if self.display_manager:
+                self.display_manager.display_task_update("SUBTASK_STARTED", self.step.instructions)
+
+            span.add_event("step_execution_started")
+            tool_calls_count = 0
+
+            # Continue executing until the task is completed (token budget enforces termination)
+            while not self.step.completed:
+                self.iterations += 1
+                token_count = self._count_tokens(self.history)
+                log.debug(
+                    "%s | iteration %d | history=%d msgs | tokens=%d/%d",
+                    self.step.id,
+                    self.iterations,
+                    len(self.history),
+                    token_count,
+                    self.max_token_limit,
+                )
+
+                # Display beautiful iteration status
+                # self.display_manager.display_iteration_status(
+                #     self.iterations, token_count, self.max_token_limit
+                # )
+
+                # Check if we need to transition to conclusion stage
+                if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
+                    # Log and display token warning
+                    log.warning(f"Token usage: {token_count}/{self.max_token_limit}")
+                    await self._transition_to_conclusion_stage()
+                    span.add_event("entered_conclusion_stage", {"token_count": token_count})
+                    # Yield the event after transitioning
+                    yield TaskUpdate(
+                        task=self.task,
+                        step=self.step,
+                        event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
+                    )
+                    if self.display_manager:
+                        self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
+
+                # Process current iteration
+                yield LogUpdate(
+                    node_id=self.step.id,
+                    node_name=f"Step: {self.step.id}",
+                    content="Generating next steps..." if not self.in_conclusion_stage else "Synthesizing final answer...",
+                    severity="info",
+                )
+                message = None
+                async for update in self._process_iteration():
+                    if isinstance(update, Message):
+                        message = update
+                    else:
+                        yield update
+
+                if message is None:
+                    log.error("Iteration failed to produce a message")
+                    break
+
+                # If there was any final content that wasn't streamed (e.g. buffered), yield it now
+                if message.content and not message.tool_calls:
+                    # This is a fallback in case streaming didn't catch everything or provider buffered
+                    # Note: if streaming worked, this will redundant but Chunk(done=False) is fast.
+                    pass
+
+                message.tool_calls = self._filter_tool_calls_for_current_stage(message.tool_calls)
+
+                # Add assistant message to history after any tool-call adjustments so the
+                # stored conversation precisely matches what we'll execute/respond to.
+                self.history.append(message)
+
+                if message.tool_calls:
+                    # Check for finish_step tool call - handle specially for completion
+                    finish_step_call = next((tc for tc in message.tool_calls if tc.name == "finish_step"), None)
+
+                    if finish_step_call:
+                        # Handle finish_step tool for step completion
+                        tool_message = self._generate_tool_call_message(finish_step_call)
                         yield ToolCall(
-                            id=tool_call.id,
-                            name=tool_call.name,
-                            args=tool_call.args,
+                            id=finish_step_call.id,
+                            name=finish_step_call.name,
+                            args=finish_step_call.args,
                             step_id=self.step.id,
                             message=tool_message,
                         )
 
-                    # Provide immediate feedback that execution has started
-                    tool_names_str = ", ".join(tc.name for tc in message.tool_calls)
-                    yield LogUpdate(
-                        node_id=self.step.id,
-                        node_name=f"Step: {self.step.id}",
-                        content=f"Executing tools: {tool_names_str}...",
-                        severity="info",
-                    )
+                        # Extract and validate result from tool call args
+                        result_payload = (
+                            finish_step_call.args.get("result") if isinstance(finish_step_call.args, dict) else None
+                        )
+                        if result_payload is not None:
+                            is_valid, error_detail, normalized_result = self._validate_result_payload(result_payload)
+                            if is_valid and normalized_result is not None:
+                                # Add tool result to history
+                                self.history.append(
+                                    Message(
+                                        role="tool",
+                                        tool_call_id=finish_step_call.id,
+                                        name="finish_step",
+                                        content='{"status": "completed"}',
+                                    )
+                                )
+                                self._store_completion_result(normalized_result)
+                                log.debug(
+                                    f"StepExecutor: {self.step.id} completed via tool. use_finish_task={self.use_finish_task}"
+                                )
+                                for event in self._emit_completion_events(normalized_result):
+                                    if isinstance(event, StepResult):
+                                        log.debug(
+                                            f"StepExecutor: Yielding tool StepResult. is_task_result={event.is_task_result}"
+                                        )
+                                    yield event
+                                break
+                            else:
+                                # Invalid result - add feedback and continue loop
+                                log.warning(f"finish_step result validation failed: {error_detail}")
+                                self.history.append(
+                                    Message(
+                                        role="tool",
+                                        tool_call_id=finish_step_call.id,
+                                        name="finish_step",
+                                        content=f'{{"error": "Result validation failed: {error_detail}"}}',
+                                    )
+                                )
+                                self._append_completion_feedback(
+                                    error_detail or "Result failed schema validation.", result_payload
+                                )
+                        else:
+                            log.warning("finish_step called without result")
+                            self.history.append(
+                                Message(
+                                    role="tool",
+                                    tool_call_id=finish_step_call.id,
+                                    name="finish_step",
+                                    content='{"error": "Missing result in finish_step call"}',
+                                )
+                            )
+                    else:
+                        # Process non-finish_step tool calls normally
+                        for tool_call in message.tool_calls:
+                            tool_message = self._generate_tool_call_message(tool_call)
+                            tool_calls_count += 1
+                            yield ToolCall(
+                                id=tool_call.id,
+                                name=tool_call.name,
+                                args=tool_call.args,
+                                step_id=self.step.id,
+                                message=tool_message,
+                            )
 
-                    await self._process_tool_call_results(message.tool_calls)
+                        # Provide immediate feedback that execution has started
+                        tool_names_str = ", ".join(tc.name for tc in message.tool_calls)
+                        yield LogUpdate(
+                            node_id=self.step.id,
+                            node_name=f"Step: {self.step.id}",
+                            content=f"Executing tools: {tool_names_str}...",
+                            severity="info",
+                        )
 
-                    yield LogUpdate(
-                        node_id=self.step.id,
-                        node_name=f"Step: {self.step.id}",
-                        content=f"Completed tool execution: {tool_names_str}.",
-                        severity="info",
-                    )
-            elif message.content:
-                # Text chunks already yielded during _process_iteration
-                pass
+                        await self._process_tool_call_results(message.tool_calls)
 
-            completed, normalized_result = self._maybe_finalize_from_message(message)
-            if completed and normalized_result is not None:
-                self._store_completion_result(normalized_result)
-                log.debug(f"StepExecutor: {self.step.id} completed via message. use_finish_task={self.use_finish_task}")
-                for event in self._emit_completion_events(normalized_result):
-                    if isinstance(event, StepResult):
-                        log.debug(f"StepExecutor: Yielding message StepResult. is_task_result={event.is_task_result}")
-                    yield event
-                break
+                        yield LogUpdate(
+                            node_id=self.step.id,
+                            node_name=f"Step: {self.step.id}",
+                            content=f"Completed tool execution: {tool_names_str}.",
+                            severity="info",
+                        )
+                elif message.content:
+                    # Text chunks already yielded during _process_iteration
+                    pass
 
-        # Display completion event
-        if self.display_manager:
-            self.display_manager.display_completion_event(self.step, self.step.completed, self._output_result)
+                completed, normalized_result = self._maybe_finalize_from_message(message)
+                if completed and normalized_result is not None:
+                    self._store_completion_result(normalized_result)
+                    log.debug(f"StepExecutor: {self.step.id} completed via message. use_finish_task={self.use_finish_task}")
+                    for event in self._emit_completion_events(normalized_result):
+                        if isinstance(event, StepResult):
+                            log.debug(f"StepExecutor: Yielding message StepResult. is_task_result={event.is_task_result}")
+                        yield event
+                    break
 
-        # Useful debug printing
-        # for m in self.history:
-        #     print("-" * 100)
-        #     print(m.role, m.content)
-        #     print("-" * 100)
+            # Record tracing attributes after completing the step
+            span.set_attribute("nodetool.step.iterations", self.iterations)
+            span.set_attribute("nodetool.step.tool_calls_count", tool_calls_count)
+            span.set_attribute("nodetool.step.completed", self.step.completed)
+            span.add_event("step_execution_completed", {
+                "iterations": self.iterations,
+                "tool_calls_count": tool_calls_count,
+            })
+
+            # Display completion event
+            if self.display_manager:
+                self.display_manager.display_completion_event(self.step, self.step.completed, self._output_result)
+
+            # Useful debug printing
+            # for m in self.history:
+            #     print("-" * 100)
+            #     print(m.role, m.content)
+            #     print("-" * 100)
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
