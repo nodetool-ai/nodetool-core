@@ -58,6 +58,12 @@ from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.workspace import Workspace
+from nodetool.observability.tracing import (
+    get_or_create_tracer,
+    is_tracing_enabled,
+    trace_websocket_message,
+    trace_workflow,
+)
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
 from nodetool.types.job import JobUpdate, RunStateInfo
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
@@ -1113,6 +1119,27 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         # Extract common fields
         job_id = command.data.get("job_id")
         workflow_id = command.data.get("workflow_id")
+        thread_id = command.data.get("thread_id")
+
+        # Trace the command handling
+        async with trace_websocket_message(
+            command=command.command.value,
+            direction="inbound",
+            job_id=job_id,
+            thread_id=thread_id,
+        ) as span:
+            span.set_attribute("websocket.workflow_id", workflow_id)
+            result = await self._process_command(command, job_id, workflow_id, span)
+            return result
+
+    async def _process_command(
+        self,
+        command: WebSocketCommand,
+        job_id: str | None,
+        workflow_id: str | None,
+        span: Any,  # Span | NoOpSpan from observability.tracing
+    ):
+        """Internal method to process commands with tracing span context."""
 
         if command.command == CommandType.CLEAR_MODELS:
             return await self.clear_models()

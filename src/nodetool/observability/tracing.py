@@ -1,33 +1,123 @@
 """
-OpenTelemetry Tracing Integration for NodeTool Workflows.
+OpenTelemetry Tracing Integration for NodeTool.
 
-This module provides distributed tracing capabilities for workflow execution,
-enabling better observability, debugging, and performance analysis.
+This module provides comprehensive distributed tracing capabilities for:
+- API calls (HTTP requests)
+- WebSocket activity (bidirectional messages)
+- Workflow execution (job lifecycle)
+- Node execution (individual node processing)
+- Provider execution (AI provider API calls with cost tracking)
+- Agent execution (LLM agent planning and tool execution)
+
+All tracing is implemented via Python context managers for unobtrusive
+instrumentation that doesn't modify business logic.
 
 Usage:
-    from nodetool.observability.tracing import WorkflowTracer, init_tracing
+    from nodetool.observability.tracing import (
+        init_tracing,
+        trace_api_call,
+        trace_websocket_message,
+        trace_workflow,
+        trace_node,
+        trace_provider_call,
+        trace_agent_task,
+    )
 
-    # Initialize tracing (optional)
-    init_tracing(service_name="nodetool-worker")
+    # Initialize tracing
+    init_tracing(service_name="nodetool-worker", exporter="otlp")
 
-    # Create tracer for a workflow run
-    tracer = WorkflowTracer(job_id="job-123")
-    async with tracer.start_span("execute_workflow") as span:
-        # Run workflow with tracing
-        await runner.run(req, context, tracer=tracer)
+    # Trace API calls
+    async with trace_api_call("POST", "/api/jobs") as span:
+        span.set_attribute("user_id", user.id)
+        result = await create_job(request)
+
+    # Trace workflow execution
+    async with trace_workflow(job_id="job-123") as span:
+        await runner.run(req, context)
+
+    # Trace provider calls with cost tracking
+    async with trace_provider_call("openai", "gpt-4o", "chat") as span:
+        response = await client.chat.completions.create(...)
+        span.set_attribute("cost.credits", calculated_cost)
+
+See OBSERVABILITY.md for full documentation.
 """
 
 import contextvars
 import os
 import time
-from contextlib import asynccontextmanager
+import uuid
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Optional
+from enum import Enum
+from typing import Any, AsyncGenerator, Generator, Literal, Optional, Union
 
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+# Context variable for trace context propagation across async boundaries
+_current_trace_context: contextvars.ContextVar[Optional["TraceContext"]] = contextvars.ContextVar(
+    "current_trace_context", default=None
+)
+
+
+class SpanKind(str, Enum):
+    """OpenTelemetry-compatible span kinds."""
+
+    INTERNAL = "internal"
+    SERVER = "server"
+    CLIENT = "client"
+    PRODUCER = "producer"
+    CONSUMER = "consumer"
+
+
+class SpanStatus(str, Enum):
+    """OpenTelemetry-compatible span status codes."""
+
+    UNSET = "unset"
+    OK = "ok"
+    ERROR = "error"
+
+
+@dataclass
+class TraceContext:
+    """Context for trace propagation across async boundaries."""
+
+    trace_id: str
+    span_id: str
+    parent_span_id: Optional[str] = None
+    baggage: dict[str, str] = field(default_factory=dict)
+
+    def child_context(self, new_span_id: str) -> "TraceContext":
+        """Create a child context with this span as parent."""
+        return TraceContext(
+            trace_id=self.trace_id,
+            span_id=new_span_id,
+            parent_span_id=self.span_id,
+            baggage=self.baggage.copy(),
+        )
+
+
+def _generate_trace_id() -> str:
+    """Generate a unique trace ID."""
+    return uuid.uuid4().hex
+
+
+def _generate_span_id() -> str:
+    """Generate a unique span ID."""
+    return uuid.uuid4().hex[:16]
+
+
+def get_current_trace_context() -> Optional[TraceContext]:
+    """Get the current trace context from context vars."""
+    return _current_trace_context.get()
+
+
+def set_current_trace_context(ctx: Optional[TraceContext]) -> contextvars.Token:
+    """Set the current trace context."""
+    return _current_trace_context.set(ctx)
 
 
 @dataclass
@@ -41,31 +131,91 @@ class SpanContext:
     end_time: Optional[float] = None
     attributes: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
-    status: str = "unset"
+    status: SpanStatus = SpanStatus.UNSET
+    status_description: Optional[str] = None
+    kind: SpanKind = SpanKind.INTERNAL
+    name: str = ""
 
 
 class Span:
-    """Represents a single trace span."""
+    """Represents a single trace span.
 
-    def __init__(self, name: str, tracer: "WorkflowTracer", parent: Optional["Span"] = None):
+    A span represents a unit of work or operation. It tracks operations
+    and their timing, and can include attributes, events, and status.
+
+    Attributes:
+        name: The operation name
+        tracer: The parent tracer managing this span
+        parent: Optional parent span for hierarchical tracing
+        context: SpanContext containing trace data
+    """
+
+    def __init__(
+        self,
+        name: str,
+        tracer: "WorkflowTracer",
+        parent: Optional["Span"] = None,
+        kind: SpanKind = SpanKind.INTERNAL,
+    ):
         self.name = name
         self.tracer = tracer
         self.parent = parent
         self.context = SpanContext(
             trace_id=tracer.trace_id,
-            span_id=f"span-{len(tracer._spans)}",
+            span_id=_generate_span_id(),
             parent_id=parent.context.span_id if parent else None,
             start_time=time.time(),
+            kind=kind,
+            name=name,
         )
         self._children: list[Span] = []
 
-    def set_attribute(self, key: str, value: Any) -> None:
-        """Set an attribute on this span."""
+    @property
+    def duration_ms(self) -> Optional[float]:
+        """Get span duration in milliseconds."""
+        if self.context.end_time is not None:
+            return (self.context.end_time - self.context.start_time) * 1000
+        return None
+
+    def set_attribute(self, key: str, value: Any) -> "Span":
+        """Set an attribute on this span.
+
+        Args:
+            key: Attribute name (use dot notation for namespacing)
+            value: Attribute value (should be JSON-serializable)
+
+        Returns:
+            Self for method chaining
+        """
         self.context.attributes[key] = value
         log.debug(f"Span attribute set: {self.name}.{key}={value}")
+        return self
 
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> None:
-        """Add an event to this span."""
+    def set_attributes(self, attributes: dict[str, Any]) -> "Span":
+        """Set multiple attributes on this span.
+
+        Args:
+            attributes: Dictionary of attribute key-value pairs
+
+        Returns:
+            Self for method chaining
+        """
+        for key, value in attributes.items():
+            self.set_attribute(key, value)
+        return self
+
+    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> "Span":
+        """Add an event to this span.
+
+        Events are time-stamped annotations that can have attributes.
+
+        Args:
+            name: Event name
+            attributes: Optional event attributes
+
+        Returns:
+            Self for method chaining
+        """
         self.context.events.append(
             {
                 "name": name,
@@ -74,15 +224,47 @@ class Span:
             }
         )
         log.debug(f"Span event added: {self.name}::{name}")
+        return self
 
-    def set_status(self, status: str, description: Optional[str] = None) -> None:
-        """Set the span status."""
+    def set_status(self, status: SpanStatus | str, description: Optional[str] = None) -> "Span":
+        """Set the span status.
+
+        Args:
+            status: Status code (ok, error, or unset)
+            description: Optional description for error status
+
+        Returns:
+            Self for method chaining
+        """
+        if isinstance(status, str):
+            status = SpanStatus(status.lower())
         self.context.status = status
+        self.context.status_description = description
         if description:
             self.set_attribute("status_description", description)
+        return self
+
+    def record_exception(self, exception: Exception) -> "Span":
+        """Record an exception in this span.
+
+        Args:
+            exception: The exception to record
+
+        Returns:
+            Self for method chaining
+        """
+        self.set_status(SpanStatus.ERROR, str(exception))
+        self.add_event(
+            "exception",
+            {
+                "exception.type": type(exception).__name__,
+                "exception.message": str(exception),
+            },
+        )
+        return self
 
     def end(self) -> None:
-        """End this span."""
+        """End this span and record duration."""
         self.context.end_time = time.time()
         duration_ms = (self.context.end_time - self.context.start_time) * 1000
         self.set_attribute("duration_ms", duration_ms)
@@ -91,16 +273,11 @@ class Span:
     def __enter__(self) -> "Span":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if exc_type:
-            self.set_status("error", str(exc_val))
-            self.add_event(
-                "exception",
-                {
-                    "type": exc_type.__name__,
-                    "message": str(exc_val),
-                },
-            )
+            self.record_exception(exc_val)
+        elif self.context.status == SpanStatus.UNSET:
+            self.set_status(SpanStatus.OK)
         self.end()
 
 
@@ -110,20 +287,38 @@ class WorkflowTracer:
 
     Provides OpenTelemetry-compatible tracing for workflow execution,
     enabling distributed tracing across multiple nodes and services.
+
+    The tracer manages span lifecycle, context propagation, and provides
+    statistics about traced operations.
+
+    Attributes:
+        job_id: The workflow job identifier
+        trace_id: Unique trace identifier
+        enabled: Whether tracing is active
     """
 
     def __init__(self, job_id: str, trace_id: Optional[str] = None):
         self.job_id = job_id
-        self.trace_id = trace_id or f"trace-{job_id}-{int(time.time() * 1000)}"
+        self.trace_id = trace_id or _generate_trace_id()
         self._spans: list[Span] = []
         self._current_span: Optional[Span] = None
         self._span_stack: list[Span] = []
         self._enabled = True
+        self._total_cost: float = 0.0
 
     @property
     def active_span(self) -> Optional[Span]:
         """Get the currently active span."""
         return self._current_span
+
+    @property
+    def total_cost(self) -> float:
+        """Get total cost tracked across all spans."""
+        return self._total_cost
+
+    def add_cost(self, cost: float) -> None:
+        """Add to the total tracked cost."""
+        self._total_cost += cost
 
     @asynccontextmanager
     async def start_span(
@@ -131,38 +326,97 @@ class WorkflowTracer:
         name: str,
         attributes: Optional[dict[str, Any]] = None,
         parent: Optional[Span] = None,
+        kind: SpanKind = SpanKind.INTERNAL,
     ) -> AsyncGenerator[Span, None]:
-        """Start a new span as a child of the active span."""
+        """Start a new span as a child of the active span.
+
+        Args:
+            name: Span name (use dot notation like "workflow.execute")
+            attributes: Initial span attributes
+            parent: Optional explicit parent span
+            kind: Span kind (internal, server, client, etc.)
+
+        Yields:
+            The created span for adding attributes and events
+        """
         if not self._enabled:
             yield Span(name, self)
             return
 
         parent_span = parent or self._current_span
-        span = Span(name, self, parent=parent_span)
+        span = Span(name, self, parent=parent_span, kind=kind)
 
         if attributes:
-            for key, value in attributes.items():
-                span.set_attribute(key, value)
+            span.set_attributes(attributes)
 
         self._span_stack.append(span)
         self._current_span = span
         self._spans.append(span)
+
+        # Track parent-child relationship
+        if parent_span:
+            parent_span._children.append(span)
 
         span.add_event("span_started", {"span_name": name})
 
         try:
             yield span
         except Exception as e:
-            span.set_status("error", str(e))
-            span.add_event(
-                "exception",
-                {
-                    "type": type(e).__name__,
-                    "message": str(e),
-                },
-            )
+            span.record_exception(e)
             raise
         finally:
+            if span.context.status == SpanStatus.UNSET:
+                span.set_status(SpanStatus.OK)
+            span.end()
+            self._span_stack.pop()
+            self._current_span = self._span_stack[-1] if self._span_stack else None
+
+    @contextmanager
+    def start_span_sync(
+        self,
+        name: str,
+        attributes: Optional[dict[str, Any]] = None,
+        parent: Optional[Span] = None,
+        kind: SpanKind = SpanKind.INTERNAL,
+    ) -> Generator[Span, None, None]:
+        """Start a new span synchronously (for non-async code).
+
+        Args:
+            name: Span name
+            attributes: Initial span attributes
+            parent: Optional explicit parent span
+            kind: Span kind
+
+        Yields:
+            The created span
+        """
+        if not self._enabled:
+            yield Span(name, self)
+            return
+
+        parent_span = parent or self._current_span
+        span = Span(name, self, parent=parent_span, kind=kind)
+
+        if attributes:
+            span.set_attributes(attributes)
+
+        self._span_stack.append(span)
+        self._current_span = span
+        self._spans.append(span)
+
+        if parent_span:
+            parent_span._children.append(span)
+
+        span.add_event("span_started", {"span_name": name})
+
+        try:
+            yield span
+        except Exception as e:
+            span.record_exception(e)
+            raise
+        finally:
+            if span.context.status == SpanStatus.UNSET:
+                span.set_status(SpanStatus.OK)
             span.end()
             self._span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
@@ -171,14 +425,7 @@ class WorkflowTracer:
         """Record an exception in the current or specified span."""
         target_span = span or self._current_span
         if target_span:
-            target_span.set_status("error", str(exception))
-            target_span.add_event(
-                "exception",
-                {
-                    "type": type(exception).__name__,
-                    "message": str(exception),
-                },
-            )
+            target_span.record_exception(exception)
 
     def get_trace_tree(self) -> dict[str, Any]:
         """Get the trace tree as a dictionary for export/visualization."""
@@ -191,10 +438,9 @@ class WorkflowTracer:
                 "trace_id": span.context.trace_id,
                 "start_time": span.context.start_time,
                 "end_time": span.context.end_time,
-                "duration_ms": (span.context.end_time - span.context.start_time) * 1000
-                if span.context.end_time
-                else None,
-                "status": span.context.status,
+                "duration_ms": span.duration_ms,
+                "status": span.context.status.value,
+                "kind": span.context.kind.value,
                 "attributes": span.context.attributes,
                 "events": span.context.events,
                 "children": [span_to_dict(child, depth + 1) for child in span._children],
@@ -205,6 +451,7 @@ class WorkflowTracer:
             "trace_id": self.trace_id,
             "job_id": self.job_id,
             "total_spans": len(self._spans),
+            "total_cost": self._total_cost,
             "root_spans": [span_to_dict(s) for s in root_spans],
         }
 
@@ -213,13 +460,15 @@ class WorkflowTracer:
         if not self._spans:
             return {"total_spans": 0}
 
-        durations = [(s.context.end_time - s.context.start_time) * 1000 for s in self._spans if s.context.end_time]
+        durations = [s.duration_ms for s in self._spans if s.duration_ms is not None]
 
         return {
             "total_spans": len(self._spans),
             "total_duration_ms": max(durations) if durations else 0,
+            "avg_duration_ms": sum(durations) / len(durations) if durations else 0,
             "span_count_by_name": self._count_spans_by_name(),
-            "error_count": sum(1 for s in self._spans if s.context.status == "error"),
+            "error_count": sum(1 for s in self._spans if s.context.status == SpanStatus.ERROR),
+            "total_cost": self._total_cost,
         }
 
     def _count_spans_by_name(self) -> dict[str, int]:
@@ -239,19 +488,36 @@ class WorkflowTracer:
 
 
 class NoOpSpan:
-    """A no-op span for when tracing is disabled."""
+    """A no-op span for when tracing is disabled.
+
+    Implements the same interface as Span but does nothing,
+    allowing instrumented code to work without overhead when tracing is off.
+    """
 
     def __init__(self, name: str):
         self.name = name
+        self.context = SpanContext(
+            trace_id="no-op",
+            span_id="no-op",
+            parent_id=None,
+            start_time=0,
+            name=name,
+        )
 
-    def set_attribute(self, key: str, value: Any) -> None:
-        pass
+    def set_attribute(self, key: str, value: Any) -> "NoOpSpan":
+        return self
 
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> None:
-        pass
+    def set_attributes(self, attributes: dict[str, Any]) -> "NoOpSpan":
+        return self
 
-    def set_status(self, status: str, description: Optional[str] = None) -> None:
-        pass
+    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> "NoOpSpan":
+        return self
+
+    def set_status(self, status: SpanStatus | str, description: Optional[str] = None) -> "NoOpSpan":
+        return self
+
+    def record_exception(self, exception: Exception) -> "NoOpSpan":
+        return self
 
     def end(self) -> None:
         pass
@@ -259,20 +525,33 @@ class NoOpSpan:
     def __enter__(self) -> "NoOpSpan":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         pass
 
 
 class NoOpTracer:
-    """A no-op tracer for when tracing is disabled."""
+    """A no-op tracer for when tracing is disabled.
+
+    Implements the same interface as WorkflowTracer but does nothing,
+    allowing instrumented code to work without overhead when tracing is off.
+    """
 
     def __init__(self, job_id: str):
         self.job_id = job_id
         self.trace_id = f"no-op-{job_id}"
+        self._enabled = False
+        self._total_cost: float = 0.0
 
     @property
     def active_span(self) -> None:
         return None
+
+    @property
+    def total_cost(self) -> float:
+        return self._total_cost
+
+    def add_cost(self, cost: float) -> None:
+        pass
 
     @asynccontextmanager
     async def start_span(
@@ -280,7 +559,18 @@ class NoOpTracer:
         name: str,
         attributes: Optional[dict[str, Any]] = None,
         parent: Optional[Span] = None,
+        kind: SpanKind = SpanKind.INTERNAL,
     ) -> AsyncGenerator[NoOpSpan, None]:
+        yield NoOpSpan(name)
+
+    @contextmanager
+    def start_span_sync(
+        self,
+        name: str,
+        attributes: Optional[dict[str, Any]] = None,
+        parent: Optional[Span] = None,
+        kind: SpanKind = SpanKind.INTERNAL,
+    ) -> Generator[NoOpSpan, None, None]:
         yield NoOpSpan(name)
 
     def record_exception(self, exception: Exception, span: Optional[Span] = None) -> None:
@@ -429,3 +719,472 @@ def get_tracer(job_id: str, enabled: bool = True) -> WorkflowTracer | NoOpTracer
 def is_tracing_enabled() -> bool:
     """Check if tracing is globally enabled."""
     return _tracing_initialized
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TracingConfig:
+    """Configuration for the tracing system.
+
+    Attributes:
+        enabled: Whether tracing is enabled globally
+        exporter: Exporter type (otlp, console, jaeger, none)
+        endpoint: OTLP endpoint URL
+        service_name: Service name for trace attribution
+        service_version: Service version
+        sample_rate: Sampling rate (0.0 to 1.0)
+        cost_tracking: Whether to track costs
+        batch_size: Export batch size
+        export_interval_ms: Export interval in milliseconds
+    """
+
+    enabled: bool = True
+    exporter: str = "console"
+    endpoint: Optional[str] = None
+    service_name: str = "nodetool"
+    service_version: str = "0.6.0"
+    sample_rate: float = 1.0
+    cost_tracking: bool = True
+    batch_size: int = 512
+    export_interval_ms: int = 5000
+
+
+_tracing_config: TracingConfig = TracingConfig()
+
+
+def configure_tracing(config: TracingConfig) -> None:
+    """Configure the tracing system with the given config.
+
+    Args:
+        config: TracingConfig instance
+    """
+    global _tracing_config, _tracing_initialized
+    _tracing_config = config
+    _tracing_initialized = config.enabled
+    log.info(f"Tracing configured: enabled={config.enabled}, exporter={config.exporter}")
+
+
+def get_tracing_config() -> TracingConfig:
+    """Get the current tracing configuration."""
+    return _tracing_config
+
+
+# ---------------------------------------------------------------------------
+# Global Tracer Management
+# ---------------------------------------------------------------------------
+
+_global_tracers: dict[str, WorkflowTracer] = {}
+
+
+def get_or_create_tracer(job_id: str) -> WorkflowTracer | NoOpTracer:
+    """Get or create a tracer for a job, managing lifecycle globally.
+
+    Args:
+        job_id: The job identifier
+
+    Returns:
+        WorkflowTracer or NoOpTracer based on configuration
+    """
+    if not _tracing_config.enabled:
+        return NoOpTracer(job_id)
+
+    if job_id not in _global_tracers:
+        _global_tracers[job_id] = WorkflowTracer(job_id)
+
+    return _global_tracers[job_id]
+
+
+def remove_tracer(job_id: str) -> Optional[WorkflowTracer]:
+    """Remove and return a tracer from global management.
+
+    Args:
+        job_id: The job identifier
+
+    Returns:
+        The removed tracer or None if not found
+    """
+    return _global_tracers.pop(job_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Convenience Context Managers for Common Tracing Scenarios
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def trace_api_call(
+    method: str,
+    path: str,
+    *,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    user_id: Optional[str] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace an HTTP API call.
+
+    Usage:
+        async with trace_api_call("POST", "/api/jobs") as span:
+            span.set_attribute("user_id", user.id)
+            result = await create_job(request)
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: Request path
+        tracer: Optional tracer (uses global if not provided)
+        user_id: Optional user ID for attribution
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("http.request")
+        return
+
+    # Use provided tracer or create a temporary one
+    _tracer = tracer or WorkflowTracer(f"api-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        "http.request",
+        attributes={
+            "http.method": method,
+            "http.path": path,
+            "http.user_id": user_id,
+        },
+        kind=SpanKind.SERVER,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_websocket_message(
+    command: str,
+    direction: Literal["inbound", "outbound"],
+    *,
+    job_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace a WebSocket message.
+
+    Usage:
+        async with trace_websocket_message("run_job", "inbound", job_id="123") as span:
+            await handle_command(command, data)
+
+    Args:
+        command: Command type being processed
+        direction: Message direction (inbound/outbound)
+        job_id: Associated job ID (for workflow commands)
+        thread_id: Associated thread ID (for chat commands)
+        tracer: Optional tracer (uses job tracer if job_id provided)
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("websocket.message")
+        return
+
+    # Get tracer from job_id or create temporary
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"ws-{_generate_span_id()}")
+
+    kind = SpanKind.CONSUMER if direction == "inbound" else SpanKind.PRODUCER
+
+    async with _tracer.start_span(
+        f"websocket.{direction}",
+        attributes={
+            "websocket.command": command,
+            "websocket.direction": direction,
+            "websocket.job_id": job_id,
+            "websocket.thread_id": thread_id,
+        },
+        kind=kind,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_workflow(
+    job_id: str,
+    workflow_id: Optional[str] = None,
+    *,
+    user_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace workflow execution lifecycle.
+
+    Usage:
+        async with trace_workflow(job_id="job-123", workflow_id="wf-456") as span:
+            span.set_attribute("node_count", 5)
+            await runner.run(req, context)
+
+    Args:
+        job_id: Unique job identifier
+        workflow_id: Optional workflow ID
+        user_id: Optional user ID for attribution
+        tracer: Optional tracer (creates one for the job if not provided)
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("workflow.execute")
+        return
+
+    _tracer = tracer or get_or_create_tracer(job_id)
+
+    async with _tracer.start_span(
+        "workflow.execute",
+        attributes={
+            "nodetool.workflow.job_id": job_id,
+            "nodetool.workflow.id": workflow_id,
+            "nodetool.workflow.user_id": user_id,
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_node(
+    node_id: str,
+    node_type: str,
+    *,
+    job_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace individual node execution.
+
+    Usage:
+        async with trace_node("node-123", "ImageGenerate") as span:
+            span.set_attribute("inputs", list(inputs.keys()))
+            result = await node.process(inputs)
+
+    Args:
+        node_id: Node identifier
+        node_type: Node class type
+        job_id: Optional job ID to link to workflow tracer
+        tracer: Optional tracer (uses job tracer if job_id provided)
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("workflow.node")
+        return
+
+    _tracer = get_or_create_tracer(job_id) if job_id and tracer is None else tracer or WorkflowTracer(f"node-{node_id}")
+
+    async with _tracer.start_span(
+        "workflow.node",
+        attributes={
+            "nodetool.node.id": node_id,
+            "nodetool.node.type": node_type,
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_provider_call(
+    provider: str,
+    model: str,
+    operation: str,
+    *,
+    job_id: Optional[str] = None,
+    node_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    track_cost: bool = True,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace AI provider API calls with optional cost tracking.
+
+    Usage:
+        async with trace_provider_call("openai", "gpt-4o", "chat") as span:
+            response = await client.chat.completions.create(...)
+            span.set_attribute("cost.input_tokens", response.usage.prompt_tokens)
+            span.set_attribute("cost.output_tokens", response.usage.completion_tokens)
+            span.set_attribute("cost.credits", calculated_cost)
+
+    Args:
+        provider: Provider name (openai, anthropic, etc.)
+        model: Model identifier
+        operation: Operation type (chat, image, tts, etc.)
+        job_id: Optional job ID to link to workflow tracer
+        node_id: Optional node ID for attribution
+        user_id: Optional user ID for cost attribution
+        tracer: Optional tracer
+        track_cost: Whether to track cost for this call
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("provider.call")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"provider-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        f"provider.{operation}",
+        attributes={
+            "nodetool.provider.name": provider,
+            "nodetool.provider.model": model,
+            "nodetool.provider.operation": operation,
+            "nodetool.provider.node_id": node_id,
+            "nodetool.provider.user_id": user_id,
+            "nodetool.cost.tracking_enabled": track_cost and _tracing_config.cost_tracking,
+        },
+        kind=SpanKind.CLIENT,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_agent_task(
+    agent_type: str,
+    task_description: str,
+    *,
+    job_id: Optional[str] = None,
+    tools: Optional[list[str]] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace agent task execution.
+
+    Usage:
+        async with trace_agent_task("cot", "Generate image") as span:
+            span.set_attribute("tools_used", ["browser", "image_gen"])
+            result = await agent.execute(task)
+
+    Args:
+        agent_type: Type of agent (cot, simple, etc.)
+        task_description: Brief task description (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        tools: List of available tool names
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("agent.task")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"agent-{_generate_span_id()}")
+
+    # Truncate task description for span attribute
+    truncated_desc = task_description[:200] if len(task_description) > 200 else task_description
+
+    async with _tracer.start_span(
+        "agent.task",
+        attributes={
+            "nodetool.agent.type": agent_type,
+            "nodetool.agent.task_description": truncated_desc,
+            "nodetool.agent.available_tools": tools or [],
+        },
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        yield span
+
+
+# ---------------------------------------------------------------------------
+# Synchronous Context Managers
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def trace_sync(
+    name: str,
+    *,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    attributes: Optional[dict[str, Any]] = None,
+    kind: SpanKind = SpanKind.INTERNAL,
+) -> Generator[Span | NoOpSpan, None, None]:
+    """Trace a synchronous operation.
+
+    Usage:
+        with trace_sync("process_data", attributes={"size": 100}) as span:
+            process_data(data)
+
+    Args:
+        name: Span name
+        tracer: Optional tracer
+        attributes: Initial span attributes
+        kind: Span kind
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled or tracer is None:
+        yield NoOpSpan(name)
+        return
+
+    with tracer.start_span_sync(name, attributes=attributes, kind=kind) as span:
+        yield span
+
+
+# ---------------------------------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------------------------------
+
+
+def record_cost(
+    span: Span | NoOpSpan,
+    *,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cached_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    credits: float = 0.0,
+    currency: str = "credits",
+) -> None:
+    """Record cost information on a span.
+
+    Args:
+        span: The span to record cost on
+        input_tokens: Number of input tokens
+        output_tokens: Number of output tokens
+        cached_tokens: Number of cached tokens
+        reasoning_tokens: Number of reasoning tokens
+        credits: Cost in credits
+        currency: Currency type
+    """
+    if not _tracing_config.cost_tracking:
+        return
+
+    span.set_attribute("cost.input_tokens", input_tokens)
+    span.set_attribute("cost.output_tokens", output_tokens)
+    span.set_attribute("cost.cached_tokens", cached_tokens)
+    span.set_attribute("cost.reasoning_tokens", reasoning_tokens)
+    span.set_attribute("cost.credits", credits)
+    span.set_attribute("cost.currency", currency)
+    span.set_attribute("cost.total_tokens", input_tokens + output_tokens)
+
+
+def set_response_attributes(
+    span: Span | NoOpSpan,
+    status_code: int,
+    content_length: Optional[int] = None,
+) -> None:
+    """Set HTTP response attributes on a span.
+
+    Args:
+        span: The span to set attributes on
+        status_code: HTTP status code
+        content_length: Optional response content length
+    """
+    span.set_attribute("http.status_code", status_code)
+    if content_length is not None:
+        span.set_attribute("http.response_content_length", content_length)
