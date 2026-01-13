@@ -47,7 +47,6 @@ from io import BytesIO
 from pickle import loads
 from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
 
-from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -292,7 +291,7 @@ class ProcessingContext:
         # Store passed client only as fallback if no scope is available
         if http_client is not None:
             self._http_client = http_client
-        self.workspace_dir = workspace_dir or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
+        self.workspace_dir = workspace_dir  # User-defined workspace only; None if not provided
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}

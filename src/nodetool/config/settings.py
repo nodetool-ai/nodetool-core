@@ -396,7 +396,7 @@ def get_system_data_path(filename: str) -> Path:
         return Path.home() / ".local" / "share" / "nodetool" / filename
     elif os_name == "Windows":
         # Use APPDATA (Roaming) instead of LOCALAPPDATA
-        appdata = os.getenv("APPDATA") 
+        appdata = os.getenv("APPDATA")
         if appdata is not None:
             return Path(appdata) / "nodetool" / filename
         return Path("data") / filename

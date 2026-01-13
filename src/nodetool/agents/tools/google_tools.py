@@ -251,7 +251,7 @@ if __name__ == "__main__":
     from nodetool.workflows.processing_context import ProcessingContext
 
     async def main():
-        # Workspace dir will default based on WorkspaceManager
+        # Workspace dir must be explicitly provided (user-defined workspaces only)
         context = ProcessingContext()
         print(f"Using workspace directory: {context.workspace_dir}")
 

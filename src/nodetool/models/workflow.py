@@ -55,6 +55,7 @@ class Workflow(DBModel):
     settings: dict[str, Any] | None = DBField(default_factory=dict)
     receive_clipboard: bool | None = DBField(default=False)
     run_mode: str | None = DBField(default=None)
+    workspace_id: str | None = DBField(default=None)  # Optional foreign key to nodetool_workspaces
 
     def before_save(self):
         """Updates the `updated_at` timestamp before saving."""
@@ -94,6 +95,7 @@ class Workflow(DBModel):
                 },
             ),
             run_mode=data.get("run_mode"),
+            workspace_id=data.get("workspace_id"),
         )
 
     @classmethod
