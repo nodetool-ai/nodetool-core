@@ -114,13 +114,21 @@ class SupabaseStorage(AbstractStorage):
         tmp_path = tmp.name
         tmp.close()  # Close the sync file handle
 
-        # Write content asynchronously
-        async with aiofiles.open(tmp_path, "wb") as f:
-            while True:
-                chunk = content.read(8192)
-                if not chunk:
-                    break
-                await f.write(chunk)
+        try:
+            # Write content asynchronously
+            async with aiofiles.open(tmp_path, "wb") as f:
+                while True:
+                    chunk = content.read(8192)
+                    if not chunk:
+                        break
+                    await f.write(chunk)
+        except Exception:
+            # Clean up temp file if write fails
+            import os
+
+            with suppress(OSError):
+                os.unlink(tmp_path)
+            raise
 
         content.seek(0)
         return tmp_path

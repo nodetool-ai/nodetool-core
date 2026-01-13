@@ -286,7 +286,7 @@ class ListDirectoryTool(Tool):
                     "error": f"Path {path} is not a directory",
                 }
 
-            results: dict[str, list[str]] = {"files": [], "directories": []}
+            results = {"files": [], "directories": []}
             errors = []
 
             if recursive:

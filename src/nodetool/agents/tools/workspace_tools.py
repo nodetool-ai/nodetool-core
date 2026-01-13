@@ -286,13 +286,13 @@ class ListDirectoryTool(Tool):
                     "error": f"Path {path} is not a directory",
                 }
 
-            results: dict[str, list[str]] = {"files": [], "directories": []}
+            results = {"files": [], "directories": []}
             errors = []
 
             if recursive:
                 # Use asyncio.to_thread for the blocking os.walk operation
                 def _walk_directory():
-                    result: dict[str, list[str]] = {"files": [], "directories": []}
+                    result = {"files": [], "directories": []}
                     for root, dirs, files in os.walk(full_path):
                         rel_root = os.path.relpath(root, context.workspace_dir)
                         # Add directories found in this level relative to the input path
