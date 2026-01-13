@@ -56,6 +56,8 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.job import Job
+from nodetool.models.workflow import Workflow
+from nodetool.models.workspace import Workspace
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
 from nodetool.types.job import JobUpdate, RunStateInfo
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
@@ -511,12 +513,30 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
             # Create processing context
             asset_mode = AssetOutputMode.DATA_URI if self.mode == WebSocketMode.TEXT else AssetOutputMode.RAW
+
+            # Resolve workspace_dir from workflow's workspace_id if available
+            workspace_dir: str | None = None
+            if req.workflow_id:
+                try:
+                    async with ResourceScope():
+                        workflow = await Workflow.find(req.user_id, req.workflow_id)
+                        if workflow and workflow.workspace_id:
+                            workspace = await Workspace.find(req.user_id, workflow.workspace_id)
+                            if workspace and workspace.is_accessible():
+                                workspace_dir = workspace.path
+                                log.info(f"Using workspace_dir from workflow: {workspace_dir}")
+                            elif workspace:
+                                log.warning(f"Workspace {workflow.workspace_id} exists but is not accessible")
+                except Exception as e:
+                    log.error(f"Error resolving workspace for workflow {req.workflow_id}: {e}")
+
             context = ProcessingContext(
                 user_id=req.user_id,
                 auth_token=req.auth_token,
                 workflow_id=req.workflow_id,
                 encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
                 asset_output_mode=asset_mode,
+                workspace_dir=workspace_dir,
             )
 
             # Start job in background via JobExecutionManager

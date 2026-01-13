@@ -303,6 +303,16 @@ _tracing_initialized = False
 _global_tracer: Optional["WorkflowTracer"] = None
 
 
+@dataclass
+class TracingConfig:
+    enabled: bool = True
+    exporter: Optional[str] = None
+    service_version: Optional[str] = None
+
+
+_tracing_config = TracingConfig()
+
+
 def _is_truthy(value: Optional[str]) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 

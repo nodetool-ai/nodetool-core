@@ -71,7 +71,6 @@ def _create_macos_sandbox_profile(
     # Default paths where writes are allowed
     default_write_paths = [
         f"{home}/.cache",  # User cache directory
-        f"{home}/.nodetool-workspaces",  # NodeTool workspaces directory
         f"{home}/.config/nodetool",  # NodeTool config directory
         f"{home}/.local/share/nodetool",  # NodeTool data directory
         f"{home}/Library/Caches",  # macOS cache location

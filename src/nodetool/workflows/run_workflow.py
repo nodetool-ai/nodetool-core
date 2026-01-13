@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
+from nodetool.models.workspace import Workspace
 from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
@@ -13,6 +14,34 @@ from nodetool.workflows.types import Error, ProcessingMessage
 from nodetool.workflows.workflow_runner import WorkflowRunner
 
 log = get_logger(__name__)
+
+
+async def _resolve_workspace_dir(user_id: str, workspace_id: str | None) -> str | None:
+    """
+    Resolve the workspace directory path from a workspace_id.
+
+    Args:
+        user_id: The user ID to validate workspace ownership.
+        workspace_id: The workspace ID to look up, can be None.
+
+    Returns:
+        The workspace path if found and accessible, None otherwise.
+    """
+    if not workspace_id:
+        return None
+
+    try:
+        workspace = await Workspace.find(user_id, workspace_id)
+        if workspace and workspace.is_accessible():
+            return workspace.path
+        elif workspace:
+            log.warning(f"Workspace {workspace_id} exists but is not accessible")
+        else:
+            log.warning(f"Workspace {workspace_id} not found for user {user_id}")
+    except Exception as e:
+        log.error(f"Error resolving workspace {workspace_id}: {e}")
+
+    return None
 
 
 async def handle_runner_error(
@@ -156,6 +185,17 @@ async def run_workflow(
                     request.graph = workflow.graph
                 else:
                     raise Exception("Workflow object does not provide a graph")
+
+                # Set workspace_dir from workflow's workspace_id if available
+                if context.workspace_dir is None and hasattr(workflow, "workspace_id"):
+                    workspace_id = getattr(workflow, "workspace_id", None)
+                    if workspace_id:
+                        context.workspace_dir = await _resolve_workspace_dir(
+                            context.user_id, workspace_id
+                        )
+                        if context.workspace_dir:
+                            log.info(f"Using workspace_dir from workflow: {context.workspace_dir}")
+
             # Execute runner with configured options
             await runner.run(
                 request,
