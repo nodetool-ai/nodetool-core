@@ -177,6 +177,7 @@ class TestWorkflowFileEndpoints:
                 "name": "File Test Workflow",
                 "graph": {"nodes": [], "edges": []},
                 "workspace_id": workspace_id,
+                "access": "private",
             },
         )
         assert wf_response.status_code == 200
@@ -246,6 +247,7 @@ class TestWorkflowFileEndpoints:
             json={
                 "name": "No Workspace Workflow",
                 "graph": {"nodes": [], "edges": []},
+                "access": "private",
             },
         )
         assert wf_response.status_code == 200

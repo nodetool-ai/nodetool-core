@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.api.model import get_all_models, recommended_models
@@ -46,7 +46,7 @@ class QueryModelsTool(Tool):
         },
     }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> list[dict[str, Any]]:
         query = params.get("query", "").lower()
         model_type = params.get("type", "").lower()
         provider = params.get("provider", "").lower()
@@ -60,7 +60,7 @@ class QueryModelsTool(Tool):
             models = await get_all_models(user_id)
 
         # Apply filters
-        filtered_models: List[UnifiedModel] = []
+        filtered_models: list[UnifiedModel] = []
         for m in models:
             # Type filter
             if model_type:
