@@ -96,6 +96,7 @@ async def from_model(
         output_schema=output_schema,
         settings=workflow.settings,
         run_mode=workflow.run_mode,
+        workspace_id=workflow.workspace_id,
     )
 
 
@@ -492,6 +493,7 @@ async def update_workflow(
     workflow.graph = new_graph
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
+    workflow.workspace_id = workflow_request.workspace_id
     workflow.updated_at = datetime.now()
     await workflow.save()
 

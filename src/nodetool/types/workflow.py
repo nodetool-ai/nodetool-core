@@ -23,6 +23,7 @@ class Workflow(BaseModel):
     package_name: str | None = None
     path: str | None = None
     run_mode: str | None = None
+    workspace_id: str | None = None
     required_providers: list[str] | None = None
     required_models: list[str] | None = None
 
@@ -41,6 +42,7 @@ class WorkflowRequest(BaseModel):
     comfy_workflow: dict[str, Any] | None = None
     settings: dict[str, str | bool | int | float | None] | None = None
     run_mode: str | None = None
+    workspace_id: str | None = None
 
 
 class WorkflowList(BaseModel):
