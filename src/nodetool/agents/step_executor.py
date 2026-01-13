@@ -959,7 +959,9 @@ class StepExecutor:
                 yield LogUpdate(
                     node_id=self.step.id,
                     node_name=f"Step: {self.step.id}",
-                    content="Generating next steps..." if not self.in_conclusion_stage else "Synthesizing final answer...",
+                    content="Generating next steps..."
+                    if not self.in_conclusion_stage
+                    else "Synthesizing final answer...",
                     severity="info",
                 )
                 message = None
@@ -1089,10 +1091,14 @@ class StepExecutor:
                 completed, normalized_result = self._maybe_finalize_from_message(message)
                 if completed and normalized_result is not None:
                     self._store_completion_result(normalized_result)
-                    log.debug(f"StepExecutor: {self.step.id} completed via message. use_finish_task={self.use_finish_task}")
+                    log.debug(
+                        f"StepExecutor: {self.step.id} completed via message. use_finish_task={self.use_finish_task}"
+                    )
                     for event in self._emit_completion_events(normalized_result):
                         if isinstance(event, StepResult):
-                            log.debug(f"StepExecutor: Yielding message StepResult. is_task_result={event.is_task_result}")
+                            log.debug(
+                                f"StepExecutor: Yielding message StepResult. is_task_result={event.is_task_result}"
+                            )
                         yield event
                     break
 
@@ -1100,10 +1106,13 @@ class StepExecutor:
             span.set_attribute("nodetool.step.iterations", self.iterations)
             span.set_attribute("nodetool.step.tool_calls_count", tool_calls_count)
             span.set_attribute("nodetool.step.completed", self.step.completed)
-            span.add_event("step_execution_completed", {
-                "iterations": self.iterations,
-                "tool_calls_count": tool_calls_count,
-            })
+            span.add_event(
+                "step_execution_completed",
+                {
+                    "iterations": self.iterations,
+                    "tool_calls_count": tool_calls_count,
+                },
+            )
 
             # Display completion event
             if self.display_manager:

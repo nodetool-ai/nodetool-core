@@ -1149,7 +1149,9 @@ class TaskPlanner:
                     # Construct error message based on plan_creation_error or last message
                     if plan_creation_error:
                         error_message = f"Failed to create valid task during Plan Creation phase. Original error: {str(plan_creation_error)}"
-                        full_error_message = f"{error_message}\n{traceback.format_exc()}" if self.verbose else error_message
+                        full_error_message = (
+                            f"{error_message}\n{traceback.format_exc()}" if self.verbose else error_message
+                        )
                         log.error("Task creation failed: %s", error_message)
                         span.add_event("planning_failed", {"error": error_message[:500]})
                         # Yield failure update before raising

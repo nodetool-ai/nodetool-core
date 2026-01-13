@@ -156,10 +156,13 @@ class TaskExecutor:
                         )
                     break
 
-                span.add_event("iteration_started", {
-                    "iteration": steps_taken,
-                    "executable_count": len(executable_tasks),
-                })
+                span.add_event(
+                    "iteration_started",
+                    {
+                        "iteration": steps_taken,
+                        "executable_count": len(executable_tasks),
+                    },
+                )
 
                 # Create a list to store all step execution generators
                 step_generators = []
@@ -206,10 +209,13 @@ class TaskExecutor:
 
             span.set_attribute("nodetool.task_executor.steps_taken", steps_taken)
             span.set_attribute("nodetool.task_executor.completed_steps", completed_steps)
-            span.add_event("execution_completed", {
-                "steps_taken": steps_taken,
-                "completed_steps": completed_steps,
-            })
+            span.add_event(
+                "execution_completed",
+                {
+                    "steps_taken": steps_taken,
+                    "completed_steps": completed_steps,
+                },
+            )
 
     def _get_all_executable_tasks(self) -> list[Step]:
         """
