@@ -4,6 +4,7 @@ Tests for the Workspace API endpoints.
 
 import os
 import tempfile
+
 import pytest
 
 
@@ -22,7 +23,7 @@ class TestWorkspaceAPI:
     def test_create_workspace_success(self, client, headers, tmp_path):
         """Test creating a workspace with valid data."""
         workspace_path = str(tmp_path)
-        
+
         response = client.post(
             "/api/workspaces",
             headers=headers,
@@ -81,7 +82,7 @@ class TestWorkspaceAPI:
         )
         assert create_response.status_code == 201
         workspace_id = create_response.json()["id"]
-        
+
         # Then get it
         get_response = client.get(f"/api/workspaces/{workspace_id}", headers=headers)
         assert get_response.status_code == 200
@@ -108,11 +109,11 @@ class TestWorkspaceAPI:
         )
         assert create_response.status_code == 201
         workspace_id = create_response.json()["id"]
-        
+
         # Then delete it
         delete_response = client.delete(f"/api/workspaces/{workspace_id}", headers=headers)
         assert delete_response.status_code == 204
-        
+
         # Verify it's gone
         get_response = client.get(f"/api/workspaces/{workspace_id}", headers=headers)
         assert get_response.status_code == 404

@@ -2,10 +2,10 @@
 Tests for the Workspace model.
 """
 
+import asyncio
 import os
 import tempfile
 import unittest
-import asyncio
 
 import pytest
 
@@ -22,6 +22,7 @@ class TestWorkspaceModel(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir)
 
     def test_workspace_is_accessible_with_valid_path(self):
@@ -84,6 +85,7 @@ class TestWorkspaceModelAsync:
         temp = tempfile.mkdtemp()
         yield temp
         import shutil
+
         shutil.rmtree(temp)
 
 
