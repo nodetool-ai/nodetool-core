@@ -367,7 +367,7 @@ class BaseChatRunner(ABC):
         processor_task = asyncio.create_task(process())
         try:
             # Process messages while the processor is running
-            while processor.has_messages() or processor.is_processing:
+            while processor.is_processing:
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
@@ -379,6 +379,18 @@ class BaseChatRunner(ABC):
                         await self.send_message(message)
                 else:
                     # Small delay to avoid busy waiting
+                    await asyncio.sleep(0.01)
+
+            # Process any remaining messages after processor signals completion
+            while processor.has_messages():
+                message = await processor.get_message()
+                if message:
+                    if message["type"] == "message":
+                        await self._save_message_to_db_async(message)
+                        await self.send_message(message)
+                    else:
+                        await self.send_message(message)
+                else:
                     await asyncio.sleep(0.01)
 
             # Wait for the processor task to complete
