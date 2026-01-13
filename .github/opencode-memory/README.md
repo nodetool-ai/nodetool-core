@@ -97,10 +97,6 @@ Use descriptive, kebab-case names that make the topic obvious at a glance:
 **Date**: YYYY-MM-DD
 ```
 
-## Legacy Files
-
-`common-issues.md` and `insights.md` remain for historical context. Add all new entries under `issues/` and `insights/` going forward.
-
 ## Benefits
 
 ✅ Fewer merge conflicts with file-based entries
