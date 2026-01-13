@@ -190,9 +190,7 @@ async def run_workflow(
                 if context.workspace_dir is None and hasattr(workflow, "workspace_id"):
                     workspace_id = getattr(workflow, "workspace_id", None)
                     if workspace_id:
-                        context.workspace_dir = await _resolve_workspace_dir(
-                            context.user_id, workspace_id
-                        )
+                        context.workspace_dir = await _resolve_workspace_dir(context.user_id, workspace_id)
                         if context.workspace_dir:
                             log.info(f"Using workspace_dir from workflow: {context.workspace_dir}")
 

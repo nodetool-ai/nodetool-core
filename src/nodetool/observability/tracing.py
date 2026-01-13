@@ -978,11 +978,7 @@ async def trace_node(
         yield NoOpSpan("workflow.node")
         return
 
-    _tracer = (
-        get_or_create_tracer(job_id)
-        if job_id and tracer is None
-        else tracer or WorkflowTracer(f"node-{node_id}")
-    )
+    _tracer = get_or_create_tracer(job_id) if job_id and tracer is None else tracer or WorkflowTracer(f"node-{node_id}")
 
     async with _tracer.start_span(
         "workflow.node",

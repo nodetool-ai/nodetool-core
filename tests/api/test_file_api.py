@@ -40,4 +40,3 @@ def test_upload_and_download_file(tmp_path, client: TestClient, headers: dict[st
     download = client.get(f"/api/files/download/{target}", headers=headers)
     assert download.status_code == 200
     assert download.content == content
-
