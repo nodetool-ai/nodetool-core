@@ -83,7 +83,7 @@ def workspace_to_response(workspace: WorkspaceModel) -> WorkspaceResponse:
     )
 
 
-@router.get("", response_model=WorkspaceListResponse)
+@router.get("/", response_model=WorkspaceListResponse)
 async def list_workspaces(
     limit: int = 100,
     cursor: Optional[str] = None,
@@ -110,7 +110,7 @@ async def list_workspaces(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("", response_model=WorkspaceResponse, status_code=201)
+@router.post("/", response_model=WorkspaceResponse, status_code=201)
 async def create_workspace(
     request: WorkspaceCreateRequest,
     user: str = Depends(current_user),
