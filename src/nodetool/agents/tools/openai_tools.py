@@ -1,5 +1,5 @@
 import base64
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from openai import AsyncClient
@@ -45,7 +45,7 @@ class OpenAIWebSearchTool(Tool):
         key = Environment.get("OPENAI_API_KEY")
         return {"OPENAI_API_KEY": key} if key else {}
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Execute a web search using OpenAI's API.
 
@@ -116,7 +116,7 @@ class OpenAIImageGenerationTool(Tool):
             "required": ["prompt", "output_file"],
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Generate an image using OpenAI's Image Generation API.
 
@@ -213,7 +213,7 @@ class OpenAITextToSpeechTool(Tool):
         key = Environment.get("OPENAI_API_KEY")
         return {"OPENAI_API_KEY": key} if key else {}
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> dict[str, Any]:
         """
         Generate audio from text using OpenAI's TTS API.
 

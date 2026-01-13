@@ -163,14 +163,8 @@ import logging
 import re
 import time
 import uuid
-from typing import (
-    Any,
-    AsyncGenerator,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-)
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any
 
 import tiktoken
 from jinja2 import BaseLoader, Environment
@@ -303,7 +297,7 @@ Before making tool calls, provide clear progress updates:
 """
 
 
-def _validate_and_sanitize_schema(schema: Any, default_description: str = "Result object") -> Dict[str, Any]:
+def _validate_and_sanitize_schema(schema: Any, default_description: str = "Result object") -> dict[str, Any]:
     """
     Validates and sanitizes a JSON schema to ensure it's compatible with OpenAI function calling.
 
@@ -348,7 +342,7 @@ def _validate_and_sanitize_schema(schema: Any, default_description: str = "Resul
         "patternProperties",
     }
 
-    def _should_default_additional_properties(obj: Dict[str, Any]) -> bool:
+    def _should_default_additional_properties(obj: dict[str, Any]) -> bool:
         """Determine if we should set additionalProperties to False for this node."""
         if "additionalProperties" in obj:
             return False
@@ -432,10 +426,10 @@ class StepExecutor:
     jinja_env: Environment
     system_prompt: str
     tools: Sequence[Tool]
-    history: List[Message]
+    history: list[Message]
     iterations: int
-    sources: List[str]
-    progress: List[Any]
+    sources: list[str]
+    progress: list[Any]
     encoding: tiktoken.Encoding
     _chunk_buffer: str
     _is_buffering_chunks: bool
@@ -453,11 +447,11 @@ class StepExecutor:
         tools: Sequence[Tool],
         model: str,
         provider: BaseProvider,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         use_finish_task: bool = False,
         max_token_limit: int | None = None,
         max_iterations: int | None = None,
-        display_manager: Optional[AgentConsole] = None,
+        display_manager: AgentConsole | None = None,
     ):
         """
         Initialize a step execution context.
@@ -467,13 +461,13 @@ class StepExecutor:
             step (Step): The step to execute
             processing_context (ProcessingContext): The processing context
             system_prompt (str): The system prompt for this step
-            tools (List[Tool]): Tools available to this step
+            tools (list[Tool]): Tools available to this step
             model (str): The model to use for this step
             provider (ChatProvider): The provider to use for this step
             use_finish_task (bool): Whether this step produces the final aggregated task result
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Deprecated; token budget now controls termination
-            display_manager (Optional[AgentConsole]): Console for beautiful terminal output
+            display_manager (AgentConsole | None): Console for beautiful terminal output
         """
         self.task = task
         self.step = step
@@ -562,7 +556,7 @@ class StepExecutor:
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
 
-    def _count_tokens(self, messages: List[Message]) -> int:
+    def _count_tokens(self, messages: list[Message]) -> int:
         """
         Count the number of tokens in the message history.
 
@@ -691,7 +685,7 @@ class StepExecutor:
 
         log.info("History trimmed at iteration %d. Token count reset.", self.iterations)
 
-    def _load_result_schema(self) -> Optional[Dict[str, Any]]:
+    def _load_result_schema(self) -> dict[str, Any] | None:
         """Parse and sanitize the declared output schema for this step."""
 
         if not self.step.output_schema:
@@ -713,7 +707,7 @@ class StepExecutor:
                 "description": default_description,
             }
 
-    def _validate_result_payload(self, result_payload: Any) -> tuple[bool, Optional[str], Any]:
+    def _validate_result_payload(self, result_payload: Any) -> tuple[bool, str | None, Any]:
         """Validate the provided result payload against the declared schema."""
 
         normalized_result = self._normalize_tool_result(result_payload)
@@ -767,7 +761,7 @@ class StepExecutor:
 
         self.history.append(Message(role="system", content="\n".join(message_lines)))
 
-    def _maybe_finalize_from_message(self, message: Optional[Message]) -> tuple[bool, Optional[Any]]:
+    def _maybe_finalize_from_message(self, message: Message | None) -> tuple[bool, Any | None]:
         """Attempt to parse and store a completion payload from the assistant message."""
 
         if not message:
@@ -1204,7 +1198,7 @@ class StepExecutor:
 
         yield message
 
-    def _filter_tool_calls_for_current_stage(self, tool_calls: Optional[list[ToolCall]]) -> list[ToolCall]:
+    def _filter_tool_calls_for_current_stage(self, tool_calls: list[ToolCall] | None) -> list[ToolCall]:
         """Filter tool calls based on whether we're in the conclusion stage."""
         if not tool_calls:
             return []
@@ -1319,8 +1313,8 @@ class StepExecutor:
         raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
 
     def _handle_binary_artifact(
-        self, tool_result: Dict[str, Any], tool_call_name: str, artifact_type: str
-    ) -> Dict[str, Any]:
+        self, tool_result: dict[str, Any], tool_call_name: str, artifact_type: str
+    ) -> dict[str, Any]:
         """Handles saving binary artifacts (image or audio) and updating the tool result."""
         artifact_key = artifact_type  # "image" or "audio"
         base64_data = tool_result.get(artifact_key)
@@ -1410,7 +1404,7 @@ class StepExecutor:
                 }
             )
 
-    async def _request_completion_response(self, system_prompt: str) -> Optional[Any]:
+    async def _request_completion_response(self, system_prompt: str) -> Any | None:
         """Ask the LLM to provide the final completion JSON and return the parsed result."""
 
         self.history.append(Message(role="system", content=system_prompt))
