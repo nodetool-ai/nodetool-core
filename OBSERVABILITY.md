@@ -617,6 +617,169 @@ async with trace_agent_task("cot", "Generate image based on description") as spa
 
 ---
 
+## OpenTelemetry Auto-Instrumentation for Server Environments
+
+For production server deployments, you can use OpenTelemetry's auto-instrumentation instead of the manual tracing context managers. This provides automatic tracing for HTTP requests, WebSocket connections, and database calls without modifying application code.
+
+### Quick Start
+
+1. **Install dependencies** (already included in `pyproject.toml`):
+   ```bash
+   uv sync --all-extras
+   ```
+
+2. **Configure environment variables** (see `.env.example` for full configuration):
+   ```bash
+   export OTEL_SERVICE_NAME="nodetool-api"
+   export OTEL_TRACES_EXPORTER="console,otlp"
+   export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+   ```
+
+3. **Run with auto-instrumentation**:
+   ```bash
+   opentelemetry-instrument uvicorn nodetool.api.app:app --host 0.0.0.0 --port 8000
+   ```
+
+   Or use the provided script:
+   ```bash
+   ./scripts/server-otel.sh
+   ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_SERVICE_NAME` | `nodetool-api` | Service name for trace attribution |
+| `OTEL_TRACES_EXPORTER` | `console,otlp` | Comma-separated exporters: `console`, `otlp` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector gRPC endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Protocol: `grpc`, `http/protobuf`, `http/json` |
+| `OTEL_METRICS_EXPORTER` | `otlp` | Metrics exporter: `console`, `otlp`, `none` |
+| `OTEL_LOGS_EXPORTER` | `none` | Logs exporter: `console`, `otlp`, `none` |
+| `OTEL_SAMPLING_RATIO` | `1.0` | Sampling ratio (0.0 to 1.0) |
+| `OTEL_RESOURCE_ATTRIBUTES` | - | Resource attributes (e.g., `deployment.environment=production`) |
+| `OTEL_PROPAGATORS` | `tracecontext,baggage` | Context propagation methods |
+
+### Docker Deployment Example
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY . .
+
+RUN pip install -e .
+
+# Environment variables for OpenTelemetry
+ENV OTEL_SERVICE_NAME=nodetool-api
+ENV OTEL_TRACES_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
+ENV OTEL_METRICS_EXPORTER=otlp
+
+EXPOSE 8000
+
+CMD ["opentelemetry-instrument", "uvicorn", "nodetool.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### Kubernetes Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodetool-api
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: nodetool
+        image: nodetool:latest
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "nodetool-api"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector:4317"
+        - name: OTEL_METRICS_EXPORTER
+          value: "otlp"
+        - name: OTEL_SAMPLING_RATIO
+          value: "0.1"
+        ports:
+        - containerPort: 8000
+```
+
+### OTLP Collector Configuration
+
+For production, use an OTLP collector to buffer and export traces:
+
+```yaml
+# otel-collector-config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1000
+    spike_limit_mib: 200
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+```
+
+### Combining Manual and Auto-Instrumentation
+
+The auto-instrumentation provides general HTTP/websocket tracing, while the manual context managers add NodeTool-specific attributes and workflow-level tracing. They work together seamlessly:
+
+- Auto-instrumentation captures: HTTP requests, response times, status codes
+- Manual tracing adds: Workflow IDs, node execution, AI provider costs
+
+Both tracing data will appear in your OTLP backend with proper parent-child relationships.
+
+### Troubleshooting
+
+**No traces appearing:**
+1. Verify OTLP endpoint is accessible
+2. Check firewall rules for port 4317
+3. Enable console exporter for debugging: `OTEL_TRACES_EXPORTER=console`
+
+**High memory usage:**
+1. Reduce sampling ratio: `OTEL_SAMPLING_RATIO=0.1`
+2. Enable batching: Add processor configuration to collector
+3. Disable metrics: `OTEL_METRICS_EXPORTER=none`
+
+**Missing spans:**
+1. Ensure `opentelemetry-instrument` wraps the uvicorn command
+2. Check that instrumented packages are imported
+3. Verify service name is set correctly
+
+---
+
 ## Best Practices
 
 ### 1. Span Naming Convention
