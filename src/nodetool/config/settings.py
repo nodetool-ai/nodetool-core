@@ -152,8 +152,42 @@ register_setting(
     description="Optional prefix applied to user/node Supabase tables to avoid clashes with core tables",
 )
 
+# Observability - Traceloop / OpenLLMetry
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_ENABLED",
+    group="Observability",
+    description="Enable Traceloop OpenLLMetry tracing",
+    enum=["true", "false"],
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_APP_NAME",
+    group="Observability",
+    description="Override the OpenLLMetry application name (defaults to service name)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_BASE_URL",
+    group="Observability",
+    description="Override the Traceloop OTLP base URL",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_DISABLE_BATCH",
+    group="Observability",
+    description="Disable Traceloop batch span processing for local development",
+    enum=["true", "false"],
+)
+
 
 # Secrets
+register_secret(
+    package_name="nodetool",
+    env_var="TRACELOOP_API_KEY",
+    group="Observability",
+    description="Traceloop API key for OpenLLMetry trace export",
+)
 register_secret(
     package_name="nodetool",
     env_var="OPENAI_API_KEY",

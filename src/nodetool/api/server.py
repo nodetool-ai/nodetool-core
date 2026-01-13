@@ -262,6 +262,10 @@ def create_app(
 
     load_dotenv_files()
 
+    from nodetool.observability.tracing import init_tracing
+
+    init_tracing(service_name="nodetool-api")
+
     # Log loaded environment configuration
     env_name = os.environ.get("ENV", "development")
     log_level = os.environ.get("LOG_LEVEL", "INFO")

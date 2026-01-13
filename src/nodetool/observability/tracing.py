@@ -17,12 +17,14 @@ Usage:
         await runner.run(req, context, tracer=tracer)
 """
 
-import asyncio
+import contextvars
+import os
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Optional
 
+from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -301,22 +303,40 @@ _tracing_initialized = False
 _global_tracer: Optional["WorkflowTracer"] = None
 
 
+def _is_truthy(value: Optional[str]) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _should_initialize_traceloop(exporter: Optional[str]) -> bool:
+    if exporter in {"traceloop", "openllmetry"}:
+        return True
+    enabled_value = get_system_env_value("TRACELOOP_ENABLED")
+    if enabled_value is not None and not _is_truthy(enabled_value):
+        return False
+    if _is_truthy(enabled_value or "true"):
+        return True
+    return any(
+        get_system_env_value(key)
+        for key in (
+            "TRACELOOP_API_KEY",
+            "TRACELOOP_BASE_URL",
+            "TRACELOOP_HEADERS",
+        )
+    )
+
+
 def init_tracing(
     service_name: str = "nodetool",
     exporter: Optional[str] = None,
     endpoint: Optional[str] = None,
 ) -> None:
     """
-    Initialize OpenTelemetry tracing.
+    Initialize OpenTelemetry tracing and OpenLLMetry instrumentation.
 
     Args:
         service_name: Name of the service for trace attribution
-        exporter: Optional exporter type ("otlp", "console", "jaeger")
+        exporter: Optional exporter type ("traceloop", "otlp", "console", "jaeger")
         endpoint: Optional endpoint for the exporter
-
-    Note: This is a placeholder for full OpenTelemetry integration.
-    The full implementation would require adding opentelemetry-api
-    and opentelemetry-exporter-otlp as dependencies.
     """
     global _tracing_initialized
 
@@ -324,16 +344,62 @@ def init_tracing(
         log.warning("Tracing already initialized")
         return
 
+    if not _tracing_config.enabled:
+        log.info("Tracing disabled by configuration")
+        return
+
+    resolved_exporter = exporter or get_system_env_value("NODETOOL_TRACING_EXPORTER") or _tracing_config.exporter
+
     _tracing_initialized = True
     log.info(f"Tracing initialized for service: {service_name}")
 
-    if exporter:
-        log.info(f"Tracing exporter configured: {exporter}")
+    if resolved_exporter:
+        log.info(f"Tracing exporter configured: {resolved_exporter}")
         if endpoint:
             log.info(f"Tracing endpoint: {endpoint}")
 
+    if not _should_initialize_traceloop(resolved_exporter):
+        log.info("Traceloop OpenLLMetry not configured; skipping SDK initialization")
+        return
 
-def get_tracer(job_id: str, enabled: bool = True) -> WorkflowTracer:
+    if endpoint and not get_system_env_value("TRACELOOP_BASE_URL"):
+        os.environ["TRACELOOP_BASE_URL"] = endpoint
+
+    try:
+        from traceloop.sdk import Traceloop
+    except ImportError:
+        log.warning("traceloop-sdk not installed; skipping OpenLLMetry initialization")
+        return
+
+    app_name = get_system_env_value("TRACELOOP_APP_NAME") or get_system_env_value("OTEL_SERVICE_NAME") or service_name
+    env_name = get_system_env_value("ENV")
+    service_version = get_system_env_value("OTEL_SERVICE_VERSION", _tracing_config.service_version)
+
+    resource_attributes: dict[str, str] = {}
+    if env_name:
+        resource_attributes["deployment.environment"] = env_name
+    if service_version:
+        resource_attributes["service.version"] = str(service_version)
+
+    init_kwargs: dict[str, Any] = {"app_name": app_name}
+    if resource_attributes:
+        init_kwargs["resource_attributes"] = resource_attributes
+    if _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH")):
+        init_kwargs["disable_batch"] = True
+
+    if resolved_exporter == "console":
+        try:
+            from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+
+            init_kwargs["exporter"] = ConsoleSpanExporter()
+        except ImportError:
+            log.warning("opentelemetry-sdk not installed; unable to set ConsoleSpanExporter")
+
+    Traceloop.init(**init_kwargs)
+    log.info("Traceloop OpenLLMetry initialized")
+
+
+def get_tracer(job_id: str, enabled: bool = True) -> WorkflowTracer | NoOpTracer:
     """
     Get a tracer for a specific job.
 

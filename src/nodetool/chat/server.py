@@ -391,6 +391,10 @@ def run_chat_server(
 
     dotenv.load_dotenv()
 
+    from nodetool.observability.tracing import init_tracing
+
+    init_tracing(service_name="nodetool-chat")
+
     tools = tools or []
     workflows = workflows or []
 

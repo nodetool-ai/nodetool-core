@@ -101,6 +101,13 @@ def create_worker_app(
     """
     tools = tools or []
     workflows = workflows or []
+
+    from nodetool.config.environment import load_dotenv_files
+    from nodetool.observability.tracing import init_tracing
+
+    load_dotenv_files()
+    init_tracing(service_name="nodetool-worker")
+
     if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
         raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for deployed workers.")
 
