@@ -170,18 +170,6 @@ def detect_mime_type(data: bytes) -> str:
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
 
-Operating mode:
-- If something is ambiguous, choose the most reasonable assumption, proceed.
-- Prefer tool calls and concrete actions over clarifying questions.
-
-Control of eagerness:
-- Keep scope tightly focused.
-- Avoid unnecessary exploration.
-- Be concise and minimize tokens.
-
-Tool preambles:
-- Before each tool call, emit a one-sentence assistant message describing what you're doing and why.
-
 # IMAGE TOOLS
 When using image tools, you will get an image url as result.
 ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
@@ -190,16 +178,6 @@ ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
 References to documents, images, videos or audio files are objects with following structure:
 - type: either document, image, video, audio
 - uri: either local "file:///path/to/file" or "http://"
-
-# Date and time
-Date and time are objects with following structure:
-- type: either date, datetime
-- year: int
-- month: int
-- day: int
-- hour: int (optional)
-- minute: int (optional)
-- second: int (optional)
 """
 
 
@@ -331,6 +309,11 @@ class RegularChatProcessor(MessageProcessor):
             if collection_context:
                 log.debug(f"Retrieved collection context: {len(collection_context)} characters")
 
+        # Track whether we should include tools in the next generation call
+        # Only include tools when they were actually used in the previous response
+        # to avoid wasting tokens on unused tool definitions
+        should_include_tools = True
+
         assert last_message.model, "Model is required"
 
         try:
@@ -345,12 +328,17 @@ class RegularChatProcessor(MessageProcessor):
 
                 unprocessed_messages = []
 
-                _log_tool_definition_token_breakdown(tools, last_message.model)
-                log.debug(f"Calling provider.generate_messages with {len(messages_to_send)} messages")
+                # Only pass tools to the provider if they were actually used
+                tools_to_use = tools if should_include_tools and tools else []
+
+                _log_tool_definition_token_breakdown(tools_to_use, last_message.model)
+                log.debug(
+                    f"Calling provider.generate_messages with {len(messages_to_send)} messages, tools={'enabled' if tools_to_use else 'disabled'}"
+                )
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
-                    tools=tools,
+                    tools=tools_to_use,
                     context_window=32000,
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
