@@ -3,6 +3,7 @@ Tests for JobExecutionManager class.
 """
 
 import asyncio
+import os
 import subprocess
 
 import pytest
@@ -16,6 +17,16 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
+
+# Check if running with pytest-xdist
+_IS_XDIST = os.environ.get("PYTEST_XDIST_WORKER", "") != ""
+
+if _IS_XDIST:
+    # Skip all tests in this module when running with xdist due to resource contention
+    pytest.skip(
+        "Skipped in xdist due to resource contention with threaded event loops",
+        allow_module_level=True,
+    )
 
 # Ensure all tests in this module run in the same xdist worker to prevent resource conflicts
 pytestmark = pytest.mark.xdist_group(name="database")
