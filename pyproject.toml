@@ -83,6 +83,7 @@ dependencies = [
     "google-genai>=1.57.0",
     # "replicate==1.0.3",
     "runpod",
+    "modal>=0.75.0",
     "mcp",
 
     # Media dependencies
