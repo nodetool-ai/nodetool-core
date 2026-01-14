@@ -9,3 +9,4 @@
 - **Async Iterators**: `AsyncByteStream` for async byte sequence iteration in chunks
 - **Retry Utilities**: `retry_with_exponential_backoff` and `RetryPolicy` for handling transient failures
 - **Timeout Utilities**: `timeout`, `with_timeout`, `TimeoutPolicy`, and `TimeoutContext` for async timeout control
+- **Rate Limiting**: `AsyncRateLimiter` for controlling operation frequency using token bucket algorithm
