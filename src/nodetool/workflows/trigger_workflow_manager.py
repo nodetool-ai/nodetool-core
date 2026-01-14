@@ -9,7 +9,6 @@ run in the background indefinitely until explicitly stopped.
 
 import asyncio
 import threading
-from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -58,7 +57,7 @@ class TriggerWorkflowManager:
     - Monitors running jobs and restarts them if they die unexpectedly
     """
 
-    _instance: Optional["TriggerWorkflowManager"] = None
+    _instance: "TriggerWorkflowManager | None" = None
     _initialized: bool = False
     _lock: threading.Lock = threading.Lock()
 

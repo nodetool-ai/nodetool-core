@@ -4,7 +4,7 @@ import threading
 from asyncio import AbstractEventLoop
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future, InvalidStateError
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from nodetool.config.logging_config import get_logger
 

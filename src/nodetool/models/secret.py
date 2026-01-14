@@ -6,7 +6,6 @@ per-user encryption isolation.
 """
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
@@ -71,7 +70,7 @@ class Secret(DBModel):
         )
 
     @classmethod
-    async def find(cls, user_id: str, key: str) -> Optional["Secret"]:
+    async def find(cls, user_id: str, key: str) -> "Secret | None":
         """
         Find a secret by user_id and key.
 
