@@ -530,8 +530,9 @@ class TestOTELIntegration:
 
     def test_span_kind_to_otel_conversion(self):
         """Test SpanKind.to_otel() conversion."""
-        from nodetool.observability.tracing import SpanKind
         from opentelemetry.trace import SpanKind as OtelSpanKind
+
+        from nodetool.observability.tracing import SpanKind
 
         assert SpanKind.INTERNAL.to_otel() == OtelSpanKind.INTERNAL
         assert SpanKind.SERVER.to_otel() == OtelSpanKind.SERVER
@@ -541,8 +542,9 @@ class TestOTELIntegration:
 
     def test_span_status_to_otel_conversion(self):
         """Test SpanStatus.to_otel() conversion."""
-        from nodetool.observability.tracing import SpanStatus
         from opentelemetry.trace import StatusCode
+
+        from nodetool.observability.tracing import SpanStatus
 
         assert SpanStatus.UNSET.to_otel() == StatusCode.UNSET
         assert SpanStatus.OK.to_otel() == StatusCode.OK

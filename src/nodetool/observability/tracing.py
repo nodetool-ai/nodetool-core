@@ -41,16 +41,17 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal, Optional
 
-from nodetool.config.env_guard import get_system_env_value
-from nodetool.config.logging_config import get_logger
-
 # OpenTelemetry SDK imports
 from opentelemetry import trace as otel_trace
-from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
+from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
-from opentelemetry.trace import Status, StatusCode, Tracer as OtelTracer
 from opentelemetry.trace import SpanKind as OtelSpanKind
+from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import Tracer as OtelTracer
+
+from nodetool.config.env_guard import get_system_env_value
+from nodetool.config.logging_config import get_logger
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span as OtelSpan
@@ -207,7 +208,7 @@ class Span:
         )
         self._children: list[Span] = []
         # Store the underlying OTEL span if provided
-        self._otel_span: Optional["OtelSpan"] = otel_span
+        self._otel_span: Optional[OtelSpan] = otel_span
 
     @property
     def duration_ms(self) -> Optional[float]:
@@ -413,7 +414,7 @@ class WorkflowTracer:
         self._spans: list[Span] = []
         self._current_span: Optional[Span] = None
         self._span_stack: list[Span] = []
-        self._otel_span_stack: list["OtelSpan"] = []  # Stack of OTEL spans for context
+        self._otel_span_stack: list[OtelSpan] = []  # Stack of OTEL spans for context
         self._enabled = True
         self._total_cost: float = 0.0
 
@@ -791,10 +792,12 @@ def _setup_otel_provider(
     """
     try:
         # Create resource with service info
-        resource = Resource.create({
-            SERVICE_NAME: service_name,
-            SERVICE_VERSION: service_version,
-        })
+        resource = Resource.create(
+            {
+                SERVICE_NAME: service_name,
+                SERVICE_VERSION: service_version,
+            }
+        )
 
         # Create provider
         provider = TracerProvider(resource=resource)
@@ -808,7 +811,9 @@ def _setup_otel_provider(
             try:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-                otlp_endpoint = endpoint or get_system_env_value("OTEL_EXPORTER_OTLP_ENDPOINT") or "http://localhost:4317"
+                otlp_endpoint = (
+                    endpoint or get_system_env_value("OTEL_EXPORTER_OTLP_ENDPOINT") or "http://localhost:4317"
+                )
                 otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
                 processor = BatchSpanProcessor(otlp_exporter)
                 provider.add_span_processor(processor)
@@ -950,9 +955,7 @@ def init_tracing(
             return
 
         app_name = (
-            get_system_env_value("TRACELOOP_APP_NAME")
-            or get_system_env_value("OTEL_SERVICE_NAME")
-            or service_name
+            get_system_env_value("TRACELOOP_APP_NAME") or get_system_env_value("OTEL_SERVICE_NAME") or service_name
         )
         env_name = get_system_env_value("ENV")
 
@@ -1115,7 +1118,6 @@ def _export_traces_to_console(tracer: WorkflowTracer) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 @asynccontextmanager
 async def trace_websocket_message(
     command: str,
@@ -1247,7 +1249,6 @@ async def trace_node(
         kind=SpanKind.INTERNAL,
     ) as span:
         yield span
-
 
 
 @asynccontextmanager
@@ -1678,4 +1679,3 @@ def set_response_attributes(
     if error is not None:
         span.set_attribute("http.error", error)
         span.set_status(SpanStatus.ERROR, error)
-
