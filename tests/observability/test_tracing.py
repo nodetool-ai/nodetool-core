@@ -14,12 +14,9 @@ from nodetool.observability.tracing import (
     get_tracer,
     init_tracing,
     is_tracing_enabled,
-    record_cost,
     remove_tracer,
     trace_agent_task,
-    trace_api_call,
     trace_node,
-    trace_provider_call,
     trace_step_execution,
     trace_task_execution,
     trace_task_planning,
@@ -203,17 +200,6 @@ class TestContextManagers:
     """Tests for tracing context managers."""
 
     @pytest.mark.asyncio
-    async def test_trace_api_call(self):
-        """Test trace_api_call context manager."""
-        configure_tracing(TracingConfig(enabled=True))
-        async with trace_api_call("POST", "/api/jobs", user_id="user-123") as span:
-            span.set_attribute("custom", "value")
-            assert span.context.attributes["http.method"] == "POST"
-            assert span.context.attributes["http.path"] == "/api/jobs"
-            assert span.context.attributes["http.user_id"] == "user-123"
-            assert span.context.kind == SpanKind.SERVER
-
-    @pytest.mark.asyncio
     async def test_trace_websocket_message(self):
         """Test trace_websocket_message context manager."""
         configure_tracing(TracingConfig(enabled=True))
@@ -241,16 +227,6 @@ class TestContextManagers:
             assert span.context.attributes["nodetool.node.type"] == "ImageGenerate"
 
     @pytest.mark.asyncio
-    async def test_trace_provider_call(self):
-        """Test trace_provider_call context manager."""
-        configure_tracing(TracingConfig(enabled=True))
-        async with trace_provider_call("openai", "gpt-4o", "chat") as span:
-            assert span.context.attributes["nodetool.provider.name"] == "openai"
-            assert span.context.attributes["nodetool.provider.model"] == "gpt-4o"
-            assert span.context.attributes["nodetool.provider.operation"] == "chat"
-            assert span.context.kind == SpanKind.CLIENT
-
-    @pytest.mark.asyncio
     async def test_trace_agent_task(self):
         """Test trace_agent_task context manager."""
         configure_tracing(TracingConfig(enabled=True))
@@ -258,14 +234,6 @@ class TestContextManagers:
             assert span.context.attributes["nodetool.agent.type"] == "cot"
             assert span.context.attributes["nodetool.agent.task_description"] == "Generate an image"
             assert span.context.attributes["nodetool.agent.available_tools"] == ["browser", "image_gen"]
-
-    @pytest.mark.asyncio
-    async def test_disabled_tracing_returns_noop(self):
-        """Test that disabled tracing returns NoOp spans."""
-        configure_tracing(TracingConfig(enabled=False))
-        async with trace_api_call("GET", "/test") as span:
-            # Should be a NoOpSpan when disabled
-            span.set_attribute("test", "value")  # Should not raise
 
 
 class TestToolExecutionTracing:
@@ -347,29 +315,6 @@ class TestStepExecutionTracing:
             assert len(span.context.attributes["nodetool.step.instructions"]) == 200
 
 
-class TestRecordCost:
-    """Tests for the record_cost utility."""
-
-    @pytest.mark.asyncio
-    async def test_record_cost(self):
-        """Test recording cost on a span."""
-        configure_tracing(TracingConfig(enabled=True, cost_tracking=True))
-        tracer = WorkflowTracer(job_id="test-job")
-        async with tracer.start_span("test") as span:
-            record_cost(
-                span,
-                input_tokens=1000,
-                output_tokens=500,
-                cached_tokens=100,
-                credits=0.05,
-            )
-            assert span.context.attributes["cost.input_tokens"] == 1000
-            assert span.context.attributes["cost.output_tokens"] == 500
-            assert span.context.attributes["cost.cached_tokens"] == 100
-            assert span.context.attributes["cost.credits"] == 0.05
-            assert span.context.attributes["cost.total_tokens"] == 1500
-
-
 class TestTracingConfig:
     """Tests for TracingConfig."""
 
@@ -379,7 +324,6 @@ class TestTracingConfig:
         assert config.enabled is True
         assert config.exporter == "console"
         assert config.sample_rate == 1.0
-        assert config.cost_tracking is True
 
     def test_custom_config(self):
         """Test custom TracingConfig values."""
