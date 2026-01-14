@@ -505,7 +505,7 @@ class Agent(BaseAgent):
         max_steps: int = 10,
         max_step_iterations: int = 5,
         max_token_limit: int | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict[str, Any] | None = None,
         task: Task | None = None,  # Add optional task parameter
         verbose: bool = True,  # Add verbose flag
         docker_image: str | None = None,
