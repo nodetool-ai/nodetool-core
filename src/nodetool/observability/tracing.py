@@ -863,7 +863,6 @@ def _export_traces_to_console(tracer: WorkflowTracer) -> None:
 # ---------------------------------------------------------------------------
 
 
-
 @asynccontextmanager
 async def trace_websocket_message(
     command: str,
@@ -995,7 +994,6 @@ async def trace_node(
         kind=SpanKind.INTERNAL,
     ) as span:
         yield span
-
 
 
 @asynccontextmanager
@@ -1265,5 +1263,3 @@ def trace_sync(
 
     with tracer.start_span_sync(name, attributes=attributes, kind=kind) as span:
         yield span
-
-
