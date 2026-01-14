@@ -19,7 +19,7 @@ import traceback
 from collections.abc import AsyncGenerator, Sequence
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Set
+from typing import Any
 
 import networkx as nx
 import yaml

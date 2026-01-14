@@ -8,7 +8,6 @@ and utility functions used by multiple tools.
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
-from nodetool.observability.tracing import trace_tool_execution
 from nodetool.workflows.processing_context import ProcessingContext
 
 logger = get_logger(__name__)

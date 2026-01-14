@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, ClassVar, Optional, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
