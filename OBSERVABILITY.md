@@ -376,16 +376,27 @@ async def trace_step_execution(
 
 ## Configuration
 
+### Dependencies
+
+For HTTP/API tracing, install the FastAPI instrumentation package:
+
+```bash
+pip install opentelemetry-instrumentation-fastapi
+```
+
+This package is optional. If not installed, only workflow/node spans will be traced.
+
 ### Environment Variables
 
 ```bash
-# Enable/disable tracing globally
+# Enable/disable tracing globally (default: true)
 NODETOOL_TRACING_ENABLED=true
 
-# Tracing exporter type
-NODETOOL_TRACING_EXPORTER=otlp  # Options: otlp, console, jaeger, none
+# OpenTelemetry trace exporter (default: none - tracing disabled)
+# Set this to enable trace export
+OTEL_TRACES_EXPORTER=otlp  # Options: otlp, console, none
 
-# OTLP exporter configuration
+# OTLP exporter endpoint (only used when OTEL_TRACES_EXPORTER=otlp)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <token>
 
@@ -394,11 +405,10 @@ OTEL_SERVICE_NAME=nodetool
 OTEL_SERVICE_VERSION=0.6.2
 
 # Traceloop OpenLLMetry (for AI provider auto-instrumentation)
-TRACELOOP_ENABLED=true
-TRACELOOP_API_KEY=your_traceloop_api_key
-TRACELOOP_BASE_URL=https://api.traceloop.com
-TRACELOOP_DISABLE_BATCH=true
-TRACELOOP_APP_NAME=nodetool
+# When OTEL_TRACES_EXPORTER=otlp, Traceloop automatically uses your OTLP endpoint
+# No API key needed for local OTLP - only set these if using Traceloop cloud:
+# TRACELOOP_API_KEY=your_traceloop_api_key
+# TRACELOOP_BASE_URL=https://api.traceloop.com
 
 # Sampling configuration
 NODETOOL_TRACING_SAMPLE_RATE=1.0  # 1.0 = 100% of traces
@@ -407,6 +417,35 @@ NODETOOL_TRACING_SAMPLE_RATE=1.0  # 1.0 = 100% of traces
 NODETOOL_TRACING_BATCH_SIZE=512
 NODETOOL_TRACING_EXPORT_INTERVAL_MS=5000
 ```
+
+### Quick Start
+
+**To enable tracing with local OTLP collector:**
+
+```bash
+# Minimal configuration - just set the exporter
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317  # gRPC port (default)
+
+# Then start your app
+python -m nodetool.api.server
+```
+
+**Note**: Port 4317 is for gRPC (default). If using HTTP, use port 4318 and set:
+
+```bash
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+
+This enables:
+- ✅ HTTP/API request tracing (via FastAPI instrumentation)
+- ✅ AI provider call tracing with costs (via Traceloop/OpenLLMetry)
+- ✅ Workflow and node execution tracing
+- ✅ All exported to your OTLP endpoint
+
+**No API keys needed** - Traceloop automatically uses your local OTLP endpoint!
 
 ### Programmatic Configuration
 

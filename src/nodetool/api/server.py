@@ -12,6 +12,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from uvicorn import run as uvicorn
 
 from nodetool.config.env_guard import RUNNING_PYTEST
@@ -374,8 +376,11 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
 
-    app.add_middleware(  # type: ignore[arg-type]
-        CORSMiddleware,
+    FastAPIInstrumentor.instrument_app(app)
+    log.info("FastAPI instrumented for OpenTelemetry tracing")
+
+    app.add_middleware( 
+        CORSMiddleware, # type: ignore[arg-type]
         allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],

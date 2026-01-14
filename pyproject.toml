@@ -131,9 +131,19 @@ dependencies = [
     "itsdangerous",
     "PyJWT",
 
-    # Observability
-    "opentelemetry-distro==0.60b1",
-    "opentelemetry-exporter-otlp==1.39.1",
+    # Observability - OpenTelemetry
+    # Core API and SDK
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    # Semantic conventions
+    "opentelemetry-semantic-conventions>=0.48b0",
+    # Exporters
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+    # Instrumentation
+    "opentelemetry-instrumentation>=0.48b0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    # AI provider tracing
+    "traceloop-sdk>=0.50.0",
 ]
 
 [project.optional-dependencies]

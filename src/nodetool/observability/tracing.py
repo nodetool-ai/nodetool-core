@@ -49,6 +49,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from opentelemetry.trace import SpanKind as OtelSpanKind
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry.trace import Tracer as OtelTracer
+from opentelemetry.trace import use_span
 
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
@@ -414,7 +415,6 @@ class WorkflowTracer:
         self._spans: list[Span] = []
         self._current_span: Optional[Span] = None
         self._span_stack: list[Span] = []
-        self._otel_span_stack: list[OtelSpan] = []  # Stack of OTEL spans for context
         self._enabled = True
         self._total_cost: float = 0.0
 
@@ -439,6 +439,9 @@ class WorkflowTracer:
         attributes: Optional[dict[str, Any]] = None,
     ) -> Optional["OtelSpan"]:
         """Create an OTEL span if tracing is initialized.
+        
+        Uses tracer.start_span() to create a raw span that we manage manually.
+        The span should be activated with use_span() for proper context propagation.
 
         Args:
             name: Span name
@@ -464,7 +467,8 @@ class WorkflowTracer:
             # Add job_id as a standard attribute
             otel_attrs["nodetool.job_id"] = self.job_id
 
-            # Start the OTEL span
+            # Use start_span (not start_as_current_span) so we can manage context ourselves
+            # This allows us to use use_span() for context propagation
             otel_span = otel_tracer.start_span(
                 name=name,
                 kind=kind.to_otel(),
@@ -484,6 +488,9 @@ class WorkflowTracer:
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> AsyncGenerator[Span, None]:
         """Start a new span as a child of the active span.
+
+        Uses OpenTelemetry's use_span() for proper context propagation,
+        ensuring parent-child relationships are maintained in the trace.
 
         Args:
             name: Span name (use dot notation like "workflow.execute")
@@ -512,8 +519,6 @@ class WorkflowTracer:
         self._span_stack.append(span)
         self._current_span = span
         self._spans.append(span)
-        if otel_span is not None:
-            self._otel_span_stack.append(otel_span)
 
         # Track parent-child relationship
         if parent_span:
@@ -522,17 +527,20 @@ class WorkflowTracer:
         span.add_event("span_started", {"span_name": name})
 
         try:
-            yield span
+            # Use OTEL context manager for proper context propagation
+            if otel_span is not None:
+                with use_span(otel_span, end_on_exit=False):
+                    yield span
+            else:
+                yield span
         except Exception as e:
             span.record_exception(e)
             raise
         finally:
             if span.context.status == SpanStatus.UNSET:
                 span.set_status(SpanStatus.OK)
-            span.end()
+            span.end()  # This also ends the OTEL span via span._otel_span.end()
             self._span_stack.pop()
-            if otel_span is not None and self._otel_span_stack:
-                self._otel_span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
 
     @contextmanager
@@ -544,6 +552,8 @@ class WorkflowTracer:
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> Generator[Span, None, None]:
         """Start a new span synchronously (for non-async code).
+
+        Uses OpenTelemetry's use_span() for proper context propagation.
 
         Args:
             name: Span name
@@ -572,8 +582,6 @@ class WorkflowTracer:
         self._span_stack.append(span)
         self._current_span = span
         self._spans.append(span)
-        if otel_span is not None:
-            self._otel_span_stack.append(otel_span)
 
         if parent_span:
             parent_span._children.append(span)
@@ -581,17 +589,20 @@ class WorkflowTracer:
         span.add_event("span_started", {"span_name": name})
 
         try:
-            yield span
+            # Use OTEL context manager for proper context propagation
+            if otel_span is not None:
+                with use_span(otel_span, end_on_exit=False):
+                    yield span
+            else:
+                yield span
         except Exception as e:
             span.record_exception(e)
             raise
         finally:
             if span.context.status == SpanStatus.UNSET:
                 span.set_status(SpanStatus.OK)
-            span.end()
+            span.end()  # This also ends the OTEL span
             self._span_stack.pop()
-            if otel_span is not None and self._otel_span_stack:
-                self._otel_span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
 
     def record_exception(self, exception: Exception, span: Optional[Span] = None) -> None:
@@ -841,18 +852,18 @@ def _setup_otel_provider(
 
 
 def _is_auto_instrumentation_active() -> bool:
-    """Check if OpenTelemetry auto-instrumentation is active via environment variables.
-
-    Auto-instrumentation is considered active when standard OTEL environment variables
-    are set, indicating opentelemetry-instrument is being used to run the application.
+    """Check if OpenTelemetry auto-instrumentation is actually active.
+    
+    Auto-instrumentation is considered active when a TracerProvider has already
+    been registered globally (typically by opentelemetry-instrument).
     """
-    auto_otel_vars = [
-        "OTEL_SERVICE_NAME",
-        "OTEL_TRACES_EXPORTER",
-        "OTEL_EXPORTER_OTLP_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_PROTOCOL",
-    ]
-    return any(get_system_env_value(var) for var in auto_otel_vars)
+    try:
+        # Check if a non-default TracerProvider is already set
+        current_provider = otel_trace.get_tracer_provider()
+        # The default NoOpTracerProvider doesn't have add_span_processor
+        return hasattr(current_provider, 'add_span_processor')
+    except Exception:
+        return False
 
 
 def _is_truthy(value: Optional[str]) -> bool:
@@ -909,7 +920,8 @@ def init_tracing(
         log.info("Tracing disabled by configuration")
         return
 
-    resolved_exporter = exporter or get_system_env_value("NODETOOL_TRACING_EXPORTER") or _tracing_config.exporter
+    # Use standard OpenTelemetry environment variables
+    resolved_exporter = exporter or get_system_env_value("OTEL_TRACES_EXPORTER") or _tracing_config.exporter
     resolved_endpoint = endpoint or get_system_env_value("OTEL_EXPORTER_OTLP_ENDPOINT") or _tracing_config.endpoint
     service_version = get_system_env_value("OTEL_SERVICE_VERSION") or _tracing_config.service_version
 
@@ -968,11 +980,27 @@ def init_tracing(
         init_kwargs: dict[str, Any] = {"app_name": app_name}
         if resource_attributes:
             init_kwargs["resource_attributes"] = resource_attributes
-        if _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH")):
-            init_kwargs["disable_batch"] = True
-
+        
+        # Configure based on exporter type
         if resolved_exporter == "console":
+            # Use console exporter for debugging
             init_kwargs["exporter"] = ConsoleSpanExporter()
+        elif resolved_exporter == "otlp":
+            # When using OTLP, configure for gRPC protocol
+            # Set standard OTEL environment variables that Traceloop will pick up
+            if not os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL"):
+                os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
+            if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+                os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = resolved_endpoint or "http://localhost:4317"
+            
+            # Don't set api_endpoint - let Traceloop use standard OTEL env vars
+            # This ensures it uses the gRPC exporter
+            init_kwargs["disable_batch"] = _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH") or "false")
+            log.info(f"Traceloop configured to export to OTLP endpoint: {os.environ['OTEL_EXPORTER_OTLP_ENDPOINT']} (gRPC)")
+        else:
+            # Default: use batch mode unless explicitly disabled
+            if _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH")):
+                init_kwargs["disable_batch"] = True
 
         Traceloop.init(**init_kwargs)
         log.info("Traceloop OpenLLMetry initialized")
@@ -1021,7 +1049,7 @@ class TracingConfig:
     """
 
     enabled: bool = True
-    exporter: str = "console"
+    exporter: str = "none"
     endpoint: Optional[str] = None
     service_name: str = "nodetool"
     service_version: str = "0.6.0"
