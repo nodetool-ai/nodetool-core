@@ -234,24 +234,22 @@ class TaskExecutor:
         for step in self.task.steps:
             if not step.completed and not step.is_running():
                 # Check if all task dependencies are completed
-                all_task_dependencies_met = self._check_depends_on(
-                    step.depends_on, self.processing_context.workspace_dir
-                )
+                all_task_dependencies_met = self._check_depends_on(step.depends_on)
 
                 if all_task_dependencies_met:
                     executable_tasks.append(step)
 
         return executable_tasks
 
-    def _check_depends_on(self, depends_on: list[str], workspace_dir: str) -> bool:
+    def _check_depends_on(self, depends_on: list[str]) -> bool:
         """
-        Check if all file dependencies exist in the workspace.
+        Check if all task dependencies (steps) are completed.
 
         Args:
-            input_files: List of file paths to check
+            depends_on: List of step IDs that must be completed
 
         Returns:
-            bool: True if all dependencies exist, False otherwise
+            bool: True if all dependencies are completed, False otherwise
         """
 
         def find_task_id(task_id: str) -> Step | None:
