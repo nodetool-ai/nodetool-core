@@ -40,6 +40,7 @@ from nodetool.metadata.types import (
     TaskPlan,
     ToolCall,
 )
+from nodetool.observability.tracing import trace_task_planning
 from nodetool.providers import BaseProvider
 
 # Removed rich imports - Console, Table, Text, Live
@@ -1098,116 +1099,132 @@ class TaskPlanner:
         task: Task | None = None
         current_phase = "Initialization"
 
-        try:
-            if self.display_manager:
-                self.display_manager.set_current_phase("Initialization")
-            log.debug("Starting planning")
+        # Wrap the planning process in tracing
+        async with trace_task_planning(
+            objective=objective,
+            model=self.model,
+        ) as span:
+            span.set_attribute("nodetool.planning.max_retries", max_retries)
+            span.set_attribute("nodetool.planning.reasoning_model", self.reasoning_model)
+            span.set_attribute("nodetool.planning.tool_count", len(self.execution_tools))
 
-            # Single Phase: Planning (directly creates the Task)
-            current_phase = "Planning"
-            if self.display_manager:
-                self.display_manager.set_current_phase(current_phase)
-            log.debug("Entering phase: %s", current_phase)
-            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-
-            task = None
-            plan_creation_error = None
-            planning_update = None
-
-            async for update in self._run_plan_creation_phase(history, objective, max_retries):
-                if isinstance(update, tuple):
-                    task, plan_creation_error, planning_update = update
-                else:
-                    yield update
-
-            if planning_update:
-                yield planning_update  # Yield the update from the phase itself
-
-            # --- Final Outcome ---
-            if task:
-                log.debug("Plan created successfully with %d steps", len(task.steps))
+            try:
                 if self.display_manager:
-                    log.debug("Plan created successfully.")
-                else:
-                    log.debug("Plan created successfully.")
-                self.task_plan.tasks.append(task)
-                log.debug(f"Task created: \n{task.to_markdown()}")
-            else:
-                # Construct error message based on plan_creation_error or last message
-                if plan_creation_error:
-                    error_message = f"Failed to create valid task during Plan Creation phase. Original error: {str(plan_creation_error)}"
-                    full_error_message = f"{error_message}\n{traceback.format_exc()}" if self.verbose else error_message
-                    log.error("Task creation failed: %s", error_message)
-                    # Yield failure update before raising
-                    yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
-                    # Update display for overall failure
-                    if self.display_manager:
-                        self.display_manager.update_planning_display(
-                            "Overall Status",
-                            "Failed",
-                            Text(full_error_message, style="bold red"),
-                            is_error=True,
-                        )
-                    raise ValueError(full_error_message) from plan_creation_error
-                else:
-                    error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
-                    log.error("Task creation failed: %s", error_message)
-                    # Yield failure update before raising
-                    yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
-                    # Update display for overall failure
-                    if self.display_manager:
-                        self.display_manager.update_planning_display(
-                            "Overall Status",
-                            "Failed",
-                            Text(error_message, style="bold red"),
-                            is_error=True,
-                        )
-                    raise ValueError(error_message)
+                    self.display_manager.set_current_phase("Initialization")
+                log.debug("Starting planning")
 
-        except Exception as e:
-            # Capture the original exception type and message
-            error_message = f"Planning failed during phase '{current_phase}': {type(e).__name__}: {str(e)}"
-            log.error(
-                "Task creation failed during %s: %s",
-                current_phase,
-                e,
-                exc_info=True,
-            )
-
-            # Log traceback if verbose
-            if self.verbose:
+                # Single Phase: Planning (directly creates the Task)
+                current_phase = "Planning"
                 if self.display_manager:
-                    self.display_manager.print_exception(show_locals=False)
-                else:
-                    log.exception("Planning exception (show_locals=False)")
+                    self.display_manager.set_current_phase(current_phase)
+                log.debug("Entering phase: %s", current_phase)
+                span.add_event("phase_started", {"phase": current_phase})
+                yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
 
-            # Add error row to table via display manager
-            if error_message and self.display_manager:
-                self.display_manager.update_planning_display(
-                    "Overall Status",
-                    "Failed",
-                    Text(
-                        f"{error_message}\n{traceback.format_exc() if self.verbose else ''}",
-                        style="bold red",
-                    ),
-                    is_error=True,
+                task = None
+                plan_creation_error = None
+                planning_update = None
+
+                async for update in self._run_plan_creation_phase(history, objective, max_retries):
+                    if isinstance(update, tuple):
+                        task, plan_creation_error, planning_update = update
+                    else:
+                        yield update
+
+                if planning_update:
+                    yield planning_update  # Yield the update from the phase itself
+
+                # --- Final Outcome ---
+                if task:
+                    log.debug("Plan created successfully with %d steps", len(task.steps))
+                    span.set_attribute("nodetool.planning.step_count", len(task.steps))
+                    span.add_event("planning_completed", {"step_count": len(task.steps)})
+                    if self.display_manager:
+                        log.debug("Plan created successfully.")
+                    else:
+                        log.debug("Plan created successfully.")
+                    self.task_plan.tasks.append(task)
+                    log.debug(f"Task created: \n{task.to_markdown()}")
+                else:
+                    # Construct error message based on plan_creation_error or last message
+                    if plan_creation_error:
+                        error_message = f"Failed to create valid task during Plan Creation phase. Original error: {str(plan_creation_error)}"
+                        full_error_message = (
+                            f"{error_message}\n{traceback.format_exc()}" if self.verbose else error_message
+                        )
+                        log.error("Task creation failed: %s", error_message)
+                        span.add_event("planning_failed", {"error": error_message[:500]})
+                        # Yield failure update before raising
+                        yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
+                        # Update display for overall failure
+                        if self.display_manager:
+                            self.display_manager.update_planning_display(
+                                "Overall Status",
+                                "Failed",
+                                Text(full_error_message, style="bold red"),
+                                is_error=True,
+                            )
+                        raise ValueError(full_error_message) from plan_creation_error
+                    else:
+                        error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
+                        log.error("Task creation failed: %s", error_message)
+                        span.add_event("planning_failed", {"error": error_message})
+                        # Yield failure update before raising
+                        yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
+                        # Update display for overall failure
+                        if self.display_manager:
+                            self.display_manager.update_planning_display(
+                                "Overall Status",
+                                "Failed",
+                                Text(error_message, style="bold red"),
+                                is_error=True,
+                            )
+                        raise ValueError(error_message)
+
+            except Exception as e:
+                # Capture the original exception type and message
+                error_message = f"Planning failed during phase '{current_phase}': {type(e).__name__}: {str(e)}"
+                log.error(
+                    "Task creation failed during %s: %s",
+                    current_phase,
+                    e,
+                    exc_info=True,
                 )
-            # Print error to console otherwise (handled by display_manager if verbose is off)
-            if self.display_manager:
-                log.debug("Planning Error: %s", error_message)
-            else:
-                log.error("Planning Error: %s", error_message)
 
-            # Yield failure update before re-raising
-            yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
-            raise  # Re-raise the caught exception
+                # Log traceback if verbose
+                if self.verbose:
+                    if self.display_manager:
+                        self.display_manager.print_exception(show_locals=False)
+                    else:
+                        log.exception("Planning exception (show_locals=False)")
 
-        finally:
-            log.debug("Stopping live display and completing task creation")
-            # Stop the live display using the display manager
-            if self.display_manager:
-                self.display_manager.stop_live()
-            self._planning_context = None
+                # Add error row to table via display manager
+                if error_message and self.display_manager:
+                    self.display_manager.update_planning_display(
+                        "Overall Status",
+                        "Failed",
+                        Text(
+                            f"{error_message}\n{traceback.format_exc() if self.verbose else ''}",
+                            style="bold red",
+                        ),
+                        is_error=True,
+                    )
+                # Print error to console otherwise (handled by display_manager if verbose is off)
+                if self.display_manager:
+                    log.debug("Planning Error: %s", error_message)
+                else:
+                    log.error("Planning Error: %s", error_message)
+
+                # Yield failure update before re-raising
+                yield PlanningUpdate(phase=current_phase, status="Failed", content=error_message)
+                raise  # Re-raise the caught exception
+
+            finally:
+                log.debug("Stopping live display and completing task creation")
+                # Stop the live display using the display manager
+                if self.display_manager:
+                    self.display_manager.stop_live()
+                self._planning_context = None
 
     def _format_message_content(self, message: Message | None) -> str | Text:
         """Formats message content for table display.
