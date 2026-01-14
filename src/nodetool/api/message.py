@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -64,7 +63,7 @@ async def index(
     thread_id: str,
     reverse: bool = False,
     user: str = Depends(current_user),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     limit: int = 100,
 ) -> MessageList:
     messages, cursor = await MessageModel.paginate(thread_id=thread_id, reverse=reverse, limit=limit, start_key=cursor)

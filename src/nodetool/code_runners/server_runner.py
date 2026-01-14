@@ -16,9 +16,10 @@ from __future__ import annotations
 import asyncio as _asyncio
 import socket as _socket
 import time as _time
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from threading import Thread
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode

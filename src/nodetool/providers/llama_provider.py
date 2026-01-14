@@ -11,7 +11,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, AsyncIterator, ClassVar, List, Sequence
+from collections.abc import AsyncIterator, Sequence
+from typing import Any, ClassVar
 
 import httpx
 import openai
@@ -21,9 +22,6 @@ from huggingface_hub import hf_hub_download
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import (
-    get_llamacpp_language_models_from_hf_cache,
-)
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.llama_server_manager import LlamaServerManager
@@ -341,7 +339,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"has_tool_support called for {model}, returning False (using emulation)")
         return False
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Llama.cpp models.
 
@@ -353,7 +351,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         import httpx
 
-        models: List[LanguageModel] = []
+        models: list[LanguageModel] = []
 
         try:
             async with httpx.AsyncClient() as client:

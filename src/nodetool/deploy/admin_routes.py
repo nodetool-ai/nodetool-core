@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -32,8 +32,6 @@ from nodetool.deploy.admin_operations import (
     download_ollama_model,
     scan_hf_cache,
 )
-from nodetool.indexing.ingestion import find_input_nodes
-from nodetool.indexing.service import index_file_to_collection
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
@@ -60,7 +58,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 
@@ -70,15 +68,15 @@ class CollectionModify(BaseModel):
 
 
 class AddToCollection(BaseModel):
-    documents: List[str]
-    ids: List[str]
-    metadatas: List[dict[str, str]]
-    embeddings: List[List[float]]
+    documents: list[str]
+    ids: list[str]
+    metadatas: list[dict[str, str]]
+    embeddings: list[list[float]]
 
 
 class IndexResponse(BaseModel):
     path: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def asset_from_model(asset: AssetModel) -> Asset:
@@ -239,7 +237,7 @@ def create_admin_router() -> APIRouter:
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
-    async def db_save(table: str, item: Dict[str, Any]):
+    async def db_save(table: str, item: dict[str, Any]):
         """Save an item to the specified table using the database adapter."""
         try:
             adapter = await get_model_adapter(table)
@@ -292,8 +290,8 @@ def create_admin_router() -> APIRouter:
 
     @router.get("/admin/collections", response_model=CollectionList)
     async def list_collections(
-        offset: Optional[int] = None,
-        limit: Optional[int] = None,
+        offset: int | None = None,
+        limit: int | None = None,
     ) -> CollectionList:
         """List all collections."""
         try:
@@ -387,11 +385,11 @@ def create_admin_router() -> APIRouter:
     @router.get("/admin/assets", response_model=AssetList)
     async def list_assets(
         user: str = Depends(current_user),
-        user_id: Optional[str] = "1",
-        parent_id: Optional[str] = None,
-        content_type: Optional[str] = None,
-        cursor: Optional[str] = None,
-        page_size: Optional[int] = 100,
+        user_id: str | None = "1",
+        parent_id: str | None = None,
+        content_type: str | None = None,
+        cursor: str | None = None,
+        page_size: int | None = 100,
     ) -> AssetList:
         """List assets (admin endpoint - no user restrictions)."""
         try:
@@ -419,7 +417,7 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
         user: str = Depends(current_user),
-        data: Dict[str, Any] = Body(...),
+        data: dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
         try:
@@ -446,7 +444,7 @@ def create_admin_router() -> APIRouter:
     async def get_asset(
         asset_id: str,
         user: str = Depends(current_user),
-        user_id: Optional[str] = "1",
+        user_id: str | None = "1",
     ) -> Asset:
         """Get a single asset by ID (admin endpoint - no user restrictions)."""
         try:
@@ -488,7 +486,7 @@ def create_admin_router() -> APIRouter:
 
             deleted_asset_ids = []
 
-            async def delete_folder(uid: str, folder_id: str) -> List[str]:
+            async def delete_folder(uid: str, folder_id: str) -> list[str]:
                 ids = []
                 try:
                     assets, _ = await AssetModel.paginate(user_id=uid, parent_id=folder_id, limit=10000)

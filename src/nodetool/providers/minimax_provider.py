@@ -9,13 +9,11 @@ MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-refe
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING
 
-import aiohttp
 import anthropic
 
 if TYPE_CHECKING:
-    import asyncio
 
     from nodetool.workflows.processing_context import ProcessingContext
 
@@ -98,7 +96,7 @@ class MiniMaxProvider(AnthropicProvider):
         # MiniMax models generally support 200k context like Claude
         return 200000
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available MiniMax models.
 

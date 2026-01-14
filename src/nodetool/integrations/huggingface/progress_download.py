@@ -2,8 +2,8 @@
 
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, Optional, Union
 
 import huggingface_hub.file_download as _fd
 from huggingface_hub import constants
@@ -11,7 +11,7 @@ from huggingface_hub.utils import build_hf_headers, validate_hf_hub_args
 
 logger = _fd.logger
 
-ProgressCallback = Callable[[int, Optional[int]], None]
+ProgressCallback = Callable[[int, int | None], None]
 import threading
 
 from tqdm.auto import tqdm
@@ -44,14 +44,14 @@ def _download_to_tmp_and_move_with_progress(
     incomplete_path: Path,
     destination_path: Path,
     url_to_download: str,
-    proxies: Optional[Dict],
-    headers: Dict[str, str],
-    expected_size: Optional[int],
+    proxies: dict | None,
+    headers: dict[str, str],
+    expected_size: int | None,
     filename: str,
     force_download: bool,
-    etag: Optional[str],
+    etag: str | None,
     xet_file_data,
-    progress_callback: Optional[ProgressCallback],
+    progress_callback: ProgressCallback | None,
 ) -> None:
     """
     Variant of `huggingface_hub.file_download._download_to_tmp_and_move` that
@@ -144,14 +144,14 @@ def _hf_hub_download_to_cache_dir_with_progress(
     filename: str,
     repo_type: str,
     revision: str,
-    endpoint: Optional[str],
+    endpoint: str | None,
     etag_timeout: float,
-    headers: Dict[str, str],
-    proxies: Optional[Dict],
-    token: Optional[bool | str],
+    headers: dict[str, str],
+    proxies: dict | None,
+    token: bool | str | None,
     local_files_only: bool,
     force_download: bool,
-    progress_callback: Optional[ProgressCallback],
+    progress_callback: ProgressCallback | None,
 ) -> str:
     """
     Copy of `_hf_hub_download_to_cache_dir` that routes the actual transfer
@@ -300,15 +300,15 @@ def _hf_hub_download_to_local_dir_with_progress(
     repo_type: str,
     filename: str,
     revision: str,
-    endpoint: Optional[str],
+    endpoint: str | None,
     etag_timeout: float,
-    headers: Dict[str, str],
-    proxies: Optional[Dict],
+    headers: dict[str, str],
+    proxies: dict | None,
     token: bool | str | None,
     cache_dir: str,
     force_download: bool,
     local_files_only: bool,
-    progress_callback: Optional[ProgressCallback],
+    progress_callback: ProgressCallback | None,
 ) -> str:
     """
     Copy of `_hf_hub_download_to_local_dir` that routes transfers through
@@ -432,25 +432,25 @@ def hf_hub_download_with_progress(
     repo_id: str,
     filename: str,
     *,
-    subfolder: Optional[str] = None,
-    repo_type: Optional[str] = None,
-    revision: Optional[str] = None,
-    library_name: Optional[str] = None,
-    library_version: Optional[str] = None,
+    subfolder: str | None = None,
+    repo_type: str | None = None,
+    revision: str | None = None,
+    library_name: str | None = None,
+    library_version: str | None = None,
     cache_dir: str | Path | None = None,
     local_dir: str | Path | None = None,
-    user_agent: Dict | str | None = None,
+    user_agent: dict | str | None = None,
     force_download: bool = False,
-    proxies: Optional[Dict] = None,
+    proxies: dict | None = None,
     etag_timeout: float = constants.DEFAULT_ETAG_TIMEOUT,
     token: bool | str | None = None,
     local_files_only: bool = False,
-    headers: Optional[Dict[str, str]] = None,
-    endpoint: Optional[str] = None,
-    resume_download: Optional[bool] = None,
-    force_filename: Optional[str] = None,
+    headers: dict[str, str] | None = None,
+    endpoint: str | None = None,
+    resume_download: bool | None = None,
+    force_filename: str | None = None,
     local_dir_use_symlinks: bool | str = "auto",
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> str:
     """
     Replacement for `huggingface_hub.hf_hub_download` that exposes

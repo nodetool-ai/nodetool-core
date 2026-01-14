@@ -33,13 +33,13 @@ class OAuthCredential(DBModel):
     user_id: str = DBField()
     provider: str = DBField()  # e.g., "huggingface"
     account_id: str = DBField()  # Provider's unique account identifier
-    username: Optional[str] = DBField(default=None)
+    username: str | None = DBField(default=None)
     encrypted_access_token: str = DBField()
-    encrypted_refresh_token: Optional[str] = DBField(default=None)
+    encrypted_refresh_token: str | None = DBField(default=None)
     token_type: str = DBField(default="Bearer")
-    scope: Optional[str] = DBField(default=None)
+    scope: str | None = DBField(default=None)
     received_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
-    expires_at: Optional[datetime] = DBField(default=None)
+    expires_at: datetime | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = DBField(default_factory=lambda: datetime.now(UTC))
 
@@ -54,12 +54,12 @@ class OAuthCredential(DBModel):
         provider: str,
         account_id: str,
         access_token: str,
-        username: Optional[str] = None,
-        refresh_token: Optional[str] = None,
+        username: str | None = None,
+        refresh_token: str | None = None,
         token_type: str = "Bearer",
-        scope: Optional[str] = None,
-        received_at: Optional[datetime] = None,
-        expires_at: Optional[datetime] = None,
+        scope: str | None = None,
+        received_at: datetime | None = None,
+        expires_at: datetime | None = None,
         **kwargs,
     ):
         """
@@ -160,7 +160,7 @@ class OAuthCredential(DBModel):
         master_key = await MasterKeyManager.get_master_key()
         return SecretCrypto.decrypt(self.encrypted_access_token, master_key, self.user_id)
 
-    async def get_decrypted_refresh_token(self) -> Optional[str]:
+    async def get_decrypted_refresh_token(self) -> str | None:
         """
         Decrypt and return the refresh token.
 
@@ -179,11 +179,11 @@ class OAuthCredential(DBModel):
     async def update_tokens(
         self,
         access_token: str,
-        refresh_token: Optional[str] = None,
-        token_type: Optional[str] = None,
-        scope: Optional[str] = None,
-        received_at: Optional[datetime] = None,
-        expires_at: Optional[datetime] = None,
+        refresh_token: str | None = None,
+        token_type: str | None = None,
+        scope: str | None = None,
+        received_at: datetime | None = None,
+        expires_at: datetime | None = None,
     ) -> None:
         """
         Update the OAuth tokens.
@@ -225,12 +225,12 @@ class OAuthCredential(DBModel):
         provider: str,
         account_id: str,
         access_token: str,
-        username: Optional[str] = None,
-        refresh_token: Optional[str] = None,
+        username: str | None = None,
+        refresh_token: str | None = None,
         token_type: str = "Bearer",
-        scope: Optional[str] = None,
-        received_at: Optional[datetime] = None,
-        expires_at: Optional[datetime] = None,
+        scope: str | None = None,
+        received_at: datetime | None = None,
+        expires_at: datetime | None = None,
     ) -> "OAuthCredential":
         """
         Create or update an OAuth credential.

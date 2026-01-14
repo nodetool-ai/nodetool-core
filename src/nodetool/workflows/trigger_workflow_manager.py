@@ -9,7 +9,6 @@ run in the background indefinitely until explicitly stopped.
 
 import asyncio
 import threading
-from typing import Dict, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -58,7 +57,7 @@ class TriggerWorkflowManager:
     - Monitors running jobs and restarts them if they die unexpectedly
     """
 
-    _instance: Optional["TriggerWorkflowManager"] = None
+    _instance: "TriggerWorkflowManager | None" = None
     _initialized: bool = False
     _lock: threading.Lock = threading.Lock()
 
@@ -67,9 +66,9 @@ class TriggerWorkflowManager:
         # Only initialize once for singleton (thread-safe)
         with TriggerWorkflowManager._lock:
             if not TriggerWorkflowManager._initialized:
-                self._running_workflows: Dict[str, JobExecution] = {}
-                self._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
-                self._watchdog_task: Optional[asyncio.Task] = None
+                self._running_workflows: dict[str, JobExecution] = {}
+                self._workflow_metadata: dict[str, dict] = {}  # Store workflow info for restarts
+                self._watchdog_task: asyncio.Task | None = None
                 self._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
                 TriggerWorkflowManager._initialized = True
 
@@ -90,7 +89,7 @@ class TriggerWorkflowManager:
         workflow: WorkflowModel,
         user_id: str,
         auth_token: str = "local_token",
-    ) -> Optional[JobExecution]:
+    ) -> JobExecution | None:
         """
         Start a single trigger workflow job.
 
@@ -134,7 +133,7 @@ class TriggerWorkflowManager:
         workflow: WorkflowModel,
         user_id: str,
         auth_token: str = "local_token",
-    ) -> Optional[JobExecution]:
+    ) -> JobExecution | None:
         """
         Start a trigger workflow in the background.
 
@@ -208,11 +207,11 @@ class TriggerWorkflowManager:
             log.error(f"Error stopping trigger workflow {workflow_id}: {e}")
             return False
 
-    def get_running_workflow(self, workflow_id: str) -> Optional[JobExecution]:
+    def get_running_workflow(self, workflow_id: str) -> JobExecution | None:
         """Get a running trigger workflow by ID."""
         return self._running_workflows.get(workflow_id)
 
-    def list_running_workflows(self) -> Dict[str, JobExecution]:
+    def list_running_workflows(self) -> dict[str, JobExecution]:
         """List all running trigger workflows."""
         return self._running_workflows.copy()
 

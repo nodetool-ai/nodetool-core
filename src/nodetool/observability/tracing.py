@@ -36,10 +36,11 @@ import contextvars
 import os
 import time
 import uuid
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Generator, Literal, Optional, Union
+from typing import Any, Literal, Optional
 
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
@@ -89,7 +90,7 @@ class TraceContext:
 
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str] = None
+    parent_span_id: str | None = None
     baggage: dict[str, str] = field(default_factory=dict)
 
     def child_context(self, new_span_id: str) -> "TraceContext":
@@ -112,12 +113,12 @@ def _generate_span_id() -> str:
     return uuid.uuid4().hex[:16]
 
 
-def get_current_trace_context() -> Optional[TraceContext]:
+def get_current_trace_context() -> TraceContext | None:
     """Get the current trace context from context vars."""
     return _current_trace_context.get()
 
 
-def set_current_trace_context(ctx: Optional[TraceContext]) -> contextvars.Token:
+def set_current_trace_context(ctx: TraceContext | None) -> contextvars.Token:
     """Set the current trace context."""
     return _current_trace_context.set(ctx)
 
@@ -128,13 +129,13 @@ class SpanContext:
 
     trace_id: str
     span_id: str
-    parent_id: Optional[str]
+    parent_id: str | None
     start_time: float
-    end_time: Optional[float] = None
+    end_time: float | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     status: SpanStatus = SpanStatus.UNSET
-    status_description: Optional[str] = None
+    status_description: str | None = None
     kind: SpanKind = SpanKind.INTERNAL
     name: str = ""
 
@@ -173,7 +174,7 @@ class Span:
         self._children: list[Span] = []
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Get span duration in milliseconds."""
         if self.context.end_time is not None:
             return (self.context.end_time - self.context.start_time) * 1000
@@ -206,7 +207,7 @@ class Span:
             self.set_attribute(key, value)
         return self
 
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> "Span":
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> "Span":
         """Add an event to this span.
 
         Events are time-stamped annotations that can have attributes.
@@ -228,7 +229,7 @@ class Span:
         log.debug(f"Span event added: {self.name}::{name}")
         return self
 
-    def set_status(self, status: SpanStatus | str, description: Optional[str] = None) -> "Span":
+    def set_status(self, status: SpanStatus | str, description: str | None = None) -> "Span":
         """Set the span status.
 
         Args:
@@ -299,17 +300,17 @@ class WorkflowTracer:
         enabled: Whether tracing is active
     """
 
-    def __init__(self, job_id: str, trace_id: Optional[str] = None):
+    def __init__(self, job_id: str, trace_id: str | None = None):
         self.job_id = job_id
         self.trace_id = trace_id or _generate_trace_id()
         self._spans: list[Span] = []
-        self._current_span: Optional[Span] = None
+        self._current_span: Span | None = None
         self._span_stack: list[Span] = []
         self._enabled = True
         self._total_cost: float = 0.0
 
     @property
-    def active_span(self) -> Optional[Span]:
+    def active_span(self) -> Span | None:
         """Get the currently active span."""
         return self._current_span
 
@@ -326,8 +327,8 @@ class WorkflowTracer:
     async def start_span(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-        parent: Optional[Span] = None,
+        attributes: dict[str, Any] | None = None,
+        parent: Span | None = None,
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> AsyncGenerator[Span, None]:
         """Start a new span as a child of the active span.
@@ -377,8 +378,8 @@ class WorkflowTracer:
     def start_span_sync(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-        parent: Optional[Span] = None,
+        attributes: dict[str, Any] | None = None,
+        parent: Span | None = None,
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> Generator[Span, None, None]:
         """Start a new span synchronously (for non-async code).
@@ -423,7 +424,7 @@ class WorkflowTracer:
             self._span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
 
-    def record_exception(self, exception: Exception, span: Optional[Span] = None) -> None:
+    def record_exception(self, exception: Exception, span: Span | None = None) -> None:
         """Record an exception in the current or specified span."""
         target_span = span or self._current_span
         if target_span:
@@ -512,10 +513,10 @@ class NoOpSpan:
     def set_attributes(self, attributes: dict[str, Any]) -> "NoOpSpan":
         return self
 
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> "NoOpSpan":
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> "NoOpSpan":
         return self
 
-    def set_status(self, status: SpanStatus | str, description: Optional[str] = None) -> "NoOpSpan":
+    def set_status(self, status: SpanStatus | str, description: str | None = None) -> "NoOpSpan":
         return self
 
     def record_exception(self, exception: Exception) -> "NoOpSpan":
@@ -559,8 +560,8 @@ class NoOpTracer:
     async def start_span(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-        parent: Optional[Span] = None,
+        attributes: dict[str, Any] | None = None,
+        parent: Span | None = None,
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> AsyncGenerator[NoOpSpan, None]:
         yield NoOpSpan(name)
@@ -569,13 +570,13 @@ class NoOpTracer:
     def start_span_sync(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-        parent: Optional[Span] = None,
+        attributes: dict[str, Any] | None = None,
+        parent: Span | None = None,
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> Generator[NoOpSpan, None, None]:
         yield NoOpSpan(name)
 
-    def record_exception(self, exception: Exception, span: Optional[Span] = None) -> None:
+    def record_exception(self, exception: Exception, span: Span | None = None) -> None:
         pass
 
     def get_trace_tree(self) -> dict[str, Any]:
@@ -609,11 +610,11 @@ def _is_auto_instrumentation_active() -> bool:
     return any(get_system_env_value(var) for var in auto_otel_vars)
 
 
-def _is_truthy(value: Optional[str]) -> bool:
+def _is_truthy(value: str | None) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _should_initialize_traceloop(exporter: Optional[str]) -> bool:
+def _should_initialize_traceloop(exporter: str | None) -> bool:
     if exporter in {"traceloop", "openllmetry"}:
         return True
     enabled_value = get_system_env_value("TRACELOOP_ENABLED")
@@ -633,8 +634,8 @@ def _should_initialize_traceloop(exporter: Optional[str]) -> bool:
 
 def init_tracing(
     service_name: str = "nodetool",
-    exporter: Optional[str] = None,
-    endpoint: Optional[str] = None,
+    exporter: str | None = None,
+    endpoint: str | None = None,
 ) -> None:
     """
     Initialize OpenTelemetry tracing and OpenLLMetry instrumentation.
@@ -768,7 +769,7 @@ class TracingConfig:
 
     enabled: bool = True
     exporter: str = "console"
-    endpoint: Optional[str] = None
+    endpoint: str | None = None
     service_name: str = "nodetool"
     service_version: str = "0.6.0"
     sample_rate: float = 1.0
@@ -821,7 +822,7 @@ def get_or_create_tracer(job_id: str) -> WorkflowTracer | NoOpTracer:
     return _global_tracers[job_id]
 
 
-def remove_tracer(job_id: str) -> Optional[WorkflowTracer]:
+def remove_tracer(job_id: str) -> WorkflowTracer | None:
     """Remove and return a tracer from global management.
 
     Args:
@@ -868,9 +869,9 @@ async def trace_websocket_message(
     command: str,
     direction: Literal["inbound", "outbound"],
     *,
-    job_id: Optional[str] = None,
-    thread_id: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    thread_id: str | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace a WebSocket message.
 
@@ -916,10 +917,10 @@ async def trace_websocket_message(
 @asynccontextmanager
 async def trace_workflow(
     job_id: str,
-    workflow_id: Optional[str] = None,
+    workflow_id: str | None = None,
     *,
-    user_id: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    user_id: str | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace workflow execution lifecycle.
 
@@ -960,8 +961,8 @@ async def trace_node(
     node_id: str,
     node_type: str,
     *,
-    job_id: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace individual node execution.
 
@@ -1001,9 +1002,9 @@ async def trace_agent_task(
     agent_type: str,
     task_description: str,
     *,
-    job_id: Optional[str] = None,
-    tools: Optional[list[str]] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    tools: list[str] | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace agent task execution.
 
@@ -1050,10 +1051,10 @@ async def trace_agent_task(
 async def trace_tool_execution(
     tool_name: str,
     *,
-    job_id: Optional[str] = None,
-    step_id: Optional[str] = None,
-    params: Optional[dict[str, Any]] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    step_id: str | None = None,
+    params: dict[str, Any] | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace tool execution in an agent workflow.
 
@@ -1096,9 +1097,9 @@ async def trace_tool_execution(
 async def trace_task_planning(
     objective: str,
     *,
-    job_id: Optional[str] = None,
-    model: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    model: str | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace agent task planning phase.
 
@@ -1140,9 +1141,9 @@ async def trace_task_execution(
     task_id: str,
     task_title: str,
     *,
-    job_id: Optional[str] = None,
-    step_count: Optional[int] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    step_count: int | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace agent task execution.
 
@@ -1187,9 +1188,9 @@ async def trace_step_execution(
     step_id: str,
     step_instructions: str,
     *,
-    job_id: Optional[str] = None,
-    task_id: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+    job_id: str | None = None,
+    task_id: str | None = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
 ) -> AsyncGenerator[Span | NoOpSpan, None]:
     """Trace agent step execution.
 
@@ -1238,8 +1239,8 @@ async def trace_step_execution(
 def trace_sync(
     name: str,
     *,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
-    attributes: Optional[dict[str, Any]] = None,
+    tracer: WorkflowTracer | NoOpTracer | None = None,
+    attributes: dict[str, Any] | None = None,
     kind: SpanKind = SpanKind.INTERNAL,
 ) -> Generator[Span | NoOpSpan, None, None]:
     """Trace a synchronous operation.

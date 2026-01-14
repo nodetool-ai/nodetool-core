@@ -42,10 +42,10 @@ This implements Phase 3 of the architectural refactor:
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_inbox_message import MessageStatus, RunInboxMessage
+from nodetool.models.run_inbox_message import RunInboxMessage
 
 log = get_logger(__name__)
 
@@ -87,8 +87,8 @@ class DurableInbox:
         self,
         handle: str,
         payload: Any,
-        message_id: Optional[str] = None,
-        payload_ref: Optional[str] = None,
+        message_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> RunInboxMessage:
         """
         Append a message to the inbox (idempotent).

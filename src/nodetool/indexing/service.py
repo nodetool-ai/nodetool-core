@@ -4,7 +4,7 @@ Collection indexing service shared by API and lightweight server routes.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.indexing.ingestion import find_input_nodes
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -22,7 +22,7 @@ async def index_file_to_collection(
     file_path: str,
     mime_type: str,
     token: str = "local_token",
-) -> Optional[str]:
+) -> str | None:
     """Index a file into the specified collection.
 
     If the collection metadata contains a workflow ID, the workflow is executed

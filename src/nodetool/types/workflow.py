@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -47,7 +47,7 @@ class WorkflowRequest(BaseModel):
 
 class WorkflowList(BaseModel):
     next: str | None
-    workflows: List[Workflow]
+    workflows: list[Workflow]
 
 
 class WorkflowTool(BaseModel):
@@ -58,7 +58,7 @@ class WorkflowTool(BaseModel):
 
 class WorkflowToolList(BaseModel):
     next: str | None
-    workflows: List[WorkflowTool]
+    workflows: list[WorkflowTool]
 
 
 class WorkflowVersion(BaseModel):
@@ -79,7 +79,7 @@ class WorkflowVersionList(BaseModel):
     """List of workflow versions with pagination support."""
 
     next: str | None
-    versions: List[WorkflowVersion]
+    versions: list[WorkflowVersion]
 
 
 class CreateWorkflowVersionRequest(BaseModel):

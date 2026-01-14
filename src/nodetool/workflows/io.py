@@ -8,8 +8,9 @@ NodeOutputs: convenience helpers that validate and route outputs via WorkflowRun
 from __future__ import annotations
 
 import inspect
+from collections.abc import AsyncIterator
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 from .types import EdgeUpdate
 

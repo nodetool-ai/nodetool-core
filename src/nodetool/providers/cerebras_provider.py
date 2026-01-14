@@ -11,7 +11,8 @@ Authentication: https://inference-docs.cerebras.ai/api-reference/authentication
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from collections.abc import AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 import openai
@@ -113,7 +114,7 @@ class CerebrasProvider(OpenAIProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Cerebras models.
 
@@ -142,7 +143,7 @@ class CerebrasProvider(OpenAIProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:

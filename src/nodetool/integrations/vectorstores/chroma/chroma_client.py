@@ -20,7 +20,6 @@ Key Functions:
     - get_all_collections(): Retrieve all collections with configured embedding functions
 """
 
-from typing import List
 from urllib.parse import urlparse
 
 import chromadb
@@ -149,8 +148,8 @@ def split_document(
     source_id: str,
     chunk_size: int = 2000,
     chunk_overlap: int = 1000,
-    separators: List[str] = DEFAULT_SEPARATORS,
-) -> List[TextChunk]:
+    separators: list[str] = DEFAULT_SEPARATORS,
+) -> list[TextChunk]:
     """
     Split text using markdown headers and/or chunk size.
 
@@ -188,7 +187,7 @@ def split_document(
     ]
 
 
-def get_all_collections() -> List[chromadb.Collection]:
+def get_all_collections() -> list[chromadb.Collection]:
     """
     Get all collections from the ChromaDB instance.
     Automatically handles embedding model selection for each collection.

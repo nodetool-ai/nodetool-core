@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic.fields import FieldInfo
 
@@ -27,9 +27,9 @@ class DatabaseAdapter(ABC):
     The auto_migrate method is deprecated and should not be used for new code.
     """
 
-    fields: Dict[str, FieldInfo]
+    fields: dict[str, FieldInfo]
     table_name: str
-    table_schema: Dict[str, Any]
+    table_schema: dict[str, Any]
 
     @abstractmethod
     async def create_table(self) -> None:
@@ -42,7 +42,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    async def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the database.
 
         Args:
@@ -51,7 +51,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database by its primary key.
 
         Args:
@@ -78,8 +78,8 @@ class DatabaseAdapter(ABC):
         order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
-        columns: List[str] | None = None,
-    ) -> tuple[List[Dict[str, Any]], str]:
+        columns: list[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], str]:
         """Queries the database based on specified conditions.
 
         Args:
@@ -103,7 +103,7 @@ class DatabaseAdapter(ABC):
         return self.table_schema.get("primary_key", "id")
 
     @abstractmethod
-    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
+    async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
         """
         Create an index on the table with the specified columns.
         :param index_name: The name of the index to create.
@@ -121,7 +121,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    async def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> list[dict[str, Any]]:
         """
         List all the indexes for the table.
         :return: A list of dictionaries representing index metadata.

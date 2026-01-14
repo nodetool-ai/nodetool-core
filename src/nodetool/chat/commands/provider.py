@@ -1,6 +1,5 @@
 """Provider selection command."""
 
-from typing import List
 
 from nodetool.chat.chat_cli import ChatCLI
 from nodetool.metadata.types import Provider
@@ -12,7 +11,7 @@ class ProviderCommand(Command):
     def __init__(self) -> None:
         super().__init__("provider", "Set the current provider", ["pr"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             if cli.selected_provider:
                 cli.console.print(f"Current provider: [bold green]{cli.selected_provider.value}[/bold green]")

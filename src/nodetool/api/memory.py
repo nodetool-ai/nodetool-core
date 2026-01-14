@@ -9,7 +9,6 @@ Provides endpoints for:
 - Getting memory statistics
 """
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -35,7 +34,7 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
 
-def _get_total_ram_mb() -> Optional[float]:
+def _get_total_ram_mb() -> float | None:
     """Get total system RAM in MB."""
     try:
         import psutil
@@ -45,7 +44,7 @@ def _get_total_ram_mb() -> Optional[float]:
         return None
 
 
-def _get_total_gpu_memory_mb() -> Optional[float]:
+def _get_total_gpu_memory_mb() -> float | None:
     """Get total GPU memory in MB."""
     try:
         import torch

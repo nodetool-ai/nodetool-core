@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
@@ -596,14 +596,14 @@ class KieProvider(BaseProvider):
 
     # Model Discovery Methods
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Get available Kie.ai image generation models."""
         if not self.api_key:
             log.debug("No Kie.ai API key configured, returning empty image model list")
             return []
         return KIE_IMAGE_MODELS
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get available Kie.ai video generation models."""
         if not self.api_key:
             log.debug("No Kie.ai API key configured, returning empty video model list")

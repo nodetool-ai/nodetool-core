@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -47,5 +47,5 @@ class JobUpdate(BaseModel):
 
 
 class JobList(BaseModel):
-    next: Optional[str]
-    jobs: List[Job]
+    next: str | None
+    jobs: list[Job]

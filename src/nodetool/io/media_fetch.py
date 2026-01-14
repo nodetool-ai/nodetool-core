@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import Tuple
 
 import aiohttp
 import httpx
 import numpy as np
 import PIL.Image
 
-from nodetool.config.environment import Environment
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,
@@ -56,7 +54,7 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
     raise ValueError(f"Unsupported object type for image conversion: {type(obj)}")
 
 
-def _parse_data_uri(uri: str) -> Tuple[str, bytes]:
+def _parse_data_uri(uri: str) -> tuple[str, bytes]:
     """Parse a data: URI and return (mime, bytes)."""
     try:
         header, b64data = uri.split(",", 1)
@@ -75,7 +73,7 @@ def _parse_data_uri(uri: str) -> Tuple[str, bytes]:
         raise ValueError(f"Invalid data URI: {e}") from e
 
 
-def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
+def _fetch_file_uri(uri: str) -> tuple[str, bytes]:
     """Read file:// URI and return (mime, bytes).
 
     Use builtins.open so tests can mock file IO with patch("builtins.open").
@@ -94,7 +92,7 @@ def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
     return mime_type, data
 
 
-async def _fetch_http_uri_async(uri: str) -> Tuple[str, bytes]:
+async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
     """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller."""
     async with aiohttp.ClientSession() as session, session.get(uri) as response:
         response.raise_for_status()
@@ -132,7 +130,7 @@ def _extract_storage_key_from_url(uri: str) -> str:
     raise ValueError(f"Could not extract storage key from URL: {uri}")
 
 
-def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
+def _fetch_local_storage_sync(uri: str) -> tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request.
 
     This function works correctly whether called from a sync or async context
@@ -172,7 +170,7 @@ def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
     return mime_type, data
 
 
-async def _fetch_local_storage_async(uri: str) -> Tuple[str, bytes]:
+async def _fetch_local_storage_async(uri: str) -> tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request (async version)."""
     import mimetypes
 
@@ -199,7 +197,7 @@ async def _fetch_local_storage_async(uri: str) -> Tuple[str, bytes]:
     return mime_type, data
 
 
-def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:
+def _fetch_http_uri_sync(uri: str) -> tuple[str, bytes]:
     # Check for local storage URLs first - read directly instead of HTTP call
     if _is_local_storage_url(uri):
         return _fetch_local_storage_sync(uri)
@@ -225,7 +223,7 @@ def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:
     return mime_type, data
 
 
-def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
+def _fetch_memory_uri(uri: str) -> tuple[str, bytes]:
     obj = None
     try:
         obj = require_scope().get_memory_uri_cache().get(uri)
@@ -248,7 +246,7 @@ def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
     raise ValueError(f"Unsupported object type for memory URI: {type(obj)}")
 
 
-async def fetch_uri_bytes_and_mime_async(uri: str) -> Tuple[str, bytes]:
+async def fetch_uri_bytes_and_mime_async(uri: str) -> tuple[str, bytes]:
     """
     Fetch content from a URI and return (mime_type, data_bytes).
     Supports data:, memory://, file://, and http(s) URIs.
@@ -268,7 +266,7 @@ async def fetch_uri_bytes_and_mime_async(uri: str) -> Tuple[str, bytes]:
     raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")
 
 
-def fetch_uri_bytes_and_mime_sync(uri: str) -> Tuple[str, bytes]:
+def fetch_uri_bytes_and_mime_sync(uri: str) -> tuple[str, bytes]:
     """
     Synchronous variant of fetch_uri_bytes_and_mime_async using httpx for http(s).
     """

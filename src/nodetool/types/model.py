@@ -1,5 +1,4 @@
 from huggingface_hub import ModelInfo
-from huggingface_hub.inference._providers import PROVIDER_T
 from pydantic import BaseModel
 
 

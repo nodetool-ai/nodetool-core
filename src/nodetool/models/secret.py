@@ -5,16 +5,11 @@ Secrets are encrypted using a master key and user_id as salt, providing
 per-user encryption isolation.
 """
 
-from datetime import UTC, datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from datetime import UTC, datetime
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
-
-if TYPE_CHECKING:
-    from nodetool.security.crypto import SecretCrypto
-    from nodetool.security.master_key import MasterKeyManager
 
 log = get_logger(__name__)
 
@@ -33,7 +28,7 @@ class Secret(DBModel):
     user_id: str = DBField()
     key: str = DBField()
     encrypted_value: str = DBField()
-    description: Optional[str] = DBField(default=None)
+    description: str | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
 
@@ -42,7 +37,7 @@ class Secret(DBModel):
         self.updated_at = datetime.now()
 
     @classmethod
-    async def create(cls, user_id: str, key: str, value: str, description: Optional[str] = None, **kwargs):
+    async def create(cls, user_id: str, key: str, value: str, description: str | None = None, **kwargs):
         """
         Create a new encrypted secret.
 
@@ -75,7 +70,7 @@ class Secret(DBModel):
         )
 
     @classmethod
-    async def find(cls, user_id: str, key: str) -> Optional["Secret"]:
+    async def find(cls, user_id: str, key: str) -> "Secret | None":
         """
         Find a secret by user_id and key.
 
@@ -92,7 +87,7 @@ class Secret(DBModel):
 
     @classmethod
     async def list_for_user(
-        cls, user_id: str, limit: int = 100, start_key: Optional[str] = None
+        cls, user_id: str, limit: int = 100, start_key: str | None = None
     ) -> tuple[list["Secret"], str]:
         """
         List all secrets for a user.
@@ -160,9 +155,9 @@ class Secret(DBModel):
         user_id: str,
         key: str,
         encrypted_value: str,
-        description: Optional[str] = None,
-        created_at: Optional[datetime] = None,
-        updated_at: Optional[datetime] = None,
+        description: str | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ) -> "Secret":
         """
         Create or update a secret using a pre-encrypted value.
@@ -201,7 +196,7 @@ class Secret(DBModel):
         )
 
     @classmethod
-    async def upsert(cls, user_id: str, key: str, value: str, description: Optional[str] = None) -> "Secret":
+    async def upsert(cls, user_id: str, key: str, value: str, description: str | None = None) -> "Secret":
         """
         Create or update a secret.
 
@@ -217,8 +212,6 @@ class Secret(DBModel):
         Returns:
             The Secret instance (created or updated).
         """
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
 
         existing = await cls.find(user_id, key)
 

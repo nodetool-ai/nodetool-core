@@ -7,11 +7,10 @@ import inspect
 import io
 import json
 import os
-import platform
 import queue
 import urllib.parse
 import uuid
-from contextlib import asynccontextmanager, suppress
+from contextlib import suppress
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -21,7 +20,6 @@ from urllib.parse import urlparse
 import httpx
 
 if TYPE_CHECKING:
-    import joblib
     import numpy as np
     import pandas as pd
     import PIL.Image
@@ -43,9 +41,11 @@ except ImportError:  # pragma: no cover - playwright is optional
     Browser = BrowserContext = Page = object  # type: ignore
 
 
+import builtins
+from collections.abc import AsyncGenerator, Callable
 from io import BytesIO
 from pickle import loads
-from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
+from typing import IO, Any
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -260,7 +260,7 @@ class ProcessingContext:
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
-        ui_tool_names: Set[str] | None = None,
+        ui_tool_names: builtins.set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"
@@ -1772,7 +1772,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from an IO object.
@@ -1819,7 +1819,7 @@ class ProcessingContext:
         b: bytes,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a bytes object.
@@ -1840,7 +1840,7 @@ class ProcessingContext:
         b64: str,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a base64-encoded string.
@@ -1861,7 +1861,7 @@ class ProcessingContext:
         image: PIL.Image.Image,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a PIL Image object.
@@ -1902,7 +1902,7 @@ class ProcessingContext:
         image: np.ndarray,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a numpy array.
@@ -1940,7 +1940,7 @@ class ProcessingContext:
         image_tensor: Any,  # Change type hint to Any since torch.Tensor may not be available
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """
         Creates an ImageRef from a tensor.
@@ -2217,7 +2217,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> VideoRef:
         """
         Creates an VideoRef from an IO object.
@@ -2244,7 +2244,7 @@ class ProcessingContext:
         b: bytes,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> VideoRef:
         """
         Creates a VideoRef from a bytes object.
@@ -2285,7 +2285,7 @@ class ProcessingContext:
         name: str | None = None,
         parent_id: str | None = None,
         format: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Model3DRef:
         """
         Creates a Model3DRef from an IO object.
@@ -2318,7 +2318,7 @@ class ProcessingContext:
         name: str | None = None,
         parent_id: str | None = None,
         format: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Model3DRef:
         """
         Creates a Model3DRef from a bytes object.

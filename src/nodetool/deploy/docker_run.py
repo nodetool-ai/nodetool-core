@@ -7,7 +7,6 @@ supporting GPU assignments, volume mounts, and environment variables.
 
 import hashlib
 import json
-from typing import List
 
 from nodetool.config.deployment import SelfHostedDeployment
 
@@ -114,7 +113,7 @@ class DockerRunGenerator:
         """
         return f"nodetool-{self.container.name}"
 
-    def _build_volumes(self) -> List[str]:
+    def _build_volumes(self) -> list[str]:
         """
         Build volume mounts for the container.
 
@@ -132,7 +131,7 @@ class DockerRunGenerator:
 
         return volumes
 
-    def _build_environment(self) -> List[str]:
+    def _build_environment(self) -> list[str]:
         """
         Build environment variables for the container.
 
@@ -170,7 +169,7 @@ class DockerRunGenerator:
             return APP_ENV_PORT
         return host_port
 
-    def _build_gpu_args(self) -> List[str]:
+    def _build_gpu_args(self) -> list[str]:
         """
         Build GPU arguments for Docker.
 

@@ -6,7 +6,7 @@ import ast
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nodetool.metadata.types import Message
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
+def remove_think_tags(text_content: str | None) -> str | None:
     """Strip `<think>...</think>` blocks from the provided text."""
 
     if text_content is None:
@@ -23,7 +23,7 @@ def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
     return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
 
-def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
+def lenient_json_parse(text: str) -> dict[str, Any] | None:
     """Try to parse JSON, falling back to Python literal eval for single quotes."""
     text = text.strip()
     if not text:
@@ -58,14 +58,14 @@ def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
     return None
 
 
-def extract_json_from_message(message: Optional[Message]) -> Optional[dict]:
+def extract_json_from_message(message: Message | None) -> dict | None:
     """Extract a JSON object from a message's textual content."""
 
     if not message or not message.content:
         log.debug("No message content to extract JSON from")
         return None
 
-    raw_content: Optional[str] = None
+    raw_content: str | None = None
     content = message.content
 
     if isinstance(content, str):

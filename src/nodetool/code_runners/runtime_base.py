@@ -4,8 +4,9 @@ import shlex
 import socket
 import subprocess
 import threading
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import suppress
-from typing import Any, AsyncGenerator, AsyncIterator, Literal
+from typing import Any, Literal
 
 from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 from nodetool.config.logging_config import get_logger

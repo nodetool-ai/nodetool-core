@@ -14,7 +14,7 @@ import os
 from contextlib import suppress
 from dataclasses import asdict
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Context, FastMCP
 from huggingface_hub.constants import HF_HUB_CACHE
@@ -158,7 +158,7 @@ class NodeSearchParams(BaseModel):
     """Parameters for searching nodes"""
 
     query: str = Field(..., description="Search query for nodes")
-    namespace: Optional[str] = Field(None, description="Optional namespace to filter nodes")
+    namespace: str | None = Field(None, description="Optional namespace to filter nodes")
 
 
 async def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
@@ -472,9 +472,9 @@ async def list_nodes(
 async def search_nodes(
     query: list[str],
     n_results: int = 10,
-    input_type: Optional[str] = None,
-    output_type: Optional[str] = None,
-    exclude_namespaces: Optional[list[str]] = None,
+    input_type: str | None = None,
+    output_type: str | None = None,
+    exclude_namespaces: list[str] | None = None,
     include_metadata: bool = False,
 ) -> list[dict[str, Any]]:
     """

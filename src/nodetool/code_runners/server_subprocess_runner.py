@@ -33,9 +33,10 @@ import subprocess
 import threading
 import time
 import zipfile
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
