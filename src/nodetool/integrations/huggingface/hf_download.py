@@ -10,9 +10,8 @@ import os
 import threading
 import traceback
 from dataclasses import dataclass, field
-from typing import Callable, Literal
+from typing import Literal
 
-import httpx
 from fastapi import WebSocket
 from huggingface_hub import (
     _CACHED_NO_EXIST,

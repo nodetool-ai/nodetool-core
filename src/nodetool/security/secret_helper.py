@@ -7,7 +7,6 @@ or environment variables, with proper fallback logic.
 
 import asyncio
 import os
-from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.secret import Secret
@@ -16,7 +15,7 @@ from nodetool.runtime.resources import maybe_scope
 log = get_logger(__name__)
 
 # Cache for decrypted secrets: (user_id, key) -> decrypted_value
-_SECRET_CACHE: dict[tuple[str, str], Optional[str]] = {}
+_SECRET_CACHE: dict[tuple[str, str], str | None] = {}
 
 # Keys that should ALWAYS prioritize environment variables (System Critical Infrastructure)
 _FORCE_ENV_PRIORITY = {
@@ -41,7 +40,7 @@ def clear_secret_cache(user_id: str, key: str) -> None:
         del _SECRET_CACHE[cache_key]
 
 
-async def get_secret(key: str, user_id: str, default: Optional[str] = None, check_env: bool = True) -> Optional[str]:
+async def get_secret(key: str, user_id: str, default: str | None = None, check_env: bool = True) -> str | None:
     """
     Get a secret value for a user.
 
@@ -143,7 +142,7 @@ async def get_secret_required(key: str, user_id: str) -> str:
     raise ValueError(f"Required secret '{key}' not found, please set it in the settings menu.")
 
 
-def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[str] = None) -> Optional[str]:
+def get_secret_sync(key: str, default: str | None = None, user_id: str | None = None) -> str | None:
     """
     Get a secret value synchronously, checking environment variables and database.
 
@@ -207,7 +206,7 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
     return None
 
 
-async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional[str]]:
+async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, str | None]:
     """
     Get multiple secrets for a user in a single database query.
 

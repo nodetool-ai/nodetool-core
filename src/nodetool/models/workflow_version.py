@@ -149,8 +149,8 @@ class WorkflowVersion(DBModel):
         cls,
         workflow_id: str,
         limit: int = 100,
-        start_version: Optional[int] = None,
-    ) -> tuple[list["WorkflowVersion"], Optional[int]]:
+        start_version: int | None = None,
+    ) -> tuple[list["WorkflowVersion"], int | None]:
         """Paginate through versions for a specific workflow.
 
         Args:
@@ -248,7 +248,7 @@ class WorkflowVersion(DBModel):
         cls,
         workflow_id: str,
         keep_count: int,
-        older_than: Optional[datetime] = None,
+        older_than: datetime | None = None,
     ) -> int:
         """
         Delete old autosave versions, keeping the most recent ones.

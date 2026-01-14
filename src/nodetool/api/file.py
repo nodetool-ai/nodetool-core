@@ -2,8 +2,7 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 import aiofiles
 import aiofiles.os
@@ -13,7 +12,6 @@ from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
-from nodetool.models.workspace import Workspace
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -67,7 +65,7 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
 
 
 @router.get("/list")
-async def list_files(path: str = ".", __user: str = Depends(current_user)) -> List[FileInfo]:
+async def list_files(path: str = ".", __user: str = Depends(current_user)) -> list[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
@@ -92,7 +90,7 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> Li
                 # Fetch mtimes concurrently for existing roots
                 mtimes = await asyncio.gather(*[get_drive_mtime(root) for root in existing_roots])
 
-                files: List[FileInfo] = []
+                files: list[FileInfo] = []
                 now_iso = datetime.now(UTC).isoformat()
                 for root, mtime in zip(existing_roots, mtimes, strict=False):
                     modified = datetime.fromtimestamp(mtime, tz=UTC).isoformat() if mtime is not None else now_iso

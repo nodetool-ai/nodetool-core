@@ -17,7 +17,6 @@ from uuid import uuid4
 
 from docker.types import DeviceRequest
 
-import docker
 from nodetool.code_runners.runtime_base import (
     ContainerFailureError,
     StreamRunnerBase,
@@ -31,8 +30,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
     JobUpdate,
-    NodeProgress,
-    NodeUpdate,
     ProcessingMessage,
 )
 
@@ -617,7 +614,7 @@ class DockerJobExecution(JobExecution):
         )
 
         # In test mode, inherit db_path from current scope if available
-        from nodetool.runtime.resources import ResourceScope, maybe_scope
+        from nodetool.runtime.resources import ResourceScope
 
         async with ResourceScope():
             await job_model.save()

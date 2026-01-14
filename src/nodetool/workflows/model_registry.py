@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import threading
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 
@@ -26,17 +27,17 @@ class RegisteredModel:
     device: str
     memory_mb: float = 0.0
     offloaded: bool = False
-    model_id: Optional[str] = None
+    model_id: str | None = None
     # Weak reference to the actual model object (allows GC when model is no longer used elsewhere)
-    _model_ref: Optional[weakref.ref] = field(default=None, repr=False)
+    _model_ref: weakref.ref | None = field(default=None, repr=False)
     # Strong reference to keep model alive (use when model should not be garbage collected)
-    _model: Optional[Any] = field(default=None, repr=False)
+    _model: Any | None = field(default=None, repr=False)
     # Cleanup callback
-    _cleanup_fn: Optional[Callable[[], None]] = field(default=None, repr=False)
+    _cleanup_fn: Callable[[], None] | None = field(default=None, repr=False)
     # In-use flag to prevent unloading during processing
     in_use: bool = False
 
-    def get_model(self) -> Optional[Any]:
+    def get_model(self) -> Any | None:
         """Get the model object if still alive."""
         if self._model is not None:
             return self._model
@@ -56,7 +57,7 @@ class ModelRegistry:
     - Thread-safe operations
     """
 
-    _instance: Optional[ModelRegistry] = None
+    _instance: ModelRegistry | None = None
     _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> ModelRegistry:
@@ -93,8 +94,8 @@ class ModelRegistry:
         device: str = "cpu",
         memory_mb: float = 0.0,
         offloaded: bool = False,
-        hf_model_id: Optional[str] = None,
-        cleanup_fn: Optional[Callable[[], None]] = None,
+        hf_model_id: str | None = None,
+        cleanup_fn: Callable[[], None] | None = None,
         keep_strong_ref: bool = False,
     ) -> None:
         """
@@ -183,14 +184,14 @@ class ModelRegistry:
                 return self._models[model_id].in_use
             return False
 
-    def get_model(self, model_id: str) -> Optional[Any]:
+    def get_model(self, model_id: str) -> Any | None:
         """Get a model by ID if it's still alive."""
         with self._registry_lock:
             if model_id not in self._models:
                 return None
             return self._models[model_id].get_model()
 
-    def get_model_info(self, model_id: str) -> Optional[RegisteredModel]:
+    def get_model_info(self, model_id: str) -> RegisteredModel | None:
         """Get model info by ID."""
         with self._registry_lock:
             return self._models.get(model_id)

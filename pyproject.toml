@@ -196,9 +196,6 @@ ignore = [
     "C901",   # too complex
     "F401",   # imported but unused (common in __init__.py)
     "F811",   # redefined while unused
-    "UP006",  # use built-in collection type annotations
-    "UP035",  # deprecated typing aliases (Dict, List, etc.)
-    "UP045",  # prefer `X | None` over `Optional[X]`
     "RUF002", # NBSP vs '-' nit in docstrings
     "RUF010", # explicit conversion flag in f-strings
     "SIM102", # combine nested ifs

@@ -4,7 +4,7 @@ primarily system statistics, to connected clients.
 """
 
 import asyncio
-from typing import Literal, Set
+from typing import Literal
 
 from fastapi import WebSocket
 from pydantic import BaseModel
@@ -33,7 +33,7 @@ class WebSocketUpdates:
 
     def __init__(self):
         """Initializes the WebSocketUpdates manager."""
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
         self.log = get_logger(__name__)
         self.log.info("WebSocketUpdates: instance initialized")

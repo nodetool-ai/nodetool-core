@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import UTC, timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from io import BytesIO
 from tempfile import SpooledTemporaryFile
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -94,8 +93,8 @@ async def _get_file(storage, key: str, request: Request):
     }
 
     range_header = request.headers.get("Range")
-    start: Optional[int] = 0
-    end: Optional[int] = None
+    start: int | None = 0
+    end: int | None = None
 
     if range_header:
         try:

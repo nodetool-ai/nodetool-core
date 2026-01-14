@@ -68,7 +68,7 @@ class JobLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-    def get_logs(self, limit: Optional[int] = None) -> list[dict]:
+    def get_logs(self, limit: int | None = None) -> list[dict]:
         """
         Get captured logs.
 

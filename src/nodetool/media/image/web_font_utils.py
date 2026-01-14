@@ -6,7 +6,6 @@ import hashlib
 import os
 import re
 from pathlib import Path
-from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -18,7 +17,7 @@ log = get_logger(__name__)
 GOOGLE_FONTS_RAW_URL = "https://raw.githubusercontent.com/google/fonts/main"
 
 # Cache directory for downloaded web fonts
-_FONT_CACHE_DIR: Optional[Path] = None
+_FONT_CACHE_DIR: Path | None = None
 
 
 def get_font_cache_dir() -> Path:

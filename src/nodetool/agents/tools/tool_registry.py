@@ -1,6 +1,5 @@
 import logging
 from importlib import import_module
-from typing import Any
 
 log = logging.getLogger(__name__)
 

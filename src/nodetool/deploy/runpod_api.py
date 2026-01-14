@@ -27,7 +27,7 @@ import os
 import sys
 import traceback
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
 
 import requests
 from runpod import error
@@ -661,18 +661,18 @@ def create_or_update_runpod_endpoint(
     template_id: str,
     name: str,
     compute_type: str = ComputeType.GPU.value,
-    gpu_type_ids: Optional[List[str]] = None,
-    gpu_count: Optional[int] = None,
-    cpu_flavor_ids: Optional[List[str]] = None,
-    vcpu_count: Optional[int] = None,
-    data_center_ids: Optional[List[str]] = None,
+    gpu_type_ids: list[str] | None = None,
+    gpu_count: int | None = None,
+    cpu_flavor_ids: list[str] | None = None,
+    vcpu_count: int | None = None,
+    data_center_ids: list[str] | None = None,
     workers_min: int = 0,
     workers_max: int = 3,
     idle_timeout: int = 5,
-    execution_timeout_ms: Optional[int] = None,
+    execution_timeout_ms: int | None = None,
     flashboot: bool = False,
-    network_volume_id: Optional[str] = None,
-    allowed_cuda_versions: Optional[List[str]] = None,
+    network_volume_id: str | None = None,
+    allowed_cuda_versions: list[str] | None = None,
 ):
     """
     Create or update a RunPod serverless endpoint using REST API.
@@ -828,18 +828,18 @@ def create_runpod_endpoint_graphql(
     template_id: str,
     name: str,
     compute_type: str = ComputeType.GPU.value,
-    gpu_type_ids: Optional[List[str]] = None,
-    gpu_count: Optional[int] = None,
-    cpu_flavor_ids: Optional[List[str]] = None,
-    vcpu_count: Optional[int] = None,
-    data_center_ids: Optional[List[str]] = None,
+    gpu_type_ids: list[str] | None = None,
+    gpu_count: int | None = None,
+    cpu_flavor_ids: list[str] | None = None,
+    vcpu_count: int | None = None,
+    data_center_ids: list[str] | None = None,
     workers_min: int = 0,
     workers_max: int = 3,
     idle_timeout: int = 5,
-    execution_timeout_ms: Optional[int] = None,
+    execution_timeout_ms: int | None = None,
     flashboot: bool = False,
-    network_volume_id: Optional[str] = None,
-    allowed_cuda_versions: Optional[List[str]] = None,
+    network_volume_id: str | None = None,
+    allowed_cuda_versions: list[str] | None = None,
 ):
     """
     Create a RunPod serverless endpoint using raw GraphQL queries.

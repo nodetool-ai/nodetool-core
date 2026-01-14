@@ -20,8 +20,9 @@ Features:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Generic, TypeVar, overload
+from typing import Any, Generic, TypeVar, overload
 
 from nodetool.config.logging_config import get_logger
 

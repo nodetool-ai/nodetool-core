@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import IO, AsyncIterator
+from typing import IO
 
 
 class AbstractStorage(ABC):

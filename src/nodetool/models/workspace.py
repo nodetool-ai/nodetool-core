@@ -149,7 +149,7 @@ class Workspace(DBModel):
         cls,
         user_id: str,
         limit: int = 100,
-        start_key: Optional[str] = None,
+        start_key: str | None = None,
     ) -> tuple[list["Workspace"], str]:
         """Paginate through workspaces for a user.
 

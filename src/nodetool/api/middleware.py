@@ -6,7 +6,7 @@ Each request gets its own database connections from shared pools.
 Note: API call tracing is handled automatically by OpenTelemetry auto-instrumentation.
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -39,7 +39,7 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: Callable,
-        exempt_paths: Optional[set[str]] = None,
+        exempt_paths: set[str] | None = None,
     ):
         """Initialize the middleware.
 

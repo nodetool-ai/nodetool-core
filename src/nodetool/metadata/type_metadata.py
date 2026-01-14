@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,9 +23,9 @@ class TypeMetadata(BaseModel):
 
     type: str
     optional: bool = False
-    values: Optional[list[str | int]] = None
+    values: list[str | int] | None = None
     type_args: list["TypeMetadata"] = []
-    type_name: Optional[str] = None
+    type_name: str | None = None
 
     def __repr__(self):
         result = ""

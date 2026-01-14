@@ -12,7 +12,7 @@ for correctness - all recovery decisions are based on run_state and run_node_sta
 import asyncio
 import os
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
@@ -156,7 +156,7 @@ class WorkflowRecoveryService:
 
     async def find_stuck_runs(self, max_age_minutes: int = 10) -> list[str]:
         """Find runs that are stuck (running with expired lease)."""
-        from nodetool.models.condition_builder import ConditionBuilder, Field
+        from nodetool.models.condition_builder import Field
 
         condition = Field("status").equals("running")
         adapter = await RunState.adapter()

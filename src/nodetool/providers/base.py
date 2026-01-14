@@ -8,17 +8,11 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 import datetime
 import json
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from enum import Enum
 from typing import (
     Any,
-    AsyncGenerator,
-    AsyncIterator,
-    Callable,
     ClassVar,
-    List,
-    Sequence,
-    Set,
-    Type,
 )
 
 import numpy as np
@@ -63,13 +57,13 @@ class ProviderCapability(str, Enum):
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
 
 
-_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = {}
+_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[type["BaseProvider"], dict[str, Any]]] = {}
 
 
 def register_provider(
     provider: ProviderEnum,
     **kwargs: Any,
-) -> Callable[[Type["BaseProvider"]], Type["BaseProvider"]]:
+) -> Callable[[type["BaseProvider"]], type["BaseProvider"]]:
     """Decorator to register a Provider implementation.
 
     Args:
@@ -80,7 +74,7 @@ def register_provider(
         Decorator function for registering the provider class
     """
 
-    def decorator(cls: Type["BaseProvider"]) -> Type["BaseProvider"]:
+    def decorator(cls: type["BaseProvider"]) -> type["BaseProvider"]:
         _PROVIDER_REGISTRY[provider] = (cls, kwargs)
         return cls
 
@@ -89,7 +83,7 @@ def register_provider(
 
 def get_registered_provider(
     provider: ProviderEnum,
-) -> tuple[Type["BaseProvider"], dict[str, Any]]:
+) -> tuple[type["BaseProvider"], dict[str, Any]]:
     """Get a registered provider class and its configuration.
 
     Args:
@@ -225,7 +219,7 @@ class BaseProvider:
             # Don't fail the API call if logging fails
             log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
-    def get_capabilities(self) -> Set[ProviderCapability]:
+    def get_capabilities(self) -> set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""
         return {
             capability
@@ -246,7 +240,7 @@ class BaseProvider:
         """Return environment variables needed when running inside Docker."""
         return {}
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Get a list of available language models for this provider.
 
         This method should return all language models that are available for use with this provider.
@@ -262,7 +256,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Get a list of available image models for this provider.
 
         This method should return all image models that are available for use with this provider.
@@ -277,7 +271,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """Get a list of available text-to-speech models for this provider.
 
         This method should return all TTS models that are available for use with this provider.
@@ -292,7 +286,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """Get a list of available automatic speech recognition models for this provider.
 
         This method should return all ASR models that are available for use with this provider.
@@ -307,7 +301,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get a list of available video generation models for this provider.
 
         This method should return all video models that are available for use with this provider.
@@ -324,7 +318,7 @@ class BaseProvider:
 
     async def get_available_models(
         self,
-    ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
+    ) -> list[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
         """Get a list of all available models for this provider.
 
         Returns language, image, TTS, ASR, and video models combined. Use get_available_language_models(),
@@ -793,7 +787,7 @@ class MockProvider(BaseProvider):
         else:
             raise IndexError("MockProvider has run out of predefined responses.")
 
-    async def get_available_models(self) -> List[LanguageModel]:
+    async def get_available_models(self) -> list[LanguageModel]:
         """Mock provider has no models."""
         return []
 

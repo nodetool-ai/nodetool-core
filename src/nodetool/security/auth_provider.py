@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Mapping, Optional
 
 
 class TokenType(Enum):
@@ -14,9 +14,9 @@ class TokenType(Enum):
 @dataclass(slots=True)
 class AuthResult:
     ok: bool
-    user_id: Optional[str] = None
-    token_type: Optional[TokenType] = None
-    error: Optional[str] = None
+    user_id: str | None = None
+    token_type: TokenType | None = None
+    error: str | None = None
 
 
 class AuthProvider(ABC):
@@ -27,7 +27,7 @@ class AuthProvider(ABC):
         """Return the preferred HTTP header name for bearer tokens."""
         return "authorization"
 
-    def extract_token_from_headers(self, headers: Mapping[str, str]) -> Optional[str]:
+    def extract_token_from_headers(self, headers: Mapping[str, str]) -> str | None:
         """Extract a bearer token from HTTP headers."""
         header_name = self.prefer_header()
         auth_header = headers.get(header_name) or headers.get(header_name.title())
@@ -39,7 +39,7 @@ class AuthProvider(ABC):
         token = parts[1].strip()
         return token or None
 
-    def extract_token_from_ws(self, headers: Mapping[str, str], query_params: Mapping[str, str]) -> Optional[str]:
+    def extract_token_from_ws(self, headers: Mapping[str, str], query_params: Mapping[str, str]) -> str | None:
         """
         Extract a bearer token for WebSocket connections.
 

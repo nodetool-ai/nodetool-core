@@ -22,8 +22,8 @@ Usage:
 import asyncio
 import inspect
 import os
+from collections.abc import AsyncGenerator
 from contextlib import suppress
-from typing import AsyncGenerator
 
 from huggingface_hub import (
     HfApi,

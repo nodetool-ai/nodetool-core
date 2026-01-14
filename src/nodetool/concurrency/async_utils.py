@@ -1,5 +1,4 @@
 import asyncio
-from typing import Optional
 
 
 class AsyncSemaphore:
@@ -55,7 +54,7 @@ class AsyncSemaphore:
         except AttributeError:
             return 0
 
-    async def acquire(self, timeout: Optional[float] = None) -> bool:
+    async def acquire(self, timeout: float | None = None) -> bool:
         """
         Acquire the semaphore with an optional timeout.
 

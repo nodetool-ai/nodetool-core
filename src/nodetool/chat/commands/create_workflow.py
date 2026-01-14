@@ -1,7 +1,6 @@
 """Workflow creation command using GraphPlanner."""
 
 import traceback
-from typing import List
 
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -49,7 +48,7 @@ class CreateWorkflowCommand(Command):
 
         return name.strip(), description.strip()
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             cli.console.print("[bold red]Usage:[/bold red] /create-workflow <objective>")
             cli.console.print('Example: /create-workflow "Process sales data and generate summary report"')

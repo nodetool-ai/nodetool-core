@@ -6,7 +6,7 @@ This module provides the processor for agent mode messages.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
@@ -25,7 +25,6 @@ from nodetool.workflows.types import (
     PlanningUpdate,
     StepResult,
     TaskUpdate,
-    TaskUpdateEvent,
 )
 
 from .message_processor import MessageProcessor
@@ -37,7 +36,7 @@ log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
 
-def _get_encoding_for_model(model: Optional[str]):
+def _get_encoding_for_model(model: str | None):
     try:
         import tiktoken  # type: ignore
 
@@ -52,7 +51,7 @@ def _get_encoding_for_model(model: Optional[str]):
     return get_default_encoding()
 
 
-def _log_tool_definition_token_breakdown(tools: list, model: Optional[str]) -> None:
+def _log_tool_definition_token_breakdown(tools: list, model: str | None) -> None:
     if not log.isEnabledFor(logging.DEBUG):
         return
 
@@ -90,7 +89,7 @@ class AgentMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):

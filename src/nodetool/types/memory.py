@@ -2,7 +2,6 @@
 Types for memory and model management API responses.
 """
 
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +14,7 @@ class LoadedModel(BaseModel):
     memory_mb: float = Field(description="Estimated memory usage in MB")
     device: str = Field(description="Device location (cuda, cpu, mps)")
     offloaded: bool = Field(default=False, description="Whether CPU offload is enabled")
-    model_id: Optional[str] = Field(default=None, description="HuggingFace model ID if applicable")
+    model_id: str | None = Field(default=None, description="HuggingFace model ID if applicable")
 
 
 class LoadedModelsResponse(BaseModel):
@@ -29,10 +28,10 @@ class MemoryStats(BaseModel):
     """Current memory statistics."""
 
     ram_mb: float = Field(description="Process RAM usage in MB")
-    ram_total_mb: Optional[float] = Field(default=None, description="Total system RAM in MB")
-    gpu_allocated_mb: Optional[float] = Field(default=None, description="GPU memory allocated in MB")
-    gpu_reserved_mb: Optional[float] = Field(default=None, description="GPU memory reserved in MB")
-    gpu_total_mb: Optional[float] = Field(default=None, description="Total GPU memory in MB")
+    ram_total_mb: float | None = Field(default=None, description="Total system RAM in MB")
+    gpu_allocated_mb: float | None = Field(default=None, description="GPU memory allocated in MB")
+    gpu_reserved_mb: float | None = Field(default=None, description="GPU memory reserved in MB")
+    gpu_total_mb: float | None = Field(default=None, description="Total GPU memory in MB")
     memory_cache_count: int = Field(default=0, description="Items in memory URI cache")
     loaded_models_count: int = Field(default=0, description="Number of loaded models")
     loaded_models_memory_mb: float = Field(default=0.0, description="Total memory used by loaded models")

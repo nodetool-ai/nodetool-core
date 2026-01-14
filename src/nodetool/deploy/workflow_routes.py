@@ -10,7 +10,7 @@ This module encapsulates:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -113,7 +113,7 @@ def create_workflow_router() -> APIRouter:
 
             context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
-            results: Dict[str, object] = {}
+            results: dict[str, object] = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
                 if isinstance(msg, JobUpdate) and msg.status == "error":
                     raise HTTPException(status_code=500, detail=msg.error)
@@ -142,7 +142,7 @@ def create_workflow_router() -> APIRouter:
             context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
             async def generate_sse():
-                results: Dict[str, object] = {}
+                results: dict[str, object] = {}
                 try:
                     async for msg in run_workflow(req, context=context, use_thread=True):
                         if isinstance(msg, JobUpdate):

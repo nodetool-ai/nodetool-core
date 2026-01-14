@@ -16,7 +16,6 @@ This module provides REST API endpoints for managing user-defined workspaces:
 import asyncio
 import os
 from datetime import UTC, datetime
-from typing import List, Optional
 
 import aiofiles
 import aiofiles.os
@@ -57,15 +56,15 @@ class WorkspaceCreateRequest(BaseModel):
 class WorkspaceUpdateRequest(BaseModel):
     """Request model for updating a workspace."""
 
-    name: Optional[str] = Field(None, description="Display name for the workspace")
-    path: Optional[str] = Field(None, description="Absolute path to the workspace directory")
-    is_default: Optional[bool] = Field(None, description="Set as default workspace")
+    name: str | None = Field(None, description="Display name for the workspace")
+    path: str | None = Field(None, description="Absolute path to the workspace directory")
+    is_default: bool | None = Field(None, description="Set as default workspace")
 
 
 class WorkspaceListResponse(BaseModel):
     """Response model for listing workspaces."""
 
-    workspaces: List[WorkspaceResponse]
+    workspaces: list[WorkspaceResponse]
     next_cursor: str = ""
 
 
@@ -86,7 +85,7 @@ def workspace_to_response(workspace: WorkspaceModel) -> WorkspaceResponse:
 @router.get("/", response_model=WorkspaceListResponse)
 async def list_workspaces(
     limit: int = 100,
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     user: str = Depends(current_user),
 ) -> WorkspaceListResponse:
     """
@@ -166,10 +165,10 @@ async def create_workspace(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/default", response_model=Optional[WorkspaceResponse])
+@router.get("/default", response_model=WorkspaceResponse | None)
 async def get_default_workspace(
     user: str = Depends(current_user),
-) -> Optional[WorkspaceResponse]:
+) -> WorkspaceResponse | None:
     """
     Get the default workspace for the current user.
     """
@@ -313,12 +312,12 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
     return normalized_path
 
 
-@router.get("/workflow/{workflow_id}/files", response_model=List[FileInfo])
+@router.get("/workflow/{workflow_id}/files", response_model=list[FileInfo])
 async def list_workflow_files(
     workflow_id: str,
     path: str = ".",
     user: str = Depends(current_user),
-) -> List[FileInfo]:
+) -> list[FileInfo]:
     """
     List files and directories in the workspace associated with a workflow.
 

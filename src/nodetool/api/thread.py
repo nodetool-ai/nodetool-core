@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -52,7 +51,7 @@ async def get(thread_id: str, user: str = Depends(current_user)) -> Thread:
 
 @router.get("/")
 async def index(
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     limit: int = 10,
     reverse: bool = False,
     user: str = Depends(current_user),

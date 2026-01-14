@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import platform
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
 from nodetool.types.model import UnifiedModel
 

@@ -1,4 +1,4 @@
-from typing import List, cast
+from typing import cast
 
 import numpy as np
 import pydub
@@ -31,7 +31,7 @@ def convert_to_float(audio_data: np.ndarray):
     raise Exception(f"Unsupported dtype: {dtype}")
 
 
-def scale_audios_to_shortest_duration(audios: List[AudioSegment]):
+def scale_audios_to_shortest_duration(audios: list[AudioSegment]):
     """
     Scales a list of audios to the shortest duration, meaning that
     all audios will have the same duration.
@@ -71,7 +71,7 @@ def resize_audio(audio: AudioSegment, duration: float) -> AudioSegment:
         return audio
 
 
-def concatenate_audios(audios: List[AudioSegment]) -> AudioSegment:
+def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     """
     Concatenate a list of audio segments
 
@@ -155,7 +155,7 @@ def remove_silence(
     return result
 
 
-def segment_audio(audio: AudioSegment) -> List[AudioSegment]:
+def segment_audio(audio: AudioSegment) -> list[AudioSegment]:
     """
     Segment an audio into multiple audio segments.
 

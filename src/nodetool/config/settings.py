@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import yaml
 
@@ -416,13 +416,13 @@ def get_log_path(filename: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def load_settings() -> Dict[str, Any]:
+def load_settings() -> dict[str, Any]:
     """
     Load settings from YAML file.
     """
     settings_file = get_system_file_path(SETTINGS_FILE)
 
-    settings: Dict[str, Any] = {}
+    settings: dict[str, Any] = {}
 
     if settings_file.exists():
         with open(settings_file) as f:
@@ -431,7 +431,7 @@ def load_settings() -> Dict[str, Any]:
     return settings
 
 
-def save_settings(settings: Dict[str, Any]) -> None:
+def save_settings(settings: dict[str, Any]) -> None:
     """
     Save settings to YAML file.
     """
@@ -445,8 +445,8 @@ def save_settings(settings: Dict[str, Any]) -> None:
 
 def get_value(
     key: str,
-    settings: Dict[str, Any],
-    default_env: Dict[str, Any],
+    settings: dict[str, Any],
+    default_env: dict[str, Any],
     default: Any = NOT_GIVEN,
 ) -> Any:
     """
