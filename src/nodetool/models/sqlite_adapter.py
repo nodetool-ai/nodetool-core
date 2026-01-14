@@ -281,6 +281,26 @@ def translate_condition_to_sql(condition: str) -> str:
     return translated_condition
 
 
+VALID_COLUMN_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_column_name(column_name: str) -> str:
+    """Validate column name to prevent SQL injection.
+
+    Args:
+        column_name: The column name to validate.
+
+    Returns:
+        The validated column name.
+
+    Raises:
+        ValueError: If the column name contains invalid characters.
+    """
+    if not VALID_COLUMN_NAME_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    return column_name
+
+
 class SQLiteAdapter(DatabaseAdapter):
     """
     Provides an adapter (`SQLiteAdapter`) to interface Pydantic-based models
@@ -522,14 +542,18 @@ class SQLiteAdapter(DatabaseAdapter):
 
         Returns:
             A tuple containing the SQL WHERE clause string and a list of parameters.
+
+        Raises:
+            ValueError: If a column name contains invalid characters.
         """
         if isinstance(condition, Condition):
+            validated_field = _validate_column_name(condition.field)
             if condition.operator == Operator.IN:
                 placeholders = ", ".join(["?" for _ in condition.value])
-                sql = f"{condition.field} IN ({placeholders})"
+                sql = f"{validated_field} IN ({placeholders})"
                 params = condition.value
             else:
-                sql = f"{condition.field} {condition.operator.value} ?"
+                sql = f"{validated_field} {condition.operator.value} ?"
                 params = [condition.value]
             return sql, params
         else:  # ConditionGroup
