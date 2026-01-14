@@ -149,6 +149,7 @@ def _load_default_routers() -> List[APIRouter]:
         model,
         node,
         oauth,
+        providers,
         settings,
         storage,
         thread,
@@ -159,6 +160,7 @@ def _load_default_routers() -> List[APIRouter]:
     routers: list[APIRouter] = [
         admin_secrets.router,
         asset.router,
+        providers.router,
         cost.router,
         message.router,
         thread.router,
