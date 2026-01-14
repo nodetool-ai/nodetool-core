@@ -18,7 +18,8 @@ from nodetool.workflows.run_job_request import RunJobRequest
 
 # Add timeout to all tests in this file to prevent hanging
 # Run these tests in the same xdist group to avoid parallel execution issues
-pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group(name="job_execution")]
+# Use serial marker to avoid singleton state conflicts
+pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group(name="job_execution"), pytest.mark.serial]
 
 
 @pytest.fixture
