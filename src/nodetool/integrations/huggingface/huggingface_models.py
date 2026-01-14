@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Callable, List, Sequence
+from typing import Any, Callable, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
 
@@ -329,7 +329,8 @@ def size_on_disk(
 
 def has_model_index(model_info: ModelInfo) -> bool:
     """Return True when hub metadata lists a `model_index.json` sibling."""
-    return any(sib.rfilename == "model_index.json" for sib in (model_info.siblings or []))
+    siblings = getattr(model_info, "siblings", None)
+    return any(sib.rfilename == "model_index.json" for sib in (siblings or []))
 
 
 # Packaging heuristics ---------------------------------------------------------
@@ -671,6 +672,29 @@ async def fetch_model_readme(model_id: str) -> str | None:
         return None
 
 
+class _RecursiveNamespace:
+    """Read-only view of a nested dict that mimics attribute access."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    def __getattr__(self, key: str) -> Any:
+        try:
+            val = self._data[key]
+        except KeyError:
+            # Mirror standard object behavior for missing attributes
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'") from None
+
+        if isinstance(val, dict):
+            return _RecursiveNamespace(val)
+        if isinstance(val, list):
+            return [_RecursiveNamespace(x) if isinstance(x, dict) else x for x in val]
+        return val
+
+    def __repr__(self) -> str:
+        return f"_RecursiveNamespace({repr(self._data)})"
+
+
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
     Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
@@ -679,6 +703,8 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
     if cached_result is not None:
         log.debug("Cache hit for model info: %s", model_id)
+        if isinstance(cached_result, dict):
+            return _RecursiveNamespace(cached_result)  # type: ignore[return-value]
         return cached_result
 
     token = await get_hf_token()
