@@ -20,6 +20,9 @@ from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 # Ensure all tests in this module run in the same xdist worker to prevent resource conflicts
 pytestmark = pytest.mark.xdist_group(name="database")
 
+# Run these tests serially to avoid singleton state conflicts in parallel execution
+pytestmark = [pytestmark, pytest.mark.serial]
+
 
 def check_docker_available() -> bool:
     """Check if Docker is available."""
