@@ -1,13 +1,14 @@
 """
 OpenTelemetry Tracing Integration for NodeTool.
 
-This module provides comprehensive distributed tracing capabilities for:
-- API calls (HTTP requests)
-- WebSocket activity (bidirectional messages)
+This module provides distributed tracing capabilities for:
 - Workflow execution (job lifecycle)
 - Node execution (individual node processing)
-- Provider execution (AI provider API calls with cost tracking)
+- WebSocket activity (bidirectional messages)
 - Agent execution (LLM agent planning and tool execution)
+
+Note: HTTP/API calls and AI provider calls are automatically instrumented
+by OpenTelemetry auto-instrumentation and Traceloop/OpenLLMetry.
 
 All tracing is implemented via Python context managers for unobtrusive
 instrumentation that doesn't modify business logic.
@@ -15,30 +16,18 @@ instrumentation that doesn't modify business logic.
 Usage:
     from nodetool.observability.tracing import (
         init_tracing,
-        trace_api_call,
-        trace_websocket_message,
         trace_workflow,
         trace_node,
-        trace_provider_call,
+        trace_websocket_message,
         trace_agent_task,
     )
 
-    # Initialize tracing
+    # Initialize tracing (also initializes Traceloop for AI provider instrumentation)
     init_tracing(service_name="nodetool-worker", exporter="otlp")
-
-    # Trace API calls
-    async with trace_api_call("POST", "/api/jobs") as span:
-        span.set_attribute("user_id", user.id)
-        result = await create_job(request)
 
     # Trace workflow execution
     async with trace_workflow(job_id="job-123") as span:
         await runner.run(req, context)
-
-    # Trace provider calls with cost tracking
-    async with trace_provider_call("openai", "gpt-4o", "chat") as span:
-        response = await client.chat.completions.create(...)
-        span.set_attribute("cost.credits", calculated_cost)
 
 See OBSERVABILITY.md for full documentation.
 """
@@ -603,7 +592,6 @@ class NoOpTracer:
 
 
 _tracing_initialized = False
-_global_tracer: Optional["WorkflowTracer"] = None
 
 
 def _is_auto_instrumentation_active() -> bool:
@@ -774,7 +762,6 @@ class TracingConfig:
         service_name: Service name for trace attribution
         service_version: Service version
         sample_rate: Sampling rate (0.0 to 1.0)
-        cost_tracking: Whether to track costs
         batch_size: Export batch size
         export_interval_ms: Export interval in milliseconds
     """
@@ -785,7 +772,6 @@ class TracingConfig:
     service_name: str = "nodetool"
     service_version: str = "0.6.0"
     sample_rate: float = 1.0
-    cost_tracking: bool = True
     batch_size: int = 512
     export_interval_ms: int = 5000
 
@@ -876,48 +862,6 @@ def _export_traces_to_console(tracer: WorkflowTracer) -> None:
 # Convenience Context Managers for Common Tracing Scenarios
 # ---------------------------------------------------------------------------
 
-
-@asynccontextmanager
-async def trace_api_call(
-    method: str,
-    path: str,
-    *,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
-    user_id: Optional[str] = None,
-) -> AsyncGenerator[Span | NoOpSpan, None]:
-    """Trace an HTTP API call.
-
-    Usage:
-        async with trace_api_call("POST", "/api/jobs") as span:
-            span.set_attribute("user_id", user.id)
-            result = await create_job(request)
-
-    Args:
-        method: HTTP method (GET, POST, etc.)
-        path: Request path
-        tracer: Optional tracer (uses global if not provided)
-        user_id: Optional user ID for attribution
-
-    Yields:
-        Span object for adding attributes and events
-    """
-    if not _tracing_config.enabled:
-        yield NoOpSpan("http.request")
-        return
-
-    # Use provided tracer or create a temporary one
-    _tracer = tracer or WorkflowTracer(f"api-{_generate_span_id()}")
-
-    async with _tracer.start_span(
-        "http.request",
-        attributes={
-            "http.method": method,
-            "http.path": path,
-            "http.user_id": user_id,
-        },
-        kind=SpanKind.SERVER,
-    ) as span:
-        yield span
 
 
 @asynccontextmanager
@@ -1052,63 +996,6 @@ async def trace_node(
     ) as span:
         yield span
 
-
-@asynccontextmanager
-async def trace_provider_call(
-    provider: str,
-    model: str,
-    operation: str,
-    *,
-    job_id: Optional[str] = None,
-    node_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
-    track_cost: bool = True,
-) -> AsyncGenerator[Span | NoOpSpan, None]:
-    """Trace AI provider API calls with optional cost tracking.
-
-    Usage:
-        async with trace_provider_call("openai", "gpt-4o", "chat") as span:
-            response = await client.chat.completions.create(...)
-            span.set_attribute("cost.input_tokens", response.usage.prompt_tokens)
-            span.set_attribute("cost.output_tokens", response.usage.completion_tokens)
-            span.set_attribute("cost.credits", calculated_cost)
-
-    Args:
-        provider: Provider name (openai, anthropic, etc.)
-        model: Model identifier
-        operation: Operation type (chat, image, tts, etc.)
-        job_id: Optional job ID to link to workflow tracer
-        node_id: Optional node ID for attribution
-        user_id: Optional user ID for cost attribution
-        tracer: Optional tracer
-        track_cost: Whether to track cost for this call
-
-    Yields:
-        Span object for adding attributes and events
-    """
-    if not _tracing_config.enabled:
-        yield NoOpSpan("provider.call")
-        return
-
-    if job_id and tracer is None:
-        _tracer = get_or_create_tracer(job_id)
-    else:
-        _tracer = tracer or WorkflowTracer(f"provider-{_generate_span_id()}")
-
-    async with _tracer.start_span(
-        f"provider.{operation}",
-        attributes={
-            "nodetool.provider.name": provider,
-            "nodetool.provider.model": model,
-            "nodetool.provider.operation": operation,
-            "nodetool.provider.node_id": node_id,
-            "nodetool.provider.user_id": user_id,
-            "nodetool.cost.tracking_enabled": track_cost and _tracing_config.cost_tracking,
-        },
-        kind=SpanKind.CLIENT,
-    ) as span:
-        yield span
 
 
 @asynccontextmanager
@@ -1380,56 +1267,3 @@ def trace_sync(
         yield span
 
 
-# ---------------------------------------------------------------------------
-# Utility Functions
-# ---------------------------------------------------------------------------
-
-
-def record_cost(
-    span: Span | NoOpSpan,
-    *,
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    cached_tokens: int = 0,
-    reasoning_tokens: int = 0,
-    credits: float = 0.0,
-    currency: str = "credits",
-) -> None:
-    """Record cost information on a span.
-
-    Args:
-        span: The span to record cost on
-        input_tokens: Number of input tokens
-        output_tokens: Number of output tokens
-        cached_tokens: Number of cached tokens
-        reasoning_tokens: Number of reasoning tokens
-        credits: Cost in credits
-        currency: Currency type
-    """
-    if not _tracing_config.cost_tracking:
-        return
-
-    span.set_attribute("cost.input_tokens", input_tokens)
-    span.set_attribute("cost.output_tokens", output_tokens)
-    span.set_attribute("cost.cached_tokens", cached_tokens)
-    span.set_attribute("cost.reasoning_tokens", reasoning_tokens)
-    span.set_attribute("cost.credits", credits)
-    span.set_attribute("cost.currency", currency)
-    span.set_attribute("cost.total_tokens", input_tokens + output_tokens)
-
-
-def set_response_attributes(
-    span: Span | NoOpSpan,
-    status_code: int,
-    content_length: Optional[int] = None,
-) -> None:
-    """Set HTTP response attributes on a span.
-
-    Args:
-        span: The span to set attributes on
-        status_code: HTTP status code
-        content_length: Optional response content length
-    """
-    span.set_attribute("http.status_code", status_code)
-    if content_length is not None:
-        span.set_attribute("http.response_content_length", content_length)
