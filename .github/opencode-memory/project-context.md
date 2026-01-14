@@ -1,3 +1,4 @@
+- **2026-01-14**: Added `AsyncRateLimiter` class to `concurrency` module for rate limiting using token bucket algorithm.
 - **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.
 - **2026-01-12**: Initialized structured OpenCode memory layout.
 - **2026-01-12**: Fixed type safety in `chat_sse_runner.py` - Changed `_create_openai_error_chunk` to use typed `Choice` and `ChoiceDelta` objects instead of raw dict unpacking.
