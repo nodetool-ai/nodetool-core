@@ -3069,6 +3069,120 @@ def deploy_destroy(name: str, force: bool):
         sys.exit(1)
 
 
+@deploy.command("hf")
+@click.argument("name")
+@click.option("--skip-build", is_flag=True, help="Skip Docker image build")
+@click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
+@click.option("--skip-endpoint", is_flag=True, help="Skip endpoint creation/update")
+@click.option("--no-cache", is_flag=True, help="Disable Docker build cache")
+@click.option(
+    "--chat-provider",
+    default="openai",
+    help="Chat provider (openai, anthropic, etc.)",
+)
+@click.option(
+    "--default-model",
+    default="gpt-4o-mini",
+    help="Default model for chat",
+)
+def deploy_hf(
+    name: str,
+    skip_build: bool,
+    skip_push: bool,
+    skip_endpoint: bool,
+    no_cache: bool,
+    chat_provider: str,
+    default_model: str,
+):
+    """Deploy to HuggingFace Inference Endpoints.
+
+    Builds a Docker image optimized for HuggingFace Inference Endpoints,
+    pushes it to the configured registry, and creates/updates the endpoint.
+
+    NAME is the deployment name from deployment.yaml.
+
+    Prerequisites:
+        - HF_TOKEN environment variable with write access
+        - Docker registry authentication (docker login)
+        - A 'huggingface' type deployment in deployment.yaml
+
+    Examples:
+        # Deploy using configuration from deployment.yaml
+        nodetool deploy hf my-hf-deployment
+
+        # Skip build and just update the endpoint
+        nodetool deploy hf my-hf-deployment --skip-build --skip-push
+
+        # Build without cache
+        nodetool deploy hf my-hf-deployment --no-cache
+    """
+    from nodetool.config.deployment import (
+        HuggingFaceDeployment,
+        load_deployment_config,
+    )
+    from nodetool.deploy.deploy_to_hf import deploy_to_huggingface
+
+    try:
+        # Load deployment configuration
+        config = load_deployment_config()
+
+        if name not in config.deployments:
+            console.print(f"[red]Deployment '{name}' not found in deployment.yaml[/]")
+            console.print()
+            console.print("[cyan]Available deployments:[/]")
+            for dep_name, dep in config.deployments.items():
+                console.print(f"  • {dep_name} ({dep.type.value})")
+            sys.exit(1)
+
+        deployment = config.deployments[name]
+
+        if not isinstance(deployment, HuggingFaceDeployment):
+            console.print(f"[red]Deployment '{name}' is not a HuggingFace deployment[/]")
+            console.print(f"[yellow]Type: {deployment.type.value}[/]")
+            console.print("[cyan]Use 'nodetool deploy apply' for other deployment types[/]")
+            sys.exit(1)
+
+        if not deployment.enabled:
+            console.print(f"[yellow]Deployment '{name}' is disabled[/]")
+            if not click.confirm("Do you want to deploy anyway?"):
+                console.print("[yellow]Operation cancelled[/]")
+                return
+
+        console.print(f"[bold cyan]🚀 Deploying '{name}' to HuggingFace Inference Endpoints...[/]")
+        console.print()
+        console.print(f"[cyan]Namespace: {deployment.namespace}[/]")
+        console.print(f"[cyan]Endpoint: {deployment.endpoint_name}[/]")
+        console.print(f"[cyan]Region: {deployment.region}[/]")
+        console.print(f"[cyan]Image: {deployment.image.full_name}[/]")
+        console.print()
+
+        # Get environment variables for deployment
+        env = env_for_deploy(chat_provider, default_model)
+
+        # Run deployment
+        deploy_to_huggingface(
+            deployment=deployment,
+            env=env,
+            skip_build=skip_build,
+            skip_push=skip_push,
+            skip_endpoint=skip_endpoint,
+            no_cache=no_cache,
+        )
+
+    except FileNotFoundError:
+        console.print("[yellow]No deployment.yaml found[/]")
+        console.print()
+        console.print("[cyan]Create one with:[/]")
+        console.print("  nodetool deploy init")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
 @deploy.group("workflows")
 def deploy_workflows():
     """Manage workflows on deployed instances."""

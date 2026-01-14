@@ -22,6 +22,7 @@ class DeploymentType(str, Enum):
     SELF_HOSTED = "self-hosted"
     RUNPOD = "runpod"
     GCP = "gcp"
+    HUGGINGFACE = "huggingface"
 
 
 class DeploymentStatus(str, Enum):
@@ -387,6 +388,74 @@ class GCPDeployment(BaseModel):
 
 
 # ============================================================================
+# HuggingFace Deployment Models
+# ============================================================================
+
+
+class HuggingFaceBuildConfig(BaseModel):
+    """Docker build configuration for HuggingFace Inference Endpoints."""
+
+    platform: str = "linux/amd64"
+    dockerfile: str = Field("Dockerfile.hf", description="Dockerfile to use for building the image")
+
+
+class HuggingFaceImageConfig(BaseModel):
+    """Docker image configuration for HuggingFace Inference Endpoints."""
+
+    registry: str = Field("docker.io", description="Container registry")
+    repository: str = Field(..., description="Docker repository (e.g., username/image-name)")
+    tag: str = Field("latest", description="Image tag")
+    build: HuggingFaceBuildConfig = Field(default_factory=HuggingFaceBuildConfig)
+
+    @property
+    def full_name(self) -> str:
+        """Get full image name with registry and tag."""
+        if self.registry == "docker.io":
+            return f"{self.repository}:{self.tag}"
+        return f"{self.registry}/{self.repository}:{self.tag}"
+
+
+class HuggingFaceResourceConfig(BaseModel):
+    """HuggingFace Inference Endpoint resource configuration."""
+
+    instance_size: str = Field("small", description="Instance size (small, medium, large, xlarge, etc.)")
+    instance_type: str = Field("intel-icl", description="Instance type (CPU or GPU identifier)")
+    min_replica: int = Field(0, ge=0, description="Minimum number of replicas")
+    max_replica: int = Field(1, ge=1, description="Maximum number of replicas")
+
+
+class HuggingFaceState(BaseModel):
+    """Runtime state for HuggingFace Inference Endpoint deployment."""
+
+    endpoint_url: Optional[str] = None
+    endpoint_name: Optional[str] = None
+    last_deployed: Optional[datetime] = None
+    status: DeploymentStatus = DeploymentStatus.UNKNOWN
+    revision: Optional[str] = None
+
+
+class HuggingFaceDeployment(BaseModel):
+    """HuggingFace Inference Endpoint deployment configuration."""
+
+    type: Literal[DeploymentType.HUGGINGFACE] = DeploymentType.HUGGINGFACE
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    namespace: str = Field(..., description="HuggingFace namespace (username or organization)")
+    endpoint_name: str = Field(..., description="Name for the inference endpoint")
+    image: HuggingFaceImageConfig
+    resources: HuggingFaceResourceConfig = Field(default_factory=HuggingFaceResourceConfig)
+    region: str = Field("us-east-1", description="Deployment region (e.g., us-east-1, eu-west-1)")
+    vendor: str = Field("aws", description="Cloud vendor (aws, gcp, azure)")
+    task: str = Field("custom", description="Task type for the endpoint")
+    custom_image: bool = Field(True, description="Whether to use a custom Docker image")
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the endpoint")
+    state: HuggingFaceState = Field(default_factory=HuggingFaceState)
+
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        return self.state.endpoint_url
+
+
+# ============================================================================
 # Main Configuration Models
 # ============================================================================
 
@@ -407,7 +476,7 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
+    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment | HuggingFaceDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
