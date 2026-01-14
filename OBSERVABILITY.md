@@ -843,8 +843,8 @@ async with trace_workflow(job_id) as span:
 ### Phase 4: Export & Integration
 - [x] Console exporter for development
 - [x] OTLP via Traceloop SDK
-- [ ] Direct OTLP exporter for WorkflowTracer spans
-- [ ] Bridge WorkflowTracer to real OTEL spans
+- [x] Direct OTLP exporter for WorkflowTracer spans
+- [x] Bridge WorkflowTracer to real OTEL spans
 
 ---
 

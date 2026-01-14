@@ -39,10 +39,21 @@ import uuid
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Generator, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal, Optional
 
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger
+
+# OpenTelemetry SDK imports
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.trace import Status, StatusCode, Tracer as OtelTracer
+from opentelemetry.trace import SpanKind as OtelSpanKind
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span as OtelSpan
 
 log = get_logger(__name__)
 
@@ -74,6 +85,17 @@ class SpanKind(str, Enum):
     PRODUCER = "producer"
     CONSUMER = "consumer"
 
+    def to_otel(self) -> OtelSpanKind:
+        """Convert to OpenTelemetry SpanKind."""
+        mapping = {
+            SpanKind.INTERNAL: OtelSpanKind.INTERNAL,
+            SpanKind.SERVER: OtelSpanKind.SERVER,
+            SpanKind.CLIENT: OtelSpanKind.CLIENT,
+            SpanKind.PRODUCER: OtelSpanKind.PRODUCER,
+            SpanKind.CONSUMER: OtelSpanKind.CONSUMER,
+        }
+        return mapping.get(self, OtelSpanKind.INTERNAL)
+
 
 class SpanStatus(str, Enum):
     """OpenTelemetry-compatible span status codes."""
@@ -81,6 +103,15 @@ class SpanStatus(str, Enum):
     UNSET = "unset"
     OK = "ok"
     ERROR = "error"
+
+    def to_otel(self) -> StatusCode:
+        """Convert to OpenTelemetry StatusCode."""
+        mapping = {
+            SpanStatus.UNSET: StatusCode.UNSET,
+            SpanStatus.OK: StatusCode.OK,
+            SpanStatus.ERROR: StatusCode.ERROR,
+        }
+        return mapping.get(self, StatusCode.UNSET)
 
 
 @dataclass
@@ -140,10 +171,13 @@ class SpanContext:
 
 
 class Span:
-    """Represents a single trace span.
+    """Represents a single trace span that bridges to OpenTelemetry.
 
     A span represents a unit of work or operation. It tracks operations
     and their timing, and can include attributes, events, and status.
+
+    This class wraps an OpenTelemetry span when OTEL is available, providing
+    a consistent interface while exporting spans to OTEL backends.
 
     Attributes:
         name: The operation name
@@ -158,6 +192,7 @@ class Span:
         tracer: "WorkflowTracer",
         parent: Optional["Span"] = None,
         kind: SpanKind = SpanKind.INTERNAL,
+        otel_span: Optional["OtelSpan"] = None,
     ):
         self.name = name
         self.tracer = tracer
@@ -171,6 +206,8 @@ class Span:
             name=name,
         )
         self._children: list[Span] = []
+        # Store the underlying OTEL span if provided
+        self._otel_span: Optional["OtelSpan"] = otel_span
 
     @property
     def duration_ms(self) -> Optional[float]:
@@ -190,6 +227,15 @@ class Span:
             Self for method chaining
         """
         self.context.attributes[key] = value
+        # Also set on OTEL span if available
+        if self._otel_span is not None:
+            try:
+                # OTEL requires specific types: str, bool, int, float, or sequences thereof
+                otel_value = _convert_to_otel_attribute(value)
+                if otel_value is not None:
+                    self._otel_span.set_attribute(key, otel_value)
+            except Exception as e:
+                log.debug(f"Failed to set OTEL attribute {key}: {e}")
         log.debug(f"Span attribute set: {self.name}.{key}={value}")
         return self
 
@@ -225,6 +271,18 @@ class Span:
                 "attributes": attributes or {},
             }
         )
+        # Also add event to OTEL span if available
+        if self._otel_span is not None:
+            try:
+                otel_attrs = {}
+                if attributes:
+                    for k, v in attributes.items():
+                        otel_v = _convert_to_otel_attribute(v)
+                        if otel_v is not None:
+                            otel_attrs[k] = otel_v
+                self._otel_span.add_event(name, otel_attrs)
+            except Exception as e:
+                log.debug(f"Failed to add OTEL event {name}: {e}")
         log.debug(f"Span event added: {self.name}::{name}")
         return self
 
@@ -244,6 +302,12 @@ class Span:
         self.context.status_description = description
         if description:
             self.set_attribute("status_description", description)
+        # Also set status on OTEL span if available
+        if self._otel_span is not None:
+            try:
+                self._otel_span.set_status(Status(status.to_otel(), description))
+            except Exception as e:
+                log.debug(f"Failed to set OTEL status: {e}")
         return self
 
     def record_exception(self, exception: Exception) -> "Span":
@@ -263,6 +327,12 @@ class Span:
                 "exception.message": str(exception),
             },
         )
+        # Also record on OTEL span if available
+        if self._otel_span is not None:
+            try:
+                self._otel_span.record_exception(exception)
+            except Exception as e:
+                log.debug(f"Failed to record OTEL exception: {e}")
         return self
 
     def end(self) -> None:
@@ -270,6 +340,12 @@ class Span:
         self.context.end_time = time.time()
         duration_ms = (self.context.end_time - self.context.start_time) * 1000
         self.set_attribute("duration_ms", duration_ms)
+        # End the OTEL span if available
+        if self._otel_span is not None:
+            try:
+                self._otel_span.end()
+            except Exception as e:
+                log.debug(f"Failed to end OTEL span: {e}")
         log.debug(f"Span ended: {self.name} ({duration_ms:.2f}ms)")
 
     def __enter__(self) -> "Span":
@@ -283,12 +359,44 @@ class Span:
         self.end()
 
 
+def _convert_to_otel_attribute(value: Any) -> Any:
+    """Convert a value to an OTEL-compatible attribute type.
+
+    OTEL accepts: str, bool, int, float, or sequences of these.
+
+    Args:
+        value: The value to convert
+
+    Returns:
+        OTEL-compatible value or None if conversion not possible
+    """
+    if value is None:
+        return None
+    if isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple)):
+        # Convert sequences, filtering out None values
+        converted = []
+        for item in value:
+            if isinstance(item, (str, bool, int, float)):
+                converted.append(item)
+            else:
+                # Convert non-primitive items to strings
+                converted.append(str(item))
+        return converted
+    # For other types, convert to string
+    return str(value)
+
+
 class WorkflowTracer:
     """
-    Distributed tracer for NodeTool workflows.
+    Distributed tracer for NodeTool workflows that bridges to OpenTelemetry.
 
     Provides OpenTelemetry-compatible tracing for workflow execution,
     enabling distributed tracing across multiple nodes and services.
+
+    When OTEL is configured, spans created by this tracer are automatically
+    exported to the configured OTEL backend (console, OTLP, etc.).
 
     The tracer manages span lifecycle, context propagation, and provides
     statistics about traced operations.
@@ -305,6 +413,7 @@ class WorkflowTracer:
         self._spans: list[Span] = []
         self._current_span: Optional[Span] = None
         self._span_stack: list[Span] = []
+        self._otel_span_stack: list["OtelSpan"] = []  # Stack of OTEL spans for context
         self._enabled = True
         self._total_cost: float = 0.0
 
@@ -321,6 +430,49 @@ class WorkflowTracer:
     def add_cost(self, cost: float) -> None:
         """Add to the total tracked cost."""
         self._total_cost += cost
+
+    def _create_otel_span(
+        self,
+        name: str,
+        kind: SpanKind,
+        attributes: Optional[dict[str, Any]] = None,
+    ) -> Optional["OtelSpan"]:
+        """Create an OTEL span if tracing is initialized.
+
+        Args:
+            name: Span name
+            kind: Span kind
+            attributes: Initial attributes
+
+        Returns:
+            OTEL span or None if OTEL is not available
+        """
+        otel_tracer = _get_otel_tracer()
+        if otel_tracer is None:
+            return None
+
+        try:
+            # Convert attributes to OTEL-compatible format
+            otel_attrs = {}
+            if attributes:
+                for key, value in attributes.items():
+                    otel_value = _convert_to_otel_attribute(value)
+                    if otel_value is not None:
+                        otel_attrs[key] = otel_value
+
+            # Add job_id as a standard attribute
+            otel_attrs["nodetool.job_id"] = self.job_id
+
+            # Start the OTEL span
+            otel_span = otel_tracer.start_span(
+                name=name,
+                kind=kind.to_otel(),
+                attributes=otel_attrs,
+            )
+            return otel_span
+        except Exception as e:
+            log.debug(f"Failed to create OTEL span: {e}")
+            return None
 
     @asynccontextmanager
     async def start_span(
@@ -346,7 +498,12 @@ class WorkflowTracer:
             return
 
         parent_span = parent or self._current_span
-        span = Span(name, self, parent=parent_span, kind=kind)
+
+        # Create OTEL span if available
+        otel_span = self._create_otel_span(name, kind, attributes)
+
+        # Create our wrapper span with the OTEL span attached
+        span = Span(name, self, parent=parent_span, kind=kind, otel_span=otel_span)
 
         if attributes:
             span.set_attributes(attributes)
@@ -354,6 +511,8 @@ class WorkflowTracer:
         self._span_stack.append(span)
         self._current_span = span
         self._spans.append(span)
+        if otel_span is not None:
+            self._otel_span_stack.append(otel_span)
 
         # Track parent-child relationship
         if parent_span:
@@ -371,6 +530,8 @@ class WorkflowTracer:
                 span.set_status(SpanStatus.OK)
             span.end()
             self._span_stack.pop()
+            if otel_span is not None and self._otel_span_stack:
+                self._otel_span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
 
     @contextmanager
@@ -397,7 +558,12 @@ class WorkflowTracer:
             return
 
         parent_span = parent or self._current_span
-        span = Span(name, self, parent=parent_span, kind=kind)
+
+        # Create OTEL span if available
+        otel_span = self._create_otel_span(name, kind, attributes)
+
+        # Create our wrapper span with the OTEL span attached
+        span = Span(name, self, parent=parent_span, kind=kind, otel_span=otel_span)
 
         if attributes:
             span.set_attributes(attributes)
@@ -405,6 +571,8 @@ class WorkflowTracer:
         self._span_stack.append(span)
         self._current_span = span
         self._spans.append(span)
+        if otel_span is not None:
+            self._otel_span_stack.append(otel_span)
 
         if parent_span:
             parent_span._children.append(span)
@@ -421,6 +589,8 @@ class WorkflowTracer:
                 span.set_status(SpanStatus.OK)
             span.end()
             self._span_stack.pop()
+            if otel_span is not None and self._otel_span_stack:
+                self._otel_span_stack.pop()
             self._current_span = self._span_stack[-1] if self._span_stack else None
 
     def record_exception(self, exception: Exception, span: Optional[Span] = None) -> None:
@@ -592,6 +762,77 @@ class NoOpTracer:
 
 
 _tracing_initialized = False
+_otel_tracer: Optional[OtelTracer] = None
+_otel_provider: Optional[TracerProvider] = None
+
+
+def _get_otel_tracer() -> Optional[OtelTracer]:
+    """Get the global OTEL tracer if initialized."""
+    global _otel_tracer
+    return _otel_tracer
+
+
+def _setup_otel_provider(
+    service_name: str,
+    service_version: str,
+    exporter_type: str,
+    endpoint: Optional[str] = None,
+) -> Optional[TracerProvider]:
+    """Set up OpenTelemetry TracerProvider with the specified exporter.
+
+    Args:
+        service_name: Name of the service
+        service_version: Version of the service
+        exporter_type: Type of exporter (console, otlp, none)
+        endpoint: OTLP endpoint if using otlp exporter
+
+    Returns:
+        Configured TracerProvider or None if setup fails
+    """
+    try:
+        # Create resource with service info
+        resource = Resource.create({
+            SERVICE_NAME: service_name,
+            SERVICE_VERSION: service_version,
+        })
+
+        # Create provider
+        provider = TracerProvider(resource=resource)
+
+        # Add appropriate span processor based on exporter type
+        if exporter_type == "console":
+            processor = SimpleSpanProcessor(ConsoleSpanExporter())
+            provider.add_span_processor(processor)
+            log.info("OTEL console exporter configured")
+        elif exporter_type == "otlp":
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+                otlp_endpoint = endpoint or get_system_env_value("OTEL_EXPORTER_OTLP_ENDPOINT") or "http://localhost:4317"
+                otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+                processor = BatchSpanProcessor(otlp_exporter)
+                provider.add_span_processor(processor)
+                log.info(f"OTEL OTLP exporter configured with endpoint: {otlp_endpoint}")
+            except ImportError:
+                log.warning("opentelemetry-exporter-otlp not installed; falling back to console exporter")
+                processor = SimpleSpanProcessor(ConsoleSpanExporter())
+                provider.add_span_processor(processor)
+        elif exporter_type != "none":
+            log.warning(f"Unknown exporter type '{exporter_type}'; no spans will be exported")
+            return None
+        else:
+            # exporter_type == "none"
+            log.info("OTEL exporter disabled (none)")
+            return None
+
+        # Register the provider globally
+        otel_trace.set_tracer_provider(provider)
+        log.info("OTEL TracerProvider registered globally")
+
+        return provider
+    except Exception as e:
+        log.error(f"Failed to setup OTEL provider: {e}")
+        return None
 
 
 def _is_auto_instrumentation_active() -> bool:
@@ -639,20 +880,21 @@ def init_tracing(
     """
     Initialize OpenTelemetry tracing and OpenLLMetry instrumentation.
 
-    This function handles both manual instrumentation (Traceloop/OpenLLMetry SDK)
-    and respects OpenTelemetry auto-instrumentation when available.
+    This function sets up the OpenTelemetry SDK for exporting workflow and node
+    spans, and optionally initializes Traceloop for AI provider instrumentation.
 
-    Auto-instrumentation detection:
-    - If OTEL_* environment variables are set, auto-instrumentation is active
-    - In this case, we skip SDK initialization and let auto-instrumentation handle traces
-    - Manual context managers still work but create local spans alongside auto traces
+    The function handles several scenarios:
+    1. If OTEL auto-instrumentation is detected (via env vars), we use the
+       existing tracer provider and just get a tracer from it.
+    2. Otherwise, we set up our own TracerProvider with the specified exporter.
+    3. Traceloop/OpenLLMetry is initialized if configured for AI provider tracing.
 
     Args:
         service_name: Name of the service for trace attribution
-        exporter: Optional exporter type ("traceloop", "otlp", "console", "jaeger")
+        exporter: Optional exporter type ("otlp", "console", "none")
         endpoint: Optional endpoint for the exporter
     """
-    global _tracing_initialized
+    global _tracing_initialized, _otel_tracer, _otel_provider
 
     if _tracing_initialized:
         log.warning("Tracing already initialized")
@@ -663,65 +905,74 @@ def init_tracing(
         return
 
     resolved_exporter = exporter or get_system_env_value("NODETOOL_TRACING_EXPORTER") or _tracing_config.exporter
+    resolved_endpoint = endpoint or get_system_env_value("OTEL_EXPORTER_OTLP_ENDPOINT") or _tracing_config.endpoint
+    service_version = get_system_env_value("OTEL_SERVICE_VERSION") or _tracing_config.service_version
 
     _tracing_initialized = True
     log.info(f"Tracing initialized for service: {service_name}")
 
     if resolved_exporter:
         log.info(f"Tracing exporter configured: {resolved_exporter}")
-        if endpoint:
-            log.info(f"Tracing endpoint: {endpoint}")
+        if resolved_endpoint:
+            log.info(f"Tracing endpoint: {resolved_endpoint}")
 
     auto_instrumentation_active = _is_auto_instrumentation_active()
 
     if auto_instrumentation_active:
         log.info(
             "OpenTelemetry auto-instrumentation detected via environment variables. "
-            "Manual SDK initialization skipped. Auto-instrumentation will handle HTTP/WS traces."
+            "Using existing TracerProvider for workflow spans."
         )
-        if resolved_exporter:
-            log.info(f"Configured exporter '{resolved_exporter}' will be used by auto-instrumentation")
-        return
+        # Get tracer from existing provider (set up by auto-instrumentation)
+        _otel_tracer = otel_trace.get_tracer("nodetool.workflows", service_version)
+        log.info("OTEL tracer obtained from auto-instrumentation provider")
+    else:
+        # Set up our own TracerProvider
+        _otel_provider = _setup_otel_provider(
+            service_name=service_name,
+            service_version=service_version,
+            exporter_type=resolved_exporter,
+            endpoint=resolved_endpoint,
+        )
+        if _otel_provider is not None:
+            _otel_tracer = otel_trace.get_tracer("nodetool.workflows", service_version)
+            log.info("OTEL tracer created with custom provider")
 
-    if not _should_initialize_traceloop(resolved_exporter):
-        log.info("Traceloop OpenLLMetry not configured; skipping SDK initialization")
-        return
+    # Initialize Traceloop for AI provider instrumentation (separate from workflow tracing)
+    if _should_initialize_traceloop(resolved_exporter):
+        if resolved_endpoint and not get_system_env_value("TRACELOOP_BASE_URL"):
+            os.environ["TRACELOOP_BASE_URL"] = resolved_endpoint
 
-    if endpoint and not get_system_env_value("TRACELOOP_BASE_URL"):
-        os.environ["TRACELOOP_BASE_URL"] = endpoint
-
-    try:
-        from traceloop.sdk import Traceloop
-    except ImportError:
-        log.warning("traceloop-sdk not installed; skipping OpenLLMetry initialization")
-        return
-
-    app_name = get_system_env_value("TRACELOOP_APP_NAME") or get_system_env_value("OTEL_SERVICE_NAME") or service_name
-    env_name = get_system_env_value("ENV")
-    service_version = get_system_env_value("OTEL_SERVICE_VERSION", _tracing_config.service_version)
-
-    resource_attributes: dict[str, str] = {}
-    if env_name:
-        resource_attributes["deployment.environment"] = env_name
-    if service_version:
-        resource_attributes["service.version"] = str(service_version)
-
-    init_kwargs: dict[str, Any] = {"app_name": app_name}
-    if resource_attributes:
-        init_kwargs["resource_attributes"] = resource_attributes
-    if _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH")):
-        init_kwargs["disable_batch"] = True
-
-    if resolved_exporter == "console":
         try:
-            from opentelemetry.sdk.trace.export import ConsoleSpanExporter
-
-            init_kwargs["exporter"] = ConsoleSpanExporter()
+            from traceloop.sdk import Traceloop
         except ImportError:
-            log.warning("opentelemetry-sdk not installed; unable to set ConsoleSpanExporter")
+            log.warning("traceloop-sdk not installed; skipping OpenLLMetry initialization")
+            return
 
-    Traceloop.init(**init_kwargs)
-    log.info("Traceloop OpenLLMetry initialized")
+        app_name = (
+            get_system_env_value("TRACELOOP_APP_NAME")
+            or get_system_env_value("OTEL_SERVICE_NAME")
+            or service_name
+        )
+        env_name = get_system_env_value("ENV")
+
+        resource_attributes: dict[str, str] = {}
+        if env_name:
+            resource_attributes["deployment.environment"] = env_name
+        if service_version:
+            resource_attributes["service.version"] = str(service_version)
+
+        init_kwargs: dict[str, Any] = {"app_name": app_name}
+        if resource_attributes:
+            init_kwargs["resource_attributes"] = resource_attributes
+        if _is_truthy(get_system_env_value("TRACELOOP_DISABLE_BATCH")):
+            init_kwargs["disable_batch"] = True
+
+        if resolved_exporter == "console":
+            init_kwargs["exporter"] = ConsoleSpanExporter()
+
+        Traceloop.init(**init_kwargs)
+        log.info("Traceloop OpenLLMetry initialized")
 
 
 def get_tracer(job_id: str, enabled: bool = True) -> WorkflowTracer | NoOpTracer:
@@ -774,6 +1025,7 @@ class TracingConfig:
     sample_rate: float = 1.0
     batch_size: int = 512
     export_interval_ms: int = 5000
+    cost_tracking: bool = True
 
 
 _tracing_config: TracingConfig = TracingConfig()
@@ -1266,4 +1518,164 @@ def trace_sync(
     with tracer.start_span_sync(name, attributes=attributes, kind=kind) as span:
         yield span
 
+
+# ---------------------------------------------------------------------------
+# API and Provider Tracing Context Managers
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def trace_api_call(
+    method: str,
+    path: str,
+    *,
+    user_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace an API call.
+
+    Note: HTTP/API calls are typically auto-instrumented by OpenTelemetry.
+    This context manager is provided for manual tracing when needed.
+
+    Usage:
+        async with trace_api_call("POST", "/api/jobs", user_id="user-123") as span:
+            response = await handle_request()
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: Request path
+        user_id: Optional user ID for attribution
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("http.request")
+        return
+
+    _tracer = tracer or WorkflowTracer(f"api-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        "http.request",
+        attributes={
+            "http.method": method,
+            "http.path": path,
+            "http.user_id": user_id,
+        },
+        kind=SpanKind.SERVER,
+    ) as span:
+        yield span
+
+
+@asynccontextmanager
+async def trace_provider_call(
+    provider: str,
+    model: str,
+    operation: str,
+    *,
+    job_id: Optional[str] = None,
+    tracer: Optional[WorkflowTracer | NoOpTracer] = None,
+) -> AsyncGenerator[Span | NoOpSpan, None]:
+    """Trace an AI provider API call.
+
+    Note: AI provider calls are typically auto-instrumented by Traceloop/OpenLLMetry.
+    This context manager is provided for manual tracing when needed.
+
+    Usage:
+        async with trace_provider_call("openai", "gpt-4o", "chat") as span:
+            response = await client.chat.completions.create(...)
+
+    Args:
+        provider: Provider name (openai, anthropic, etc.)
+        model: Model name
+        operation: Operation type (chat, completion, embedding, etc.)
+        job_id: Optional job ID to link to workflow tracer
+        tracer: Optional tracer
+
+    Yields:
+        Span object for adding attributes and events
+    """
+    if not _tracing_config.enabled:
+        yield NoOpSpan("provider.call")
+        return
+
+    if job_id and tracer is None:
+        _tracer = get_or_create_tracer(job_id)
+    else:
+        _tracer = tracer or WorkflowTracer(f"provider-{_generate_span_id()}")
+
+    async with _tracer.start_span(
+        f"provider.{operation}",
+        attributes={
+            "nodetool.provider.name": provider,
+            "nodetool.provider.model": model,
+            "nodetool.provider.operation": operation,
+        },
+        kind=SpanKind.CLIENT,
+    ) as span:
+        yield span
+
+
+def record_cost(
+    span: Span | NoOpSpan,
+    *,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cached_tokens: int = 0,
+    credits: float = 0.0,
+) -> None:
+    """Record cost information on a span.
+
+    This utility function adds token usage and cost attributes to a span.
+    Use this to track AI provider costs for billing and analytics.
+
+    Usage:
+        async with trace_provider_call("openai", "gpt-4o", "chat") as span:
+            response = await client.chat.completions.create(...)
+            record_cost(
+                span,
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+                credits=calculate_cost(response.usage),
+            )
+
+    Args:
+        span: The span to record cost on
+        input_tokens: Number of input/prompt tokens
+        output_tokens: Number of output/completion tokens
+        cached_tokens: Number of cached tokens (if applicable)
+        credits: Cost in credits/currency
+    """
+    span.set_attribute("cost.input_tokens", input_tokens)
+    span.set_attribute("cost.output_tokens", output_tokens)
+    span.set_attribute("cost.cached_tokens", cached_tokens)
+    span.set_attribute("cost.credits", credits)
+    span.set_attribute("cost.total_tokens", input_tokens + output_tokens)
+
+
+def set_response_attributes(
+    span: Span | NoOpSpan,
+    *,
+    status_code: Optional[int] = None,
+    response_size: Optional[int] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Set HTTP response attributes on a span.
+
+    Utility function to record response information on an API span.
+
+    Args:
+        span: The span to set attributes on
+        status_code: HTTP status code
+        response_size: Response body size in bytes
+        error: Error message if request failed
+    """
+    if status_code is not None:
+        span.set_attribute("http.status_code", status_code)
+    if response_size is not None:
+        span.set_attribute("http.response_size", response_size)
+    if error is not None:
+        span.set_attribute("http.error", error)
+        span.set_status(SpanStatus.ERROR, error)
 

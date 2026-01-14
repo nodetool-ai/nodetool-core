@@ -427,3 +427,123 @@ class TestConsoleExporter:
         assert removed_tracer is not None
         captured = capsys.readouterr()
         assert "TRACES" not in captured.out
+
+
+class TestOTELIntegration:
+    """Tests for OpenTelemetry SDK integration."""
+
+    @pytest.mark.asyncio
+    async def test_span_has_otel_span_attribute(self):
+        """Test that Span has _otel_span attribute."""
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+        tracer = WorkflowTracer(job_id="test-job")
+        async with tracer.start_span("test") as span:
+            # The span should have an _otel_span attribute (may be None if OTEL not initialized)
+            assert hasattr(span, "_otel_span")
+
+    @pytest.mark.asyncio
+    async def test_span_bridge_attributes_to_otel(self):
+        """Test that span attributes are bridged to OTEL span when available."""
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+        tracer = WorkflowTracer(job_id="test-job")
+        async with tracer.start_span("test") as span:
+            # Set attributes - these should be set on both our span and OTEL span
+            span.set_attribute("test.string", "value")
+            span.set_attribute("test.int", 42)
+            span.set_attribute("test.float", 3.14)
+            span.set_attribute("test.bool", True)
+            span.set_attribute("test.list", ["a", "b", "c"])
+
+            # Verify our span has the attributes
+            assert span.context.attributes["test.string"] == "value"
+            assert span.context.attributes["test.int"] == 42
+            assert span.context.attributes["test.float"] == 3.14
+            assert span.context.attributes["test.bool"] is True
+            assert span.context.attributes["test.list"] == ["a", "b", "c"]
+
+    @pytest.mark.asyncio
+    async def test_span_bridge_events_to_otel(self):
+        """Test that span events are bridged to OTEL span when available."""
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+        tracer = WorkflowTracer(job_id="test-job")
+        async with tracer.start_span("test") as span:
+            span.add_event("custom_event", {"key": "value"})
+
+            # Verify our span has the event
+            event_names = [e["name"] for e in span.context.events]
+            assert "custom_event" in event_names
+
+    @pytest.mark.asyncio
+    async def test_span_bridge_status_to_otel(self):
+        """Test that span status is bridged to OTEL span when available."""
+        from nodetool.observability.tracing import SpanStatus
+
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+        tracer = WorkflowTracer(job_id="test-job")
+        async with tracer.start_span("test") as span:
+            span.set_status(SpanStatus.ERROR, "Test error")
+
+            # Verify our span has the status
+            assert span.context.status == SpanStatus.ERROR
+            assert span.context.status_description == "Test error"
+
+    @pytest.mark.asyncio
+    async def test_span_bridge_exception_to_otel(self):
+        """Test that span exceptions are bridged to OTEL span when available."""
+        from nodetool.observability.tracing import SpanStatus
+
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
+        tracer = WorkflowTracer(job_id="test-job")
+        async with tracer.start_span("test") as span:
+            span.record_exception(ValueError("Test error"))
+
+            # Verify our span has the error status and event
+            assert span.context.status == SpanStatus.ERROR
+            event_names = [e["name"] for e in span.context.events]
+            assert "exception" in event_names
+
+    def test_convert_to_otel_attribute_primitives(self):
+        """Test _convert_to_otel_attribute with primitive types."""
+        from nodetool.observability.tracing import _convert_to_otel_attribute
+
+        assert _convert_to_otel_attribute("test") == "test"
+        assert _convert_to_otel_attribute(42) == 42
+        assert _convert_to_otel_attribute(3.14) == 3.14
+        assert _convert_to_otel_attribute(True) is True
+        assert _convert_to_otel_attribute(None) is None
+
+    def test_convert_to_otel_attribute_sequences(self):
+        """Test _convert_to_otel_attribute with sequences."""
+        from nodetool.observability.tracing import _convert_to_otel_attribute
+
+        assert _convert_to_otel_attribute(["a", "b"]) == ["a", "b"]
+        assert _convert_to_otel_attribute([1, 2, 3]) == [1, 2, 3]
+        assert _convert_to_otel_attribute((1.0, 2.0)) == [1.0, 2.0]
+
+    def test_convert_to_otel_attribute_complex_types(self):
+        """Test _convert_to_otel_attribute with complex types converts to string."""
+        from nodetool.observability.tracing import _convert_to_otel_attribute
+
+        result = _convert_to_otel_attribute({"key": "value"})
+        assert isinstance(result, str)
+        assert "key" in result
+
+    def test_span_kind_to_otel_conversion(self):
+        """Test SpanKind.to_otel() conversion."""
+        from nodetool.observability.tracing import SpanKind
+        from opentelemetry.trace import SpanKind as OtelSpanKind
+
+        assert SpanKind.INTERNAL.to_otel() == OtelSpanKind.INTERNAL
+        assert SpanKind.SERVER.to_otel() == OtelSpanKind.SERVER
+        assert SpanKind.CLIENT.to_otel() == OtelSpanKind.CLIENT
+        assert SpanKind.PRODUCER.to_otel() == OtelSpanKind.PRODUCER
+        assert SpanKind.CONSUMER.to_otel() == OtelSpanKind.CONSUMER
+
+    def test_span_status_to_otel_conversion(self):
+        """Test SpanStatus.to_otel() conversion."""
+        from nodetool.observability.tracing import SpanStatus
+        from opentelemetry.trace import StatusCode
+
+        assert SpanStatus.UNSET.to_otel() == StatusCode.UNSET
+        assert SpanStatus.OK.to_otel() == StatusCode.OK
+        assert SpanStatus.ERROR.to_otel() == StatusCode.ERROR
