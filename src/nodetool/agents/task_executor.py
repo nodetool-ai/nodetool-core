@@ -23,6 +23,7 @@ from nodetool.agents.wrap_generators_parallel import (
 )
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Step, Task, ToolCall
+from nodetool.observability.tracing import trace_task_execution
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, StepResult
@@ -114,74 +115,107 @@ class TaskExecutor:
         Yields:
             Union[TaskUpdate, Chunk, ToolCall]: Live updates during execution
         """
-        steps_taken = 0
+        # Wrap execution in tracing context
+        async with trace_task_execution(
+            task_id=self.task.id or "unknown",
+            task_title=self.task.title or "Untitled Task",
+            step_count=len(self.task.steps),
+        ) as span:
+            span.set_attribute("nodetool.task_executor.max_steps", self.max_steps)
+            span.set_attribute("nodetool.task_executor.parallel_execution", self.parallel_execution)
+            span.set_attribute("nodetool.task_executor.model", self.model)
 
-        for key, value in self.inputs.items():
-            context.set(key, value)
+            steps_taken = 0
+            completed_steps = 0
 
-        # Remember which step is the designated finisher so dynamic additions can slot before it.
-        if self.task.steps:
-            self._finish_step_id = self.task.steps[-1].id
-        else:
-            self._finish_step_id = None
+            for key, value in self.inputs.items():
+                context.set(key, value)
 
-        # Continue until all tasks are complete or we reach max steps
-        while not self._all_tasks_complete() and steps_taken < self.max_steps:
-            steps_taken += 1
-
-            # Find all executable tasks
-            executable_tasks = self._get_all_executable_tasks()
-            executable_tasks = self._maybe_defer_finish_step(executable_tasks)
-
-            if not executable_tasks:
-                # If no tasks are executable but we're not done, there might be a dependency issue
-                if not self._all_tasks_complete():
-                    yield Chunk(
-                        content="\nNo executable tasks but not all complete. Possible file dependency issues.\n",
-                        done=False,
-                    )
-                break
-
-            # Create a list to store all step execution generators
-            step_generators = []
-
-            # Create execution contexts for all executable steps
-            for step in executable_tasks:
-                step_executor = StepExecutor(
-                    task=self.task,
-                    step=step,
-                    processing_context=context,
-                    system_prompt=self.system_prompt,
-                    tools=list(self.tools).copy(),
-                    model=self.model,
-                    provider=self.provider,
-                    max_token_limit=self.max_token_limit,
-                    use_finish_task=self._is_finish_step(step),
-                    display_manager=self.display_manager,
-                )
-                step_generators.append(step_executor.execute())
-
-            if not step_generators:
-                continue
-
-            [s.id for s in executable_tasks]
-            if self.parallel_execution:
-                # Execute all steps concurrently using wrap_generators_parallel
-                async for message in wrap_generators_parallel(*step_generators):
-                    if isinstance(message, StepResult):
-                        log.debug(
-                            f"TaskExecutor: Yielding StepResult from parallel for step {message.step.id}. is_task_result={message.is_task_result}"
-                        )
-                    yield message
+            # Remember which step is the designated finisher so dynamic additions can slot before it.
+            if self.task.steps:
+                self._finish_step_id = self.task.steps[-1].id
             else:
-                # Execute steps sequentially, one at a time
-                for generator in step_generators:
-                    async for message in generator:
+                self._finish_step_id = None
+
+            span.add_event("execution_started", {"step_count": len(self.task.steps)})
+
+            # Continue until all tasks are complete or we reach max steps
+            while not self._all_tasks_complete() and steps_taken < self.max_steps:
+                steps_taken += 1
+
+                # Find all executable tasks
+                executable_tasks = self._get_all_executable_tasks()
+                executable_tasks = self._maybe_defer_finish_step(executable_tasks)
+
+                if not executable_tasks:
+                    # If no tasks are executable but we're not done, there might be a dependency issue
+                    if not self._all_tasks_complete():
+                        yield Chunk(
+                            content="\nNo executable tasks but not all complete. Possible file dependency issues.\n",
+                            done=False,
+                        )
+                    break
+
+                span.add_event(
+                    "iteration_started",
+                    {
+                        "iteration": steps_taken,
+                        "executable_count": len(executable_tasks),
+                    },
+                )
+
+                # Create a list to store all step execution generators
+                step_generators = []
+
+                # Create execution contexts for all executable steps
+                for step in executable_tasks:
+                    step_executor = StepExecutor(
+                        task=self.task,
+                        step=step,
+                        processing_context=context,
+                        system_prompt=self.system_prompt,
+                        tools=list(self.tools).copy(),
+                        model=self.model,
+                        provider=self.provider,
+                        max_token_limit=self.max_token_limit,
+                        use_finish_task=self._is_finish_step(step),
+                        display_manager=self.display_manager,
+                    )
+                    step_generators.append(step_executor.execute())
+
+                if not step_generators:
+                    continue
+
+                [s.id for s in executable_tasks]
+                if self.parallel_execution:
+                    # Execute all steps concurrently using wrap_generators_parallel
+                    async for message in wrap_generators_parallel(*step_generators):
                         if isinstance(message, StepResult):
                             log.debug(
-                                f"TaskExecutor: Yielding StepResult from sequential for step {message.step.id}. is_task_result={message.is_task_result}"
+                                f"TaskExecutor: Yielding StepResult from parallel for step {message.step.id}. is_task_result={message.is_task_result}"
                             )
+                            completed_steps += 1
                         yield message
+                else:
+                    # Execute steps sequentially, one at a time
+                    for generator in step_generators:
+                        async for message in generator:
+                            if isinstance(message, StepResult):
+                                log.debug(
+                                    f"TaskExecutor: Yielding StepResult from sequential for step {message.step.id}. is_task_result={message.is_task_result}"
+                                )
+                                completed_steps += 1
+                            yield message
+
+            span.set_attribute("nodetool.task_executor.steps_taken", steps_taken)
+            span.set_attribute("nodetool.task_executor.completed_steps", completed_steps)
+            span.add_event(
+                "execution_completed",
+                {
+                    "steps_taken": steps_taken,
+                    "completed_steps": completed_steps,
+                },
+            )
 
     def _get_all_executable_tasks(self) -> list[Step]:
         """

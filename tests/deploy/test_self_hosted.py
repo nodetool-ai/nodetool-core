@@ -67,14 +67,14 @@ class TestLocalExecutor:
         executor = LocalExecutor()
 
         with pytest.raises(SSHCommandError) as exc_info:
-            executor.execute("exit 1", check=True)
+            executor.execute("sh -c 'exit 1'", check=True)
 
         assert exc_info.value.exit_code == 1
 
     def test_execute_failure_without_check(self):
         """Test command failure with check=False."""
         executor = LocalExecutor()
-        exit_code, _stdout, _stderr = executor.execute("exit 1", check=False)
+        exit_code, _stdout, _stderr = executor.execute("sh -c 'exit 1'", check=False)
 
         assert exit_code == 1
 
