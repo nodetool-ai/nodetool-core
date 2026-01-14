@@ -27,6 +27,43 @@ log = logging.getLogger(__name__)
 ACME_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
+def validate_acme_token_path(token: str, acme_webroot: str) -> Path | None:
+    """
+    Validate an ACME token and return a safe file path if valid.
+
+    Args:
+        token: The ACME challenge token from the URL.
+        acme_webroot: The configured ACME webroot directory.
+
+    Returns:
+        A validated Path object pointing to the challenge file, or None if invalid.
+    """
+    # Validate token format - only alphanumeric, underscore, and hyphen allowed
+    if not token or not ACME_TOKEN_RE.match(token):
+        return None
+
+    # Ensure token contains no path separators (additional safety check)
+    if "/" in token or "\\" in token or ".." in token:
+        return None
+
+    try:
+        acme_root = Path(acme_webroot).resolve(strict=False)
+        # Redundant check for defense-in-depth and to help static analyzers
+        # verify the token is safe before use in path construction
+        safe_token = "".join(c for c in token if c.isalnum() or c in "_-")
+        if safe_token != token:
+            return None
+        challenge_path = (acme_root / safe_token).resolve(strict=False)
+    except (OSError, ValueError):
+        return None
+
+    # Verify path is within acme_root (prevents any path escape)
+    if not challenge_path.is_relative_to(acme_root):
+        return None
+
+    return challenge_path
+
+
 class AsyncReverseProxy:
     """Async reverse proxy with Docker container management."""
 
@@ -258,24 +295,15 @@ class AsyncReverseProxy:
         Returns:
             PlainTextResponse with challenge file content or 404.
         """
-        if not ACME_TOKEN_RE.match(token):
+        challenge_path = validate_acme_token_path(token, self.config.global_.acme_webroot)
+        if challenge_path is None:
             log.warning(f"Invalid ACME token format: {token}")
             return PlainTextResponse("Invalid token", status_code=400)
 
-        acme_root = Path(self.config.global_.acme_webroot).resolve()
-        challenge_path = acme_root / token
-
-        try:
-            challenge_path = challenge_path.resolve()
-        except (OSError, ValueError):
-            log.warning(f"Invalid path for ACME token: {token}")
-            return PlainTextResponse("Invalid token", status_code=400)
-
-        if not challenge_path.is_file() or not challenge_path.is_relative_to(acme_root):
+        if not challenge_path.is_file():
             return PlainTextResponse("Not found", status_code=404)
 
         try:
-
             async def stream_file():
                 async with aiofiles.open(challenge_path, "rb") as f:
                     while True:
@@ -376,13 +404,11 @@ def create_acme_only_app(config: ProxyConfig) -> FastAPI:
 
     @app.get("/.well-known/acme-challenge/{token}", include_in_schema=False)
     async def acme_only(token: str):
-        if not ACME_TOKEN_RE.match(token):
+        challenge_path = validate_acme_token_path(token, config.global_.acme_webroot)
+        if challenge_path is None:
             return PlainTextResponse("Invalid token", status_code=400)
 
-        acme_root = Path(config.global_.acme_webroot).resolve()
-        challenge_path = (acme_root / token).resolve()
-
-        if not challenge_path.is_file() or not challenge_path.is_relative_to(acme_root):
+        if not challenge_path.is_file():
             return PlainTextResponse("Not found", status_code=404)
 
         async def stream_file():
