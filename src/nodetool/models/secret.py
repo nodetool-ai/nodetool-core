@@ -12,7 +12,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
 
-
 log = get_logger(__name__)
 
 
