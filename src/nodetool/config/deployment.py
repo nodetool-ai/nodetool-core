@@ -22,6 +22,7 @@ class DeploymentType(str, Enum):
     SELF_HOSTED = "self-hosted"
     RUNPOD = "runpod"
     GCP = "gcp"
+    FLY = "fly"
 
 
 class DeploymentStatus(str, Enum):
@@ -387,6 +388,102 @@ class GCPDeployment(BaseModel):
 
 
 # ============================================================================
+# Fly.io Deployment Models
+# ============================================================================
+
+
+class FlyBuildConfig(BaseModel):
+    """Docker build configuration for Fly.io."""
+
+    platform: str = Field("linux/amd64", description="Build platform")
+    dockerfile: str = Field("Dockerfile", description="Dockerfile path")
+
+
+class FlyImageConfig(BaseModel):
+    """Docker image configuration for Fly.io."""
+
+    name: Optional[str] = Field(None, description="Image name (uses Fly registry by default)")
+    tag: str = Field("latest", description="Image tag")
+    registry: Optional[str] = Field(None, description="Docker registry (uses Fly registry if not set)")
+    build: FlyBuildConfig = Field(default_factory=FlyBuildConfig)
+
+    @property
+    def full_name(self) -> str:
+        """Get full image name with tag."""
+        if self.registry and self.name:
+            return f"{self.registry}/{self.name}:{self.tag}"
+        elif self.name:
+            return f"{self.name}:{self.tag}"
+        return f"fly-app:{self.tag}"
+
+
+class FlyResourceConfig(BaseModel):
+    """Fly.io VM resource configuration."""
+
+    vm_size: str = Field("shared-cpu-1x", description="VM size (e.g., shared-cpu-1x, performance-1x)")
+    memory: str = Field("256mb", description="Memory allocation (e.g., 256mb, 1gb, 2gb)")
+    cpu_kind: str = Field("shared", description="CPU kind (shared or performance)")
+    cpus: int = Field(1, ge=1, description="Number of CPUs")
+    gpu_kind: Optional[str] = Field(None, description="GPU type (e.g., a100-pcie-40gb, l40s)")
+
+
+class FlyVolumeConfig(BaseModel):
+    """Fly.io persistent volume configuration."""
+
+    name: str = Field(..., description="Volume name")
+    size_gb: int = Field(1, ge=1, description="Volume size in GB")
+    mount_path: str = Field(..., description="Container mount path")
+
+
+class FlyNetworkConfig(BaseModel):
+    """Fly.io network configuration."""
+
+    internal_port: int = Field(8080, ge=1, le=65535, description="Internal container port")
+    force_https: bool = Field(True, description="Force HTTPS for external connections")
+    auto_stop_machines: bool = Field(True, description="Auto-stop machines when idle")
+    auto_start_machines: bool = Field(True, description="Auto-start machines on request")
+    min_machines_running: int = Field(0, ge=0, description="Minimum number of running machines")
+    max_machines: Optional[int] = Field(None, description="Maximum number of machines (optional)")
+
+
+class FlyState(BaseModel):
+    """Runtime state for Fly.io deployment."""
+
+    app_name: Optional[str] = None
+    app_url: Optional[str] = None
+    last_deployed: Optional[datetime] = None
+    status: DeploymentStatus = DeploymentStatus.UNKNOWN
+    machine_ids: List[str] = Field(default_factory=list)
+
+
+class FlyDeployment(BaseModel):
+    """Fly.io deployment configuration."""
+
+    type: Literal[DeploymentType.FLY] = DeploymentType.FLY
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    app_name: str = Field(..., description="Fly.io app name (must be globally unique)")
+    organization: Optional[str] = Field(None, description="Fly.io organization (uses personal if not set)")
+    region: str = Field("iad", description="Primary region code (e.g., iad, lax, ams)")
+    image: FlyImageConfig = Field(default_factory=FlyImageConfig)
+    resources: FlyResourceConfig = Field(default_factory=FlyResourceConfig)
+    network: FlyNetworkConfig = Field(default_factory=FlyNetworkConfig)
+    volumes: List[FlyVolumeConfig] = Field(default_factory=list, description="Persistent volumes")
+    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables")
+    secrets: List[str] = Field(
+        default_factory=list,
+        description="Secret names to set (values sourced from local env or secrets manager)",
+    )
+    state: FlyState = Field(default_factory=FlyState)
+
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        if self.state.app_url:
+            return self.state.app_url
+        # Return the default Fly.io URL pattern
+        return f"https://{self.app_name}.fly.dev"
+
+
+# ============================================================================
 # Main Configuration Models
 # ============================================================================
 
@@ -407,7 +504,7 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
+    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment | FlyDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
