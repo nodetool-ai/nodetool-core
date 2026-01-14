@@ -606,6 +606,21 @@ _tracing_initialized = False
 _global_tracer: Optional["WorkflowTracer"] = None
 
 
+def _is_auto_instrumentation_active() -> bool:
+    """Check if OpenTelemetry auto-instrumentation is active via environment variables.
+
+    Auto-instrumentation is considered active when standard OTEL environment variables
+    are set, indicating opentelemetry-instrument is being used to run the application.
+    """
+    auto_otel_vars = [
+        "OTEL_SERVICE_NAME",
+        "OTEL_TRACES_EXPORTER",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+    ]
+    return any(get_system_env_value(var) for var in auto_otel_vars)
+
+
 def _is_truthy(value: Optional[str]) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -636,6 +651,14 @@ def init_tracing(
     """
     Initialize OpenTelemetry tracing and OpenLLMetry instrumentation.
 
+    This function handles both manual instrumentation (Traceloop/OpenLLMetry SDK)
+    and respects OpenTelemetry auto-instrumentation when available.
+
+    Auto-instrumentation detection:
+    - If OTEL_* environment variables are set, auto-instrumentation is active
+    - In this case, we skip SDK initialization and let auto-instrumentation handle traces
+    - Manual context managers still work but create local spans alongside auto traces
+
     Args:
         service_name: Name of the service for trace attribution
         exporter: Optional exporter type ("traceloop", "otlp", "console", "jaeger")
@@ -660,6 +683,17 @@ def init_tracing(
         log.info(f"Tracing exporter configured: {resolved_exporter}")
         if endpoint:
             log.info(f"Tracing endpoint: {endpoint}")
+
+    auto_instrumentation_active = _is_auto_instrumentation_active()
+
+    if auto_instrumentation_active:
+        log.info(
+            "OpenTelemetry auto-instrumentation detected via environment variables. "
+            "Manual SDK initialization skipped. Auto-instrumentation will handle HTTP/WS traces."
+        )
+        if resolved_exporter:
+            log.info(f"Configured exporter '{resolved_exporter}' will be used by auto-instrumentation")
+        return
 
     if not _should_initialize_traceloop(resolved_exporter):
         log.info("Traceloop OpenLLMetry not configured; skipping SDK initialization")
