@@ -42,11 +42,26 @@ class LocalExecutor:
         pass
 
     def execute(self, command: str, check: bool = True, timeout: Optional[int] = None) -> Tuple[int, str, str]:
-        """Execute a command locally."""
+        """Execute a command locally.
+
+        Security: Uses shell=False and shlex.split to prevent command injection.
+        The command is split into a list of arguments using shlex.split().
+
+        Args:
+            command: The command string to execute.
+            check: If True, raises SSHCommandError on non-zero return code.
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            Tuple of (returncode, stdout, stderr).
+        """
         try:
+            import shlex
+
+            cmd_list = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_list,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

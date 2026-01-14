@@ -82,4 +82,3 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
             )
             # Let the exception propagate so normal handlers run and avoid double execution
             raise
-
