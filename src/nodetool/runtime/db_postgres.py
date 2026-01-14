@@ -17,13 +17,35 @@ from nodetool.runtime.resources import DBResources
 log = get_logger(__name__)
 
 
+class _AsyncConnectionWrapper:
+    """Wrapper to provide connection() context manager interface."""
+
+    def __init__(self, pool: "PostgresConnectionPool"):
+        self.pool = pool
+
+    async def __aenter__(self):
+        """Acquire connection when entering context."""
+        psycopg_pool = await self.pool.get_pool()
+        self._conn_ctx = psycopg_pool.connection()
+        return await self._conn_ctx.__aenter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Release connection when exiting context."""
+        return await self._conn_ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+
 class PostgresConnectionPool:
     """Async connection pool for PostgreSQL."""
 
     _pools: ClassVar[Dict[str, "PostgresConnectionPool"]] = {}
     _pool_locks: ClassVar[Dict[str, asyncio.Lock]] = {}
 
-    def __init__(self, conninfo: str, min_size: int = 1, max_size: int = 10):
+    def __init__(
+        self,
+        conninfo: str,
+        min_size: int = 1,
+        max_size: int = 10,
+    ):
         """Initialize the connection pool.
 
         Args:
@@ -45,7 +67,12 @@ class PostgresConnectionPool:
         return cls._pool_locks[pool_key]
 
     @classmethod
-    async def get_shared(cls, conninfo: str, min_size: int = 1, max_size: int = 10) -> "PostgresConnectionPool":
+    async def get_shared(
+        cls,
+        conninfo: str,
+        min_size: int = 1,
+        max_size: int = 10,
+    ) -> "PostgresConnectionPool":
         """Get or create a shared connection pool.
 
         Args:
@@ -79,10 +106,24 @@ class PostgresConnectionPool:
                         self.conninfo,
                         min_size=self.min_size,
                         max_size=self.max_size,
-                        open=True,
                     )
+                    await self._pool.open()
                     log.debug("Opened PostgreSQL connection pool")
         return self._pool  # type: ignore[return-value]
+
+    def connection(self):
+        """Get a connection context manager from the pool.
+
+        Returns a context manager that acquires and releases a connection.
+        This is the same interface as psycopg_pool.AsyncConnectionPool.
+        """
+
+        async def _get_connection():
+            pool = await self.get_pool()
+            return pool.connection()
+
+        # Return an awaitable that returns the context manager
+        return _AsyncConnectionWrapper(self)
 
     async def acquire(self):
         """Acquire a connection from the pool.
@@ -143,11 +184,17 @@ class PostgresScopeResources(DBResources):
             )
             self.pool = await PostgresConnectionPool.get_shared(conninfo)
 
+        # Get the underlying psycopg pool to pass to the adapter
+        psycopg_pool = None
+        if self.pool is not None:
+            psycopg_pool = await self.pool.get_pool()
+
         adapter = PostgresAdapter(
             db_params=Environment.get_postgres_params(),
             fields=model_cls.db_fields(),
             table_schema=model_cls.get_table_schema(),
             indexes=model_cls.get_indexes(),
+            pool=psycopg_pool,
         )
         await adapter.initialize()
 

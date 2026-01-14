@@ -73,89 +73,260 @@ def worker_id(request):
 #         logger.propagate = False
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_db_pool(worker_id):
-    """Create test database once for entire session with connection pool.
+def pytest_configure(config):
+    """Configure pytest with custom logic."""
+    # Check if we should use PostgreSQL for tests
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+    config.use_postgres = use_postgres
 
-    This fixture:
-    - Creates a single temporary database file per worker (for pytest-xdist compatibility)
-    - Runs migrations once at session start
-    - Creates a persistent connection pool
-    - Cleans up pool at session end
+
+@pytest_asyncio.fixture(scope="session")
+async def test_db_pool(request, worker_id):
+    """Provide test database pool based on environment configuration.
+
+    Uses template database approach for PostgreSQL:
+    - Master worker creates template database with migrations
+    - Each worker creates its own DB from template using `createdb -T`
+    - Fast (no re-migration per worker) + complete isolation
 
     Args:
-        worker_id: Provided by pytest-xdist to identify the worker process
+        request: pytest request object
+        worker_id: Worker ID for pytest-xdist
 
     Yields:
-        tuple: (pool, db_path) for use in tests
+        Connection pool (either SQLite or PostgreSQL)
     """
-    import os
-    import tempfile
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
 
-    from nodetool.models.migrations import run_startup_migrations
-    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+    if use_postgres:
+        import subprocess
+        from nodetool.models.migrations import run_startup_migrations
+        from nodetool.runtime.db_postgres import PostgresConnectionPool
 
-    # Create a temporary database file for the entire test session
-    # Use worker_id to ensure each xdist worker gets a unique database
-    worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
-    with tempfile.NamedTemporaryFile(
-        suffix=f"{worker_suffix}.sqlite3", prefix="nodetool_test_session_", delete=False
-    ) as temp_db:
-        db_path = temp_db.name
+        db_host = os.getenv("POSTGRES_TEST_HOST", "localhost")
+        db_port = os.getenv("POSTGRES_TEST_PORT", "5433")
+        db_user = os.getenv("POSTGRES_TEST_USER", "nodetool_test")
+        db_password = os.getenv("POSTGRES_TEST_PASSWORD", "nodetool_test_password")
 
-    pool = None
-    try:
-        # Create connection pool (will be reused across all tests in this worker)
-        pool = await SQLiteConnectionPool.get_shared(db_path)
-        # Run migrations once for the session
-        await run_startup_migrations(pool)
+        def run_psql(sql, database="postgres"):
+            """Run SQL via psql CLI."""
+            env = os.environ.copy()
+            env["PGPASSWORD"] = db_password
+            result = subprocess.run(
+                [
+                    "psql",
+                    "-h",
+                    db_host,
+                    "-p",
+                    db_port,
+                    "-U",
+                    db_user,
+                    "-d",
+                    database,
+                    "-c",
+                    sql,
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            return result.returncode == 0, result.stdout, result.stderr
 
-        yield pool
+        # Set up environment for PostgreSQL migrations
+        from nodetool.config.environment import Environment
 
-    finally:
-        # Clean up pool at session end
-        if pool is not None:
-            try:
-                await pool.close_all()
-                import asyncio
+        original_postgres_db = os.environ.get("POSTGRES_DB")
 
-                loop_id = id(asyncio.get_running_loop())
-                SQLiteConnectionPool._pools.pop((loop_id, db_path), None)
-            except Exception as e:
-                import logging
+        # Only master worker creates the template database
+        is_master = worker_id == "master"
+        template_db_name = "nodetool_test_template"
 
-                logging.warning(f"Error cleaning up session connection pool: {e}")
+        if is_master:
+            # Drop and recreate template database from base template
+            run_psql(f"DROP DATABASE IF EXISTS {template_db_name}")
+            run_psql(f"CREATE DATABASE {template_db_name} TEMPLATE template0")
 
-        # Remove temporary database file
+            # Set POSTGRES_DB before running migrations so PostgreSQL path is used
+            os.environ["POSTGRES_DB"] = template_db_name
+            Environment.settings = None  # Clear cache so it re-reads env
+
+            # Connect to the new template database and run migrations
+            template_conninfo = (
+                f"dbname={template_db_name} user={db_user} password={db_password} host={db_host} port={db_port}"
+            )
+
+            # Run migrations directly (we're already in an async context)
+            pool = await PostgresConnectionPool.get_shared(template_conninfo)
+            await run_startup_migrations(pool)
+            await pool.close()
+            PostgresConnectionPool._pools.clear()
+
+        # Barrier to ensure template is ready before workers connect
+        # Use a simple file-based sync for xdist compatibility
+        import time
+
+        sync_file = "/tmp/nodetool_test_template_ready"
+        if not is_master:
+            for _ in range(50):
+                if os.path.exists(sync_file):
+                    break
+                time.sleep(0.1)
+        else:
+            with open(sync_file, "w") as f:
+                f.write("ready")
+            time.sleep(0.5)  # Give workers a moment to notice
+
+        # Each worker gets its own database cloned from template
+        worker_db_name = f"nodetool_test_{worker_id}"
+        run_psql(f"DROP DATABASE IF EXISTS {worker_db_name}")
+        success = run_psql(f"CREATE DATABASE {worker_db_name} TEMPLATE {template_db_name}")
+        if not success:
+            raise RuntimeError(f"Failed to create worker database {worker_db_name}")
+
+        # Set environment so ResourceScopeMiddleware uses PostgreSQL
+        os.environ["POSTGRES_DB"] = worker_db_name
+        Environment.settings = None  # Clear cache so it re-reads env
+
+        pool = None
+        worker_conninfo = f"dbname={worker_db_name} user={db_user} password={db_password} host={db_host} port={db_port}"
+
         try:
-            os.unlink(db_path)
-        except Exception:
-            pass
+            pool = await PostgresConnectionPool.get_shared(worker_conninfo)
+            yield pool
+        finally:
+            # Restore env
+            if original_postgres_db is None:
+                os.environ.pop("POSTGRES_DB", None)
+            else:
+                os.environ["POSTGRES_DB"] = original_postgres_db
+            Environment.settings = None  # Clear cache to restore original behavior
+
+            # Cleanup
+            if pool is not None:
+                try:
+                    await pool.close()
+                except Exception:
+                    pass
+                PostgresConnectionPool._pools.clear()
+
+            # Drop worker database (template persists for reuse)
+            run_psql(f"DROP DATABASE IF EXISTS {worker_db_name}")
+
+        # Master cleans up template after all workers finish
+        if is_master:
+            try:
+                os.remove(sync_file)
+            except OSError:
+                pass
+            run_psql(f"DROP DATABASE IF EXISTS {template_db_name}")
+
+    else:
+        # Use SQLite
+        import tempfile
+        from nodetool.models.migrations import run_startup_migrations
+        from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+
+        # Create a temporary database file for the entire test session
+        # Use worker_id to ensure each xdist worker gets a unique database
+        worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
+        with tempfile.NamedTemporaryFile(
+            suffix=f"{worker_suffix}.sqlite3", prefix="nodetool_test_session_", delete=False
+        ) as temp_db:
+            db_path = temp_db.name
+
+        pool = None
+        try:
+            # Create connection pool (will be reused across all tests in this worker)
+            pool = await SQLiteConnectionPool.get_shared(db_path)
+            # Run migrations once for the session
+            await run_startup_migrations(pool)
+
+            yield pool
+
+        finally:
+            # Clean up pool at session end
+            if pool is not None:
+                try:
+                    await pool.close_all()
+                    import asyncio
+
+                    loop_id = id(asyncio.get_running_loop())
+                    SQLiteConnectionPool._pools.pop((loop_id, db_path), None)
+                except Exception as e:
+                    import logging
+
+                    logging.warning(f"Error cleaning up session connection pool: {e}")
+
+            # Remove temporary database file
+            try:
+                os.unlink(db_path)
+            except Exception:
+                pass
 
 
 async def _truncate_all_tables(pool):
-    """Truncate all tables to reset database state between tests."""
+    """Truncate all tables to reset database state between tests.
+
+    Supports both SQLite and PostgreSQL backends.
+    """
     connection = None
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+
     try:
         connection = await pool.acquire()
-        cursor = await connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
-        )
-        tables = await cursor.fetchall()
 
-        # Use a single transaction for all deletes
-        for table in tables:
-            table_name = table[0]
-            try:
-                await connection.execute(f"DELETE FROM {table_name}")
-            except Exception as e:
-                import logging
+        if use_postgres:
+            # PostgreSQL: Query information_schema for nodetool tables
+            cursor = await connection.execute(
+                """
+                SELECT tablename FROM pg_tables 
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema') 
+                AND tablename LIKE 'nodetool_%'
+                """
+            )
+            tables = await cursor.fetchall()
 
-                logging.debug(f"Failed to truncate table {table_name}: {e}")
-                pass
+            # Use TRUNCATE for PostgreSQL (faster and handles foreign keys better)
+            # Use psycopg.sql.Identifier for safe table name handling
+            from psycopg.sql import SQL, Identifier
 
-        # Commit all deletes in a single transaction
-        await connection.commit()
+            for table in tables:
+                table_name = table[0]
+                try:
+                    await connection.execute(SQL("TRUNCATE TABLE {} CASCADE").format(Identifier(table_name)))
+                except Exception as e:
+                    import logging
+
+                    logging.debug(f"Failed to truncate table {table_name}: {e}")
+                    pass
+
+            await connection.commit()
+        else:
+            # SQLite: Query sqlite_master for nodetool tables
+            cursor = await connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
+            )
+            tables = await cursor.fetchall()
+
+            # Use a single transaction for all deletes
+            # Note: SQLite doesn't support parameterized table names in DELETE
+            # but table names come from sqlite_master which is trusted
+            for table in tables:
+                table_name = table[0]
+                # Validate table name to ensure it came from sqlite_master
+                if not table_name.startswith("nodetool_"):
+                    continue
+
+                try:
+                    await connection.execute(f"DELETE FROM {table_name}")
+                except Exception as e:
+                    import logging
+
+                    logging.debug(f"Failed to truncate table {table_name}: {e}")
+                    pass
+
+            # Commit all deletes in a single transaction
+            await connection.commit()
     except Exception as e:
         # Rollback on error
         import logging
@@ -186,19 +357,28 @@ async def setup_and_teardown(request, test_db_pool):
         yield
         return
 
+    from nodetool.runtime.resources import ResourceScope
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    # Use ResourceScope with the shared test database
-    async with ResourceScope(pool=test_db_pool):
-        try:
-            yield
-        finally:
-            # Clean up JobExecutionManager after test
+    use_postgres = os.getenv("USE_POSTGRES_FOR_TESTS", "0") == "1"
+    if use_postgres:
+        ResourceScope._test_pool = test_db_pool
+
+    try:
+        # Use ResourceScope with the shared test database
+        async with ResourceScope(pool=test_db_pool):
             try:
-                if JobExecutionManager._instance is not None:
-                    await JobExecutionManager.get_instance().shutdown()
-            except Exception:
-                pass
+                yield
+            finally:
+                # Clean up JobExecutionManager after test
+                try:
+                    if JobExecutionManager._instance is not None:
+                        await JobExecutionManager.get_instance().shutdown()
+                except Exception:
+                    pass
+    finally:
+        if use_postgres:
+            ResourceScope._test_pool = None
 
     # Truncate all tables to reset state for next test
     # Retry truncation if it fails due to lock (can happen during parallel execution)

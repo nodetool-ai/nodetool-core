@@ -90,7 +90,14 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | PostgresConnectio
                 pool = await SQLiteConnectionPool.get_shared(db_path)
 
         # Acquire connection for migrations
-        conn = await pool.acquire()
+        # For PostgreSQL, pass the underlying psycopg pool; for SQLite, pass the connection
+        if postgres_db:
+            # PostgreSQL: pass the underlying psycopg pool to the migration runner
+            psycopg_pool = await pool.get_pool()
+            conn_or_pool = psycopg_pool
+        else:
+            # SQLite: acquire a connection for the migration runner
+            conn_or_pool = await pool.acquire()
 
         try:
             # Detect initial state for logging
@@ -99,11 +106,11 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | PostgresConnectio
             else:
                 from nodetool.migrations.state import detect_database_state_sqlite
 
-                db_state = await detect_database_state_sqlite(conn)
+                db_state = await detect_database_state_sqlite(conn_or_pool)
             log.info(f"Database state: {db_state.value}")
 
             # Create migration runner and execute migrations
-            runner = MigrationRunner(conn)
+            runner = MigrationRunner(conn_or_pool)
 
             # Run migrations - the runner handles all three scenarios
             applied = await runner.migrate(
@@ -131,4 +138,6 @@ async def run_startup_migrations(pool: "SQLiteConnectionPool | PostgresConnectio
             raise
 
         finally:
-            await pool.release(conn)  # type: ignore[arg-type]
+            # For SQLite, release the connection back to the pool
+            if not postgres_db:
+                await pool.release(conn_or_pool)  # type: ignore[arg-type]

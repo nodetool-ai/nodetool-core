@@ -1,3 +1,4 @@
+import json
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -49,8 +50,10 @@ def convert_to_postgres_format(value: Any, py_type: Type | None) -> int | float 
         else:
             return value
 
-    if py_type in (str, int, float, bool, datetime):
+    if py_type in (str, int, float, datetime):
         return value
+    elif py_type is bool:
+        return int(value)  # Convert bool to int (0 or 1) for compatibility with INTEGER columns
     elif py_type in (list, dict, set) or origin in (list, dict, set):
         return Jsonb(value)
     elif py_type is bytes:
@@ -86,7 +89,20 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
         else:
             return value
 
-    if py_type in (str, int, float, bool, bytes, dict, list, set) or origin in (dict, list, set) or py_type is datetime:
+    if py_type is bool:
+        return bool(value)
+    elif py_type in (dict, list, set) or origin in (dict, list, set):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value
+        return value
+    elif py_type is datetime:
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
+    elif py_type in (str, int, float, bytes):
         return value
     elif py_type.__class__ is EnumType:
         return py_type(value)
@@ -201,6 +217,7 @@ class PostgresAdapter(DatabaseAdapter):
         fields: Dict[str, FieldInfo],
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
+        pool: AsyncConnectionPool | None = None,
     ):
         """Initializes the PostgreSQL adapter.
 
@@ -212,13 +229,14 @@ class PostgresAdapter(DatabaseAdapter):
             fields: Dictionary mapping field names to Pydantic FieldInfo objects.
             table_schema: Schema definition for the table.
             indexes: List of index definitions for the table.
+            pool: Optional pre-existing connection pool to use.
         """
         self.db_params = db_params
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
-        self._pool = None
+        self._pool = pool
 
     async def initialize(self) -> None:
         """Initialize the adapter asynchronously."""
