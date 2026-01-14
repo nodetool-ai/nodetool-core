@@ -38,7 +38,6 @@ from nodetool.metadata.types import (
 from nodetool.metadata.types import (
     Provider as ProviderEnum,
 )
-from nodetool.observability.tracing import record_cost, trace_provider_call
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
