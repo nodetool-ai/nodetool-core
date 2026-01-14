@@ -11,12 +11,11 @@ tracing, timing, and cost tracking across all system components.
 3. [Tracing Architecture](#tracing-architecture)
 4. [Instrumentation Points](#instrumentation-points)
 5. [Context Managers](#context-managers)
-6. [Cost Tracking](#cost-tracking)
-7. [Configuration](#configuration)
-8. [Exporters](#exporters)
-9. [Usage Examples](#usage-examples)
-10. [Metrics and Dashboards](#metrics-and-dashboards)
-11. [Best Practices](#best-practices)
+6. [Configuration](#configuration)
+7. [Exporters](#exporters)
+8. [Usage Examples](#usage-examples)
+9. [Metrics and Dashboards](#metrics-and-dashboards)
+10. [Best Practices](#best-practices)
 
 ---
 
@@ -24,18 +23,21 @@ tracing, timing, and cost tracking across all system components.
 
 NodeTool's observability system provides end-to-end tracing for:
 
-- **API Calls**: HTTP requests to the FastAPI server
-- **WebSocket Activity**: Bidirectional message flow for workflows and chat
 - **Workflow Execution**: Complete workflow lifecycle tracking
 - **Node Execution**: Individual node processing within workflows
-- **Provider Execution**: AI provider API calls (OpenAI, Anthropic, etc.)
+- **WebSocket Activity**: Bidirectional message flow for workflows and chat
 - **Agent Execution**: LLM agent planning and tool execution
+
+### Auto-Instrumented (via OpenTelemetry & Traceloop)
+
+- **API Calls**: HTTP requests to the FastAPI server (OpenTelemetry auto-instrumentation)
+- **Provider Execution**: AI provider API calls with cost tracking (Traceloop/OpenLLMetry)
 
 ### Goals
 
 1. **Full Traceability**: Every action should be traceable from API request to completion
 2. **Accurate Timing**: Precise duration measurements for performance analysis
-3. **Cost Attribution**: Track costs per user, workflow, and provider
+3. **Cost Attribution**: Track costs per user, workflow, and provider (via Traceloop)
 4. **Minimal Overhead**: Non-blocking, unobtrusive instrumentation
 5. **OpenTelemetry Compatibility**: Standard format for interoperability
 
@@ -45,16 +47,15 @@ NodeTool's observability system provides end-to-end tracing for:
 
 ### 1. Unobtrusive Instrumentation
 
-All tracing is implemented via Python context managers, ensuring:
-- Clean separation of concerns
-- No modification to business logic
-- Easy opt-in/opt-out per component
+Tracing uses a combination of:
+- **Auto-instrumentation**: OpenTelemetry for HTTP/API, Traceloop for AI providers
+- **Manual context managers**: For workflow-specific tracing (nodes, agents, etc.)
 
 ```python
-# Example: Tracing is completely transparent to the business logic
-async with trace_api_call("POST", "/api/jobs") as span:
-    span.set_attribute("user_id", user.id)
-    result = await create_job(request)
+# Example: Workflow tracing via context managers
+async with trace_workflow(job_id="job-123") as span:
+    span.set_attribute("node_count", 5)
+    await runner.run(req, context)
 ```
 
 ### 2. Hierarchical Trace Structure
@@ -89,53 +90,54 @@ Trace context flows automatically through:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          TracingManager                                  │
-│  - Global configuration and lifecycle management                        │
-│  - Exporter setup (OTLP, Console, Jaeger)                              │
-│  - Trace ID generation and context propagation                         │
+│                     OpenTelemetry Auto-Instrumentation                   │
+│  - HTTP/FastAPI requests (automatic)                                     │
+│  - Database calls (automatic)                                            │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
-        ┌───────────────────────────┼───────────────────────────┐
-        ▼                           ▼                           ▼
-┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
-│   APITracer       │    │  WorkflowTracer   │    │  ProviderTracer   │
-│  - HTTP requests  │    │  - Job lifecycle  │    │  - AI API calls   │
-│  - WebSocket msgs │    │  - Node execution │    │  - Cost tracking  │
-└───────────────────┘    └───────────────────┘    └───────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Traceloop/OpenLLMetry                               │
+│  - AI provider calls (OpenAI, Anthropic, etc.) - automatic              │
+│  - Token usage and cost tracking                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Manual WorkflowTracer                                │
+│  - Workflow execution lifecycle                                          │
+│  - Node execution spans                                                  │
+│  - Agent/tool execution spans                                            │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Span Types
 
-| Span Type | Attributes | Purpose |
-|-----------|------------|---------|
-| `http.request` | method, path, status_code | API endpoint calls |
-| `websocket.message` | direction, command, job_id | WebSocket activity |
-| `workflow.execution` | job_id, workflow_id, status | Workflow lifecycle |
-| `workflow.node` | node_id, node_type, duration_ms | Node processing |
-| `provider.call` | provider, model, tokens, cost | AI provider calls |
-| `agent.task` | task_id, agent_type, tools_used | Agent execution |
+| Span Type | Source | Purpose |
+|-----------|--------|---------|
+| `http.*` | OTEL Auto | HTTP API requests |
+| `llm.*` | Traceloop | AI provider calls with costs |
+| `websocket.*` | Manual | WebSocket activity |
+| `workflow.execute` | Manual | Workflow lifecycle |
+| `workflow.node` | Manual | Node processing |
+| `agent.task` | Manual | Agent execution |
+| `tool.execute` | Manual | Tool execution in agents |
 
 ---
 
 ## Instrumentation Points
 
-### 1. API Calls
+### 1. API Calls (Auto-Instrumented)
 
-**Location**: `src/nodetool/api/middleware.py`
+**Source**: OpenTelemetry auto-instrumentation
 
-```python
-@trace_api_call()
-async def dispatch(self, request: Request, call_next: Callable) -> Response:
-    # Automatic tracing of all API endpoints
-    pass
-```
+When running with `opentelemetry-instrument`, all FastAPI/Starlette HTTP requests
+are automatically traced without any code changes.
 
 **Captured Data**:
 - HTTP method and path
 - Request/response size
 - Status code
 - Duration
-- User ID (if authenticated)
+- Headers (configurable)
 
 ### 2. WebSocket Activity
 
@@ -189,26 +191,19 @@ async with trace_node(node_id, node_type) as span:
 - GPU wait time (if applicable)
 - Retry count (for CUDA OOM)
 
-### 5. Provider Execution
+### 5. Provider Execution (Auto-Instrumented)
 
-**Location**: `src/nodetool/providers/base.py` and individual providers
+**Source**: Traceloop/OpenLLMetry auto-instrumentation
 
-```python
-async with trace_provider_call(provider, model, operation) as span:
-    span.set_attribute("max_tokens", max_tokens)
-    response = await self._call_api(messages)
-    span.set_attribute("input_tokens", response.usage.input_tokens)
-    span.set_attribute("output_tokens", response.usage.output_tokens)
-    span.set_attribute("cost", calculated_cost)
-```
+AI provider calls (OpenAI, Anthropic, Cohere, etc.) are automatically traced
+when Traceloop is initialized via `init_tracing()`.
 
-**Captured Data**:
-- Provider name (openai, anthropic, etc.)
-- Model ID
-- Operation type (chat, image, tts, etc.)
-- Token counts (input, output, cached, reasoning)
-- Cost in credits
-- Latency breakdown (time to first token, total)
+**Captured Data** (automatic):
+- Provider name and model
+- Token counts (input, output, cached)
+- Cost calculation
+- Latency and time to first token
+- Request/response content (configurable)
 
 ### 6. Agent Execution
 
@@ -236,40 +231,24 @@ async with trace_agent_task(agent_type, task_description) as span:
 
 ### Core Tracing Context Managers
 
-All tracing is implemented via async context managers in `src/nodetool/observability/tracing.py`:
+All manual tracing is implemented via async context managers in `src/nodetool/observability/tracing.py`:
 
 ```python
 from nodetool.observability.tracing import (
-    trace_api_call,
-    trace_websocket_message,
     trace_workflow,
     trace_node,
-    trace_provider_call,
+    trace_websocket_message,
     trace_agent_task,
+    trace_tool_execution,
+    trace_task_planning,
+    trace_task_execution,
+    trace_step_execution,
 )
 ```
 
-### API Call Tracing
-
-```python
-@asynccontextmanager
-async def trace_api_call(
-    method: str,
-    path: str,
-    *,
-    tracer: TracingManager | None = None,
-) -> AsyncGenerator[Span, None]:
-    """Trace an HTTP API call.
-    
-    Args:
-        method: HTTP method (GET, POST, etc.)
-        path: Request path
-        tracer: Optional TracingManager, uses global if not provided
-    
-    Yields:
-        Span object for adding attributes and events
-    """
-```
+> **Note**: `trace_api_call` and `trace_provider_call` have been removed.
+> HTTP/API tracing is handled by OpenTelemetry auto-instrumentation.
+> AI provider tracing is handled by Traceloop/OpenLLMetry.
 
 ### WebSocket Message Tracing
 
@@ -296,65 +275,6 @@ async def trace_websocket_message(
 
 ```python
 @asynccontextmanager
-async def trace_workflow(
-    job_id: str,
-    workflow_id: str | None = None,
-    *,
-    user_id: str | None = None,
-) -> AsyncGenerator[Span, None]:
-    """Trace workflow execution lifecycle.
-    
-    Args:
-        job_id: Unique job identifier
-        workflow_id: Optional workflow ID
-        user_id: Optional user ID for attribution
-    """
-```
-
-### Node Execution Tracing
-
-```python
-@asynccontextmanager
-async def trace_node(
-    node_id: str,
-    node_type: str,
-    *,
-    parent_span: Span | None = None,
-) -> AsyncGenerator[Span, None]:
-    """Trace individual node execution.
-    
-    Args:
-        node_id: Node identifier
-        node_type: Node class type
-        parent_span: Optional parent workflow span
-    """
-```
-
-### Provider Call Tracing
-
-```python
-@asynccontextmanager
-async def trace_provider_call(
-    provider: str,
-    model: str,
-    operation: str,
-    *,
-    track_cost: bool = True,
-) -> AsyncGenerator[Span, None]:
-    """Trace AI provider API calls.
-    
-    Args:
-        provider: Provider name (openai, anthropic, etc.)
-        model: Model identifier
-        operation: Operation type (chat, image, tts)
-        track_cost: Whether to track cost for this call
-    """
-```
-
-### Agent Task Tracing
-
-```python
-@asynccontextmanager
 async def trace_agent_task(
     agent_type: str,
     task_description: str,
@@ -370,54 +290,86 @@ async def trace_agent_task(
     """
 ```
 
----
-
-## Cost Tracking
-
-### Cost Attribution Model
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Cost Hierarchy                           │
-├─────────────────────────────────────────────────────────────────┤
-│  User                                                           │
-│  └── Workflow Run                                               │
-│      └── Node Execution                                         │
-│          └── Provider Call (with token counts and cost)         │
-│                                                                 │
-│  Agent Run                                                      │
-│  └── Task Execution                                             │
-│      └── Provider Call (planning)                               │
-│      └── Provider Call (execution)                              │
-│      └── Tool Calls (if billable)                               │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Cost Attributes on Spans
+### Tool Execution Tracing
 
 ```python
-span.set_attribute("cost.provider", "openai")
-span.set_attribute("cost.model", "gpt-4o")
-span.set_attribute("cost.input_tokens", 1500)
-span.set_attribute("cost.output_tokens", 500)
-span.set_attribute("cost.cached_tokens", 200)
-span.set_attribute("cost.credits", 0.0325)  # Calculated cost
-span.set_attribute("cost.currency", "credits")
+@asynccontextmanager
+async def trace_tool_execution(
+    tool_name: str,
+    *,
+    job_id: str | None = None,
+    step_id: str | None = None,
+    params: dict[str, Any] | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace tool execution in an agent workflow.
+    
+    Args:
+        tool_name: Name of the tool being executed
+        job_id: Optional job ID to link to workflow tracer
+        step_id: Optional step ID for attribution
+        params: Optional tool parameters (keys only for privacy)
+    """
 ```
 
-### Cost Calculation
-
-Cost is calculated by the provider based on token counts and model pricing:
+### Task Planning Tracing
 
 ```python
-# In provider implementation
-cost = calculate_cost(
-    model=model,
-    input_tokens=usage.input_tokens,
-    output_tokens=usage.output_tokens,
-    cached_tokens=usage.cached_tokens,
-)
-span.set_attribute("cost.credits", cost)
+@asynccontextmanager
+async def trace_task_planning(
+    objective: str,
+    *,
+    job_id: str | None = None,
+    model: str | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent task planning phase.
+    
+    Args:
+        objective: The objective being planned (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        model: Optional model used for planning
+    """
+```
+
+### Task Execution Tracing
+
+```python
+@asynccontextmanager
+async def trace_task_execution(
+    task_id: str,
+    task_title: str,
+    *,
+    job_id: str | None = None,
+    step_count: int | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent task execution.
+    
+    Args:
+        task_id: Unique task identifier
+        task_title: Task title/description
+        job_id: Optional job ID to link to workflow tracer
+        step_count: Number of steps in the task
+    """
+```
+
+### Step Execution Tracing
+
+```python
+@asynccontextmanager
+async def trace_step_execution(
+    step_id: str,
+    step_instructions: str,
+    *,
+    job_id: str | None = None,
+    task_id: str | None = None,
+) -> AsyncGenerator[Span, None]:
+    """Trace agent step execution.
+    
+    Args:
+        step_id: Unique step identifier
+        step_instructions: Step instructions (will be truncated)
+        job_id: Optional job ID to link to workflow tracer
+        task_id: Optional parent task ID
+    """
 ```
 
 ---
@@ -441,7 +393,7 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <token>
 OTEL_SERVICE_NAME=nodetool
 OTEL_SERVICE_VERSION=0.6.2
 
-# Traceloop OpenLLMetry (optional)
+# Traceloop OpenLLMetry (for AI provider auto-instrumentation)
 TRACELOOP_ENABLED=true
 TRACELOOP_API_KEY=your_traceloop_api_key
 TRACELOOP_BASE_URL=https://api.traceloop.com
@@ -450,9 +402,6 @@ TRACELOOP_APP_NAME=nodetool
 
 # Sampling configuration
 NODETOOL_TRACING_SAMPLE_RATE=1.0  # 1.0 = 100% of traces
-
-# Cost tracking
-NODETOOL_COST_TRACKING_ENABLED=true
 
 # Performance settings
 NODETOOL_TRACING_BATCH_SIZE=512
@@ -470,7 +419,6 @@ config = TracingConfig(
     endpoint="http://localhost:4317",
     service_name="nodetool-worker",
     sample_rate=1.0,
-    cost_tracking=True,
 )
 
 init_tracing(config)
@@ -572,10 +520,10 @@ async with trace_agent_task("cot", "Generate image based on description") as spa
         span.add_event("task_started", {"task_id": task.id})
         await executor.execute(task)
         span.add_event("task_completed", {"task_id": task.id})
-    
-    span.set_attribute("tools_used", executor.tools_used)
-    span.set_attribute("total_cost", executor.total_cost)
 ```
+
+> **Note**: AI provider costs are automatically tracked by Traceloop.
+> Access cost data via the Traceloop dashboard or OTEL backend.
 
 ---
 
@@ -614,6 +562,169 @@ async with trace_agent_task("cot", "Generate image based on description") as spa
    - Daily cost by user
    - Cost per workflow type
    - Cost prediction (based on trends)
+
+---
+
+## OpenTelemetry Auto-Instrumentation for Server Environments
+
+For production server deployments, you can use OpenTelemetry's auto-instrumentation instead of the manual tracing context managers. This provides automatic tracing for HTTP requests, WebSocket connections, and database calls without modifying application code.
+
+### Quick Start
+
+1. **Install dependencies** (already included in `pyproject.toml`):
+   ```bash
+   uv sync --all-extras
+   ```
+
+2. **Configure environment variables** (see `.env.example` for full configuration):
+   ```bash
+   export OTEL_SERVICE_NAME="nodetool-api"
+   export OTEL_TRACES_EXPORTER="console,otlp"
+   export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+   ```
+
+3. **Run with auto-instrumentation**:
+   ```bash
+   opentelemetry-instrument uvicorn nodetool.api.app:app --host 0.0.0.0 --port 8000
+   ```
+
+   Or use the provided script:
+   ```bash
+   ./scripts/server-otel.sh
+   ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_SERVICE_NAME` | `nodetool-api` | Service name for trace attribution |
+| `OTEL_TRACES_EXPORTER` | `console,otlp` | Comma-separated exporters: `console`, `otlp` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector gRPC endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Protocol: `grpc`, `http/protobuf`, `http/json` |
+| `OTEL_METRICS_EXPORTER` | `otlp` | Metrics exporter: `console`, `otlp`, `none` |
+| `OTEL_LOGS_EXPORTER` | `none` | Logs exporter: `console`, `otlp`, `none` |
+| `OTEL_SAMPLING_RATIO` | `1.0` | Sampling ratio (0.0 to 1.0) |
+| `OTEL_RESOURCE_ATTRIBUTES` | - | Resource attributes (e.g., `deployment.environment=production`) |
+| `OTEL_PROPAGATORS` | `tracecontext,baggage` | Context propagation methods |
+
+### Docker Deployment Example
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY . .
+
+RUN pip install -e .
+
+# Environment variables for OpenTelemetry
+ENV OTEL_SERVICE_NAME=nodetool-api
+ENV OTEL_TRACES_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
+ENV OTEL_METRICS_EXPORTER=otlp
+
+EXPOSE 8000
+
+CMD ["opentelemetry-instrument", "uvicorn", "nodetool.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### Kubernetes Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodetool-api
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: nodetool
+        image: nodetool:latest
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "nodetool-api"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector:4317"
+        - name: OTEL_METRICS_EXPORTER
+          value: "otlp"
+        - name: OTEL_SAMPLING_RATIO
+          value: "0.1"
+        ports:
+        - containerPort: 8000
+```
+
+### OTLP Collector Configuration
+
+For production, use an OTLP collector to buffer and export traces:
+
+```yaml
+# otel-collector-config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1000
+    spike_limit_mib: 200
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+```
+
+### Combining Manual and Auto-Instrumentation
+
+The auto-instrumentation provides general HTTP/websocket tracing, while the manual context managers add NodeTool-specific attributes and workflow-level tracing. They work together seamlessly:
+
+- Auto-instrumentation captures: HTTP requests, response times, status codes
+- Manual tracing adds: Workflow IDs, node execution, AI provider costs
+
+Both tracing data will appear in your OTLP backend with proper parent-child relationships.
+
+### Troubleshooting
+
+**No traces appearing:**
+1. Verify OTLP endpoint is accessible
+2. Check firewall rules for port 4317
+3. Enable console exporter for debugging: `OTEL_TRACES_EXPORTER=console`
+
+**High memory usage:**
+1. Reduce sampling ratio: `OTEL_SAMPLING_RATIO=0.1`
+2. Enable batching: Add processor configuration to collector
+3. Disable metrics: `OTEL_METRICS_EXPORTER=none`
+
+**Missing spans:**
+1. Ensure `opentelemetry-instrument` wraps the uvicorn command
+2. Check that instrumented packages are imported
+3. Verify service name is set correctly
 
 ---
 
@@ -715,30 +826,25 @@ async with trace_workflow(job_id) as span:
 - [x] Basic WorkflowTracer implementation
 - [x] Span and SpanContext classes
 - [x] NoOp tracer for disabled state
-- [x] Context managers for all trace types
+- [x] Context managers for workflow/node/agent tracing
 
-### Phase 2: Extended Instrumentation (Completed)
-- [x] API call tracing middleware (`TracingMiddleware` in `api/middleware.py`)
-- [x] WebSocket message tracing (`unified_websocket_runner.py` with `trace_websocket_message`)
-- [x] Enhanced workflow tracing (`workflow_runner.py` with `trace_workflow`)
-- [x] Node execution tracing (`actor.py` with `trace_node`)
-- [x] Provider tracing imports ready (`base.py` with `trace_provider_call`, `record_cost`)
+### Phase 2: Auto-Instrumentation (Completed)
+- [x] OpenTelemetry auto-instrumentation for HTTP/API
+- [x] Traceloop/OpenLLMetry for AI provider calls
+- [x] WebSocket message tracing (`trace_websocket_message`)
+- [x] Workflow tracing (`trace_workflow` in `workflow_runner.py`)
 
-### Phase 3: Agent Tracing
-- [ ] Agent task tracing
-- [ ] Tool execution tracing
-- [ ] Planning phase tracing
+### Phase 3: Agent Tracing (Completed)
+- [x] Agent task tracing (`trace_agent_task`)
+- [x] Tool execution tracing (`trace_tool_execution`)
+- [x] Planning phase tracing (`trace_task_planning`)
+- [x] Step execution tracing (`trace_step_execution`)
 
-### Phase 4: Exporters and Integration
-- [ ] OTLP exporter implementation
-- [ ] Console exporter for development
-- [ ] Jaeger direct export option
-
-### Phase 5: Cost Tracking
-- [x] Cost tracking utilities (`record_cost` function)
-- [x] Cost attributes on spans
-- [ ] Cost aggregation by user/workflow
-- [ ] Cost reporting API
+### Phase 4: Export & Integration
+- [x] Console exporter for development
+- [x] OTLP via Traceloop SDK
+- [ ] Direct OTLP exporter for WorkflowTracer spans
+- [ ] Bridge WorkflowTracer to real OTEL spans
 
 ---
 

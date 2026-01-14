@@ -149,6 +149,7 @@ async def create(
                     graph=example_workflow.graph.model_dump(),
                     user_id=user,
                     run_mode=workflow_request.run_mode,
+                    workspace_id=workflow_request.workspace_id,
                 )
             )
         except ValueError as e:
@@ -166,6 +167,7 @@ async def create(
                 graph=remove_connected_slots(workflow_request.graph).model_dump(),
                 user_id=user,
                 run_mode=workflow_request.run_mode,
+                workspace_id=workflow_request.workspace_id,
             )
         )
     elif workflow_request.comfy_workflow:
@@ -187,6 +189,7 @@ async def create(
                     "edges": [edge.model_dump() for edge in edges],
                 },
                 run_mode=workflow_request.run_mode,
+                workspace_id=workflow_request.workspace_id,
             )
         )
     else:

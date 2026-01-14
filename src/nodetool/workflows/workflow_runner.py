@@ -42,6 +42,11 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.run_node_state import RunNodeState
 from nodetool.models.run_state import RunState
+from nodetool.observability.tracing import (
+    get_or_create_tracer,
+    remove_tracer,
+    trace_workflow,
+)
 from nodetool.types.api_graph import Edge
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
@@ -634,6 +639,38 @@ class WorkflowRunner:
             - Updates workflow status to "completed", "cancelled", or "error".
             - Posts a final JobUpdate message with results or error information.
         """
+        # Create tracer for this workflow run
+        tracer = get_or_create_tracer(self.job_id)
+
+        async with trace_workflow(
+            job_id=self.job_id,
+            workflow_id=request.workflow_id,
+            user_id=request.user_id,
+            tracer=tracer,
+        ) as span:
+            try:
+                await self._run_workflow(
+                    request=request,
+                    context=context,
+                    send_job_updates=send_job_updates,
+                    initialize_graph=initialize_graph,
+                    validate_graph=validate_graph,
+                    span=span,
+                )
+            finally:
+                # Clean up tracer
+                remove_tracer(self.job_id)
+
+    async def _run_workflow(
+        self,
+        request: RunJobRequest,
+        context: ProcessingContext,
+        send_job_updates: bool,
+        initialize_graph: bool,
+        validate_graph: bool,
+        span,
+    ):
+        """Internal method containing the actual workflow execution logic."""
         log.info("Starting workflow run: job_id=%s", self.job_id)
         log_memory(f"WorkflowRunner.run START job_id={self.job_id}")
         self._edge_counters.clear()

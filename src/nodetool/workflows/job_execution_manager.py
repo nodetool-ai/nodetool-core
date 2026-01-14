@@ -13,6 +13,8 @@ from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import Field
 from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
+from nodetool.models.workflow import Workflow
+from nodetool.models.workspace import Workspace
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.job_execution import JobExecution
@@ -438,15 +440,31 @@ class JobExecutionManager:
                 auth_token="",  # Auth token is lost, but internal recovery might not need it for all ops
             )
 
-            # 4. create ProcessingContext (headless for recovery)
+            # 4. Resolve workspace_dir from workflow's workspace_id
+            workspace_dir: str | None = None
+            async with ResourceScope():
+                try:
+                    workflow = await Workflow.find(request.user_id, request.workflow_id)
+                    if workflow and workflow.workspace_id:
+                        workspace = await Workspace.find(request.user_id, workflow.workspace_id)
+                        if workspace and workspace.is_accessible():
+                            workspace_dir = workspace.path
+                            log.info(f"Using workspace_dir from workflow: {workspace_dir}")
+                        elif workspace:
+                            log.warning(f"Workspace {workflow.workspace_id} exists but is not accessible")
+                except Exception as e:
+                    log.error(f"Error resolving workspace for resume {run_id}: {e}")
+
+            # 5. create ProcessingContext (headless for recovery)
             context = ProcessingContext(
                 user_id=request.user_id,
                 job_id=run_id,
                 workflow_id=request.workflow_id,
+                workspace_dir=workspace_dir,
                 # In recovery mode, we might not have active websocket clients initially
             )
 
-            # 5. Relaunch Execution
+            # 6. Relaunch Execution
             # We generate a NEW execution_id for this attempt, preserving the run_id
             new_execution_id = str(uuid.uuid4())
             worker_id = Environment.get_worker_id()

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.2-rc.21"
+version = "0.6.2-rc.22"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -32,7 +32,6 @@ dependencies = [
     "psycopg[binary]>=3.2.9",
     "psycopg-pool>=3.2.6",
     "docker==7.1.0",
-    "traceloop=0.50.1",
 
     # Utils dependencies
     "watchdog>=4.0.0",
@@ -71,17 +70,17 @@ dependencies = [
     "jinja2==3.1.6",
 
     # AI dependencies
-    "anthropic>=0.75.0",
-    "claude-agent-sdk>=0.1.18",
+    "anthropic>=0.76.0",
+    "claude-agent-sdk>=0.1.19",
     "huggingface_hub>=0.35.3",
-    "openai>=2.14.0",
-    "traceloop-sdk>=0.28.0",
+    "openai>=2.15.0",
+    "traceloop-sdk>=0.50.0",
     "fal-client>=0.8.1",
     "gguf>=0.17.1",
-    "ollama>=0.6.0",
+    "ollama>=0.6.1",
     "tiktoken",
     "sentencepiece",
-    "google-genai>=1.42.0",
+    "google-genai>=1.57.0",
     # "replicate==1.0.3",
     "runpod",
     "mcp",
@@ -110,12 +109,12 @@ dependencies = [
     "openpyxl>=3.1.3",
 
     # Database and storage
-    "chromadb>=1.0.20",
+    "chromadb>=1.4.0",
     "aiofiles>=24.1.0",
     "aiosqlite>=0.20.0",
     "boto3>=1.35.63",
     "pymemcache>=4.0.0",
-    "protobuf<=3.20.3",
+    "protobuf",
     "moto>=5.1.4",
 
     # Web and networking
@@ -131,6 +130,10 @@ dependencies = [
     "authlib>=1.3.2",
     "itsdangerous",
     "PyJWT",
+
+    # Observability
+    "opentelemetry-distro==0.60b1",
+    "opentelemetry-exporter-otlp==1.39.1",
 ]
 
 [project.optional-dependencies]
