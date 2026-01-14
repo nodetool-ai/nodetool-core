@@ -50,28 +50,22 @@ def _assign_inputs(specs: Sequence[InputSpec], args: Sequence[Any], namespace: M
 
 async def _execute_workflow(workflow: Any) -> None:
     try:
-        from nodetool.workflows.processing_context import ProcessingContext
-        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from nodetool.dsl.graph import run_graph
+        from nodetool.types.api_graph import Graph
     except Exception as exc:  # pragma: no cover - runtime availability guard
         raise RuntimeError(
             "NodeTool runtime is required to execute this workflow. Install nodetool-core "
             "and nodetool-base. Original import error: " + str(exc)
         ) from exc
 
-    try:
-        context = ProcessingContext()
-    except Exception:
-        context = None
+    if isinstance(workflow, Graph):
+        graph = workflow
+    elif hasattr(workflow, "graph") and isinstance(workflow.graph, Graph):
+        graph = workflow.graph
+    else:
+        raise TypeError(f"Unsupported workflow type: {type(workflow)}. Expected Graph or object with Graph attribute.")
 
-    runner = WorkflowRunner(workflow, context=context)
-    if hasattr(runner, "run_stream"):
-        async for _ in runner.run_stream():
-            pass
-        return
-    if hasattr(runner, "run"):
-        await runner.run()  # type: ignore[call-arg]
-        return
-    raise RuntimeError("WorkflowRunner has no run or run_stream method")
+    await run_graph(graph)
 
 
 def _collect_outputs(specs: Sequence[OutputSpec], namespace: Mapping[str, Any]) -> list[Any]:

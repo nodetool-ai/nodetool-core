@@ -16,6 +16,9 @@ class ChangeToWorkspaceCommand(Command):
         super().__init__("cdw", "Change directory to the defined workspace root")
 
     async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+        if cli.context.workspace_dir is None:
+            cli.console.print("[bold red]Error:[/bold red] Workspace directory is not set.")
+            return False
         workspace_dir = Path(cli.context.workspace_dir).resolve()
         if not workspace_dir.is_dir():
             cli.console.print(
