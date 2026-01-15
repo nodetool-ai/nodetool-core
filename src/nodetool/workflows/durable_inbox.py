@@ -45,7 +45,8 @@ from datetime import datetime
 from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_inbox_message import MessageStatus, RunInboxMessage
+from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+from nodetool.models.run_inbox_message import RunInboxMessage
 
 log = get_logger(__name__)
 
@@ -112,19 +113,17 @@ class DurableInbox:
             message_id = self.generate_message_id(self.run_id, self.node_id, handle, next_seq)
 
         # Check if message already exists (idempotency)
-        existing = await RunInboxMessage.find_one({"message_id": message_id})
+        existing = await RunInboxMessage.get_by_message_id(message_id)
         if existing:
             log.debug(f"Message {message_id} already exists (idempotent)")
             return existing
 
-        # Serialize payload
-        payload_json = json.dumps(payload) if payload is not None else None
+        payload_dict = payload if payload is not None else {}
 
-        # Detect large payloads (>1MB) and warn
-        if payload_json and len(payload_json) > 1_000_000:
+        payload_json_len = len(json.dumps(payload_dict))
+        if payload_json_len > 1_000_000:
             log.warning(
-                f"Large payload ({len(payload_json)} bytes) in inbox message. "
-                f"Consider using payload_ref for large data."
+                f"Large payload ({payload_json_len} bytes) in inbox message. Consider using payload_ref for large data."
             )
 
         # Create message
@@ -134,7 +133,20 @@ class DurableInbox:
             handle=handle,
             message_id=message_id,
             msg_seq=next_seq,
-            payload_json=payload_json,
+            payload_json=payload_dict,
+            payload_ref=payload_ref,
+            status="pending",
+            created_at=datetime.now(),
+        )
+
+        # Create message
+        message = RunInboxMessage(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
+            message_id=message_id,
+            msg_seq=next_seq,
+            payload_json=payload_dict,
             payload_ref=payload_ref,
             status="pending",
             created_at=datetime.now(),
@@ -162,19 +174,26 @@ class DurableInbox:
         Returns:
             List of pending messages in sequence order
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "pending",
-                "msg_seq": {"$gte": min_seq},
-            },
-            sort=[("msg_seq", 1)],
+        adapter = await RunInboxMessage.adapter()
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(self.run_id),
+                    Field("node_id").equals(self.node_id),
+                    Field("handle").equals(handle),
+                    Field("status").equals("pending"),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            reverse=False,
             limit=limit,
         )
-
-        return messages
+        messages = [RunInboxMessage.from_dict(row) for row in results]
+        return [m for m in messages if m.msg_seq >= min_seq]
 
     async def mark_consumed(self, message: RunInboxMessage) -> None:
         """
@@ -202,18 +221,26 @@ class DurableInbox:
         Returns:
             Maximum sequence number (0 if no messages exist)
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-            },
-            sort=[("msg_seq", -1)],
+        adapter = await RunInboxMessage.adapter()
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(self.run_id),
+                    Field("node_id").equals(self.node_id),
+                    Field("handle").equals(handle),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            reverse=True,
             limit=1,
         )
 
-        if messages:
-            return messages[0].msg_seq
+        if results:
+            return results[0]["msg_seq"]
         return 0
 
     async def _get_next_seq(self, handle: str) -> int:
@@ -242,22 +269,31 @@ class DurableInbox:
         Returns:
             Number of messages deleted
         """
-        # Find consumed messages to delete
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "consumed",
-                "msg_seq": {"$lt": older_than_seq},
-            }
+        adapter = await RunInboxMessage.adapter()
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(self.run_id),
+                    Field("node_id").equals(self.node_id),
+                    Field("handle").equals(handle),
+                    Field("status").equals("consumed"),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            reverse=False,
         )
 
-        # Delete them
+        # Filter by seq and delete
         count = 0
-        for msg in messages:
-            await msg.delete()
-            count += 1
+        for row in results:
+            msg = RunInboxMessage.from_dict(row)
+            if msg.msg_seq < older_than_seq:
+                await msg.delete()
+                count += 1
 
         if count > 0:
             log.info(f"Cleaned up {count} consumed messages from inbox ({self.run_id}/{self.node_id}/{handle})")
