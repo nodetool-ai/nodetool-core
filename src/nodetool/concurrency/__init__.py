@@ -1,5 +1,6 @@
 from .async_iterators import AsyncByteStream
 from .async_utils import AsyncSemaphore, gather_with_concurrency
+from .batching import batched_async_iterable, process_in_batches
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
 
@@ -9,7 +10,9 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "batched_async_iterable",
     "gather_with_concurrency",
+    "process_in_batches",
     "retry_with_exponential_backoff",
     "timeout",
     "with_timeout",
