@@ -24,7 +24,6 @@ from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface import async_downloader, hf_auth, hf_cache
-from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
 
@@ -83,7 +82,6 @@ class DownloadManager:
         self.logger = get_logger(__name__)
         self.downloads = {}
         self.active_websockets = set()
-        self.model_cache = ModelCache("model_info")
         self._token_initialized = token is not None
 
     @classmethod
@@ -286,7 +284,9 @@ class DownloadManager:
         self.logger.info(f"Fetching file list for repo: {repo_id}")
         raw_files = self.api.list_repo_tree(repo_id, recursive=True)
         files = [file for file in raw_files if isinstance(file, RepoFile) or getattr(file, "type", None) == "file"]
-        files = filter_repo_paths(files, allow_patterns, ignore_patterns)
+        files = filter_repo_paths(
+            [file for file in files if isinstance(file, RepoFile)], allow_patterns, ignore_patterns
+        )
 
         # Filter out files that already exist in the cache
         files_to_download = []
@@ -405,8 +405,7 @@ class DownloadManager:
         self.logger.info(f"Download {state.status} for repo: {repo_id}")
 
         if state.status == "completed":
-            self.logger.info("Purging HuggingFace model caches after successful download")
-            self.model_cache.delete_pattern("cached_hf_*")
+            self.logger.info("Download completed for %s", repo_id)
 
 
 # Singleton management

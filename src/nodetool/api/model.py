@@ -75,7 +75,10 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     seen_ids = set()
     deduped_models = []
     for model in models:
-        model_id = (model.repo_id, model.path or "")
+        if isinstance(model, dict):
+            model_id = (model.get("repo_id"), model.get("path") or "")
+        else:
+            model_id = (model.repo_id, model.path or "")
         if model_id not in seen_ids:
             seen_ids.add(model_id)
             deduped_models.append(model)
@@ -106,6 +109,9 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
                 detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download",
             ) from e
         raise e
+
+    assert isinstance(hf_models, list), "hf_models should be a list after isinstance check"
+    assert isinstance(ollama_models_unified, list), "ollama_models_unified should be a list after isinstance check"
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models

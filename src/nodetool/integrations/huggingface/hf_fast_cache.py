@@ -48,10 +48,6 @@ from typing import Dict, List, Optional, Tuple
 import aiofiles
 import aiofiles.os
 
-from nodetool.ml.models.model_cache import ModelCache
-
-DEFAULT_MODEL_INFO_CACHE_TTL = 30 * 24 * 3600
-
 
 def get_default_hf_cache_dir() -> Path:
     """Return the default Hugging Face Hub cache directory.
@@ -93,8 +89,6 @@ class HfFastCache:
     def __init__(
         self,
         cache_dir: str | Path | None = None,
-        *,
-        model_info_cache: ModelCache | None = None,
     ) -> None:
         """Initialize a fast view over a local Hugging Face cache.
 
@@ -107,8 +101,6 @@ class HfFastCache:
         self._lock: Optional[asyncio.Lock] = None
         self._lock_loop_id: Optional[int] = None
         self._repos: Dict[str, _RepoState] = {}
-        # Share the model info cache between callers so metadata lookups can leverage the disk cache.
-        self.model_info_cache = model_info_cache or ModelCache("model_info")
 
     def _get_lock(self) -> asyncio.Lock:
         """Get the asyncio lock, creating a new one if the event loop has changed.
