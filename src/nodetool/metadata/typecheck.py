@@ -153,7 +153,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     # Handle dictionary values
     if python_type is dict and "type" in value:
         return value["type"] == type_meta.type
-    
+
     # Handle dict values without explicit 'type' field - check if they could be validated
     # by the target type. This supports types like ToolName that have default 'type' values.
     if python_type is dict and "type" not in value:
