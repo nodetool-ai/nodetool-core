@@ -3,7 +3,7 @@ import asyncio
 import dotenv
 
 from nodetool.agents.simple_agent import SimpleAgent
-from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools import BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
