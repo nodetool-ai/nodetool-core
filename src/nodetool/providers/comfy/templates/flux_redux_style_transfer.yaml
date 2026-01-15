@@ -1,0 +1,82 @@
+template_id: flux_redux_style_transfer
+template_type: text_to_image
+template_name: Flux Redux Style Transfer
+description: Flux Redux model for style transfer using reference images
+inputs:
+  prompt:
+    node_id: 6
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: true
+  style_image:
+    node_id: 17
+    node_type: LoadImage
+    input_field: image
+    input_type: IMAGE
+    required: true
+  width:
+    node_id: 27
+    node_type: EmptySD3LatentImage
+    input_field: width
+    input_type: INT
+    required: false
+    default: 1024
+  height:
+    node_id: 27
+    node_type: EmptySD3LatentImage
+    input_field: height
+    input_type: INT
+    required: false
+    default: 1024
+  seed:
+    node_id: 31
+    node_type: KSampler
+    input_field: seed
+    input_type: INT
+    required: false
+    default: 0
+  steps:
+    node_id: 31
+    node_type: KSampler
+    input_field: steps
+    input_type: INT
+    required: false
+    default: 20
+  cfg:
+    node_id: 31
+    node_type: KSampler
+    input_field: cfg
+    input_type: FLOAT
+    required: false
+    default: 1.0
+  sampler:
+    node_id: 31
+    node_type: KSampler
+    input_field: sampler_name
+    input_type: STRING
+    required: false
+    default: "euler"
+  scheduler:
+    node_id: 31
+    node_type: KSampler
+    input_field: scheduler
+    input_type: STRING
+    required: false
+    default: "simple"
+outputs:
+  image:
+    node_id: 9
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+presets:
+  standard:
+    steps: 20
+    cfg: 1.0
+  strong_style:
+    steps: 30
+    cfg: 1.5
+  fast:
+    steps: 10
+    cfg: 1.0
