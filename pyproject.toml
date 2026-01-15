@@ -45,6 +45,7 @@ dependencies = [
     "joblib",
     "jsonpath-ng>=1.7.0",
     "jsonschema",
+    "attrs>=23.2.0",
     "keyring>=25.5.0",
     "psutil>=6.1.0",
     "nvidia-ml-py>=13.580.65",

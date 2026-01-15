@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Any
 
+from pydantic import ValidationError
+
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import ImageRef, NameToType, NPArray
 
@@ -153,13 +155,16 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     # Handle dictionary values
     if python_type is dict and "type" in value:
         return value["type"] == type_meta.type
-    
-    # Handle dict values without explicit 'type' field - check if they could be validated
-    # by the target type. This supports types like ToolName that have default 'type' values.
+
+    # Handle dict values without explicit 'type' field - check if they validate
+    # against the target model. This supports types like ToolName with default type values.
     if python_type is dict and "type" not in value:
         target_class = NameToType.get(type_meta.type)
         if target_class is not None and hasattr(target_class, "model_validate"):
-            # Assume the dict could be valid if we have a matching class
+            try:
+                target_class.model_validate(value)
+            except (ValidationError, ValueError, TypeError):
+                return False
             return True
 
     # Handle list types.
