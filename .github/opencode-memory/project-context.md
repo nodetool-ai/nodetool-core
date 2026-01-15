@@ -1,4 +1,4 @@
-- **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.
+- **2026-01-15**: Fixed type annotations across multiple files - Added explicit type arguments to generic types (`dict[str, Any]`, `list[Any]`), added None checks for `workspace_dir` and `step.id`, and added `LogUpdate` to async generator return type.
 - **2026-01-12**: Initialized structured OpenCode memory layout.
 - **2026-01-12**: Fixed type safety in `chat_sse_runner.py` - Changed `_create_openai_error_chunk` to use typed `Choice` and `ChoiceDelta` objects instead of raw dict unpacking.
 - **2026-01-12**: Fixed type safety in `threaded_event_loop.py` - Added `assert` for loop non-null check and `type: ignore` for dynamic future.task attribute.

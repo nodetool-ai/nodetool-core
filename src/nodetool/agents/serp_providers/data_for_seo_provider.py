@@ -70,7 +70,7 @@ class DataForSEOProvider(SerpProvider):
             "Content-Type": "application/json",
         }
 
-    async def _make_request(self, api_url: str, payload: list[dict]) -> dict[str, Any] | ErrorResponse:
+    async def _make_request(self, api_url: str, payload: list[dict[str, Any]]) -> dict[str, Any] | ErrorResponse:
         """
         Makes an asynchronous POST request to the DataForSEO API.
         """
