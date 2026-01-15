@@ -45,6 +45,7 @@ class JobExecutionManager:
     _cleanup_task: Optional[asyncio.Task]
     _heartbeat_task: Optional[asyncio.Task]
     _finalizing_jobs: set[str]
+    _shutdown: bool
 
     def __new__(cls):
         if cls._instance is None:
@@ -53,6 +54,7 @@ class JobExecutionManager:
             cls._instance._cleanup_task = None
             cls._instance._heartbeat_task = None
             cls._instance._finalizing_jobs = set()
+            cls._instance._shutdown = False
         return cls._instance
 
     async def initialize(self):
@@ -304,6 +306,10 @@ class JobExecutionManager:
 
     async def shutdown(self):
         """Shutdown the job manager and all running jobs."""
+        if self._shutdown:
+            log.debug("JobExecutionManager already shutdown, skipping")
+            return
+        self._shutdown = True
         log.info("Shutting down JobExecutionManager")
 
         # Cancel cleanup task

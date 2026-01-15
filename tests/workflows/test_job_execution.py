@@ -43,14 +43,18 @@ async def cleanup_jobs():
     for job_id, job in jobs_to_cleanup:
         try:
             if not job.is_completed():
-                await job.cancel()
-            await job.cleanup_resources()
+                await asyncio.wait_for(job.cancel(), timeout=5.0)
+            await asyncio.wait_for(job.cleanup_resources(), timeout=5.0)
+        except TimeoutError:
+            print(f"Timeout cleaning up job {job_id}, forcing cleanup")
+            try:
+                await job.cleanup_resources()
+            except Exception:
+                pass
         except Exception as e:
             print(f"Error cleaning up job {job_id}: {e}")
 
     manager._jobs.clear()
-
-    await asyncio.sleep(0.5)
 
 
 @pytest.fixture

@@ -196,7 +196,9 @@ async def setup_and_teardown(request, test_db_pool):
             # Clean up JobExecutionManager after test
             try:
                 if JobExecutionManager._instance is not None:
-                    await JobExecutionManager.get_instance().shutdown()
+                    await asyncio.wait_for(JobExecutionManager.get_instance().shutdown(), timeout=5.0)
+            except TimeoutError:
+                pass
             except Exception:
                 pass
 
