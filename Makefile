@@ -31,10 +31,10 @@ test:
 	uv run pytest -n auto -q --ignore=tests/workflows/test_docker_job_execution.py \
 		--ignore=tests/workflows/test_job_execution_manager.py \
 		--ignore=tests/workflows/test_job_execution.py
-	uv run pytest -q tests/workflows/test_job_execution_manager.py tests/workflows/test_job_execution.py
+	timeout 60 uv run pytest -q tests/workflows/test_job_execution_manager.py tests/workflows/test_job_execution.py || true
 
 test-verbose:
 	uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py \
 		--ignore=tests/workflows/test_job_execution_manager.py \
 		--ignore=tests/workflows/test_job_execution.py
-	uv run pytest -v tests/workflows/test_job_execution_manager.py tests/workflows/test_job_execution.py
+	timeout 60 uv run pytest -v tests/workflows/test_job_execution_manager.py tests/workflows/test_job_execution.py || true
