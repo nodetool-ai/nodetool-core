@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import suppress
 from datetime import UTC, datetime, timezone
 from typing import IO, TYPE_CHECKING, Any, AsyncIterator
@@ -94,22 +95,38 @@ class SupabaseStorage(AbstractStorage):
             return res["signedURL"]
         finally:
             if tmp_path:
-                import os
-
                 with suppress(OSError):
                     os.unlink(tmp_path)
 
     async def _write_temp_file(self, content: IO) -> str:
         import tempfile
 
+        import aiofiles
+
         content.seek(0)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            while True:
-                chunk = content.read(8192)
-                if not chunk:
-                    break
-                tmp.write(chunk)
-            tmp_path = tmp.name
+
+        # Create temp file in a thread (blocking operation)
+        def _create_temp():
+            return tempfile.NamedTemporaryFile(delete=False)
+
+        tmp = await asyncio.to_thread(_create_temp)
+        tmp_path = tmp.name
+        tmp.close()  # Close the sync file handle
+
+        try:
+            # Write content asynchronously - wrap blocking content.read in to_thread
+            async with aiofiles.open(tmp_path, "wb") as f:
+                while True:
+                    chunk = await asyncio.to_thread(content.read, 8192)
+                    if not chunk:
+                        break
+                    await f.write(chunk)
+        except Exception:
+            # Clean up temp file if write fails
+            with suppress(OSError):
+                os.unlink(tmp_path)
+            raise
+
         content.seek(0)
         return tmp_path
 

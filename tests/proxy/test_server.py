@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nodetool.proxy.config import GlobalConfig, ProxyConfig, ServiceConfig
-from nodetool.proxy.server import create_acme_only_app, create_proxy_app
+from nodetool.proxy.server import create_acme_only_app, create_proxy_app, validate_acme_token_path
 
 
 @pytest.fixture
@@ -360,3 +360,64 @@ class TestHealthzEndpoint:
         response = client.get("/healthz")
         assert response.status_code == 200
         assert response.text == "ok"
+
+
+class TestAcmeTokenValidation:
+    """Tests for ACME token path validation and security."""
+
+    def test_valid_token(self):
+        """Test that valid tokens are accepted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a valid token file
+            token_file = Path(tmpdir) / "valid-token_123"
+            token_file.write_text("challenge")
+
+            result = validate_acme_token_path("valid-token_123", tmpdir)
+            assert result is not None
+            assert result == token_file.resolve()
+
+    def test_path_traversal_rejected(self):
+        """Test that path traversal attempts are blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create files outside the webroot
+            outside = Path(tmpdir) / "outside"
+            outside.mkdir()
+            secret = outside / "secret"
+            secret.write_text("secret content")
+
+            webroot = Path(tmpdir) / "webroot"
+            webroot.mkdir()
+
+            # These should all be rejected
+            assert validate_acme_token_path("../outside/secret", str(webroot)) is None
+            assert validate_acme_token_path("..%2Foutside%2Fsecret", str(webroot)) is None
+            assert validate_acme_token_path("foo/../../../etc/passwd", str(webroot)) is None
+
+    def test_invalid_token_formats(self):
+        """Test that invalid token formats are rejected."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Tokens with invalid characters
+            assert validate_acme_token_path("token/path", tmpdir) is None
+            assert validate_acme_token_path("token\\path", tmpdir) is None
+            assert validate_acme_token_path("token..path", tmpdir) is None
+            assert validate_acme_token_path("token path", tmpdir) is None
+            assert validate_acme_token_path("token.path", tmpdir) is None
+            assert validate_acme_token_path("", tmpdir) is None
+            assert validate_acme_token_path("..", tmpdir) is None
+            assert validate_acme_token_path(".", tmpdir) is None
+
+    def test_acme_endpoint_rejects_traversal(self, proxy_config: ProxyConfig):
+        """Test that ACME endpoint properly rejects path traversal via token parameter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proxy_config.global_.acme_webroot = tmpdir
+
+            app = create_acme_only_app(proxy_config)
+            client = TestClient(app)
+
+            # Tokens with dots should fail with 400 (prevents .. traversal)
+            response = client.get("/.well-known/acme-challenge/token.with.dots")
+            assert response.status_code == 400
+
+            # Valid-format tokens that don't exist should return 404
+            response = client.get("/.well-known/acme-challenge/valid_token_format")
+            assert response.status_code == 404
