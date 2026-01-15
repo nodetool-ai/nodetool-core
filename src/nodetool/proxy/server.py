@@ -304,6 +304,7 @@ class AsyncReverseProxy:
             return PlainTextResponse("Not found", status_code=404)
 
         try:
+
             async def stream_file():
                 async with aiofiles.open(challenge_path, "rb") as f:
                     while True:
