@@ -2154,6 +2154,36 @@ def list_gcp_options():
     console.print("  asia-docker.pkg.dev")
 
 
+@cli.command("list-aws-options")
+def list_aws_options():
+    """List available AWS App Runner configuration options for deployments.
+
+    Shows available regions, CPU options, memory options, and registry information."""
+    from nodetool.deploy.aws_app_runner_api import (
+        AppRunnerCPU,
+        AppRunnerMemory,
+        AppRunnerRegion,
+    )
+
+    console.print("[bold cyan]AWS App Runner Options:[/]")
+
+    console.print("\n[bold]Regions:[/]")
+    for region in AppRunnerRegion:
+        console.print(f"  {region.value}")
+
+    console.print("\n[bold]CPU Options:[/]")
+    for cpu in AppRunnerCPU:
+        console.print(f"  {cpu.value}")
+
+    console.print("\n[bold]Memory Options:[/]")
+    for memory in AppRunnerMemory:
+        console.print(f"  {memory.value}")
+
+    console.print("\n[bold]Registry Options:[/]")
+    console.print("  ECR (Amazon Elastic Container Registry) - automatically created")
+    console.print("  Format: <account-id>.dkr.ecr.<region>.amazonaws.com/<repository>")
+
+
 def _handle_docker_config_check(check_docker_config: bool, docker_registry: str, docker_username: str | None) -> None:
     """Handle Docker configuration check and exit if specified."""
     if not check_docker_config:
@@ -2247,6 +2277,7 @@ def env_for_deploy(
 
 def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
+        AWSDeployment,
         GCPDeployment,
         RunPodDeployment,
         SelfHostedDeployment,
@@ -2262,7 +2293,7 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         if deployment.proxy and deployment.proxy.services:
             for service in deployment.proxy.services:
                 service.environment = _inject(service.environment)
-    elif isinstance(deployment, RunPodDeployment | GCPDeployment):
+    elif isinstance(deployment, RunPodDeployment | GCPDeployment | AWSDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
 
@@ -2365,6 +2396,7 @@ def deploy_init():
         console.print("  - self-hosted: Deploy to your own server via SSH")
         console.print("  - runpod: Deploy to RunPod serverless")
         console.print("  - gcp: Deploy to Google Cloud Run")
+        console.print("  - aws: Deploy to AWS App Runner")
 
     except FileExistsError as e:
         console.print(f"[yellow]{e}[/]")
@@ -2381,6 +2413,7 @@ def deploy_init():
 def deploy_show(name: str):
     """Display detailed information about a specific deployment."""
     from nodetool.config.deployment import (
+        AWSDeployment,
         GCPDeployment,
         RunPodDeployment,
         SelfHostedDeployment,
@@ -2446,9 +2479,18 @@ def deploy_show(name: str):
             content.append(f"  Project: {deployment.project_id}")
             content.append(f"  Region: {deployment.region}")
             content.append(f"  Service: {deployment.service_name}")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  CPU: {deployment.cpu}")
-            content.append(f"  Memory: {deployment.memory}")
+            content.append(f"  Image: {deployment.image.repository}:{deployment.image.tag}")
+            content.append(f"  CPU: {deployment.resources.cpu}")
+            content.append(f"  Memory: {deployment.resources.memory}")
+            content.append("")
+
+        elif isinstance(deployment, AWSDeployment):
+            content.append("[bold]AWS App Runner Configuration:[/]")
+            content.append(f"  Region: {deployment.region}")
+            content.append(f"  Service: {deployment.service_name}")
+            content.append(f"  Image: {deployment.image.repository}:{deployment.image.tag}")
+            content.append(f"  CPU: {deployment.resources.cpu}")
+            content.append(f"  Memory: {deployment.resources.memory}")
             content.append("")
 
         # Current state
@@ -2458,6 +2500,7 @@ def deploy_show(name: str):
             status_color = {
                 "running": "green",
                 "active": "green",
+                "serving": "green",
                 "stopped": "red",
                 "error": "red",
                 "unknown": "yellow",
@@ -2481,6 +2524,11 @@ def deploy_show(name: str):
             content.append(f"  {deployment.container.name}: {url}")
 
         elif isinstance(deployment, GCPDeployment):
+            if state and state.get("service_url"):
+                content.append("[bold]Endpoint:[/]")
+                content.append(f"  {state['service_url']}")
+
+        elif isinstance(deployment, AWSDeployment):
             if state and state.get("service_url"):
                 content.append("[bold]Endpoint:[/]")
                 content.append(f"  {state['service_url']}")
@@ -2526,13 +2574,15 @@ def deploy_show(name: str):
 @click.option(
     "--type",
     "deployment_type",
-    type=click.Choice(["self-hosted", "runpod", "gcp"]),
+    type=click.Choice(["self-hosted", "runpod", "gcp", "aws"]),
     prompt="Deployment type",
     help="Type of deployment",
 )
 def deploy_add(name: str, deployment_type: str):
     """Add a new deployment to deployment.yaml interactively."""
     from nodetool.config.deployment import (
+        AWSDeployment,
+        AWSImageConfig,
         ContainerConfig,
         DeploymentConfig,
         GCPDeployment,
@@ -2648,6 +2698,28 @@ def deploy_add(name: str, deployment_type: str):
                 image=ImageConfig(name=image_name, tag=image_tag),
                 cpu=cpu,
                 memory=memory,
+            )
+
+        elif deployment_type == "aws":
+            console.print("[cyan]AWS App Runner Configuration:[/]")
+            region = click.prompt("AWS Region", type=str, default="us-east-1")
+            service_name = click.prompt("Service name", type=str, default=name)
+            repository_name = click.prompt("ECR repository name", type=str, default=name)
+            image_tag = click.prompt("Docker image tag", type=str, default="latest")
+
+            # Optional resource configuration
+            console.print()
+            configure_resources = click.confirm("Configure CPU/Memory?", default=False)
+            cpu = "1 vCPU"
+            memory = "2 GB"
+            if configure_resources:
+                cpu = click.prompt("CPU", type=str, default="1 vCPU")
+                memory = click.prompt("Memory", type=str, default="2 GB")
+
+            deployment = AWSDeployment(
+                region=region,
+                service_name=service_name,
+                image=AWSImageConfig(repository=repository_name, tag=image_tag),
             )
 
         # Add deployment to config

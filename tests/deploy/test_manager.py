@@ -8,6 +8,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nodetool.config.deployment import (
+    AWSDeployment,
+    AWSImageConfig,
     ContainerConfig,
     DeploymentConfig,
     DeploymentType,
@@ -57,12 +59,23 @@ class TestDeploymentManager:
             ),
         )
 
+        # Create AWS deployment
+        aws = AWSDeployment(
+            region="us-east-1",
+            service_name="nodetool-aws-service",
+            image=AWSImageConfig(
+                repository="nodetool/app",
+                tag="latest",
+            ),
+        )
+
         # Create config with all deployments
         config = DeploymentConfig(
             deployments={
                 "production": self_hosted,
                 "serverless": runpod,
                 "cloud": gcp,
+                "aws-cloud": aws,
             }
         )
 
@@ -130,7 +143,7 @@ class TestDeploymentManager:
 
         deployments = manager.list_deployments()
 
-        assert len(deployments) == 3
+        assert len(deployments) == 4
         assert deployments[0]["name"] == "production"
         assert deployments[0]["type"] == DeploymentType.SELF_HOSTED
         assert deployments[0]["status"] == "unknown"
@@ -145,6 +158,11 @@ class TestDeploymentManager:
         assert deployments[2]["type"] == DeploymentType.GCP
         assert deployments[2]["project"] == "my-project"
         assert deployments[2]["region"] == "us-central1"
+
+        assert deployments[3]["name"] == "aws-cloud"
+        assert deployments[3]["type"] == DeploymentType.AWS
+        assert deployments[3]["region"] == "us-east-1"
+        assert deployments[3]["service_name"] == "nodetool-aws-service"
 
     def test_list_deployments_with_state(self, manager):
         """Test listing deployments with state."""
@@ -230,6 +248,20 @@ class TestDeploymentManager:
             mock_deployer_cls.assert_called_once()
             mock_deployer.plan.assert_called_once()
 
+    def test_plan_aws(self, manager):
+        """Test generating plan for AWS deployment."""
+        mock_deployer = Mock()
+        mock_deployer.plan.return_value = {"changes": ["deploy app runner service"]}
+
+        with patch("nodetool.deploy.manager.AWSDeployer") as mock_deployer_cls:
+            mock_deployer_cls.return_value = mock_deployer
+
+            result = manager.plan("aws-cloud")
+
+            assert result == {"changes": ["deploy app runner service"]}
+            mock_deployer_cls.assert_called_once()
+            mock_deployer.plan.assert_called_once()
+
     def test_plan_deployment_not_found(self, manager):
         """Test plan with non-existent deployment."""
         with pytest.raises(KeyError):
@@ -290,6 +322,20 @@ class TestDeploymentManager:
             mock_deployer_cls.assert_called_once()
             mock_deployer.apply.assert_called_once()
 
+    def test_apply_aws(self, manager):
+        """Test applying AWS deployment."""
+        mock_deployer = Mock()
+        mock_deployer.apply.return_value = {"service_url": "https://example.awsapprunner.com"}
+
+        with patch("nodetool.deploy.manager.AWSDeployer") as mock_deployer_cls:
+            mock_deployer_cls.return_value = mock_deployer
+
+            result = manager.apply("aws-cloud")
+
+            assert result == {"service_url": "https://example.awsapprunner.com"}
+            mock_deployer_cls.assert_called_once()
+            mock_deployer.apply.assert_called_once()
+
     def test_status_self_hosted(self, manager):
         """Test getting status of self-hosted deployment."""
         mock_deployer = Mock()
@@ -326,6 +372,19 @@ class TestDeploymentManager:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.status("cloud")
+
+            assert result == {"status": "serving", "instances": 1}
+            mock_deployer.status.assert_called_once()
+
+    def test_status_aws(self, manager):
+        """Test getting status of AWS deployment."""
+        mock_deployer = Mock()
+        mock_deployer.status.return_value = {"status": "serving", "instances": 1}
+
+        with patch("nodetool.deploy.manager.AWSDeployer") as mock_deployer_cls:
+            mock_deployer_cls.return_value = mock_deployer
+
+            result = manager.status("aws-cloud")
 
             assert result == {"status": "serving", "instances": 1}
             mock_deployer.status.assert_called_once()
@@ -383,6 +442,19 @@ class TestDeploymentManager:
             assert result == "cloud run logs here"
             mock_deployer.logs.assert_called_once()
 
+    def test_logs_aws(self, manager):
+        """Test getting logs from AWS deployment."""
+        mock_deployer = Mock()
+        mock_deployer.logs.return_value = "app runner logs here"
+
+        with patch("nodetool.deploy.manager.AWSDeployer") as mock_deployer_cls:
+            mock_deployer_cls.return_value = mock_deployer
+
+            result = manager.logs("aws-cloud")
+
+            assert result == "app runner logs here"
+            mock_deployer.logs.assert_called_once()
+
     def test_destroy_self_hosted(self, manager):
         """Test destroying self-hosted deployment."""
         mock_deployer = Mock()
@@ -419,6 +491,19 @@ class TestDeploymentManager:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.destroy("cloud")
+
+            assert result == {"service_deleted": True}
+            mock_deployer.destroy.assert_called_once()
+
+    def test_destroy_aws(self, manager):
+        """Test destroying AWS deployment."""
+        mock_deployer = Mock()
+        mock_deployer.destroy.return_value = {"service_deleted": True}
+
+        with patch("nodetool.deploy.manager.AWSDeployer") as mock_deployer_cls:
+            mock_deployer_cls.return_value = mock_deployer
+
+            result = manager.destroy("aws-cloud")
 
             assert result == {"service_deleted": True}
             mock_deployer.destroy.assert_called_once()
