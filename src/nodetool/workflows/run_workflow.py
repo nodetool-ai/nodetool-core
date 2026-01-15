@@ -100,7 +100,6 @@ async def process_workflow_messages(
             else:
                 await asyncio.sleep(sleep_interval)
 
-        # Process remaining messages
         while context.has_messages():
             async for msg in process_message(context):
                 yield msg
@@ -112,7 +111,6 @@ async def process_workflow_messages(
         async for msg in handle_runner_error(e, runner):
             yield msg
     finally:
-        # Always drain pending messages, even if an error occurred
         while context.has_messages():
             async for msg in process_message(context):
                 yield msg
@@ -178,7 +176,6 @@ async def run_workflow(
                 workflow = await context.get_workflow(request.workflow_id)
                 if workflow is None:
                     raise Exception(f"Workflow {request.workflow_id} not found")
-                # Support both API model and plain object with a 'graph' attribute
                 if hasattr(workflow, "get_api_graph"):
                     request.graph = workflow.get_api_graph()  # type: ignore[attr-defined]
                 elif hasattr(workflow, "graph"):
@@ -186,7 +183,6 @@ async def run_workflow(
                 else:
                     raise Exception("Workflow object does not provide a graph")
 
-                # Set workspace_dir from workflow's workspace_id if available
                 if context.workspace_dir is None and hasattr(workflow, "workspace_id"):
                     workspace_id = getattr(workflow, "workspace_id", None)
                     if workspace_id:
@@ -194,7 +190,6 @@ async def run_workflow(
                         if context.workspace_dir:
                             log.info(f"Using workspace_dir from workflow: {context.workspace_dir}")
 
-            # Execute runner with configured options
             await runner.run(
                 request,
                 context,
@@ -212,19 +207,8 @@ async def run_workflow(
             raise
 
     if use_thread:
-        # Running the workflow in a separate thread (via ThreadedEventLoop) is beneficial
-        # in scenarios where:
-        # 1. The calling environment is synchronous, or its asyncio event loop should not
-        #    be blocked by the workflow's execution. This keeps the caller responsive.
-        # 2. The workflow needs to be integrated into a larger, primarily synchronous
-        #    multi-threaded application. ThreadedEventLoop provides a managed asyncio
-        #    environment within a dedicated thread.
-        # 3. The workflow's operations are potentially long-running or resource-intensive,
-        #    and isolating them in a separate thread prevents interference with other
-        #    operations in the main application thread or event loop.
         log.info(f"Running workflow in thread for {request.workflow_id}")
         if event_loop is not None:
-            # Use provided persistent loop (do not close it here)
             if not event_loop.is_running:
                 event_loop.start()
             run_future = event_loop.run_coroutine(run())
@@ -237,28 +221,38 @@ async def run_workflow(
                 run_future.cancel()
                 async for msg in handle_runner_error(e, runner):
                     yield msg
+                if not run_future.done():
+                    try:
+                        wrapped = asyncio.wrap_future(run_future)
+                        with suppress(asyncio.CancelledError):
+                            await asyncio.wait_for(wrapped, timeout=5.0)
+                    except TimeoutError:
+                        log.warning("Future did not complete within timeout after cancellation")
                 try:
-                    run_future.result()
-                except Exception as e:
-                    log.exception(e)
-                    async for msg in handle_runner_error(e, runner):
-                        yield msg
-                # Drain pending messages after error
+                    exc = run_future.exception()
+                    if exc is not None and not isinstance(exc, asyncio.CancelledError):
+                        raise exc
+                except asyncio.CancelledError:
+                    pass
                 async for msg in drain_pending_messages():
                     yield msg
                 raise
             else:
+                if not run_future.done():
+                    try:
+                        wrapped = asyncio.wrap_future(run_future)
+                        await asyncio.wait_for(wrapped, timeout=30.0)
+                    except TimeoutError:
+                        log.warning("Future did not complete within timeout")
                 try:
                     run_future.result()
                 except Exception as e:
                     log.exception(e)
                     async for msg in handle_runner_error(e, runner):
                         yield msg
-                # Drain pending messages after normal completion
                 async for msg in drain_pending_messages():
                     yield msg
         else:
-            # Backwards-compatible behavior: create a temporary loop for this run
             with ThreadedEventLoop() as tel:
                 run_future = tel.run_coroutine(run())
 
@@ -270,24 +264,35 @@ async def run_workflow(
                     run_future.cancel()
                     async for msg in handle_runner_error(e, runner):
                         yield msg
+                    if not run_future.done():
+                        try:
+                            wrapped = asyncio.wrap_future(run_future)
+                            with suppress(asyncio.CancelledError):
+                                await asyncio.wait_for(wrapped, timeout=5.0)
+                        except TimeoutError:
+                            log.warning("Future did not complete within timeout after cancellation")
                     try:
-                        run_future.result()
-                    except Exception as e:
-                        log.exception(e)
-                        async for msg in handle_runner_error(e, runner):
-                            yield msg
-                    # Drain pending messages after error
+                        exc = run_future.exception()
+                        if exc is not None and not isinstance(exc, asyncio.CancelledError):
+                            raise exc
+                    except asyncio.CancelledError:
+                        pass
                     async for msg in drain_pending_messages():
                         yield msg
                     raise
                 else:
+                    if not run_future.done():
+                        try:
+                            wrapped = asyncio.wrap_future(run_future)
+                            await asyncio.wait_for(wrapped, timeout=30.0)
+                        except TimeoutError:
+                            log.warning("Future did not complete within timeout")
                     try:
                         run_future.result()
                     except Exception as e:
                         log.exception(e)
                         async for msg in handle_runner_error(e, runner):
                             yield msg
-                    # Drain pending messages after normal completion
                     async for msg in drain_pending_messages():
                         yield msg
 
