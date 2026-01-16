@@ -4,3 +4,4 @@
 - **2026-01-12**: Fixed type safety in `threaded_event_loop.py` - Added `assert` for loop non-null check and `type: ignore` for dynamic future.task attribute.
 - **2026-01-12**: Removed unused import `Optional` from `build.py`.
 - **2026-01-12**: Added async retry utilities (`retry_with_exponential_backoff`, `RetryPolicy`) in `src/nodetool/concurrency/retry.py` for handling transient failures with configurable exponential backoff and jitter.
+- **2026-01-16**: Added `RateLimiter` and `rate_limited_gather` for token bucket rate limiting in `src/nodetool/concurrency/rate_limiter.py`.
