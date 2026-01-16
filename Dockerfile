@@ -111,7 +111,7 @@ COPY --chown=root:root . /tmp/nodetool-core
                 --index-strategy unsafe-best-match \
                 --index-url https://pypi.org/simple \
                 --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-                nodetool-core==0.6.2-rc.25 nodetool-base==0.6.2-rc.25 ; \
+                nodetool-core==0.6.2-rc.26 nodetool-base==0.6.2-rc.26 ; \
         fi && \
         # Clean up
         rm -rf /tmp/nodetool-core && \
