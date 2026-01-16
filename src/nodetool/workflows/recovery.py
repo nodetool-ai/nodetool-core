@@ -1,6 +1,6 @@
 """
 Workflow Recovery Service - State Table Based
-=============================================
+==============================================
 
 This module implements the recovery algorithm for resuming workflows after
 crashes, restarts, or interruptions using MUTABLE STATE TABLES as source of truth.
@@ -13,7 +13,10 @@ import asyncio
 import os
 import socket
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from nodetool.workflows.suspendable_node import SuspendableNode
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.run_lease import RunLease
@@ -106,11 +109,15 @@ class WorkflowRecoveryService:
                 node = n
                 break
 
-        if not node or not hasattr(node, "_set_resuming_state"):
+        if not node:
+            return False
+
+        if not hasattr(node, "_set_resuming_state"):
             return False
 
         try:
-            node._set_resuming_state(resume_state, 0)
+            suspendable_node = cast("SuspendableNode", node)
+            suspendable_node._set_resuming_state(resume_state, 0)
             return True
         except Exception as e:
             log.error(f"Failed to restore state to node {node_id}: {e}")

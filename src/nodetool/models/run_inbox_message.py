@@ -172,6 +172,63 @@ class RunInboxMessage(DBModel):
         return cls.from_dict(results[0])
 
     @classmethod
+    async def _find_messages(
+        cls,
+        run_id: str,
+        node_id: str,
+        handle: str,
+        status_filter: str | None = None,
+        min_seq: int = 0,
+        max_seq: int | None = None,
+        sort_order: int = 1,
+        limit: int = 100,
+    ) -> list["RunInboxMessage"]:
+        """
+        Internal method to find messages by criteria.
+
+        Args:
+            run_id: The workflow run identifier
+            node_id: The node identifier
+            handle: The input handle name
+            status_filter: Optional status to filter by (pending, claimed, consumed)
+            min_seq: Minimum sequence number
+            max_seq: Maximum sequence number (for range queries)
+            sort_order: Sort order (1 for ascending, -1 for descending)
+            limit: Maximum messages to return
+
+        Returns:
+            List of matching messages
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        conditions = [
+            Field("run_id").equals(run_id),
+            Field("node_id").equals(node_id),
+            Field("handle").equals(handle),
+        ]
+
+        if status_filter:
+            conditions.append(Field("status").equals(status_filter))
+
+        if min_seq > 0:
+            conditions.append(Field("msg_seq").greater_than_or_equal(min_seq))
+
+        if max_seq is not None:
+            conditions.append(Field("msg_seq").less_than_or_equal(max_seq))
+
+        condition = ConditionBuilder(ConditionGroup(list(conditions), LogicalOperator.AND))
+
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by="msg_seq",
+            reverse=sort_order == -1,
+            limit=limit,
+        )
+
+        return [cls.from_dict(row) for row in results]
+
+    @classmethod
     async def get_pending_messages(
         cls,
         run_id: str,
