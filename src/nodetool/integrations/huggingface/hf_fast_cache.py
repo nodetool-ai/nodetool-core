@@ -75,6 +75,27 @@ def get_default_hf_cache_dir() -> Path:
     return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+class _SimpleCache:
+    """Simple in-memory cache with get, set, and delete_pattern methods."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, object] = {}
+
+    def get(self, key: str) -> object | None:
+        return self._data.get(key)
+
+    def set(self, key: str, value: object) -> None:
+        self._data[key] = value
+
+    def delete_pattern(self, pattern: str) -> None:
+        """Delete all keys matching the given pattern (supports * wildcards)."""
+        import fnmatch
+
+        keys_to_delete = [k for k in self._data if fnmatch.fnmatch(k, pattern)]
+        for key in keys_to_delete:
+            del self._data[key]
+
+
 class HfFastCache:
     """
     Fast, read-only view over the local HF file cache (async).
@@ -101,6 +122,7 @@ class HfFastCache:
         self._lock: Optional[asyncio.Lock] = None
         self._lock_loop_id: Optional[int] = None
         self._repos: Dict[str, _RepoState] = {}
+        self.model_info_cache = _SimpleCache()
 
     def _get_lock(self) -> asyncio.Lock:
         """Get the asyncio lock, creating a new one if the event loop has changed.
