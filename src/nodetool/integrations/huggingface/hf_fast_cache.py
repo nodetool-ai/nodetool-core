@@ -48,10 +48,6 @@ from typing import Dict, List, Optional, Tuple
 import aiofiles
 import aiofiles.os
 
-from nodetool.ml.models.model_cache import ModelCache
-
-DEFAULT_MODEL_INFO_CACHE_TTL = 30 * 24 * 3600
-
 
 def get_default_hf_cache_dir() -> Path:
     """Return the default Hugging Face Hub cache directory.
@@ -79,6 +75,27 @@ def get_default_hf_cache_dir() -> Path:
     return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+class _SimpleCache:
+    """Simple in-memory cache with get, set, and delete_pattern methods."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, object] = {}
+
+    def get(self, key: str) -> object | None:
+        return self._data.get(key)
+
+    def set(self, key: str, value: object) -> None:
+        self._data[key] = value
+
+    def delete_pattern(self, pattern: str) -> None:
+        """Delete all keys matching the given pattern (supports * wildcards)."""
+        import fnmatch
+
+        keys_to_delete = [k for k in self._data if fnmatch.fnmatch(k, pattern)]
+        for key in keys_to_delete:
+            del self._data[key]
+
+
 class HfFastCache:
     """
     Fast, read-only view over the local HF file cache (async).
@@ -93,8 +110,6 @@ class HfFastCache:
     def __init__(
         self,
         cache_dir: str | Path | None = None,
-        *,
-        model_info_cache: ModelCache | None = None,
     ) -> None:
         """Initialize a fast view over a local Hugging Face cache.
 
@@ -107,8 +122,7 @@ class HfFastCache:
         self._lock: Optional[asyncio.Lock] = None
         self._lock_loop_id: Optional[int] = None
         self._repos: Dict[str, _RepoState] = {}
-        # Share the model info cache between callers so metadata lookups can leverage the disk cache.
-        self.model_info_cache = model_info_cache or ModelCache("model_info")
+        self.model_info_cache = _SimpleCache()
 
     def _get_lock(self) -> asyncio.Lock:
         """Get the asyncio lock, creating a new one if the event loop has changed.
