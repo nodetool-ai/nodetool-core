@@ -479,9 +479,6 @@ class TestDeleteCachedHfModel:
             patch("nodetool.integrations.huggingface.huggingface_models.os.path.exists") as mock_exists,
             patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
-            ) as mock_delete_pattern,
-            patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
                 new_callable=AsyncMock,
             ) as mock_invalidate,
@@ -492,7 +489,6 @@ class TestDeleteCachedHfModel:
         mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_not_called()
         mock_rmtree.assert_not_called()
-        mock_delete_pattern.assert_not_called()
         mock_invalidate.assert_not_called()
 
     @pytest.mark.asyncio
@@ -510,9 +506,6 @@ class TestDeleteCachedHfModel:
             ) as mock_exists,
             patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
-            ) as mock_delete_pattern,
-            patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
                 new_callable=AsyncMock,
             ) as mock_invalidate,
@@ -523,7 +516,6 @@ class TestDeleteCachedHfModel:
         mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
         mock_rmtree.assert_not_called()
-        mock_delete_pattern.assert_not_called()
         mock_invalidate.assert_not_called()
 
 
@@ -652,18 +644,9 @@ class TestReadCachedHfModels:
 
         with (
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
-                return_value=None,
-            ),
-            patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
                 new_callable=AsyncMock,
                 return_value=[("org/repo", repo_dir)],
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.fetch_model_info",
-                new_callable=AsyncMock,
-                return_value=mock_model_info,
             ),
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.repo_root",
