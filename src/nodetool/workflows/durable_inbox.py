@@ -118,7 +118,7 @@ class DurableInbox:
             return existing
 
         # Serialize payload
-        payload_json = json.dumps(payload) if payload is not None else None
+        payload_json = payload if payload is not None else {}
 
         # Detect large payloads (>1MB) and warn
         if payload_json and len(payload_json) > 1_000_000:

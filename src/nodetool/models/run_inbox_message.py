@@ -294,6 +294,80 @@ class RunInboxMessage(DBModel):
         return self.payload_json
 
     @classmethod
+    async def find_one(cls, query: dict[str, Any]) -> "RunInboxMessage | None":
+        """
+        Find a single message matching the query.
+
+        Args:
+            query: Query dictionary with field -> value mappings
+
+        Returns:
+            Matching message or None if not found
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        conditions = [Field(k).equals(v) for k, v in query.items()]
+        condition = ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND))  # type: ignore[arg-type]
+
+        results, _ = await adapter.query(
+            condition=condition,
+            limit=1,
+        )
+        if not results:
+            return None
+        return cls.from_dict(results[0])
+
+    @classmethod
+    async def find(
+        cls,
+        query: dict[str, Any],
+        sort: list[tuple[str, int]] | None = None,
+        limit: int = 100,
+    ) -> list["RunInboxMessage"]:
+        """
+        Find messages matching the query.
+
+        Args:
+            query: Query dictionary with field -> value mappings
+            sort: List of (field, direction) tuples for sorting (1=asc, -1=desc)
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching messages
+        """
+        adapter = await cls.adapter()
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        conditions = []
+        for key, value in query.items():
+            if isinstance(value, dict) and "$gte" in value:
+                conditions.append(Field(key).greater_than_or_equal(value["$gte"]))
+            elif isinstance(value, dict) and "$lt" in value:
+                conditions.append(Field(key).less_than(value["$lt"]))
+            else:
+                conditions.append(Field(key).equals(value))
+
+        condition = ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND))  # type: ignore[arg-type]
+
+        order_by = None
+        reverse = False
+        if sort:
+            for field, direction in sort:
+                order_by = field
+                reverse = direction < 0
+                break
+
+        results, _ = await adapter.query(
+            condition=condition,
+            order_by=order_by,
+            reverse=reverse,
+            limit=limit,
+        )
+
+        return [cls.from_dict(row) for row in results]
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RunInboxMessage":
         """Create RunInboxMessage from dictionary."""
         return cls(
