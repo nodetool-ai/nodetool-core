@@ -1,3 +1,4 @@
+- **2026-01-16**: QA Validation - `make lint` and `make test` pass; `make typecheck` has 145 pre-existing errors documented in `issues/typing/pre-existing-type-errors.md`.
 - **2026-01-16**: Added rate limiting utilities (`AsyncTokenBucket`, `AsyncRateLimiter`) in `src/nodetool/concurrency/rate_limit.py` for controlling operation rates using the token bucket algorithm.
 - **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.
 - **2026-01-12**: Initialized structured OpenCode memory layout.
