@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Callable, List, Sequence
+from typing import Any, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
 
@@ -44,7 +44,6 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.runtime.resources import maybe_scope
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -627,7 +626,6 @@ async def fetch_model_readme(model_id: str) -> str | None:
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
-        hf_hub_download,
         try_to_load_from_cache,
     )
 

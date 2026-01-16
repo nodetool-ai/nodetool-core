@@ -4,7 +4,6 @@ import os
 import pkgutil
 import shutil
 import subprocess
-import sys
 import typing
 from enum import Enum
 from types import GenericAlias, UnionType

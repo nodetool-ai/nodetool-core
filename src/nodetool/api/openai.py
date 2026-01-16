@@ -7,11 +7,10 @@ from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+from nodetool.runtime.resources import get_static_auth_provider
 
 log = get_logger(__name__)
 

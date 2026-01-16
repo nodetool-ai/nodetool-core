@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Union
+from typing import ClassVar, Optional
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(

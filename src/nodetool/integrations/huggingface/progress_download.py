@@ -3,7 +3,7 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional
 
 import huggingface_hub.file_download as _fd
 from huggingface_hub import constants
