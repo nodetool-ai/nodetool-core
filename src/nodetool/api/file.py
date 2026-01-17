@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import List
 
 import aiofiles
@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
-from nodetool.models.workspace import Workspace
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
