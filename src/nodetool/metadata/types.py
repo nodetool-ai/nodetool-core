@@ -610,6 +610,14 @@ class VideoModel(BaseType):
     supported_tasks: list[str] = Field(default_factory=list)
 
 
+class EmbeddingModel(BaseType):
+    type: Literal["embedding_model"] = "embedding_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    dimensions: int = 0
+
+
 class LlamaModel(BaseType):
     type: Literal["llama_model"] = "llama_model"
     name: str = ""

@@ -70,6 +70,7 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -2156,6 +2157,114 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI ASR transcription failed: {e}")
             raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
+
+    async def get_available_embedding_models(self) -> List[EmbeddingModel]:
+        """
+        Get available OpenAI embedding models.
+
+        Returns embedding models available from OpenAI.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of EmbeddingModel instances for OpenAI
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty embedding model list")
+            return []
+
+        # OpenAI embedding models
+        # Source: https://platform.openai.com/docs/guides/embeddings
+        embedding_models_config = [
+            {
+                "id": "text-embedding-3-small",
+                "name": "Text Embedding 3 Small",
+                "dimensions": 1536,
+            },
+            {
+                "id": "text-embedding-3-large",
+                "name": "Text Embedding 3 Large",
+                "dimensions": 3072,
+            },
+            {
+                "id": "text-embedding-ada-002",
+                "name": "Text Embedding Ada 002",
+                "dimensions": 1536,
+            },
+        ]
+
+        models: List[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.OpenAI,
+                    dimensions=config["dimensions"],
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using OpenAI's Embeddings API.
+
+        Uses the embeddings endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "text-embedding-3-small", "text-embedding-3-large")
+            **kwargs: Additional parameters:
+                - dimensions: Optional output dimensions (for text-embedding-3-* models)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build API parameters
+            api_params: dict[str, Any] = {
+                "input": texts,
+                "model": model,
+            }
+
+            # Add optional dimensions parameter for text-embedding-3-* models
+            if kwargs.get("dimensions"):
+                api_params["dimensions"] = kwargs["dimensions"]
+
+            response = await client.embeddings.create(**api_params)
+
+            # Extract embeddings from response
+            embeddings = [data.embedding for data in response.data]
+
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}")
+
+            return embeddings
+
+        except Exception as e:
+            log.error(f"OpenAI embedding generation failed: {e}")
+            raise RuntimeError(f"OpenAI embedding generation failed: {str(e)}") from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Detect whether an exception represents a context window error.
