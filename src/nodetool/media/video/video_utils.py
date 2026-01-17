@@ -282,11 +282,7 @@ def extract_video_frames(
     frames = []
 
     # Handle bytes - create a BytesIO for imageio
-    video_source: str | io.BytesIO
-    if isinstance(input_video, bytes):
-        video_source = io.BytesIO(input_video)
-    else:
-        video_source = input_video
+    video_source = io.BytesIO(input_video) if isinstance(input_video, bytes) else input_video
 
     try:
         reader = imageio.get_reader(video_source, format="ffmpeg")  # type: ignore[arg-type]
