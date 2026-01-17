@@ -6,7 +6,7 @@ import mimetypes
 import os
 import zipfile
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -76,7 +76,7 @@ class PackageAsset(BaseModel):
 
 
 class PackageAssetList(BaseModel):
-    assets: List[PackageAsset]
+    assets: list[PackageAsset]
 
 
 # Constants
@@ -405,7 +405,7 @@ async def delete(id: str, user: str = Depends(current_user)):
         raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}") from e
 
 
-async def delete_folder(user_id: str, folder_id: str) -> List[str]:
+async def delete_folder(user_id: str, folder_id: str) -> list[str]:
     deleted_asset_ids = []
     try:
         assets, _next_cursor = await AssetModel.paginate(user_id=user_id, parent_id=folder_id, limit=10000)
@@ -531,9 +531,9 @@ async def download_assets(
     storage = require_scope().get_asset_storage()
 
     # This dictionary will hold all assets to be included in the zip, plus their parents for path construction.
-    all_assets_with_parents: Dict[str, AssetModel] = {}
+    all_assets_with_parents: dict[str, AssetModel] = {}
     # This set will hold just the assets that should be included in the zip file content.
-    assets_to_zip: Dict[str, AssetModel] = {}
+    assets_to_zip: dict[str, AssetModel] = {}
 
     # Step 1: Fetch the requested assets and all their descendants.
     queue = list(req.asset_ids)
@@ -570,7 +570,7 @@ async def download_assets(
             if parent_asset.parent_id and parent_asset.parent_id not in all_assets_with_parents:
                 parents_to_fetch.add(parent_asset.parent_id)
 
-    asset_paths: Dict[str, str] = {}
+    asset_paths: dict[str, str] = {}
 
     def get_asset_path(asset: AssetModel) -> str:
         if asset.id in asset_paths:
@@ -587,7 +587,7 @@ async def download_assets(
 
     async def fetch_asset_content(
         asset: AssetModel,
-    ) -> Tuple[str, BytesIO | None]:
+    ) -> tuple[str, BytesIO | None]:
         try:
             if asset.user_id != user:
                 raise HTTPException(
@@ -619,7 +619,7 @@ async def download_assets(
         content = await fetch_asset_content(asset)
         asset_contents.append(content)
 
-    used_paths: Dict[str, int] = {}
+    used_paths: dict[str, int] = {}
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for file_path, content in asset_contents:
             if file_path and content is not None:

@@ -4,7 +4,6 @@ Simple Learning Path Generator using Nodetool Agent system.
 """
 
 import asyncio
-from typing import List
 
 import dotenv
 from pydantic import BaseModel
@@ -24,13 +23,13 @@ dotenv.load_dotenv()
 class LearningModule(BaseModel):
     title: str
     description: str
-    resources: List[str]
+    resources: list[str]
 
 
 class LearningPath(BaseModel):
     topic: str
     overview: str
-    modules: List[LearningModule]
+    modules: list[LearningModule]
 
 
 async def generate_learning_path(provider: BaseProvider, model: str, topic: str):
