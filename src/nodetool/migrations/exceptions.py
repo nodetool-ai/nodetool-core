@@ -14,9 +14,7 @@ class MigrationError(Exception):
 
 
 class LockError(MigrationError):
-    """Raised when migration lock cannot be acquired or released."""
-
-    pass
+    """Raised when migration lock cannot be acquired or release."""
 
 
 class ChecksumError(MigrationError):
@@ -37,16 +35,10 @@ class ChecksumError(MigrationError):
 class BaselineError(MigrationError):
     """Raised when baselining fails."""
 
-    pass
-
 
 class MigrationDiscoveryError(MigrationError):
     """Raised when migration discovery fails."""
 
-    pass
-
 
 class RollbackError(MigrationError):
     """Raised when migration rollback fails."""
-
-    pass
