@@ -133,6 +133,15 @@ class ThreadedJobExecution(JobExecution):
                             state={},
                         )
                     await self.job_model.update(finished_at=datetime.now())
+                    
+                    # Post suspension message BEFORE finalize_state to avoid race condition
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="suspended",
+                            message="Workflow suspended",
+                        )
+                    )
                 else:
                     # Update job status on completion
                     self._set_status("completed")
@@ -142,6 +151,15 @@ class ThreadedJobExecution(JobExecution):
                     if run_state:
                         await run_state.mark_completed()
                     await self.job_model.update(finished_at=datetime.now())
+                    
+                    # Post completion message BEFORE finalize_state to avoid race condition
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="completed",
+                            message=f"Job {self.job_id} completed successfully",
+                        )
+                    )
                 log.info(f"Background job {self.job_id} completed successfully")
 
             except asyncio.CancelledError:
@@ -152,6 +170,15 @@ class ThreadedJobExecution(JobExecution):
                 if run_state:
                     await run_state.mark_cancelled()
                 await self.job_model.update(finished_at=datetime.now())
+                
+                # Post cancellation message BEFORE finalize_state to avoid race condition
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="cancelled",
+                        message=f"Job {self.job_id} was cancelled",
+                    )
+                )
                 log.info(f"Background job {self.job_id} cancelled")
                 raise
             except Exception as e:
