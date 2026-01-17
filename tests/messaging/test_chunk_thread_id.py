@@ -224,69 +224,6 @@ class TestHelpMessageProcessorThreadId:
                 assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
-class TestClaudeAgentMessageProcessorThreadId:
-    """Tests for claude_agent_message_processor setting thread_id on chunks."""
-
-    @pytest.mark.asyncio
-    async def test_claude_agent_processor_sets_thread_id(self, test_thread_id, processing_context):
-        """Test that ClaudeAgentMessageProcessor sets thread_id on chunks."""
-        from nodetool.messaging.claude_agent_message_processor import (
-            ClaudeAgentMessageProcessor,
-        )
-
-        processor = ClaudeAgentMessageProcessor(api_key="test_key")
-
-        # Create test message with thread_id
-        test_message = Message(
-            thread_id=test_thread_id,
-            role="user",
-            content="Test task",
-            provider=Provider.Anthropic,
-            model="claude-3-sonnet-20240229",
-        )
-
-        sent_messages = []
-
-        async def capture_send(msg):
-            sent_messages.append(msg)
-
-        processor.send_message = capture_send
-
-        # Mock the ClaudeSDKClient
-        from claude_agent_sdk import (
-            AssistantMessage,
-            ResultMessage,
-            TextBlock,
-        )
-
-        async def mock_query(*args, **kwargs):
-            pass
-
-        async def mock_receive_response():
-            # Yield text blocks
-            yield AssistantMessage(content=[TextBlock(text="Processing your request")])
-            yield ResultMessage(duration_ms=100)
-
-        with patch("nodetool.messaging.claude_agent_message_processor.ClaudeSDKClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.query = mock_query
-            mock_client.receive_response = mock_receive_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            MockClient.return_value = mock_client
-
-            # Process the message
-            await processor.process([test_message], processing_context)
-
-        # Check that chunks have thread_id set
-        chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk"]
-        assert len(chunk_messages) > 0, "Should have sent chunk messages"
-
-        for msg in chunk_messages:
-            assert "thread_id" in msg, "Chunk message should include thread_id"
-            assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
-
-
 class TestWorkflowMessageProcessorThreadId:
     """Tests for workflow_message_processor setting thread_id on chunks."""
 

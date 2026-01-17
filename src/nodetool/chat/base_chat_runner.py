@@ -30,10 +30,6 @@ from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.chat_workflow_message_processor import (
     ChatWorkflowMessageProcessor,
 )
-from nodetool.messaging.claude_agent_message_processor import (
-    ClaudeAgentHelpMessageProcessor,
-    ClaudeAgentMessageProcessor,
-)
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
@@ -435,19 +431,7 @@ class BaseChatRunner(ABC):
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
 
-            # Use Claude Agent SDK for Anthropic help requests
-            if last_message.provider.lower() == "anthropic":
-                # Get API key from the provider
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
-            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-            elif last_message.provider.lower() == "minimax":
-                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-            else:
-                processor = HelpMessageProcessor(provider)
+            processor = HelpMessageProcessor(provider)
 
             await self._run_processor(
                 processor=processor,
@@ -484,19 +468,7 @@ class BaseChatRunner(ABC):
 
         provider = await get_provider(last_message.provider)
 
-        # Use Claude Agent SDK for Anthropic agent requests
-        if last_message.provider.lower() == "anthropic":
-            # Get API key from the provider
-            api_key = getattr(provider, "api_key", None)
-            processor = ClaudeAgentMessageProcessor(api_key=api_key)
-        # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-        elif last_message.provider.lower() == "minimax":
-            from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-
-            api_key = getattr(provider, "api_key", None)
-            processor = ClaudeAgentMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-        else:
-            processor = AgentMessageProcessor(provider)
+        processor = AgentMessageProcessor(provider)
 
         processing_context = ProcessingContext(user_id=self.user_id)
 
@@ -517,7 +489,7 @@ class BaseChatRunner(ABC):
         Processes messages that are part of a defined workflow.
 
         Routes to different processors:
-        - help_mode=True: Uses HelpMessageProcessor (or ClaudeAgentHelpMessageProcessor for Anthropic/MiniMax)
+        - help_mode=True: Uses HelpMessageProcessor
         - help_mode=False and run_mode="chat": Uses ChatWorkflowMessageProcessor
         - Otherwise: Uses WorkflowMessageProcessor
         """
@@ -544,18 +516,7 @@ class BaseChatRunner(ABC):
 
             provider = await get_provider(last_message.provider)
 
-            # Use Claude Agent SDK for Anthropic help requests
-            if last_message.provider.lower() == "anthropic":
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
-            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-            elif last_message.provider.lower() == "minimax":
-                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-            else:
-                processor = HelpMessageProcessor(provider)
+            processor = HelpMessageProcessor(provider)
         # Regular workflow processing
         elif workflow.run_mode == "chat":
             log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")

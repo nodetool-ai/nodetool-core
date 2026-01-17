@@ -50,8 +50,7 @@ Architecture Overview
 Provider Support
 ----------------
 
-Unlike ClaudeAgentHelpMessageProcessor (which uses Claude SDK exclusively),
-this processor works with any LLM provider:
+This processor works with any LLM provider:
 
 - OpenAI (GPT-4, GPT-3.5)
 - Anthropic (Claude 3.x via API)

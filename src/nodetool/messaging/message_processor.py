@@ -37,8 +37,7 @@ Processor Types
 
 1. **RegularChatProcessor**: Standard chat completion without tools
 2. **HelpMessageProcessor**: Workflow assistance with node/example search
-3. **ClaudeAgentMessageProcessor**: Full agent mode with Claude SDK
-4. **ClaudeAgentHelpMessageProcessor**: Help mode using Claude SDK
+3. **AgentMessageProcessor**: Agent mode with tool execution
 
 Message Flow
 ============
