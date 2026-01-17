@@ -245,7 +245,7 @@ class AnthropicProvider(BaseProvider):
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return cast(
-                MessageParam,
+                "MessageParam",
                 {
                     "role": "user",
                     "content": [
@@ -322,7 +322,7 @@ class AnthropicProvider(BaseProvider):
             if message.tool_calls:
                 log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
                 return cast(
-                    MessageParam,
+                    "MessageParam",
                     {
                         "role": "assistant",
                         "content": [

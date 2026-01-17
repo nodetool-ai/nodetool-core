@@ -99,7 +99,7 @@ SAMPLE_WORKFLOW_DESCRIPTIONS = [
 async def generate_mock_threads(user_id: str = "1", count: int = 5) -> list[Thread]:
     """Generate mock threads with realistic titles."""
     threads = []
-    for i in range(count):
+    for _ in range(count):
         thread_id = create_time_ordered_uuid()
         created_at = datetime.now() - timedelta(days=random.randint(0, 30))
 
@@ -155,7 +155,7 @@ async def generate_mock_workflows(user_id: str = "1", count: int = 5) -> list[Wo
     """Generate mock workflows with example graphs."""
     workflows = []
 
-    for i in range(count):
+    for _ in range(count):
         name = random.choice(SAMPLE_WORKFLOW_NAMES)
         description = random.choice(SAMPLE_WORKFLOW_DESCRIPTIONS)
 
@@ -270,7 +270,7 @@ async def generate_mock_assets(user_id: str = "1", count: int = 10) -> list[Asse
         )
         assets.append(asset)
 
-    log.info(f"Created 3 mock text file assets")
+    log.info("Created 3 mock text file assets")
     return assets
 
 
