@@ -1,8 +1,0 @@
-- **2026-01-17**: Added `AsyncLock` class in `src/nodetool/concurrency/async_lock.py` for exclusive resource access with timeout support, complementing `AsyncSemaphore` for cases where only one task should access a resource at a time.
-- **2026-01-16**: Added rate limiting utilities (`AsyncTokenBucket`, `AsyncRateLimiter`) in `src/nodetool/concurrency/rate_limit.py` for controlling operation rates using the token bucket algorithm.
-- **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.
-- **2026-01-12**: Initialized structured OpenCode memory layout.
-- **2026-01-12**: Fixed type safety in `chat_sse_runner.py` - Changed `_create_openai_error_chunk` to use typed `Choice` and `ChoiceDelta` objects instead of raw dict unpacking.
-- **2026-01-12**: Fixed type safety in `threaded_event_loop.py` - Added `assert` for loop non-null check and `type: ignore` for dynamic future.task attribute.
-- **2026-01-12**: Removed unused import `Optional` from `build.py`.
-- **2026-01-12**: Added async retry utilities (`retry_with_exponential_backoff`, `RetryPolicy`) in `src/nodetool/concurrency/retry.py` for handling transient failures with configurable exponential backoff and jitter.

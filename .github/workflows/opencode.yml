@@ -67,7 +67,6 @@ jobs:
             ## Memory System (Read First)
             - `.github/opencode-memory/README.md` - Folder-based memory usage
             - `.github/opencode-memory/repository-context.md` - Structure, conventions, commands
-            - `.github/opencode-memory/project-context.md` - Recent changes
             - `.github/opencode-memory/features.md` - Feature inventory
             - List `issues/` and `insights/` to find descriptive files
             
