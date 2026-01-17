@@ -36,12 +36,14 @@ from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageTextContent,
+    Provider,
     ToolCall,
 )
-from nodetool.providers.base import BaseProvider
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.workflows.types import Chunk
 
 
+@register_provider(Provider.Fake)
 class FakeProvider(BaseProvider):
     """
     A simplified fake chat provider for testing.
@@ -98,8 +100,36 @@ class FakeProvider(BaseProvider):
         self.call_count = 0
 
     async def get_available_language_models(self) -> List[LanguageModel]:
-        """Fake provider has no models."""
-        return []
+        """Return fake language models for testing."""
+        return [
+            LanguageModel(
+                id="fake-model-v1",
+                name="Fake Model v1",
+                provider="fake",
+                max_context_length=8192,
+                supports_streaming=True,
+                supports_tools=True,
+                supports_vision=True,
+            ),
+            LanguageModel(
+                id="fake-model-v2",
+                name="Fake Model v2",
+                provider="fake",
+                max_context_length=16384,
+                supports_streaming=True,
+                supports_tools=True,
+                supports_vision=True,
+            ),
+            LanguageModel(
+                id="fake-fast-model",
+                name="Fake Fast Model",
+                provider="fake",
+                max_context_length=4096,
+                supports_streaming=True,
+                supports_tools=False,
+                supports_vision=False,
+            ),
+        ]
 
     async def generate_message(
         self,

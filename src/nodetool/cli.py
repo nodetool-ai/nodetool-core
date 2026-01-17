@@ -312,6 +312,11 @@ def mcp():
     is_flag=True,
     help="Enable verbose logging (DEBUG level) for detailed output.",
 )
+@click.option(
+    "--mock",
+    is_flag=True,
+    help="Start server with mock data for testing (pre-fills database with sample threads, messages, workflows, assets, and collections).",
+)
 def serve(
     host: str,
     port: int,
@@ -322,10 +327,13 @@ def serve(
     apps_folder: str | None = None,
     production: bool = False,
     verbose: bool = False,
+    mock: bool = False,
 ):
     """Run the FastAPI backend server for the NodeTool platform.
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
+    
+    Use --mock to start with pre-filled test data for development and testing.
     """
     from nodetool.api.server import create_app, run_uvicorn_server
 
@@ -336,6 +344,11 @@ def serve(
         configure_logging(level="DEBUG")
         os.environ["LOG_LEVEL"] = "DEBUG"
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+    
+    # Configure mock mode
+    if mock:
+        console.print("[yellow]🎭 Mock mode enabled - will populate database with test data[/]")
+        os.environ["NODETOOL_MOCK_MODE"] = "1"
 
     try:
         import comfy.cli_args  # type: ignore
