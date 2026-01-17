@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
@@ -39,8 +39,7 @@ class JobResponse(BaseModel):
     cost: Optional[float] = None
     run_state: Optional[RunStateResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BackgroundJobResponse(BaseModel):
@@ -354,7 +353,7 @@ async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
     Ensure job status reflects the background execution manager.
     Syncs completed/failed states from RunState and background manager.
     """
-    from nodetool.models.condition_builder import ConditionBuilder
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
 
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}

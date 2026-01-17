@@ -34,7 +34,6 @@ from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Chunk,
-    Step,
     Task,
     ToolCall,
 )
