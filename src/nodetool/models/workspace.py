@@ -89,10 +89,6 @@ class Workspace(DBModel):
     @classmethod
     async def create(
         cls,
-        user_id: str,
-        name: str,
-        path: str,
-        is_default: bool = False,
         **kwargs,
     ) -> "Workspace":
         """
@@ -110,6 +106,11 @@ class Workspace(DBModel):
         Raises:
             ValueError: If the path is not absolute or doesn't exist.
         """
+        user_id = kwargs.pop('user_id')
+        name = kwargs.pop('name')
+        path = kwargs.pop('path')
+        is_default = kwargs.pop('is_default', False)
+        
         # Validate path is absolute
         if not os.path.isabs(path):
             raise ValueError(f"Workspace path must be absolute: {path}")

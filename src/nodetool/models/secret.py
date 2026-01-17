@@ -42,7 +42,7 @@ class Secret(DBModel):
         self.updated_at = datetime.now()
 
     @classmethod
-    async def create(cls, user_id: str, key: str, value: str, description: Optional[str] = None, **kwargs):
+    async def create(cls, **kwargs):
         """
         Create a new encrypted secret.
 
@@ -59,6 +59,12 @@ class Secret(DBModel):
         from nodetool.security.crypto import SecretCrypto
         from nodetool.security.master_key import MasterKeyManager
 
+        # Extract required parameters
+        user_id = kwargs.pop('user_id')
+        key = kwargs.pop('key')
+        value = kwargs.pop('value')
+        description = kwargs.pop('description', None)
+        
         # Get master key and encrypt the value
         master_key = await MasterKeyManager.get_master_key()
         encrypted_value = SecretCrypto.encrypt(value, master_key, user_id)

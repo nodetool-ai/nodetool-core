@@ -88,11 +88,7 @@ class RunEvent(DBModel):
     @classmethod
     async def create(
         cls,
-        run_id: str,
-        seq: int,
-        event_type: EventType,
-        payload: dict[str, Any],
-        node_id: str | None = None,
+        **kwargs,
     ):
         """
         Create and append a new event to the log.
@@ -111,15 +107,12 @@ class RunEvent(DBModel):
             This operation is idempotent. If an event with the same (run_id, seq)
             already exists, the existing event is returned without error.
         """
-        event = cls(
-            id=create_time_ordered_uuid(),
-            run_id=run_id,
-            seq=seq,
-            event_type=event_type,
-            event_time=datetime.now(),
-            node_id=node_id,
-            payload=payload,
-        )
+        if 'id' not in kwargs:
+            kwargs['id'] = create_time_ordered_uuid()
+        if 'event_time' not in kwargs:
+            kwargs['event_time'] = datetime.now()
+        
+        event = cls(**kwargs)
         await event.save()
         return event
 

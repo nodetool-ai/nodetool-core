@@ -42,7 +42,7 @@ class Thread(DBModel):
         return None
 
     @classmethod
-    async def create(cls, user_id: str, id: str | None = None, **kwargs) -> "Thread":
+    async def create(cls, **kwargs) -> "Thread":
         """Creates a new thread record in the database for a given user.
 
         Args:
@@ -53,8 +53,11 @@ class Thread(DBModel):
         Returns:
             The newly created and saved Thread instance.
         """
+        user_id = kwargs.pop('user_id')
+        thread_id = kwargs.pop('id', None)
+        
         return await super().create(
-            id=id or create_time_ordered_uuid(),
+            id=thread_id or create_time_ordered_uuid(),
             user_id=user_id,
             **kwargs,
         )

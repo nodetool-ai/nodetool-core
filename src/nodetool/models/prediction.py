@@ -64,27 +64,7 @@ class Prediction(DBModel):
     @classmethod
     async def create(
         cls,
-        user_id: str,
-        node_id: str,
-        provider: str,
-        model: str,
-        workflow_id: str | None = None,
-        status: str = "starting",
-        cost: float | None = None,
-        duration: float | None = None,
-        hardware: str | None = None,
-        created_at: datetime | None = None,
-        started_at: datetime | None = None,
-        completed_at: datetime | None = None,
-        input_tokens: int | None = None,
-        output_tokens: int | None = None,
-        total_tokens: int | None = None,
-        cached_tokens: int | None = None,
-        reasoning_tokens: int | None = None,
-        input_size: int | None = None,
-        output_size: int | None = None,
-        parameters: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        **kwargs,
     ):
         """Creates a new prediction record in the database.
 
@@ -114,33 +94,15 @@ class Prediction(DBModel):
         Returns:
             The newly created and saved Prediction instance.
         """
+        created_at = kwargs.get('created_at')
         if created_at is None:
             created_at = datetime.now()
+            kwargs['created_at'] = created_at
+        
+        if 'id' not in kwargs:
+            kwargs['id'] = create_time_ordered_uuid()
 
-        prediction = cls(
-            id=create_time_ordered_uuid(),
-            user_id=user_id,
-            node_id=node_id,
-            provider=provider,
-            model=model,
-            workflow_id=workflow_id,
-            status=status,
-            cost=cost,
-            duration=duration,
-            hardware=hardware,
-            created_at=created_at,
-            started_at=started_at,
-            completed_at=completed_at,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cached_tokens=cached_tokens,
-            reasoning_tokens=reasoning_tokens,
-            input_size=input_size,
-            output_size=output_size,
-            parameters=parameters,
-            metadata=metadata,
-        )
+        prediction = cls(**kwargs)
         await prediction.save()
         return prediction
 
