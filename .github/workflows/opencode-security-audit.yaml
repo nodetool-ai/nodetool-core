@@ -66,7 +66,6 @@ jobs:
             ## Step 1: Read Memory (Required)
             - `.github/opencode-memory/README.md`
             - `.github/opencode-memory/repository-context.md`
-            - `.github/opencode-memory/project-context.md`
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 

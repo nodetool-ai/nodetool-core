@@ -8,7 +8,6 @@ This directory contains persistent knowledge for OpenCode workflows in **nodetoo
 opencode-memory/
 ├── README.md              # This file - overview and usage
 ├── features.md            # List of user-facing features
-├── project-context.md     # Architecture and recent changes
 ├── build-test-lint.md     # Quality requirements and commands
 ├── tech-stack.md          # Key technologies and versions
 ├── repository-context.md  # Project structure and conventions
@@ -45,14 +44,13 @@ opencode-memory/
 1. Check `features.md` to avoid duplicate feature work
 2. List `issues/` to discover relevant topics, then read descriptive files
 3. List `insights/` to discover best practices, then read descriptive files
-4. Read `project-context.md` and `repository-context.md`
+4. Read `repository-context.md`
 
 ### After Completing Work
 
 1. New feature? → Add ONE line to `features.md`
 2. Solved a tricky issue? → Create a file in `issues/<topic>/`
 3. Discovered a best practice? → Create a file in `insights/<topic>/`
-4. Significant change? → Add entry to `project-context.md`
 
 ## File Naming Convention
 
