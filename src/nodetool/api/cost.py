@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -20,15 +20,15 @@ class PredictionResponse(BaseModel):
     node_id: str
     provider: str
     model: str
-    workflow_id: Optional[str] = None
-    cost: Optional[float] = None
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    total_tokens: Optional[int] = None
-    cached_tokens: Optional[int] = None
-    reasoning_tokens: Optional[int] = None
-    created_at: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
+    workflow_id: str | None = None
+    cost: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    created_at: str | None = None
+    metadata: dict[str, Any] | None = None
 
     class Config:
         from_attributes = True
@@ -37,8 +37,8 @@ class PredictionResponse(BaseModel):
 class PredictionListResponse(BaseModel):
     """Response model for a list of predictions."""
 
-    calls: List[PredictionResponse]
-    next_start_key: Optional[str] = None
+    calls: list[PredictionResponse]
+    next_start_key: str | None = None
 
 
 class AggregateResponse(BaseModel):
@@ -55,8 +55,8 @@ class UserAggregateResponse(AggregateResponse):
     """Response model for user-level aggregation."""
 
     user_id: str
-    provider: Optional[str] = None
-    model: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
 
 
 class ProviderAggregateResponse(AggregateResponse):
@@ -75,10 +75,10 @@ class ModelAggregateResponse(AggregateResponse):
 @router.get("/", response_model=PredictionListResponse)
 async def list_provider_calls(
     user_id: str = Depends(current_user),
-    provider: Optional[str] = Query(None, description="Filter by provider"),
-    model: Optional[str] = Query(None, description="Filter by model"),
+    provider: str | None = Query(None, description="Filter by provider"),
+    model: str | None = Query(None, description="Filter by model"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
-    start_key: Optional[str] = Query(None, description="Pagination start key"),
+    start_key: str | None = Query(None, description="Pagination start key"),
 ):
     """
     List provider API calls for the current user with optional filtering.
@@ -140,8 +140,8 @@ async def list_provider_calls(
 @router.get("/aggregate", response_model=UserAggregateResponse)
 async def aggregate_costs(
     user_id: str = Depends(current_user),
-    provider: Optional[str] = Query(None, description="Filter by provider"),
-    model: Optional[str] = Query(None, description="Filter by model"),
+    provider: str | None = Query(None, description="Filter by provider"),
+    model: str | None = Query(None, description="Filter by model"),
 ):
     """
     Get aggregated cost statistics for the current user.
@@ -173,7 +173,7 @@ async def aggregate_costs(
     return UserAggregateResponse(**aggregation)
 
 
-@router.get("/aggregate/by-provider", response_model=List[ProviderAggregateResponse])
+@router.get("/aggregate/by-provider", response_model=list[ProviderAggregateResponse])
 async def aggregate_costs_by_provider(
     user_id: str = Depends(current_user),
 ):
@@ -199,10 +199,10 @@ async def aggregate_costs_by_provider(
     return [ProviderAggregateResponse(**agg) for agg in aggregations]
 
 
-@router.get("/aggregate/by-model", response_model=List[ModelAggregateResponse])
+@router.get("/aggregate/by-model", response_model=list[ModelAggregateResponse])
 async def aggregate_costs_by_model(
     user_id: str = Depends(current_user),
-    provider: Optional[str] = Query(None, description="Filter by provider"),
+    provider: str | None = Query(None, description="Filter by provider"),
 ):
     """
     Get cost statistics aggregated by model for the current user.

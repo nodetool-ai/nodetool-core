@@ -188,20 +188,23 @@ async def setup_and_teardown(request, test_db_pool):
 
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    # Use ResourceScope with the shared test database
     async with ResourceScope(pool=test_db_pool):
         try:
             yield
         finally:
-            # Clean up JobExecutionManager after test
             try:
                 if JobExecutionManager._instance is not None:
-                    await JobExecutionManager.get_instance().shutdown()
+                    manager = JobExecutionManager.get_instance()
+                    for _job_id, job in list(manager._jobs.items()):
+                        try:
+                            await job.cleanup_resources()
+                        except Exception:
+                            pass
+                    manager._jobs.clear()
+                    await manager.shutdown()
             except Exception:
                 pass
 
-    # Truncate all tables to reset state for next test
-    # Retry truncation if it fails due to lock (can happen during parallel execution)
     max_truncate_retries = 3
     for attempt in range(max_truncate_retries):
         try:
@@ -212,7 +215,7 @@ async def setup_and_teardown(request, test_db_pool):
 
             if attempt < max_truncate_retries - 1:
                 logging.debug(f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}")
-                await asyncio.sleep(0.1 * (attempt + 1))  # Brief delay before retry
+                await asyncio.sleep(0.1 * (attempt + 1))
             else:
                 logging.warning(f"Error truncating tables after {max_truncate_retries} attempts: {e}")
 
