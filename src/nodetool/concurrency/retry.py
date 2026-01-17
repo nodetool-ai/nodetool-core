@@ -1,7 +1,7 @@
 import asyncio
 import random
+from typing import Any, Coroutine, TypeVar
 from collections.abc import Callable
-from typing import Any, TypeVar
 
 from nodetool.config.logging_config import get_logger
 
@@ -11,7 +11,7 @@ T = TypeVar("T")
 
 
 async def retry_with_exponential_backoff(
-    func: Callable[[], Any],
+    func: Callable[[], Coroutine[Any, Any, T]],
     max_retries: int = 3,
     initial_delay: float = 1.0,
     max_delay: float = 60.0,
@@ -58,7 +58,6 @@ async def retry_with_exponential_backoff(
     if max_retries < -1:
         raise ValueError("max_retries must be -1 (unlimited) or >= 0")
 
-    last_exception: Exception | None = None
     delay = initial_delay
     attempt = 0
 
@@ -66,8 +65,6 @@ async def retry_with_exponential_backoff(
         try:
             return await func()
         except retryable_exceptions as e:
-            last_exception = e
-
             if max_retries != -1 and attempt >= max_retries:
                 log.error(
                     f"Operation failed after {max_retries} retries: {e}",
@@ -86,8 +83,6 @@ async def retry_with_exponential_backoff(
 
             delay = min(delay * exponential_base, max_delay)
             attempt += 1
-
-    raise last_exception  # type: ignore[return-value]
 
 
 class RetryPolicy:
@@ -134,15 +129,15 @@ class RetryPolicy:
             retryable_exceptions: Exception types that are retryable.
             retryable_predicate: Custom function to determine if an exception is retryable.
         """
-        self.max_retries = max_retries
-        self.initial_delay = initial_delay
-        self.max_delay = max_delay
-        self.exponential_base = exponential_base
-        self.jitter = jitter
-        self.retryable_exceptions = retryable_exceptions
-        self.retryable_predicate = retryable_predicate
+        self.max_retries: int = max_retries
+        self.initial_delay: float = initial_delay
+        self.max_delay: float = max_delay
+        self.exponential_base: float = exponential_base
+        self.jitter: bool = jitter
+        self.retryable_exceptions: tuple[type[Exception], ...] = retryable_exceptions
+        self.retryable_predicate: Callable[[Exception], bool] | None = retryable_predicate
 
-    async def execute(self, func: Callable[[], Any]) -> Any:
+    async def execute(self, func: Callable[[], Coroutine[Any, Any, T]]) -> T:
         """Execute a function with this retry policy."""
         return await retry_with_exponential_backoff(
             func=func,
@@ -154,7 +149,7 @@ class RetryPolicy:
             retryable_exceptions=self.retryable_exceptions,
         )
 
-    def __call__(self, func: Callable[[], Any]) -> Callable[[], Any]:
+    def __call__(self, func: Callable[[], Coroutine[Any, Any, T]]) -> Callable[[], Coroutine[Any, Any, T]]:
         """
         Use as a decorator for async functions.
 
@@ -166,7 +161,7 @@ class RetryPolicy:
         import functools
 
         @functools.wraps(func)
-        async def wrapper() -> Any:
+        async def wrapper() -> T:
             return await self.execute(func)
 
         return wrapper

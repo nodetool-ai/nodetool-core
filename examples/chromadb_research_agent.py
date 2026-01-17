@@ -19,7 +19,6 @@ from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaIndexTool,
 )
-from nodetool.agents.tools.pdf_tools import ConvertPDFToMarkdownTool
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )

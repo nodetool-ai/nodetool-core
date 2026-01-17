@@ -1,3 +1,5 @@
+- **2026-01-15**: Fixed unused imports and deprecated typing in examples and scripts
+- **2026-01-15**: Improved type annotations in `retry.py` - added class attribute types, fixed generic return types, removed unreachable code
 - **2026-01-15**: Fixed type annotations across multiple files - Added explicit type arguments to generic types (`dict[str, Any]`, `list[Any]`), added None checks for `workspace_dir` and `step.id`, and added `LogUpdate` to async generator return type.
 - **2026-01-16**: Removed 40+ unused imports from source files to improve code quality and reduce import overhead.
 - **2026-01-16**: Simplified nested if statements in `model_tools.py`, `job.py`, and `search_nodes.py` to reduce complexity.
