@@ -77,20 +77,20 @@ async def create_image_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     import PIL.Image
 
     # Read the image from the input BytesIO object
-    image = PIL.Image.open(input_io)
-    input_io.seek(0)
+    with PIL.Image.open(input_io) as image:
+        input_io.seek(0)
 
-    # Resize the image to the specified width and height
-    image.thumbnail((width, height))
+        # Resize the image to the specified width and height
+        image.thumbnail((width, height))
 
-    # Create a new BytesIO object to store the thumbnail image
-    output_io = BytesIO()
-    image.convert("RGB").save(output_io, format="JPEG")
+        # Create a new BytesIO object to store the thumbnail image
+        output_io = BytesIO()
+        image.convert("RGB").save(output_io, format="JPEG")
 
-    # Reset the BytesIO object to the beginning
-    output_io.seek(0)
+        # Reset the BytesIO object to the beginning
+        output_io.seek(0)
 
-    return output_io
+        return output_io
 
 
 async def create_video_thumbnail(input_io: IO, width: int, height: int) -> BytesIO:
