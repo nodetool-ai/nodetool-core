@@ -36,21 +36,21 @@ pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group(name="job_executi
 @pytest.fixture
 async def cleanup_jobs():
     """Cleanup jobs after each test."""
-    yield
     manager = JobExecutionManager.get_instance()
-
-    jobs_to_cleanup = list(manager._jobs.items())
-    for job_id, job in jobs_to_cleanup:
+    initial_jobs = set(manager._jobs.keys())
+    yield
+    jobs_to_cleanup = [jid for jid in manager._jobs if jid not in initial_jobs]
+    for job_id in jobs_to_cleanup:
         try:
-            if not job.is_completed():
+            job = manager._jobs.get(job_id)
+            if job and not job.is_completed():
                 await job.cancel()
-            await job.cleanup_resources()
-        except Exception as e:
-            print(f"Error cleaning up job {job_id}: {e}")
-
-    manager._jobs.clear()
-
-    await asyncio.sleep(0.5)
+            if job:
+                await job.cleanup_resources()
+        except Exception:
+            pass
+    for job_id in jobs_to_cleanup:
+        manager._jobs.pop(job_id, None)
 
 
 @pytest.fixture

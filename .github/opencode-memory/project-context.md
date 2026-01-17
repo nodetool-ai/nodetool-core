@@ -1,6 +1,8 @@
 - **2026-01-17**: Added circuit breaker utilities (`CircuitBreaker`, `MultiCircuitBreaker`, `CircuitBreakerConfig`) in `src/nodetool/concurrency/circuit_breaker.py` for preventing cascading failures in distributed systems with three states (closed, open, half-open) and configurable thresholds.
 - **2026-01-17**: Added rate limiting utilities (`AsyncTokenBucket`, `AsyncRateLimiter`) in `src/nodetool/concurrency/rate_limit.py` for controlling operation rates using the token bucket algorithm.
 - **2026-01-16**: Fixed deprecated `datetime.utcnow()` usage in `src/nodetool/migrations/runner.py` by replacing with `datetime.now(UTC)` for Python 3.11+ compatibility.
+- **2026-01-17**: Added `AsyncLock` class in `src/nodetool/concurrency/async_lock.py` for exclusive resource access with timeout support, complementing `AsyncSemaphore` for cases where only one task should access a resource at a time.
+- **2026-01-16**: Added rate limiting utilities (`AsyncTokenBucket`, `AsyncRateLimiter`) in `src/nodetool/concurrency/rate_limit.py` for controlling operation rates using the token bucket algorithm.
 - **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.
 - **2026-01-12**: Initialized structured OpenCode memory layout.
 - **2026-01-12**: Fixed type safety in `chat_sse_runner.py` - Changed `_create_openai_error_chunk` to use typed `Choice` and `ChoiceDelta` objects instead of raw dict unpacking.
