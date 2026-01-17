@@ -1,6 +1,7 @@
 import asyncio
 import random
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import Any, Coroutine, TypeVar
+from collections.abc import Callable
 
 from nodetool.config.logging_config import get_logger
 
