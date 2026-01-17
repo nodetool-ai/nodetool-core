@@ -42,7 +42,7 @@ class Thread(DBModel):
         return None
 
     @classmethod
-    async def create(cls, user_id: str, id: str | None = None, **kwargs) -> "Thread":
+    async def create(cls, user_id: str, id: str | None = None, **kwargs) -> "Thread":  # type: ignore[override]
         """Creates a new thread record in the database for a given user.
 
         Args:

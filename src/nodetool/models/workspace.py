@@ -87,7 +87,7 @@ class Workspace(DBModel):
         return workspace if workspace and workspace.user_id == user_id else None
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         user_id: str,
         name: str,
