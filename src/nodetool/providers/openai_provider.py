@@ -1028,9 +1028,8 @@ class OpenAIProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        json_schema: dict | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -1041,10 +1040,8 @@ class OpenAIProvider(BaseProvider):
             model: Target OpenAI model.
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
-            context_window: Maximum tokens considered for context.
-            json_schema: Optional response schema.
             response_format: Optional structured output format.
-            **kwargs: Additional OpenAI parameters such as temperature.
+            **kwargs: Additional OpenAI parameters such as temperature, json_schema, etc.
 
         Yields:
             Text ``Chunk`` items and ``ToolCall`` objects when the model
@@ -1052,8 +1049,12 @@ class OpenAIProvider(BaseProvider):
         """
         import json
 
+        # Extract optional parameters from kwargs
+        json_schema = kwargs.pop("json_schema", None)
+
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         if not messages:
             raise ValueError("messages must not be empty")
@@ -1066,7 +1067,7 @@ class OpenAIProvider(BaseProvider):
             "stream_options": {"include_usage": True},
         }
         if response_format is None:
-            response_format = kwargs.get("response_format")
+            response_format = kwargs.pop("response_format", None)
         if response_format is not None and json_schema is not None:
             raise ValueError("response_format and json_schema are mutually exclusive")
         if response_format is not None:
@@ -1093,9 +1094,9 @@ class OpenAIProvider(BaseProvider):
                 }
             log.debug("Added audio modalities to request")
 
-        if len(tools) > 0:
-            _kwargs["tools"] = self.format_tools(tools)
-            log.debug(f"Added {len(tools)} tools to request")
+        if len(tools_list) > 0:
+            _kwargs["tools"] = self.format_tools(tools_list)
+            log.debug(f"Added {len(tools_list)} tools to request")
 
         if model.startswith("o"):
             log.debug("Converting system messages for O-series model")
@@ -1220,13 +1221,8 @@ class OpenAIProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        json_schema: dict | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        presence_penalty: float | None = None,
-        frequency_penalty: float | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -1237,17 +1233,29 @@ class OpenAIProvider(BaseProvider):
             model: The model to use
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
-            context_window: The maximum number of tokens to consider for the context
             response_format: The format of the response
             **kwargs: Additional arguments to pass to the OpenAI API
+                - json_schema: Optional JSON schema for structured output
+                - temperature: Optional sampling temperature
+                - top_p: Optional nucleus sampling parameter
+                - presence_penalty: Optional presence penalty
+                - frequency_penalty: Optional frequency penalty
 
         Returns:
             A Message object containing the model's response
         """
         import json
 
+        # Extract optional parameters from kwargs
+        json_schema = kwargs.pop("json_schema", None)
+        temperature = kwargs.pop("temperature", None)
+        top_p = kwargs.pop("top_p", None)
+        presence_penalty = kwargs.pop("presence_penalty", None)
+        frequency_penalty = kwargs.pop("frequency_penalty", None)
+
         log.debug(f"Generating non-streaming message for model: {model}")
-        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         if not messages:
             raise ValueError("messages must not be empty")
@@ -1256,7 +1264,7 @@ class OpenAIProvider(BaseProvider):
             "max_completion_tokens": max_tokens,
         }
         if response_format is None:
-            response_format = kwargs.get("response_format")
+            response_format = kwargs.pop("response_format", None)
         if response_format is not None and json_schema is not None:
             raise ValueError("response_format and json_schema are mutually exclusive")
         if response_format is not None:
@@ -1298,9 +1306,9 @@ class OpenAIProvider(BaseProvider):
 
         self._log_api_request("chat", messages, **request_kwargs)
 
-        if len(tools) > 0:
-            request_kwargs["tools"] = self.format_tools(tools)
-            log.debug(f"Added {len(tools)} tools to request")
+        if len(tools_list) > 0:
+            request_kwargs["tools"] = self.format_tools(tools_list)
+            log.debug(f"Added {len(tools_list)} tools to request")
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
         openai_messages = [await self.convert_message(m) for m in messages]

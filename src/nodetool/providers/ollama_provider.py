@@ -483,7 +483,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         response_format: dict | None = None,
         **kwargs,
@@ -495,18 +495,20 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             messages: The conversation history
             model: The model to use
             tools: Optional tools to make available to the model
-            audio: Optional audio
+            max_tokens: Maximum tokens to generate
+            response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the Ollama API
 
         Yields:
             Chunk | ToolCall: Content chunks or tool calls
         """
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
-        self._log_api_request("chat_stream", messages, model=model, tools=tools, **kwargs)
+        tools_list = tools if tools is not None else []
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools_list)} tools")
+        self._log_api_request("chat_stream", messages, model=model, tools=tools_list, **kwargs)
 
         # Determine if we're using tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        use_tool_emulation = len(tools_list) > 0 and not self.has_tool_support(model)
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
@@ -514,7 +516,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             params = self._prepare_request_params(
                 messages,
                 model,
-                tools,
+                tools_list,
                 max_tokens=max_tokens,
                 **kwargs,
             )
@@ -570,7 +572,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Tool] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         response_format: dict | None = None,
         **kwargs,
@@ -582,6 +584,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             messages: The conversation history
             model: The model to use
             tools: Optional tools to make available to the model
+            max_tokens: Maximum tokens to generate
+            response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the Ollama API
 
 
@@ -589,11 +593,12 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             Message: The complete response message
         """
         log.debug(f"Generating complete message for model: {model}")
-        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
-        self._log_api_request("chat", messages, model=model, tools=tools, **kwargs)
+        tools_list = tools if tools is not None else []
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools_list)} tools")
+        self._log_api_request("chat", messages, model=model, tools=tools_list, **kwargs)
 
         # Determine if we're using tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        use_tool_emulation = len(tools_list) > 0 and not self.has_tool_support(model)
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
@@ -601,7 +606,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             params = self._prepare_request_params(
                 messages,
                 model,
-                tools,
+                tools_list,
                 response_format=response_format,
                 max_tokens=max_tokens,
             )

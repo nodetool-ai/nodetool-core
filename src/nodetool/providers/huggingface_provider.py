@@ -719,7 +719,7 @@ class HuggingFaceProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
         response_format: dict | None = None,
         **kwargs,
@@ -739,7 +739,8 @@ class HuggingFaceProvider(BaseProvider):
             A message returned by the provider.
         """
         log.debug(f"Generating message for model: {model}")
-        log.debug(f"Input: {len(messages)} messages, {len(tools)} tools, max_tokens: {max_tokens}")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Input: {len(messages)} messages, {len(tools_list)} tools, max_tokens: {max_tokens}")
 
         if len(messages) == 0:
             raise ValueError("Empty messsages")
@@ -905,7 +906,7 @@ class HuggingFaceProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         response_format: dict | None = None,
         **kwargs,
@@ -927,7 +928,8 @@ class HuggingFaceProvider(BaseProvider):
             Chunk objects with content and completion status or ToolCall objects
         """
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         # Convert messages to HuggingFace format
         log.debug("Converting messages to HuggingFace format")

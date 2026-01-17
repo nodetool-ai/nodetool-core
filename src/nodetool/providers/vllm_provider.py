@@ -191,7 +191,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -202,9 +201,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
             model: Model identifier to use for generation.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Maximum context window size.
             response_format: Optional response schema.
-            **kwargs: Additional OpenAI-compatible parameters.
+            **kwargs: Additional OpenAI-compatible parameters
+                - context_window: Maximum context window size.
 
         Yields:
             Chunk objects for text deltas and ToolCall entries when
@@ -213,6 +212,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
         Raises:
             ValueError: If messages is empty.
         """
+        # Extract optional parameters from kwargs
+        context_window = kwargs.pop("context_window", None)
+
         if not messages:
             raise ValueError("messages must not be empty")
 
@@ -317,7 +319,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -328,9 +329,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
             model: Model identifier to use for generation.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Maximum context window size.
             response_format: Optional response schema.
-            **kwargs: Additional OpenAI-compatible parameters.
+            **kwargs: Additional OpenAI-compatible parameters
+                - context_window: Maximum context window size.
 
         Returns:
             Final assistant Message with optional tool_calls.
@@ -338,6 +339,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
         Raises:
             ValueError: If messages is empty.
         """
+        # Extract optional parameters from kwargs
+        context_window = kwargs.pop("context_window", 128000)
+
         if not messages:
             raise ValueError("messages must not be empty")
 

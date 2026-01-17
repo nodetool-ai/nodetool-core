@@ -168,13 +168,8 @@ class CerebrasProvider(OpenAIProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        json_schema: dict | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        presence_penalty: float | None = None,
-        frequency_penalty: float | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -187,21 +182,29 @@ class CerebrasProvider(OpenAIProvider):
             model: The model to use
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
-            json_schema: Optional JSON schema for structured output
-            temperature: Optional sampling temperature
-            top_p: Optional nucleus sampling parameter
-            presence_penalty: Optional presence penalty
-            frequency_penalty: Optional frequency penalty
             response_format: The format of the response
             **kwargs: Additional arguments to pass to the API
+                - json_schema: Optional JSON schema for structured output
+                - temperature: Optional sampling temperature
+                - top_p: Optional nucleus sampling parameter
+                - presence_penalty: Optional presence penalty
+                - frequency_penalty: Optional frequency penalty
 
         Returns:
             A Message object containing the model's response
         """
         import json
 
+        # Extract optional parameters from kwargs
+        json_schema = kwargs.pop("json_schema", None)
+        temperature = kwargs.pop("temperature", None)
+        top_p = kwargs.pop("top_p", None)
+        presence_penalty = kwargs.pop("presence_penalty", None)
+        frequency_penalty = kwargs.pop("frequency_penalty", None)
+
         log.debug(f"Generating non-streaming message for model: {model}")
-        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         if not messages:
             raise ValueError("messages must not be empty")
@@ -236,9 +239,9 @@ class CerebrasProvider(OpenAIProvider):
 
         self._log_api_request("chat", messages, **request_kwargs)
 
-        if len(tools) > 0:
-            request_kwargs["tools"] = self.format_tools(tools)
-            log.debug(f"Added {len(tools)} tools to request")
+        if len(tools_list) > 0:
+            request_kwargs["tools"] = self.format_tools(tools_list)
+            log.debug(f"Added {len(tools_list)} tools to request")
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
         openai_messages = [await self.convert_message(m) for m in messages]
@@ -311,9 +314,9 @@ class CerebrasProvider(OpenAIProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        json_schema: dict | None = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
         """Stream assistant deltas and tool calls from Cerebras.
@@ -325,8 +328,8 @@ class CerebrasProvider(OpenAIProvider):
             model: Target model.
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
-            json_schema: Optional response schema.
-            **kwargs: Additional parameters such as temperature.
+            response_format: The format of the response
+            **kwargs: Additional parameters such as temperature, json_schema.
 
         Yields:
             Text ``Chunk`` items and ``ToolCall`` objects when the model
@@ -334,8 +337,12 @@ class CerebrasProvider(OpenAIProvider):
         """
         import json
 
+        # Extract optional parameters from kwargs
+        json_schema = kwargs.pop("json_schema", None)
+
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         if not messages:
             raise ValueError("messages must not be empty")
@@ -347,8 +354,8 @@ class CerebrasProvider(OpenAIProvider):
             "stream_options": {"include_usage": True},
         }
 
-        if "response_format" in kwargs and kwargs["response_format"] is not None:
-            _kwargs["response_format"] = kwargs["response_format"]
+        if response_format is not None:
+            _kwargs["response_format"] = response_format
         elif json_schema is not None:
             _kwargs["response_format"] = {
                 "type": "json_schema",
@@ -361,9 +368,9 @@ class CerebrasProvider(OpenAIProvider):
                 _kwargs[key] = kwargs[key]
         log.debug(f"Initial kwargs: {_kwargs}")
 
-        if len(tools) > 0:
-            _kwargs["tools"] = self.format_tools(tools)
-            log.debug(f"Added {len(tools)} tools to request")
+        if len(tools_list) > 0:
+            _kwargs["tools"] = self.format_tools(tools_list)
+            log.debug(f"Added {len(tools_list)} tools to request")
 
         self._log_api_request(
             "chat_stream",

@@ -105,7 +105,7 @@ class FakeProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         response_format: dict | None = None,
         **kwargs,
@@ -119,7 +119,7 @@ class FakeProvider(BaseProvider):
         self.call_count += 1
         self.last_messages = messages
         self.last_model = model
-        self.last_tools = tools
+        self.last_tools = tools if tools is not None else []
         self.last_kwargs = kwargs
 
         response = self.get_response(messages, model)
@@ -137,7 +137,7 @@ class FakeProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
         response_format: dict | None = None,
         **kwargs,
@@ -151,7 +151,7 @@ class FakeProvider(BaseProvider):
         self.call_count += 1
         self.last_messages = messages
         self.last_model = model
-        self.last_tools = tools
+        self.last_tools = tools if tools is not None else []
         self.last_kwargs = kwargs
 
         response = self.get_response(messages, model)

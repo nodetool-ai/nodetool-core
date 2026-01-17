@@ -354,8 +354,10 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Prepared {len(history)} messages for API call")
         return history
 
-    def _format_tools(self, tools: Sequence[Any]) -> ToolListUnion:
+    def _format_tools(self, tools: Sequence[Any] | None) -> ToolListUnion | None:
         """Convert NodeTool objects to Gemini Tool format."""
+        if not tools:
+            return None
         log.debug(f"Formatting {len(tools)} tools for Gemini API")
         result = []
 
@@ -368,7 +370,7 @@ class GeminiProvider(BaseProvider):
             )
             result.append(Tool(function_declarations=[function_declaration]))
         log.debug(f"Formatted {len(result)} tools")
-        return result
+        return result if result else None
 
     def _default_serializer(self, obj: Any) -> dict:
         """Serialize Pydantic models to dict."""
@@ -455,7 +457,7 @@ class GeminiProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
         response_format: dict | None = None,
         **kwargs,
@@ -535,7 +537,6 @@ class GeminiProvider(BaseProvider):
             role="assistant",
             content=content,
             tool_calls=tool_calls,
-            output_files=output_files if output_files else None,
         )
 
     @staticmethod
@@ -565,13 +566,15 @@ class GeminiProvider(BaseProvider):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
         response_format: dict | None = None,
-        audio: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall | MessageFile]:
         """Stream response from Gemini for the given messages with code execution support."""
+        # Extract audio parameter from kwargs if present
+        audio = kwargs.pop("audio", None)
+        
         log.debug(f"Starting streaming generation with model: {model}")
         log.debug(f"Streaming messages count: {len(messages)}")
 
@@ -1332,6 +1335,7 @@ class GeminiProvider(BaseProvider):
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
         node_id: str | None = None,
+        **kwargs: Any,
     ) -> bytes:
         """Generate a video from an input image using Gemini Veo models.
 

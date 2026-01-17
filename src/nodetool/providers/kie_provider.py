@@ -899,6 +899,7 @@ class KieProvider(BaseProvider):
         timeout_s: int | None = None,
         context: Any = None,
         node_id: str | None = None,
+        **kwargs: Any,
     ) -> bytes:
         """Generate a video from an image using Kie.ai image-to-video models.
 
@@ -908,6 +909,7 @@ class KieProvider(BaseProvider):
             timeout_s: Optional timeout in seconds
             context: Processing context for asset handling
             node_id: Optional node ID for tracking
+            **kwargs: Additional provider-specific parameters
 
         Returns:
             Raw video bytes

@@ -163,9 +163,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Tool] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -176,15 +175,19 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             model: The model to use
             tools: Optional tools to make available to the model
             max_tokens: Maximum tokens to generate
-            context_window: Optional context window override
             response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the LM Studio API
+                - context_window: Optional context window override
 
         Returns:
             Message: The complete response message
         """
+        # Extract optional parameters from kwargs
+        context_window = kwargs.pop("context_window", None)
+
         log.debug(f"Generating complete message for model: {model}")
-        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         client = self._create_client()
 
@@ -200,8 +203,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         }
 
         # Add tools if provided
-        if tools:
-            params["tools"] = self.format_tools(tools)
+        if tools_list:
+            params["tools"] = self.format_tools(tools_list)
 
         # Add response format if provided
         if response_format:
@@ -251,9 +254,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Tool] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 8192,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -264,15 +266,19 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             model: The model to use
             tools: Optional tools to make available to the model
             max_tokens: Maximum tokens to generate
-            context_window: Optional context window override
             response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the LM Studio API
+                - context_window: Optional context window override
 
         Yields:
             Chunk | ToolCall: Content chunks or tool calls
         """
+        # Extract optional parameters from kwargs
+        context_window = kwargs.pop("context_window", None)
+
         log.debug(f"Starting streaming generation for model: {model}")
-        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+        tools_list = tools if tools is not None else []
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools_list)} tools")
 
         client = self._create_client()
 
@@ -288,8 +294,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         }
 
         # Add tools if provided
-        if tools:
-            params["tools"] = self.format_tools(tools)
+        if tools_list:
+            params["tools"] = self.format_tools(tools_list)
 
         # Add response format if provided
         if response_format:

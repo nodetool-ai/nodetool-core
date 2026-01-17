@@ -380,7 +380,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 1024,
         response_format: dict | None = None,
         **kwargs,
@@ -400,7 +400,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             the model requests tool execution.
         """
         # Determine if we need tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        tools_list = tools if tools is not None else []
+        use_tool_emulation = len(tools_list) > 0 and not self.has_tool_support(model)
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
@@ -413,11 +414,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if response_format is not None:
             _kwargs["response_format"] = response_format
         # Only add tools if native support is available
-        if len(tools) > 0 and not use_tool_emulation:
-            _kwargs["tools"] = self.format_tools(tools)
+        if len(tools_list) > 0 and not use_tool_emulation:
+            _kwargs["tools"] = self.format_tools(tools_list)
 
         # Normalize messages to satisfy llama.cpp alternation constraints
-        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
+        messages_normalized = self._normalize_messages_for_llama(messages, tools_list, use_tool_emulation)
         # llama.cpp is sensitive to unsupported fields; pass only necessary ones
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
@@ -514,7 +515,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
+        tools: Sequence[Any] | None = None,
         max_tokens: int = 1024,
         response_format: dict | None = None,
         **kwargs,
@@ -533,7 +534,8 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             Final assistant ``Message`` with optional ``tool_calls``.
         """
         # Determine if we need tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        tools_list = tools if tools is not None else []
+        use_tool_emulation = len(tools_list) > 0 and not self.has_tool_support(model)
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
@@ -545,13 +547,13 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if response_format is not None:
             _kwargs["response_format"] = response_format
         # Only add tools if native support is available
-        if len(tools) > 0 and not use_tool_emulation:
-            _kwargs["tools"] = self.format_tools(tools)
+        if len(tools_list) > 0 and not use_tool_emulation:
+            _kwargs["tools"] = self.format_tools(tools_list)
         # Pass through additional sampling/params
         if kwargs:
             _kwargs.update(kwargs)
 
-        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
+        messages_normalized = self._normalize_messages_for_llama(messages, tools_list, use_tool_emulation)
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
         # Count prompt tokens before sending
@@ -560,7 +562,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         # Debug: print the processed messages
         # print("DEBUG: Normalized messages:", [{"role": m.role, "content": m.content} for m in messages_normalized])
         # print("DEBUG: OpenAI messages:", openai_messages)
-        # print("DEBUG: Tools:", len(tools) if tools else 0)
+        # print("DEBUG: Tools:", len(tools_list) if tools_list else 0)
 
         self._log_api_request("chat", messages_normalized, model=model, **_kwargs)
 

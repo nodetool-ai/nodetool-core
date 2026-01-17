@@ -202,7 +202,7 @@ class ComfyLocalProvider(BaseProvider):
 
     async def image_to_image(
         self,
-        image_bytes: bytes,
+        image: bytes,
         params: ImageToImageParams,
         timeout_s: int | None = None,
         context=None,
@@ -212,7 +212,7 @@ class ComfyLocalProvider(BaseProvider):
             "ComfyLocal.image_to_image called: model_id=%s prompt_len=%d bytes=%d",
             getattr(params.model, "id", ""),
             len(params.prompt) if isinstance(params.prompt, str) else -1,
-            len(image_bytes) if isinstance(image_bytes, bytes | bytearray) else -1,
+            len(image) if isinstance(image, bytes | bytearray) else -1,
         )
 
         ckpt = params.model.id
@@ -229,7 +229,7 @@ class ComfyLocalProvider(BaseProvider):
         scheduler = params.scheduler or "normal"
 
         image_name = f"nodetool_comfy_input_{uuid.uuid4().hex}.png"
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        image_b64 = base64.b64encode(image).decode("utf-8")
         upload_payload = [{"name": image_name, "image": f"data:image/png;base64,{image_b64}"}]
 
         upload_result = await asyncio.to_thread(upload_images, upload_payload)
