@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+import aiofiles
 import httpx
 
 if TYPE_CHECKING:
@@ -1102,7 +1103,8 @@ class ProcessingContext:
         if url_parsed.scheme == "" and not url.startswith("data:"):
             local_path = Path(url).expanduser()
             if local_path.exists():
-                return open(local_path, "rb")
+                content = await asyncio.to_thread(local_path.read_bytes)
+                return BytesIO(content)
 
         if url_parsed.scheme == "data":
             fname, data = url.split(",", 1)
@@ -1140,7 +1142,8 @@ class ProcessingContext:
                 if not resolved_path.exists():
                     raise FileNotFoundError(f"No such file or directory: '{resolved_path}'")
 
-                return open(resolved_path, "rb")
+                content = await asyncio.to_thread(resolved_path.read_bytes)
+                return BytesIO(content)
             except Exception as e:
                 raise FileNotFoundError(f"Failed to access file: {e}") from e
 
@@ -2055,8 +2058,9 @@ class ProcessingContext:
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
-            with open(temp.name, "rb") as f:
-                ref = await self.video_from_io(f)
+            temp.seek(0)
+            content = await asyncio.to_thread(temp.read)
+            ref = await self.video_from_bytes(content, name=name, parent_id=parent_id)
             ref.metadata = metadata
             return ref
 
