@@ -111,8 +111,8 @@ async def test_populate_mock_data():
     assert result["collections"] >= 0
     
     # Verify data exists in database
-    threads = await Thread.query(limit=10)
-    assert len(threads[0]) > 0
+    threads, _ = await Thread.query(limit=10)
+    assert len(threads) > 0
     
-    workflows = await Workflow.query(limit=10)
-    assert len(workflows[0]) > 0
+    workflows, _ = await Workflow.query(limit=10)
+    assert len(workflows) > 0
