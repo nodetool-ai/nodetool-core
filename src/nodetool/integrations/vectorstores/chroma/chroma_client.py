@@ -197,6 +197,7 @@ def get_all_collections() -> List[chromadb.Collection]:
         List[Collection]: List of ChromaDB collections with appropriate embedding functions
     """
     from nodetool.integrations.vectorstores.chroma.provider_embedding_function import (
+        DEFAULT_SENTENCE_TRANSFORMER_MODEL,
         get_provider_embedding_function,
     )
 
@@ -206,8 +207,9 @@ def get_all_collections() -> List[chromadb.Collection]:
     result = []
 
     for collection in collections:
-        model = collection.metadata.get("embedding_model") if collection.metadata else None
-        provider = collection.metadata.get("embedding_provider") if collection.metadata else None
+        metadata = collection.metadata or {}
+        model = metadata.get("embedding_model")
+        provider = metadata.get("embedding_provider")
 
         if model:
             log.debug(f"Getting embedding function for collection '{collection.name}' with model '{model}'")
@@ -218,7 +220,7 @@ def get_all_collections() -> List[chromadb.Collection]:
         else:
             log.debug(f"No embedding model specified for collection '{collection.name}', using SentenceTransformer")
             embedding_function = SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2",
+                model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
             )
 
         result.append(

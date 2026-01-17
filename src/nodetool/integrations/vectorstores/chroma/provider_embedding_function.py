@@ -6,6 +6,7 @@ allowing collections to use OpenAI, Ollama, or other provider APIs for embedding
 """
 
 import asyncio
+import concurrent.futures
 from typing import List
 
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
@@ -15,6 +16,13 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Provider
 
 log = get_logger(__name__)
+
+# Module-level thread pool for running async code in sync contexts
+# This avoids creating a new ThreadPoolExecutor for each embedding call
+_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="embedding-")
+
+# Default fallback model for SentenceTransformer
+DEFAULT_SENTENCE_TRANSFORMER_MODEL = "all-MiniLM-L6-v2"
 
 
 class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
@@ -81,19 +89,16 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
 
         if loop is not None and loop.is_running():
             # We're in an async context but need to run sync
-            # Use asyncio.to_thread or create a new event loop in a thread
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run,
-                    provider.generate_embedding(
-                        text=list(input),
-                        model=self._model,
-                        **self._kwargs,
-                    ),
-                )
-                embeddings = future.result()
+            # Use the module-level thread pool to avoid overhead of creating new threads
+            future = _THREAD_POOL.submit(
+                asyncio.run,
+                provider.generate_embedding(
+                    text=list(input),
+                    model=self._model,
+                    **self._kwargs,
+                ),
+            )
+            embeddings = future.result()
         else:
             # We're not in an async context, run directly
             embeddings = asyncio.run(
@@ -184,4 +189,4 @@ def get_provider_embedding_function(
         f"Could not determine provider for embedding model '{embedding_model}'. "
         "Falling back to SentenceTransformer."
     )
-    return SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    return SentenceTransformerEmbeddingFunction(model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL)
