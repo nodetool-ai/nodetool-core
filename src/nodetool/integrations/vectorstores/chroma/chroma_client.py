@@ -25,9 +25,6 @@ from urllib.parse import urlparse
 
 import chromadb
 from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
-from chromadb.utils.embedding_functions.ollama_embedding_function import (
-    OllamaEmbeddingFunction,
-)
 from chromadb.utils.embedding_functions.sentence_transformer_embedding_function import (
     SentenceTransformerEmbeddingFunction,
 )
@@ -193,30 +190,33 @@ def get_all_collections() -> List[chromadb.Collection]:
     Get all collections from the ChromaDB instance.
     Automatically handles embedding model selection for each collection.
 
+    Uses the provider-based embedding functions when a provider is available,
+    falling back to SentenceTransformer for local embeddings.
+
     Returns:
         List[Collection]: List of ChromaDB collections with appropriate embedding functions
     """
+    from nodetool.integrations.vectorstores.chroma.provider_embedding_function import (
+        get_provider_embedding_function,
+    )
+
     client = get_chroma_client()
     collections = client.list_collections()
 
-    ollama_url = Environment.get("OLLAMA_API_URL")
     result = []
 
     for collection in collections:
-        model = collection.metadata.get("embedding_model")
-        print(model)
+        model = collection.metadata.get("embedding_model") if collection.metadata else None
+        provider = collection.metadata.get("embedding_provider") if collection.metadata else None
+
         if model:
-            embedding_function = OllamaEmbeddingFunction(
-                url=f"{ollama_url}/api/embeddings", model_name=model, timeout=300
+            log.debug(f"Getting embedding function for collection '{collection.name}' with model '{model}'")
+            embedding_function = get_provider_embedding_function(
+                embedding_model=model,
+                provider=provider,
             )
-            try:
-                embedding_function(["test"])
-            except Exception as e:
-                log.error(f"Failed to connect or use Ollama model '{model}' for collection '{collection.name}': {e}")
-                raise ValueError(
-                    f"Ollama model '{model}' for collection '{collection.name}' not available at {ollama_url}. Error: {e}"
-                ) from e
         else:
+            log.debug(f"No embedding model specified for collection '{collection.name}', using SentenceTransformer")
             embedding_function = SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2",
             )
