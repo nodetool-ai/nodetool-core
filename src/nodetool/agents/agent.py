@@ -23,7 +23,7 @@ import sys
 import tempfile
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nodetool.agents.base_agent import BaseAgent
 from nodetool.agents.task_executor import TaskExecutor
@@ -34,6 +34,7 @@ from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Chunk,
+    Step,
     Task,
     ToolCall,
 )
@@ -618,12 +619,14 @@ class Agent(BaseAgent):
                 )
                 span.add_event("planning_started")
 
+                assert context.workspace_dir is not None, "workspace_dir is required for TaskPlanner"
+                task_planner_workspace_dir = cast("str", context.workspace_dir)
                 task_planner_instance = TaskPlanner(
                     provider=self.provider,
                     model=self.planning_model,
                     reasoning_model=self.reasoning_model,
                     objective=self.objective,
-                    workspace_dir=context.workspace_dir,
+                    workspace_dir=task_planner_workspace_dir,
                     execution_tools=tools,
                     inputs=self.inputs,
                     output_schema=self.output_schema,
@@ -704,8 +707,9 @@ class Agent(BaseAgent):
                     if isinstance(item, ToolCall):
                         yield item
                     elif isinstance(item, StepResult):
+                        step_id = getattr(item.step, "id", "unknown") if item.step is not None else "unknown"
                         log.debug(
-                            f"Agent: Received StepResult for step {item.step.id}. is_task_result={item.is_task_result}"
+                            f"Agent: Received StepResult for step {step_id}. is_task_result={item.is_task_result}"
                         )
                         if item.is_task_result:
                             log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")

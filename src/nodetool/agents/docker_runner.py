@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import get_tool_by_name
@@ -10,7 +11,7 @@ from nodetool.providers import get_provider
 from nodetool.workflows.processing_context import ProcessingContext
 
 
-async def _run(cfg: dict) -> None:
+async def _run(cfg: dict[str, Any]) -> None:
     provider = await get_provider(Provider[cfg["provider"]])
     tools = []
     for name in cfg.get("tools", []):
