@@ -793,7 +793,7 @@ class MockProvider(BaseProvider):
         else:
             raise IndexError("MockProvider has run out of predefined responses.")
 
-    async def get_available_models(  # type: ignore[override]self) -> List[LanguageModel]:
+    async def get_available_models(self) -> List[LanguageModel]:  # type: ignore[override]
         """Mock provider has no models."""
         return []
 
