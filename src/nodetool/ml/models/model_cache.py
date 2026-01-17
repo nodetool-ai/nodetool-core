@@ -31,6 +31,8 @@ class CacheJSONEncoder(json.JSONEncoder):
             return {"__datetime__": o.isoformat()}
         if isinstance(o, set):
             return {"__set__": list(o)}
+        if hasattr(o, "model_dump"):
+            return {"__pydantic__": {"__model__": type(o).__name__, "__data__": o.model_dump(mode="json")}}
         try:
             return super().default(o)
         except TypeError:
@@ -46,6 +48,19 @@ def _decode_cache_obj(obj: Any) -> Any:
             return datetime.fromisoformat(obj["__datetime__"])
         if "__set__" in obj and len(obj) == 1:
             return set(obj["__set__"])
+        if "__pydantic__" in obj:
+            data = obj["__pydantic__"]
+            if isinstance(data, dict) and "__model__" in data:
+                model_name = data["__model__"]
+                model_data = data["__data__"]
+                try:
+                    from nodetool.types.model import UnifiedModel
+
+                    if model_name == "UnifiedModel":
+                        return UnifiedModel(**model_data)
+                except ImportError:
+                    pass
+            return data
     return obj
 
 
@@ -176,7 +191,3 @@ class ModelCache:
         for cache_file in self.cache_dir.glob("*.cache"):
             cache_file.unlink(missing_ok=True)
         log.info("Model cache cleared")
-
-
-# Global cache instance
-_model_cache = ModelCache()

@@ -31,7 +31,8 @@
 - `src/nodetool/agents/tools/openai_tools.py`
 - `src/nodetool/agents/tools/tool_registry.py`
 - `src/nodetool/agents/tools/workflow_tool.py`
-- `src/nodetool/api/admin_secrets.py`
+- `src/nodetool/api/cost.py`
+- `src/nodetool/api/debug.py`
 
 **Impact**:
 - Improved code readability with modern Python syntax
