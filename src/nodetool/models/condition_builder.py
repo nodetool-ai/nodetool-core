@@ -133,11 +133,11 @@ class Field:
 
     # --- Operator Overloads ---
 
-    def __eq__(self, value: Any | Variable) -> "ConditionBuilder":
+    def __eq__(self, value: Any | Variable) -> "ConditionBuilder":  # type: ignore[override]
         """Overloads the '==' operator to create an 'equals' condition."""
         return self.equals(value)
 
-    def __ne__(self, value: Any | Variable) -> "ConditionBuilder":
+    def __ne__(self, value: Any | Variable) -> "ConditionBuilder":  # type: ignore[override]
         """Overloads the '!=' operator to create a 'not equals' condition."""
         return self.not_equals(value)
 

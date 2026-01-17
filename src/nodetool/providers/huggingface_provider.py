@@ -1284,7 +1284,7 @@ class HuggingFaceProvider(BaseProvider):
                 negative_prompt=params.negative_prompt or None,
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
-                target_size={  # pyright: ignore[reportArgumentType]
+                target_size={  # type: ignore[arg-type]
                     "width": params.target_width,
                     "height": params.target_height,
                 }

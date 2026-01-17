@@ -68,8 +68,8 @@ def _make_node_class(name: str, cacheable: bool) -> type[BaseNode]:
 # ---------------------------------------------------------------------------
 
 _calendar_mod = ModuleType("nodetool.nodes.apple.calendar")
-_calendar_mod.CreateCalendarEvent = _make_node_class("CreateCalendarEvent", False)
-_calendar_mod.ListCalendarEvents = _make_node_class("ListCalendarEvents", False)
+setattr(_calendar_mod, "CreateCalendarEvent", _make_node_class("CreateCalendarEvent", False))
+setattr(_calendar_mod, "ListCalendarEvents", _make_node_class("ListCalendarEvents", False))
 _sys.modules[_calendar_mod.__name__] = _calendar_mod
 calendar = _calendar_mod  # re-export
 
@@ -79,9 +79,9 @@ calendar = _calendar_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _notes_mod = ModuleType("nodetool.nodes.apple.notes")
-_notes_mod.escape_for_applescript = escape_for_applescript
-_notes_mod.CreateNote = _make_node_class("CreateNote", False)
-_notes_mod.ReadNotes = _make_node_class("ReadNotes", False)
+setattr(_notes_mod, "escape_for_applescript", escape_for_applescript)
+setattr(_notes_mod, "CreateNote", _make_node_class("CreateNote", False))
+setattr(_notes_mod, "ReadNotes", _make_node_class("ReadNotes", False))
 _sys.modules[_notes_mod.__name__] = _notes_mod
 notes = _notes_mod  # re-export
 
@@ -91,7 +91,7 @@ notes = _notes_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _messages_mod = ModuleType("nodetool.nodes.apple.messages")
-_messages_mod.SendMessage = _make_node_class("SendMessage", False)
+setattr(_messages_mod, "SendMessage", _make_node_class("SendMessage", False))
 _sys.modules[_messages_mod.__name__] = _messages_mod
 messages = _messages_mod  # re-export
 
@@ -101,7 +101,7 @@ messages = _messages_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _speech_mod = ModuleType("nodetool.nodes.apple.speech")
-_speech_mod.SayText = _make_node_class("SayText", False)
+setattr(_speech_mod, "SayText", _make_node_class("SayText", False))
 _sys.modules[_speech_mod.__name__] = _speech_mod
 speech = _speech_mod  # re-export
 
@@ -111,6 +111,6 @@ speech = _speech_mod  # re-export
 # ---------------------------------------------------------------------------
 
 _dictionary_mod = ModuleType("nodetool.nodes.apple.dictionary")
-_dictionary_mod.SearchDictionary = _make_node_class("SearchDictionary", True)
+setattr(_dictionary_mod, "SearchDictionary", _make_node_class("SearchDictionary", True))
 _sys.modules[_dictionary_mod.__name__] = _dictionary_mod
 dictionary = _dictionary_mod  # re-export

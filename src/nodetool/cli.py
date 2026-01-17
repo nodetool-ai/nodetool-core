@@ -2445,8 +2445,8 @@ def deploy_show(name: str):
         elif isinstance(deployment, RunPodDeployment):
             content.append("[bold]RunPod Configuration:[/]")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  Template ID: {deployment.template_id or 'Not set'}")
-            content.append(f"  Endpoint ID: {deployment.endpoint_id or 'Not set'}")
+            content.append(f"  Template ID: {deployment.state.template_id or 'Not set'}")
+            content.append(f"  Endpoint ID: {deployment.state.endpoint_id or 'Not set'}")
             content.append("")
 
             if state and state.get("pod_id"):
@@ -2458,9 +2458,9 @@ def deploy_show(name: str):
             content.append(f"  Project: {deployment.project_id}")
             content.append(f"  Region: {deployment.region}")
             content.append(f"  Service: {deployment.service_name}")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  CPU: {deployment.cpu}")
-            content.append(f"  Memory: {deployment.memory}")
+            content.append(f"  Image: {deployment.image.full_name}")
+            content.append(f"  CPU: {deployment.resources.cpu}")
+            content.append(f"  Memory: {deployment.resources.memory}")
             content.append("")
 
         # Current state
@@ -2548,8 +2548,12 @@ def deploy_add(name: str, deployment_type: str):
         ContainerConfig,
         DeploymentConfig,
         GCPDeployment,
+        GCPImageConfig,
+        GCPResourceConfig,
         ImageConfig,
         RunPodDeployment,
+        RunPodImageConfig,
+        RunPodState,
         SelfHostedDeployment,
         SSHConfig,
         get_deployment_config_path,
@@ -2630,10 +2634,14 @@ def deploy_add(name: str, deployment_type: str):
             template_id = click.prompt("Template ID (optional)", type=str, default="")
             endpoint_id = click.prompt("Endpoint ID (optional)", type=str, default="")
 
-            deployment = RunPodDeployment(
-                image=ImageConfig(name=image_name, tag=image_tag),
+            # Create deployment with state containing template_id and endpoint_id
+            state = RunPodState(
                 template_id=template_id or None,
                 endpoint_id=endpoint_id or None,
+            )
+            deployment = RunPodDeployment(
+                image=RunPodImageConfig(name=image_name, tag=image_tag),
+                state=state,
             )
 
         elif deployment_type == "gcp":
@@ -2641,7 +2649,7 @@ def deploy_add(name: str, deployment_type: str):
             project_id = click.prompt("GCP Project ID", type=str)
             region = click.prompt("Region", type=str, default="us-central1")
             service_name = click.prompt("Service name", type=str, default=name)
-            image_name = click.prompt("Docker image name", type=str)
+            image_repository = click.prompt("Docker image repository (e.g., project/repo/image)", type=str)
             image_tag = click.prompt("Docker image tag", type=str, default="latest")
 
             # Optional resource configuration
@@ -2657,9 +2665,8 @@ def deploy_add(name: str, deployment_type: str):
                 project_id=project_id,
                 region=region,
                 service_name=service_name,
-                image=ImageConfig(name=image_name, tag=image_tag),
-                cpu=cpu,
-                memory=memory,
+                image=GCPImageConfig(repository=image_repository, tag=image_tag),
+                resources=GCPResourceConfig(cpu=cpu, memory=memory),
             )
 
         # Add deployment to config

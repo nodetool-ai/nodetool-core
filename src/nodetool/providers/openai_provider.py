@@ -19,6 +19,7 @@ from typing import (
     AsyncIterator,
     Dict,
     List,
+    Literal,
     Sequence,
     cast,
 )
@@ -258,7 +259,7 @@ class OpenAIProvider(BaseProvider):
 
         # OpenAI TTS models and their voices
         # Source: https://platform.openai.com/docs/guides/text-to-speech
-        tts_models_config = [
+        tts_models_config: list[dict[str, Any]] = [
             {
                 "id": "tts-1",
                 "name": "TTS 1",
@@ -921,13 +922,13 @@ class OpenAIProvider(BaseProvider):
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=message.role,
+                role=cast(Literal["tool"], message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
             log.debug("Converting system message")
-            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
+            return ChatCompletionSystemMessageParam(role=cast(Literal["system"], message.role), content=str(message.content))
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
@@ -936,11 +937,11 @@ class OpenAIProvider(BaseProvider):
                 log.debug("User message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=message.role, content=content)
+            return ChatCompletionUserMessageParam(role=cast(Literal["user"], message.role), content=content)
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             tool_calls = [
@@ -961,7 +962,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Assistant message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 content = None
                 log.debug("Assistant message has no content")
@@ -969,13 +970,13 @@ class OpenAIProvider(BaseProvider):
             if len(tool_calls) == 0:
                 log.debug("Returning assistant message without tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast(Literal["assistant"], message.role),
                     content=content,  # type: ignore
                 )
             else:
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast(Literal["assistant"], message.role),
                     content=content,  # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )

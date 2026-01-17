@@ -778,7 +778,7 @@ async def main():
     print(f"{'=' * 60}\n")
 
     # Define a JSON schema for structured output
-    response_format = {
+    response_format: dict[str, Any] = {
         "type": "json_schema",
         "json_schema": {
             "name": "calculation_result",

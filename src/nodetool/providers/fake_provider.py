@@ -103,33 +103,23 @@ class FakeProvider(BaseProvider):
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Return fake language models for testing."""
+        from nodetool.metadata.types import Provider
+
         return [
             LanguageModel(
                 id="fake-model-v1",
                 name="Fake Model v1",
-                provider="fake",
-                max_context_length=8192,
-                supports_streaming=True,
-                supports_tools=True,
-                supports_vision=True,
+                provider=Provider.Fake,
             ),
             LanguageModel(
                 id="fake-model-v2",
                 name="Fake Model v2",
-                provider="fake",
-                max_context_length=16384,
-                supports_streaming=True,
-                supports_tools=True,
-                supports_vision=True,
+                provider=Provider.Fake,
             ),
             LanguageModel(
                 id="fake-fast-model",
                 name="Fake Fast Model",
-                provider="fake",
-                max_context_length=4096,
-                supports_streaming=True,
-                supports_tools=False,
-                supports_vision=False,
+                provider=Provider.Fake,
             ),
         ]
 

@@ -13,7 +13,7 @@ import base64
 import io
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Sequence, cast
+from typing import TYPE_CHECKING, Any, Literal, Sequence, cast
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -157,21 +157,21 @@ class OpenAICompat:
                 content = json.dumps(message.content)
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=message.role,
+                role=cast(Literal["tool"], message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
-            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
+            return ChatCompletionSystemMessageParam(role=cast(Literal["system"], message.role), content=str(message.content))
         elif message.role == "user":
             assert message.content is not None, "User message content must not be None"
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=message.role, content=content)
+            return ChatCompletionUserMessageParam(role=cast(Literal["user"], message.role), content=content)
         elif message.role == "ipython":
             # Handle ipython role used by Llama models for tool results
             if isinstance(message.content, BaseModel):
@@ -202,12 +202,12 @@ class OpenAICompat:
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 content = None
 
             result = ChatCompletionAssistantMessageParam(
-                role=message.role,
+                role=cast(Literal["assistant"], message.role),
                 content=content,  # type: ignore
             )
             if tool_calls:  # Only add tool_calls if they exist

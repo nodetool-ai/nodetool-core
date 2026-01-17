@@ -93,7 +93,7 @@ class _Index:
 
 
 def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
-    paths = [Path(src)] if isinstance(src, str | os.PathLike) else [Path(p) for p in src]
+    paths = [Path(src)] if isinstance(src, (str, os.PathLike)) else [Path(p) for p in src]  # type: ignore[arg-type]
 
     out: List[Path] = []
     for path in paths:

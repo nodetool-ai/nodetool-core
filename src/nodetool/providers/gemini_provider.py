@@ -535,7 +535,7 @@ class GeminiProvider(BaseProvider):
             role="assistant",
             content=content,
             tool_calls=tool_calls,
-            output_files=output_files if output_files else None,
+            output_files=output_files if output_files else None,  # type: ignore[call-arg]
         )
 
     @staticmethod

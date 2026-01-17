@@ -387,8 +387,8 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
 
-    app.add_middleware(  # type: ignore[arg-type]
-        CORSMiddleware,
+    app.add_middleware(
+        CORSMiddleware,  # type: ignore[arg-type]
         allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
