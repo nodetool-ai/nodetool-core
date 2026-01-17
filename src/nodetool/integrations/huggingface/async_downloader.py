@@ -3,7 +3,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 from urllib.parse import urlparse
 
 import httpx

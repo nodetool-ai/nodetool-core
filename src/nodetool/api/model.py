@@ -3,7 +3,6 @@
 import asyncio
 import os
 from fnmatch import fnmatch
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -42,11 +41,9 @@ from nodetool.metadata.types import (
     ImageModel,
     LanguageModel,
     LlamaModel,
-    ModelFile,
     Provider,
     TTSModel,
     VideoModel,
-    comfy_model_to_folder,
 )
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.tts_models import get_all_tts_models

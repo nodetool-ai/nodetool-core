@@ -26,13 +26,12 @@ import asyncio
 import json
 import time
 from contextlib import suppress
-from typing import AsyncGenerator, Iterable, List, Optional, Union, cast
+from typing import AsyncGenerator, Iterable, List, Optional, cast
 
 from openai.types.chat import (
     ChatCompletionChunk,
     ChatCompletionContentPartParam,
     ChatCompletionMessageParam,
-    ChatCompletionMessageToolCallParam,
     ChatCompletionToolParam,
 )
 from openai.types.chat.chat_completion_assistant_message_param import (

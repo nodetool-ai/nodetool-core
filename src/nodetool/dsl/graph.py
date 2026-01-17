@@ -8,13 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nodetool.config.logging_config import get_logger
 from nodetool.dsl.handles import DynamicOutputsProxy, OutputHandle, OutputsProxy
-from nodetool.metadata.types import OutputSlot, ToolCall
+from nodetool.metadata.types import OutputSlot
 from nodetool.runtime.resources import ResourceScope
 from nodetool.types.api_graph import Graph, Node
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import (
-    AssetOutputMode,
     ProcessingContext,
 )
 from nodetool.workflows.run_job_request import RunJobRequest

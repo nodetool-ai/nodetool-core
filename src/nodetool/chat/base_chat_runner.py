@@ -16,7 +16,6 @@ Subclasses should implement transport-specific methods for:
 """
 
 import asyncio
-import logging
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
