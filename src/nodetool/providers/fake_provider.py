@@ -101,7 +101,7 @@ class FakeProvider(BaseProvider):
         """Fake provider has no models."""
         return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -133,7 +133,7 @@ class FakeProvider(BaseProvider):
         else:  # Text response
             return Message(role="assistant", content=[MessageTextContent(text=response)])
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

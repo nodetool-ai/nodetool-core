@@ -293,14 +293,14 @@ def create_proxy_app(config: ProxyConfig) -> FastAPI:
 
     proxy = AsyncReverseProxy(config)
 
-    @app.on_event("startup")
+    @app.on_event("startup")  # type: ignore[deprecated]
     async def startup():
         await proxy.startup()
         # Ensure ACME webroot exists
         acme_root = Path(config.global_.acme_webroot)
         acme_root.mkdir(parents=True, exist_ok=True)
 
-    @app.on_event("shutdown")
+    @app.on_event("shutdown")  # type: ignore[deprecated]
     async def shutdown():
         await proxy.shutdown()
 

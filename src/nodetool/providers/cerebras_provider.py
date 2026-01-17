@@ -164,7 +164,7 @@ class CerebrasProvider(OpenAIProvider):
             log.error(f"Error fetching Cerebras models: {e}")
             return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -307,7 +307,7 @@ class CerebrasProvider(OpenAIProvider):
 
         return message
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

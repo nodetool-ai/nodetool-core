@@ -376,7 +376,7 @@ class OpenRouterProvider(OpenAIProvider):
             log.error(f"OpenRouter text-to-image generation failed: {exc}")
             raise RuntimeError(f"OpenRouter text-to-image generation failed: {exc}") from exc
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -549,7 +549,7 @@ class OpenRouterProvider(OpenAIProvider):
 
         return message
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

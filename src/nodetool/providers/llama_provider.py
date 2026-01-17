@@ -376,7 +376,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         return models
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -510,7 +510,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                             tc["function"]["arguments"] = ""
                         tc["function"]["arguments"] += tool_call.function.arguments
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -632,7 +632,7 @@ if __name__ == "__main__":
     async def _run_all():
         from nodetool.agents.tools.math_tools import CalculatorTool
 
-        provider = LlamaProvider()
+        provider = LlamaProvider({})  # type: ignore[call-arg]
         context = ProcessingContext()
 
         # =====================================================================

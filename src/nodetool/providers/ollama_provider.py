@@ -479,7 +479,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Prepared request params with keys: {list(params.keys())}")
         return params
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -566,7 +566,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     log.debug(f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}")
                     break
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
