@@ -13,8 +13,6 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-import PIL.Image
-
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     MessageImageContent,
@@ -143,7 +141,7 @@ async def generate_mock_messages(
                 MessageTextContent(text=random.choice(SAMPLE_ASSISTANT_RESPONSES))
             ]
             role = "assistant"
-            provider = Provider.fake
+            provider = Provider.Fake
             model = "fake-model-v1"
         
         message = await Message.create(
@@ -168,7 +166,6 @@ async def generate_mock_workflows(
     workflows = []
     
     for i in range(count):
-        workflow_id = create_time_ordered_uuid()
         name = random.choice(SAMPLE_WORKFLOW_NAMES)
         description = random.choice(SAMPLE_WORKFLOW_DESCRIPTIONS)
         
@@ -192,7 +189,6 @@ async def generate_mock_workflows(
         }
         
         workflow = await Workflow.create(
-            id=workflow_id,
             user_id=user_id,
             name=name,
             description=description,
@@ -201,7 +197,7 @@ async def generate_mock_workflows(
             access="private",
         )
         workflows.append(workflow)
-        log.info(f"Created mock workflow: {name} ({workflow_id})")
+        log.info(f"Created mock workflow: {name} ({workflow.id})")
     
     return workflows
 
@@ -224,34 +220,39 @@ async def generate_mock_assets(
     log.info(f"Created mock folder: {folder.name} ({folder.id})")
     
     # Create some image assets
-    for i in range(count):
-        asset_id = create_time_ordered_uuid()
-        asset_name = f"mock_image_{i}.png"
+    try:
+        from PIL import Image
         
-        # Create a simple test image
-        img = PIL.Image.new("RGB", (100, 100), color=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
-        img_bytes = io.BytesIO()
-        img.save(img_bytes, format="PNG")
-        img_bytes.seek(0)
+        for i in range(count):
+            asset_id = create_time_ordered_uuid()
+            asset_name = f"mock_image_{i}.png"
+            
+            # Create a simple test image
+            img = Image.new("RGB", (100, 100), color=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
+            
+            # Generate file name for storage
+            file_name = f"{user_id}/{asset_id}.png"
+            
+            # Upload to storage
+            await storage.upload(file_name, img_bytes)
+            
+            # Create asset record
+            asset = await Asset.create(
+                id=asset_id,
+                user_id=user_id,
+                name=asset_name,
+                content_type="image/png",
+                file_name=file_name,
+                parent_id=folder.id,
+            )
+            assets.append(asset)
         
-        # Generate file name for storage
-        file_name = f"{user_id}/{asset_id}.png"
-        
-        # Upload to storage
-        await storage.upload(file_name, img_bytes)
-        
-        # Create asset record
-        asset = await Asset.create(
-            id=asset_id,
-            user_id=user_id,
-            name=asset_name,
-            content_type="image/png",
-            file_name=file_name,
-            parent_id=folder.id,
-        )
-        assets.append(asset)
-    
-    log.info(f"Created {count} mock image assets")
+        log.info(f"Created {count} mock image assets")
+    except ImportError:
+        log.warning("PIL not available, skipping image asset generation")
     
     # Create some text file assets
     for i in range(3):
