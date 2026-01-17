@@ -337,10 +337,9 @@ class TestIsAssignable:
 
     def test_edge_cases(self):
         """Test edge cases and error conditions."""
-        # Test None values with enum
+        # Test None values with enum - should return False instead of raising
         enum_type = TypeMetadata(type="enum", values=None)
-        with pytest.raises(AssertionError):
-            is_assignable(enum_type, "value")
+        assert is_assignable(enum_type, "value") is False
 
         # Test unknown type in NameToType
         unknown_type = TypeMetadata(type="unknown_type")

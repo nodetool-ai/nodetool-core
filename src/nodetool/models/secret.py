@@ -42,7 +42,7 @@ class Secret(DBModel):
         self.updated_at = datetime.now()
 
     @classmethod
-    async def create(cls, user_id: str, key: str, value: str, description: Optional[str] = None, **kwargs):
+    async def create(cls, user_id: str, key: str, value: str, description: Optional[str] = None, **kwargs):  # type: ignore[override]
         """
         Create a new encrypted secret.
 

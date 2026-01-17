@@ -38,7 +38,7 @@ class Message(DBModel):
     workflow_target: str | None = DBField(default=None)
 
     @classmethod
-    async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
+    async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":  # type: ignore[override]
         if ("instructions" in kwargs and "content" not in kwargs) or (
             "instructions" in kwargs and kwargs.get("content") is None
         ):

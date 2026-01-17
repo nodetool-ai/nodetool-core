@@ -159,7 +159,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             log.error(f"Error fetching LM Studio models: {e}")
             return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -247,7 +247,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             log.error(f"Error generating message from LM Studio: {e}")
             raise
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

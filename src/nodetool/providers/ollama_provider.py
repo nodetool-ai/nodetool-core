@@ -25,6 +25,7 @@ from nodetool.media.image.image_utils import (
     image_ref_to_base64_jpeg,
 )
 from nodetool.metadata.types import (
+    EmbeddingModel,
     ImageRef,
     LanguageModel,
     Message,
@@ -479,7 +480,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Prepared request params with keys: {list(params.keys())}")
         return params
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -566,7 +567,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     log.debug(f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}")
                     break
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -678,6 +679,89 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Processed image to base64 string of length: {len(result)}")
         return result
 
+    async def get_available_embedding_models(self) -> List[EmbeddingModel]:
+        """
+        Get available Ollama embedding models.
+
+        Returns embedding models available in the local Ollama installation.
+        Returns an empty list if Ollama is not available.
+
+        Returns:
+            List of EmbeddingModel instances for Ollama
+        """
+        try:
+            async with get_ollama_client(self.api_url) as client:
+                models_response = await client.list()
+                models: List[EmbeddingModel] = []
+                # The Ollama client returns an object with a .models attribute
+                for model in models_response.models:
+                    model_name = model.model
+                    if model_name:
+                        # Ollama models can be used for both chat and embeddings
+                        # Common embedding models include nomic-embed-text, all-minilm, etc.
+                        models.append(
+                            EmbeddingModel(
+                                id=model_name,
+                                name=model_name,
+                                provider=Provider.Ollama,
+                                dimensions=0,  # Dimensions vary by model
+                            )
+                        )
+                log.debug(f"Fetched {len(models)} Ollama embedding models")
+                return models
+        except Exception as e:
+            log.error(f"Error fetching Ollama embedding models: {e}")
+            return []
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using Ollama's embed API.
+
+        Uses the embed endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "nomic-embed-text", "all-minilm")
+            **kwargs: Additional parameters (unused, for compatibility)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            async with get_ollama_client(self.api_url) as client:
+                # Ollama's embed endpoint can handle multiple inputs
+                response = await client.embed(model=model, input=texts)
+
+                # Extract embeddings from response
+                # The response has an 'embeddings' field with the list of vectors
+                embeddings = response.embeddings
+
+                log.debug(
+                    f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}"
+                )
+
+                return embeddings
+
+        except Exception as e:
+            log.error(f"Ollama embedding generation failed: {e}")
+            raise RuntimeError(f"Ollama embedding generation failed: {str(e)}") from e
+
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()
         is_context_error = (
@@ -778,7 +862,7 @@ async def main():
     print(f"{'=' * 60}\n")
 
     # Define a JSON schema for structured output
-    response_format = {
+    response_format: dict[str, Any] = {
         "type": "json_schema",
         "json_schema": {
             "name": "calculation_result",

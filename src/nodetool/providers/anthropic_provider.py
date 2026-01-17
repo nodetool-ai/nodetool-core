@@ -244,16 +244,19 @@ class AnthropicProvider(BaseProvider):
                 content = json.dumps(message.content)
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
-            return {  # type: ignore[return-value]
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": message.tool_call_id,
-                        "content": str(message.content),
-                    }
-                ],
-            }
+            return cast(
+                "MessageParam",
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": message.tool_call_id,
+                            "content": str(message.content),
+                        }
+                    ],
+                },
+            )
         elif message.role == "system":
             log.debug("Converting system message")
             return {  # type: ignore[return-value]
@@ -318,18 +321,21 @@ class AnthropicProvider(BaseProvider):
 
             if message.tool_calls:
                 log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
-                return {  # type: ignore[return-value]
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "name": tool_call.name,
-                            "id": tool_call.id,
-                            "input": tool_call.args,
-                        }
-                        for tool_call in message.tool_calls
-                    ],
-                }
+                return cast(
+                    "MessageParam",
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": tool_call.name,
+                                "id": tool_call.id,
+                                "input": tool_call.args,
+                            }
+                            for tool_call in message.tool_calls
+                        ],
+                    },
+                )
             elif isinstance(message.content, str):
                 log.debug("Assistant message has string content")
                 return {"role": "assistant", "content": message.content}  # type: ignore[return-value]
@@ -364,7 +370,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -463,7 +469,7 @@ class AnthropicProvider(BaseProvider):
         except anthropic.AnthropicError as exc:
             raise self._as_httpx_status_error(exc) from exc
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

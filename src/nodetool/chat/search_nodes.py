@@ -113,12 +113,10 @@ def search_nodes(
         output_types = [out.type for out in node_metadata.outputs if out.type]
         if node_metadata.namespace in exclude_namespaces:
             continue
-        if input_type:
-            if not any(type_matches(t, input_type) for t in input_types):
-                continue
-        if output_type:
-            if not any(type_matches(t, output_type) for t in output_types):
-                continue
+        if input_type and not any(type_matches(t, input_type) for t in input_types):
+            continue
+        if output_type and not any(type_matches(t, output_type) for t in output_types):
+            continue
         score = 0
         # Phrase match boost: reward sequences like "text.*to.*image" across title/name.
         max_phrase_len = 0

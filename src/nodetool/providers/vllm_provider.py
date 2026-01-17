@@ -185,7 +185,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         """
         return super().format_tools(tools)
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -311,7 +311,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     self._log_tool_call(tool_call)
                     yield tool_call
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

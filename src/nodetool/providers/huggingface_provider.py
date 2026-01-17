@@ -715,7 +715,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Formatted {len(formatted_tools)} tools")
         return formatted_tools
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -901,7 +901,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug("Returning generated message")
         return response_message
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1239,7 +1239,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace text-to-image generation failed: {e}")
             raise RuntimeError(f"HuggingFace text-to-image generation failed: {str(e)}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams
@@ -1284,7 +1284,7 @@ class HuggingFaceProvider(BaseProvider):
                 negative_prompt=params.negative_prompt or None,
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
-                target_size={  # pyright: ignore[reportArgumentType]
+                target_size={  # type: ignore[arg-type]
                     "width": params.target_width,
                     "height": params.target_height,
                 }

@@ -1,9 +1,9 @@
 import asyncio
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
@@ -39,8 +39,7 @@ class JobResponse(BaseModel):
     cost: Optional[float] = None
     run_state: Optional[RunStateResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BackgroundJobResponse(BaseModel):
@@ -354,7 +353,7 @@ async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
     Ensure job status reflects the background execution manager.
     Syncs completed/failed states from RunState and background manager.
     """
-    from nodetool.models.condition_builder import Field
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
 
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}
@@ -406,12 +405,11 @@ async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
                 run_state.error_message = run_state.error_message or bg_job.error
                 run_state.completed_at = datetime.now(UTC)
                 updates.append(run_state.save())
-        elif bg_job is not None and not bg_job.is_running():
-            if current_status in {"running", "scheduled"}:
-                run_state.status = "failed"
-                run_state.error_message = run_state.error_message or "Reconciled: execution handle stopped unexpectedly"
-                run_state.failed_at = datetime.now(UTC)
-                updates.append(run_state.save())
+        elif bg_job is not None and not bg_job.is_running() and current_status in {"running", "scheduled"}:
+            run_state.status = "failed"
+            run_state.error_message = run_state.error_message or "Reconciled: execution handle stopped unexpectedly"
+            run_state.failed_at = datetime.now(UTC)
+            updates.append(run_state.save())
 
     if updates:
         await asyncio.gather(*updates)

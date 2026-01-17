@@ -200,7 +200,7 @@ class ComfyLocalProvider(BaseProvider):
 
         return images[0] if images else b""
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image_bytes: bytes,
         params: ImageToImageParams,

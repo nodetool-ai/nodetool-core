@@ -1,6 +1,7 @@
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
 from .async_utils import AsyncSemaphore, gather_with_concurrency
+from .batching import batched_async_iterable, process_in_batches
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -28,7 +29,9 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "batched_async_iterable",
     "gather_with_concurrency",
+    "process_in_batches",
     "retry_with_exponential_backoff",
     "timeout",
     "with_timeout",

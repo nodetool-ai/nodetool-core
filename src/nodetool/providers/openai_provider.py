@@ -19,6 +19,7 @@ from typing import (
     AsyncIterator,
     Dict,
     List,
+    Literal,
     Sequence,
     cast,
 )
@@ -70,6 +71,7 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -258,7 +260,7 @@ class OpenAIProvider(BaseProvider):
 
         # OpenAI TTS models and their voices
         # Source: https://platform.openai.com/docs/guides/text-to-speech
-        tts_models_config = [
+        tts_models_config: list[dict[str, Any]] = [
             {
                 "id": "tts-1",
                 "name": "TTS 1",
@@ -921,13 +923,15 @@ class OpenAIProvider(BaseProvider):
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=message.role,
+                role=cast("Literal['tool']", message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
             log.debug("Converting system message")
-            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
+            return ChatCompletionSystemMessageParam(
+                role=cast("Literal['system']", message.role), content=str(message.content)
+            )
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
@@ -936,11 +940,11 @@ class OpenAIProvider(BaseProvider):
                 log.debug("User message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=message.role, content=content)
+            return ChatCompletionUserMessageParam(role=cast("Literal['user']", message.role), content=content)
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             tool_calls = [
@@ -961,7 +965,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Assistant message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 content = None
                 log.debug("Assistant message has no content")
@@ -969,13 +973,13 @@ class OpenAIProvider(BaseProvider):
             if len(tool_calls) == 0:
                 log.debug("Returning assistant message without tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                 )
             else:
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )
@@ -1024,7 +1028,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Formatted {len(formatted_tools)} tools total")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1216,7 +1220,7 @@ class OpenAIProvider(BaseProvider):
                     log.error("No tool call found in delta_tool_calls")
                     raise ValueError("No tool call found")
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1520,7 +1524,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"OpenAI text-to-image generation failed: {exc}")
             raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToImageParams,
@@ -1878,7 +1882,7 @@ class OpenAIProvider(BaseProvider):
             },
         )
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToVideoParams,
@@ -2156,6 +2160,114 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI ASR transcription failed: {e}")
             raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
+
+    async def get_available_embedding_models(self) -> List[EmbeddingModel]:
+        """
+        Get available OpenAI embedding models.
+
+        Returns embedding models available from OpenAI.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of EmbeddingModel instances for OpenAI
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty embedding model list")
+            return []
+
+        # OpenAI embedding models
+        # Source: https://platform.openai.com/docs/guides/embeddings
+        embedding_models_config = [
+            {
+                "id": "text-embedding-3-small",
+                "name": "Text Embedding 3 Small",
+                "dimensions": 1536,
+            },
+            {
+                "id": "text-embedding-3-large",
+                "name": "Text Embedding 3 Large",
+                "dimensions": 3072,
+            },
+            {
+                "id": "text-embedding-ada-002",
+                "name": "Text Embedding Ada 002",
+                "dimensions": 1536,
+            },
+        ]
+
+        models: List[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.OpenAI,
+                    dimensions=config["dimensions"],
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using OpenAI's Embeddings API.
+
+        Uses the embeddings endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "text-embedding-3-small", "text-embedding-3-large")
+            **kwargs: Additional parameters:
+                - dimensions: Optional output dimensions (for text-embedding-3-* models)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build API parameters
+            api_params: dict[str, Any] = {
+                "input": texts,
+                "model": model,
+            }
+
+            # Add optional dimensions parameter for text-embedding-3-* models
+            if kwargs.get("dimensions"):
+                api_params["dimensions"] = kwargs["dimensions"]
+
+            response = await client.embeddings.create(**api_params)
+
+            # Extract embeddings from response
+            embeddings = [data.embedding for data in response.data]
+
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}")
+
+            return embeddings
+
+        except Exception as e:
+            log.error(f"OpenAI embedding generation failed: {e}")
+            raise RuntimeError(f"OpenAI embedding generation failed: {str(e)}") from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Detect whether an exception represents a context window error.

@@ -86,7 +86,7 @@ class RunEvent(DBModel):
     payload: dict[str, Any] = DBField(default_factory=dict)
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         run_id: str,
         seq: int,

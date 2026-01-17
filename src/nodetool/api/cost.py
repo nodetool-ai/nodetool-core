@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
@@ -30,8 +30,7 @@ class PredictionResponse(BaseModel):
     created_at: str | None = None
     metadata: dict[str, Any] | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PredictionListResponse(BaseModel):

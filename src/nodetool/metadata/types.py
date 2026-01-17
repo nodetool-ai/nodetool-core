@@ -438,6 +438,7 @@ class Provider(str, enum.Enum):
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"
+    Fake = "fake"  # fake provider for testing
     HuggingFace = "huggingface"  # local hf models
     # Providers for HuggingFace Inference Providers
     HuggingFaceCohere = "huggingface_cohere"
@@ -608,6 +609,14 @@ class VideoModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+
+
+class EmbeddingModel(BaseType):
+    type: Literal["embedding_model"] = "embedding_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    dimensions: int = 0
 
 
 class LlamaModel(BaseType):

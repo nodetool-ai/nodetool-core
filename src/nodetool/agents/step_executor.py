@@ -393,6 +393,8 @@ def _validate_and_sanitize_schema(schema: Any, default_description: str = "Resul
 
 def _remove_think_tags(text: str | None) -> str:
     """Remove think tags from the text."""
+    if text is None:
+        return ""
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
@@ -552,7 +554,7 @@ class StepExecutor:
         # Flag to track which stage we're in - normal execution flow for all tasks
         self.in_conclusion_stage = False
 
-    def _render_prompt(self, template_string: str, context: dict) -> str:
+    def _render_prompt(self, template_string: str, context: dict[str, Any]) -> str:
         """Renders a prompt template using Jinja2."""
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
@@ -713,6 +715,9 @@ class StepExecutor:
 
         normalized_result = self._normalize_tool_result(result_payload)
 
+        if self.result_schema is None:
+            return True, None, normalized_result
+
         try:
             jsonschema_validate(normalized_result, self.result_schema)
             return True, None, normalized_result
@@ -852,7 +857,7 @@ class StepExecutor:
 
     async def execute(
         self,
-    ) -> AsyncGenerator[Chunk | ToolCall | TaskUpdate | StepResult, None]:
+    ) -> AsyncGenerator[Chunk | ToolCall | TaskUpdate | StepResult | LogUpdate, None]:
         """
         Runs a single step to completion using the LLM-driven execution loop.
 
@@ -1488,7 +1493,7 @@ class StepExecutor:
 
         raise ValueError(f"Tool '{tool_call.name}' not found")
 
-    async def _compress_tool_result(self, result_content: Any, tool_name: str, tool_args: dict) -> dict | str:
+    async def _compress_tool_result(self, result_content: Any, tool_name: str, tool_args: dict[str, Any]) -> dict | str:
         """
         Compresses large tool result content using an LLM call.
 

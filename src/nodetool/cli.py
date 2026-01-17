@@ -312,6 +312,11 @@ def mcp():
     is_flag=True,
     help="Enable verbose logging (DEBUG level) for detailed output.",
 )
+@click.option(
+    "--mock",
+    is_flag=True,
+    help="Start server with mock data for testing (pre-fills database with sample threads, messages, workflows, assets, and collections).",
+)
 def serve(
     host: str,
     port: int,
@@ -322,10 +327,13 @@ def serve(
     apps_folder: str | None = None,
     production: bool = False,
     verbose: bool = False,
+    mock: bool = False,
 ):
     """Run the FastAPI backend server for the NodeTool platform.
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
+
+    Use --mock to start with pre-filled test data for development and testing.
     """
     from nodetool.api.server import create_app, run_uvicorn_server
 
@@ -336,6 +344,11 @@ def serve(
         configure_logging(level="DEBUG")
         os.environ["LOG_LEVEL"] = "DEBUG"
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+    # Configure mock mode
+    if mock:
+        console.print("[yellow]🎭 Mock mode enabled - will populate database with test data[/]")
+        os.environ["NODETOOL_MOCK_MODE"] = "1"
 
     try:
         import comfy.cli_args  # type: ignore
@@ -424,7 +437,6 @@ def run(
     import os
     import sys
     import traceback
-    from typing import Any
 
     from nodetool.types.api_graph import Graph
     from nodetool.types.job import JobUpdate
@@ -2433,8 +2445,8 @@ def deploy_show(name: str):
         elif isinstance(deployment, RunPodDeployment):
             content.append("[bold]RunPod Configuration:[/]")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  Template ID: {deployment.template_id or 'Not set'}")
-            content.append(f"  Endpoint ID: {deployment.endpoint_id or 'Not set'}")
+            content.append(f"  Template ID: {deployment.state.template_id or 'Not set'}")
+            content.append(f"  Endpoint ID: {deployment.state.endpoint_id or 'Not set'}")
             content.append("")
 
             if state and state.get("pod_id"):
@@ -2446,9 +2458,9 @@ def deploy_show(name: str):
             content.append(f"  Project: {deployment.project_id}")
             content.append(f"  Region: {deployment.region}")
             content.append(f"  Service: {deployment.service_name}")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  CPU: {deployment.cpu}")
-            content.append(f"  Memory: {deployment.memory}")
+            content.append(f"  Image: {deployment.image.full_name}")
+            content.append(f"  CPU: {deployment.resources.cpu}")
+            content.append(f"  Memory: {deployment.resources.memory}")
             content.append("")
 
         # Current state
@@ -2536,8 +2548,12 @@ def deploy_add(name: str, deployment_type: str):
         ContainerConfig,
         DeploymentConfig,
         GCPDeployment,
+        GCPImageConfig,
+        GCPResourceConfig,
         ImageConfig,
         RunPodDeployment,
+        RunPodImageConfig,
+        RunPodState,
         SelfHostedDeployment,
         SSHConfig,
         get_deployment_config_path,
@@ -2615,13 +2631,12 @@ def deploy_add(name: str, deployment_type: str):
             console.print("[cyan]RunPod Configuration:[/]")
             image_name = click.prompt("Docker image name", type=str)
             image_tag = click.prompt("Docker image tag", type=str, default="latest")
-            template_id = click.prompt("Template ID (optional)", type=str, default="")
-            endpoint_id = click.prompt("Endpoint ID (optional)", type=str, default="")
+            registry = click.prompt("Docker registry", type=str, default="docker.io")
+
+            from nodetool.config.deployment import RunPodDeployment, RunPodImageConfig
 
             deployment = RunPodDeployment(
-                image=ImageConfig(name=image_name, tag=image_tag),
-                template_id=template_id or None,
-                endpoint_id=endpoint_id or None,
+                image=RunPodImageConfig(name=image_name, tag=image_tag, registry=registry),
             )
 
         elif deployment_type == "gcp":
@@ -2629,7 +2644,7 @@ def deploy_add(name: str, deployment_type: str):
             project_id = click.prompt("GCP Project ID", type=str)
             region = click.prompt("Region", type=str, default="us-central1")
             service_name = click.prompt("Service name", type=str, default=name)
-            image_name = click.prompt("Docker image name", type=str)
+            image_repository = click.prompt("Docker image repository (e.g., project/repo/image)", type=str)
             image_tag = click.prompt("Docker image tag", type=str, default="latest")
 
             # Optional resource configuration
@@ -2641,13 +2656,14 @@ def deploy_add(name: str, deployment_type: str):
                 cpu = click.prompt("CPU cores", type=str, default="4")
                 memory = click.prompt("Memory", type=str, default="16Gi")
 
+            from nodetool.config.deployment import GCPDeployment, GCPImageConfig, GCPResourceConfig
+
             deployment = GCPDeployment(
                 project_id=project_id,
                 region=region,
                 service_name=service_name,
-                image=ImageConfig(name=image_name, tag=image_tag),
-                cpu=cpu,
-                memory=memory,
+                image=GCPImageConfig(repository=image_repository, tag=image_tag),
+                resources=GCPResourceConfig(cpu=cpu, memory=memory),
             )
 
         # Add deployment to config

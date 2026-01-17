@@ -1,7 +1,5 @@
 import os
 import socket
-import tempfile
-import threading
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional

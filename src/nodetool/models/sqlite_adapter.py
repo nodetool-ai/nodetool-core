@@ -133,7 +133,7 @@ def convert_to_sqlite_format(value: Any, py_type: Type) -> int | float | str | b
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_to_sqlite_format(value, args[0])
         else:
@@ -173,7 +173,7 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_from_sqlite_format(value, args[0])
         else:
