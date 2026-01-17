@@ -276,7 +276,9 @@ class WorkflowVersion(DBModel):
             return 0
 
         for version_id in versions_to_delete:
-            await cls.delete(id=version_id)
+            version = await cls.find(version_id)
+            if version:
+                await version.delete()
 
         return len(versions_to_delete)
 
@@ -286,7 +288,10 @@ class WorkflowVersion(DBModel):
         Delete a specific version by ID.
         """
         try:
-            await cls.delete(id=version_id)
-            return True
+            version = await cls.find(version_id)
+            if version:
+                await version.delete()
+                return True
+            return False
         except Exception:
             return False
