@@ -1,4 +1,5 @@
 from .async_iterators import AsyncByteStream
+from .async_lock import AsyncLock
 from .async_utils import AsyncSemaphore, gather_with_concurrency
 from .circuit_breaker import (
     CircuitBreaker,
@@ -14,6 +15,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AsyncByteStream",
+    "AsyncLock",
     "AsyncRateLimiter",
     "AsyncSemaphore",
     "AsyncTokenBucket",
