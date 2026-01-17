@@ -62,6 +62,7 @@ class FakeProvider(BaseProvider):
         should_stream: bool = True,
         chunk_size: int = 10,
         custom_response_fn: (Callable[[Sequence[Message], str], str | list[ToolCall]] | None) = None,
+        secrets: dict[str, str] | None = None,
     ):
         """
         Initialize the FakeProvider.
@@ -73,8 +74,9 @@ class FakeProvider(BaseProvider):
             chunk_size: Number of characters per chunk when streaming text
             custom_response_fn: Optional function that takes (messages, model) and returns
                                either a string or list[ToolCall]
+            secrets: API secrets (not used by FakeProvider, but required by BaseProvider)
         """
-        super().__init__()
+        super().__init__(secrets=secrets)
         self.text_response = text_response
         self.tool_calls = tool_calls or []
         self.should_stream = should_stream
