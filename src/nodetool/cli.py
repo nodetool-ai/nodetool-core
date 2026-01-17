@@ -2432,8 +2432,8 @@ def deploy_show(name: str):
         elif isinstance(deployment, RunPodDeployment):
             content.append("[bold]RunPod Configuration:[/]")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  Template ID: {deployment.template_id or 'Not set'}")
-            content.append(f"  Endpoint ID: {deployment.endpoint_id or 'Not set'}")
+            content.append(f"  Template ID: {deployment.state.template_id or 'Not set'}")
+            content.append(f"  Endpoint ID: {deployment.state.endpoint_id or 'Not set'}")
             content.append("")
 
             if state and state.get("pod_id"):
@@ -2445,9 +2445,9 @@ def deploy_show(name: str):
             content.append(f"  Project: {deployment.project_id}")
             content.append(f"  Region: {deployment.region}")
             content.append(f"  Service: {deployment.service_name}")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  CPU: {deployment.cpu}")
-            content.append(f"  Memory: {deployment.memory}")
+            content.append(f"  Image: {deployment.image.full_name}")
+            content.append(f"  CPU: {deployment.resources.cpu}")
+            content.append(f"  Memory: {deployment.resources.memory}")
             content.append("")
 
         # Current state
@@ -2614,13 +2614,12 @@ def deploy_add(name: str, deployment_type: str):
             console.print("[cyan]RunPod Configuration:[/]")
             image_name = click.prompt("Docker image name", type=str)
             image_tag = click.prompt("Docker image tag", type=str, default="latest")
-            template_id = click.prompt("Template ID (optional)", type=str, default="")
-            endpoint_id = click.prompt("Endpoint ID (optional)", type=str, default="")
+            registry = click.prompt("Docker registry", type=str, default="docker.io")
+
+            from nodetool.config.deployment import RunPodDeployment, RunPodImageConfig
 
             deployment = RunPodDeployment(
-                image=ImageConfig(name=image_name, tag=image_tag),
-                template_id=template_id or None,
-                endpoint_id=endpoint_id or None,
+                image=RunPodImageConfig(name=image_name, tag=image_tag, registry=registry),
             )
 
         elif deployment_type == "gcp":
@@ -2640,13 +2639,14 @@ def deploy_add(name: str, deployment_type: str):
                 cpu = click.prompt("CPU cores", type=str, default="4")
                 memory = click.prompt("Memory", type=str, default="16Gi")
 
+            from nodetool.config.deployment import GCPDeployment, GCPImageConfig, GCPResourceConfig
+
             deployment = GCPDeployment(
                 project_id=project_id,
                 region=region,
                 service_name=service_name,
-                image=ImageConfig(name=image_name, tag=image_tag),
-                cpu=cpu,
-                memory=memory,
+                image=GCPImageConfig(repository=image_name, tag=image_tag),
+                resources=GCPResourceConfig(cpu=cpu, memory=memory),
             )
 
         # Add deployment to config
