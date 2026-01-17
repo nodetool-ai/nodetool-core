@@ -11,6 +11,7 @@ from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
 from nodetool.types.api_graph import Graph
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
@@ -328,9 +329,6 @@ async def test_threaded_job_completion_event(simple_workflow, cleanup_jobs):
             message = context.message_queue.get_nowait()
             checked_messages.append(message)
 
-            # Import JobUpdate to check message type
-            from nodetool.types.job import JobUpdate
-
             if isinstance(message, JobUpdate):
                 if message.job_id == job.job_id and message.status == "completed":
                     completion_event_found = True
@@ -382,9 +380,6 @@ async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
             try:
                 message = context.message_queue.get_nowait()
                 checked_messages.append(message)
-
-                # Import JobUpdate to check message type
-                from nodetool.types.job import JobUpdate
 
                 if isinstance(message, JobUpdate):
                     if message.job_id == job.job_id and message.status == "cancelled":
