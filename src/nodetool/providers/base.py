@@ -327,8 +327,6 @@ class BaseProvider:
 
     async def get_available_embedding_models(self) -> List[EmbeddingModel]:
         """Get a list of available embedding models for this provider.
-
-        This method should return all embedding models that are available for use with this provider.
         The implementation may check for API keys, local cache, or other requirements.
 
         Returns:

@@ -332,6 +332,7 @@ def serve(
     """Run the FastAPI backend server for the NodeTool platform.
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
+    Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
 
     Use --mock to start with pre-filled test data for development and testing.
     """
@@ -344,6 +345,11 @@ def serve(
         configure_logging(level="DEBUG")
         os.environ["LOG_LEVEL"] = "DEBUG"
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+    # Configure mock mode
+    if mock:
+        console.print("[yellow]🎭 Mock mode enabled - will populate database with test data[/]")
+        os.environ["NODETOOL_MOCK_MODE"] = "1"
 
     # Configure mock mode
     if mock:
@@ -2662,7 +2668,7 @@ def deploy_add(name: str, deployment_type: str):
                 project_id=project_id,
                 region=region,
                 service_name=service_name,
-                image=GCPImageConfig(repository=image_name, tag=image_tag),
+                image=GCPImageConfig(repository=image_repository, tag=image_tag),
                 resources=GCPResourceConfig(cpu=cpu, memory=memory),
             )
 
