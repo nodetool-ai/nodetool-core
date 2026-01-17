@@ -32,8 +32,6 @@ from nodetool.deploy.admin_operations import (
     download_ollama_model,
     scan_hf_cache,
 )
-from nodetool.indexing.ingestion import find_input_nodes
-from nodetool.indexing.service import index_file_to_collection
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
