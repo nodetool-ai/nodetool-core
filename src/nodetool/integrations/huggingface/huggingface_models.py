@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Callable, List, Sequence
+from typing import Any, List, Sequence
 
 from huggingface_hub import HfApi, ModelInfo
 
@@ -36,10 +36,7 @@ from nodetool.integrations.huggingface.artifact_inspector import (
     inspect_paths,
 )
 from nodetool.integrations.huggingface.async_downloader import async_hf_download
-from nodetool.integrations.huggingface.hf_fast_cache import (
-    DEFAULT_MODEL_INFO_CACHE_TTL,
-    HfFastCache,
-)
+from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -47,7 +44,6 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.runtime.resources import maybe_scope
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -630,7 +626,6 @@ async def fetch_model_readme(model_id: str) -> str | None:
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
-        hf_hub_download,
         try_to_load_from_cache,
     )
 
@@ -699,14 +694,6 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
     Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
     """
-    cache_key = f"model_info:{model_id}"
-    cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
-    if cached_result is not None:
-        log.debug("Cache hit for model info: %s", model_id)
-        if isinstance(cached_result, dict):
-            return _RecursiveNamespace(cached_result)  # type: ignore[return-value]
-        return cached_result
-
     token = await get_hf_token()
     api = HfApi(token=token) if token else HfApi()
 
@@ -720,12 +707,6 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
         log.debug("fetch_model_info: failed to fetch %s: %s", model_id, exc)
         return None
 
-    HF_FAST_CACHE.model_info_cache.set(
-        cache_key,
-        model_info,
-        DEFAULT_MODEL_INFO_CACHE_TTL,
-    )
-    log.debug("Cached model info for: %s", model_id)
     return model_info
 
 
@@ -915,15 +896,6 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
     """
 
-    cache_key = "cached_hf_models"
-    try:
-        cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
-    except Exception:
-        cached_result = None
-
-    if cached_result is not None:
-        return cached_result
-
     try:
         repo_list = await HF_FAST_CACHE.discover_repos("model")
     except Exception as exc:
@@ -940,15 +912,6 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
             recommended_models,
         )
         models.append(repo_model)
-
-    try:
-        HF_FAST_CACHE.model_info_cache.set(
-            cache_key,
-            models,
-            DEFAULT_MODEL_INFO_CACHE_TTL,
-        )
-    except Exception:
-        pass
 
     return models
 
@@ -1625,6 +1588,7 @@ async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
             repo_id = f"{org}/{repo}"
         else:
             # Fallback for unexpected format
+            repo = ""
             repo_id = ""
             filename = entry
 
@@ -1967,9 +1931,6 @@ async def delete_cached_hf_model(model_id: str) -> bool:
 
     shutil.rmtree(repo_root)
 
-    # Purge all HuggingFace caches after successful deletion
-    log.info("Purging HuggingFace model caches after model deletion")
-    HF_FAST_CACHE.model_info_cache.delete_pattern("cached_hf_*")
     await HF_FAST_CACHE.invalidate(model_id, repo_type="model")
     return True
 

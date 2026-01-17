@@ -6,7 +6,6 @@ from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvi
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 
 T = TypeVar("T")

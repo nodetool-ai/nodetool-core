@@ -100,13 +100,10 @@ class QueryModelsTool(Tool):
                         continue
 
             # Query filter
-            if query:
-                if (
-                    query not in m.id.lower()
-                    and query not in m.name.lower()
-                    and query not in (m.description or "").lower()
-                ):
-                    continue
+            if query and (
+                query not in m.id.lower() and query not in m.name.lower() and query not in (m.description or "").lower()
+            ):
+                continue
 
             filtered_models.append(m)
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.2-rc.24"
+version = "0.6.2-rc.26"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -45,6 +45,7 @@ dependencies = [
     "joblib",
     "jsonpath-ng>=1.7.0",
     "jsonschema",
+    "attrs>=23.2.0",
     "keyring>=25.5.0",
     "psutil>=6.1.0",
     "nvidia-ml-py>=13.580.65",

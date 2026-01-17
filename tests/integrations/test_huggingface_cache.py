@@ -455,9 +455,6 @@ class TestDeleteCachedHfModel:
             ) as mock_exists,
             patch("nodetool.integrations.huggingface.huggingface_models.shutil.rmtree") as mock_rmtree,
             patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.delete_pattern"
-            ) as mock_delete_pattern,
-            patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.invalidate",
                 new_callable=AsyncMock,
             ) as mock_invalidate,
@@ -468,7 +465,6 @@ class TestDeleteCachedHfModel:
         mock_repo_root.assert_awaited_once_with("org/repo", repo_type="model")
         mock_exists.assert_called_once_with("/fake/cache/models--org--repo")
         mock_rmtree.assert_called_once_with("/fake/cache/models--org--repo")
-        mock_delete_pattern.assert_called_once_with("cached_hf_*")
         mock_invalidate.assert_awaited_once_with("org/repo", repo_type="model")
 
     @pytest.mark.asyncio
@@ -626,27 +622,9 @@ class TestReadCachedHfModels:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
-                return_value=None,
-            ),
         ):
             result = await read_cached_hf_models()
-
         assert result == []
-
-    @pytest.mark.asyncio
-    async def test_read_cached_hf_models_uses_cache(self):
-        """Test that read_cached_hf_models uses cached results when available."""
-        mock_cached_models = [MagicMock(repo_id="org/repo")]
-
-        with patch(
-            "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
-            return_value=mock_cached_models,
-        ):
-            result = await read_cached_hf_models()
-
-        assert result == mock_cached_models
 
     @pytest.mark.asyncio
     async def test_read_cached_hf_models_calculates_size(self, tmp_path):
@@ -706,9 +684,6 @@ class TestReadCachedHfModels:
                 "nodetool.integrations.huggingface.huggingface_models._get_file_size",
                 side_effect=lambda p: p.stat().st_size if p.exists() else 0,
             ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.set",
-            ),
         ):
             result = await read_cached_hf_models()
 
@@ -720,10 +695,6 @@ class TestReadCachedHfModels:
     async def test_read_cached_hf_models_handles_exceptions(self):
         """Test that read_cached_hf_models handles exceptions gracefully."""
         with (
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.model_info_cache.get",
-                return_value=None,
-            ),
             patch(
                 "nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE.discover_repos",
                 new_callable=AsyncMock,

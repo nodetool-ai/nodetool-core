@@ -734,7 +734,7 @@ class GraphPlanner:
         self.graph: APIGraph | None = None
 
         # Cache for expensive operations
-        self._cached_node_metadata: list | None = None
+        self._cached_node_metadata: list[Any] | None = None
         self._cached_namespaces: set[str] | None = None
 
         logger.debug(f"GraphPlanner initialized for objective: {objective[:100]}...")
@@ -747,7 +747,7 @@ class GraphPlanner:
             [f"{out.name}:{out.type.type}" for out in self.output_schema],
         )
 
-    def _get_node_metadata(self) -> list:
+    def _get_node_metadata(self) -> list[Any]:
         """Get node metadata with caching."""
         logger.debug(f"_get_node_metadata called, cached: {self._cached_node_metadata is not None}")
         if self._cached_node_metadata is None:

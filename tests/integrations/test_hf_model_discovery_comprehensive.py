@@ -247,7 +247,6 @@ async def test_checkpoint_variant_detection(monkeypatch, tmp_path):
     monkeypatch.setenv("HF_HUB_CACHE", str(cache_root))
     fake_cache = HfFastCache(cache_dir=cache_root)
     monkeypatch.setattr(huggingface_models, "HF_FAST_CACHE", fake_cache)
-    fake_cache.model_info_cache.delete_pattern("cached_hf_*")
 
     # Test that we can find the checkpoint
     from nodetool.integrations.huggingface.huggingface_models import (

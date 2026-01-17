@@ -3,7 +3,6 @@
 import asyncio
 import os
 from fnmatch import fnmatch
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -42,11 +41,9 @@ from nodetool.metadata.types import (
     ImageModel,
     LanguageModel,
     LlamaModel,
-    ModelFile,
     Provider,
     TTSModel,
     VideoModel,
-    comfy_model_to_folder,
 )
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.tts_models import get_all_tts_models
@@ -75,7 +72,10 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     seen_ids = set()
     deduped_models = []
     for model in models:
-        model_id = (model.repo_id, model.path or "")
+        if isinstance(model, dict):
+            model_id = (model.get("repo_id"), model.get("path") or "")
+        else:
+            model_id = (model.repo_id, model.path or "")
         if model_id not in seen_ids:
             seen_ids.add(model_id)
             deduped_models.append(model)
@@ -106,6 +106,9 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
                 detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download",
             ) from e
         raise e
+
+    assert isinstance(hf_models, list), "hf_models should be a list after isinstance check"
+    assert isinstance(ollama_models_unified, list), "ollama_models_unified should be a list after isinstance check"
 
     # order matters: cached models should be first to have correct downloaded status
     all_models = hf_models + ollama_models_unified + reco_models

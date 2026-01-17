@@ -424,7 +424,6 @@ def run(
     import os
     import sys
     import traceback
-    from typing import Any
 
     from nodetool.types.api_graph import Graph
     from nodetool.types.job import JobUpdate
