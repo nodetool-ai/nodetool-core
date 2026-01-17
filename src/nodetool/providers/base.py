@@ -322,7 +322,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_models(
+    async def get_available_models(  # type: ignore[override]
         self,
     ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
         """Get a list of all available models for this provider.
@@ -506,7 +506,7 @@ class BaseProvider:
         except Exception as e:
             print(f"Error logging API response: {e}")
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -591,7 +591,7 @@ class BaseProvider:
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability")
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams, but imported later to avoid circular deps
@@ -724,7 +724,7 @@ class BaseProvider:
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability")
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToVideoParams, but imported later to avoid circular deps
@@ -793,11 +793,11 @@ class MockProvider(BaseProvider):
         else:
             raise IndexError("MockProvider has run out of predefined responses.")
 
-    async def get_available_models(self) -> List[LanguageModel]:
+    async def get_available_models(self) -> List[LanguageModel]:  # type: ignore[override]
         """Mock provider has no models."""
         return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -826,7 +826,7 @@ class MockProvider(BaseProvider):
 
         return response
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

@@ -1504,7 +1504,7 @@ class BaseNode(BaseModel):
 
         # Get properties from parent classes
         parent_properties = {}
-        for base in cls.__bases__:
+        for base in cls.__bases__:  # type: ignore[attr-defined]
             if hasattr(base, "properties_dict"):
                 parent_properties.update(base.properties_dict())
 

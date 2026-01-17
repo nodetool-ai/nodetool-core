@@ -62,7 +62,7 @@ class Prediction(DBModel):
     metadata: dict[str, Any] | None = DBField(default=None)
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         user_id: str,
         node_id: str,

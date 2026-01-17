@@ -1024,7 +1024,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Formatted {len(formatted_tools)} tools total")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1216,7 +1216,7 @@ class OpenAIProvider(BaseProvider):
                     log.error("No tool call found in delta_tool_calls")
                     raise ValueError("No tool call found")
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1520,7 +1520,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"OpenAI text-to-image generation failed: {exc}")
             raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToImageParams,
@@ -1878,7 +1878,7 @@ class OpenAIProvider(BaseProvider):
             },
         )
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToVideoParams,

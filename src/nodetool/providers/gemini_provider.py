@@ -451,7 +451,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Extraction complete: {len(tool_calls)} tool calls, {len(output_files)} output files")
         return content, tool_calls, output_files
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -561,7 +561,7 @@ class GeminiProvider(BaseProvider):
         response = httpx.Response(status_code=status_code, request=request)
         return httpx.HTTPStatusError(message, request=request, response=response)
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -794,7 +794,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-image generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-image generation failed: {e}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams
@@ -1325,7 +1325,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-video generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-video generation failed: {e}") from e
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToVideoParams

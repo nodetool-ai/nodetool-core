@@ -703,9 +703,9 @@ class LlamaServerManager:
             with suppress(Exception):
                 if getattr(self, "_shutdown_started", False):
                     return
-                self._shutdown_started = True
+                self._shutdown_started = True  # type: ignore[attr-defined]
             try:
-                self._shutdown_task = loop.create_task(self.stop_all())
+                self._shutdown_task = loop.create_task(self.stop_all())  # type: ignore[attr-defined]
             except Exception:
                 self.shutdown_sync()
 

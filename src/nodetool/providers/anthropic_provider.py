@@ -364,7 +364,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -463,7 +463,7 @@ class AnthropicProvider(BaseProvider):
         except anthropic.AnthropicError as exc:
             raise self._as_httpx_status_error(exc) from exc
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

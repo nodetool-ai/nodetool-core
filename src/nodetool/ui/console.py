@@ -321,7 +321,7 @@ class AgentConsole:
 
             log_entry = LogEntry(
                 message=message,
-                level=level,
+                level=level,  # type: ignore[arg-type]
                 timestamp=int(time.time()),  # type: ignore
             )
             self.current_step.logs.append(log_entry)
