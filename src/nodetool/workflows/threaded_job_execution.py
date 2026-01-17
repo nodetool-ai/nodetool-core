@@ -133,7 +133,7 @@ class ThreadedJobExecution(JobExecution):
                             state={},
                         )
                     await self.job_model.update(finished_at=datetime.now())
-                    
+
                     # Post suspension message BEFORE finalize_state to avoid race condition
                     self.context.post_message(
                         JobUpdate(
@@ -151,7 +151,7 @@ class ThreadedJobExecution(JobExecution):
                     if run_state:
                         await run_state.mark_completed()
                     await self.job_model.update(finished_at=datetime.now())
-                    
+
                     # Post completion message BEFORE finalize_state to avoid race condition
                     self.context.post_message(
                         JobUpdate(
@@ -170,7 +170,7 @@ class ThreadedJobExecution(JobExecution):
                 if run_state:
                     await run_state.mark_cancelled()
                 await self.job_model.update(finished_at=datetime.now())
-                
+
                 # Post cancellation message BEFORE finalize_state to avoid race condition
                 self.context.post_message(
                     JobUpdate(

@@ -322,15 +322,15 @@ async def test_threaded_job_completion_event(simple_workflow, cleanup_jobs):
     # Check that completion event was posted to message queue
     completion_event_found = False
     checked_messages = []
-    
+
     while context.has_messages():
         try:
             message = context.message_queue.get_nowait()
             checked_messages.append(message)
-            
+
             # Import JobUpdate to check message type
             from nodetool.types.job import JobUpdate
-            
+
             if isinstance(message, JobUpdate):
                 if message.job_id == job.job_id and message.status == "completed":
                     completion_event_found = True
@@ -373,19 +373,19 @@ async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
     # If cancellation succeeded, wait for the message
     if cancelled:
         await asyncio.sleep(0.2)
-        
+
         # Check that cancellation event was posted to message queue
         cancellation_event_found = False
         checked_messages = []
-        
+
         while context.has_messages():
             try:
                 message = context.message_queue.get_nowait()
                 checked_messages.append(message)
-                
+
                 # Import JobUpdate to check message type
                 from nodetool.types.job import JobUpdate
-                
+
                 if isinstance(message, JobUpdate):
                     if message.job_id == job.job_id and message.status == "cancelled":
                         cancellation_event_found = True

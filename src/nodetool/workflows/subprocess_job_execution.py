@@ -628,6 +628,15 @@ class SubprocessJobExecution(JobExecution):
                 # Successful completion - update both internal status and database
                 self._status = "completed"
                 await self.job_model.update(status="completed", finished_at=datetime.now())
+
+                # Post completion message to avoid race condition
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="completed",
+                        message=f"Subprocess job {self.job_id} completed successfully",
+                    )
+                )
                 log.info(f"Subprocess job {self.job_id} completed successfully")
             else:
                 # Failed completion - the subprocess may not have sent a proper update
@@ -664,6 +673,15 @@ class SubprocessJobExecution(JobExecution):
         except asyncio.CancelledError:
             self._status = "cancelled"
             await self.job_model.update(status="cancelled", finished_at=datetime.now())
+
+            # Post cancellation message to avoid race condition
+            self.context.post_message(
+                JobUpdate(
+                    job_id=self.job_id,
+                    status="cancelled",
+                    message=f"Subprocess job {self.job_id} was cancelled",
+                )
+            )
             self._completed_event.set()
             log.info(f"Subprocess job {self.job_id} was cancelled")
         except Exception as e:

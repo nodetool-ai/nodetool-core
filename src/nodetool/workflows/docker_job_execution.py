@@ -504,6 +504,16 @@ class DockerJobExecution(JobExecution):
             if self._job_model:
                 await self._job_model.save()
 
+            # Post cancellation message to avoid race condition
+            self._context.post_message(
+                JobUpdate(
+                    job_id=self.job_id,
+                    status="cancelled",
+                    message=f"Docker job {self.job_id} was cancelled",
+                    workflow_id=self._job_model.workflow_id if self._job_model else None,
+                )
+            )
+
             return True
 
         except Exception as e:
