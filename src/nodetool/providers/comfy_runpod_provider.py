@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import random
@@ -119,7 +120,7 @@ class ComfyRunpodProvider(BaseProvider):
                         log.warning("Error fetching S3 URL %s: %s", data, exc)
                 else:
                     log.debug("Ignoring unsupported image type from RunPod: %s", t)
-            except (KeyError, ValueError, base64.binascii.Error) as exc:
+            except (KeyError, ValueError, binascii.Error) as exc:
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 

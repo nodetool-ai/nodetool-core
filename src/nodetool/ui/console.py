@@ -4,7 +4,7 @@ UI Console for displaying Agent progress using Rich.
 
 import json
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 from rich.columns import Columns
 from rich.console import Console
@@ -308,7 +308,7 @@ class AgentConsole:
         if self.live and self.current_tree and self.live.is_started:
             self.update_execution_display()
 
-    def log_to_step(self, level: str, message: str) -> None:
+    def log_to_step(self, level: Literal["debug", "info", "warning", "error"], message: str) -> None:
         """
         Add a log entry to the current step.
 

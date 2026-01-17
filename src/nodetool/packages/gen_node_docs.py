@@ -117,12 +117,14 @@ namespace: "{namespace}"
         content += "| Input | Type | Description |\n"
         content += "|-------|------|-------------|\n"
 
-        for input_item in node.inputs:
-            input_name = input_item.name if hasattr(input_item, "name") else str(input_item)
-            input_type = format_type_info(getattr(input_item, "type", "any"))
-            input_desc = getattr(input_item, "description", "")
+        inputs = node.inputs
+        if inputs:  # Additional guard to help type checker
+            for input_item in inputs:
+                input_name = input_item.name if hasattr(input_item, "name") else str(input_item)
+                input_type = format_type_info(getattr(input_item, "type", "any"))
+                input_desc = getattr(input_item, "description", "")
 
-            content += f"| {input_name} | {input_type} | {input_desc} |\n"
+                content += f"| {input_name} | {input_type} | {input_desc} |\n"
 
         content += "\n"
 

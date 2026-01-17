@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -286,23 +287,26 @@ def create_proxy_app(config: ProxyConfig) -> FastAPI:
     Returns:
         Configured FastAPI app ready to run.
     """
-    app = FastAPI(
-        title="Async Docker Reverse Proxy",
-        description="On-demand Docker container proxy with Let's Encrypt support",
-    )
-
     proxy = AsyncReverseProxy(config)
-
-    @app.on_event("startup")
-    async def startup():
+    
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup
         await proxy.startup()
         # Ensure ACME webroot exists
         acme_root = Path(config.global_.acme_webroot)
         acme_root.mkdir(parents=True, exist_ok=True)
-
-    @app.on_event("shutdown")
-    async def shutdown():
+        
+        yield
+        
+        # Shutdown
         await proxy.shutdown()
+    
+    app = FastAPI(
+        lifespan=lifespan,
+        title="Async Docker Reverse Proxy",
+        description="On-demand Docker container proxy with Let's Encrypt support",
+    )
 
     # ---- Auth dependency ----
     async def require_bearer_auth(request: Request):
