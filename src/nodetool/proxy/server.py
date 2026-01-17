@@ -290,7 +290,7 @@ def create_proxy_app(config: ProxyConfig) -> FastAPI:
     proxy = AsyncReverseProxy(config)
     
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(_app: FastAPI):
         # Startup
         await proxy.startup()
         # Ensure ACME webroot exists
