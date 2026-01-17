@@ -75,7 +75,7 @@ class Asset(DBModel):
         return f"{self.id}_thumb.jpg"
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         user_id: str,
         name: str,

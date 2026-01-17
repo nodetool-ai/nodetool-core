@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 _thread_local = threading.local()
 
 
-class _CallbackTqdm(tqdm):
+class _CallbackTqdm(tqdm):  # type: ignore[misc]
     def __init__(self, *args, **kwargs):
         # Force disable display so it doesn't print to stderr
         kwargs["disable"] = True
@@ -108,7 +108,7 @@ def _download_to_tmp_and_move_with_progress(
                     headers=headers,
                     expected_size=expected_size,
                     displayed_filename=filename,
-                    _tqdm_bar=_CallbackTqdm,
+                    _tqdm_bar=_CallbackTqdm,  # type: ignore[arg-type]
                 )
             else:
                 if xet_file_data is not None and not constants.HF_HUB_DISABLE_XET:
@@ -126,7 +126,7 @@ def _download_to_tmp_and_move_with_progress(
                     resume_size=resume_size,
                     headers=headers,
                     expected_size=expected_size,
-                    _tqdm_bar=_CallbackTqdm,
+                    _tqdm_bar=_CallbackTqdm,  # type: ignore[arg-type]
                 )
         finally:
             # Clean up thread local storage
@@ -481,7 +481,7 @@ def hf_hub_download_with_progress(
             endpoint=endpoint,
             resume_download=resume_download,
             force_filename=force_filename,
-            local_dir_use_symlinks=local_dir_use_symlinks,
+            local_dir_use_symlinks=local_dir_use_symlinks,  # type: ignore[arg-type]
         )
 
     if constants.HF_HUB_ETAG_TIMEOUT != constants.DEFAULT_ETAG_TIMEOUT:

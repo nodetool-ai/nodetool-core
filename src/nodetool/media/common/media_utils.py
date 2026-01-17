@@ -209,7 +209,7 @@ def get_audio_duration(source_io: BytesIO) -> float:
 
     if not _pydub_configured:
         pydub.AudioSegment.converter = FFMPEG_PATH
-        pydub.AudioSegment.ffprobe = FFPROBE_PATH
+        pydub.AudioSegment.ffprobe = FFPROBE_PATH  # type: ignore[attr-defined]
         _pydub_configured = True
 
     try:

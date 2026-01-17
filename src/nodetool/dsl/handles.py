@@ -176,7 +176,7 @@ def connect_field(
     else:
         final_json_schema_extra = json_schema_extra
 
-    return Field(
+    return Field(  # type: ignore[no-matching-overload]
         default=default,
         default_factory=default_factory,
         description=description,

@@ -205,7 +205,7 @@ class StateManager:
             current_state.update(state_updates)
 
             # Re-validate and update
-            deployment.state = deployment.state.__class__.model_validate(current_state)
+            deployment.state = deployment.state.__class__.model_validate(current_state)  # type: ignore[assignment]
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -284,7 +284,7 @@ class StateManager:
             secret_value = secrets.token_urlsafe(byte_length)
             state_dict[field_name] = secret_value
 
-            deployment.state = deployment.state.__class__.model_validate(state_dict)
+            deployment.state = deployment.state.__class__.model_validate(state_dict)  # type: ignore[assignment]
 
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
@@ -327,7 +327,7 @@ class StateManager:
                 raise KeyError(f"Deployment '{deployment_name}' not found")
 
             # Reset to default state for this deployment type
-            deployment.state = deployment.state.__class__()
+            deployment.state = deployment.state.__class__()  # type: ignore[assignment]
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -450,7 +450,7 @@ def restore_state_from_snapshot(
             deployment = config.deployments[name]
 
             # Restore state
-            deployment.state = deployment.state.__class__.model_validate(snapshot_state)
+            deployment.state = deployment.state.__class__.model_validate(snapshot_state)  # type: ignore[assignment]
 
         if resolved_config_path:
             import yaml
