@@ -1,4 +1,5 @@
 - **2026-01-17**: Added circuit breaker utilities (`CircuitBreaker`, `MultiCircuitBreaker`, `CircuitBreakerConfig`) in `src/nodetool/concurrency/circuit_breaker.py` for preventing cascading failures in distributed systems with three states (closed, open, half-open) and configurable thresholds.
+- **2026-01-17**: Added `AsyncLock` class in `src/nodetool/concurrency/async_lock.py` for exclusive resource access with timeout support, complementing `AsyncSemaphore` for cases where only one task should access a resource at a time.
 - **2026-01-17**: Cleaned up unused imports from 5 files (`workflow_runner.py`, `serp_tools.py`, `tool_registry.py`, `asset.py`, `file.py`) to improve code quality and reduce lint errors.
 - **2026-01-16**: Added rate limiting utilities (`AsyncTokenBucket`, `AsyncRateLimiter`) in `src/nodetool/concurrency/rate_limit.py` for controlling operation rates using the token bucket algorithm.
 - **2026-01-14**: Exported `AsyncByteStream` class from `concurrency` module's `__init__.py`.

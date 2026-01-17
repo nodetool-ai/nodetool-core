@@ -13,6 +13,7 @@ a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
 """
 
+import asyncio
 import json
 import re  # Added import re
 import traceback
@@ -290,12 +291,12 @@ class TaskPlanner:
         """
         if self.tasks_file_path.exists():
             try:
-                with open(self.tasks_file_path) as f:
-                    task_plan_data: dict = yaml.safe_load(f)
-                    self.task_plan = TaskPlan(**task_plan_data)
-                    if self.display_manager:
-                        log.debug("Loaded existing task plan from %s", self.tasks_file_path)
-                    return True
+                content = await asyncio.to_thread(self.tasks_file_path.read_text)
+                task_plan_data: dict = yaml.safe_load(content)
+                self.task_plan = TaskPlan(**task_plan_data)
+                if self.display_manager:
+                    log.debug("Loaded existing task plan from %s", self.tasks_file_path)
+                return True
             except Exception as e:  # Keep general exception for file I/O or parsing issues
                 if self.display_manager:
                     log.debug(

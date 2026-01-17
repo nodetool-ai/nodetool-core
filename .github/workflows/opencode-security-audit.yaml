@@ -20,6 +20,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Merge main if necessary
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit || echo "Already up to date or merge not needed"
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
