@@ -26,6 +26,7 @@ import numpy as np
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -55,6 +56,7 @@ class ProviderCapability(str, Enum):
 
     GENERATE_MESSAGE = "generate_message"  # Single message generation
     GENERATE_MESSAGES = "generate_messages"  # Streaming message generation
+    GENERATE_EMBEDDING = "generate_embedding"  # Text → Embedding vectors
     TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
@@ -136,6 +138,7 @@ class BaseProvider:
     _CAPABILITY_METHODS: ClassVar[dict[ProviderCapability, str]] = {
         ProviderCapability.GENERATE_MESSAGE: "generate_message",
         ProviderCapability.GENERATE_MESSAGES: "generate_messages",
+        ProviderCapability.GENERATE_EMBEDDING: "generate_embedding",
         ProviderCapability.TEXT_TO_IMAGE: "text_to_image",
         ProviderCapability.IMAGE_TO_IMAGE: "image_to_image",
         ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
@@ -322,17 +325,30 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_models(  # type: ignore[override]
-        self,
-    ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
-        """Get a list of all available models for this provider.
-
-        Returns language, image, TTS, ASR, and video models combined. Use get_available_language_models(),
-        get_available_image_models(), get_available_tts_models(), get_available_asr_models(), or
-        get_available_video_models() to filter to specific model types.
+    async def get_available_embedding_models(self) -> List[EmbeddingModel]:
+        """Get a list of available embedding models for this provider.
+        The implementation may check for API keys, local cache, or other requirements.
 
         Returns:
-            List containing LanguageModel, ImageModel, TTSModel, ASRModel, and VideoModel instances
+            List of EmbeddingModel instances available for this provider.
+            Returns empty list if provider doesn't support embeddings.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(
+        self,
+    ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel | EmbeddingModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, TTS, ASR, video, and embedding models combined. Use get_available_language_models(),
+        get_available_image_models(), get_available_tts_models(), get_available_asr_models(),
+        get_available_video_models(), or get_available_embedding_models() to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, TTSModel, ASRModel, VideoModel, and EmbeddingModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -342,7 +358,8 @@ class BaseProvider:
         tts_models = await self.get_available_tts_models()
         asr_models = await self.get_available_asr_models()
         video_models = await self.get_available_video_models()
-        return language_models + image_models + tts_models + asr_models + video_models  # type: ignore
+        embedding_models = await self.get_available_embedding_models()
+        return language_models + image_models + tts_models + asr_models + video_models + embedding_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -759,6 +776,32 @@ class BaseProvider:
             RuntimeError: If generation fails
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability")
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs: Any,
+    ) -> list[list[float]]:
+        """Generate embedding vectors for the given text input(s).
+
+        Only implemented by providers with GENERATE_EMBEDDING capability.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier for embedding generation (e.g., "text-embedding-3-small")
+            **kwargs: Additional provider-specific parameters (e.g., dimensions)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+            Each embedding is a list of floats representing the vector.
+
+        Raises:
+            NotImplementedError: If provider doesn't support GENERATE_EMBEDDING capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If embedding generation fails
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_EMBEDDING capability")
 
 
 class MockProvider(BaseProvider):

@@ -38,6 +38,7 @@ from nodetool.integrations.huggingface.huggingface_models import (
 )
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     LlamaModel,
@@ -99,13 +100,11 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
     if isinstance(ollama_models_unified, Exception):
         e = ollama_models_unified
-        # Check if it looks like a connection error
         if "connect" in str(e).lower() or "refused" in str(e).lower():
-            raise HTTPException(
-                status_code=503,
-                detail="ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download",
-            ) from e
-        raise e
+            log.warning(f"Ollama not available: {e}. Continuing without Ollama models.")
+            ollama_models_unified = []
+        else:
+            raise e
 
     assert isinstance(hf_models, list), "hf_models should be a list after isinstance check"
     assert isinstance(ollama_models_unified, list), "ollama_models_unified should be a list after isinstance check"
@@ -523,6 +522,19 @@ async def get_video_models_by_provider(provider: Provider, user: str) -> list[Vi
         return []
 
 
+async def get_embedding_models_by_provider(provider: Provider, user: str) -> list[EmbeddingModel]:
+    """Get embedding models for a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        return await provider_instance.get_available_embedding_models()
+    except ValueError as e:
+        log.warning(f"Provider {provider.value} not available: {e}")
+        return []
+    except Exception as e:
+        log.error(f"Error getting embedding models from {provider.value}: {e}")
+        return []
+
+
 @router.get("/llm/{provider}")
 async def get_language_models_endpoint(
     provider: Provider,
@@ -586,6 +598,17 @@ async def get_video_models_endpoint(
     Get all available video generation models from a specific provider.
     """
     return await get_video_models_by_provider(provider, user)
+
+
+@router.get("/embedding/{provider}")
+async def get_embedding_models_endpoint(
+    provider: Provider,
+    user: str = Depends(current_user),
+) -> list[EmbeddingModel]:
+    """
+    Get all available embedding models from a specific provider.
+    """
+    return await get_embedding_models_by_provider(provider, user)
 
 
 @router.get("/ollama_model_info")
