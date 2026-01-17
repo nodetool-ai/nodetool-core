@@ -263,8 +263,12 @@ class Graph(BaseModel):
 
         indegree: dict[str, int] = {node.id: 0 for node in nodes}
 
+        outgoing_edges: dict[str, list[Edge]] = {}
         for edge in edges:
             indegree[edge.target] += 1
+            if edge.source not in outgoing_edges:
+                outgoing_edges[edge.source] = []
+            outgoing_edges[edge.source].append(edge)
 
         queue = deque(node_id for node_id, degree in indegree.items() if degree == 0)
 
@@ -274,12 +278,10 @@ class Graph(BaseModel):
             for _ in range(len(queue)):
                 n = queue.popleft()
                 level_nodes.append(n)
-                for edge in edges[:]:  # Iterate over a copy of the list
-                    if edge.source == n:
-                        edges.remove(edge)
-                        indegree[edge.target] -= 1
-                        if indegree[edge.target] == 0:
-                            queue.append(edge.target)
+                for edge in outgoing_edges.get(n, []):
+                    indegree[edge.target] -= 1
+                    if indegree[edge.target] == 0:
+                        queue.append(edge.target)
 
             if level_nodes:
                 sorted_nodes.append(level_nodes)

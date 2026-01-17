@@ -423,13 +423,11 @@ class TestVideoMethods:
         with patch("tempfile.NamedTemporaryFile") as mock_temp:
             mock_file = Mock()
             mock_file.name = "/tmp/test_video.mp4"
+            mock_file.read = Mock(return_value=b"fake video data")
             mock_temp.return_value.__enter__.return_value = mock_file
 
-            with (
-                patch("nodetool.media.video.video_utils.export_to_video") as mock_export,
-                patch("builtins.open", create=True) as mock_open,
-            ):
-                mock_open.return_value = BytesIO(b"fake video data")
+            with patch("nodetool.media.video.video_utils.export_to_video") as mock_export:
+                mock_export.return_value = None
 
                 result = await context.video_from_frames(frames, fps=24)
                 assert isinstance(result, VideoRef)
