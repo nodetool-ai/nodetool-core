@@ -438,6 +438,7 @@ class Provider(str, enum.Enum):
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"
+    Fake = "fake"  # fake provider for testing
     HuggingFace = "huggingface"  # local hf models
     # Providers for HuggingFace Inference Providers
     HuggingFaceCohere = "huggingface_cohere"
