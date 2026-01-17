@@ -215,8 +215,9 @@ def main():
             master_key = args.key
         else:
             from nodetool.security.master_key import MasterKeyManager
+            import asyncio
 
-            master_key = MasterKeyManager.export_master_key()
+            master_key = asyncio.run(MasterKeyManager.export_master_key())
 
         success = util.store_master_key(args.secret_name, master_key, args.region)
         sys.exit(0 if success else 1)
