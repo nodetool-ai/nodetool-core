@@ -923,13 +923,15 @@ class OpenAIProvider(BaseProvider):
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=cast(Literal["tool"], message.role),
+                role=cast("Literal['tool']", message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
             log.debug("Converting system message")
-            return ChatCompletionSystemMessageParam(role=cast(Literal["system"], message.role), content=str(message.content))
+            return ChatCompletionSystemMessageParam(
+                role=cast("Literal['system']", message.role), content=str(message.content)
+            )
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
@@ -942,7 +944,7 @@ class OpenAIProvider(BaseProvider):
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=cast(Literal["user"], message.role), content=content)
+            return ChatCompletionUserMessageParam(role=cast("Literal['user']", message.role), content=content)
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             tool_calls = [
@@ -971,13 +973,13 @@ class OpenAIProvider(BaseProvider):
             if len(tool_calls) == 0:
                 log.debug("Returning assistant message without tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=cast(Literal["assistant"], message.role),
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                 )
             else:
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=cast(Literal["assistant"], message.role),
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )
