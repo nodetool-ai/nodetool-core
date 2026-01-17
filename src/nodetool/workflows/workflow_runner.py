@@ -31,11 +31,10 @@ Example:
 """
 
 import asyncio
-import logging
 import threading
 import time
 from collections import defaultdict, deque
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from typing import Any, Optional
 
 from nodetool.config.environment import Environment

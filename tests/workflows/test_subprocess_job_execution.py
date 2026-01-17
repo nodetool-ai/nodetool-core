@@ -23,15 +23,13 @@ async def cleanup_jobs():
     """Cleanup resources after each test."""
     jobs_to_cleanup = []
     yield jobs_to_cleanup
-    # Cleanup any jobs created during tests
     for job in jobs_to_cleanup:
         try:
             job.cleanup_resources()
             if not job.is_completed():
                 job.cancel()
-        except Exception as e:
-            print(f"Error cleaning up job {job.job_id}: {e}")
-    await asyncio.sleep(0.1)
+        except Exception:
+            pass
 
 
 @pytest.fixture
