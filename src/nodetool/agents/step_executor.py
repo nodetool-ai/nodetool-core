@@ -393,6 +393,8 @@ def _validate_and_sanitize_schema(schema: Any, default_description: str = "Resul
 
 def _remove_think_tags(text: str | None) -> str:
     """Remove think tags from the text."""
+    if text is None:
+        return ""
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 

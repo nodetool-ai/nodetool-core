@@ -621,6 +621,7 @@ class MigrationRunner:
 
         try:
             # Execute migration's up function with the adapter
+            assert self._adapter is not None, "Database adapter must be initialized"
             await migration.up(self._adapter)
             await self._adapter.commit()
 
@@ -818,6 +819,7 @@ class MigrationRunner:
         log.info(f"Rolling back migration: {migration.version} ({migration.name})")
 
         try:
+            assert self._adapter is not None, "Database adapter must be initialized"
             await migration.down(self._adapter)
             await self._adapter.commit()
 

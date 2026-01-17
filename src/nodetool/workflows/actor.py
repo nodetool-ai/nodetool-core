@@ -382,7 +382,7 @@ class NodeActor:
                 else:
                     # Notify frontend of property change (if method exists)
                     if hasattr(self.runner, "send_property_update"):
-                        await self.runner.send_property_update(node, context, name)
+                        await self.runner.send_property_update(node, context, name)  # type: ignore[misc]
             except Exception as exc:
                 self.logger.error("Error assigning property %s to node %s", name, node.id)
                 raise ValueError(f"Error assigning property {name}: {exc}") from exc

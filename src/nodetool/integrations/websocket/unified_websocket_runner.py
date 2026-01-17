@@ -312,7 +312,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         if user_id:
             self.user_id = user_id
 
-    async def connect(
+    async def connect(  # type: ignore[override]
         self,
         websocket: WebSocket,
         user_id: str | None = None,
@@ -849,6 +849,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 return
 
             # Create streaming context
+            assert job_execution is not None  # Guaranteed by checks above
             job_ctx = JobStreamContext(job_id, workflow_id, job_execution)
             self.active_jobs[job_id] = job_ctx
 

@@ -285,7 +285,6 @@ class StateManager:
             state_dict[field_name] = secret_value
 
             deployment.state = deployment.state.__class__.model_validate(state_dict)  # type: ignore
-
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
             with open(temp_path, "w") as f:

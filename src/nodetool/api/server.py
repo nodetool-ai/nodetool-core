@@ -342,6 +342,19 @@ def create_app(
             except Exception as e:
                 log.error(f"Failed to run database migrations: {e}", exc_info=True)
                 raise
+        
+        # Populate mock data if --mock flag is enabled
+        if os.environ.get("NODETOOL_MOCK_MODE") == "1":
+            log.info("Mock mode enabled - populating database with test data")
+            try:
+                from nodetool.api.mock_data import populate_mock_data
+                from nodetool.runtime.resources import ResourceScope
+                
+                async with ResourceScope():
+                    result = await populate_mock_data(user_id="1")
+                    log.info(f"Mock data populated successfully: {result}")
+            except Exception as e:
+                log.error(f"Failed to populate mock data: {e}", exc_info=True)
 
         # Start job execution manager cleanup task
         from nodetool.workflows.job_execution_manager import JobExecutionManager
@@ -374,8 +387,8 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
 
-    app.add_middleware(  # type: ignore[arg-type]
-        CORSMiddleware,
+    app.add_middleware(
+        CORSMiddleware,  # type: ignore[arg-type]
         allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],

@@ -227,12 +227,13 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         return any(is_assignable(t, value) for t in type_meta.type_args)
     # Handle enum types.
     if type_meta.type == "enum":
+        if type_meta.values is None:
+            return False
         if isinstance(value, Enum):
             # Check if the enum value exists in the defined enum values.
             return value.value in type_meta.values
         else:
             # Check if the raw value exists in the defined enum values.
-            assert type_meta.values is not None
             return value in type_meta.values
 
     # Default case: check if the Python type matches the expected type.

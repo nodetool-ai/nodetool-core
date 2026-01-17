@@ -117,7 +117,7 @@ namespace: "{namespace}"
         content += "| Input | Type | Description |\n"
         content += "|-------|------|-------------|\n"
 
-        for input_item in node.inputs:
+        for input_item in node.inputs:  # type: ignore[attr-defined]
             input_name = input_item.name if hasattr(input_item, "name") else str(input_item)
             input_type = format_type_info(getattr(input_item, "type", "any"))
             input_desc = getattr(input_item, "description", "")

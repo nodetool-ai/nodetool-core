@@ -312,6 +312,11 @@ def mcp():
     is_flag=True,
     help="Enable verbose logging (DEBUG level) for detailed output.",
 )
+@click.option(
+    "--mock",
+    is_flag=True,
+    help="Start server with mock data for testing (pre-fills database with sample threads, messages, workflows, assets, and collections).",
+)
 def serve(
     host: str,
     port: int,
@@ -322,10 +327,13 @@ def serve(
     apps_folder: str | None = None,
     production: bool = False,
     verbose: bool = False,
+    mock: bool = False,
 ):
     """Run the FastAPI backend server for the NodeTool platform.
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
+
+    Use --mock to start with pre-filled test data for development and testing.
     """
     from nodetool.api.server import create_app, run_uvicorn_server
 
@@ -336,6 +344,11 @@ def serve(
         configure_logging(level="DEBUG")
         os.environ["LOG_LEVEL"] = "DEBUG"
         console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+    # Configure mock mode
+    if mock:
+        console.print("[yellow]🎭 Mock mode enabled - will populate database with test data[/]")
+        os.environ["NODETOOL_MOCK_MODE"] = "1"
 
     try:
         import comfy.cli_args  # type: ignore
@@ -2535,8 +2548,12 @@ def deploy_add(name: str, deployment_type: str):
         ContainerConfig,
         DeploymentConfig,
         GCPDeployment,
+        GCPImageConfig,
+        GCPResourceConfig,
         ImageConfig,
         RunPodDeployment,
+        RunPodImageConfig,
+        RunPodState,
         SelfHostedDeployment,
         SSHConfig,
         get_deployment_config_path,
@@ -2627,7 +2644,7 @@ def deploy_add(name: str, deployment_type: str):
             project_id = click.prompt("GCP Project ID", type=str)
             region = click.prompt("Region", type=str, default="us-central1")
             service_name = click.prompt("Service name", type=str, default=name)
-            image_name = click.prompt("Docker image name", type=str)
+            image_repository = click.prompt("Docker image repository (e.g., project/repo/image)", type=str)
             image_tag = click.prompt("Docker image tag", type=str, default="latest")
 
             # Optional resource configuration

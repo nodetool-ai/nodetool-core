@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import Tuple
+from typing import IO, TYPE_CHECKING, Any, Tuple, cast
 
 import aiohttp
 import httpx
@@ -41,13 +41,14 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
             raise ValueError(f"Bytes are not a decodable image: {e}") from e
 
     if hasattr(obj, "read"):
+        file_like = cast("IO[bytes]", obj)
         try:
-            pos = obj.tell() if hasattr(obj, "tell") else None
-            if hasattr(obj, "seek"):
-                obj.seek(0)
-            raw = obj.read()
-            if pos is not None and hasattr(obj, "seek"):
-                obj.seek(pos)
+            pos = file_like.tell() if hasattr(file_like, "tell") else None
+            if hasattr(file_like, "seek"):
+                file_like.seek(0)
+            raw = file_like.read()
+            if pos is not None and hasattr(file_like, "seek"):
+                file_like.seek(pos)
             with PIL.Image.open(BytesIO(raw)) as img:
                 return pil_to_png_bytes(img)
         except Exception as e:
@@ -161,8 +162,8 @@ def _fetch_local_storage_sync(uri: str) -> Tuple[str, bytes]:
     # Run the async code in a separate thread to avoid event loop conflicts
     # when this sync function is called from an async context
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _do_fetch())
-        data: bytes = future.result()
+        future = executor.submit(asyncio.run, _do_fetch())  # type: ignore[arg-type]
+        data: bytes = cast(bytes, future.result())
 
     # Guess mime type from the key
     mime_type, _ = mimetypes.guess_type(key)

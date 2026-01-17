@@ -693,7 +693,7 @@ class KieProvider(BaseProvider):
             log.error(f"Kie.ai text-to-image generation failed: {e}")
             raise RuntimeError(f"Kie.ai text-to-image generation failed: {str(e)}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToImageParams,
@@ -892,7 +892,7 @@ class KieProvider(BaseProvider):
             log.error(f"Kie.ai text-to-video generation failed: {e}")
             raise RuntimeError(f"Kie.ai text-to-video generation failed: {str(e)}") from e
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToVideoParams,

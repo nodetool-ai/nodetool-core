@@ -161,7 +161,7 @@ def get_edge_names(comfy_class: type) -> List[str]:
         List[str]: A list of input names for the node class.
     """
     if comfy_class:
-        inputs = list(comfy_class.INPUT_TYPES.__func__(comfy_class).get("required", {}).items())
+        inputs = list(comfy_class.INPUT_TYPES.__func__(comfy_class).get("required", {}).items())  # type: ignore[attr-defined]
         return [name for name, value in inputs if not is_comfy_widget(value[0])]
     return []
 

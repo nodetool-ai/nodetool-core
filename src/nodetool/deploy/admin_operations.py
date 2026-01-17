@@ -204,7 +204,7 @@ class AdminDownloadManager:
 
             # Get file list
             raw_files = self.api.list_repo_tree(repo_id, recursive=True)
-            files = [file for file in raw_files if isinstance(file, RepoFile) or hasattr(file, "path")]
+            files: list[RepoFile] = [file for file in raw_files if isinstance(file, RepoFile)]
             files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
             # Filter out cached files

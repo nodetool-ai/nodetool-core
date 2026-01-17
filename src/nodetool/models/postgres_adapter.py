@@ -43,7 +43,7 @@ def convert_to_postgres_format(value: Any, py_type: Type | None) -> int | float 
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_to_postgres_format(value, args[0])
         else:
@@ -80,7 +80,7 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_from_postgres_format(value, args[0])
         else:
@@ -291,7 +291,7 @@ class PostgresAdapter(DatabaseAdapter):
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)
+                    await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during table creation: {e}")
@@ -303,7 +303,7 @@ class PostgresAdapter(DatabaseAdapter):
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(sql)
+                await cursor.execute(sql)  # type: ignore[arg-type]
             await conn.commit()
 
     async def migrate_table(self) -> None:
@@ -330,11 +330,11 @@ class PostgresAdapter(DatabaseAdapter):
                 # Alter table to add new fields
                 for field_name in fields_to_add:
                     field_type = get_postgres_type(self.fields[field_name].annotation)
-                    await cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")
+                    await cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")  # type: ignore[arg-type]
 
                 # Alter table to remove fields
                 for field_name in fields_to_remove:
-                    await cursor.execute(f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}")
+                    await cursor.execute(f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}")  # type: ignore[arg-type]
 
             await conn.commit()
 
@@ -364,7 +364,7 @@ class PostgresAdapter(DatabaseAdapter):
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, values)
+                await cursor.execute(query, values)  # type: ignore[arg-type]
             await conn.commit()
 
     async def get(self, key: Any) -> Dict[str, Any] | None:
@@ -382,7 +382,7 @@ class PostgresAdapter(DatabaseAdapter):
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (key,))
+            await cursor.execute(query, (key,))  # type: ignore[arg-type]
             item = await cursor.fetchone()
         if item is None:
             return None
@@ -399,7 +399,7 @@ class PostgresAdapter(DatabaseAdapter):
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, (primary_key,))
+                await cursor.execute(query, (primary_key,))  # type: ignore[arg-type]
             await conn.commit()
 
     def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[Composed, list[Any]]:
@@ -435,7 +435,7 @@ class PostgresAdapter(DatabaseAdapter):
                 return sub_conditions[0], params
             else:
                 return (
-                    SQL("({})").format(SQL(f" {condition.operator.value} ").join(sub_conditions)),
+                    SQL("({})").format(SQL(f" {condition.operator.value} ").join(sub_conditions)),  # type: ignore[arg-type]
                     params,
                 )
 
@@ -481,7 +481,7 @@ class PostgresAdapter(DatabaseAdapter):
             Identifier(self.table_name),
             where_clause,
             order_clause,
-            SQL(str(fetch_limit)),
+            SQL(str(fetch_limit)),  # type: ignore[arg-type]
         )
 
         pool = await self._get_pool()
@@ -522,7 +522,7 @@ class PostgresAdapter(DatabaseAdapter):
         translated_sql, translated_params = translate_postgres_params(sql, params or {})
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(translated_sql, translated_params)
+            await cursor.execute(translated_sql, translated_params)  # type: ignore[arg-type]
             if cursor.description:
                 rows = await cursor.fetchall()
                 return [convert_from_postgres_attributes(dict(row), self.fields) for row in rows]
@@ -537,7 +537,7 @@ class PostgresAdapter(DatabaseAdapter):
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)
+                    await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index creation: {e}")
@@ -550,7 +550,7 @@ class PostgresAdapter(DatabaseAdapter):
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)
+                    await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index deletion: {e}")
