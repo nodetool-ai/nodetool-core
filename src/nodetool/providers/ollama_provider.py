@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
 
 import tiktoken
 from ollama import AsyncClient, Client
