@@ -109,7 +109,7 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
                 )
             )
 
-        return embeddings
+        return list(embeddings)  # type: ignore[return-value]
 
 
 class OpenAIEmbeddingFunction(ProviderEmbeddingFunction):
@@ -186,7 +186,6 @@ def get_provider_embedding_function(
     )
 
     log.warning(
-        f"Could not determine provider for embedding model '{embedding_model}'. "
-        "Falling back to SentenceTransformer."
+        f"Could not determine provider for embedding model '{embedding_model}'. Falling back to SentenceTransformer."
     )
     return SentenceTransformerEmbeddingFunction(model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL)
