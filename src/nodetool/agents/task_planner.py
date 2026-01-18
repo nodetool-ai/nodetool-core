@@ -245,7 +245,7 @@ class TaskPlanner:
         reasoning_model: str | None = None,
         inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict[str, Any] | None = None,
         display_manager: AgentConsole | None = None,
         verbose: bool = True,
     ):
@@ -276,7 +276,7 @@ class TaskPlanner:
         self.system_prompt: str = system_prompt or DEFAULT_PLANNING_SYSTEM_PROMPT
         self.execution_tools: Sequence[Tool] = execution_tools or []
         self._planning_context: ProcessingContext | None = None
-        self.output_schema: dict | None = output_schema
+        self.output_schema: dict[str, Any] | None = output_schema
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = display_manager
@@ -292,7 +292,7 @@ class TaskPlanner:
         if self.tasks_file_path.exists():
             try:
                 content = await asyncio.to_thread(self.tasks_file_path.read_text)
-                task_plan_data: dict = yaml.safe_load(content)
+                task_plan_data: dict[str, Any] = yaml.safe_load(content)
                 self.task_plan = TaskPlan(**task_plan_data)
                 if self.display_manager:
                     log.debug("Loaded existing task plan from %s", self.tasks_file_path)
@@ -361,7 +361,7 @@ class TaskPlanner:
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
 
-    def _build_dependency_graph(self, steps: list[Step]) -> nx.DiGraph:
+    def _build_dependency_graph(self, steps: list[Step]) -> nx.DiGraph:  # type: ignore[type-arg]
         """
             Build a directed graph of dependencies between steps.
 
@@ -573,7 +573,7 @@ class TaskPlanner:
         errors: list[str] = []
 
         # Helper: parse JSON schema string into dict (best-effort)
-        def _parse_schema(schema_str: str | None) -> dict | None:
+        def _parse_schema(schema_str: str | None) -> dict[str, Any] | None:
             if not schema_str or not isinstance(schema_str, str):
                 return None
             try:
@@ -1379,12 +1379,12 @@ class TaskPlanner:
 
     def _validate_tool_task(
         self,
-        step_data: dict,
+        step_data: dict[str, Any],
         tool_name: str,
         content: Any,
         available_execution_tools: dict[str, Tool],
         sub_context: str,
-    ) -> tuple[dict | None, list[str]]:
+    ) -> tuple[dict[str, Any] | None, list[str]]:
         """Validates a step intended as a direct tool call.
 
         This involves:
@@ -1410,7 +1410,7 @@ class TaskPlanner:
         """
         log.debug("%s: Starting tool task validation for tool '%s'", sub_context, tool_name)
         validation_errors: list[str] = []
-        parsed_content: dict | None = None
+        parsed_content: dict[str, Any] | None = None
 
         # Check if tool exists
         if tool_name not in available_execution_tools:
@@ -1539,7 +1539,7 @@ class TaskPlanner:
 
         return validation_errors
 
-    def _process_step_schema(self, step_data: dict, sub_context: str) -> tuple[str | None, list[str]]:
+    def _process_step_schema(self, step_data: dict[str, Any], sub_context: str) -> tuple[str | None, list[str]]:
         """Processes and validates the output_schema for a step.
 
         Accepts schema definitions provided as JSON strings or already-parsed
@@ -1563,9 +1563,9 @@ class TaskPlanner:
         validation_errors: list[str] = []
         raw_schema: Any = step_data.get("output_schema")
         final_schema_str: str | None = None
-        schema_dict: dict | None = None
+        schema_dict: dict[str, Any] | None = None
 
-        def default_schema(reason: str) -> dict:
+        def default_schema(reason: str) -> dict[str, Any]:
             """Return a default schema and log why it was needed."""
             log.warning(
                 "%s: %s. Using default string schema.",
@@ -1663,12 +1663,12 @@ class TaskPlanner:
 
     def _prepare_step_data(
         self,
-        step_data: dict,
+        step_data: dict[str, Any],
         final_schema_str: str,
-        parsed_tool_content: dict | None,
+        parsed_tool_content: dict[str, Any] | None,
         sub_context: str,
         available_execution_tools: dict[str, Tool],
-    ) -> tuple[dict | None, list[str]]:
+    ) -> tuple[dict[str, Any] | None, list[str]]:
         """Prepares the final data dictionary for Step creation.
 
         This method takes the raw step data, the validated `final_schema_str`,
@@ -1821,7 +1821,7 @@ class TaskPlanner:
 
     async def _process_single_step(
         self,
-        step_data: dict,
+        step_data: dict[str, Any],
         index: int,
         context_prefix: str,
         available_execution_tools: dict[str, Tool],
@@ -1832,7 +1832,7 @@ class TaskPlanner:
         sub_context = f"{context_prefix} step {index}"
         log.debug("Processing %s", sub_context)
         all_validation_errors: list[str] = []
-        parsed_tool_content: dict | None = None  # To store parsed JSON for tool tasks
+        parsed_tool_content: dict[str, Any] | None = None  # To store parsed JSON for tool tasks
 
         try:
             # --- Validate Tool Call vs Agent Instruction ---
@@ -1932,7 +1932,9 @@ class TaskPlanner:
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
 
-    async def _process_step_list(self, raw_steps: list, context_prefix: str) -> tuple[list[Step], list[str]]:
+    async def _process_step_list(
+        self, raw_steps: list[dict[str, Any]], context_prefix: str
+    ) -> tuple[list[Step], list[str]]:
         """
         Processes a list of raw step data dictionaries using the helper method.
         """
@@ -1965,7 +1967,9 @@ class TaskPlanner:
 
         return processed_steps, all_validation_errors
 
-    async def _validate_structured_output_plan(self, task_data: dict, objective: str) -> tuple[Task | None, list[str]]:
+    async def _validate_structured_output_plan(
+        self, task_data: dict[str, Any], objective: str
+    ) -> tuple[Task | None, list[str]]:
         """Validates the plan data received from structured output.
 
         This method is used when the LLM generates the plan as direct JSON
@@ -2457,7 +2461,7 @@ class TaskPlanner:
 
         return is_list, estimated_count
 
-    def _ensure_additional_properties_false(self, schema: dict) -> dict:
+    def _ensure_additional_properties_false(self, schema: dict[str, Any]) -> dict[str, Any]:
         """
         Recursively ensures `additionalProperties: false` on object schemas.
 

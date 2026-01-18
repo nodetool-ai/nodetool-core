@@ -94,7 +94,7 @@ class TaskExecutor:
     async def execute_tasks(
         self,
         context: ProcessingContext,
-    ) -> AsyncGenerator[TaskUpdate | Chunk | ToolCall, None]:
+    ) -> AsyncGenerator[TaskUpdate | Chunk | ToolCall | StepResult, None]:
         """
         🎭 The Conductor - Orchestrates task execution with dependencies
 
