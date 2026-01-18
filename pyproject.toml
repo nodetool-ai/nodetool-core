@@ -20,7 +20,7 @@ dependencies = [
     # aiodns (pulled in by aiohttp speedups) crashes at import-time with pycares 5.x:
     # AttributeError: module 'pycares' has no attribute 'ares_query_a_result'
     # Pin until upstream aiodns supports pycares 5.x.
-    "pycares<5",
+    "pycares<6",
     "websockets>=14.1",
     "fastapi>=0.115.5",
     "fastmcp>=2.12.4",
