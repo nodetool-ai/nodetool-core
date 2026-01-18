@@ -2199,10 +2199,10 @@ class OpenAIProvider(BaseProvider):
         for config in embedding_models_config:
             models.append(
                 EmbeddingModel(
-                    id=config["id"],
-                    name=config["name"],
+                    id=cast("str", config["id"]),
+                    name=cast("str", config["name"]),
                     provider=Provider.OpenAI,
-                    dimensions=config["dimensions"],
+                    dimensions=cast("int", config["dimensions"]),
                 )
             )
 

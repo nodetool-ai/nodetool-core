@@ -7,7 +7,7 @@ allowing collections to use OpenAI, Ollama, or other provider APIs for embedding
 
 import asyncio
 import concurrent.futures
-from typing import List
+from typing import List, cast
 
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
@@ -109,7 +109,7 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
                 )
             )
 
-        return embeddings
+        return cast("Embeddings", embeddings)
 
 
 class OpenAIEmbeddingFunction(ProviderEmbeddingFunction):
@@ -186,7 +186,6 @@ def get_provider_embedding_function(
     )
 
     log.warning(
-        f"Could not determine provider for embedding model '{embedding_model}'. "
-        "Falling back to SentenceTransformer."
+        f"Could not determine provider for embedding model '{embedding_model}'. Falling back to SentenceTransformer."
     )
     return SentenceTransformerEmbeddingFunction(model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL)

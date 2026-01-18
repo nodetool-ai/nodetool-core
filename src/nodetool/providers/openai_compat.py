@@ -145,7 +145,7 @@ class OpenAICompat:
         else:
             raise ValueError(f"Unknown content type {content}")
 
-    async def convert_message(self, message: Message):
+    async def convert_message(self, message: Message) -> Any:
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
