@@ -251,7 +251,9 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
+    def convert_message(  # type: ignore[override]
+        self, message: Message, use_tool_emulation: bool = False
+    ) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
