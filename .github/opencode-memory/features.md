@@ -13,3 +13,4 @@
 - **Rate Limiting**: `AsyncTokenBucket` and `AsyncRateLimiter` for controlling operation rates (token bucket algorithm)
 - **Circuit Breaker**: `CircuitBreaker`, `MultiCircuitBreaker`, and `CircuitBreakerConfig` for preventing cascading failures in distributed systems
 - **Async Lock**: `AsyncLock` for exclusive resource access with timeout support, complementing `AsyncSemaphore`
+- **Debounce Utilities**: `AsyncDebounce` and `async_debounce` for debouncing rapid successive calls (search-as-you-type, auto-save, API coalescing)

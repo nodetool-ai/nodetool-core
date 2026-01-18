@@ -1,3 +1,4 @@
+from .async_debounce import AsyncDebounce, async_debounce
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
 from .async_utils import AsyncSemaphore, gather_with_concurrency
@@ -16,6 +17,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AsyncByteStream",
+    "AsyncDebounce",
     "AsyncLock",
     "AsyncRateLimiter",
     "AsyncSemaphore",
@@ -29,6 +31,7 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "async_debounce",
     "batched_async_iterable",
     "gather_with_concurrency",
     "process_in_batches",
