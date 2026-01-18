@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
 
 import tiktoken
 from ollama import AsyncClient, Client
@@ -756,7 +756,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}"
                 )
 
-                return embeddings
+                return cast("list[list[float]]", embeddings)
 
         except Exception as e:
             log.error(f"Ollama embedding generation failed: {e}")
