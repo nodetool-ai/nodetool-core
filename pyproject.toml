@@ -15,7 +15,8 @@ dependencies = [
     # Core dependencies
     "pydantic>=2.11.2",
     "python-multipart>=0.0.17",
-    "aiohttp>=3.11.2",
+    "aiohttp>=3.13.1",  # 3.13.1 fixes zstd decompression for chunked streams
+    "brotli>=1.2.0",  # Required by aiohttp 3.13+ for br encoding
     # aiodns (pulled in by aiohttp speedups) crashes at import-time with pycares 5.x:
     # AttributeError: module 'pycares' has no attribute 'ares_query_a_result'
     # Pin until upstream aiodns supports pycares 5.x.
