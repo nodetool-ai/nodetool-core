@@ -109,7 +109,7 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
                 )
             )
 
-        return cast("Embeddings", embeddings)
+        return list(embeddings)  # type: ignore[return-value]
 
 
 class OpenAIEmbeddingFunction(ProviderEmbeddingFunction):

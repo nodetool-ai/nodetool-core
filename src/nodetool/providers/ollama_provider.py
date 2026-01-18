@@ -756,7 +756,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}"
                 )
 
-                return cast("list[list[float]]", embeddings)
+                return [list(e) for e in embeddings]  # type: ignore[misc]
 
         except Exception as e:
             log.error(f"Ollama embedding generation failed: {e}")
