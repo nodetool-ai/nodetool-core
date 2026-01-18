@@ -5,7 +5,7 @@ This module includes the fundamental Tool class that all tools inherit from,
 and utility functions used by multiple tools.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.processing_context import ProcessingContext
@@ -19,7 +19,7 @@ class Tool:
     # Class attributes expected to be defined by subclasses
     name: str = "base_tool"  # Provide a default or make abstract
     description: str = "Base tool description"
-    input_schema: dict[str, Any] = {}  # noqa: RUF012  # Mutable default is intentional; overridden by subclasses
+    input_schema: ClassVar[dict[str, Any]] = {}  # Mutable default is intentional; overridden by subclasses
     example: str = ""
 
     def user_message(self, params: dict[str, Any]) -> str:

@@ -129,6 +129,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.typecheck import typecheck
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.packages.registry import Registry
+from nodetool.types.api_graph import Edge, Node
 from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.workflows.base_node import (
     InputNode,
@@ -219,7 +220,7 @@ class SubmitWorkflowDesignTool(Tool):
 
     name: str = "submit_workflow_design"
     description: str = "Submit the final workflow design including all nodes and their connections. Use this once you have found all necessary nodes and are ready to create the graph."
-    input_schema: ClassVar[dict[str, Any]] = WORKFLOW_DESIGN_SCHEMA
+    input_schema: ClassVar[dict[str, Any]] = WORKFLOW_DESIGN_SCHEMA  # type: ignore[reportIncompatibleVariableOverride]
 
     async def process(self, context: ProcessingContext, params: dict[str, Any]):
         """This tool doesn't need a process method as the agent handles the output."""
@@ -808,7 +809,7 @@ class GraphPlanner:
     def _build_nodes_and_edges_from_specifications(
         self,
         node_specifications: list[NodeSpecification],
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    ) -> tuple[list[Node], list[Edge]]:
         """
         Build nodes and edges from node specifications.
 
@@ -853,12 +854,12 @@ class GraphPlanner:
                 # Check if this is an edge definition
                 if isinstance(prop_value, dict) and prop_value.get("type") == "edge":
                     # Create edge
-                    edge = {
-                        "source": prop_value["source"],
-                        "target": node_id,
-                        "sourceHandle": prop_value["sourceHandle"],
-                        "targetHandle": prop_name,
-                    }
+                    edge = Edge(
+                        source=prop_value["source"],
+                        target=node_id,
+                        sourceHandle=prop_value["sourceHandle"],
+                        targetHandle=prop_name,
+                    )
                     edges.append(edge)
                     edge_count += 1
                     logger.debug(
@@ -879,18 +880,15 @@ class GraphPlanner:
                 f"Node {node_id} processed: {edge_count} edges, {len(node_data)} standard props, {len(dynamic_properties)} dynamic props"
             )
 
-            # Create node dict in the requested format
-            node_dict = {
-                "id": node_id,
-                "type": node_type,
-                "data": node_data,
-            }
+            # Create node object in the requested format
+            node = Node(
+                id=node_id,
+                type=node_type,
+                data=node_data,
+                dynamic_properties=dynamic_properties if dynamic_properties else {},
+            )
 
-            # Add dynamic_properties only if there are any
-            if dynamic_properties:
-                node_dict["dynamic_properties"] = dynamic_properties
-
-            nodes.append(node_dict)
+            nodes.append(node)
             logger.debug(f"Added node {node_id} to nodes list")
 
         logger.debug(f"Built {len(nodes)} nodes and {len(edges)} edges total")
@@ -987,7 +985,7 @@ class GraphPlanner:
         context: ProcessingContext,
         history: list[Message],
     ) -> AsyncGenerator[
-        Chunk | ToolCall | tuple[list[Message], WorkflowDesignResult, PlanningUpdate | None],
+        Chunk | ToolCall | tuple[list[Message], WorkflowDesignResult | None, PlanningUpdate | None],
         None,
     ]:
         """Run the workflow design phase with SearchNodesTool, using JSON output for final result."""
@@ -1372,7 +1370,7 @@ class GraphPlanner:
 
         logger.info("=" * 80 + "\n")
 
-    async def create_graph(self, context: ProcessingContext) -> AsyncGenerator[Chunk | PlanningUpdate, None]:
+    async def create_graph(self, context: ProcessingContext) -> AsyncGenerator[Chunk | PlanningUpdate | ToolCall, None]:
         """Create a workflow graph from the objective.
 
         Yields PlanningUpdate events during the process.
@@ -1412,7 +1410,7 @@ class GraphPlanner:
                     yield planning_update
             else:
                 # Stream chunk or tool call to frontend
-                yield item  # type: ignore
+                yield item
 
         if planning_update and planning_update.status == "Failed":
             error_msg = f"Workflow design phase failed: {planning_update.content}"
@@ -1456,8 +1454,8 @@ class GraphPlanner:
         # Create the final graph
         logger.debug("Creating APIGraph object")
         self.graph = APIGraph(
-            nodes=nodes,  # type: ignore
-            edges=edges,  # type: ignore
+            nodes=nodes,
+            edges=edges,
         )
         logger.info(f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
         logger.debug(f"Graph object created: {type(self.graph)}")
