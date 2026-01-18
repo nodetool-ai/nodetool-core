@@ -10,6 +10,13 @@ from .circuit_breaker import (
     CircuitState,
     MultiCircuitBreaker,
 )
+from .object_pool import (
+    AsyncObjectPool,
+    ObjectPoolError,
+    PoolAcquireTimeoutError,
+    PoolClosedError,
+    pooled,
+)
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
@@ -17,6 +24,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 __all__ = [
     "AsyncByteStream",
     "AsyncLock",
+    "AsyncObjectPool",
     "AsyncRateLimiter",
     "AsyncSemaphore",
     "AsyncTokenBucket",
@@ -26,11 +34,15 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "ObjectPoolError",
+    "PoolAcquireTimeoutError",
+    "PoolClosedError",
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
     "batched_async_iterable",
     "gather_with_concurrency",
+    "pooled",
     "process_in_batches",
     "retry_with_exponential_backoff",
     "timeout",

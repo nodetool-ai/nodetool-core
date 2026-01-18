@@ -13,3 +13,4 @@
 - **Rate Limiting**: `AsyncTokenBucket` and `AsyncRateLimiter` for controlling operation rates (token bucket algorithm)
 - **Circuit Breaker**: `CircuitBreaker`, `MultiCircuitBreaker`, and `CircuitBreakerConfig` for preventing cascading failures in distributed systems
 - **Async Lock**: `AsyncLock` for exclusive resource access with timeout support, complementing `AsyncSemaphore`
+- **Object Pool**: `AsyncObjectPool` for reusing expensive-to-create resources (HTTP sessions, ML models, connections) with lazy initialization, validation on borrow, and self-healing
