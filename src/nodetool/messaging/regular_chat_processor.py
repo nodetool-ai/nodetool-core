@@ -104,10 +104,8 @@ import hashlib
 import json
 import logging
 import mimetypes
-import tempfile
 from datetime import date, datetime
 from io import BytesIO
-from pathlib import Path
 from typing import List, Optional
 
 import httpx
@@ -733,8 +731,6 @@ class RegularChatProcessor(MessageProcessor):
 
         try:
             if e.response and e.response.content:
-                import json
-
                 body = e.response.json()
                 if isinstance(body, dict) and "error" in body:
                     error_detail = body["error"]
