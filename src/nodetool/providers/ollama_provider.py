@@ -251,7 +251,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
+    async def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -367,7 +367,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Formatted tools: {[tool.get('function', {}).get('name', 'unknown') for tool in formatted_tools]}")
         return formatted_tools
 
-    def _prepare_request_params(
+    async def _prepare_request_params(
         self,
         messages: Sequence[Message],
         model: str,
@@ -442,11 +442,14 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     *modified_messages,
                 ]
 
-            ollama_messages = [self.convert_message(m, use_tool_emulation=True) for m in modified_messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=True) for m in modified_messages)
+            )
             log.debug("Using tool emulation: added tool definitions to system message")
         else:
-            # Regular message conversion
-            ollama_messages = [self.convert_message(m, use_tool_emulation=False) for m in messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=False) for m in messages)
+            )
 
         log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
@@ -512,7 +515,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.info(f"Using tool emulation for model {model}")
 
         async with get_ollama_client(self.api_url) as client:
-            params = self._prepare_request_params(
+            params = await self._prepare_request_params(
                 messages,
                 model,
                 tools,
@@ -599,7 +602,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.info(f"Using tool emulation for model {model}")
 
         async with get_ollama_client(self.api_url) as client:
-            params = self._prepare_request_params(
+            params = await self._prepare_request_params(
                 messages,
                 model,
                 tools,
