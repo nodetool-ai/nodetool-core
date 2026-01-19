@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+import aiofiles
 import httpx
 
 from nodetool.config.logging_config import get_logger
@@ -149,13 +150,13 @@ async def download_llama_cpp_model(
         async with client.stream("GET", hf_url, headers=headers) as response:
             response.raise_for_status()
 
-            with open(temp_path, "wb") as f:
+            async with aiofiles.open(temp_path, "wb") as f:
                 async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
                     if cancel_event and cancel_event.is_set():
                         temp_path.unlink(missing_ok=True)
                         raise asyncio.CancelledError("Download cancelled")
 
-                    f.write(chunk)
+                    await f.write(chunk)
                     downloaded += len(chunk)
 
                     if progress_callback:

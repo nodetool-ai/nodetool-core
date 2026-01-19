@@ -9,6 +9,7 @@ import shutil
 import tempfile
 from typing import Optional
 
+import aiofiles
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 
 from nodetool.config.logging_config import get_logger
@@ -31,7 +32,7 @@ def create_collection_router() -> APIRouter:
         tmp_dir = tempfile.mkdtemp()
         tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
         try:
-            with open(tmp_path, "wb") as buffer:
+            async with aiofiles.open(tmp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
             file_path = tmp_path

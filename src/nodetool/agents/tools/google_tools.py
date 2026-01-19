@@ -1,5 +1,7 @@
 from typing import Any
 
+import aiofiles
+
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import Provider
@@ -226,8 +228,8 @@ class GoogleImageGenerationTool(Tool):
             raise ValueError("No image bytes found in response")
 
         file_path = context.resolve_workspace_path(output_file)
-        with open(file_path, "wb") as f:
-            f.write(image_bytes)
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(image_bytes)
 
         formatted_results = {
             "type": "image",
