@@ -9,9 +9,8 @@ import asyncio
 import json
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
 
 import tiktoken
 from ollama import AsyncClient, Client

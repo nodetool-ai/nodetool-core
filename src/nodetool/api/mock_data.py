@@ -5,9 +5,7 @@ Provides functions to populate the database with realistic test data including
 threads, messages, workflows, assets, and collections.
 """
 
-import asyncio
 import io
-import json
 import random
 import uuid
 from datetime import datetime, timedelta
@@ -15,10 +13,8 @@ from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
-    MessageImageContent,
     MessageTextContent,
     Provider,
-    ToolCall,
 )
 from nodetool.models.asset import Asset
 from nodetool.models.base_model import create_time_ordered_uuid
