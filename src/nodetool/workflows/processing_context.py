@@ -1093,6 +1093,20 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the file does not exist (for local files).
         """
+        # Handle local storage URLs that are provided as relative API paths
+        if url.startswith("/api/storage/temp/"):
+            key = url.split("/api/storage/temp/", 1)[1]
+            io = BytesIO()
+            await require_scope().get_temp_storage().download(key, io)
+            io.seek(0)
+            return io
+        if url.startswith("/api/storage/"):
+            key = url.split("/api/storage/", 1)[1]
+            io = BytesIO()
+            await require_scope().get_asset_storage().download(key, io)
+            io.seek(0)
+            return io
+
         # Handle paths that start with "/" by converting to proper file:// URI
         if url.startswith("/") and not url.startswith("//"):
             url = create_file_uri(url)
