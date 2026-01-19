@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")

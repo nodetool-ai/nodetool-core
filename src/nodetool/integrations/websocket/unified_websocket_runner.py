@@ -59,9 +59,7 @@ from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.workspace import Workspace
 from nodetool.observability.tracing import (
-    is_tracing_enabled,
     trace_websocket_message,
-    trace_workflow,
 )
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
 from nodetool.types.job import JobUpdate, RunStateInfo
