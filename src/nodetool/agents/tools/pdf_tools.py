@@ -4,6 +4,8 @@ import json
 import os
 from typing import Any, ClassVar
 
+import aiofiles
+
 from nodetool.workflows.processing_context import ProcessingContext
 
 from .base import Tool
@@ -125,8 +127,8 @@ class ExtractPDFTablesTool(Tool):
                     all_tables.append(table_data)
 
             output_file = context.resolve_workspace_path(params["output_file"])
-            with open(output_file, "w") as f:
-                json.dump(all_tables, f)
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(json.dumps(all_tables))
 
             return {"output_file": output_file}
         except Exception as e:
@@ -192,8 +194,8 @@ class ConvertPDFToMarkdownTool(Tool):
                 md_text = "\f".join(pages[start_page : end + 1])
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, "w") as f:
-                f.write(md_text)
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(md_text)
 
             return {"output_file": output_file}
         except Exception as e:

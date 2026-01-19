@@ -12,6 +12,7 @@ This module provides tools for managing the filesystem:
 import os
 import re
 
+import aiofiles
 import tiktoken
 
 from nodetool.workflows.processing_context import ProcessingContext
@@ -54,8 +55,8 @@ class WriteFileTool(Tool):
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
             mode = "a" if append else "w"
-            with open(full_path, mode, encoding="utf-8") as f:
-                f.write(content)
+            async with aiofiles.open(full_path, mode, encoding="utf-8") as f:
+                await f.write(content)
 
             file_existed = os.path.exists(full_path)
             return {
@@ -126,14 +127,14 @@ class ReadFileTool(Tool):
                 # Handle reading a single file
                 try:
                     # Check if the file is binary
-                    with open(full_path, encoding="utf-8") as f:
-                        f.read(1024)  # Test read
+                    async with aiofiles.open(full_path, encoding="utf-8") as f:
+                        await f.read(1024)  # Test read
 
                     # Read the file content
-                    with open(full_path, encoding="utf-8") as f:
+                    async with aiofiles.open(full_path, encoding="utf-8") as f:
                         if start_line is not None or end_line is not None:
                             # Read specified line range
-                            lines = f.readlines()
+                            lines = await f.readlines()
                             total_lines = len(lines)
 
                             # Adjust for 1-based indexing and validate range
@@ -162,7 +163,7 @@ class ReadFileTool(Tool):
                             }
                         else:
                             # Read the whole file or up to max_length_per_file
-                            content = f.read(max_length_per_file)
+                            content = await f.read(max_length_per_file)
                             line_info = {"total_lines": len(re.findall(r"\n", content)) + 1}
 
                     # Always count tokens

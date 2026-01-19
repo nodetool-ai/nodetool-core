@@ -7,6 +7,8 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import aiofiles
+
 if TYPE_CHECKING:
     from huggingface_hub import AsyncInferenceClient
     from playwright.async_api import ElementHandle, Page
@@ -910,14 +912,14 @@ class DOMExtractTool(Tool):
                 full_path = context.resolve_workspace_path(output_file)
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-                with open(full_path, "w", encoding="utf-8") as f:
+                async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                     if output_file.endswith(".json"):
-                        json.dump(extracted_data, f, indent=2, ensure_ascii=False)
+                        await f.write(json.dumps(extracted_data, indent=2, ensure_ascii=False))
                     else:
                         if isinstance(extracted_data, list):
-                            f.write("\n".join(str(item) for item in extracted_data))
+                            await f.write("\n".join(str(item) for item in extracted_data))
                         else:
-                            f.write(str(extracted_data))
+                            await f.write(str(extracted_data))
 
             return {
                 "success": True,
@@ -1134,20 +1136,21 @@ class AgenticBrowserTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            with open(full_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "url": url,
-                        "objective": objective,
-                        "extracted_content": result["extracted_content"],
-                        "metadata": {
-                            "iterations": result["iterations"],
-                            "tool_calls": result["tool_calls"],
+            async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
+                await f.write(
+                    json.dumps(
+                        {
+                            "url": url,
+                            "objective": objective,
+                            "extracted_content": result["extracted_content"],
+                            "metadata": {
+                                "iterations": result["iterations"],
+                                "tool_calls": result["tool_calls"],
+                            },
                         },
-                    },
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
+                        indent=2,
+                        ensure_ascii=False,
+                    )
                 )
 
             result["output_file"] = output_file

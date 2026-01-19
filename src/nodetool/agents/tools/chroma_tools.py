@@ -11,6 +11,7 @@ This module provides tools for semantic and keyword searching:
 import uuid
 from typing import Any, ClassVar
 
+import aiofiles
 import chromadb
 
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -458,8 +459,8 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             doc_id = file_path
             resolved_file_path = context.resolve_workspace_path(file_path)
 
-            with open(resolved_file_path) as f:
-                text = f.read()
+            async with aiofiles.open(resolved_file_path) as f:
+                text = await f.read()
         else:
             text = params.get("text")
             doc_id = str(uuid.uuid4())

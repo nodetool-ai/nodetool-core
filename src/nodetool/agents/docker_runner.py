@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import aiofiles
+
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import get_tool_by_name
 from nodetool.metadata.types import Provider
@@ -44,8 +46,8 @@ async def _run(cfg: dict[str, Any]) -> None:
         pass
 
     results = agent.get_results()
-    with Path(cfg["result_path"]).open("w") as f:
-        json.dump(results, f)
+    async with aiofiles.open(cfg["result_path"], "w") as f:
+        await f.write(json.dumps(results))
 
 
 def main() -> None:

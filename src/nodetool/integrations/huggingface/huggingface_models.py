@@ -28,6 +28,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, List, Sequence
 
+import aiofiles
 from huggingface_hub import HfApi, ModelInfo
 
 from nodetool.config.logging_config import get_logger
@@ -633,8 +634,8 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
     if isinstance(cached_path, str):
         try:
-            with open(cached_path, encoding="utf-8") as handle:
-                return handle.read()
+            async with aiofiles.open(cached_path, encoding="utf-8") as handle:
+                return await handle.read()
         except Exception as e:
             log.debug("Failed to read cached README for %s: %s", model_id, e)
     elif cached_path is _CACHED_NO_EXIST:
@@ -660,8 +661,8 @@ async def fetch_model_readme(model_id: str) -> str | None:
             repo_type="model",
             token=token,
         )
-        with open(readme_path, encoding="utf-8") as handle:
-            return handle.read()
+        async with aiofiles.open(readme_path, encoding="utf-8") as handle:
+            return await handle.read()
     except Exception as exc:  # pragma: no cover
         log.debug("Failed to download README for %s: %s", model_id, exc)
         return None
@@ -1492,8 +1493,8 @@ async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
         repo_id.split("/")[-1]
         config = await HF_FAST_CACHE.resolve(repo_id, "config.json")
         if config:
-            with open(config) as f:
-                config_data = json.load(f)
+            async with aiofiles.open(config) as f:
+                config_data = json.loads(await f.read())
             model_type = config_data.get("model_type")
             if model_type in SUPPORTED_MODEL_TYPES:
                 results.append(

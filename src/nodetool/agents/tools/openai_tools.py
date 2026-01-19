@@ -1,6 +1,8 @@
 import base64
 from typing import TYPE_CHECKING, Any
 
+import aiofiles
+
 if TYPE_CHECKING:
     from openai import AsyncClient
 
@@ -149,8 +151,8 @@ class OpenAIImageGenerationTool(Tool):
             b64_image = getattr(image_data, "b64_json", None)
             if b64_image:
                 file_path = context.resolve_workspace_path(output_file)
-                with open(file_path, "wb") as f:
-                    f.write(base64.b64decode(b64_image))
+                async with aiofiles.open(file_path, "wb") as f:
+                    await f.write(base64.b64decode(b64_image))
                 formatted_results = {
                     "type": "image",
                     "prompt": prompt,
@@ -254,8 +256,8 @@ class OpenAITextToSpeechTool(Tool):
 
         if output_file:
             file_path = context.resolve_workspace_path(output_file)
-            with open(file_path, "wb") as f:
-                f.write(base64.b64decode(b64_audio))
+            async with aiofiles.open(file_path, "wb") as f:
+                await f.write(base64.b64decode(b64_audio))
 
         formatted_results = {
             "type": "audio",

@@ -1,6 +1,7 @@
 import os
 from typing import Any, ClassVar
 
+import aiofiles
 import aiohttp
 
 from nodetool.agents.tools.base import Tool
@@ -92,8 +93,8 @@ class DownloadFileTool(Tool):
                 file_size = int(content_length) if content_length else None
 
                 # Read the file data and write to disk
-                with open(full_path, "wb") as f:
-                    f.write(await response.read())
+                async with aiofiles.open(full_path, "wb") as f:
+                    await f.write(await response.read())
 
                 return {
                     "url": url,
