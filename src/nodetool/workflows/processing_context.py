@@ -1123,7 +1123,7 @@ class ProcessingContext:
         if url_parsed.scheme == "data":
             fname, data = url.split(",", 1)
             image_bytes = base64.b64decode(data)
-            file = io.BytesIO(image_bytes)
+            file = BytesIO(image_bytes)
             # parse file ext from data uri
             ext = fname.split(";")[0].split("/")[1]
             file.name = f"{uuid.uuid4()}.{ext}"
