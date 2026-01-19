@@ -1,5 +1,6 @@
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
+from .async_queue import AsyncQueue, QueueShutdownError
 from .async_utils import AsyncSemaphore, gather_with_concurrency
 from .batching import batched_async_iterable, process_in_batches
 from .circuit_breaker import (
@@ -17,6 +18,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 __all__ = [
     "AsyncByteStream",
     "AsyncLock",
+    "AsyncQueue",
     "AsyncRateLimiter",
     "AsyncSemaphore",
     "AsyncTokenBucket",
@@ -26,6 +28,7 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "QueueShutdownError",
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
