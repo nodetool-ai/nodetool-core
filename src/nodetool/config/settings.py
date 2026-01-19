@@ -30,16 +30,6 @@ register_setting(
         "If not specified, the system will use default fonts."
     ),
 )
-register_setting(
-    package_name="nodetool",
-    env_var="COMFY_FOLDER",
-    group="Folders",
-    description=(
-        "Location of ComfyUI folder for integration with ComfyUI models and workflows. "
-        "Set this to use models from your existing ComfyUI installation. "
-        "This allows nodetool to access resources from your ComfyUI setup without duplicating files."
-    ),
-)
 
 register_setting(
     package_name="nodetool",
