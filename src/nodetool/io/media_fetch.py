@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import IO, TYPE_CHECKING, Any, Tuple, cast
+from typing import IO, Any, Tuple, cast
 
 import aiohttp
 import httpx
 import numpy as np
 import PIL.Image
 
-from nodetool.config.environment import Environment
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,

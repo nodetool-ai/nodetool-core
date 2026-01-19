@@ -2553,7 +2553,6 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
-        RunPodState,
         SelfHostedDeployment,
         SSHConfig,
         get_deployment_config_path,
