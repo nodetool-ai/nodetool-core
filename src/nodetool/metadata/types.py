@@ -23,7 +23,7 @@ TypeToName = {}
 NameToType = {}
 
 
-def add_type_name(type: Type, name: str):
+def add_type_name(type: type, name: str):
     """
     Adds a type name to the TypeToEnum and EnumToType mappings.
     """
@@ -249,7 +249,7 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
-    metadata: Dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
 
     @staticmethod
     def from_file(path: str):

@@ -80,8 +80,8 @@ async def abort(status_code: int, detail: Optional[str] = None) -> None:
 
 
 def flatten_models(
-    models: List[List[HuggingFaceModel]],
-) -> List[HuggingFaceModel]:
+    models: list[list[HuggingFaceModel]],
+) -> list[HuggingFaceModel]:
     """Flatten a list of models that may contain nested lists."""
     flat_list = []
     for item in models:

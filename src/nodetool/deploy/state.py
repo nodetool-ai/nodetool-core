@@ -134,7 +134,7 @@ class StateManager:
         finally:
             self._thread_lock.release()
 
-    def read_state(self, deployment_name: str) -> Optional[Dict[str, Any]]:
+    def read_state(self, deployment_name: str) -> Optional[dict[str, Any]]:
         """
         Read the state for a specific deployment.
 
@@ -167,7 +167,7 @@ class StateManager:
     def write_state(
         self,
         deployment_name: str,
-        state_updates: Dict[str, Any],
+        state_updates: dict[str, Any],
         update_timestamp: bool = True,
     ) -> None:
         """
@@ -231,7 +231,7 @@ class StateManager:
         """
         self.write_state(deployment_name, {"status": status}, update_timestamp=update_timestamp)
 
-    def get_all_states(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_states(self) -> dict[str, dict[str, Any]]:
         """
         Get state for all deployments.
 
@@ -374,7 +374,7 @@ class StateManager:
         return self.get_last_deployed(deployment_name) is not None
 
 
-def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> Dict[str, Any]:
+def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> dict[str, Any]:
     """
     Create a snapshot of the current state of all deployments.
 
@@ -386,7 +386,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
     Returns:
         Dictionary containing snapshot of all deployment states
     """
-    snapshot: Dict[str, Any] = {
+    snapshot: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
         "version": config.version,
         "deployments": {},
@@ -406,7 +406,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
 
 
 def restore_state_from_snapshot(
-    snapshot: Dict[str, Any],
+    snapshot: dict[str, Any],
     deployment_name: Optional[str] = None,
     config_path: Optional[Path | str] = None,
 ) -> None:

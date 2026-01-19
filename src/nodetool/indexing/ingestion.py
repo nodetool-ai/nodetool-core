@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 
 
 class Document:
-    def __init__(self, text: str, doc_id: str, metadata: Dict[str, str] | None = None):
+    def __init__(self, text: str, doc_id: str, metadata: dict[str, str] | None = None):
         self.text = text
         self.doc_id = doc_id
         self.metadata = metadata or {}
 
 
 def chunk_documents_recursive(
-    documents: List[Document],
+    documents: list[Document],
     chunk_size: int = 4096,
     chunk_overlap: int = 2048,
 ) -> tuple[dict[str, str], list[dict]]:
@@ -44,8 +44,8 @@ def chunk_documents_recursive(
         add_start_index=True,
     )
 
-    ids_docs: Dict[str, str] = {}
-    metadatas: List[dict] = []
+    ids_docs: dict[str, str] = {}
+    metadatas: list[dict] = []
 
     for doc in documents:
         splits = splitter.split_text(doc.text)
@@ -58,7 +58,7 @@ def chunk_documents_recursive(
 
 
 def chunk_documents_markdown(
-    documents: List[Document],
+    documents: list[Document],
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
 ) -> tuple[dict[str, str], list[dict]]:
@@ -77,8 +77,8 @@ def chunk_documents_markdown(
     )
     recursive_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-    ids_docs: Dict[str, str] = {}
-    metadatas: List[dict] = []
+    ids_docs: dict[str, str] = {}
+    metadatas: list[dict] = []
     chunk_index = 0
 
     for doc in documents:
@@ -162,7 +162,7 @@ async def default_ingestion_workflow_async(collection: Any, file_path: str, mime
     )
 
 
-def find_input_nodes(graph: dict) -> Tuple[str | None, str | None]:
+def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
     """Find the collection and file input node names from a workflow graph."""
     collection_input = None
     file_input = None

@@ -183,7 +183,7 @@ class ChatWebSocketClient:
                 f"Error sending message: {e}",
             )
 
-    async def send_command(self, command: str, data: Dict[str, Any]):
+    async def send_command(self, command: str, data: dict[str, Any]):
         """Send a generic command to the WebSocket server."""
         if not self.websocket:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
@@ -235,7 +235,7 @@ class ChatWebSocketClient:
             )
             self.running = False
 
-    async def process_message(self, data: Dict[str, Any]):
+    async def process_message(self, data: dict[str, Any]):
         """Process received message based on type."""
         msg_type = data.get("type", "unknown")
         timestamp = datetime.now().strftime("%H:%M:%S")

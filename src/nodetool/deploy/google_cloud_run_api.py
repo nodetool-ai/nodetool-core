@@ -333,11 +333,11 @@ def deploy_to_cloud_run(
     concurrency: int = 80,
     timeout: int = 3600,
     allow_unauthenticated: bool = True,
-    env_vars: Optional[Dict[str, str]] = None,
+    env_vars: Optional[dict[str, str]] = None,
     service_account: Optional[str] = None,
     gcs_bucket: Optional[str] = None,
     gcs_mount_path: str = "/mnt/gcs",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Deploy a service to Google Cloud Run.
 
@@ -564,7 +564,7 @@ def delete_cloud_run_service(service_name: str, region: str, project_id: str) ->
         return False
 
 
-def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Optional[Dict[str, Any]]:
+def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Optional[dict[str, Any]]:
     """
     Get information about a Cloud Run service.
 
@@ -602,7 +602,7 @@ def get_cloud_run_service(service_name: str, region: str, project_id: str) -> Op
         return None
 
 
-def list_cloud_run_services(region: str, project_id: str) -> List[Dict[str, Any]]:
+def list_cloud_run_services(region: str, project_id: str) -> list[dict[str, Any]]:
     """
     List all Cloud Run services in a region.
 

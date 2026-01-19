@@ -145,7 +145,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
             http_client=self._fallback_http_client,
         )
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Get available vLLM models.
 
         Queries the vLLM server's /models endpoint to discover available models.
@@ -157,7 +157,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         try:
             client = self._ensure_client()
             models_response = await client.models.list()
-            models: List[LanguageModel] = []
+            models: list[LanguageModel] = []
 
             for model in models_response.data:
                 models.append(

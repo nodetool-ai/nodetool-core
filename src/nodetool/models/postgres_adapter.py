@@ -26,7 +26,7 @@ from .database_adapter import DatabaseAdapter
 log = get_logger(__name__)
 
 
-def convert_to_postgres_format(value: Any, py_type: Type | None) -> int | float | str | bytes | Jsonb | None:
+def convert_to_postgres_format(value: Any, py_type: type | None) -> int | float | str | bytes | Jsonb | None:
     """
     Convert a Python value to a format suitable for PostgreSQL based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -63,7 +63,7 @@ def convert_to_postgres_format(value: Any, py_type: Type | None) -> int | float 
         raise TypeError(f"Unsupported type for PostgreSQL: {py_type}")
 
 
-def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
+def convert_from_postgres_format(value: Any, py_type: type | None) -> Any:
     """
     Convert a value from PostgreSQL to a Python type based on the provided Python type.
     Deserialize JSON strings to lists and dicts.
@@ -94,7 +94,7 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
         raise TypeError(f"Unsupported type for PostgreSQL: {py_type}")
 
 
-def convert_from_postgres_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
+def convert_from_postgres_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
     """
     Convert a dictionary of attributes from PostgreSQL to a dictionary of Python types based on the provided fields.
     """
@@ -106,7 +106,7 @@ def convert_from_postgres_attributes(attributes: Dict[str, Any], fields: Dict[st
     }
 
 
-def convert_to_postgres_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
+def convert_to_postgres_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
     """
     Convert a dictionary of attributes from PostgreSQL to a dictionary of Python types based on the provided fields.
     """
@@ -177,7 +177,7 @@ def translate_condition_to_sql(condition: str) -> str:
     return translated_condition
 
 
-def translate_postgres_params(query: str, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+def translate_postgres_params(query: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """
     Translate SQLite-style named parameters to PostgreSQL-style parameters.
     """
@@ -188,19 +188,19 @@ def translate_postgres_params(query: str, params: Dict[str, Any]) -> tuple[str, 
 class PostgresAdapter(DatabaseAdapter):
     """Adapts DBModel operations to a PostgreSQL database."""
 
-    db_params: Dict[str, str]
+    db_params: dict[str, str]
     table_name: str
-    table_schema: Dict[str, Any]
-    fields: Dict[str, FieldInfo]
-    indexes: List[Dict[str, Any]]
+    table_schema: dict[str, Any]
+    fields: dict[str, FieldInfo]
+    indexes: list[dict[str, Any]]
     _pool: AsyncConnectionPool | None
 
     def __init__(
         self,
-        db_params: Dict[str, str],
-        fields: Dict[str, FieldInfo],
-        table_schema: Dict[str, Any],
-        indexes: List[Dict[str, Any]],
+        db_params: dict[str, str],
+        fields: dict[str, FieldInfo],
+        table_schema: dict[str, Any],
+        indexes: list[dict[str, Any]],
     ):
         """Initializes the PostgreSQL adapter.
 
@@ -344,7 +344,7 @@ class PostgresAdapter(DatabaseAdapter):
                 if field_name in index["columns"]:
                     await self.create_index(index["name"], index["columns"], index["unique"])
 
-    async def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: dict[str, Any]) -> None:
         """Saves (inserts or updates) an item into the database table.
 
         Uses an INSERT ... ON CONFLICT (primary_key) DO UPDATE statement.
@@ -367,7 +367,7 @@ class PostgresAdapter(DatabaseAdapter):
                 await cursor.execute(query, values)  # type: ignore[arg-type]
             await conn.commit()
 
-    async def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
         Args:
@@ -445,8 +445,8 @@ class PostgresAdapter(DatabaseAdapter):
         order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
-        columns: List[str] | None = None,
-    ) -> tuple[List[Dict[str, Any]], str]:
+        columns: list[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], str]:
         pk = self.get_primary_key()
         if order_by:
             order_clause = SQL("{}.{} {}").format(
@@ -506,7 +506,7 @@ class PostgresAdapter(DatabaseAdapter):
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
             yield cursor
 
-    async def execute_sql(self, sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    async def execute_sql(self, sql: str, params: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
         Uses a RealDictCursor to return rows as dictionaries.
@@ -528,7 +528,7 @@ class PostgresAdapter(DatabaseAdapter):
                 return [convert_from_postgres_attributes(dict(row), self.fields) for row in rows]
             return []
 
-    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
+    async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
         unique_str = "UNIQUE" if unique else ""
         columns_str = ", ".join(columns)
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
@@ -556,7 +556,7 @@ class PostgresAdapter(DatabaseAdapter):
             print(f"PostgreSQL error during index deletion: {e}")
             raise e
 
-    async def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> list[dict[str, Any]]:
         sql = """
             SELECT
                 i.relname as index_name,

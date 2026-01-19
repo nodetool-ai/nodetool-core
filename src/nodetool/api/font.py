@@ -12,7 +12,7 @@ log = get_logger(__name__)
 
 
 class FontResponse(BaseModel):
-    fonts: List[str]
+    fonts: list[str]
 
 
 router = APIRouter(prefix="/api/fonts", tags=["fonts"])

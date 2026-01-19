@@ -173,7 +173,7 @@ class Asset(DBModel):
         return items
 
     @classmethod
-    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> Dict:
+    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> dict:
         """Recursively fetches all assets within a given folder for a user.
 
         Args:
@@ -284,7 +284,7 @@ class Asset(DBModel):
         return assets, next_cursor, folder_path_list
 
     @classmethod
-    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Get folder path information for given asset IDs using batch queries to avoid N+1 problem.
 
@@ -411,7 +411,7 @@ class Asset(DBModel):
         return result
 
     @classmethod
-    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Fallback method for get_asset_path_info when batch queries fail.
         Uses individual queries but with better error handling.

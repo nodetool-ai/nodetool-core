@@ -13,7 +13,7 @@ class ModelCommand(Command):
     def __init__(self):
         super().__init__("model", "Set the model for all agents by ID", ["m"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not cli.selected_provider:
             cli.console.print("[bold red]No provider selected.[/bold red] Use /provider <name> first.")
             return False
@@ -65,7 +65,7 @@ class ModelsCommand(Command):
     def __init__(self):
         super().__init__("models", "List available models for the current provider", ["ms"])
 
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
+    async def execute(self, cli: "ChatCLI", args: list[str]) -> bool:
         try:
             if not cli.selected_provider:
                 cli.console.print(

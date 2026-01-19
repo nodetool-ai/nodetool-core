@@ -26,7 +26,7 @@ def _is_opencv_available() -> bool:
 
 
 def _legacy_export_to_video(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
 ) -> str:
@@ -60,7 +60,7 @@ def _legacy_export_to_video(
 
 
 def export_to_video(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
     quality: float = 5.0,
@@ -135,7 +135,7 @@ def export_to_video(
 
 
 def export_to_video_bytes(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     fps: int = 10,
     quality: float = 5.0,
     bitrate: Optional[int] = None,
@@ -208,7 +208,7 @@ def export_to_video_bytes(
 
 
 def _legacy_export_to_video_bytes(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     fps: int = 10,
 ) -> bytes:
     """Legacy video export to bytes using OpenCV backend."""
@@ -249,7 +249,7 @@ def _legacy_export_to_video_bytes(
 def extract_video_frames(
     input_video: str | bytes,
     fps: int = 1,
-) -> List[PIL.Image.Image]:
+) -> list[PIL.Image.Image]:
     """
     Extract frames from a video at a specific fps.
 
@@ -310,7 +310,7 @@ def extract_video_frames(
 def _legacy_read_video_frames(
     input_video: str | bytes | Any,
     fps: int = 1,
-) -> List[PIL.Image.Image]:
+) -> list[PIL.Image.Image]:
     """Legacy video reading using OpenCV."""
     if not _is_opencv_available():
         raise ImportError("OpenCV is required for video reading fallback.")

@@ -46,7 +46,7 @@ class DeploymentManager:
         self.config = load_deployment_config()
         self.state_manager = StateManager(config_path=config_path)
 
-    def list_deployments(self) -> List[Dict[str, Any]]:
+    def list_deployments(self) -> list[dict[str, Any]]:
         """
         List all configured deployments with their current status.
 
@@ -96,7 +96,7 @@ class DeploymentManager:
             raise KeyError(f"Deployment '{name}' not found")
         return self.config.deployments[name]
 
-    def plan(self, name: str) -> Dict[str, Any]:
+    def plan(self, name: str) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
 
@@ -144,7 +144,7 @@ class DeploymentManager:
         name: str,
         dry_run: bool = False,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Apply a deployment to its target platform.
 
@@ -188,7 +188,7 @@ class DeploymentManager:
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
-    def status(self, name: str) -> Dict[str, Any]:
+    def status(self, name: str) -> dict[str, Any]:
         """
         Get current status of a deployment.
 
@@ -276,7 +276,7 @@ class DeploymentManager:
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
-    def destroy(self, name: str, force: bool = False) -> Dict[str, Any]:
+    def destroy(self, name: str, force: bool = False) -> dict[str, Any]:
         """
         Destroy a deployment (stop and remove all resources).
 
@@ -319,7 +319,7 @@ class DeploymentManager:
         else:
             raise ValueError(f"Unknown deployment type: {deployment.type}")
 
-    def validate(self, name: Optional[str] = None) -> Dict[str, Any]:
+    def validate(self, name: Optional[str] = None) -> dict[str, Any]:
         """
         Validate deployment configuration.
 
@@ -383,7 +383,7 @@ class DeploymentManager:
             logger.error(f"Error checking for changes: {e}")
             return False
 
-    def get_all_states(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_states(self) -> dict[str, dict[str, Any]]:
         """
         Get state for all deployments.
 

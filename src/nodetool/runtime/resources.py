@@ -30,7 +30,7 @@ log = get_logger(__name__)
 class DBResources(Protocol):
     """Protocol for database resources (connection + adapters)."""
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> DatabaseAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> DatabaseAdapter:
         """Get or create an adapter for the given model class.
 
         Args:
