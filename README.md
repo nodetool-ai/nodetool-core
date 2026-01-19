@@ -1,4 +1,4 @@
-# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
+# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.2--rc.27-blue.svg" alt="Version Badge">
 
 <h3>AI Workflow Engine</h3>
 
@@ -51,20 +51,31 @@ pip install .
 
 ```python
 import asyncio
-from nodetool.dsl.graph import graph, run_graph
-from nodetool.dsl.providers.openai import ChatCompletion
-from nodetool.metadata.types import OpenAIModel
+import tempfile
 
-# Create a simple workflow
-g = ChatCompletion(
-    model=OpenAIModel(model="gpt-4"),
-    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
-)
+from nodetool.nodes.lib.math import Add, Multiply
+from nodetool.runtime.resources import ResourceScope
+from nodetool.workflows.processing_context import ProcessingContext
 
-# Run the workflow
-result = asyncio.run(run_graph(graph(g)))
-print(result)
+async def main():
+    async with ResourceScope():
+        with tempfile.TemporaryDirectory() as workspace:
+            context = ProcessingContext(workspace_dir=workspace)
+
+            # Create and run a simple math workflow
+            add_node = Add(a=5.0, b=3.0)
+            result = await add_node.process(context)
+            print(f"5 + 3 = {result}")  # 8.0
+
+            # Chain operations
+            multiply_node = Multiply(a=result, b=2.0)
+            final = await multiply_node.process(context)
+            print(f"(5 + 3) * 2 = {final}")  # 16.0
+
+asyncio.run(main())
 ```
+
+For workflow-based execution with AI models, see the examples in `examples/`.
 
 ### CLI Usage
 
