@@ -404,14 +404,14 @@ async def generate_thumbnail(id: str, user: str = Depends(current_user)):
         video_content.seek(0)
     except Exception as e:
         log.error(f"Error downloading video asset {id}: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving video file")
+        raise HTTPException(status_code=500, detail="Error retrieving video file") from e
 
     # Generate thumbnail
     try:
         thumbnail = await create_video_thumbnail(video_content, 512, 512)
     except Exception as e:
         log.exception(f"Error generating thumbnail for asset {id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}") from e
 
     # Upload thumbnail
     try:
@@ -419,7 +419,7 @@ async def generate_thumbnail(id: str, user: str = Depends(current_user)):
             await storage.upload(asset.thumb_file_name, thumbnail)
     except Exception as e:
         log.error(f"Error uploading thumbnail for asset {id}: {e}")
-        raise HTTPException(status_code=500, detail="Error uploading thumbnail")
+        raise HTTPException(status_code=500, detail="Error uploading thumbnail") from e
 
     # Return updated asset
     return await from_model(asset)
