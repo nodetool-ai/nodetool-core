@@ -23,8 +23,6 @@ from anthropic.types.message_param import MessageParam
 from anthropic.types.tool_param import ToolParam
 from pydantic import BaseModel
 
-from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (

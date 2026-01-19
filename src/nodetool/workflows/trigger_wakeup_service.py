@@ -42,7 +42,6 @@ This implements Phase 4 of the architectural refactor:
 - Recovery service handles actual resumption
 """
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
@@ -176,7 +175,7 @@ class TriggerWakeupService:
         Returns:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
-        from nodetool.models.condition_builder import ConditionBuilder, Field
+        from nodetool.models.condition_builder import Field
 
         condition = Field("status").equals("suspended")
         adapter = await RunState.adapter()

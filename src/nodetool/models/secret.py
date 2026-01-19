@@ -5,18 +5,12 @@ Secrets are encrypted using a master key and user_id as salt, providing
 per-user encryption isolation.
 """
 
-from datetime import UTC, datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from datetime import UTC, datetime
+from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
-
-if TYPE_CHECKING:
-    from nodetool.security.crypto import SecretCrypto
-    from nodetool.security.master_key import MasterKeyManager
-
-log = get_logger(__name__)
 
 
 @DBIndex(["user_id", "key"], unique=True)
@@ -217,8 +211,6 @@ class Secret(DBModel):
         Returns:
             The Secret instance (created or updated).
         """
-        from nodetool.security.crypto import SecretCrypto
-        from nodetool.security.master_key import MasterKeyManager
 
         existing = await cls.find(user_id, key)
 

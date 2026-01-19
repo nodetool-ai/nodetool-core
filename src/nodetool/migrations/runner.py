@@ -28,12 +28,10 @@ from typing import Any, Callable, Coroutine
 from nodetool.config.logging_config import get_logger
 from nodetool.migrations.db_adapter import (
     MigrationDBAdapter,
-    SQLiteMigrationAdapter,
     create_migration_adapter,
 )
 from nodetool.migrations.exceptions import (
     BaselineError,
-    ChecksumError,
     LockError,
     MigrationDiscoveryError,
     MigrationError,

@@ -3,9 +3,8 @@ Vendorized video export utilities from diffusers.
 """
 
 import io
-import os
 import tempfile
-from typing import IO, Any, List, Optional, Union, cast
+from typing import IO, Any, List, Optional, cast
 
 import numpy as np
 import PIL.Image

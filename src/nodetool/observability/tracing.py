@@ -39,7 +39,7 @@ import uuid
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Generator, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Generator, Literal, Optional
 
 from nodetool.config.env_guard import get_system_env_value
 from nodetool.config.logging_config import get_logger

@@ -4,14 +4,13 @@ import base64
 import json
 import logging
 import os
-import socket
 import tempfile
 import time
 import urllib.parse
 import urllib.request
 import uuid
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 import websocket
@@ -563,10 +562,10 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning("Job completed with errors/warnings: %s", errors)
 
     if not output_data and errors:
-        print("worker-comfyui - Job failed with no output images.")
+        logger.error("Job failed with no output images.")
         return {"error": "Job processing failed", "details": errors}
     elif not output_data and not errors:
-        print("worker-comfyui - Job completed successfully, but the workflow produced no images.")
+        logger.warning("Job completed successfully, but the workflow produced no images.")
         final_result["status"] = "success_no_images"
         final_result["images"] = []
 

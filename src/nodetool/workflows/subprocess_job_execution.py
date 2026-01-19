@@ -13,7 +13,7 @@ from asyncio import subprocess as aio_subprocess
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
@@ -23,9 +23,6 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import (
-    Error as WorkflowError,
-)
 from nodetool.workflows.types import (
     ProcessingMessage,
 )

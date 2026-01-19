@@ -9,13 +9,11 @@ MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-refe
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, List
 
-import aiohttp
 import anthropic
 
 if TYPE_CHECKING:
-    import asyncio
 
     from nodetool.workflows.processing_context import ProcessingContext
 

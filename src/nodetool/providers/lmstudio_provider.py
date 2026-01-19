@@ -20,7 +20,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
-from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk
 
 if TYPE_CHECKING:

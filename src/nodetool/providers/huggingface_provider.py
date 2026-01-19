@@ -8,7 +8,6 @@ Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 import asyncio
 import base64
 import json
-import logging
 import os
 import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
@@ -21,7 +20,6 @@ from huggingface_hub import AsyncInferenceClient
 from pydantic import BaseModel
 
 from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
@@ -38,7 +36,6 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.types.model import CachedFileInfo
-from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 

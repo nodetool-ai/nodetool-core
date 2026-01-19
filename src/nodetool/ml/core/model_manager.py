@@ -276,7 +276,7 @@ class ModelManager:
         """
 
         try:  # pragma: no cover - optional dependency
-            import torch  # type: ignore
+            pass  # type: ignore
         except Exception:
             return "unknown", None
 

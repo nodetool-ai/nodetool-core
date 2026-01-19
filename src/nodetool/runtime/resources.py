@@ -17,7 +17,6 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 if TYPE_CHECKING:
-    from supabase import AsyncClient
 
     from nodetool.models.database_adapter import DatabaseAdapter
     from nodetool.storage.abstract_storage import AbstractStorage

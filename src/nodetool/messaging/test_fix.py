@@ -1,10 +1,8 @@
 import asyncio
 import json
-import os
 from unittest.mock import MagicMock
 
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor, detect_mime_type
-from nodetool.metadata.types import AssetRef
 from nodetool.providers.base import BaseProvider
 
 

@@ -8,7 +8,6 @@ from enum import EnumMeta as EnumType
 # mypy: ignore-errors
 from typing import Any, Dict, List, Type, Union, get_args, get_origin
 
-from postgrest.base_request_builder import APIResponse
 from pydantic.fields import FieldInfo
 
 # Assume supabase-py is installed (use async client)

@@ -5,7 +5,6 @@ Version: 20260103_000001
 Lease-based locking for distributed workflow execution.
 """
 
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

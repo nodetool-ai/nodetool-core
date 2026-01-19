@@ -102,7 +102,6 @@ class AWSSecretsUtil:
             The master key if found, None otherwise.
         """
         try:
-            from botocore.exceptions import ClientError
 
             client = AWSSecretsUtil.get_aws_client(region)
 

@@ -7,7 +7,6 @@ allowing collections to use OpenAI, Ollama, or other provider APIs for embedding
 
 import asyncio
 import concurrent.futures
-from typing import cast
 
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 

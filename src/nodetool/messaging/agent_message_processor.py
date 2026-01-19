@@ -25,7 +25,6 @@ from nodetool.workflows.types import (
     PlanningUpdate,
     StepResult,
     TaskUpdate,
-    TaskUpdateEvent,
 )
 
 from .message_processor import MessageProcessor
