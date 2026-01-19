@@ -383,6 +383,48 @@ async def update(
     return await from_model(asset)
 
 
+@router.post("/{id}/thumbnail")
+async def generate_thumbnail(id: str, user: str = Depends(current_user)):
+    """
+    Generate a thumbnail for a video asset.
+    """
+    asset = await AssetModel.find(user, id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not asset.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Asset is not a video")
+
+    storage = require_scope().get_asset_storage()
+
+    # Download video file
+    video_content = BytesIO()
+    try:
+        await storage.download(asset.file_name, video_content)
+        video_content.seek(0)
+    except Exception as e:
+        log.error(f"Error downloading video asset {id}: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving video file")
+
+    # Generate thumbnail
+    try:
+        thumbnail = await create_video_thumbnail(video_content, 512, 512)
+    except Exception as e:
+        log.exception(f"Error generating thumbnail for asset {id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")
+
+    # Upload thumbnail
+    try:
+        if thumbnail:
+            await storage.upload(asset.thumb_file_name, thumbnail)
+    except Exception as e:
+        log.error(f"Error uploading thumbnail for asset {id}: {e}")
+        raise HTTPException(status_code=500, detail="Error uploading thumbnail")
+
+    # Return updated asset
+    return await from_model(asset)
+
+
 @router.delete("/{id}")
 async def delete(id: str, user: str = Depends(current_user)):
     """
