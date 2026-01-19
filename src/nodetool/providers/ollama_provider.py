@@ -441,11 +441,14 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     *modified_messages,
                 ]
 
-            ollama_messages = [await self.convert_message(m, use_tool_emulation=True) for m in modified_messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=True) for m in modified_messages)
+            )
             log.debug("Using tool emulation: added tool definitions to system message")
         else:
-            # Regular message conversion
-            ollama_messages = [await self.convert_message(m, use_tool_emulation=False) for m in messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=False) for m in messages)
+            )
 
         log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
