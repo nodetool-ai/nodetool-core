@@ -104,16 +104,20 @@ async def run_coding_agent(
 
     # Save the markdown report
     if agent.results:
-        report_path = Path(context.workspace_dir) / "analysis_report.md"
-        with open(report_path, "w") as f:
-            # Handle both string and dict results
-            if isinstance(agent.results, str):
-                f.write(agent.results)
-            else:
-                # If results is a dict or other type, convert to JSON string
-                import json
+        import asyncio
+        import json
+        from pathlib import Path
 
-                f.write(json.dumps(agent.results, indent=2))
+        report_path = Path(context.workspace_dir) / "analysis_report.md"
+
+        def write_report():
+            with open(report_path, "w") as f:
+                if isinstance(agent.results, str):
+                    f.write(agent.results)
+                else:
+                    f.write(json.dumps(agent.results, indent=2))
+
+        await asyncio.to_thread(write_report)
         print(f"\n✓ Analysis report saved to: {report_path}")
 
         # List all generated files

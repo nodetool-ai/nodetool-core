@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import IO, Any, Tuple, cast
+from typing import IO, Tuple, cast
 
 import aiohttp
 import httpx

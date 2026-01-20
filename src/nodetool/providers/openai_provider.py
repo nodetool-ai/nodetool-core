@@ -750,8 +750,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
+                log.warning("Failed to convert audio URI %s to MP3: %s. Using original content.", uri, e)
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             log.debug("Encoding content to base64")
@@ -811,8 +810,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert data URI audio to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content.")
+                log.warning("Failed to convert data URI audio to MP3: %s. Using original content.", e)
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             log.debug("Encoding data to base64")
@@ -862,8 +860,7 @@ class OpenAIProvider(BaseProvider):
                     data = base64.b64encode(mp3_data).decode("utf-8")
                     log.debug(f"Audio converted to MP3, data length: {len(data)}")
                 except Exception as e:
-                    log.warning(f"Failed to convert raw audio data to MP3: {e}. Sending original data.")
-                    print(f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data.")
+                    log.warning("Failed to convert raw audio data to MP3: %s. Sending original data.", e)
                     data = base64.b64encode(content.audio.data).decode("utf-8")
 
                 return ChatCompletionContentPartInputAudioParam(
@@ -1360,8 +1357,7 @@ class OpenAIProvider(BaseProvider):
             try:
                 return json.loads(args)
             except Exception:
-                log.warning(f"Error parsing tool call arguments: {args}")
-                print(f"Warning: Error parsing tool call arguments: {args}")
+                log.warning("Error parsing tool call arguments: %s", args)
                 return {}
 
         # Create tool calls if present
