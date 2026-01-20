@@ -641,13 +641,13 @@ class WorkflowRunner:
         # Create tracer for this workflow run
         tracer = get_or_create_tracer(self.job_id)
 
-        async with trace_workflow(
-            job_id=self.job_id,
-            workflow_id=request.workflow_id,
-            user_id=request.user_id,
-            tracer=tracer,
-        ) as span:
-            try:
+        try:
+            async with trace_workflow(
+                job_id=self.job_id,
+                workflow_id=request.workflow_id,
+                user_id=request.user_id,
+                tracer=tracer,
+            ) as span:
                 await self._run_workflow(
                     request=request,
                     context=context,
@@ -656,9 +656,9 @@ class WorkflowRunner:
                     validate_graph=validate_graph,
                     span=span,
                 )
-            finally:
-                # Clean up tracer
-                remove_tracer(self.job_id)
+        finally:
+            # Clean up tracer - must be AFTER trace_workflow exits to ensure span is ended
+            remove_tracer(self.job_id)
 
     async def _run_workflow(
         self,
