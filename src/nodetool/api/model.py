@@ -638,7 +638,7 @@ async def get_pricing_by_provider(
 @router.get("/pricing/{provider}")
 async def get_pricing_endpoint(
     provider: Provider,
-    endpoint_id: list[str] | None = Query(None, description="Optional list of model/endpoint IDs to filter"),
+    endpoint_ids: list[str] | None = Query(None, description="Optional list of model/endpoint IDs to filter"),
     user: str = Depends(current_user),
 ) -> list[ModelPricing]:
     """
@@ -653,7 +653,7 @@ async def get_pricing_endpoint(
     - KIE: Output-based pricing (per image/video)
     - FAL: Output-based pricing (per image/video/request)
     """
-    return await get_pricing_by_provider(provider, user, endpoint_id)
+    return await get_pricing_by_provider(provider, user, endpoint_ids)
 
 
 @router.get("/ollama_model_info")
