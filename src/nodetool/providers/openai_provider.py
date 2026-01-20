@@ -193,7 +193,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available OpenAI models.
 
@@ -224,7 +224,7 @@ class OpenAIProvider(BaseProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:
@@ -242,7 +242,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"Error fetching OpenAI models: {e}")
             return []
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available OpenAI TTS models.
 
@@ -271,7 +271,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[TTSModel] = []
+        models: list[TTSModel] = []
         for config in tts_models_config:
             models.append(
                 TTSModel(
@@ -285,7 +285,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI TTS models")
         return models
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """
         Get available OpenAI ASR models.
 
@@ -308,7 +308,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[ASRModel] = []
+        models: list[ASRModel] = []
         for config in asr_models_config:
             models.append(
                 ASRModel(
@@ -321,7 +321,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI ASR models")
         return models
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """
         Get available OpenAI video generation models.
 
@@ -353,7 +353,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI video models")
         return models
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available OpenAI image generation models.
 
@@ -385,7 +385,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[ImageModel] = []
+        models: list[ImageModel] = []
         for config in image_models_config:
             model_id = config["id"]
             tasks = ["text_to_image", "image_to_image"]
@@ -748,8 +748,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
+                log.warning("Failed to convert audio URI %s to MP3: %s. Using original content.", uri, e)
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             log.debug("Encoding content to base64")
@@ -809,8 +808,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert data URI audio to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content.")
+                log.warning("Failed to convert data URI audio to MP3: %s. Using original content.", e)
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             log.debug("Encoding data to base64")
@@ -860,8 +858,7 @@ class OpenAIProvider(BaseProvider):
                     data = base64.b64encode(mp3_data).decode("utf-8")
                     log.debug(f"Audio converted to MP3, data length: {len(data)}")
                 except Exception as e:
-                    log.warning(f"Failed to convert raw audio data to MP3: {e}. Sending original data.")
-                    print(f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data.")
+                    log.warning("Failed to convert raw audio data to MP3: %s. Sending original data.", e)
                     data = base64.b64encode(content.audio.data).decode("utf-8")
 
                 return ChatCompletionContentPartInputAudioParam(
@@ -1358,8 +1355,7 @@ class OpenAIProvider(BaseProvider):
             try:
                 return json.loads(args)
             except Exception:
-                log.warning(f"Error parsing tool call arguments: {args}")
-                print(f"Warning: Error parsing tool call arguments: {args}")
+                log.warning("Error parsing tool call arguments: %s", args)
                 return {}
 
         # Create tool calls if present
@@ -2159,7 +2155,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"OpenAI ASR transcription failed: {e}")
             raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
 
-    async def get_available_embedding_models(self) -> List[EmbeddingModel]:
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
         """
         Get available OpenAI embedding models.
 
@@ -2193,7 +2189,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[EmbeddingModel] = []
+        models: list[EmbeddingModel] = []
         for config in embedding_models_config:
             models.append(
                 EmbeddingModel(

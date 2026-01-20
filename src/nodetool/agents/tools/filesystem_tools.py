@@ -1,16 +1,6 @@
-from typing import Any, ClassVar
-
-"""
-Filesystem management tools module.
-
-This module provides tools for managing the filesystem:
-- ReadFileTool: Read contents of files, with token counting and line range control
-- WriteFileTool: Write content to a file, creating it if it doesn't exist
-- ListDirectoryTool: List the contents of a directory
-"""
-
 import os
 import re
+from typing import Any, ClassVar
 
 import aiofiles
 import tiktoken

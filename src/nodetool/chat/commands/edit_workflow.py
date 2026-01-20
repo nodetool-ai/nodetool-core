@@ -50,7 +50,7 @@ class EditWorkflowCommand(Command):
 
         return name.strip(), description.strip()
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if len(args) < 2:
             cli.console.print("[bold red]Usage:[/bold red] /edit-workflow <workflow_name> <new_objective>")
             cli.console.print(

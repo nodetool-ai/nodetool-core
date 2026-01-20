@@ -38,7 +38,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 

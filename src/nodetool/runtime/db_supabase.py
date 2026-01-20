@@ -23,9 +23,9 @@ class SupabaseScopeResources(DBResources):
             client: The Supabase client
         """
         self.client = client
-        self._adapters: Dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> Any:
+    async def adapter_for_model(self, model_cls: type[Any]) -> Any:
         """Get or create an adapter for the given model class.
 
         Memoizes adapters per table within this scope.

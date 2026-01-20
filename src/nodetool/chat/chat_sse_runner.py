@@ -93,7 +93,7 @@ class ChatSSERunner(BaseChatRunner):
         self.message_queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()
         self.is_connected: bool = False
         # Store the provided chat history for this request (used when database is disabled)
-        self.provided_history: List[ApiMessage] = []
+        self.provided_history: list[ApiMessage] = []
         self.workflows = workflows or []
 
     async def connect(self, user_id: str | None = None, **kwargs) -> None:
@@ -176,10 +176,10 @@ class ChatSSERunner(BaseChatRunner):
         """
         return None
 
-    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
+    async def get_chat_history_from_db(self, thread_id: str) -> list[ApiMessage]:
         return []
 
-    async def handle_message(self, messages: List[ApiMessage]):
+    async def handle_message(self, messages: list[ApiMessage]):
         """
         Handle a message for SSE by preparing the message list and calling handle_message_impl.
         """
@@ -239,7 +239,7 @@ class ChatSSERunner(BaseChatRunner):
     def _convert_openai_content(
         self,
         content: str | Iterable[ChatCompletionContentPartParam] | Iterable[ContentArrayOfContentPart] | None,
-    ) -> List[MessageContent]:
+    ) -> list[MessageContent]:
         """
         Convert OpenAI message content to internal MessageContent list format.
 
@@ -254,7 +254,7 @@ class ChatSSERunner(BaseChatRunner):
             return [MessageTextContent(text=content)]
         elif isinstance(content, list):
             # Multi-modal content
-            message_contents: List[MessageContent] = []
+            message_contents: list[MessageContent] = []
             for part in content:
                 if isinstance(part, dict):
                     part_type = part.get("type")
@@ -287,8 +287,8 @@ class ChatSSERunner(BaseChatRunner):
             return [MessageTextContent(text=str(content))]
 
     def _convert_openai_messages(
-        self, openai_messages: List[ChatCompletionMessageParam], model: str
-    ) -> List[ApiMessage]:
+        self, openai_messages: list[ChatCompletionMessageParam], model: str
+    ) -> list[ApiMessage]:
         """
         Convert OpenAI messages to internal Message format for history.
 
@@ -326,7 +326,7 @@ class ChatSSERunner(BaseChatRunner):
         openai_tool_calls: Iterable[
             ChatCompletionMessageFunctionToolCallParam | ChatCompletionMessageCustomToolCallParam
         ],
-    ) -> List[ToolCall]:
+    ) -> list[ToolCall]:
         """
         Convert OpenAI tool calls to internal ToolCall format.
 
@@ -349,7 +349,7 @@ class ChatSSERunner(BaseChatRunner):
                     tool_calls.append(tool_call)
         return tool_calls
 
-    def _convert_openai_tools(self, openai_tools: List[ChatCompletionToolParam]) -> List[str]:
+    def _convert_openai_tools(self, openai_tools: list[ChatCompletionToolParam]) -> list[str]:
         """
         Convert OpenAI tool definitions to internal tool name list.
 

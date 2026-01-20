@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.2-rc.27"
+version = "0.6.2-rc.28"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -144,7 +144,7 @@ dev = [
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.6.0",   # Parallel test execution
     "mypy>=1.0.0",           # Type checking
-    "ruff==0.14.1",           # Linting and formatting
+    "ruff==0.14.13",           # Linting and formatting
     "ty>=0.0.7",             # Fast type checking
 ]
 

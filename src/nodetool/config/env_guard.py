@@ -29,6 +29,6 @@ def get_system_env_value(key: str, default: Any = None) -> Any:
     return os.environ.get(key, default)
 
 
-def get_system_env() -> Dict[str, str]:
+def get_system_env() -> dict[str, str]:
     """Return the current process environment."""
     return dict(os.environ)

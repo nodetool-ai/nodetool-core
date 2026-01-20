@@ -40,7 +40,7 @@ class JobExecutionManager:
     """
 
     _instance: Optional["JobExecutionManager"] = None
-    _jobs: Dict[str, JobExecution]
+    _jobs: dict[str, JobExecution]
     _cleanup_task: Optional[asyncio.Task]
     _heartbeat_task: Optional[asyncio.Task]
     _finalizing_jobs: set[str]

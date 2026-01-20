@@ -658,7 +658,7 @@ class HelpMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -1080,7 +1080,7 @@ class HelpMessageProcessor(MessageProcessor):
             # Log unexpected errors but don't fail the chat
             log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
-    def _sanitize_chat_history(self, history: List[Message]) -> List[Message]:
+    def _sanitize_chat_history(self, history: list[Message]) -> list[Message]:
         """
         Sanitize chat history to ensure valid tool call sequences.
         Removes assistant messages with dangling tool calls and orphan tool messages.

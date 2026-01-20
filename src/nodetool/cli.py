@@ -2264,7 +2264,7 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         SelfHostedDeployment,
     )
 
-    def _inject(env: Optional[Dict[str, str]]) -> Dict[str, str]:
+    def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
         env = dict(env) if env else {}
         env["SECRETS_MASTER_KEY"] = master_key
         return env
@@ -2278,11 +2278,11 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
 
-async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str, Any]]:
+async def _export_encrypted_secrets_payload(limit: int = 1000) -> list[dict[str, Any]]:
     from nodetool.models.secret import Secret
 
     secrets = await Secret.list_all(limit=limit)
-    payload: List[Dict[str, Any]] = []
+    payload: list[dict[str, Any]] = []
     for secret in secrets:
         payload.append(
             {
@@ -2297,7 +2297,7 @@ async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str,
     return payload
 
 
-async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: list[dict[str, Any]]) -> dict[str, Any]:
     from nodetool.deploy.admin_client import AdminHTTPClient
 
     client = AdminHTTPClient(server_url, auth_token)
@@ -2312,7 +2312,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
 
     auth_token = getattr(deployment, "worker_auth_token", None)
     if not auth_token:
-        env: Optional[Dict[str, str]] = None
+        env: Optional[dict[str, str]] = None
         if hasattr(deployment, "environment") and deployment.environment:
             env = deployment.environment
         elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):

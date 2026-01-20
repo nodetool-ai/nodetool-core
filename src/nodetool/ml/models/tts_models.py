@@ -17,12 +17,12 @@ from nodetool.metadata.types import TTSModel
 log = get_logger(__name__)
 
 # Cache for TTS models (per user_id) with timestamp
-_tts_models_cache: dict[str, tuple[List[TTSModel], float]] = {}
+_tts_models_cache: dict[str, tuple[list[TTSModel], float]] = {}
 _tts_models_cache_lock = asyncio.Lock()
 _TTS_MODELS_CACHE_TTL = 6 * 3600  # 6 hours in seconds
 
 
-async def get_all_tts_models(user_id: str) -> List[TTSModel]:
+async def get_all_tts_models(user_id: str) -> list[TTSModel]:
     """
     Get all TTS models from all registered providers.
     Results are cached for 6 hours to reduce API calls.

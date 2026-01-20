@@ -21,8 +21,8 @@ class ProgressManager:
     def __init__(self, console: Optional[Console] = None):
         self.console: Console = console or Console()
         self.progress: Optional[Progress] = None
-        self.tasks: Dict[str, TaskID] = {}  # Maps operation IDs to task IDs
-        self.current_operations: Dict[str, Dict[str, Any]] = {}  # operation info
+        self.tasks: dict[str, TaskID] = {}  # Maps operation IDs to task IDs
+        self.current_operations: dict[str, dict[str, Any]] = {}  # operation info
 
     def start(self) -> None:
         """Start the progress display."""
@@ -71,7 +71,7 @@ class ProgressManager:
         if operation_id in self.tasks and self.progress:
             assert self.progress is not None
             task_id = self.tasks[operation_id]
-            update_kwargs: Dict[str, Any] = {}
+            update_kwargs: dict[str, Any] = {}
 
             if completed is not None:
                 # Calculate advance amount

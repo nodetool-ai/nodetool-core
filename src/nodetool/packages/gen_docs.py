@@ -12,7 +12,7 @@ from nodetool.workflows.base_node import BaseNode
 logger = get_logger(__name__)
 
 
-def defined_in_module(obj: Any, module: Type[Any] | Any) -> bool:
+def defined_in_module(obj: Any, module: type[Any] | Any) -> bool:
     """
     Check if an object is defined in a given module.
 
@@ -46,7 +46,7 @@ def exract_desc_and_tags(docstring: str) -> tuple[str, list[str]]:
         return "\n".join(lines[:1] + lines[2:]), lines[1].strip().split(", ")
 
 
-def type_to_str(tp: Type[Any]) -> str:
+def type_to_str(tp: type[Any]) -> str:
     """
     Convert a type to a string representation.
 
@@ -118,7 +118,7 @@ def docstring_to_markdown(docstring):
     return "\n".join(markdown).strip()
 
 
-def defined_in_class(obj: Any, cls: Type[Any]) -> bool:
+def defined_in_class(obj: Any, cls: type[Any]) -> bool:
     """
     Check if an object is defined in a given class.
 
@@ -165,7 +165,7 @@ def generate_documentation(
 
 
 def process_module(
-    module: Type[Any],
+    module: type[Any],
     base_path: str,
     root_module: str | None = None,
     current_depth: int = 0,
@@ -228,7 +228,7 @@ def process_module(
                     document_function(file, obj, compact=compact)
 
 
-def document_class(file: Any, cls: Type[Any], compact: bool = False) -> None:
+def document_class(file: Any, cls: type[Any], compact: bool = False) -> None:
     """
     Document a class, including its docstring, base classes, and fields (if it's a Pydantic model).
 
@@ -265,7 +265,7 @@ def document_class(file: Any, cls: Type[Any], compact: bool = False) -> None:
         file.write("\n")
 
 
-def document_methods(file: Any, cls: Type[Any], compact: bool = False) -> None:
+def document_methods(file: Any, cls: type[Any], compact: bool = False) -> None:
     """
     Document the methods of a class.
 

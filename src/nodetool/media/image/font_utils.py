@@ -11,7 +11,7 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[Dict[str, str]] = None) -> str:
+def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, str]] = None) -> str:
     """
     Get the system path for a font file based on the operating system.
 

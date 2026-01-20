@@ -96,7 +96,7 @@ class MiniMaxProvider(AnthropicProvider):
         # MiniMax models generally support 200k context like Claude
         return 200000
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available MiniMax models.
 

@@ -124,7 +124,7 @@ class ComfyRunpodProvider(BaseProvider):
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         return [
             ImageModel(
                 id="flux1-dev-fp8.safetensors",

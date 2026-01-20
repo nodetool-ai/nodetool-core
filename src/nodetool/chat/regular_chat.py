@@ -97,14 +97,14 @@ async def run_tool(
 
 async def process_regular_chat(
     user_input: str,
-    messages: List[Message],
+    messages: list[Message],
     model: str,
     provider: BaseProvider,
     status: Status,
     context: ProcessingContext,
     console: Console,
     debug_mode: bool = False,
-) -> List[Message]:
+) -> list[Message]:
     """
     Process a user message in regular chat mode (non-agent).
 
@@ -128,7 +128,7 @@ async def process_regular_chat(
     # Process messages
     messages_to_send = messages
 
-    tools: List[Tool] = [
+    tools: list[Tool] = [
         AddLabelToEmailTool(),
         ArchiveEmailTool(),
         BrowserTool(),

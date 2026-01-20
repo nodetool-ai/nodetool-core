@@ -221,7 +221,7 @@ def _message_contains_media(message: Message) -> tuple[bool, str]:
 
 async def fetch_image_models_from_hf_provider(
     provider: str, pipeline_tag: str, token: str | None = None
-) -> List[ImageModel]:
+) -> list[ImageModel]:
     """
     Fetch image models from HuggingFace Hub API for a specific provider.
 
@@ -282,7 +282,7 @@ async def fetch_image_models_from_hf_provider(
         return []
 
 
-async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[TTSModel]:
+async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[TTSModel]:
     """
     Fetch TTS models from HuggingFace Hub API for a specific provider.
 
@@ -334,7 +334,7 @@ async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) ->
         return []
 
 
-async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[VideoModel]:
+async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[VideoModel]:
     """
     Fetch video models from HuggingFace Hub API for a specific provider.
 
@@ -394,7 +394,7 @@ async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) 
         return []
 
 
-async def fetch_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[LanguageModel]:
+async def fetch_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[LanguageModel]:
     """
     Fetch language models from HuggingFace Hub API for a specific provider.
 
@@ -566,7 +566,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available HuggingFace models for this inference provider.
 
@@ -1154,7 +1154,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace TTS generation failed: {e}")
             raise RuntimeError(f"HuggingFace TTS generation failed: {str(e)}") from e
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available HuggingFace TTS models.
 
@@ -1305,7 +1305,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace image-to-image generation failed: {e}")
             raise RuntimeError(f"HuggingFace image-to-image generation failed: {str(e)}") from e
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available HuggingFace image generation models for this inference provider.
 
@@ -1342,7 +1342,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}")
             return []
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """
         Get available HuggingFace video generation models for this inference provider.
 

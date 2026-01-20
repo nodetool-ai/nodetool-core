@@ -29,8 +29,8 @@ class DetectionResult:
     family: str
     component: str
     confidence: float
-    evidence: List[str] = field(default_factory=list)
-    details: Dict[str, object] = field(default_factory=dict)
+    evidence: list[str] = field(default_factory=list)
+    details: dict[str, object] = field(default_factory=dict)
 
 
 def detect_model(
@@ -87,15 +87,15 @@ def detect_model(
 
 @dataclass
 class _Index:
-    files: List[Path]
-    keys_per_file: Dict[Path, List[str]]
-    key_to_file: Dict[str, Path]
+    files: list[Path]
+    keys_per_file: dict[Path, list[str]]
+    key_to_file: dict[str, Path]
 
 
-def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
+def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> list[Path]:
     paths = [Path(src)] if isinstance(src, (str, os.PathLike)) else [Path(p) for p in src]  # type: ignore[arg-type]
 
-    out: List[Path] = []
+    out: list[Path] = []
     for path in paths:
         if path.is_dir():
             out.extend(sorted(path.glob("*.safetensors")))
@@ -107,9 +107,9 @@ def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
     return uniq
 
 
-def _build_index(files: List[Path], framework: str) -> _Index:
-    keys_per_file: Dict[Path, List[str]] = {}
-    key_to_file: Dict[str, Path] = {}
+def _build_index(files: list[Path], framework: str) -> _Index:
+    keys_per_file: dict[Path, list[str]] = {}
+    key_to_file: dict[str, Path] = {}
     for fp in files:
         with safe_open(fp.as_posix(), framework=framework) as handle:
             keys = list(handle.keys())
@@ -136,7 +136,7 @@ def _find_first(keys: Iterable[str], pattern: str) -> Optional[str]:
     return None
 
 
-def _get_shape(index: _Index, key: str, framework: str) -> Optional[Tuple[int, ...]]:
+def _get_shape(index: _Index, key: str, framework: str) -> Optional[tuple[int, ...]]:
     file_path = index.key_to_file.get(key)
     if not file_path:
         return None
@@ -208,7 +208,7 @@ def _infer_component(index: _Index) -> str:
 
 def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> DetectionResult:
     keys = list(index.key_to_file.keys())
-    evidence: List[str] = []
+    evidence: list[str] = []
     confidence = 0.0
     family = "unknown"
     component = _infer_component(index)
@@ -523,7 +523,7 @@ def _classify_tts(index: _Index) -> DetectionResult:
     )
 
 
-def _common_details(index: _Index, sample: int = 10) -> Dict[str, object]:
+def _common_details(index: _Index, sample: int = 10) -> dict[str, object]:
     keys = sorted(index.key_to_file.keys())
     return {
         "num_files": len(index.files),
