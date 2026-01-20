@@ -14,3 +14,4 @@
 - **Circuit Breaker**: `CircuitBreaker`, `MultiCircuitBreaker`, and `CircuitBreakerConfig` for preventing cascading failures in distributed systems
 - **Async Lock**: `AsyncLock` for exclusive resource access with timeout support, complementing `AsyncSemaphore`
 - **Task Group Management**: `AsyncTaskGroup` for managing groups of related async tasks with spawn, run, cancel, and result collection
+- **Async Event**: `AsyncEvent` for inter-task signaling with one-shot and auto-reset modes, supports value passing and predicate-based waiting
