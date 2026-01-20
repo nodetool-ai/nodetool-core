@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(
@@ -22,11 +22,11 @@ def _supports_color() -> bool:
 
 
 def configure_logging(
-    level: Optional[str | int] = None,
-    fmt: Optional[str] = None,
-    datefmt: Optional[str] = None,
+    level: str | int | None = None,
+    fmt: str | None = None,
+    datefmt: str | None = None,
     propagate_root: bool = False,
-    log_file: Optional[str | Path] = None,
+    log_file: str | Path | None = None,
     console_output: bool = True,
 ) -> str | int:
     """Configure root logging with consistent format, file logging, and console control.
@@ -35,20 +35,26 @@ def configure_logging(
     - `NODETOOL_LOG_LEVEL`
     - `NODETOOL_LOG_FORMAT`
     - `NODETOOL_LOG_DATEFMT`
+
+    Returns:
+        The configured log level as a string or int.
     """
     from nodetool.config.environment import Environment
 
     global _current_config
 
+    # Resolve level to a non-None value
+    resolved_level: str | int
     if isinstance(level, str):
-        level = level.upper()
-
-    if level is None:
-        level = Environment.get_log_level()
+        resolved_level = level.upper()
+    elif level is not None:
+        resolved_level = level
+    else:
+        resolved_level = Environment.get_log_level() or "INFO"
 
     # Determine if configuration needs to change
     new_config = {
-        "level": level,
+        "level": resolved_level,
         "fmt": fmt,
         "datefmt": datefmt,
         "propagate_root": propagate_root,
@@ -57,7 +63,7 @@ def configure_logging(
     }
 
     if _current_config == new_config:
-        return level
+        return resolved_level
 
     _current_config = new_config
 
@@ -71,7 +77,7 @@ def configure_logging(
     datefmt = datefmt if datefmt is not None else _DEFAULT_DATEFMT
 
     root = logging.getLogger()
-    root.setLevel(level)
+    root.setLevel(resolved_level)
     root.propagate = propagate_root
 
     class _LevelColorFormatter(logging.Formatter):
@@ -122,7 +128,7 @@ def configure_logging(
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    return level
+    return resolved_level
 
 
 def get_logger(name: str) -> logging.Logger:

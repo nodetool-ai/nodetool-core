@@ -13,6 +13,12 @@ log = get_logger(__name__)
 async def current_user(request: Request) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
+
+    Returns:
+        The authenticated user ID as a string.
+
+    Raises:
+        HTTPException: 401 if authentication is required but no valid credentials are provided.
     """
     user_id = getattr(request.state, "user_id", None)
     if user_id:
@@ -35,7 +41,11 @@ async def current_user(request: Request) -> str:
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials were not provided.",
+            detail=(
+                "Authentication credentials were not provided. "
+                "Include an Authorization header with a valid Bearer token. "
+                "Example: Authorization: Bearer <your-token>"
+            ),
         )
 
     static_result = await static_provider.verify_token(token)
@@ -50,7 +60,11 @@ async def current_user(request: Request) -> str:
     if not user_provider:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication provider is configured but unavailable.",
+            detail=(
+                "Authentication provider is configured but unavailable. "
+                "Check that the authentication service is running and properly configured. "
+                "Contact your administrator if the problem persists."
+            ),
         )
 
     try:
@@ -63,12 +77,16 @@ async def current_user(request: Request) -> str:
         log.error(f"Error validating remote authentication token: {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Failed to validate authentication token.",
+            detail=(
+                "Failed to validate authentication token. "
+                "The token may be expired, revoked, or invalid. "
+                "Please obtain a new token and try again."
+            ),
         ) from exc
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Failed to validate authentication token.",
+        detail=("Failed to validate authentication token. Please check that your token is valid and has not expired."),
     )
 
 
