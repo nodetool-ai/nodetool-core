@@ -184,7 +184,7 @@ class Environment:
     development purposes.
     """
 
-    settings: Optional[Dict[str, Any]] = None
+    settings: Optional[dict[str, Any]] = None
     _sqlite_connection: Any = None
 
     @classmethod

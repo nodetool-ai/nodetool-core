@@ -25,6 +25,6 @@ def create_file_uri(path: str) -> str:
         return f"{prefix}{posix_path}"
 
 
-async def fetch_uri_bytes_and_mime(uri: str) -> Tuple[str, bytes]:
+async def fetch_uri_bytes_and_mime(uri: str) -> tuple[str, bytes]:
     """Delegate to shared async media fetcher to ensure DRY behavior."""
     return await _fetch_async(uri)

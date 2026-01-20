@@ -34,7 +34,7 @@ class AdminHTTPClient:
         if auth_token:
             self.headers["Authorization"] = f"Bearer {auth_token}"
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Perform health check."""
         async with (
             aiohttp.ClientSession() as session,
@@ -44,7 +44,7 @@ class AdminHTTPClient:
                 raise Exception(f"Health check failed: {response.status} {await response.text()}")
             return await response.json()
 
-    async def list_workflows(self) -> Dict[str, Any]:
+    async def list_workflows(self) -> dict[str, Any]:
         """List all workflows."""
         async with (
             aiohttp.ClientSession() as session,
@@ -54,7 +54,7 @@ class AdminHTTPClient:
                 raise Exception(f"Failed to list workflows: {response.status} {await response.text()}")
             return await response.json()
 
-    async def update_workflow(self, workflow_id: str, workflow: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_workflow(self, workflow_id: str, workflow: dict[str, Any]) -> dict[str, Any]:
         """Update a workflow."""
         async with (
             aiohttp.ClientSession() as session,
@@ -66,7 +66,7 @@ class AdminHTTPClient:
         ):
             return await response.json()
 
-    async def delete_workflow(self, workflow_id: str) -> Dict[str, Any]:
+    async def delete_workflow(self, workflow_id: str) -> dict[str, Any]:
         """Delete a workflow."""
         async with (
             aiohttp.ClientSession() as session,
@@ -76,7 +76,7 @@ class AdminHTTPClient:
                 raise Exception(f"Failed to delete workflow: {response.status} {await response.text()}")
             return await response.json()
 
-    async def run_workflow(self, workflow_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def run_workflow(self, workflow_id: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         """Run a workflow on the deployed instance."""
         if params is None:
             params = {}
@@ -93,7 +93,7 @@ class AdminHTTPClient:
                 raise Exception(f"Failed to run workflow: {response.status} {await response.text()}")
             return await response.json()
 
-    async def get_asset(self, asset_id: str, user_id: str = "1") -> Dict[str, Any]:
+    async def get_asset(self, asset_id: str, user_id: str = "1") -> dict[str, Any]:
         """Get asset metadata from the deployed instance."""
         async with (
             aiohttp.ClientSession() as session,
@@ -115,8 +115,8 @@ class AdminHTTPClient:
         content_type: str = "",
         parent_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Create asset metadata on the deployed instance."""
         data = {
             "user_id": user_id,
@@ -170,7 +170,7 @@ class AdminHTTPClient:
                 raise Exception(f"Failed to download asset file: {response.status} {await response.text()}")
             return await response.read()
 
-    async def db_get(self, table: str, key: str) -> Dict[str, Any]:
+    async def db_get(self, table: str, key: str) -> dict[str, Any]:
         """Get an item from database table by key."""
         async with (
             aiohttp.ClientSession() as session,
@@ -183,7 +183,7 @@ class AdminHTTPClient:
                 raise Exception(f"Failed to get item: {response.status} {await response.text()}")
             return await response.json()
 
-    async def db_save(self, table: str, item: Dict[str, Any]) -> Dict[str, Any]:
+    async def db_save(self, table: str, item: dict[str, Any]) -> dict[str, Any]:
         """Save an item to database table."""
         async with (
             aiohttp.ClientSession() as session,
@@ -209,7 +209,7 @@ class AdminHTTPClient:
             if response.status != 200:
                 raise Exception(f"Failed to delete item: {response.status} {await response.text()}")
 
-    async def import_secrets(self, secrets: list[dict[str, Any]]) -> Dict[str, Any]:
+    async def import_secrets(self, secrets: list[dict[str, Any]]) -> dict[str, Any]:
         """Import encrypted secrets into the remote worker."""
         async with (
             aiohttp.ClientSession() as session,
@@ -230,7 +230,7 @@ class AdminHTTPClient:
         file_path: Optional[str] = None,
         ignore_patterns: Optional[list] = None,
         allow_patterns: Optional[list] = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Download HuggingFace model with streaming progress."""
         data = {"repo_id": repo_id, "cache_dir": cache_dir, "stream": True}
         if file_path:
@@ -274,7 +274,7 @@ class AdminHTTPClient:
                             console.print(f"[dim yellow]HF SSE JSON decode error: {data_str[:100]}[/]")
                             continue
 
-    async def download_ollama_model(self, model_name: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def download_ollama_model(self, model_name: str) -> AsyncGenerator[dict[str, Any], None]:
         """Download Ollama model with streaming progress."""
         data = {"model_name": model_name, "stream": True}
 
@@ -306,7 +306,7 @@ class AdminHTTPClient:
                         except json.JSONDecodeError:
                             continue
 
-    async def scan_cache(self) -> Dict[str, Any]:
+    async def scan_cache(self) -> dict[str, Any]:
         """Scan HuggingFace cache directory."""
         async with (
             aiohttp.ClientSession() as session,
@@ -316,7 +316,7 @@ class AdminHTTPClient:
                 raise Exception(f"Cache scan failed: {response.status} {await response.text()}")
             return await response.json()
 
-    async def get_cache_size(self, cache_dir: str = "/app/.cache/huggingface/hub") -> Dict[str, Any]:
+    async def get_cache_size(self, cache_dir: str = "/app/.cache/huggingface/hub") -> dict[str, Any]:
         """Calculate total cache size."""
         async with (
             aiohttp.ClientSession() as session,
@@ -329,7 +329,7 @@ class AdminHTTPClient:
                 raise Exception(f"Cache size calculation failed: {response.status} {await response.text()}")
             return await response.json()
 
-    async def delete_huggingface_model(self, repo_id: str) -> Dict[str, Any]:
+    async def delete_huggingface_model(self, repo_id: str) -> dict[str, Any]:
         """Delete HuggingFace model from cache."""
         # URL encode the repo_id to handle slashes
         import urllib.parse
@@ -347,7 +347,7 @@ class AdminHTTPClient:
                 raise Exception(f"Model deletion failed: {response.status} {await response.text()}")
             return await response.json()
 
-    async def create_collection(self, name: str, embedding_model: str) -> Dict[str, Any]:
+    async def create_collection(self, name: str, embedding_model: str) -> dict[str, Any]:
         """Create a collection on the deployed instance."""
         data = {"name": name, "embedding_model": embedding_model}
 
@@ -370,7 +370,7 @@ class AdminHTTPClient:
         ids: list[str],
         metadatas: list[dict[str, Any]],
         embeddings: list[list[float]],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add documents to a collection on the deployed instance."""
         data = {
             "documents": documents,
@@ -392,7 +392,7 @@ class AdminHTTPClient:
             return await response.json()
 
     # Legacy endpoint support
-    async def admin_operation(self, operation: str, **params) -> AsyncGenerator[Dict[str, Any], None]:
+    async def admin_operation(self, operation: str, **params) -> AsyncGenerator[dict[str, Any], None]:
         """Execute admin operation using legacy endpoint."""
         data = {"operation": operation, "params": params}
 

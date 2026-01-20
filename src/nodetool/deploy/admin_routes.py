@@ -58,7 +58,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 
@@ -68,10 +68,10 @@ class CollectionModify(BaseModel):
 
 
 class AddToCollection(BaseModel):
-    documents: List[str]
-    ids: List[str]
-    metadatas: List[dict[str, str]]
-    embeddings: List[List[float]]
+    documents: list[str]
+    ids: list[str]
+    metadatas: list[dict[str, str]]
+    embeddings: list[list[float]]
 
 
 class IndexResponse(BaseModel):
@@ -237,7 +237,7 @@ def create_admin_router() -> APIRouter:
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
-    async def db_save(table: str, item: Dict[str, Any]):
+    async def db_save(table: str, item: dict[str, Any]):
         """Save an item to the specified table using the database adapter."""
         try:
             adapter = await get_model_adapter(table)
@@ -417,7 +417,7 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
         user: str = Depends(current_user),
-        data: Dict[str, Any] = Body(...),
+        data: dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
         try:
@@ -486,7 +486,7 @@ def create_admin_router() -> APIRouter:
 
             deleted_asset_ids = []
 
-            async def delete_folder(uid: str, folder_id: str) -> List[str]:
+            async def delete_folder(uid: str, folder_id: str) -> list[str]:
                 ids = []
                 try:
                     assets, _ = await AssetModel.paginate(user_id=uid, parent_id=folder_id, limit=10000)

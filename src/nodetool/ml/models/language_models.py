@@ -10,7 +10,7 @@ from nodetool.providers import list_providers
 log = get_logger(__name__)
 
 
-async def get_all_language_models(user_id: str) -> List[LanguageModel]:
+async def get_all_language_models(user_id: str) -> list[LanguageModel]:
     """
     Get all language models from all registered chat providers.
     Results are cached for 6 hours to reduce API calls.

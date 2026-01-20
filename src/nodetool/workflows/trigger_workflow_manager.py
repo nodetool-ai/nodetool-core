@@ -67,8 +67,8 @@ class TriggerWorkflowManager:
         # Only initialize once for singleton (thread-safe)
         with TriggerWorkflowManager._lock:
             if not TriggerWorkflowManager._initialized:
-                self._running_workflows: Dict[str, JobExecution] = {}
-                self._workflow_metadata: Dict[str, dict] = {}  # Store workflow info for restarts
+                self._running_workflows: dict[str, JobExecution] = {}
+                self._workflow_metadata: dict[str, dict] = {}  # Store workflow info for restarts
                 self._watchdog_task: Optional[asyncio.Task] = None
                 self._watchdog_interval = DEFAULT_WATCHDOG_INTERVAL
                 TriggerWorkflowManager._initialized = True
@@ -212,7 +212,7 @@ class TriggerWorkflowManager:
         """Get a running trigger workflow by ID."""
         return self._running_workflows.get(workflow_id)
 
-    def list_running_workflows(self) -> Dict[str, JobExecution]:
+    def list_running_workflows(self) -> dict[str, JobExecution]:
         """List all running trigger workflows."""
         return self._running_workflows.copy()
 

@@ -13,7 +13,7 @@ class HelpCommand(Command):
     def __init__(self):
         super().__init__("help", "Display available commands", ["h"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         cli.console.print("\n[bold]Available Commands[/bold]", style="cyan")
 
         table = Table(show_header=True, header_style="bold magenta")

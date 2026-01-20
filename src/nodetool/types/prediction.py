@@ -35,7 +35,7 @@ class Prediction(BaseModel):
 
 class PredictionList(BaseModel):
     next: str | None
-    predictions: List[Prediction]
+    predictions: list[Prediction]
 
 
 class PredictionCreateRequest(BaseModel):

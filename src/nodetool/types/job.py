@@ -48,4 +48,4 @@ class JobUpdate(BaseModel):
 
 class JobList(BaseModel):
     next: Optional[str]
-    jobs: List[Job]
+    jobs: list[Job]

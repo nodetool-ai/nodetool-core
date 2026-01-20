@@ -35,8 +35,8 @@ class SQLiteConnectionPool:
     """
 
     # Class-level pools per database path and event loop
-    _pools: ClassVar[Dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
-    _loop_locks: ClassVar[Dict[int, asyncio.Lock]] = {}
+    _pools: ClassVar[dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
+    _loop_locks: ClassVar[dict[int, asyncio.Lock]] = {}
 
     def __init__(self, db_path: str, pool_size: int = 10):
         """Initialize the connection pool with lazy slots.
@@ -103,7 +103,7 @@ class SQLiteConnectionPool:
             Exception: If connection creation or configuration fails after retries.
         """
         # Determine connection settings
-        connect_kwargs: Dict[str, Any] = {"timeout": 30}
+        connect_kwargs: dict[str, Any] = {"timeout": 30}
         if ":memory:" in self.db_path:
             connect_kwargs["check_same_thread"] = False
 
@@ -415,9 +415,9 @@ class SQLiteScopeResources(DBResources):
             pool: The pool to return connection to on cleanup
         """
         self.pool = pool
-        self._adapters: Dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> SQLiteAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> SQLiteAdapter:
         """Get or create an adapter for the given model class.
 
         Memoizes adapters per table within this scope.

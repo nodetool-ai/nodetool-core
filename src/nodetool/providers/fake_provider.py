@@ -101,7 +101,7 @@ class FakeProvider(BaseProvider):
         """Reset the call count to 0."""
         self.call_count = 0
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Return fake language models for testing."""
         from nodetool.metadata.types import Provider
 

@@ -271,9 +271,9 @@ class RegularChatProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
-        collections: Optional[List[str]] = None,
+        collections: Optional[list[str]] = None,
         graph: Optional[Graph] = None,
         **kwargs,
     ):
@@ -533,7 +533,7 @@ class RegularChatProcessor(MessageProcessor):
                     return content_item.text
         return ""
 
-    async def _query_collections(self, collections: List[str], query_text: str, n_results: int) -> str:
+    async def _query_collections(self, collections: list[str], query_text: str, n_results: int) -> str:
         """Query ChromaDB collections and return concatenated results."""
         if not collections or not query_text:
             return ""
@@ -566,7 +566,7 @@ class RegularChatProcessor(MessageProcessor):
 
         return "\n".join(all_results) if all_results else ""
 
-    def _add_collection_context(self, messages: List[Message], collection_context: str) -> List[Message]:
+    def _add_collection_context(self, messages: list[Message], collection_context: str) -> list[Message]:
         """Add collection context as a system message before the last user message."""
         # Find the last user message index
         last_user_index = -1

@@ -14,7 +14,7 @@ class ProvidersCommand(Command):
     def __init__(self):
         super().__init__("providers", "List available providers", ["p"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         try:
             providers = await list_providers("1")
 

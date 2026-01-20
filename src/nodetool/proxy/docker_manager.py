@@ -46,7 +46,7 @@ class DockerManager:
         """
         self.docker = docker.from_env()  # type: ignore[attr-defined]
         self.idle_timeout = idle_timeout
-        self.runtime: Dict[str, ServiceRuntime] = {}
+        self.runtime: dict[str, ServiceRuntime] = {}
         self.idle_task: Optional[asyncio.Task] = None
         self.network_name = network_name
         self.connect_mode = connect_mode
@@ -325,7 +325,7 @@ class DockerManager:
 
         return await asyncio.to_thread(_stop)
 
-    async def get_container_status(self, name: str) -> Dict[str, Any]:
+    async def get_container_status(self, name: str) -> dict[str, Any]:
         """
         Get current container status.
 
@@ -336,7 +336,7 @@ class DockerManager:
             Dict with status information.
         """
 
-        def _get_status() -> Dict[str, Any]:
+        def _get_status() -> dict[str, Any]:
             try:
                 container = self.docker.containers.get(name)
                 container.reload()

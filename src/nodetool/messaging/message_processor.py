@@ -104,7 +104,7 @@ class MessageProcessor(ABC):
     """
 
     def __init__(self):
-        self.message_queue: Queue[Dict[str, Any]] = Queue()
+        self.message_queue: Queue[dict[str, Any]] = Queue()
         self.is_processing = True
         self._cancelled = False
 
@@ -125,7 +125,7 @@ class MessageProcessor(ABC):
     @abstractmethod
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ) -> Optional[Message]:
@@ -143,7 +143,7 @@ class MessageProcessor(ABC):
         """
         pass
 
-    async def send_message(self, message: Dict[str, Any]):
+    async def send_message(self, message: dict[str, Any]):
         """
         Add a message to the queue for sending to the client.
 
@@ -152,7 +152,7 @@ class MessageProcessor(ABC):
         """
         await self.message_queue.put(message)
 
-    async def get_message(self) -> Optional[Dict[str, Any]]:
+    async def get_message(self) -> Optional[dict[str, Any]]:
         """
         Get the next message from the queue.
 

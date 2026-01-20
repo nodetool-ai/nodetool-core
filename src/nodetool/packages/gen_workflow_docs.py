@@ -14,7 +14,7 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-def get_node_label(node: Dict[str, Any]) -> str:
+def get_node_label(node: dict[str, Any]) -> str:
     """Extract a readable label for a node.
 
     Args:
@@ -50,7 +50,7 @@ def sanitize_mermaid_id(text: str) -> str:
     return sanitized.lower()
 
 
-def generate_mermaid_diagram(graph: Dict[str, Any]) -> str:
+def generate_mermaid_diagram(graph: dict[str, Any]) -> str:
     """Generate a Mermaid diagram from a workflow graph.
 
     Args:
@@ -164,7 +164,7 @@ def extract_text_from_lexical(lexical_data: Any) -> str:
     return ""
 
 
-def extract_description(graph: Dict[str, Any]) -> str:
+def extract_description(graph: dict[str, Any]) -> str:
     """Extract description from Comment node if available.
 
     Args:

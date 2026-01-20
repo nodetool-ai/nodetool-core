@@ -65,7 +65,7 @@ class WorkspaceUpdateRequest(BaseModel):
 class WorkspaceListResponse(BaseModel):
     """Response model for listing workspaces."""
 
-    workspaces: List[WorkspaceResponse]
+    workspaces: list[WorkspaceResponse]
     next_cursor: str = ""
 
 
@@ -313,12 +313,12 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
     return normalized_path
 
 
-@router.get("/workflow/{workflow_id}/files", response_model=List[FileInfo])
+@router.get("/workflow/{workflow_id}/files", response_model=list[FileInfo])
 async def list_workflow_files(
     workflow_id: str,
     path: str = ".",
     user: str = Depends(current_user),
-) -> List[FileInfo]:
+) -> list[FileInfo]:
     """
     List files and directories in the workspace associated with a workflow.
 

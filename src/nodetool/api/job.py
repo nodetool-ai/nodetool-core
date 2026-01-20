@@ -52,7 +52,7 @@ class BackgroundJobResponse(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    jobs: List[JobResponse]
+    jobs: list[JobResponse]
     next_start_key: Optional[str] = None
 
 
@@ -176,7 +176,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
     )
 
 
-@router.get("/running/all", response_model=List[BackgroundJobResponse])
+@router.get("/running/all", response_model=list[BackgroundJobResponse])
 async def list_running_jobs(user_id: str = Depends(current_user)):
     """
     List all currently running background jobs for the current user.
@@ -243,7 +243,7 @@ class TriggerWorkflowResponse(BaseModel):
 
 
 class TriggerWorkflowListResponse(BaseModel):
-    workflows: List[TriggerWorkflowResponse]
+    workflows: list[TriggerWorkflowResponse]
 
 
 @router.get("/triggers/running", response_model=TriggerWorkflowListResponse)
@@ -348,7 +348,7 @@ async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current
     )
 
 
-async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
+async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
     """
     Ensure job status reflects the background execution manager.
     Syncs completed/failed states from RunState and background manager.

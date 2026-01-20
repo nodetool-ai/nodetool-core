@@ -341,7 +341,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"has_tool_support called for {model}, returning False (using emulation)")
         return False
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Llama.cpp models.
 
@@ -353,7 +353,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         import httpx
 
-        models: List[LanguageModel] = []
+        models: list[LanguageModel] = []
 
         try:
             async with httpx.AsyncClient() as client:

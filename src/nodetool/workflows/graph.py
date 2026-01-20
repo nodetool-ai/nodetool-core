@@ -67,7 +67,7 @@ class Graph(BaseModel):
                 return node
         return None
 
-    def find_edges(self, source: str, source_handle: str) -> List[Edge]:
+    def find_edges(self, source: str, source_handle: str) -> list[Edge]:
         """
         Find edges by their source and source_handle.
         """
@@ -201,13 +201,13 @@ class Graph(BaseModel):
             edges=valid_edges,
         )
 
-    def inputs(self) -> List[InputNode]:
+    def inputs(self) -> list[InputNode]:
         """
         Returns a list of nodes that inherit from InputNode.
         """
         return [node for node in self.nodes if isinstance(node, InputNode)]
 
-    def outputs(self) -> List[OutputNode]:
+    def outputs(self) -> list[OutputNode]:
         """
         Returns a list of nodes that are designated as OutputNode instances.
         """
@@ -231,7 +231,7 @@ class Graph(BaseModel):
             "properties": {node.name: node.get_json_schema() for node in self.outputs()},
         }
 
-    def topological_sort(self, parent_id: str | None = None) -> List[List[str]]:
+    def topological_sort(self, parent_id: str | None = None) -> list[list[str]]:
         """
         Perform a topological sort on the graph, grouping nodes by levels.
 

@@ -108,7 +108,7 @@ class SSHConnection:
                 self._client = SSHClient()
                 self._client.set_missing_host_key_policy(AutoAddPolicy())
 
-                connect_kwargs: Dict[str, Any] = {
+                connect_kwargs: dict[str, Any] = {
                     "hostname": self.host,
                     "port": self.port,
                     "username": self.user,
@@ -171,7 +171,7 @@ class SSHConnection:
         command: str,
         check: bool = True,
         timeout: Optional[int] = None,
-    ) -> Tuple[int, str, str]:
+    ) -> tuple[int, str, str]:
         """
         Execute a command on the remote host.
 
@@ -214,7 +214,7 @@ class SSHConnection:
         script: str,
         check: bool = True,
         timeout: Optional[int] = None,
-    ) -> Tuple[int, str, str]:
+    ) -> tuple[int, str, str]:
         """
         Execute a multi-line shell script on the remote host.
 

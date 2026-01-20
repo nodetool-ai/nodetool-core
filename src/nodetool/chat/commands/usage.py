@@ -15,7 +15,7 @@ class UsageCommand(Command):
     def __init__(self):
         super().__init__("usage", "Display usage statistics for the selected model's provider", ["u"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if cli.selected_model:
             # Get the provider instance for the selected model
             try:

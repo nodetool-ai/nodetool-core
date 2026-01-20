@@ -17,18 +17,18 @@ class SettingWithValue(BaseModel):
     env_var: str
     group: str
     description: str
-    enum: Optional[List[str]] = None
+    enum: Optional[list[str]] = None
     value: Optional[Any] = None
     is_secret: bool = False
 
 
 class SettingsResponse(BaseModel):
-    settings: List[SettingWithValue]
+    settings: list[SettingWithValue]
 
 
 class SettingsUpdateRequest(BaseModel):
-    settings: Dict[str, Any]
-    secrets: Dict[str, Any]
+    settings: dict[str, Any]
+    secrets: dict[str, Any]
 
 
 class SecretCreateRequest(BaseModel):
@@ -53,7 +53,7 @@ class SecretResponse(BaseModel):
 
 
 class SecretsListResponse(BaseModel):
-    secrets: List[SecretResponse]
+    secrets: list[SecretResponse]
     next_key: Optional[str] = None
 
 
@@ -116,7 +116,7 @@ async def get_settings(user: str = Depends(current_user)) -> SettingsResponse:
 
 
 @router.put("/")
-async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> Dict[str, str]:
+async def update_settings(req: SettingsUpdateRequest, user: str = Depends(current_user)) -> dict[str, str]:
     if Environment.is_production():
         raise HTTPException(status_code=403, detail="Settings cannot be updated in production")
 
@@ -195,7 +195,7 @@ async def list_secrets(
 
 
 @router.get("/secrets/{key}")
-async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> Dict[str, Any]:
+async def get_secret(key: str, decrypt: bool = False, user: str = Depends(current_user)) -> dict[str, Any]:
     """
     Get a specific secret by key.
 
@@ -261,7 +261,7 @@ async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(
 
 
 @router.delete("/secrets/{key}")
-async def delete_secret(key: str, user: str = Depends(current_user)) -> Dict[str, str]:
+async def delete_secret(key: str, user: str = Depends(current_user)) -> dict[str, str]:
     """
     Delete a secret.
     """

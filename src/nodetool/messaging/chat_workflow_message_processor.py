@@ -113,7 +113,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -207,7 +207,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
             # Always mark processing as complete
             self.is_processing = False
 
-    def _prepare_workflow_params(self, chat_history: List[Message], last_message: Message) -> dict:
+    def _prepare_workflow_params(self, chat_history: list[Message], last_message: Message) -> dict:
         """
         Prepare workflow parameters from chat history and message.
 
@@ -238,7 +238,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
         log.debug(f"Legacy chat_input prepared with {len(chat_input_data)} messages")
         return params
 
-    def _prepare_legacy_chat_input(self, chat_history: List[Message]) -> List[dict]:
+    def _prepare_legacy_chat_input(self, chat_history: list[Message]) -> list[dict]:
         """
         Legacy format for backward compatibility with existing workflows.
 

@@ -54,7 +54,7 @@ class GCPDeployer:
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
 
-    def plan(self) -> Dict[str, Any]:
+    def plan(self) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
 
@@ -92,7 +92,7 @@ class GCPDeployer:
 
         return plan
 
-    def apply(self, dry_run: bool = False) -> Dict[str, Any]:
+    def apply(self, dry_run: bool = False) -> dict[str, Any]:
         """
         Apply the deployment to Google Cloud Run.
 
@@ -155,7 +155,7 @@ class GCPDeployer:
 
         return results
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """
         Get current deployment status.
 
@@ -240,7 +240,7 @@ class GCPDeployer:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to fetch logs: {e.stderr}") from e
 
-    def destroy(self) -> Dict[str, Any]:
+    def destroy(self) -> dict[str, Any]:
         """
         Destroy the deployment (delete Cloud Run service).
 

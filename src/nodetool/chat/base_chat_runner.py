@@ -218,7 +218,7 @@ class BaseChatRunner(ABC):
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
 
-    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
+    async def get_chat_history_from_db(self, thread_id: str) -> list[ApiMessage]:
         """
         Fetch chat history from the database using thread_id.
         When database is disabled, returns empty list (subclasses should override).
