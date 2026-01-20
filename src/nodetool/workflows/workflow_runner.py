@@ -737,7 +737,7 @@ class WorkflowRunner:
         start_time = time.time()
         if send_job_updates:
             log.debug(f"Posting 'running' job update for job {self.job_id}")
-            context.post_message(JobUpdate(job_id=self.job_id, status="running"))
+            context.post_message(JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="running"))
 
         # Create run_state (source of truth) - creates if not exists for direct runner usage
         try:
@@ -881,6 +881,7 @@ class WorkflowRunner:
                             JobUpdate(
                                 job_id=self.job_id,
                                 status="completed",
+                                workflow_id=context.workflow_id,
                                 result=self.outputs,
                                 message=f"Workflow {self.job_id} completed",
                             )
@@ -907,7 +908,7 @@ class WorkflowRunner:
                         log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
 
                 if send_job_updates:
-                    context.post_message(JobUpdate(job_id=self.job_id, status="cancelled"))
+                    context.post_message(JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="cancelled"))
 
             except WorkflowSuspendedException as e:
                 # Handle workflow suspension from suspendable node
@@ -991,6 +992,7 @@ class WorkflowRunner:
                         JobUpdate(
                             job_id=self.job_id,
                             status="suspended",
+                            workflow_id=context.workflow_id,
                             message=f"Workflow suspended at node {e.node_id}: {e.reason}",
                         )
                     )
@@ -1035,6 +1037,7 @@ class WorkflowRunner:
                         JobUpdate(
                             job_id=self.job_id,
                             status="error",
+                            workflow_id=context.workflow_id,
                             error=error_message_for_job_update[:1000],
                         )
                     )
