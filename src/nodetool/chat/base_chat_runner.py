@@ -417,6 +417,10 @@ class BaseChatRunner(ABC):
             processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
 
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
+
         assert last_message.model, "Model is required"
 
         if not last_message.provider or last_message.provider == Provider.Empty:
@@ -478,6 +482,10 @@ class BaseChatRunner(ABC):
             processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
 
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
+
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
@@ -530,6 +538,10 @@ class BaseChatRunner(ABC):
             processing_context.tool_bridge = self.tool_bridge
             processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
+
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
 
         await self._run_processor(
             processor=processor,
