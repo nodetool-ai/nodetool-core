@@ -1,3 +1,4 @@
+from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
@@ -17,6 +18,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AsyncByteStream",
+    "AsyncEvent",
     "AsyncLock",
     "AsyncRateLimiter",
     "AsyncSemaphore",
