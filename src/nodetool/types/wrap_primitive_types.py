@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 
 def wrap_primitive_types(value: Any) -> dict[str, Any] | list[Any] | Any:

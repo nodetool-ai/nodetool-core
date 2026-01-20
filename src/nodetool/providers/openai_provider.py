@@ -17,7 +17,6 @@ from typing import (
     Any,
     AsyncGenerator,
     AsyncIterator,
-    Dict,
     List,
     Literal,
     Sequence,
@@ -85,7 +84,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_prediction import calculate_chat_cost
-from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
@@ -158,7 +157,6 @@ class OpenAIProvider(BaseProvider):
         Returns:
             An initialized ``openai.AsyncClient`` with reasonable timeouts.
         """
-        import httpx
 
         log.debug("Creating OpenAI async client")
 

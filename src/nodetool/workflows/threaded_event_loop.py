@@ -3,15 +3,12 @@ import contextvars
 import threading
 from asyncio import AbstractEventLoop
 from concurrent.futures import Future, InvalidStateError
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, TypeVar, cast
+from typing import Any, Callable, Coroutine, Optional, TypeVar
 
 from nodetool.config.logging_config import get_logger
 
 T = TypeVar("T")
 log = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from asyncio import Task
 
 
 class ThreadedEventLoop:

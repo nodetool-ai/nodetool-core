@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import asyncio
 from typing import List
 
 from nodetool.config.logging_config import get_logger

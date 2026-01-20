@@ -4,21 +4,18 @@ import asyncio
 import base64
 import imaplib
 import inspect
-import io
 import json
 import os
-import platform
 import queue
 import urllib.parse
 import uuid
-from contextlib import asynccontextmanager, suppress
+from contextlib import suppress
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import aiofiles
 import httpx
 
 if TYPE_CHECKING:

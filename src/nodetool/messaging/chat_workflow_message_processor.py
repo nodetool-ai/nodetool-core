@@ -56,7 +56,7 @@ The ChatInput receives messages as a list of dictionaries:
 
 import json
 import uuid
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (

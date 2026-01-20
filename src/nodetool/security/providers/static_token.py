@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from nodetool.security.auth_provider import AuthProvider, AuthResult, TokenType
 

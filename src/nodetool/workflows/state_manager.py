@@ -34,10 +34,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import logging
-from collections import defaultdict
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.run_node_state import NodeStatus, RunNodeState

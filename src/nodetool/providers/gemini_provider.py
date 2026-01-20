@@ -1,7 +1,7 @@
 import asyncio
 import mimetypes
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
@@ -23,18 +23,15 @@ from google.genai.types import (
     GenerateContentConfig,
     GenerateImagesConfig,
     GenerateVideosConfig,
-    ImageOrDict,
     Part,
     PrebuiltVoiceConfig,
     SpeechConfig,
-    ThinkingConfig,
     Tool,
     ToolListUnion,
     VoiceConfig,
 )
 from pydantic import BaseModel
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.metadata.types import (
@@ -80,7 +77,6 @@ class GeminiProvider(BaseProvider):
 
     def get_client(self) -> AsyncClient:
         """Return an async Gemini client for the current event loop."""
-        from weakref import WeakKeyDictionary  # Lazy import for type hint if needed above
 
         loop = asyncio.get_running_loop()
         if loop not in self._clients:

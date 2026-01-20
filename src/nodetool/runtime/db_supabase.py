@@ -5,7 +5,7 @@ Provides per-scope Supabase resources with adapter memoization.
 Note: Supabase client handles its own connection pooling.
 """
 
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Type
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import DBResources

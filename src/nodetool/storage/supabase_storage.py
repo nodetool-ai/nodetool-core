@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from datetime import UTC, datetime, timezone
-from typing import IO, TYPE_CHECKING, Any, AsyncIterator
+from datetime import UTC, datetime
+from typing import IO, TYPE_CHECKING, AsyncIterator
 
 from .abstract_storage import AbstractStorage
 

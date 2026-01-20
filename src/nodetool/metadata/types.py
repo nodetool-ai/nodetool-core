@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, Literal, Optional, Type, Union
 
 import numpy as np
 import pandas as pd

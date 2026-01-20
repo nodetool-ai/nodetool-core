@@ -91,7 +91,6 @@ import asyncio
 import functools
 import importlib
 import inspect
-import logging
 import re
 import traceback
 from types import UnionType
@@ -123,17 +122,13 @@ from nodetool.metadata.typecheck import (
 )
 from nodetool.metadata.types import (
     AssetRef,
-    AudioRef,
     ComfyData,
     ComfyModel,
     HuggingFaceModel,
-    ImageRef,
     NameToType,
     NPArray,
     OutputSlot,
-    TextRef,
     TypeToName,
-    VideoRef,
 )
 from nodetool.metadata.utils import (
     async_generator_item_type,
@@ -167,7 +162,6 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
-    from .property import Property
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -711,7 +705,6 @@ class BaseNode(BaseModel):
         Returns:
             list[ModelPack]: List of model packs for this node.
         """
-        from nodetool.types.model import ModelPack
 
         return []
 
@@ -1504,7 +1497,6 @@ class BaseNode(BaseModel):
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        from .property import Property
 
         # Get properties from parent classes
         parent_properties = {}
