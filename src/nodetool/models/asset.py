@@ -7,7 +7,7 @@ and optional workflow association.
 """
 
 from datetime import datetime
-from typing import Dict, Literal, Optional, Sequence
+from typing import Literal, Optional, Sequence
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
