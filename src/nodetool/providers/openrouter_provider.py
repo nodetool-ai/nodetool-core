@@ -23,6 +23,7 @@ from nodetool.metadata.types import (
     ImageModel,
     LanguageModel,
     Message,
+    ModelPricing,
     Provider,
     ToolCall,
 )
@@ -253,6 +254,96 @@ class OpenRouterProvider(OpenAIProvider):
                 return models
         except Exception as e:
             log.error(f"Error fetching OpenRouter image models: {e}")
+            return []
+
+    async def get_pricing(self, endpoint_ids: list[str] | None = None) -> list[ModelPricing]:
+        """Get pricing information for OpenRouter models.
+
+        Fetches models from the OpenRouter API and extracts pricing information.
+        OpenRouter embeds pricing in the model metadata.
+
+        Args:
+            endpoint_ids: Optional list of specific model IDs to get pricing for.
+                         If None, returns pricing for all available models.
+
+        Returns:
+            List of ModelPricing instances with pricing information.
+        """
+        if not self.api_key:
+            log.debug("No OpenRouter API key configured, returning empty pricing list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://github.com/nodetool-ai/nodetool-core",
+                "X-Title": "NodeTool",
+            }
+            async with (
+                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+                session.get("https://openrouter.ai/api/v1/models") as response,
+            ):
+                if response.status != 200:
+                    log.warning(f"Failed to fetch OpenRouter models for pricing: HTTP {response.status}")
+                    return []
+                payload = await response.json()
+                data = payload.get("data", [])
+
+                pricing_list: list[ModelPricing] = []
+                for item in data:
+                    model_id = item.get("id")
+                    if not model_id:
+                        continue
+
+                    # Skip if we're filtering and this model isn't in the list
+                    if endpoint_ids and model_id not in endpoint_ids:
+                        continue
+
+                    # Extract pricing from the model data
+                    pricing_data = item.get("pricing", {})
+                    if not pricing_data:
+                        continue
+
+                    # OpenRouter uses per-token pricing (prompt/completion)
+                    prompt_price = pricing_data.get("prompt", "0")
+                    completion_price = pricing_data.get("completion", "0")
+                    request_price = pricing_data.get("request", "0")
+                    image_price = pricing_data.get("image", "0")
+
+                    # Convert string prices to float
+                    try:
+                        prompt_price = float(prompt_price) if prompt_price else 0.0
+                        completion_price = float(completion_price) if completion_price else 0.0
+                        request_price = float(request_price) if request_price else 0.0
+                        image_price = float(image_price) if image_price else 0.0
+                    except (ValueError, TypeError):
+                        prompt_price = 0.0
+                        completion_price = 0.0
+                        request_price = 0.0
+                        image_price = 0.0
+
+                    # Use completion price as the primary unit_price for LLMs
+                    unit_price = completion_price if completion_price else prompt_price
+
+                    pricing_list.append(
+                        ModelPricing(
+                            endpoint_id=model_id,
+                            provider=Provider.OpenRouter,
+                            unit_price=unit_price,
+                            unit="token",
+                            currency="USD",
+                            prompt_price=prompt_price if prompt_price else None,
+                            completion_price=completion_price if completion_price else None,
+                            request_price=request_price if request_price else None,
+                            image_price=image_price if image_price else None,
+                        )
+                    )
+
+                log.debug(f"Fetched {len(pricing_list)} pricing entries from OpenRouter")
+                return pricing_list
+        except Exception as e:
+            log.error(f"Error fetching OpenRouter pricing: {e}")
             return []
 
     async def text_to_image(
