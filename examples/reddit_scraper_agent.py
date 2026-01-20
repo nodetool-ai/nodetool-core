@@ -153,14 +153,18 @@ async def analyze_reddit_subreddit(
             print(f"\n{i}. {rec}")
 
         # Save results to file
+        import asyncio
         import json
         from pathlib import Path
 
         output_dir = Path(context.workspace_dir)
         output_file = output_dir / "reddit_analysis_report.json"
 
-        with open(output_file, "w") as f:
-            json.dump(results, f, indent=2)
+        def write_json_file():
+            with open(output_file, "w") as f:
+                json.dump(results, f, indent=2)
+
+        await asyncio.to_thread(write_json_file)
 
         print(f"\n\nReport saved to: {output_file}")
         print(f"Summary: {results.get('summary', 'No summary available')}")

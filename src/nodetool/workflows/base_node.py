@@ -587,7 +587,8 @@ class BaseNode(BaseModel):
         # Resolve annotations robustly (handles postponed annotations)
         try:
             resolved_annotations = get_type_hints(cls)
-        except Exception:
+        except Exception as e:
+            log.debug("Failed to resolve type hints for %s: %s", cls.__name__, e)
             resolved_annotations = getattr(cls, "__annotations__", {}) or {}
         for field_type in resolved_annotations.values():
             if is_enum_type(field_type):
@@ -730,7 +731,8 @@ class BaseNode(BaseModel):
             if include_model_info and model.repo_id:
                 try:
                     info = await fetch_model_info(model.repo_id)
-                except Exception:
+                except Exception as e:
+                    log.debug("Failed to fetch model info for %s: %s", model.repo_id, e)
                     info = None
             return await unified_model(model, model_info=info)
 
@@ -832,7 +834,8 @@ class BaseNode(BaseModel):
             if hasattr(self, name):
                 try:
                     hinted_type = self.__class__.field_types().get(name)
-                except Exception:
+                except Exception as e:
+                    log.debug("Failed to get field type for %s: %s", name, e)
                     hinted_type = None
 
                 if hinted_type is not None:
@@ -1384,8 +1387,8 @@ class BaseNode(BaseModel):
             if getattr(return_type, "__annotations__", None) and not issubclass(return_type, BaseModel):
                 try:
                     annotations = get_type_hints(return_type)
-                except Exception:
-                    # Fall back to raw annotations if resolution fails
+                except Exception as e:
+                    log.debug("Failed to get type hints for return type %s: %s", return_type, e)
                     annotations = return_type.__annotations__
                 return [
                     OutputSlot(
@@ -1422,7 +1425,8 @@ class BaseNode(BaseModel):
             return
         try:
             tm = type_metadata(python_type) if python_type is not None else TypeMetadata(type="any")
-        except Exception:
+        except Exception as e:
+            log.debug("Failed to create type metadata for %s: %s", python_type, e)
             tm = TypeMetadata(type="any")
         self._dynamic_outputs[name] = tm
 

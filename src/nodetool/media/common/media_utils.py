@@ -3,7 +3,7 @@ import os
 import subprocess
 import tempfile
 from io import BytesIO
-from typing import IO, Union
+from typing import IO
 
 from nodetool.config.logging_config import get_logger
 
