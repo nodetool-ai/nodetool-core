@@ -3,7 +3,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime
-from typing import List
+from typing import Optional
 
 import aiofiles
 import aiofiles.os

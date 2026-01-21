@@ -16,7 +16,7 @@ This module provides REST API endpoints for managing user-defined workspaces:
 import asyncio
 import os
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Optional
 
 import aiofiles
 import aiofiles.os
