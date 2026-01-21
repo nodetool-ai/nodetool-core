@@ -2003,7 +2003,10 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         return None
 
     # Handle special case for test_helper nodes under nodetool.workflows.test_helper
-    if parts[0] == "nodetool" and parts[1] == "workflows" and parts[2] == "test_helper":
+    # Handle special case for test nodes under tests.workflows
+    if (parts[0] == "nodetool" and parts[1] == "workflows" and parts[2] == "test_helper") or (
+        parts[0] == "tests" and parts[1] == "workflows"
+    ):
         module_prefix = ".".join(parts[:-1])
     else:
         # Try to load the module under the standard nodes namespace
