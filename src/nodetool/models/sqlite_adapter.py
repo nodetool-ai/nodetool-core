@@ -77,15 +77,16 @@ def safe_json_loads(value: str) -> Any:
     return json.loads(value, object_hook=_decode_special_types)
 
 
-async def retry_on_locked(func, max_retries=20, initial_delay=0.02):
+async def retry_on_locked(func, max_retries=10, initial_delay=0.01, max_delay=0.5):
     """Retry a database operation if it fails due to database lock.
 
     Uses exponential backoff with jitter to avoid thundering herd.
 
     Args:
         func: Async function to execute
-        max_retries: Maximum number of retry attempts (default 20 for high-concurrency scenarios)
-        initial_delay: Initial delay in seconds (doubled each retry, starts at 20ms)
+        max_retries: Maximum number of retry attempts (default 10 for balanced throughput)
+        initial_delay: Initial delay in seconds (doubled each retry, starts at 10ms)
+        max_delay: Maximum delay cap in seconds (default 0.5s for faster recovery)
     """
     last_exception = None
     delay = initial_delay
@@ -108,7 +109,7 @@ async def retry_on_locked(func, max_retries=20, initial_delay=0.02):
                 jitter = delay * random.uniform(0.5, 1.5)
                 log.debug(f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(jitter)
-                delay = min(delay * 2, 3.0)  # Exponential backoff capped at 3 seconds
+                delay = min(delay * 2, max_delay)  # Exponential backoff capped at max_delay
             else:
                 log.error(f"Database operation failed after {max_retries} retries: {e}")
                 raise

@@ -759,6 +759,14 @@ class WorkflowRunner:
         await self.state_manager.start()
         log.info(f"Started StateManager for run {self.job_id}")
 
+        # Start event logger background flush task (for non-blocking event logging)
+        if self.event_logger:
+            try:
+                await self.event_logger.start()
+                log.info(f"Started EventLogger for run {self.job_id}")
+            except Exception as e:
+                log.warning(f"Failed to start EventLogger (non-fatal): {e}")
+
         # Log RunCreated event (audit-only, non-fatal)
         if self.event_logger:
             try:
@@ -954,6 +962,15 @@ class WorkflowRunner:
                     except Exception as e2:
                         log.warning(f"Failed to stop StateManager: {e2}")
 
+                # Stop EventLogger for suspension
+                if self.event_logger:
+                    try:
+                        await self.event_logger.stop()
+                        log.info(f"EventLogger stopped for suspension")
+                        self.event_logger = None  # Prevent finally block from stopping again
+                    except Exception as e2:
+                        log.warning(f"Failed to stop EventLogger: {e2}")
+
                 # Log suspension events (audit-only, non-fatal)
                 if self.event_logger:
                     try:
@@ -1053,6 +1070,14 @@ class WorkflowRunner:
                         log.info(f"StateManager stopped for run {self.job_id}")
                     except Exception as e:
                         log.error(f"Error stopping StateManager: {e}")
+
+                # Stop EventLogger and flush remaining events
+                if self.event_logger:
+                    try:
+                        await self.event_logger.stop()
+                        log.info(f"EventLogger stopped for run {self.job_id}")
+                    except Exception as e:
+                        log.warning(f"Error stopping EventLogger (non-fatal): {e}")
 
                 # Stop input dispatcher if running
                 try:
