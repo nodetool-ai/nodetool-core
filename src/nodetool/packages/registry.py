@@ -622,7 +622,7 @@ class Registry:
             ExampleWorkflow: The loaded example workflow with metadata
         """
         try:
-            with open(file_path) as f:
+            with open(file_path, encoding="utf-8") as f:
                 props = json.load(f)
                 props["package_name"] = package_name
                 if not Environment.is_production():
