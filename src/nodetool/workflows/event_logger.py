@@ -73,7 +73,7 @@ class WorkflowEventLogger:
 
     async def _flush_pending(self):
         """Flush all pending events from the queue.
-        
+
         Events are flushed with a short timeout to prevent blocking.
         Failed events are logged but not retried to avoid contention.
         """
@@ -103,10 +103,10 @@ class WorkflowEventLogger:
                             payload=payload,
                             node_id=node_id,
                         ),
-                        timeout=2.0  # 2 second timeout for audit events
+                        timeout=2.0,  # 2 second timeout for audit events
                     )
                     log.debug(f"Flushed event {event_type} for run {self.run_id}")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     log.warning(f"Timeout flushing event {event_type} (non-fatal)")
             except Exception as e:
                 # Log but don't retry - these are audit events, not critical
