@@ -22,6 +22,7 @@ import aiohttp
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     ImageModel,
+    ModelPricing,
     Provider,
     VideoModel,
 )
@@ -609,6 +610,102 @@ class KieProvider(BaseProvider):
             log.debug("No Kie.ai API key configured, returning empty video model list")
             return []
         return KIE_VIDEO_MODELS
+
+    async def get_pricing(self, endpoint_ids: list[str] | None = None) -> list[ModelPricing]:
+        """Get pricing information for Kie.ai models.
+
+        Fetches pricing from Kie.ai's model-pricing API endpoint.
+
+        Args:
+            endpoint_ids: Optional list of specific model IDs to get pricing for.
+                         If None, returns pricing for all available models.
+
+        Returns:
+            List of ModelPricing instances with pricing information.
+        """
+        if not self.api_key:
+            log.debug("No Kie.ai API key configured, returning empty pricing list")
+            return []
+
+        try:
+            url = f"{KIE_API_BASE_URL}/client/v1/model-pricing/page"
+            headers = self._get_headers()
+
+            # Fetch all pricing with pagination
+            all_pricing: list[ModelPricing] = []
+            page_num = 1
+            page_size = 100  # Use larger page size for efficiency
+
+            async with aiohttp.ClientSession() as session:
+                while True:
+                    payload = {
+                        "pageNum": page_num,
+                        "pageSize": page_size,
+                        "modelDescription": "",
+                        "interfaceType": "",
+                    }
+
+                    async with session.post(url, json=payload, headers=headers) as response:
+                        if response.status != 200:
+                            log.warning(f"Failed to fetch Kie.ai pricing: HTTP {response.status}")
+                            break
+
+                        response_data = await response.json()
+                        self._check_response_status(response_data)
+
+                        data = response_data.get("data", {})
+                        records = data.get("records", [])
+
+                        if not records:
+                            break
+
+                        for record in records:
+                            model_id = record.get("model", "")
+                            # Skip if we're filtering and this model isn't in the list
+                            if endpoint_ids and model_id not in endpoint_ids:
+                                continue
+
+                            # Parse pricing - Kie.ai returns price in various formats
+                            price = record.get("price", 0)
+                            if isinstance(price, str):
+                                try:
+                                    price = float(price)
+                                except ValueError:
+                                    price = 0.0
+
+                            # Determine unit type from interface type
+                            interface_type = record.get("interfaceType", "")
+                            if "image" in interface_type.lower():
+                                unit = "image"
+                            elif "video" in interface_type.lower():
+                                unit = "video"
+                            elif "audio" in interface_type.lower():
+                                unit = "audio"
+                            else:
+                                unit = "request"
+
+                            all_pricing.append(
+                                ModelPricing(
+                                    endpoint_id=model_id,
+                                    provider=Provider.KIE,
+                                    unit_price=price,
+                                    unit=unit,
+                                    currency="USD",
+                                )
+                            )
+
+                        # Check if there are more pages
+                        total = data.get("total", 0)
+                        if page_num * page_size >= total:
+                            break
+                        page_num += 1
+
+            log.debug(f"Fetched {len(all_pricing)} pricing entries from Kie.ai")
+            return all_pricing
+
+        except Exception as e:
+            log.error(f"Error fetching Kie.ai pricing: {e}")
+            return []
 
     # Image Generation Methods
 

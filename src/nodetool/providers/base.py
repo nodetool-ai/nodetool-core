@@ -31,6 +31,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageFile,
+    ModelPricing,
     Provider,
     ToolCall,
     TTSModel,
@@ -335,6 +336,28 @@ class BaseProvider:
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_pricing(self, endpoint_ids: list[str] | None = None) -> list[ModelPricing]:
+        """Get pricing information for models from this provider.
+
+        Returns unit pricing for requested endpoint IDs. Most models use output-based
+        pricing (e.g., per image/video with proportional adjustments for resolution/length).
+        Some models use GPU-based or token-based pricing depending on architecture.
+
+        Args:
+            endpoint_ids: Optional list of specific endpoint/model IDs to get pricing for.
+                         If None, returns pricing for all available models.
+                         Accepts 1-50 endpoint IDs.
+
+        Returns:
+            List of ModelPricing instances with pricing information.
+            Returns empty list if provider doesn't support pricing API or if
+            pricing information is not available.
+
+        Raises:
+            Exception: If pricing fetch fails (should be caught and return empty list)
         """
         return []
 

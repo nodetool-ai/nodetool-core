@@ -29,6 +29,7 @@ from nodetool.metadata.types import (
     Message,
     MessageImageContent,
     MessageTextContent,
+    ModelPricing,
     Provider,
     ToolCall,
     TTSModel,
@@ -588,6 +589,37 @@ class HuggingFaceProvider(BaseProvider):
         except Exception as e:
             log.error(f"Error fetching HuggingFace models for provider {self.inference_provider}: {e}")
             return []
+
+    async def get_pricing(self, endpoint_ids: list[str] | None = None) -> list[ModelPricing]:
+        """Get pricing information for models from this HuggingFace inference provider.
+
+        Currently only FAL.ai provider supports the pricing API. Other HuggingFace
+        inference providers do not expose a public pricing API.
+
+        Args:
+            endpoint_ids: Optional list of specific endpoint/model IDs to get pricing for.
+                         Required for FAL.ai - must be 1-50 endpoint IDs.
+
+        Returns:
+            List of ModelPricing instances with pricing information.
+            Returns empty list if provider doesn't support pricing API.
+        """
+        # Only FAL.ai inference provider supports the pricing API
+        if self.inference_provider == "fal-ai":
+            from nodetool.providers.fal_pricing import fetch_fal_pricing
+            from nodetool.security.secret_helper import get_secret_sync
+
+            # FAL pricing requires FAL_API_KEY (separate from HF_TOKEN)
+            fal_api_key = get_secret_sync("FAL_API_KEY")
+            if not fal_api_key:
+                log.debug("No FAL_API_KEY configured, cannot fetch FAL pricing")
+                return []
+
+            return await fetch_fal_pricing(fal_api_key, endpoint_ids)
+
+        # Other HuggingFace inference providers don't have public pricing APIs
+        log.debug(f"Pricing not available for HuggingFace inference provider: {self.inference_provider}")
+        return []
 
     def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""

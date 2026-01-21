@@ -619,6 +619,39 @@ class EmbeddingModel(BaseType):
     dimensions: int = 0
 
 
+class ModelPricing(BaseType):
+    """Pricing information for a specific model endpoint.
+
+    Most models use output-based pricing (e.g., per image/video with proportional
+    adjustments for resolution/length). Some models use GPU-based pricing depending
+    on architecture. Some models use token-based pricing (per input/output token).
+
+    Attributes:
+        endpoint_id: Model/endpoint identifier (e.g., 'fal-ai/flux/dev', 'gpt-4o-mini')
+        provider: The provider this pricing applies to
+        unit_price: Base price per billing unit in the specified currency
+        unit: Unit of measurement for billing (e.g., 'image', 'video', 'token', 'request')
+        currency: Three-letter currency code (ISO 4217, e.g., 'USD')
+        prompt_price: Optional price per input/prompt token (for LLM models)
+        completion_price: Optional price per output/completion token (for LLM models)
+        request_price: Optional fixed cost per API request
+        image_price: Optional cost per image input
+    """
+
+    type: Literal["model_pricing"] = "model_pricing"
+    endpoint_id: str = ""
+    provider: Provider = Provider.Empty
+    unit_price: float = 0.0
+    unit: str = "request"
+    currency: str = "USD"
+    # Token-based pricing (for LLMs)
+    prompt_price: float | None = None
+    completion_price: float | None = None
+    # Additional pricing fields
+    request_price: float | None = None
+    image_price: float | None = None
+
+
 class LlamaModel(BaseType):
     type: Literal["llama_model"] = "llama_model"
     name: str = ""

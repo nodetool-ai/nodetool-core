@@ -42,6 +42,7 @@ from nodetool.metadata.types import (
     ImageModel,
     LanguageModel,
     LlamaModel,
+    ModelPricing,
     Provider,
     TTSModel,
     VideoModel,
@@ -609,6 +610,50 @@ async def get_embedding_models_endpoint(
     Get all available embedding models from a specific provider.
     """
     return await get_embedding_models_by_provider(provider, user)
+
+
+async def get_pricing_by_provider(
+    provider: Provider, user: str, endpoint_ids: list[str] | None = None
+) -> list[ModelPricing]:
+    """Get pricing information for models from a specific provider."""
+    try:
+        provider_instance = await get_provider(provider, user)
+        pricing = await provider_instance.get_pricing(endpoint_ids)
+        log.debug(f"Successfully retrieved {len(pricing)} pricing entries from provider {provider.value}")
+        return pricing
+    except ValueError as e:
+        log.warning(
+            f"Provider {provider.value} not available for pricing: {e}. "
+            "This may be expected if the provider package is not installed."
+        )
+        return []
+    except Exception as e:
+        log.error(
+            f"Error getting pricing from {provider.value}: {e}",
+            exc_info=True,
+        )
+        return []
+
+
+@router.get("/pricing/{provider}")
+async def get_pricing_endpoint(
+    provider: Provider,
+    endpoint_ids: list[str] | None = Query(None, description="Optional list of model/endpoint IDs to filter"),
+    user: str = Depends(current_user),
+) -> list[ModelPricing]:
+    """
+    Get pricing information for models from a specific provider.
+
+    Returns unit pricing for requested endpoint IDs. Most models use output-based
+    pricing (e.g., per image/video with proportional adjustments for resolution/length).
+    Some models use GPU-based or token-based pricing depending on architecture.
+
+    Supported providers:
+    - OpenRouter: Token-based pricing (prompt/completion)
+    - KIE: Output-based pricing (per image/video)
+    - FAL: Output-based pricing (per image/video/request)
+    """
+    return await get_pricing_by_provider(provider, user, endpoint_ids)
 
 
 @router.get("/ollama_model_info")
