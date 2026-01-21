@@ -462,8 +462,9 @@ class DockerJobExecution(JobExecution):
 
                             run_state = await RunState.get(self.job_id)
                             if run_state:
-                                run_state.status = self._status
-                                await run_state.save()
+                                if run_state.status != self._status:
+                                    run_state.status = self._status
+                                    await run_state.save_nonblocking()
                             if self._error:
                                 self._job_model.error = self._error
                             await self._job_model.save()

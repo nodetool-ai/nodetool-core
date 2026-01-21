@@ -3,6 +3,26 @@ RunState model - authoritative source of truth for workflow run status.
 
 This table stores the current state of a workflow run. Unlike the event log,
 this is mutable and represents the current truth. The event log is audit-only.
+
+Concurrency note (SQLite)
+------------------------
+SQLite allows many concurrent readers but serializes writes behind a single
+writer lock. In NodeTool, RunState can be updated very frequently (heartbeats,
+status transitions) and those writes can contend with other state-table writes
+(e.g. `run_node_state`) and with higher-value DB work.
+
+To keep workflow execution responsive under contention, most RunState mutation
+helpers (e.g. `update_heartbeat()`, `mark_*()`) persist via `save_nonblocking()`.
+When running on SQLite, `save_nonblocking()` enqueues the full row for a
+dedicated background writer thread which:
+- coalesces updates by `run_id` (latest wins)
+- periodically flushes batches using an UPSERT
+- uses a short busy timeout + retry backoff to avoid blocking the event loop
+
+This makes RunState persistence *eventually consistent* under SQLite: awaiting
+`mark_completed()` does **not** guarantee the row is committed before the call
+returns. If a caller truly requires synchronous persistence, call `await save()`
+explicitly.
 """
 
 from datetime import datetime
@@ -10,7 +30,9 @@ from typing import Any, Literal
 
 from pydantic import field_validator
 
+from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.models.base_model import DBField, DBIndex, DBModel
+from nodetool.runtime.resources import maybe_scope
 
 RunStatus = Literal["scheduled", "running", "suspended", "paused", "completed", "failed", "cancelled", "recovering"]
 
@@ -31,6 +53,12 @@ class RunState(DBModel):
     - Mutable (status changes in place)
     - Source of truth (not derived from events)
     - Optimistic concurrency via version field
+
+    Persistence model:
+    - `await save()` performs a synchronous DB write (may block on SQLite locks).
+    - `await save_nonblocking()` performs a best-effort write; on SQLite it
+      queues the row to a background writer thread to avoid blocking workflow
+      execution.
     """
 
     @classmethod
@@ -81,6 +109,52 @@ class RunState(DBModel):
         self.updated_at = datetime.now()
         self.version += 1
 
+    async def save_nonblocking(self) -> None:
+        """Persist the RunState without blocking workflow execution (SQLite only).
+
+        Behavior:
+        - Under pytest (`RUNNING_PYTEST=True`): falls back to `await save()` for
+          deterministic test behavior and to avoid background writes after table
+          truncation/teardown.
+        - SQLite: updates in this process are enqueued to a per-DB-path, dedicated
+          writer thread (`RunStateWriter`) and this coroutine returns immediately.
+          The writer thread coalesces updates by `run_id` and periodically flushes
+          batches using an UPSERT.
+        - Non-SQLite backends: falls back to `await save()` (preserves existing
+          semantics; no background thread).
+
+        Guarantees and caveats (SQLite):
+        - Best-effort/eventual consistency: returning from this call does *not*
+          guarantee the row is committed yet.
+        - Updates may be delayed up to the writer flush interval.
+        - If the in-memory queue is full, updates are dropped to avoid blocking
+          workflow execution (latest state may not be persisted).
+
+        Use this for high-frequency RunState updates (heartbeats/progress). If a
+        caller requires synchronous durability, call `await save()` explicitly.
+        """
+        if RUNNING_PYTEST:
+            # Tests rely on deterministic DB state and aggressive table truncation.
+            # Avoid background threads that can write after teardown.
+            await self.save()
+            return
+
+        scope = maybe_scope()
+        db_resources = getattr(scope, "db", None) if scope else None
+        pool = getattr(db_resources, "pool", None) if db_resources else None
+        db_path = getattr(pool, "db_path", None) if pool else None
+
+        if isinstance(db_path, str) and db_path:
+            # SQLite: enqueue and return immediately
+            self.before_save()
+            from nodetool.models.run_state_writer import RunStateWriter
+
+            RunStateWriter.enqueue(db_path, self.model_dump())
+            return
+
+        # Non-SQLite (or unknown): preserve original semantics.
+        await self.save()
+
     @classmethod
     async def create_run(
         cls,
@@ -111,26 +185,26 @@ class RunState(DBModel):
         return run
 
     async def claim(self, worker_id: str):
-        """Claim ownership of this run."""
+        """Claim ownership of this run (best-effort persistence on SQLite)."""
         self.worker_id = worker_id
         self.heartbeat_at = datetime.now()
-        await self.save()
+        await self.save_nonblocking()
 
     async def release(self):
-        """Release ownership (e.g. on clean shutdown)."""
+        """Release ownership (e.g. on clean shutdown; best-effort on SQLite)."""
         self.worker_id = None
         self.heartbeat_at = None
-        await self.save()
+        await self.save_nonblocking()
 
     async def update_heartbeat(self):
-        """Update heartbeat to now."""
+        """Update heartbeat to now (best-effort persistence on SQLite)."""
         self.heartbeat_at = datetime.now()
-        await self.save()
+        await self.save_nonblocking()
 
     async def increment_retry(self):
-        """Increment retry count."""
+        """Increment retry count (best-effort persistence on SQLite)."""
         self.retry_count += 1
-        await self.save()
+        await self.save_nonblocking()
 
     def is_stale(self, threshold_minutes: int = 5) -> bool:
         """Check if run has missed heartbeats."""
@@ -184,41 +258,41 @@ class RunState(DBModel):
         self.suspension_reason = reason
         self.suspension_state_json = state
         self.suspension_metadata_json = metadata or {}
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_resumed(self):
-        """Mark run as resumed (back to running)."""
+        """Mark run as resumed (back to running; best-effort persistence on SQLite)."""
         self.status = "running"
         # Keep suspension fields for audit trail
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_completed(self):
-        """Mark run as completed."""
+        """Mark run as completed (best-effort persistence on SQLite)."""
         self.status = "completed"
         self.completed_at = datetime.now()
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_failed(self, error: str):
-        """Mark run as failed."""
+        """Mark run as failed (best-effort persistence on SQLite)."""
         self.status = "failed"
         self.failed_at = datetime.now()
         self.error_message = error
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_cancelled(self):
-        """Mark run as cancelled."""
+        """Mark run as cancelled (best-effort persistence on SQLite)."""
         self.status = "cancelled"
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_paused(self):
-        """Mark run as paused."""
+        """Mark run as paused (best-effort persistence on SQLite)."""
         self.status = "paused"
-        await self.save()
+        await self.save_nonblocking()
 
     async def mark_recovering(self):
-        """Mark run as recovering (transient state during recovery)."""
+        """Mark run as recovering (transient; best-effort persistence on SQLite)."""
         self.status = "recovering"
-        await self.save()
+        await self.save_nonblocking()
 
     def is_resumable(self) -> bool:
         """Check if run can be resumed."""
