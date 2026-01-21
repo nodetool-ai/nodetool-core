@@ -100,7 +100,7 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
     if isinstance(ollama_models_unified, Exception):
         e = ollama_models_unified
-        if "connect" in str(e).lower() or "refused" in str(e).lower():
+        if "connect" in str(e).lower() or "refused" in str(e).lower() or "not set" in str(e).lower():
             log.warning(f"Ollama not available: {e}. Continuing without Ollama models.")
             ollama_models_unified = []
         else:

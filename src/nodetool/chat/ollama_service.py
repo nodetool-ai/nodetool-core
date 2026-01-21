@@ -10,7 +10,8 @@ from nodetool.types.model import UnifiedModel
 
 def get_ollama_client() -> AsyncClient:
     api_url = Environment.get("OLLAMA_API_URL")
-    assert api_url, "OLLAMA_API_URL not set"
+    if not api_url:
+        raise ConnectionError("OLLAMA_API_URL not set")
 
     return AsyncClient(api_url)
 
