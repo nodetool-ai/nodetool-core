@@ -1,3 +1,4 @@
+from .async_counter import AsyncCounter
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
@@ -19,6 +20,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AsyncByteStream",
+    "AsyncCounter",
     "AsyncEvent",
     "AsyncLock",
     "AsyncPriorityQueue",
