@@ -161,12 +161,27 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+SENSITIVE_PATHS = {"/etc/passwd", "/etc/shadow", "/root", "/home", "/var/log", "/proc", "/sys"}
+
+
+def _is_safe_download_path(path: str) -> bool:
+    """Check if the path is safe for download (not a sensitive system path)."""
+    abs_path = os.path.abspath(path)
+    return all(not (abs_path == sensitive or abs_path.startswith(sensitive + os.sep)) for sensitive in SENSITIVE_PATHS)
+
+
 @router.get("/download/{path:path}")
 async def download_file(path: str, __user: str = Depends(current_user)):
     """
-    Download a file from the specified path
+    Download a file from the specified path.
+
+    Security Note: This endpoint restricts downloads to prevent access to sensitive
+    system paths like /etc, /root, /proc, etc.
     """
     try:
+        if not _is_safe_download_path(path):
+            raise HTTPException(status_code=403, detail="Access to this path is forbidden")
+
         abs_path = path
         exists = await asyncio.to_thread(os.path.exists, abs_path)
         is_dir = await asyncio.to_thread(os.path.isdir, abs_path)
