@@ -109,6 +109,9 @@ async def test_event_logger_convenience_methods():
     run_id = "test-run-5"
     logger = WorkflowEventLogger(run_id)
 
+    # Start the logger to enable background flushing
+    await logger.start()
+
     # Log various events
     await logger.log_run_created(graph={}, params={}, user_id="test-user")
     await logger.log_node_scheduled("node1", "Multiply", attempt=1)
@@ -116,12 +119,14 @@ async def test_event_logger_convenience_methods():
     await logger.log_node_completed("node1", attempt=1, outputs={}, duration_ms=100)
     await logger.log_run_completed(outputs={}, duration_ms=1000)
 
-    # Verify events were logged
+    # Stop the logger to flush remaining events
+    await logger.stop()
+
+    # Verify all events were logged
     events = await RunEvent.get_events(run_id=run_id)
     assert len(events) == 5
-    assert events[0].event_type == "RunCreated"
-    assert events[1].event_type == "NodeScheduled"
-    assert events[4].event_type == "RunCompleted"
+    event_types = {e.event_type for e in events}
+    assert event_types == {"RunCreated", "NodeScheduled", "NodeStarted", "NodeCompleted", "RunCompleted"}
 
 
 @pytest.mark.asyncio
