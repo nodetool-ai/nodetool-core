@@ -48,3 +48,8 @@
 - Remaining ruff issues (SIM108, B010) are intentional patterns that don't require changes
 - SIM108 suggests using ternary operator in video_utils.py (style preference)
 - B010 flags setattr calls in apple/__init__.py (required for dynamic module exports)
+
+**Updates (2026-01-21)**:
+- Fixed W293: Blank line contains whitespace in `src/nodetool/workflows/event_logger.py:76`
+- Fixed UP041: Replaced `asyncio.TimeoutError` with builtin `TimeoutError` in `src/nodetool/workflows/event_logger.py:109`
+- Fixed F541: Removed f-string prefix from `log.info(f"EventLogger stopped for suspension")` in `src/nodetool/workflows/workflow_runner.py:969`
