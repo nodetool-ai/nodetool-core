@@ -916,7 +916,9 @@ class WorkflowRunner:
                         log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
 
                 if send_job_updates:
-                    context.post_message(JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="cancelled"))
+                    context.post_message(
+                        JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="cancelled")
+                    )
 
             except WorkflowSuspendedException as e:
                 # Handle workflow suspension from suspendable node
@@ -966,7 +968,7 @@ class WorkflowRunner:
                 if self.event_logger:
                     try:
                         await self.event_logger.stop()
-                        log.info(f"EventLogger stopped for suspension")
+                        log.info("EventLogger stopped for suspension")
                         self.event_logger = None  # Prevent finally block from stopping again
                     except Exception as e2:
                         log.warning(f"Failed to stop EventLogger: {e2}")
