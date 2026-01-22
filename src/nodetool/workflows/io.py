@@ -11,8 +11,9 @@ import inspect
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from .types import EdgeUpdate
 from nodetool.config.logging_config import get_logger
+
+from .types import EdgeUpdate
 
 log = get_logger(__name__)
 
