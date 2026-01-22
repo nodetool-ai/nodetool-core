@@ -339,27 +339,29 @@ async def test_autosave_force_bypasses_rate_limit(client: TestClient, workflow: 
 
 @pytest.mark.asyncio
 async def test_autosave_max_versions_limit(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    """Test autosave respects max versions per workflow."""
+    """Test autosave respects max versions per workflow using FIFO."""
     await workflow.save()
 
+    max_versions = 20
     # Create autosaves with force to bypass rate limiting
-    for _i in range(25):  # More than the default max of 20
+    for _i in range(25):  # More than the max of 20
         response = client.post(
             f"/api/workflows/{workflow.id}/autosave",
-            json={"save_type": "autosave", "force": True},
+            json={"save_type": "autosave", "force": True, "max_versions": max_versions},
             headers=headers,
         )
-        if response.json().get("skipped"):
-            break
+        # Should never be skipped - old ones are deleted instead (FIFO)
+        assert response.json()["skipped"] is False
 
-    # The last one should be skipped due to max versions
-    last_response = client.post(
-        f"/api/workflows/{workflow.id}/autosave",
-        json={"save_type": "autosave", "force": True},
+    # Verify that only max_versions autosaves exist
+    versions_response = client.get(
+        f"/api/workflows/{workflow.id}/versions",
         headers=headers,
     )
-    assert last_response.json()["skipped"] is True
-    assert "max versions" in last_response.json()["message"]
+    assert versions_response.status_code == 200
+    versions = versions_response.json()["versions"]
+    autosave_versions = [v for v in versions if v["save_type"] == "autosave"]
+    assert len(autosave_versions) == max_versions
 
 
 @pytest.mark.asyncio
