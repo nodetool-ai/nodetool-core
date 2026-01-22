@@ -4,6 +4,7 @@ Vendorized video export utilities from diffusers.
 
 import io
 import tempfile
+from contextlib import suppress
 from typing import IO, Any, List, Optional, cast
 
 import numpy as np
@@ -365,9 +366,7 @@ def _legacy_read_video_frames(
         cap.release()
     finally:
         if temp_file and os.path.exists(temp_file):
-            try:
+            with suppress(OSError):
                 os.remove(temp_file)
-            except OSError:
-                pass
 
     return frames

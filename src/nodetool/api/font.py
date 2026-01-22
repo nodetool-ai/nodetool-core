@@ -1,7 +1,6 @@
 import asyncio
 import os
 import platform
-from typing import List
 
 from fastapi import APIRouter
 from pydantic import BaseModel

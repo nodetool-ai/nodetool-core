@@ -34,6 +34,7 @@ import queue
 import sqlite3
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -109,14 +110,10 @@ class _SQLiteRunStateWriter:
         """
         self._stop_event.set()
         if flush:
-            try:
+            with suppress(queue.Full):
                 self._queue.put_nowait(RunStateWriteItem(run_id="__stop__", data={}))
-            except queue.Full:
-                pass
-        try:
+        with suppress(Exception):
             self._thread.join(timeout=timeout)
-        except Exception:
-            pass
 
     def enqueue(self, data: dict[str, Any]) -> None:
         """Enqueue a full-row update for the given RunState.
@@ -178,8 +175,7 @@ class _SQLiteRunStateWriter:
         update_sql = ", ".join([f"{col}=excluded.{col}" for col in update_cols])
 
         sql = (
-            f"INSERT INTO run_state ({cols_sql}) VALUES ({placeholders}) "
-            f"ON CONFLICT(run_id) DO UPDATE SET {update_sql}"
+            f"INSERT INTO run_state ({cols_sql}) VALUES ({placeholders}) ON CONFLICT(run_id) DO UPDATE SET {update_sql}"
         )
 
         values: list[tuple[Any, ...]] = []
@@ -192,20 +188,15 @@ class _SQLiteRunStateWriter:
             conn.executemany(sql, values)
             conn.commit()
         except sqlite3.OperationalError as e:
-            try:
+            with suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
-            # If database is locked, let the next iteration retry.
             msg = str(e).lower()
             if "locked" in msg or "busy" in msg:
                 raise
             log.warning("RunState writer failed to flush batch", exc_info=True)
         except Exception:
-            try:
+            with suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
             log.warning("RunState writer failed to flush batch", exc_info=True)
 
     def _run(self) -> None:
@@ -254,18 +245,14 @@ class _SQLiteRunStateWriter:
 
             # Final flush on stop
             if pending and conn is not None:
-                try:
+                with suppress(Exception):
                     self._flush(conn, list(pending.values()))
-                except Exception:
-                    pass
         except Exception:
             log.error("RunState writer thread crashed", exc_info=True)
         finally:
             if conn is not None:
-                try:
+                with suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
 
 
 class RunStateWriter:
