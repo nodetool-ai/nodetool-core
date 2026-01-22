@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict

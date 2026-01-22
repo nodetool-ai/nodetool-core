@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import traceback
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import aiofiles
 import chromadb
