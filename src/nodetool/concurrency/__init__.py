@@ -5,6 +5,7 @@ from .async_priority_queue import AsyncPriorityQueue
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
 from .batching import batched_async_iterable, process_in_batches
+from .async_barrier import AsyncBarrier, BrokenBarrierError
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -18,6 +19,7 @@ from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
 
 __all__ = [
+    "AsyncBarrier",
     "AsyncByteStream",
     "AsyncEvent",
     "AsyncLock",
@@ -26,6 +28,7 @@ __all__ = [
     "AsyncSemaphore",
     "AsyncTaskGroup",
     "AsyncTokenBucket",
+    "BrokenBarrierError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
     "CircuitBreakerError",
