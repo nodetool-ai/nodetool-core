@@ -235,3 +235,81 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
 #     )
 #     assert response.status_code == 200
 #     assert response.headers["content-type"] == "application/x-ndjson"
+
+
+@pytest.mark.asyncio
+async def test_dsl_export(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test exporting a workflow to DSL Python code."""
+    await workflow.save()
+    response = client.get(f"/api/workflows/{workflow.id}/dsl-export", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+
+    # Check that the response contains valid Python DSL code
+    code = response.text
+    assert "from nodetool.dsl.graph import graph" in code
+    assert "workflow = graph(" in code
+
+
+@pytest.mark.asyncio
+async def test_dsl_export_not_found(client: TestClient, headers: dict[str, str]):
+    """Test DSL export for non-existent workflow returns 404."""
+    response = client.get("/api/workflows/nonexistent-id/dsl-export", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_dsl_export_public_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test that public workflows can be exported."""
+    workflow.access = "public"
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/dsl-export", headers=headers)
+    assert response.status_code == 200
+    assert "from nodetool.dsl.graph import graph" in response.text
+
+
+@pytest.mark.asyncio
+async def test_gradio_export(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test exporting a workflow to Gradio app Python code."""
+    await workflow.save()
+    response = client.post(
+        f"/api/workflows/{workflow.id}/gradio-export",
+        json={"app_title": "Test App", "description": "Test description"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+
+    # Check that the response contains Gradio-specific code
+    code = response.text
+    assert "from nodetool.dsl.graph import graph" in code
+    assert "GradioAppConfig" in code
+    assert "Test App" in code
+
+
+@pytest.mark.asyncio
+async def test_gradio_export_not_found(client: TestClient, headers: dict[str, str]):
+    """Test Gradio export for non-existent workflow returns 404."""
+    response = client.post(
+        "/api/workflows/nonexistent-id/gradio-export",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_gradio_export_with_defaults(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test Gradio export with default configuration."""
+    await workflow.save()
+    response = client.post(
+        f"/api/workflows/{workflow.id}/gradio-export",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "NodeTool Workflow" in response.text  # Default app title
+

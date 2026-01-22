@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from nodetool.api.utils import current_user
@@ -1001,4 +1001,99 @@ async def cleanup_old_autosaves(
     except Exception as e:
         log.error(f"Error cleaning up autosaves for workflow {workflow_id}: {e}")
 
+
+class GradioExportRequest(BaseModel):
+    """Request model for Gradio export configuration."""
+
+    app_title: str = Field(default="NodeTool Workflow", description="Title for the Gradio app")
+    theme: Optional[str] = Field(default=None, description="Gradio theme to use")
+    description: Optional[str] = Field(default=None, description="Description for the Gradio app")
+    allow_flagging: bool = Field(default=False, description="Allow flagging in the Gradio app")
+    queue: bool = Field(default=True, description="Enable request queuing")
+
+
+@router.get("/{id}/dsl-export", response_class=PlainTextResponse)
+async def dsl_export(
+    id: str,
+    user: str = Depends(current_user),
+) -> str:
+    """
+    Export a workflow to Python DSL code.
+
+    Returns Python code that reconstructs the workflow using DSL node wrappers
+    and connections. The generated code can be saved to a .py file and executed
+    to recreate the workflow graph.
+
+    Args:
+        id: Workflow ID
+
+    Returns:
+        Python source code as a plain text response
+    """
+    from nodetool.dsl.export import graph_to_dsl_py
+
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    api_graph = workflow.get_api_graph()
+    if api_graph is None:
+        raise HTTPException(status_code=400, detail="Workflow has no associated graph")
+
+    try:
+        code = graph_to_dsl_py(api_graph)
+    except Exception as e:
+        log.error(f"Error exporting workflow {id} to DSL: {e}")
+        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+
+    return code
+
+
+@router.post("/{id}/gradio-export", response_class=PlainTextResponse)
+async def gradio_export(
+    id: str,
+    config: GradioExportRequest,
+    user: str = Depends(current_user),
+) -> str:
+    """
+    Export a workflow to a Gradio app Python script.
+
+    Returns Python code that reconstructs the workflow using DSL node wrappers
+    and wraps it in a Gradio app for interactive execution.
+
+    Args:
+        id: Workflow ID
+        config: Gradio app configuration options
+
+    Returns:
+        Python source code as a plain text response
+    """
+    from nodetool.dsl.export import graph_to_gradio_py
+
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    api_graph = workflow.get_api_graph()
+    if api_graph is None:
+        raise HTTPException(status_code=400, detail="Workflow has no associated graph")
+
+    try:
+        code = graph_to_gradio_py(
+            api_graph,
+            app_title=config.app_title,
+            theme=config.theme,
+            description=config.description,
+            allow_flagging=config.allow_flagging,
+            queue=config.queue,
+        )
+    except Exception as e:
+        log.error(f"Error exporting workflow {id} to Gradio: {e}")
+        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+
+    return code
 
