@@ -41,6 +41,7 @@ from nodetool.observability.tracing import trace_agent_task
 from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.run_job_request import ResourceLimits
 from nodetool.workflows.types import (
     LogUpdate,
     StepResult,
@@ -255,7 +256,7 @@ def _wrap_command_with_sandbox(cmd: list[str], workspace_dir: str | None = None)
         return cmd, None
 
 
-def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
+def _get_cpu_limit(resource_limits: ResourceLimits | None = None) -> int | None:
     """
     Get CPU limit percentage from resource limits or environment.
 
@@ -303,7 +304,7 @@ def _cpu_percent_to_taskpolicy_class(cpu_percent: int) -> str:
 
 
 def _wrap_command_with_cpu_limit(
-    cmd: list[str], resource_limits: Any | None = None
+    cmd: list[str], resource_limits: ResourceLimits | None = None
 ) -> tuple[list[str], dict[str, Any]]:
     """
     Wrap command with CPU limit using taskpolicy on macOS.
@@ -371,8 +372,8 @@ class AgentRunner(StreamRunnerBase):
         nano_cpus: int = 2_000_000_000,
         network_disabled: bool = False,
         mode: str = "docker",
-        resource_limits: Any | None = None,
-    ):
+        resource_limits: ResourceLimits | None = None,
+    ) -> None:
         """
         Initialize the AgentRunner.
 
@@ -413,7 +414,7 @@ class AgentRunner(StreamRunnerBase):
             user_code,
         ]
 
-    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], Any]:
+    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], str | None]:
         """
         Wrap subprocess command with sandbox-exec and CPU limiting on macOS.
 
@@ -436,7 +437,7 @@ class AgentRunner(StreamRunnerBase):
 
         return command, sandbox_profile_path
 
-    def cleanup_subprocess_wrapper(self, cleanup_data: Any) -> None:
+    def cleanup_subprocess_wrapper(self, cleanup_data: str | None) -> None:
         """
         Clean up sandbox profile file if it was created.
 
@@ -510,9 +511,9 @@ class Agent(BaseAgent):
         verbose: bool = True,  # Add verbose flag
         docker_image: str | None = None,
         use_sandbox: bool = False,
-        resource_limits: Any | None = None,
+        resource_limits: ResourceLimits | None = None,
         display_manager: AgentConsole | None = None,
-    ):
+    ) -> None:
         """
         Initialize the base agent.
 
@@ -850,7 +851,7 @@ class Agent(BaseAgent):
         yield Chunk(content=f"\n[{mode_name} completed]\n", done=True)
 
 
-async def test_docker_feature():
+async def test_docker_feature() -> None:
     """
     Smoke test for the Docker feature in Agent.
     Tests that an Agent can be initialized with a docker_image parameter.
@@ -884,7 +885,7 @@ async def test_docker_feature():
     print("✓ Docker feature smoke test passed")
 
 
-async def test_sandbox_feature():
+async def test_sandbox_feature() -> None:
     """
     Smoke test for the Sandbox feature in Agent.
     Tests that an Agent can be initialized with use_sandbox=True parameter.
