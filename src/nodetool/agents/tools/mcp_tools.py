@@ -25,6 +25,11 @@ log = get_logger(__name__)
 
 # Lazy import to avoid circular dependencies and missing dependencies
 _mcp_instance = None
+
+# Cache for loaded MCP tools
+# Note: This global cache is intentional for performance. MCP tools are immutable
+# once loaded and the cache is safe for concurrent access (read-only after first load).
+# In tests, the cache can be cleared by reimporting the module.
 _mcp_tools_cache: dict[str, Tool] = {}
 
 
@@ -134,13 +139,14 @@ def _extract_function_schema(func: Any) -> dict[str, Any]:
         # Try to infer type from annotation
         if param.annotation != inspect.Parameter.empty:
             annotation = param.annotation
-            if annotation == str or annotation == "str":
+            # Check if annotation is a type object
+            if annotation == str:
                 param_type = "string"
-            elif annotation == int or annotation == "int":
+            elif annotation == int:
                 param_type = "integer"
-            elif annotation == bool or annotation == "bool":
+            elif annotation == bool:
                 param_type = "boolean"
-            elif annotation == float or annotation == "float":
+            elif annotation == float:
                 param_type = "number"
             elif hasattr(annotation, "__origin__"):
                 # Handle typing generics like list[str], dict[str, Any]
@@ -208,8 +214,8 @@ async def get_all_mcp_tools() -> list[Tool]:
                 # - parameters: dict (JSON schema)
                 func = mcp_tool.fn
                 description = mcp_tool.description or ""
-                # Use 'parameters' attribute instead of 'input_schema'
-                input_schema = getattr(mcp_tool, "parameters", {})
+                # Get parameters from MCP tool (FastMCP uses 'parameters' for JSON schema)
+                parameters = getattr(mcp_tool, "parameters", {})
                 
                 if func is None:
                     log.warning(f"MCP tool '{tool_name}' has no function, skipping")
@@ -220,13 +226,13 @@ async def get_all_mcp_tools() -> list[Tool]:
                     description = func.__doc__.strip().split("\n")[0]
                 
                 # Generate input schema if not provided
-                if not input_schema or not input_schema.get("properties"):
-                    input_schema = _extract_function_schema(func)
+                if not parameters or not parameters.get("properties"):
+                    parameters = _extract_function_schema(func)
                 
                 # Create tool metadata
                 tool_metadata = {
                     "description": description,
-                    "inputSchema": input_schema,
+                    "inputSchema": parameters,
                 }
                 
                 # Create and add the wrapper

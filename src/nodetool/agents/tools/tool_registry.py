@@ -110,7 +110,8 @@ async def get_all_available_tools() -> list[Tool]:
         try:
             tools.append(tool_class())
         except Exception as e:
-            log.warning(f"Failed to instantiate tool: {e}")
+            tool_name = getattr(tool_class, '__name__', str(tool_class))
+            log.warning(f"Failed to instantiate tool {tool_name}: {e}")
     
     # Get all MCP tools
     try:
