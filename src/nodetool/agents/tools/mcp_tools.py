@@ -170,7 +170,7 @@ def _extract_function_schema(func: Any) -> dict[str, Any]:
     return schema
 
 
-def get_all_mcp_tools() -> list[Tool]:
+async def get_all_mcp_tools() -> list[Tool]:
     """
     Get all MCP tools as a list of Agent Tool instances.
     
@@ -194,29 +194,22 @@ def get_all_mcp_tools() -> list[Tool]:
         log.error(f"Failed to get MCP instance: {e}")
         return tools
     
-    # The FastMCP instance stores tools in its registry
-    # We need to access the tools registered with @mcp.tool()
-    if not hasattr(mcp, "_tools") and not hasattr(mcp, "tools"):
-        log.warning("MCP server has no tools registry. Cannot expose MCP tools to agent.")
-        return tools
-    
-    # Get tools from MCP server
-    # FastMCP stores tools in different ways depending on version
-    mcp_tools = getattr(mcp, "_tools", None) or getattr(mcp, "tools", None) or {}
-    
-    if isinstance(mcp_tools, dict):
-        for tool_name, tool_info in mcp_tools.items():
+    # Use the FastMCP get_tools() method to retrieve all registered tools
+    # Returns a dict: {tool_name: FunctionTool}
+    try:
+        mcp_tools_dict = await mcp.get_tools()
+        
+        for tool_name, mcp_tool in mcp_tools_dict.items():
             try:
-                # Extract the function
-                if isinstance(tool_info, dict):
-                    func = tool_info.get("fn") or tool_info.get("function")
-                    description = tool_info.get("description", "")
-                    input_schema = tool_info.get("inputSchema", {})
-                else:
-                    # tool_info might be the function itself
-                    func = tool_info
-                    description = getattr(func, "__doc__", "") or ""
-                    input_schema = {}
+                # mcp_tool is a FunctionTool object from FastMCP with attributes:
+                # - name: str
+                # - description: str  
+                # - fn: callable
+                # - parameters: dict (JSON schema)
+                func = mcp_tool.fn
+                description = mcp_tool.description or ""
+                # Use 'parameters' attribute instead of 'input_schema'
+                input_schema = getattr(mcp_tool, "parameters", {})
                 
                 if func is None:
                     log.warning(f"MCP tool '{tool_name}' has no function, skipping")
@@ -243,13 +236,17 @@ def get_all_mcp_tools() -> list[Tool]:
                 log.debug(f"Registered MCP tool: {tool_name}")
                 
             except Exception as e:
-                log.error(f"Failed to wrap MCP tool '{tool_name}': {e}", exc_info=True)
+                log.error(f"Failed to wrap MCP tool: {e}", exc_info=True)
+                
+    except Exception as e:
+        log.error(f"Failed to get tools from MCP server: {e}", exc_info=True)
+        return tools
     
     log.info(f"Loaded {len(tools)} MCP tools for agent use")
     return tools
 
 
-def get_mcp_tool_by_name(name: str) -> Tool | None:
+async def get_mcp_tool_by_name(name: str) -> Tool | None:
     """
     Get a specific MCP tool by name.
     
@@ -260,6 +257,6 @@ def get_mcp_tool_by_name(name: str) -> Tool | None:
         Tool instance or None if not found
     """
     if not _mcp_tools_cache:
-        get_all_mcp_tools()  # Populate cache
+        await get_all_mcp_tools()  # Populate cache
     
     return _mcp_tools_cache.get(name)

@@ -93,7 +93,7 @@ def _ensure_builtin_tools_registered() -> None:
                 register_tool_class(tool_cls)
 
 
-def get_all_available_tools() -> list[Tool]:
+async def get_all_available_tools() -> list[Tool]:
     """
     Get all available tools including built-in tools and MCP tools.
     
@@ -115,7 +115,7 @@ def get_all_available_tools() -> list[Tool]:
     # Get all MCP tools
     try:
         from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
-        mcp_tools = get_all_mcp_tools()
+        mcp_tools = await get_all_mcp_tools()
         tools.extend(mcp_tools)
     except Exception as e:
         log.warning(f"Failed to load MCP tools: {e}")
@@ -189,7 +189,7 @@ async def resolve_tool_by_name(
     # Try to resolve MCP tool
     try:
         from nodetool.agents.tools.mcp_tools import get_mcp_tool_by_name
-        mcp_tool = get_mcp_tool_by_name(name)
+        mcp_tool = await get_mcp_tool_by_name(name)
         if mcp_tool:
             return mcp_tool
     except Exception as e:
