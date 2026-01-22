@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Optional, Type, Union, get_args, get_origin
+from typing import Any, Optional, Union, get_args, get_origin
 
 # mypy: ignore-errors
 import psycopg

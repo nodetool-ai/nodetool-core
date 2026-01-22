@@ -7,7 +7,6 @@ This module provides functionality to discover and list all available ASR models
 across all registered providers that support the AUTOMATIC_SPEECH_RECOGNITION capability.
 """
 
-from typing import List
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import ASRModel

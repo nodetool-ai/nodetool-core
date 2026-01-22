@@ -7,7 +7,7 @@ import os
 import random
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 

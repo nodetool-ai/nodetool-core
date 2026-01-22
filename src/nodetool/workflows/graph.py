@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict, deque
-from typing import Any, List, Sequence
+from typing import Any, Sequence
 
 from pydantic import BaseModel, Field
 

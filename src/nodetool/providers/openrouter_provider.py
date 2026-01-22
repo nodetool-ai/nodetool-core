@@ -10,7 +10,7 @@ OpenRouter Usage Accounting: https://openrouter.ai/docs/use-cases/usage-accounti
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
 import openai

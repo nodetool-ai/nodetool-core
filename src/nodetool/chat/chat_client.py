@@ -8,7 +8,7 @@ Provides an interactive chat interface that connects to a running chat server wi
 import asyncio
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import Optional
 
 from openai import AsyncOpenAI
 from openai.types.chat import (

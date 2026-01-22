@@ -4,7 +4,7 @@ import logging
 import os
 import traceback
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 import openai
 import pydub

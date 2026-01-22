@@ -30,7 +30,7 @@ Example usage:
 """
 
 import uuid
-from typing import Any, AsyncGenerator, Callable, List, Sequence
+from typing import Any, AsyncGenerator, Callable, Sequence
 
 from nodetool.metadata.types import (
     LanguageModel,

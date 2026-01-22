@@ -106,7 +106,7 @@ import logging
 import mimetypes
 from datetime import date, datetime
 from io import BytesIO
-from typing import List, Optional
+from typing import Optional
 
 import httpx
 from pydantic import BaseModel

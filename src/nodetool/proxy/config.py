@@ -6,7 +6,7 @@ Handles loading YAML configuration files and validating service/global settings.
 
 import os
 from pathlib import Path
-from typing import ClassVar, Dict, List, Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator

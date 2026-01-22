@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import EnumMeta as EnumType
 
 # mypy: ignore-errors
-from typing import Any, Type, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 from pydantic.fields import FieldInfo
 

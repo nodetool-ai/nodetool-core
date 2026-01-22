@@ -10,7 +10,7 @@ import base64
 import json
 import os
 import traceback
-from typing import Any, AsyncGenerator, List, Literal, Sequence
+from typing import Any, AsyncGenerator, Literal, Sequence
 from weakref import WeakKeyDictionary
 
 import aiohttp

@@ -20,7 +20,6 @@ Key Functions:
     - get_all_collections(): Retrieve all collections with configured embedding functions
 """
 
-from typing import List
 from urllib.parse import urlparse
 
 import chromadb

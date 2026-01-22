@@ -6,7 +6,7 @@ import json
 import os
 import random
 import uuid
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 import requests
 import websockets
