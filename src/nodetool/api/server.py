@@ -5,7 +5,7 @@ import os
 import platform
 import sys
 from contextlib import asynccontextmanager
-from typing import Any, ClassVar, List
+from typing import Any, ClassVar
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
