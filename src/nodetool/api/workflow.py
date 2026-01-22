@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -845,6 +845,34 @@ async def restore_version(
     return await from_model(workflow)
 
 
+@router.delete("/{id}/versions/{version_id}")
+async def delete_version(
+    id: str,
+    version_id: str,
+    user: str = Depends(current_user),
+) -> dict[str, bool]:
+    """
+    Delete a specific workflow version.
+
+    Args:
+        id: Workflow ID
+        version_id: Version ID to delete
+
+    Returns:
+        Success status
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    deleted = await WorkflowVersionModel.delete_by_id(version_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return {"success": True}
+
 @router.post("/{id}/autosave")
 async def autosave_workflow(
     id: str,
@@ -897,10 +925,19 @@ async def autosave_workflow(
         "trigger_reason": autosave_request.save_type,
     }
 
+    # Convert dict to Graph if provided
+    graph_to_save = workflow.graph
+    if autosave_request.graph:
+        try:
+            graph_to_save = Graph(**autosave_request.graph)
+        except Exception as e:
+            log.warning(f"Failed to parse graph from request, using database graph: {e}")
+            graph_to_save = workflow.graph
+
     version = await WorkflowVersionModel.create(
         workflow_id=id,
         user_id=user,
-        graph=workflow.graph,
+        graph=graph_to_save,
         name=version_name,
         description=autosave_request.description,
         save_type=autosave_request.save_type,

@@ -96,6 +96,7 @@ class AutosaveWorkflowRequest(BaseModel):
     description: str = ""
     force: bool = False
     client_id: str | None = None
+    graph: dict[str, Any] | None = None  # Current workflow graph from frontend
 
 
 class AutosaveResponse(BaseModel):
