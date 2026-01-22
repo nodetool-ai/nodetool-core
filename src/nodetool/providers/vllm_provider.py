@@ -8,6 +8,7 @@ endpoint for serving large language models with optimized inference.
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
 
 import httpx
@@ -27,7 +28,8 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 # Only register the provider if VLLM_BASE_URL is explicitly set
-_vllm_base_url = Environment.get_environment().get("VLLM_BASE_URL")
+# Use os.environ directly to avoid triggering early Environment loading
+_vllm_base_url = os.environ.get("VLLM_BASE_URL")
 
 
 def _parse_bool(value: str | None, default: bool) -> bool:

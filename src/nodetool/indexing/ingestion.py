@@ -10,9 +10,26 @@ import asyncio
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
-import pymupdf
-import pymupdf4llm
 from markitdown import MarkItDown
+
+# Lazy imports for heavy modules (pymupdf takes ~10s to import)
+_pymupdf = None
+_pymupdf4llm = None
+
+def _get_pymupdf():
+    global _pymupdf
+    if _pymupdf is None:
+        import pymupdf
+        _pymupdf = pymupdf
+    return _pymupdf
+
+def _get_pymupdf4llm():
+    global _pymupdf4llm
+    if _pymupdf4llm is None:
+        import pymupdf4llm
+        _pymupdf4llm = pymupdf4llm
+    return _pymupdf4llm
+
 
 if TYPE_CHECKING:
     import chromadb
@@ -100,8 +117,8 @@ def default_ingestion_workflow(collection: chromadb.Collection, file_path: str, 
     if mime_type == "application/pdf":
         with open(file_path, "rb") as f:
             pdf_data = f.read()
-            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
-            md_text = pymupdf4llm.to_markdown(doc)
+            doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
+            md_text = _get_pymupdf4llm().to_markdown(doc)
             documents = [Document(text=md_text, doc_id=file_path)]
     else:
         md = MarkItDown()
@@ -129,9 +146,9 @@ async def default_ingestion_workflow_async(collection: Any, file_path: str, mime
         def pdf_to_markdown(path: str) -> str:
             with open(path, "rb") as f:
                 pdf_data = f.read()
-            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
+            doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
             try:
-                return pymupdf4llm.to_markdown(doc)
+                return _get_pymupdf4llm().to_markdown(doc)
             finally:
                 with suppress(Exception):
                     doc.close()

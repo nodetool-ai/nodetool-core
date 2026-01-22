@@ -45,7 +45,8 @@ log.setLevel(logging.DEBUG)
 DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096
 
 # Only register the provider if OLLAMA_API_URL is explicitly set
-_ollama_api_url = Environment.get("OLLAMA_API_URL")
+# Use os.environ directly to avoid triggering early Environment loading
+_ollama_api_url = os.environ.get("OLLAMA_API_URL")
 
 
 def _resolve_ollama_api_url(explicit: str | None = None) -> str:
