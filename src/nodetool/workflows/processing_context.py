@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 import queue
+import threading
 import urllib.parse
 import uuid
 from contextlib import suppress
@@ -422,33 +423,6 @@ class ProcessingContext:
         if last_exc:
             raise last_exc
         raise RuntimeError("HTTP request failed without exception")
-
-    async def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
-        """
-        Creates a Gmail connection configuration.
-
-        Args:
-            email_address: Gmail address to connect to
-            app_password: Google App Password for authentication
-
-        Returns:
-            IMAPConnection configured for Gmail
-
-        Raises:
-            ValueError: If email_address or app_password is empty
-        """
-        from nodetool.security.secret_helper import get_secret_required
-
-        if hasattr(self, "_gmail_connection"):
-            return self._gmail_connection
-
-        email_address = await get_secret_required("GOOGLE_MAIL_USER", self.user_id)
-        app_password = await get_secret_required("GOOGLE_APP_PASSWORD", self.user_id)
-
-        imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        imap.login(email_address, app_password)
-        self._gmail_connection = imap
-        return imap
 
     async def get_secret(self, key: str) -> str | None:
         """

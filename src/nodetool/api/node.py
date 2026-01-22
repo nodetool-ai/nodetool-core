@@ -13,7 +13,6 @@ from nodetool.metadata.types import (
     CalendarEvent,
     DataframeRef,
     DocumentRef,
-    Email,
     FilePath,
     FolderRef,
     FontRef,
@@ -111,7 +110,6 @@ UnionType = (
     AssetRef
     | AudioRef
     | DataframeRef
-    | Email
     | FilePath
     | FolderRef
     | ImageRef

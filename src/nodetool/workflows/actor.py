@@ -627,21 +627,28 @@ class NodeActor:
     ) -> None:
         """Standard batching behavior without list aggregation."""
         node = self.node
-        handle_streaming: dict[str, bool] = {}
+        # Track inherent streaming nature of edges for stickiness determination
+        inherent_streaming: dict[str, bool] = {}
         for handle in handles:
             edge = next(
                 (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
                 None,
             )
-            handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
+            # Determine if the edge is inherently streaming (from streaming source)
+            inherent_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
+
+        # Always treat all handles as streaming for "always-on streaming" behavior.
+        # This ensures every inbound input update triggers a node execution.
+        handle_streaming: dict[str, bool] = dict.fromkeys(handles, True)
 
         sync_mode = node.get_sync_mode()
         self.logger.debug(
-            "Batching mode for %s (%s): sync_mode=%s handle_streaming=%s",
+            "Batching mode for %s (%s): sync_mode=%s handle_streaming=%s inherent_streaming=%s",
             node.get_title(),
             node._id,
             sync_mode,
             handle_streaming,
+            inherent_streaming,
         )
 
         if sync_mode == "zip_all" and any(handle_streaming.values()):
@@ -649,20 +656,55 @@ class NodeActor:
 
             buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
             sticky_values: dict[str, Any] = {}
-            is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
+            # Use inherent_streaming for stickiness: non-inherently-streaming inputs are sticky
+            is_sticky: dict[str, bool] = {h: not inherent_streaming.get(h, False) for h in handles}
             seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
 
             def buffer_summary() -> dict[str, int]:
                 return {h: len(buf) for h, buf in buffers.items() if buf}
 
             def ready_to_zip() -> bool:
+                # Check if we have enough data to create a batch
+                has_any_new_data = False
                 for handle in handles:
                     if is_sticky.get(handle, False):
-                        if handle not in sticky_values and not buffers[handle]:
+                        # For sticky handles: need either a new buffered value or existing sticky value
+                        if buffers[handle]:
+                            has_any_new_data = True  # New data available
+                        elif handle not in sticky_values:
+                            return False  # No value at all for this sticky handle
+                    else:
+                        # For non-sticky handles: always need buffered items
+                        if not buffers[handle]:
                             return False
-                    elif not buffers[handle]:
-                        return False
-                return True
+                        has_any_new_data = True  # Non-sticky data counts as new
+
+                # If all handles are sticky and have sticky values, we need new data to batch.
+                # This prevents infinite loops when processing only sticky values.
+                all_sticky = all(is_sticky.get(h, False) for h in handles)
+                return has_any_new_data or not all_sticky
+
+            def any_closed_and_empty() -> bool:
+                """Return True if any non-sticky handle is closed and has no buffered items.
+
+                Sticky handles are allowed to be closed and empty if they have a sticky value,
+                as they will reuse that value for future batches.
+
+                Also checks the inbox buffer in addition to the local buffer to avoid
+                premature termination when items are still pending in the inbox.
+                """
+                for h in handles:
+                    # Check if handle is closed (no more items coming from upstream)
+                    if not self.inbox.is_open(h):
+                        # Check both local buffer AND inbox buffer
+                        local_empty = not buffers[h]
+                        inbox_has_items = self.inbox.has_buffered(h)
+                        if local_empty and not inbox_has_items:
+                            # For sticky handles, check if we have a sticky value
+                            if is_sticky.get(h, False) and h in sticky_values:
+                                continue  # Sticky handle with value is OK
+                            return True
+                return False
 
             async for handle, item in self.inbox.iter_any():
                 if handle not in buffers:
@@ -688,12 +730,12 @@ class NodeActor:
                     batch: dict[str, Any] = {}
                     for h in handles:
                         if is_sticky.get(h, False):
+                            # For sticky handles: use new value if available, else reuse sticky value
                             if buffers[h]:
                                 sticky_values[h] = buffers[h].popleft()
                             batch[h] = sticky_values[h]
-                            # Restore the sticky value for future batches
-                            if sticky_values[h] is not None:
-                                buffers[h].appendleft(sticky_values[h])
+                            # NOTE: We do NOT re-add the sticky value to the buffer.
+                            # The sticky value is only reused when no new value is available.
                         else:
                             batch[h] = buffers[h].popleft()
 
@@ -740,14 +782,8 @@ class NodeActor:
                     )
                     await processor(dict(current))
 
-                if not handle_streaming.get(handle, False):
-                    self.logger.debug(
-                        "Marking non-streaming handle done: node=%s (%s) handle=%s",
-                        node.get_title(),
-                        node._id,
-                        handle,
-                    )
-                    self.inbox.mark_source_done(handle)
+                # NOTE: With always-on streaming, we do NOT mark non-streaming handles
+                # as done. This keeps the node alive for re-invocations with sticky inputs.
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.
