@@ -9,7 +9,7 @@ run in the background indefinitely until explicitly stopped.
 
 import asyncio
 import threading
-from typing import Dict, Optional
+from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel

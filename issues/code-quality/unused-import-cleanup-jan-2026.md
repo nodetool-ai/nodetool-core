@@ -1,27 +1,41 @@
-# Unused Import Cleanup
+# Unused Import Cleanup - January 2026
 
-**Problem**: Four unused imports were causing F401 linting violations across the codebase.
+**Problem**: 113 unused imports across the codebase, primarily `typing.List`, `typing.Dict`, `typing.Set`, and `typing.Tuple` that were imported but never used in type annotations.
 
-**Solution**: Removed unused imports from three files:
+**Solution**: Removed unused imports using `ruff check --select F401 --fix` and manual fixes:
 
-1. `src/nodetool/concurrency/async_task_group.py`:
-   - Removed `field` from `from dataclasses import dataclass, field` (only `dataclass` was used)
+1. Removed unused `typing.List` from 32+ files including:
+   - `src/nodetool/chat/commands/*.py` (12 command files)
+   - `src/nodetool/chat/*.py` (5+ files)
+   - `src/nodetool/config/*.py` (3 files)
+   - `src/nodetool/deploy/*.py` (10+ files)
+   - `src/nodetool/ml/models/*.py` (5 model files)
+   - And many more
 
-2. `src/nodetool/integrations/vectorstores/chroma/provider_embedding_function.py`:
-   - Removed `List` from `from typing import List, cast` (only `cast` was used)
+2. Removed unused `typing.Dict` from 25+ files
 
-3. `src/nodetool/integrations/websocket/unified_websocket_runner.py`:
-   - Removed `is_tracing_enabled` and `trace_workflow` from tracing imports (only `trace_websocket_message` was used)
+3. Removed unused `typing.Set` from 5+ files
 
-**Why**: Unused imports add noise to the codebase, increase module load time marginally, and can mislead developers about actual dependencies.
+4. Removed unused `typing.Tuple` from 8+ files
 
-**Impact**: 
-- All F401 violations from ruff check are now resolved
+5. Removed other unused imports:
+   - `asyncio` from `src/nodetool/api/job.py`
+   - `pathlib.Path` from example files
+
+**Why**: Unused imports:
+- Add noise to the codebase
+- Increase module load time marginally
+- Can mislead developers about actual dependencies
+- Trigger F401 linting violations
+
+**Impact**:
+- 113 unused imports removed
+- All F401 linting violations resolved
 - Code is cleaner and more maintainable
+- Lint passes: `make lint`
+- Typecheck passes: `make typecheck`
 
 **Files Modified**:
-- `src/nodetool/concurrency/async_task_group.py`
-- `src/nodetool/integrations/vectorstores/chroma/provider_embedding_function.py`
-- `src/nodetool/integrations/websocket/unified_websocket_runner.py`
+- All files listed in ruff F401 output
 
-**Date**: 2026-01-19
+**Date**: 2026-01-22

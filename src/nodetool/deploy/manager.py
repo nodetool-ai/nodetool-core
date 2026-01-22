@@ -12,7 +12,7 @@ different platforms (self-hosted, RunPod, GCP). It handles:
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from nodetool.config.deployment import (
     GCPDeployment,

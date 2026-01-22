@@ -17,7 +17,6 @@ from typing import (
     Any,
     AsyncGenerator,
     AsyncIterator,
-    List,
     Literal,
     Sequence,
     cast,

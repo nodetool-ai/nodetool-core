@@ -12,7 +12,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, Optional, Sequence
 
 try:
     from safetensors import safe_open  # type: ignore

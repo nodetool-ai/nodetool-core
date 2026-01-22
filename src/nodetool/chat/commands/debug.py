@@ -1,7 +1,5 @@
 """Debug command implementation."""
 
-from typing import List
-
 from rich.prompt import Confirm
 
 from nodetool.chat.chat_cli import ChatCLI

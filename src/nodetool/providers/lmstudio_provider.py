@@ -10,7 +10,7 @@ LM Studio Documentation: https://lmstudio.ai/docs/developer/openai-compat
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import httpx
 import openai

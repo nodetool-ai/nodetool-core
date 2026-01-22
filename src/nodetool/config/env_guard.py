@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
 
 
 def _is_running_under_pytest() -> bool:

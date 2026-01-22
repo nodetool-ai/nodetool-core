@@ -40,7 +40,7 @@ import socket
 import time
 import weakref
 from contextlib import suppress
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import httpx
 

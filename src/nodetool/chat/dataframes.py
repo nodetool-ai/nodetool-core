@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import ColumnDef, RecordType

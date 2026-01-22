@@ -26,7 +26,7 @@ import asyncio
 import json
 import time
 from contextlib import suppress
-from typing import AsyncGenerator, Iterable, List, Optional, cast
+from typing import AsyncGenerator, Iterable, Optional, cast
 
 from openai.types.chat import (
     ChatCompletionChunk,

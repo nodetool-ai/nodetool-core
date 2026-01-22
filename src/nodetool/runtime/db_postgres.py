@@ -5,7 +5,7 @@ Provides async connection pooling for PostgreSQL with per-scope adapter memoizat
 """
 
 import asyncio
-from typing import Any, ClassVar, Dict, Optional, Type
+from typing import Any, ClassVar, Optional
 
 from psycopg_pool import AsyncConnectionPool
 

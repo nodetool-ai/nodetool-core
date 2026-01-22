@@ -1,7 +1,5 @@
 """Help command implementation."""
 
-from typing import List
-
 from rich.table import Table
 
 from nodetool.chat.chat_cli import ChatCLI

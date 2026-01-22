@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, List, Sequence
+from typing import Any, Sequence
 
 import aiofiles
 from huggingface_hub import HfApi, ModelInfo

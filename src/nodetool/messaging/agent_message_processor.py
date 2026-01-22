@@ -6,7 +6,7 @@ This module provides the processor for agent mode messages.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name

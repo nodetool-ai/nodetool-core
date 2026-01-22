@@ -1,7 +1,6 @@
 """Workflow creation command using GraphPlanner."""
 
 import traceback
-from typing import List
 
 from rich.panel import Panel
 from rich.syntax import Syntax
