@@ -1,5 +1,5 @@
 import base64
-from typing import Any, List, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
