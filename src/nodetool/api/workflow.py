@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -873,6 +873,7 @@ async def delete_version(
 
     return {"success": True}
 
+
 @router.post("/{id}/autosave")
 async def autosave_workflow(
     id: str,
@@ -911,19 +912,14 @@ async def autosave_workflow(
                 log.debug(f"Autosave skipped for workflow {id}: too soon ({elapsed:.1f}s < {min_interval}s)")
                 return AutosaveResponse(version=None, message="skipped (too soon)", skipped=True)
 
-    # Use user's max_versions setting, default to 50
-    max_versions = autosave_request.max_versions or 50
+    # Use user's max_versions setting, default to 20
+    max_versions = autosave_request.max_versions or 20
 
-    # FIFO: Delete oldest autosaves to make room before creating new one
+    # Check if we've reached the max versions limit
     autosave_count = await WorkflowVersionModel.count_autosaves(id)
     if autosave_count >= max_versions:
-        # Delete oldest autosaves, keeping max_versions - 1 to make room for new one
-        deleted = await WorkflowVersionModel.delete_old_autosaves(
-            workflow_id=id,
-            keep_count=max_versions - 1,
-        )
-        if deleted > 0:
-            log.debug(f"Deleted {deleted} old autosaves for workflow {id} (FIFO)")
+        log.debug(f"Autosave skipped for workflow {id}: max versions ({max_versions}) reached")
+        return AutosaveResponse(version=None, message="skipped (max versions)", skipped=True)
 
     next_version = await WorkflowVersionModel.get_next_version(id)
     version_name = f"Autosave {next_version}"
@@ -1000,5 +996,3 @@ async def cleanup_old_autosaves(
             log.info(f"Cleaned up {deleted_count} old autosaves for workflow {workflow_id}")
     except Exception as e:
         log.error(f"Error cleaning up autosaves for workflow {workflow_id}: {e}")
-
-
