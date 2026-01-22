@@ -12,6 +12,9 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from .types import EdgeUpdate
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 if TYPE_CHECKING:
     from .inbox import NodeInbox
@@ -143,11 +146,24 @@ class NodeOutputs:
 
         # Allow node to suppress routing for this slot
         if not self.node.should_route_output(slot):
+            log.debug(
+                "NodeOutputs.emit suppressed: node=%s (%s) slot=%s",
+                self.node.get_title(),
+                self.node._id,
+                slot,
+            )
             return
         if self.node.find_output_instance(slot) is None:
             raise ValueError(f"Node {self.node.get_title()} ({self.node._id}) tried to emit to unknown output '{slot}'")
         # Always collect the last value per slot
         self._collected[slot] = value
+        log.debug(
+            "NodeOutputs.emit: node=%s (%s) slot=%s capture_only=%s",
+            self.node.get_title(),
+            self.node._id,
+            slot,
+            self.capture_only,
+        )
 
         # Capture outputs from OutputNode instances into runner.outputs
         if isinstance(self.node, OutputNode):
@@ -186,6 +202,15 @@ class NodeOutputs:
         graph = self.context.graph
         for edge in graph.edges:
             if edge.source == self.node._id and edge.sourceHandle == slot:
+                log.debug(
+                    "NodeOutputs.complete: node=%s (%s) slot=%s edge=%s target=%s handle=%s",
+                    self.node.get_title(),
+                    self.node._id,
+                    slot,
+                    edge.id,
+                    edge.target,
+                    edge.targetHandle,
+                )
                 inbox = self.runner.node_inboxes.get(edge.target)
                 if inbox is not None:
                     inbox.mark_source_done(edge.targetHandle)

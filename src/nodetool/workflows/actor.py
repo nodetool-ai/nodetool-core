@@ -340,7 +340,7 @@ class NodeActor:
                     node.get_title(),
                     node._id,
                 )
-                context.cache_result(node, result)
+                await context.cache_result_async(node, result)
 
         span.set_attribute("nodetool.node.output_count", len(result) if result else 0)
         await node.send_update(context, "completed", result=result)
@@ -514,7 +514,12 @@ class NodeActor:
         """
         node = self.node
 
-        self.logger.debug(f"Running batched node {node.get_title()} ({node._id})")
+        self.logger.debug(
+            "Running batched node %s (%s) sync_mode=%s",
+            node.get_title(),
+            node._id,
+            node.get_sync_mode(),
+        )
         if self._only_nonroutable_upstreams():
             await self._mark_downstream_eos()
             return
@@ -533,9 +538,21 @@ class NodeActor:
 
             # If there are list handles that require full aggregation, use list aggregation mode
             if list_handles:
+                self.logger.debug(
+                    "List aggregation enabled for node %s (%s): handles=%s",
+                    node.get_title(),
+                    node._id,
+                    sorted(list_handles),
+                )
                 await self._run_with_list_aggregation(handles, list_handles, processor)
             else:
                 # Standard behavior for non-list handles
+                self.logger.debug(
+                    "Standard batching for node %s (%s): handles=%s",
+                    node.get_title(),
+                    node._id,
+                    sorted(handles),
+                )
                 await self._run_standard_batching(handles, processor)
 
         await node.handle_eos()
@@ -619,6 +636,13 @@ class NodeActor:
             handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
 
         sync_mode = node.get_sync_mode()
+        self.logger.debug(
+            "Batching mode for %s (%s): sync_mode=%s handle_streaming=%s",
+            node.get_title(),
+            node._id,
+            sync_mode,
+            handle_streaming,
+        )
 
         if sync_mode == "zip_all" and any(handle_streaming.values()):
             from collections import deque
@@ -627,6 +651,9 @@ class NodeActor:
             sticky_values: dict[str, Any] = {}
             is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
             seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
+
+            def buffer_summary() -> dict[str, int]:
+                return {h: len(buf) for h, buf in buffers.items() if buf}
 
             def ready_to_zip() -> bool:
                 for handle in handles:
@@ -637,6 +664,10 @@ class NodeActor:
                         return False
                 return True
 
+            def any_closed_and_empty() -> bool:
+                """Return True if any handle is closed and has no buffered items."""
+                return any(not self.inbox.is_open(h) and not buffers[h] for h in handles)
+
             async for handle, item in self.inbox.iter_any():
                 if handle not in buffers:
                     continue
@@ -646,6 +677,16 @@ class NodeActor:
 
                 if is_sticky.get(handle, False):
                     sticky_values[handle] = item
+
+                self.logger.debug(
+                    "zip_all received: node=%s (%s) handle=%s seen=%s buffers=%s open=%s",
+                    node.get_title(),
+                    node._id,
+                    handle,
+                    seen_counts.get(handle, 0),
+                    buffer_summary(),
+                    {h: self.inbox.is_open(h) for h in handles},
+                )
 
                 while ready_to_zip():
                     batch: dict[str, Any] = {}
@@ -660,11 +701,31 @@ class NodeActor:
                         else:
                             batch[h] = buffers[h].popleft()
 
+                    self.logger.debug(
+                        "zip_all batch ready: node=%s (%s) batch_handles=%s buffers=%s",
+                        node.get_title(),
+                        node._id,
+                        list(batch.keys()),
+                        buffer_summary(),
+                    )
                     await processor(dict(batch))
 
                     for h in handles:
                         if is_sticky.get(h, False) and sticky_values.get(h) is None:
                             sticky_values.pop(h, None)
+
+                if any_closed_and_empty():
+                    closed_handles = [h for h in handles if not self.inbox.is_open(h) and not buffers[h]]
+                    self.logger.warning(
+                        "zip_all stopping early for %s (%s): closed_empty=%s buffers=%s seen=%s",
+                        node.get_title(),
+                        node._id,
+                        closed_handles,
+                        buffer_summary(),
+                        seen_counts,
+                    )
+                    await self.inbox.close_all()
+                    break
         else:
             current: dict[str, Any] = {}
             pending_handles: set[str] = set(handles)
@@ -678,12 +739,31 @@ class NodeActor:
                     pending_handles.discard(handle)
                     if pending_handles:
                         continue
+                    self.logger.debug(
+                        "on_any initial batch ready: node=%s (%s) handles=%s",
+                        node.get_title(),
+                        node._id,
+                        list(current.keys()),
+                    )
                     await processor(dict(current))
                     initial_fired = True
                 else:
+                    self.logger.debug(
+                        "on_any batch update: node=%s (%s) updated_handle=%s handles=%s",
+                        node.get_title(),
+                        node._id,
+                        handle,
+                        list(current.keys()),
+                    )
                     await processor(dict(current))
 
                 if not handle_streaming.get(handle, False):
+                    self.logger.debug(
+                        "Marking non-streaming handle done: node=%s (%s) handle=%s",
+                        node.get_title(),
+                        node._id,
+                        handle,
+                    )
                     self.inbox.mark_source_done(handle)
 
     async def _run_output_node(self) -> None:

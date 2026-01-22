@@ -375,13 +375,23 @@ class WorkflowRunner:
                     visited.add(target_id)
                     queue.append(target_id)
 
+        try:
+            streaming_edges = [k for k, v in self._streaming_edges.items() if v]
+            log.debug(
+                "Streaming analysis: streaming_edges=%s total_edges=%s",
+                len(streaming_edges),
+                len(self._streaming_edges),
+            )
+        except Exception:
+            pass
+
     def _classify_list_inputs(self, graph: Graph) -> None:
         """Identify properties that require list aggregation.
 
         Populates ``self.multi_edge_list_inputs`` with a mapping from node IDs to
         the set of handle names that:
         1. Have type ``list[T]``
-        2. Have one or more incoming edges on the same targetHandle
+        2. Have multiple incoming edges on the same targetHandle
 
         For these handles, the actor will collect all incoming values into a list
         before invoking the node's process method, rather than using the default
@@ -416,13 +426,17 @@ class WorkflowRunner:
                 # Multiple edges to non-list property will be caught during validation
                 continue
 
-            # Mark this handle for list aggregation (single or multiple edges)
-            if node_id not in self.multi_edge_list_inputs:
-                self.multi_edge_list_inputs[node_id] = set()
-            self.multi_edge_list_inputs[node_id].add(handle)
+            # Only aggregate list inputs when multiple edges feed the same handle.
+            # Single-edge list inputs should be handled by sync_mode/streaming logic.
+            if len(edges) > 1:
+                if node_id not in self.multi_edge_list_inputs:
+                    self.multi_edge_list_inputs[node_id] = set()
+                self.multi_edge_list_inputs[node_id].add(handle)
 
         if self.multi_edge_list_inputs:
             log.debug(f"Multi-edge list inputs detected: {self.multi_edge_list_inputs}")
+        else:
+            log.debug("Multi-edge list inputs detected: none")
 
     # --- Streaming Input support for InputNode(is_streaming=True) ---
     def _enqueue_input_event(self, event: dict[str, Any]) -> None:
@@ -514,6 +528,12 @@ class WorkflowRunner:
                     for edge in graph.find_edges(node_id, handle):
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
+                            log.debug(
+                                "Dispatch input push: edge=%s target=%s handle=%s",
+                                edge.id,
+                                edge.target,
+                                edge.targetHandle,
+                            )
                             await inbox.put(edge.targetHandle, value)
                             edge_id = edge.id or ""
                             self._edge_counters[edge_id] += 1
@@ -531,6 +551,12 @@ class WorkflowRunner:
                     for edge in graph.find_edges(node_id, handle):
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
+                            log.debug(
+                                "Dispatch input end: edge=%s target=%s handle=%s",
+                                edge.id,
+                                edge.target,
+                                edge.targetHandle,
+                            )
                             inbox.mark_source_done(edge.targetHandle)
                             context.post_message(
                                 EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id or "", status="drained")
@@ -1271,10 +1297,26 @@ class WorkflowRunner:
                 continue
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
+            if not outgoing_edges:
+                log.debug(
+                    "No outgoing edges for node output: node=%s (%s) slot=%s",
+                    node.get_title(),
+                    node.id,
+                    key,
+                )
             for edge in outgoing_edges:
                 # Deliver to inboxes for streaming-input consumers
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:
+                    log.debug(
+                        "Enqueue output: node=%s (%s) slot=%s edge=%s target=%s handle=%s",
+                        node.get_title(),
+                        node.id,
+                        key,
+                        edge.id,
+                        edge.target,
+                        edge.targetHandle,
+                    )
                     await inbox.put(edge.targetHandle, value_to_send)
                 edge_id = edge.id or ""
                 self._edge_counters[edge_id] += 1
@@ -1296,6 +1338,8 @@ class WorkflowRunner:
             key = (edge.target, edge.targetHandle)
             upstream_counts[key] = upstream_counts.get(key, 0) + 1
 
+        log.debug("Initializing inboxes with upstream_counts=%s", upstream_counts)
+
         for node in graph.nodes:
             inbox = NodeInbox(buffer_limit=self.buffer_limit)
             # Attach per-handle upstream counts
@@ -1305,6 +1349,32 @@ class WorkflowRunner:
                     inbox.add_upstream(handle, count)
             self.node_inboxes[node._id] = inbox
             node.attach_inbox(inbox)
+            log.debug(
+                "Inbox attached: node=%s (%s) handles=%s",
+                node.get_title(),
+                node._id,
+                [handle for (target_id, handle), _ in upstream_counts.items() if target_id == node._id],
+            )
+
+    def _mark_node_outbound_eos(self, context: ProcessingContext, node: BaseNode) -> None:
+        """Mark end-of-stream for all outbound edges from a node.
+
+        This is used during resumption to ensure downstream inboxes do not hang
+        waiting on already-completed nodes.
+        """
+        graph = context.graph
+        if graph is None:
+            return
+        for edge in graph.edges:
+            if edge.source != node._id:
+                continue
+            inbox = self.node_inboxes.get(edge.target)
+            if inbox is not None:
+                inbox.mark_source_done(edge.targetHandle)
+            context.post_message(
+                EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id or "", status="drained"),
+            )
+        log.debug("Marked outbound EOS for completed node: %s (%s)", node.get_title(), node._id)
 
     def drain_active_edges(self, context: ProcessingContext, graph: Graph) -> None:
         """Post a drained update for any edge with pending or open input.
@@ -1397,6 +1467,8 @@ class WorkflowRunner:
             )
             if node_state and node_state.status == "completed":
                 log.info(f"Skipping already completed node: {node._id} ({node.get_node_type()})")
+                # Ensure downstream inboxes observe EOS for already-completed nodes
+                self._mark_node_outbound_eos(context, node)
                 continue
 
             # Restore resuming state for suspended nodes
