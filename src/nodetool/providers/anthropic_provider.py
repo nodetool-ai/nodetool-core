@@ -1,4 +1,4 @@
-"""
+﻿"""
 Anthropic provider implementation for chat completions.
 
 This module implements the ChatProvider interface for Anthropic Claude models,
@@ -10,9 +10,9 @@ import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
 from weakref import WeakKeyDictionary
 
-if TYPE_CHECKING:
-    import asyncio
+import asyncio
 
+if TYPE_CHECKING:
     import httpx
 
 import aiohttp

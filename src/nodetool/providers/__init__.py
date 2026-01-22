@@ -41,6 +41,7 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 
 _SAFE_IMPORT_CACHE: dict[str, bool] = {}
+_providers_imported = False
 
 
 def _safe_import_check(module_name: str) -> bool:
@@ -87,6 +88,14 @@ def _is_llama_server_available() -> bool:
 
 
 def import_providers():
+    global _providers_imported
+    if _providers_imported:
+        return
+
+    # Mark imported early to avoid repeating expensive probes on concurrent requests.
+    # If a hard failure occurs during imports, restart the process to retry.
+    _providers_imported = True
+
     # import providers to ensure they are registered
     from nodetool.providers import (
         anthropic_provider,
