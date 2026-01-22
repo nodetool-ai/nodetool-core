@@ -7,6 +7,7 @@ and improve throughput.
 """
 
 import asyncio
+from contextlib import suppress
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
@@ -53,10 +54,8 @@ class WorkflowEventLogger:
         if self._flush_task:
             await self._flush_pending()
             self._flush_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._flush_task
-            except asyncio.CancelledError:
-                pass
             self._flush_task = None
             log.debug(f"Stopped event logger flush task for run {self.run_id}")
 
@@ -73,7 +72,7 @@ class WorkflowEventLogger:
 
     async def _flush_pending(self):
         """Flush all pending events from the queue.
-        
+
         Events are flushed with a short timeout to prevent blocking.
         Failed events are logged but not retried to avoid contention.
         """
@@ -103,10 +102,10 @@ class WorkflowEventLogger:
                             payload=payload,
                             node_id=node_id,
                         ),
-                        timeout=2.0  # 2 second timeout for audit events
+                        timeout=2.0,  # 2 second timeout for audit events
                     )
                     log.debug(f"Flushed event {event_type} for run {self.run_id}")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     log.warning(f"Timeout flushing event {event_type} (non-fatal)")
             except Exception as e:
                 # Log but don't retry - these are audit events, not critical

@@ -1,6 +1,7 @@
 import base64
 import enum
 import json
+from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
@@ -1935,15 +1936,11 @@ class Message(BaseType):
         """
         content = message.content
         if message.role == "agent_execution" and isinstance(content, str):
-            try:
+            with suppress(Exception):
                 content = json.loads(content)
                 if isinstance(content, str):
-                    try:
+                    with suppress(Exception):
                         content = json.loads(content)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
         execution_event_type = getattr(message, "execution_event_type", None)
         agent_execution_id = getattr(message, "agent_execution_id", None)
         if message.role == "agent_execution" and isinstance(content, dict):

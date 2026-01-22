@@ -3,6 +3,7 @@ import contextvars
 import threading
 from asyncio import AbstractEventLoop
 from concurrent.futures import Future, InvalidStateError
+from contextlib import suppress
 from typing import Any, Callable, Coroutine, Optional, TypeVar
 
 from nodetool.config.logging_config import get_logger
@@ -300,10 +301,8 @@ class ThreadedEventLoop:
                     pass
                 except Exception as e:
                     if not result_future.done():
-                        try:
+                        with suppress(InvalidStateError):
                             result_future.set_exception(e)
-                        except InvalidStateError:
-                            pass
 
             task.add_done_callback(on_done)
 

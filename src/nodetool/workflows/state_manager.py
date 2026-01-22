@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
@@ -160,10 +161,8 @@ class StateManager:
         except TimeoutError:
             log.warning(f"StateManager writer task timed out after {timeout}s")
             self.writer_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self.writer_task
-            except asyncio.CancelledError:
-                pass
 
         log.info(
             f"StateManager stopped. Stats: {self.stats['updates_processed']}/{self.stats['updates_queued']} updates processed, "

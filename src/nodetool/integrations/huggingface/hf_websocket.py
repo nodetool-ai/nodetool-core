@@ -5,6 +5,8 @@ This module provides the WebSocket endpoint for HuggingFace model downloads
 with authentication and real-time progress tracking.
 """
 
+from contextlib import suppress
+
 from fastapi import WebSocket
 
 from nodetool.config.logging_config import get_logger
@@ -66,7 +68,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
             download_manager = await get_download_manager(user_id=user_id)
         except Exception as e:
             log.error(f"Failed to initialize DownloadManager: {e}", exc_info=True)
-            try:
+            with suppress(Exception):
                 await websocket.send_json(
                     {
                         "status": "error",
@@ -75,8 +77,6 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         "error": str(e),
                     }
                 )
-            except Exception:
-                pass
             await websocket.close()
             return
 
@@ -154,7 +154,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     await websocket.send_json({"status": "error", "message": "Unknown command"})
         except Exception as e:
             log.error(f"WebSocket error: {e}", exc_info=True)
-            try:
+            with suppress(Exception):
                 await websocket.send_json(
                     {
                         "status": "error",
@@ -163,12 +163,8 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                         "error": str(e),
                     }
                 )
-            except Exception:
-                pass
         finally:
             if download_manager:
                 download_manager.remove_websocket(websocket)
-            try:
+            with suppress(Exception):
                 await websocket.close()
-            except Exception:
-                pass

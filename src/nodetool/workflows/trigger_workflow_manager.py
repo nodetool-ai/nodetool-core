@@ -9,6 +9,7 @@ run in the background indefinitely until explicitly stopped.
 
 import asyncio
 import threading
+from contextlib import suppress
 from typing import Dict, Optional
 
 from nodetool.config.logging_config import get_logger
@@ -327,10 +328,8 @@ class TriggerWorkflowManager:
         """Stop the watchdog task."""
         if self._watchdog_task is not None:
             self._watchdog_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._watchdog_task
-            except asyncio.CancelledError:
-                pass
             self._watchdog_task = None
             log.info("Trigger workflow watchdog stopped")
 

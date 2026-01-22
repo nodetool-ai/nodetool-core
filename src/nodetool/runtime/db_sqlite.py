@@ -6,7 +6,7 @@ Uses the "Lazy Slot" algorithm for efficient connection management.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, AsyncIterator, ClassVar, Dict, Optional, Type
 
@@ -152,17 +152,13 @@ class SQLiteConnectionPool:
                         continue
                 # For non-lock errors or final attempt, close and raise
                 log.warning(f"Error applying SQLite pragmas: {e}")
-                try:
+                with suppress(Exception):
                     await connection.close()
-                except Exception:
-                    pass
                 raise
 
         # Should not reach here, but if it does, close and raise last error
-        try:
+        with suppress(Exception):
             await connection.close()
-        except Exception:
-            pass
         raise last_error or RuntimeError("Failed to configure connection after retries")
 
     async def _validate_connection(self, conn: aiosqlite.Connection) -> bool:
@@ -461,11 +457,8 @@ class SQLiteScopeResources(DBResources):
                 for adapter in self._adapters.values():
                     if hasattr(adapter, "connection") and adapter.connection is not None:
                         conn = adapter.connection
-                        # Rollback any pending transactions to prevent locks
-                        try:
+                        with suppress(Exception):
                             await conn.rollback()
-                        except Exception:
-                            pass
                         await self.pool.release(conn)
 
             # Clear adapter cache

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from contextlib import suppress
 from typing import Any, AsyncIterator
 
 from nodetool.config.logging_config import get_logger
@@ -301,9 +302,7 @@ class NodeInbox:
             # Notify producers that space is available (backpressure release)
             # Note: This is synchronous, so we schedule notification without blocking
             if self._loop is not None:
-                try:
+                with suppress(Exception):
                     self._notify_waiters_threadsafe()
-                except Exception:
-                    pass
             return handle, item
         return None

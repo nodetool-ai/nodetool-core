@@ -7,6 +7,7 @@ import os
 import platform
 import sys
 import warnings
+from contextlib import suppress
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -196,10 +197,8 @@ def info_cmd(as_json: bool):
     ]
     installed_packages: dict[str, str] = {}
     for pkg in ai_packages:
-        try:
+        with suppress(PackageNotFoundError):
             installed_packages[pkg] = get_package_version(pkg)
-        except PackageNotFoundError:
-            pass
     info_data["ai_packages"] = installed_packages
 
     # Check environment configuration (without exposing secrets)
