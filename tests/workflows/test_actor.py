@@ -1159,7 +1159,8 @@ async def test_always_on_streaming_sticky_inputs():
     await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     # Target B should have run 3 times with the sticky value 100 for 'b'
-    # Note: on_any waits for all handles at least once before firing
+    # With on_any mode (default), the node waits for all handles to have at least one value,
+    # then re-executes on every subsequent input, reusing sticky values for handles that don't update.
     # So we expect: (1, 100), (2, 100), (3, 100)
     assert len(CapturePairsNode.seen) == 3, f"Expected 3 executions, got {CapturePairsNode.seen}"
     assert CapturePairsNode.seen[0] == (1, 100)

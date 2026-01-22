@@ -679,9 +679,10 @@ class NodeActor:
                             return False
                         has_any_new_data = True  # Non-sticky data counts as new
 
-                # If all handles are sticky and have sticky values, we need new data to batch
+                # If all handles are sticky and have sticky values, we need new data to batch.
+                # This prevents infinite loops when processing only sticky values.
                 all_sticky = all(is_sticky.get(h, False) for h in handles)
-                return not (all_sticky and not has_any_new_data)
+                return has_any_new_data or not all_sticky
 
             def any_closed_and_empty() -> bool:
                 """Return True if any non-sticky handle is closed and has no buffered items.
