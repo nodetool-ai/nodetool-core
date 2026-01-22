@@ -11,7 +11,7 @@ Authentication: https://inference-docs.cerebras.ai/api-reference/authentication
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
 import openai

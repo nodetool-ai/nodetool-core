@@ -1,7 +1,7 @@
 import inspect
 import json
 import os
-from typing import Any, Type
+from typing import Any
 
 from pydantic import BaseModel
 

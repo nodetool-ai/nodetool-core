@@ -8,7 +8,7 @@ Uses the "Lazy Slot" algorithm for efficient connection management.
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, ClassVar, Dict, Optional, Type
+from typing import Any, AsyncIterator, ClassVar, Optional
 
 import aiosqlite
 

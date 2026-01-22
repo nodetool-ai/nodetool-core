@@ -26,7 +26,6 @@ generate a comprehensive report with all findings.
 """
 
 import asyncio
-from pathlib import Path
 
 import dotenv
 

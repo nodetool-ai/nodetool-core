@@ -1,6 +1,5 @@
 """Model management commands."""
 
-from typing import List
 
 from rich.table import Table
 

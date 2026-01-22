@@ -104,7 +104,7 @@ Module Contents
 import asyncio
 import json
 import logging
-from typing import List, Optional
+from typing import Optional
 
 import httpx
 from pydantic import BaseModel

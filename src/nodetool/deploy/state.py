@@ -11,7 +11,7 @@ import time
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Generator, Optional
 
 # Cross-platform file locking:
 # - Unix: fcntl.flock

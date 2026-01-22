@@ -4,7 +4,7 @@ UI Console for displaying Agent progress using Rich.
 
 import json
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from rich.columns import Columns
 from rich.console import Console

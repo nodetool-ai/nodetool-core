@@ -46,7 +46,7 @@ import sys
 from contextlib import suppress
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import msgpack
 import websockets

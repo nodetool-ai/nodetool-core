@@ -2,7 +2,7 @@ import os
 import socket
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nodetool.config.env_guard import (
     RUNNING_PYTEST,

@@ -19,7 +19,7 @@ import asyncio
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import List, Optional
+from typing import Optional
 
 from supabase import AsyncClient, create_async_client
 

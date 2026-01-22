@@ -8,7 +8,7 @@ with proper cleanup and connection pooling.
 from __future__ import annotations
 
 import contextvars
-from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import httpx
 

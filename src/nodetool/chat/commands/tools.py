@@ -5,7 +5,6 @@ import os
 import sys
 import termios
 import tty
-from typing import List
 
 from rich.console import Group
 from rich.live import Live
