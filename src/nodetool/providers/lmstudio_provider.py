@@ -117,16 +117,26 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    def _create_client(self) -> openai.AsyncOpenAI:
-        """Create an OpenAI client instance configured for LM Studio."""
+    def _create_client(
+        self, max_retries: int = 2, timeout: float | None = None
+    ) -> openai.AsyncOpenAI:
+        """Create an OpenAI client instance configured for LM Studio.
+
+        Args:
+            max_retries: Maximum number of retries for failed requests (default 2).
+                        Use 0 for no retries (fail fast).
+            timeout: Optional timeout override in seconds. Defaults to self._timeout.
+        """
+        effective_timeout = timeout if timeout is not None else self._timeout
         http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._timeout),
+            timeout=httpx.Timeout(effective_timeout),
             verify=self._verify_tls,
         )
         return openai.AsyncOpenAI(
             base_url=f"{self._base_url}/v1",
             api_key=self._api_key or "lm-studio",  # LM Studio doesn't require an API key
             http_client=http_client,
+            max_retries=max_retries,
         )
 
     async def get_available_language_models(self) -> list[LanguageModel]:
@@ -139,7 +149,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             List of LanguageModel instances for LM Studio
         """
         try:
-            client = self._create_client()
+            # Use fast-fail settings for model listing: no retries, short timeout
+            client = self._create_client(max_retries=0, timeout=2.0)
             models_response = await client.models.list()
             models: list[LanguageModel] = []
             for model in models_response.data:
