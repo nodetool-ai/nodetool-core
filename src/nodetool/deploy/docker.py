@@ -27,10 +27,19 @@ def _shell_escape(value: str) -> str:
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
-    """Run a shell command with streaming output and return output if requested."""
+    """Run a command safely without shell expansion.
+
+    Args:
+        command: Shell command string to run.
+        capture_output: If True, capture and return output. If False, stream output.
+
+    Returns:
+        Captured output if capture_output=True, empty string otherwise.
+    """
     try:
+        cmd_list = shlex.split(command)
         if capture_output:
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True, check=True)
             output = result.stdout.strip()
             if output:
                 print(output)
@@ -39,8 +48,8 @@ def run_command(command: str, capture_output: bool = False) -> str:
             return output
         else:
             process = subprocess.Popen(
-                command,
-                shell=True,
+                cmd_list,
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
