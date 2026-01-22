@@ -365,7 +365,6 @@ class BrowserTool(Tool):
             }
 
         except Exception as e:
-            print(e)
             return {"error": f"Error fetching page: {str(e)}"}
 
         finally:
