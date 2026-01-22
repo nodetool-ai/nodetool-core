@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Tuple
 
 from nodetool.io.media_fetch import (
     fetch_uri_bytes_and_mime_async as _fetch_async,

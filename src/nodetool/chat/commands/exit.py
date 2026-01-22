@@ -1,6 +1,5 @@
 """Exit command implementation."""
 
-from typing import List
 
 from nodetool.chat.chat_cli import ChatCLI
 

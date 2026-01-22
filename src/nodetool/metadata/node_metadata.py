@@ -3,7 +3,7 @@ import inspect
 import json
 import pkgutil
 from enum import Enum
-from typing import Any, List
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 

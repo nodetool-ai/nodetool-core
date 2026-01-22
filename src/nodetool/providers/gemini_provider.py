@@ -1,7 +1,7 @@
 import asyncio
 import mimetypes
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Sequence
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:

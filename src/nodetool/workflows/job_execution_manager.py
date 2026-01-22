@@ -5,7 +5,7 @@ Manager for executing workflow jobs using different execution strategies.
 import asyncio
 import uuid
 from contextlib import suppress
-from typing import Dict, Optional
+from typing import Optional
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger

@@ -9,7 +9,7 @@ This module handles deployment to RunPod serverless infrastructure, including:
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nodetool.config.deployment import (
     DeploymentStatus,

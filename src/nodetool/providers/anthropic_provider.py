@@ -7,7 +7,7 @@ handling message conversion, streaming, and tool integration.
 
 import base64
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:

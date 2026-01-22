@@ -7,7 +7,7 @@ generate markdown documentation pages organized by namespace structure.
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.node_metadata import NodeMetadata

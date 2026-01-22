@@ -1,7 +1,6 @@
 """Usage command implementation."""
 
 import json
-from typing import List
 
 from rich.syntax import Syntax
 

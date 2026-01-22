@@ -2,7 +2,6 @@
 
 import json
 import traceback
-from typing import List
 
 from rich.syntax import Syntax
 

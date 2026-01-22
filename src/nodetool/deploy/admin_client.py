@@ -6,7 +6,7 @@ admin endpoints, including support for Server-Sent Events (SSE) streaming.
 """
 
 import json
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import aiohttp
 from rich.console import Console

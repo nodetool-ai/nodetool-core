@@ -1,6 +1,5 @@
 """Providers listing command."""
 
-from typing import List
 
 from rich.table import Table
 

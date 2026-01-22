@@ -10,7 +10,7 @@ This module encapsulates:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse

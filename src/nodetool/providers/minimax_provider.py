@@ -9,7 +9,7 @@ MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-refe
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import anthropic
 

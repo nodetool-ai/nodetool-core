@@ -1,6 +1,6 @@
 """Base command class for CLI commands."""
 
-from typing import List, Optional
+from typing import Optional
 
 from nodetool.chat.chat_cli import ChatCLI
 

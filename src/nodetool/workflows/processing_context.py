@@ -22,7 +22,6 @@ import httpx
 if TYPE_CHECKING:
     import builtins
 
-    import joblib
     import numpy as np
     import pandas as pd
     import PIL.Image
@@ -46,7 +45,7 @@ except ImportError:  # pragma: no cover - playwright is optional
 
 from io import BytesIO
 from pickle import loads
-from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
+from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger

@@ -31,7 +31,7 @@ Environment Variables:
 
 import sys
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from rich.console import Console
 
