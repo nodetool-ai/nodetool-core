@@ -181,7 +181,8 @@ class AnthropicProvider(BaseProvider):
         Get available Anthropic models.
 
         Fetches models dynamically from the Anthropic API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Implements retry with exponential backoff for transient failures.
+        Does not retry on authentication errors (401/403).
 
         Returns:
             List of LanguageModel instances for Anthropic
@@ -190,39 +191,75 @@ class AnthropicProvider(BaseProvider):
             log.debug("No Anthropic API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            headers = {
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-            }
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get("https://api.anthropic.com/v1/models") as response,
-            ):
-                if response.status != 200:
-                    log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
-                    return []
-                payload: dict[str, Any] = await response.json()
-                data = payload.get("data", [])
+        max_retries = 3
+        base_delay = 1.0  # seconds
 
-                models: list[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id") or item.get("name")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.Anthropic,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Anthropic models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching Anthropic models: {e}")
-            return []
+        # Granular timeouts: 5s connect, 10s total
+        timeout = aiohttp.ClientTimeout(connect=5, total=10)
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+
+        last_error: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.get("https://api.anthropic.com/v1/models") as response:
+                        # Don't retry on auth errors
+                        if response.status in (401, 403):
+                            log.warning(f"Anthropic API auth error: HTTP {response.status} (not retrying)")
+                            return []
+
+                        # Retry on rate limit or server errors
+                        if response.status in (429, 500, 502, 503, 504):
+                            log.warning(f"Anthropic API error: HTTP {response.status}, attempt {attempt + 1}/{max_retries}")
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2**attempt)
+                                await asyncio.sleep(delay)
+                                continue
+                            return []
+
+                        if response.status != 200:
+                            log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
+                            return []
+
+                        payload: dict[str, Any] = await response.json()
+                        data = payload.get("data", [])
+
+                        models: list[LanguageModel] = []
+                        for item in data:
+                            model_id = item.get("id") or item.get("name")
+                            if not model_id:
+                                continue
+                            models.append(
+                                LanguageModel(
+                                    id=model_id,
+                                    name=model_id,
+                                    provider=Provider.Anthropic,
+                                )
+                            )
+                        log.debug(f"Fetched {len(models)} Anthropic models")
+                        return models
+
+            except asyncio.TimeoutError as e:
+                last_error = e
+                log.warning(f"Anthropic API timeout, attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    await asyncio.sleep(delay)
+            except aiohttp.ClientError as e:
+                last_error = e
+                log.warning(f"Anthropic API connection error: {e}, attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    await asyncio.sleep(delay)
+            except Exception as e:
+                log.error(f"Unexpected error fetching Anthropic models: {e}")
+                return []
+
+        log.error(f"Failed to fetch Anthropic models after {max_retries} attempts: {last_error}")
+        return []
 
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
