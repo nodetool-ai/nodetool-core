@@ -23,3 +23,20 @@
 **Files**: Multiple files in src/nodetool/api, src/nodetool/providers, src/nodetool/nodes/apple, tests/api
 
 **Date**: 2026-01-17
+
+---
+
+**Problem**: Additional ruff lint violations found in scheduled QA:
+- W293: Blank line contains whitespace
+- UP041: Replace aliased errors with `TimeoutError`
+- F541: f-string without any placeholders
+
+**Solution**: Fixed 3 lint violations in 2 files:
+- `src/nodetool/workflows/event_logger.py`: 
+  - Removed trailing whitespace from blank line in `_flush_pending()` docstring
+  - Replaced `asyncio.TimeoutError` with builtin `TimeoutError`
+- `src/nodetool/workflows/workflow_runner.py`: Removed f-string prefix from log message without placeholders
+
+**Files**: `src/nodetool/workflows/event_logger.py`, `src/nodetool/workflows/workflow_runner.py`
+
+**Date**: 2026-01-22
