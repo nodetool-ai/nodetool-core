@@ -1750,6 +1750,7 @@ class Chunk(BaseType):
     content: str = ""
     content_metadata: dict[str, Any] = {}
     done: bool = False
+    thinking: bool = False
 
 
 class MessageFile(BaseModel):

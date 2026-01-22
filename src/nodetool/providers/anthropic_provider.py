@@ -451,7 +451,7 @@ class AnthropicProvider(BaseProvider):
                         # be yielded as message content. The complete tool call is emitted
                         # at content_block_stop event.
                         elif isinstance(thinking, str):
-                            yield Chunk(content=thinking, done=False)
+                            yield Chunk(content=thinking, done=False, thinking=True)
                     elif etype == "content_block_stop":
                         # Tool use may appear here in real SDK; tests often omit attributes
                         content_block = getattr(event, "content_block", None)
