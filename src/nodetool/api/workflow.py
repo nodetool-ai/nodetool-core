@@ -911,11 +911,19 @@ async def autosave_workflow(
                 log.debug(f"Autosave skipped for workflow {id}: too soon ({elapsed:.1f}s < {min_interval}s)")
                 return AutosaveResponse(version=None, message="skipped (too soon)", skipped=True)
 
-    max_versions = 20
+    # Use user's max_versions setting, default to 50
+    max_versions = autosave_request.max_versions or 50
+
+    # FIFO: Delete oldest autosaves to make room before creating new one
     autosave_count = await WorkflowVersionModel.count_autosaves(id)
     if autosave_count >= max_versions:
-        log.debug(f"Autosave skipped for workflow {id}: max versions reached ({autosave_count} >= {max_versions})")
-        return AutosaveResponse(version=None, message="skipped (max versions)", skipped=True)
+        # Delete oldest autosaves, keeping max_versions - 1 to make room for new one
+        deleted = await WorkflowVersionModel.delete_old_autosaves(
+            workflow_id=id,
+            keep_count=max_versions - 1,
+        )
+        if deleted > 0:
+            log.debug(f"Deleted {deleted} old autosaves for workflow {id} (FIFO)")
 
     next_version = await WorkflowVersionModel.get_next_version(id)
     version_name = f"Autosave {next_version}"
@@ -929,10 +937,16 @@ async def autosave_workflow(
     graph_to_save = workflow.graph
     if autosave_request.graph:
         try:
-            graph_to_save = Graph(**autosave_request.graph)
+            graph_to_save = Graph(**autosave_request.graph).model_dump()
         except Exception as e:
             log.warning(f"Failed to parse graph from request, using database graph: {e}")
             graph_to_save = workflow.graph
+
+    # Skip empty workflows (no nodes)
+    nodes = graph_to_save.get("nodes", []) if isinstance(graph_to_save, dict) else []
+    if not nodes:
+        log.debug(f"Autosave skipped for workflow {id}: empty workflow")
+        return AutosaveResponse(version=None, message="skipped (empty workflow)", skipped=True)
 
     version = await WorkflowVersionModel.create(
         workflow_id=id,
@@ -986,3 +1000,5 @@ async def cleanup_old_autosaves(
             log.info(f"Cleaned up {deleted_count} old autosaves for workflow {workflow_id}")
     except Exception as e:
         log.error(f"Error cleaning up autosaves for workflow {workflow_id}: {e}")
+
+

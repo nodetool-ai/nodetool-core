@@ -1,4 +1,4 @@
-from typing import Any, List
+﻿from typing import Any, List
 
 from pydantic import BaseModel
 
@@ -97,6 +97,7 @@ class AutosaveWorkflowRequest(BaseModel):
     force: bool = False
     client_id: str | None = None
     graph: dict[str, Any] | None = None  # Current workflow graph from frontend
+    max_versions: int | None = None  # Max autosave versions to keep (from user settings)
 
 
 class AutosaveResponse(BaseModel):
@@ -105,3 +106,4 @@ class AutosaveResponse(BaseModel):
     version: WorkflowVersion | None = None
     message: str
     skipped: bool = False
+
