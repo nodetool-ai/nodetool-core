@@ -8,6 +8,7 @@ from nodetool.config.configuration import get_secrets_registry, get_settings_reg
 from nodetool.config.environment import Environment
 from nodetool.config.settings import load_settings, save_settings
 from nodetool.models.secret import Secret
+from nodetool.providers import clear_provider_cache
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -246,6 +247,9 @@ async def update_secret(key: str, req: SecretUpdateRequest, user: str = Depends(
             user_id=user, key=key, value=req.value, description=req.description or secret_setting.description
         )
 
+        # Clear provider cache so providers pick up the new API key
+        clear_provider_cache()
+
         return SecretResponse(
             id=secret.id,
             user_id=secret.user_id,
@@ -269,5 +273,8 @@ async def delete_secret(key: str, user: str = Depends(current_user)) -> dict[str
 
     if not success:
         raise HTTPException(status_code=404, detail="Secret not found")
+
+    # Clear provider cache so providers don't use the deleted API key
+    clear_provider_cache()
 
     return {"message": "Secret deleted successfully"}

@@ -174,6 +174,15 @@ _provider_cache_locks: dict[int, asyncio.Lock] = {}
 _provider_cache_locks_lock = threading.Lock()
 
 
+def clear_provider_cache() -> int:
+    global _provider_cache
+    count = len(_provider_cache)
+    _provider_cache.clear()
+    if count > 0:
+        log.info(f"Cleared {count} providers from cache")
+    return count
+
+
 def _get_provider_cache_lock() -> asyncio.Lock:
     """Get or create the provider cache lock lazily.
 
@@ -290,6 +299,7 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 __all__ = [
     "BaseProvider",
     "Chunk",
+    "clear_provider_cache",
     "FakeProvider",
     "MockProvider",
     "ProviderCapability",
