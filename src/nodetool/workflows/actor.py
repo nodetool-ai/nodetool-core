@@ -664,10 +664,6 @@ class NodeActor:
                         return False
                 return True
 
-            def any_closed_and_empty() -> bool:
-                """Return True if any handle is closed and has no buffered items."""
-                return any(not self.inbox.is_open(h) and not buffers[h] for h in handles)
-
             async for handle, item in self.inbox.iter_any():
                 if handle not in buffers:
                     continue
@@ -713,19 +709,6 @@ class NodeActor:
                     for h in handles:
                         if is_sticky.get(h, False) and sticky_values.get(h) is None:
                             sticky_values.pop(h, None)
-
-                if any_closed_and_empty():
-                    closed_handles = [h for h in handles if not self.inbox.is_open(h) and not buffers[h]]
-                    self.logger.warning(
-                        "zip_all stopping early for %s (%s): closed_empty=%s buffers=%s seen=%s",
-                        node.get_title(),
-                        node._id,
-                        closed_handles,
-                        buffer_summary(),
-                        seen_counts,
-                    )
-                    await self.inbox.close_all()
-                    break
         else:
             current: dict[str, Any] = {}
             pending_handles: set[str] = set(handles)
