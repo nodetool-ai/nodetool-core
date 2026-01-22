@@ -1,4 +1,4 @@
-"""LM Studio OpenAI-compatible provider implementation.
+﻿"""LM Studio OpenAI-compatible provider implementation.
 
 This module implements the BaseProvider interface for LM Studio models, handling message
 conversion, streaming, and tool integration. LM Studio provides an OpenAI-compatible API
@@ -129,7 +129,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         """
         effective_timeout = timeout if timeout is not None else self._timeout
         http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(effective_timeout),
+            timeout=httpx.Timeout(effective_timeout, connect=1.0),
             verify=self._verify_tls,
         )
         return openai.AsyncOpenAI(
@@ -166,7 +166,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             log.debug(f"Fetched {len(models)} LM Studio models")
             return models
         except Exception as e:
-            log.error(f"Error fetching LM Studio models: {e}")
+            log.debug(f"LM Studio not available: {e}")
             return []
 
     async def generate_message(  # type: ignore[override]
