@@ -1041,7 +1041,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     # Chat Message Handling (from ChatWebSocketRunner)
     # =========================================================================
 
-    async def handle_chat_message(self, data: dict):
+    async def handle_chat_message(self, data: dict, request_seq: int | None = None):
         """
         Handle an incoming chat message by saving to DB and processing using chat history from DB.
         """
@@ -1080,6 +1080,11 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     log.debug(
                         f"[handle_chat_message] Last message in history: workflow_target={getattr(last_msg, 'workflow_target', 'N/A')}, workflow_id={getattr(last_msg, 'workflow_id', 'N/A')}"
                     )
+
+                # Check if this request is still current before processing
+                if request_seq is not None and request_seq != self.chat_request_seq:
+                    log.debug(f"Skipping stale request (seq={request_seq}, current={self.chat_request_seq})")
+                    return
 
                 # Call the implementation method with the loaded messages
                 await self.handle_message_impl(chat_history)
@@ -1263,13 +1268,19 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             if self.current_task and not self.current_task.done():
                 log.debug("Cancelling previous chat task before starting new one")
                 self.current_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    try:
-                        await asyncio.wait_for(asyncio.shield(self.current_task), timeout=0.1)
-                    except asyncio.TimeoutError:
-                        pass
+                # Wait briefly for the task to actually cancel
+                try:
+                    await asyncio.wait_for(self.current_task, timeout=0.5)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass  # Expected - task was cancelled or timed out
+                except Exception as e:
+                    log.warning(f"Error waiting for previous task to cancel: {e}")
 
-            self.current_task = asyncio.create_task(self.handle_chat_message(command.data))
+
+            # Increment sequence number to invalidate any pending responses from old tasks
+            self.chat_request_seq += 1
+            current_seq = self.chat_request_seq
+            self.current_task = asyncio.create_task(self.handle_chat_message(command.data, current_seq))
             return {"message": "Chat message processing started", "thread_id": thread_id}
 
         elif command.command == CommandType.STOP:
