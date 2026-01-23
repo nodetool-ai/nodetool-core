@@ -8,6 +8,7 @@ handling message conversion, streaming, and tool integration.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import inspect
 import io
@@ -1138,82 +1139,100 @@ class OpenAIProvider(BaseProvider):
         current_chunk = ""
         chunk_count = 0
 
-        async for chunk in completion:
-            chunk: ChatCompletionChunk = chunk
-            chunk_count += 1
-
-            if not chunk.choices:
-                log.debug("Chunk has no choices, skipping")
-                continue
-
-            delta = chunk.choices[0].delta
-
-            if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
-                log.debug("Yielding audio chunk")
-                yield Chunk(
-                    content=delta.audio["data"],  # type: ignore
-                    content_type="audio",
-                )
-
-            # Process tool call deltas before checking finish_reason
-            if delta.tool_calls:
-                for tool_call in delta.tool_calls:
-                    tc: dict[str, Any] | None = None
-                    if tool_call.index in delta_tool_calls:
-                        tc = delta_tool_calls[tool_call.index]
-                    else:
-                        tc = {"id": tool_call.id}
-                        delta_tool_calls[tool_call.index] = tc
-                    assert tc is not None, "Tool call must not be None"
-
-                    if tool_call.id:
-                        tc["id"] = tool_call.id
-                    if tool_call.function and tool_call.function.name:
-                        tc["name"] = tool_call.function.name
-                    if tool_call.function and tool_call.function.arguments:
-                        if "function" not in tc:
-                            tc["function"] = {}
-                        if "arguments" not in tc["function"]:
-                            tc["function"]["arguments"] = ""
-                        tc["function"]["arguments"] += tool_call.function.arguments
-
-            if delta.content or chunk.choices[0].finish_reason == "stop":
-                current_chunk += delta.content or ""
-                finish_reason = chunk.choices[0].finish_reason
-                log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
-
-                if finish_reason == "stop":
-                    log.debug("Final chunk received, logging response")
-                    self._log_api_response(
-                        "chat_stream",
-                        Message(
-                            role="assistant",
-                            content=current_chunk,
-                        ),
+        try:
+            async for chunk in completion:
+                chunk: ChatCompletionChunk = chunk
+                chunk_count += 1
+    
+                if not chunk.choices:
+                    log.debug("Chunk has no choices, skipping")
+                    continue
+    
+                delta = chunk.choices[0].delta
+    
+                if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
+                    log.debug("Yielding audio chunk")
+                    yield Chunk(
+                        content=delta.audio["data"],  # type: ignore
+                        content_type="audio",
                     )
-
-                content_to_yield = delta.content or ""
-                yield Chunk(
-                    content=content_to_yield,
-                    done=finish_reason == "stop",
-                )
-
-            if chunk.choices[0].finish_reason == "tool_calls":
-                log.debug("Processing tool calls completion")
-                if delta_tool_calls:
-                    log.debug(f"Yielding {len(delta_tool_calls)} tool calls")
-                    for tc in delta_tool_calls.values():
+    
+                # Process tool call deltas before checking finish_reason
+                if delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        tc: dict[str, Any] | None = None
+                        if tool_call.index in delta_tool_calls:
+                            tc = delta_tool_calls[tool_call.index]
+                        else:
+                            tc = {"id": tool_call.id}
+                            delta_tool_calls[tool_call.index] = tc
                         assert tc is not None, "Tool call must not be None"
-                        tool_call = ToolCall(
-                            id=tc["id"],
-                            name=tc["name"],
-                            args=json.loads(tc["function"]["arguments"]),
+    
+                        if tool_call.id:
+                            tc["id"] = tool_call.id
+                        if tool_call.function and tool_call.function.name:
+                            tc["name"] = tool_call.function.name
+                        if tool_call.function and tool_call.function.arguments:
+                            if "function" not in tc:
+                                tc["function"] = {}
+                            if "arguments" not in tc["function"]:
+                                tc["function"]["arguments"] = ""
+                            tc["function"]["arguments"] += tool_call.function.arguments
+    
+                if delta.content or chunk.choices[0].finish_reason == "stop":
+                    current_chunk += delta.content or ""
+                    finish_reason = chunk.choices[0].finish_reason
+                    log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
+    
+                    if finish_reason == "stop":
+                        log.debug("Final chunk received, logging response")
+                        self._log_api_response(
+                            "chat_stream",
+                            Message(
+                                role="assistant",
+                                content=current_chunk,
+                            ),
                         )
-                        self._log_tool_call(tool_call)
-                        yield tool_call
-                else:
-                    log.error("No tool call found in delta_tool_calls")
-                    raise ValueError("No tool call found")
+    
+                    content_to_yield = delta.content or ""
+                    yield Chunk(
+                        content=content_to_yield,
+                        done=finish_reason == "stop",
+                    )
+    
+                if chunk.choices[0].finish_reason == "tool_calls":
+                    log.debug("Processing tool calls completion")
+                    if delta_tool_calls:
+                        log.debug(f"Yielding {len(delta_tool_calls)} tool calls")
+                        for tc in delta_tool_calls.values():
+                            assert tc is not None, "Tool call must not be None"
+                            tool_call = ToolCall(
+                                id=tc["id"],
+                                name=tc["name"],
+                                args=json.loads(tc["function"]["arguments"]),
+                            )
+                            self._log_tool_call(tool_call)
+                            yield tool_call
+                    else:
+                        log.error("No tool call found in delta_tool_calls")
+                        raise ValueError("No tool call found")
+    
+        except asyncio.CancelledError:
+            log.info("OpenAI streaming cancelled by user")
+            raise
+        finally:
+            # Close the stream to terminate the HTTP connection
+            if hasattr(completion, 'close'):
+                try:
+                    completion.close()
+                except Exception:
+                    pass
+            elif hasattr(completion, 'response') and hasattr(completion.response, 'close'):
+                try:
+                    await completion.response.close()
+                except Exception:
+                    pass
+            log.debug("OpenAI streaming cleanup completed")
 
     async def generate_message(  # type: ignore[override]
         self,

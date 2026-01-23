@@ -1258,6 +1258,17 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             thread_id = command.data.get("thread_id")
             if not thread_id:
                 return {"error": "thread_id is required for chat_message command"}
+
+            # Cancel any existing chat task before starting a new one
+            if self.current_task and not self.current_task.done():
+                log.debug("Cancelling previous chat task before starting new one")
+                self.current_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    try:
+                        await asyncio.wait_for(asyncio.shield(self.current_task), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        pass
+
             self.current_task = asyncio.create_task(self.handle_chat_message(command.data))
             return {"message": "Chat message processing started", "thread_id": thread_id}
 
