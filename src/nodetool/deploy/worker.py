@@ -40,7 +40,6 @@ import datetime
 import os
 import platform
 from contextlib import asynccontextmanager
-from typing import List
 
 import uvicorn
 from fastapi import FastAPI, HTTPException

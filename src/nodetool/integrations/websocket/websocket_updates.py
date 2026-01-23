@@ -4,7 +4,7 @@ primarily system statistics, to connected clients.
 """
 
 import asyncio
-from typing import Literal, Set
+from typing import Literal
 
 from fastapi import WebSocket
 from pydantic import BaseModel

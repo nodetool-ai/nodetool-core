@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from contextlib import suppress
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from docker.errors import APIError, NotFound
 

@@ -7,7 +7,7 @@ markdown documentation pages with Mermaid diagrams for visualization.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
 

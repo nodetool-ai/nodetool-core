@@ -1,6 +1,6 @@
 import io
 from datetime import datetime
-from typing import IO, AsyncIterator, Dict, Iterator
+from typing import IO, AsyncIterator, Iterator
 
 from nodetool.concurrency.async_iterators import AsyncByteStream
 from nodetool.storage.abstract_storage import AbstractStorage

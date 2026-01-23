@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Dict, Literal, Optional, Type, Union
+from typing import Any, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -2292,15 +2292,6 @@ class ChartConfigSchema(BaseModel):
 # Email Types
 #######################
 # Types for handling email data
-
-
-class Email(BaseType):
-    type: Literal["email"] = "email"
-    id: str = Field(default="", description="Message ID")
-    sender: str = Field(default="", description="Sender email address")
-    subject: str = Field(default="", description="Email subject line")
-    date: Datetime = Field(default=Datetime(), description="Email date")
-    body: str | TextRef = Field(default="", description="Email body content")
 
 
 class EmailFlag(str, Enum):

@@ -12,7 +12,7 @@ import asyncio
 import gc
 import time
 from contextlib import asynccontextmanager, suppress
-from typing import Any, AsyncIterator, ClassVar, Dict, NamedTuple
+from typing import Any, AsyncIterator, ClassVar, NamedTuple
 
 import psutil
 

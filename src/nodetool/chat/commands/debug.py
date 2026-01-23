@@ -1,6 +1,5 @@
 """Debug command implementation."""
 
-from typing import List
 
 from rich.prompt import Confirm
 

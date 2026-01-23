@@ -4,7 +4,7 @@ Shared font-related utilities used across the codebase.
 
 import os
 import platform
-from typing import Dict, Optional
+from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 

@@ -9,7 +9,7 @@ import sys
 import warnings
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import click
 from rich.console import Console

@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nodetool.config.deployment import SelfHostedDeployment

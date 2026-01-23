@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, AsyncIterator, ClassVar, List, Sequence
+from typing import Any, AsyncIterator, ClassVar, Sequence
 
 import httpx
 import openai

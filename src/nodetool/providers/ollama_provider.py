@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 
 import tiktoken
 from ollama import AsyncClient, Client

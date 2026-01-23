@@ -2,10 +2,12 @@ import email
 import imaplib
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
-from typing import List
 
 from nodetool.html.convert_html import convert_html_to_text
-from nodetool.metadata.types import Datetime, Email, EmailSearchCriteria, IMAPConnection
+from nodetool.metadata.types import Datetime, EmailSearchCriteria, IMAPConnection
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_gmail_connection(email_address: str, app_password: str) -> IMAPConnection:
@@ -58,7 +60,7 @@ def decode_bytes_with_fallback(byte_string: bytes, encodings=("utf-8", "latin-1"
     return ""
 
 
-def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
+def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> dict | None:
     """
     Fetches a single email by message ID.
 
@@ -71,6 +73,7 @@ def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
     """
     result, data = imap.fetch(message_id, "(RFC822)")
     if result != "OK" or not data[0] or not isinstance(data[0], tuple):
+        logger.error(f"Failed to fetch email with ID {message_id}: {data}")
         return None
 
     email_body = data[0][1]
@@ -85,16 +88,16 @@ def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
     date_str = email_message["Date"]
     date = parsedate_to_datetime(date_str) if date_str else None
 
-    return Email(
-        id=message_id,
-        subject=subject,
-        sender=from_addr,
-        date=(Datetime.from_datetime(date) if date else Datetime()),
-        body=get_email_body(email_message),
-    )
+    return {
+        "id": message_id,
+        "subject": subject,
+        "sender": from_addr,
+        "date": (Datetime.from_datetime(date) if date else Datetime()),
+        "body": get_email_body(email_message),
+    }
 
 
-def fetch_emails(imap, message_ids: list[str], batch_size: int = 100) -> list[Email]:
+def fetch_emails(imap, message_ids: list[str], batch_size: int = 100) -> list[dict]:
     """
     Fetches email details for the given message IDs in batches.
 
@@ -104,7 +107,7 @@ def fetch_emails(imap, message_ids: list[str], batch_size: int = 100) -> list[Em
         batch_size: Number of emails to fetch in each batch
 
     Returns:
-        List of Email objects
+        List of email details
     """
     emails = []
 

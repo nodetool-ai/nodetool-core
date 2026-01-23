@@ -6,7 +6,7 @@ It processes user input, generates responses, and handles tool calls and their r
 """
 
 import json
-from typing import List, Sequence
+from typing import Sequence
 
 from rich.console import Console
 from rich.status import Status

@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import requests
 import websocket
