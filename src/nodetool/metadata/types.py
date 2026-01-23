@@ -435,6 +435,7 @@ class Provider(str, enum.Enum):
     LlamaCpp = "llama_cpp"
     Gemini = "gemini"
     VLLM = "vllm"
+    ZAI = "zai"
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"

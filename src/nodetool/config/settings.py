@@ -204,6 +204,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="ZHIPU_API_KEY",
+    group="ZAI",
+    description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="MINIMAX_API_KEY",
     group="MiniMax",
     description="MiniMax API key for accessing MiniMax AI models via their Anthropic-compatible API",
