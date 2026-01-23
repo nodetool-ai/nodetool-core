@@ -208,6 +208,13 @@ register_secret(
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
 )
+register_setting(
+    package_name="nodetool",
+    env_var="ZAI_USE_CODING_PLAN",
+    group="ZAI",
+    description="Use Z.AI coding plan endpoint (https://api.z.ai/api/coding/paas/v4) instead of normal endpoint (https://api.z.ai/api/paas/v4)",
+    enum=["true", "false"],
+)
 register_secret(
     package_name="nodetool",
     env_var="MINIMAX_API_KEY",
