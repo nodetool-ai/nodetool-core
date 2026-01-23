@@ -342,9 +342,15 @@ async def start_huggingface_oauth(
     # Extract just the host and port, handle both with and without scheme
     if "://" in host:
         host = host.split("://")[1]
+    
+    # Normalize 127.0.0.1 to localhost to match registered OAuth callback keys
+    if host.startswith("127.0.0.1"):
+        host = host.replace("127.0.0.1", "localhost")
+
     # Use http for local, https for production
-    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+    scheme = "https" if "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/hf/callback"
+    log.warning(f"Hugging Face OAuth redirect_uri: {redirect_uri}")
 
     # Store state and verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
@@ -816,8 +822,14 @@ async def start_github_oauth(
     host = request.headers.get("host", "127.0.0.1:7777")
     if "://" in host:
         host = host.split("://")[1]
-    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+    
+    # Normalize 127.0.0.1 to localhost
+    if host.startswith("127.0.0.1"):
+        host = host.replace("127.0.0.1", "localhost")
+        
+    scheme = "https" if "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/github/callback"
+    log.info(f"GitHub OAuth redirect_uri: {redirect_uri}")
 
     # Store state and PKCE verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
