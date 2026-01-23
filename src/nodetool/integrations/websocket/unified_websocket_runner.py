@@ -303,6 +303,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         # Chat-related
         self.heartbeat_task: asyncio.Task | None = None
+        self.chat_request_seq = 0
         self.tool_bridge = ToolBridge()
         self.client_tools_manifest: dict[str, dict] = {}
 
@@ -1275,7 +1276,6 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                     pass  # Expected - task was cancelled or timed out
                 except Exception as e:
                     log.warning(f"Error waiting for previous task to cancel: {e}")
-
 
             # Increment sequence number to invalidate any pending responses from old tasks
             self.chat_request_seq += 1
