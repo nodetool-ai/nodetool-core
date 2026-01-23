@@ -22,12 +22,23 @@ from rich.table import Table
 console = Console()
 
 
+def _ensure_settings_loaded():
+    """Ensure environment settings are loaded before command processing.
+
+    This must be called before Click processes envvar options, otherwise
+    environment variables from .env files won't be available.
+    """
+    from nodetool.config.environment import Environment
+
+    Environment.load_settings()
+
+
 async def _get_db_connection(postgres_url: Optional[str] = None):
     """Get a database connection based on configuration.
 
     Args:
         postgres_url: Optional PostgreSQL connection URL. If provided, connects to PostgreSQL.
-                      Otherwise checks POSTGRES_* env vars or falls back to SQLite.
+                      Otherwise checks POSTGRES_* env vars, Supabase API, or falls back to SQLite.
 
     Returns:
         Tuple of (connection_or_pool, cleanup_func, db_type)
@@ -36,12 +47,26 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
         ImportError: If psycopg_pool is not installed when using PostgreSQL.
     """
     from nodetool.config.environment import Environment
+    from nodetool.config.logging_config import get_logger
+
+    logger = get_logger(__name__)
+
+    # Check for Supabase configuration first
+    supabase_url = Environment.get_supabase_url()
+    db_source = None
+    if not postgres_url and supabase_url:
+        postgres_url = await Environment.get_supabase_postgres_uri()
+        if postgres_url:
+            db_source = "supabase"
+            logger.info(f"Using Supabase database: {supabase_url}")
 
     # Check for PostgreSQL configuration
     postgres_db = Environment.get("POSTGRES_DB")
 
     if postgres_url or postgres_db:
-        # Connect to PostgreSQL
+        if not db_source:
+            db_source = "postgres" if postgres_url else "postgres-env"
+
         try:
             from psycopg_pool import AsyncConnectionPool
         except ImportError as e:
@@ -49,7 +74,6 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
                 "psycopg-pool is required for PostgreSQL migrations. Install it with: pip install psycopg psycopg-pool"
             ) from e
 
-        # Build connection URL from individual vars if not provided
         if not postgres_url and postgres_db:
             params = Environment.get_postgres_params()
             postgres_url = (
@@ -64,13 +88,14 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
         async def cleanup():
             await pool.close()
 
-        return pool, cleanup, "postgres"
+        return pool, cleanup, db_source or "postgres"
     else:
-        # Connect to SQLite
-        from nodetool.runtime.db_sqlite import SQLiteConnectionPool
-
         db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
         db_path = str(Path(db_path).expanduser())
+
+        logger.info(f"Using SQLite database: {db_path}")
+
+        from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
         pool = await SQLiteConnectionPool.get_shared(db_path)
         conn = await pool.acquire()
@@ -86,12 +111,17 @@ def migrations():
     """Manage database migrations.
 
     Commands for applying, rolling back, and managing database schema migrations.
-    Supports both SQLite (default) and PostgreSQL databases.
+    Supports both SQLite (default), PostgreSQL, and Supabase databases.
 
-    To migrate a PostgreSQL database (including Supabase), use the --postgres-url option:
+    To migrate a Supabase database, set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+        export SUPABASE_URL="https://your-project.supabase.co"
+        export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+        nodetool migrations upgrade
 
+    To migrate a PostgreSQL database, use the --postgres-url option:
         nodetool migrations upgrade --postgres-url "postgresql://user:pass@host:5432/db"
     """
+    _ensure_settings_loaded()
     pass
 
 

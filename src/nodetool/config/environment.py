@@ -611,6 +611,74 @@ class Environment:
         return cls.get("SUPABASE_KEY")
 
     @classmethod
+    async def get_supabase_postgres_uri(cls) -> Optional[str]:
+        """
+        Fetch PostgreSQL connection URI from Supabase API.
+
+        Uses the Supabase Management API to retrieve a pooled connection URI
+        for the project's postgres database.
+
+        Returns:
+            PostgreSQL connection URI string, or None if not configured or on error.
+
+        Requires:
+            SUPABASE_URL - The Supabase project URL
+            SUPABASE_KEY - The Supabase service key for API authentication
+        """
+        import httpx
+
+        supabase_url = cls.get("SUPABASE_URL")
+        service_key = cls.get_supabase_key()
+
+        if not supabase_url:
+            return None
+
+        if not service_key:
+            return None
+
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(supabase_url)
+            # Extract project ref from hostname (e.g., "xyz123.supabase.co" -> "xyz123")
+            if parsed.hostname:
+                project_ref = parsed.hostname.split(".")[0]
+            else:
+                project_ref = None
+            if not project_ref:
+                logger = get_logger(__name__)
+                logger.warning(
+                    f"Could not extract project ref from SUPABASE_URL '{supabase_url}'. "
+                    "Expected format: https://<project-ref>.supabase.co"
+                )
+                return None
+        except Exception:
+            return None
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"https://api.supabase.com/v1/projects/{project_ref}/connections/uri",
+                    headers={"Authorization": f"Bearer {service_key}"},
+                    timeout=30.0,
+                )
+                if response.status_code == 401:
+                    logger = get_logger(__name__)
+                    logger.warning(
+                        "SUPABASE_KEY is invalid (401 Unauthorized). "
+                        "Ensure you're using the service_role key, not the anon key. "
+                        "Get the correct key from: Supabase Dashboard > Settings > API"
+                    )
+                    return None
+                response.raise_for_status()
+                data = response.json()
+                return data.get("uri")
+        except Exception as e:
+            logger = get_logger(__name__)
+            logger.warning(f"Failed to fetch Supabase PostgreSQL URI: {e}")
+            return None
+
+    @classmethod
     def get_node_supabase_url(cls):
         """
         Supabase URL for user-provided nodes (kept separate from core SUPABASE_URL).
