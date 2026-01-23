@@ -57,6 +57,7 @@ async def get_ollama_models_unified() -> list[UnifiedModel]:
             downloads=0,
             likes=0,
             trending_score=0,
+            downloaded=True,
         )
         for model in models
     ]
