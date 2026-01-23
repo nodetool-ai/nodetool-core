@@ -112,6 +112,7 @@ def import_providers():
         openai_provider,
         openrouter_provider,
         vllm_provider,
+        zai_provider,
     )
 
     # Conditionally import llama_provider only if llama-server binary is available
