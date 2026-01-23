@@ -366,7 +366,7 @@ class KieProvider(BaseProvider):
     _poll_interval: float = 2.0
     _max_poll_attempts: int = 180  # 6 minutes max
     _image_poll_interval: float = 1.5
-    _image_max_poll_attempts: int = 60
+    _image_max_poll_attempts: int = 200  # 300 seconds (5 minutes) total
     _video_poll_interval: float = 8.0
     _video_max_poll_attempts: int = 240
 
@@ -587,8 +587,21 @@ class KieProvider(BaseProvider):
         input_params: dict[str, Any],
         poll_interval: float,
         max_attempts: int,
+        timeout_s: int | None = None,
     ) -> bytes:
-        """Execute the full task workflow: submit, poll, download."""
+        """Execute the full task workflow: submit, poll, download.
+
+        Args:
+            model: Model identifier
+            input_params: Parameters for the task
+            poll_interval: Seconds between status polls
+            max_attempts: Default maximum poll attempts
+            timeout_s: Optional timeout in seconds (overrides max_attempts if provided)
+        """
+        # If timeout_s provided, calculate max_attempts from it
+        if timeout_s is not None and timeout_s > 0:
+            max_attempts = max(1, int(timeout_s / poll_interval))
+
         async with aiohttp.ClientSession() as session:
             task_id = await self._submit_task(session, model, input_params)
             await self._poll_status(session, task_id, poll_interval, max_attempts)
@@ -684,6 +697,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._image_poll_interval,
                 max_attempts=self._image_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of image data")
@@ -780,6 +794,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._image_poll_interval,
                 max_attempts=self._image_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of image data")
@@ -883,6 +898,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._video_poll_interval,
                 max_attempts=self._video_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of video data")
@@ -969,6 +985,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._video_poll_interval,
                 max_attempts=self._video_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of video data")
