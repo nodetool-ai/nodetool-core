@@ -41,7 +41,6 @@ services:
       SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY}
       MEMCACHE_HOST: ${MEMCACHE_HOST:-memcached}
       MEMCACHE_PORT: ${MEMCACHE_PORT:-11211}
-      NODETOOL_API_URL: ${NODETOOL_API_URL}
       CHROMA_PATH: /chroma-data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:7777/health"]
