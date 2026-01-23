@@ -110,7 +110,7 @@ async def list_jobs(
     )
 
     # Reconcile DB status with the background manager for this page of jobs
-    await reconcile_jobs_for_user(user_id, jobs)
+    # await reconcile_jobs_for_user(user_id, jobs)
 
     log.info(
         "Jobs API list_jobs",
