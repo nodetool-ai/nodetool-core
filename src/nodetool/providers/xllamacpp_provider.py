@@ -22,23 +22,22 @@ Environment variables:
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-from typing import Any, AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Sequence
 
 import httpx
 import openai
 import tiktoken
 
-from nodetool.agents.tools.base import Tool
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
+
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
@@ -54,7 +53,7 @@ def _check_xllamacpp_available() -> bool:
         return _xllamacpp_available
 
     try:
-        import xllamacpp  # noqa: F401
+        import xllamacpp
 
         _xllamacpp_available = True
         log.info("xllamacpp is available")
@@ -87,7 +86,7 @@ class XLlamaCppProvider(BaseProvider, OpenAICompat):
 
     provider_name: str = "xllamacpp"
     _server: Any = None
-    _model_servers: dict[str, Any] = {}
+    _model_servers: ClassVar[dict[str, Any]] = {}
     _default_context_length: int = 8192
 
     def __init__(self, secrets: dict[str, str], ttl_seconds: int = 300):
@@ -349,7 +348,7 @@ class XLlamaCppProvider(BaseProvider, OpenAICompat):
         num_tokens += 2  # Assistant reply primer
         return num_tokens
 
-    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
+    def get_container_env(self, context: Any) -> dict[str, str]:
         """Return environment variables for containerized execution."""
         return {}
 

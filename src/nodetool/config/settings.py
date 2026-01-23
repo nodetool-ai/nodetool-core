@@ -114,63 +114,6 @@ register_setting(
     ),
 )
 
-# xllamacpp settings
-register_setting(
-    package_name="nodetool",
-    env_var="XLLAMACPP_N_CTX",
-    group="XLlamaCpp",
-    description=(
-        "Context window size (in tokens) for xllamacpp models. "
-        "Determines the maximum number of tokens that can be processed in a single interaction. "
-        "Default: 8192. Larger values allow more context but use more memory."
-    ),
-)
-
-register_setting(
-    package_name="nodetool",
-    env_var="XLLAMACPP_N_GPU_LAYERS",
-    group="XLlamaCpp",
-    description=(
-        "Number of model layers to offload to GPU. "
-        "Leave empty for auto-detection using xllamacpp's memory estimator. "
-        "Set to 0 for CPU-only inference. Higher values improve performance but use more VRAM."
-    ),
-)
-
-register_setting(
-    package_name="nodetool",
-    env_var="XLLAMACPP_N_THREADS",
-    group="XLlamaCpp",
-    description=(
-        "Number of CPU threads to use for inference. "
-        "Leave empty for auto-detection. Set to match your CPU core count for best performance."
-    ),
-)
-
-register_setting(
-    package_name="nodetool",
-    env_var="XLLAMACPP_PARALLEL",
-    group="XLlamaCpp",
-    description=(
-        "Number of parallel sequences to process simultaneously. "
-        "Default: 1. Increase for batch processing multiple requests."
-    ),
-)
-
-register_setting(
-    package_name="nodetool",
-    env_var="XLLAMACPP_CACHE_RAM_MIB",
-    group="XLlamaCpp",
-    description=(
-        "RAM cache size in MiB for model data. "
-        "Default: 2048 (2GB). Increase for larger models or more caching."
-    ),
-)
-        "If not set, the provider will query the model for its default context length. "
-        "Common values: 2048, 4096, 8192, 16384, 32768, 128000"
-    ),
-)
-
 # Llama.cpp settings
 register_setting(
     package_name="nodetool",
