@@ -170,6 +170,7 @@ class DBModel(BaseModel):
         condition: ConditionBuilder | None = None,
         limit: int = 100,
         reverse: bool = False,
+        columns: list[str] | None = None,
     ):
         """
         Query the DB table for the model to retrieve a list of items.
@@ -180,6 +181,7 @@ class DBModel(BaseModel):
             condition: The condition for the query.
             limit: The maximum number of items to retrieve.
             reverse: Whether to reverse the order of the results.
+            columns: The columns to retrieve.
 
         Returns:
             A tuple containing a list of items that match the query conditions and the last evaluated key.
@@ -189,6 +191,7 @@ class DBModel(BaseModel):
             condition=condition,
             limit=limit,
             reverse=reverse,
+            columns=columns,
         )
 
         def try_load_model(item: dict[str, Any]) -> Any:

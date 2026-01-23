@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -103,8 +103,10 @@ async def list_jobs(
     Returns:
         List of jobs
     """
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+
     jobs, next_start_key = await Job.paginate(
-        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key
+        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key, started_after=one_hour_ago
     )
 
     # Reconcile DB status with the background manager for this page of jobs

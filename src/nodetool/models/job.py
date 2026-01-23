@@ -46,18 +46,28 @@ class Job(DBModel):
         workflow_id: Optional[str] = None,
         limit: int = 10,
         start_key: Optional[str] = None,
+        started_after: Optional[datetime] = None,
     ):
         if workflow_id:
             items, key = await cls.query(
                 Field("workflow_id").equals(workflow_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
+                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost"],
             )
             return items, key
         elif user_id:
             items, key = await cls.query(
                 Field("user_id").equals(user_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
+                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost"],
+            )
+            return items, key
+        elif started_after:
+            items, key = await cls.query(
+                Field("started_at").greater_than(started_after).and_(Field("id").greater_than(start_key or "")),
+                limit=limit,
+                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost"],
             )
             return items, key
         else:
-            raise ValueError("Must provide either user_id or workflow_id")
+            raise ValueError("Must provide either user_id or workflow_id or started_after")
