@@ -8,25 +8,12 @@ This test suite verifies that the Z.AI provider correctly:
 - Handles function calling
 """
 
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import openai
 import pytest
-from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
+from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
-from openai.types.chat.chat_completion_chunk import (
-    Choice as ChunkChoice,
-)
-from openai.types.chat.chat_completion_chunk import (
-    ChoiceDelta,
-)
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCall,
-)
-from openai.types.chat.chat_completion_message_tool_call import (
-    Function as ToolCallFunction,
-)
 from openai.types.completion_usage import CompletionUsage
 
 from nodetool.providers.zai_provider import ZAIProvider

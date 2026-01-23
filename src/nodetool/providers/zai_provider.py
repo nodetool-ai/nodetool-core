@@ -11,7 +11,7 @@ Authentication: Uses ZHIPU_API_KEY
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
+from typing import TYPE_CHECKING
 
 import aiohttp
 import openai
@@ -22,13 +22,10 @@ if TYPE_CHECKING:
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     LanguageModel,
-    Message,
     Provider,
-    ToolCall,
 )
 from nodetool.providers.base import register_provider
 from nodetool.providers.openai_provider import OpenAIProvider
-from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
