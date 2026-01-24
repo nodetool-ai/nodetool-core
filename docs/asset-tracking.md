@@ -1,6 +1,6 @@
 # Asset Tracking with Node and Job IDs
 
-This document explains the asset tracking feature that allows associating assets with specific nodes and jobs during workflow execution.
+This document explains the asset tracking and automatic saving features that allow associating assets with specific nodes and jobs during workflow execution.
 
 ## Overview
 
@@ -10,6 +10,75 @@ Assets in NodeTool can now be tagged with:
 - **`workflow_id`**: The ID of the workflow (already existed, now complemented by node/job IDs)
 
 This enables better tracking and organization of assets created during workflow execution.
+
+## Automatic Asset Saving
+
+### How It Works
+
+When a node has `_auto_save_asset = True`, the workflow system automatically:
+1. Scans the node's output for any `AssetRef` instances (at any nesting level)
+2. Saves each asset to storage with proper tracking information
+3. Updates the `AssetRef` objects with the saved `asset_id`
+
+**No manual code changes are needed** - just set the flag and return `AssetRef` objects.
+
+### Example Usage
+
+```python
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.metadata.types import ImageRef
+
+class ImageProcessingNode(BaseNode):
+    _auto_save_asset = True  # Enable automatic saving
+    
+    async def process(self, context: ProcessingContext) -> dict:
+        # Process your image
+        processed_image_bytes = ...
+        
+        # Just return ImageRef - it will be saved automatically!
+        return {
+            "output": ImageRef(data=processed_image_bytes)
+        }
+        # The system automatically:
+        # 1. Saves the image to storage
+        # 2. Tags it with node_id, job_id, workflow_id
+        # 3. Updates ImageRef with the asset_id
+```
+
+### Supported Asset Types
+
+Automatic saving works with all `AssetRef` subclasses:
+- `ImageRef` - Saved as image/png
+- `AudioRef` - Saved as audio/mp3
+- `VideoRef` - Saved as video/mp4
+- `TextRef` - Saved as text/plain
+- `DocumentRef` - Saved as application/pdf
+- `DataframeRef` - Saved as application/json
+- `ExcelRef` - Saved as Excel spreadsheet
+- `Model3DRef` - Saved as 3D model
+- Generic `AssetRef` - Saved as application/octet-stream
+
+### Nested Assets
+
+The auto-save system recursively scans outputs, so nested assets are also saved:
+
+```python
+class MultiOutputNode(BaseNode):
+    _auto_save_asset = True
+    
+    async def process(self, context: ProcessingContext) -> dict:
+        return {
+            "images": [
+                ImageRef(data=image1_bytes),
+                ImageRef(data=image2_bytes),
+            ],
+            "metadata": {
+                "thumbnail": ImageRef(data=thumb_bytes)
+            }
+        }
+        # All three ImageRefs are automatically saved!
+```
 
 ## Database Schema
 
