@@ -304,7 +304,37 @@ class NodeActor:
 
                 # Get data as BytesIO
                 if asset_ref.data:
-                    content = BytesIO(asset_ref.data)
+                    # Handle DataframeRef specially - data is list of lists, not bytes
+                    from nodetool.metadata.types import DataframeRef, JSONRef, SVGRef
+                    if isinstance(asset_ref, DataframeRef):
+                        import json
+                        # Convert DataFrame data to JSON bytes
+                        json_str = json.dumps(asset_ref.data)
+                        content = BytesIO(json_str.encode("utf-8"))
+                    elif isinstance(asset_ref, (JSONRef, SVGRef)):
+                        # JSONRef and SVGRef have string data
+                        if isinstance(asset_ref.data, str):
+                            content = BytesIO(asset_ref.data.encode("utf-8"))
+                        elif isinstance(asset_ref.data, bytes):
+                            content = BytesIO(asset_ref.data)
+                        else:
+                            self.logger.warning(
+                                "JSONRef/SVGRef data is not string or bytes at %s",
+                                path,
+                            )
+                            continue
+                    elif isinstance(asset_ref.data, bytes):
+                        content = BytesIO(asset_ref.data)
+                    else:
+                        # Try to convert to bytes
+                        try:
+                            content = BytesIO(bytes(asset_ref.data))
+                        except Exception:
+                            self.logger.warning(
+                                "Could not convert data to bytes for asset at %s",
+                                path,
+                            )
+                            continue
                 elif asset_ref.uri.startswith("memory://"):
                     # Resolve memory URI to get the data
                     from nodetool.runtime.resources import require_scope
@@ -374,7 +404,9 @@ class NodeActor:
             ExcelRef,
             FolderRef,
             ImageRef,
+            JSONRef,
             Model3DRef,
+            SVGRef,
             TextRef,
             VideoRef,
         )
@@ -397,6 +429,10 @@ class NodeActor:
             return "model/gltf-binary"
         elif isinstance(asset_ref, FolderRef):
             return "folder"
+        elif isinstance(asset_ref, JSONRef):
+            return "application/json"
+        elif isinstance(asset_ref, SVGRef):
+            return "image/svg+xml"
         else:
             return "application/octet-stream"
 
