@@ -19,6 +19,8 @@ class Asset(BaseModel):
     get_url: str | None
     thumb_url: str | None
     duration: float | None = None
+    node_id: str | None = None
+    job_id: str | None = None
 
     @property
     def file_extension(self) -> str:
@@ -55,6 +57,8 @@ class AssetCreateRequest(BaseModel):
     metadata: dict | None = None
     duration: float | None = None
     size: Optional[int] = None
+    node_id: str | None = None
+    job_id: str | None = None
 
 
 class AssetDownloadRequest(BaseModel):
@@ -85,6 +89,8 @@ class AssetWithPath(BaseModel):
     get_url: str | None
     thumb_url: str | None
     duration: float | None
+    node_id: str | None = None
+    job_id: str | None = None
 
     # New fields for search context
     folder_name: str = PydanticField(..., description="Direct parent folder name")

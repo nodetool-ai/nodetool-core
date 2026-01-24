@@ -87,6 +87,118 @@ async def test_created_at(user_id: str):
     assert isinstance(asset.created_at, datetime)
 
 
+@pytest.mark.asyncio
+async def test_create_asset_with_node_and_job_id(user_id: str):
+    """Test creating an asset with node_id and job_id."""
+    node_id = "test_node_123"
+    job_id = "test_job_456"
+    
+    asset = await Asset.create(
+        user_id=user_id,
+        name="test_asset_with_ids",
+        content_type="image/jpeg",
+        node_id=node_id,
+        job_id=job_id,
+    )
+
+    assert asset.name == "test_asset_with_ids"
+    assert asset.node_id == node_id
+    assert asset.job_id == job_id
+
+
+@pytest.mark.asyncio
+async def test_paginate_assets_by_node_id(user_id: str):
+    """Test filtering assets by node_id."""
+    node_id = "test_node_789"
+    
+    # Create assets with and without node_id
+    await Asset.create(
+        user_id=user_id,
+        name="asset_with_node",
+        content_type="image/jpeg",
+        node_id=node_id,
+    )
+    await Asset.create(
+        user_id=user_id,
+        name="asset_without_node",
+        content_type="image/jpeg",
+    )
+
+    # Query by node_id
+    assets, _last_key = await Asset.paginate(user_id=user_id, node_id=node_id, limit=10)
+    
+    assert len(assets) == 1
+    assert assets[0].name == "asset_with_node"
+    assert assets[0].node_id == node_id
+
+
+@pytest.mark.asyncio
+async def test_paginate_assets_by_job_id(user_id: str):
+    """Test filtering assets by job_id."""
+    job_id = "test_job_999"
+    
+    # Create assets with and without job_id
+    await Asset.create(
+        user_id=user_id,
+        name="asset_with_job",
+        content_type="image/jpeg",
+        job_id=job_id,
+    )
+    await Asset.create(
+        user_id=user_id,
+        name="asset_without_job",
+        content_type="image/jpeg",
+    )
+
+    # Query by job_id
+    assets, _last_key = await Asset.paginate(user_id=user_id, job_id=job_id, limit=10)
+    
+    assert len(assets) == 1
+    assert assets[0].name == "asset_with_job"
+    assert assets[0].job_id == job_id
+
+
+@pytest.mark.asyncio
+async def test_paginate_assets_by_node_and_job_id(user_id: str):
+    """Test filtering assets by both node_id and job_id."""
+    node_id = "test_node_combined"
+    job_id = "test_job_combined"
+    
+    # Create various combinations
+    await Asset.create(
+        user_id=user_id,
+        name="asset_both_ids",
+        content_type="image/jpeg",
+        node_id=node_id,
+        job_id=job_id,
+    )
+    await Asset.create(
+        user_id=user_id,
+        name="asset_only_node",
+        content_type="image/jpeg",
+        node_id=node_id,
+    )
+    await Asset.create(
+        user_id=user_id,
+        name="asset_only_job",
+        content_type="image/jpeg",
+        job_id=job_id,
+    )
+
+    # Query by both node_id and job_id
+    assets, _last_key = await Asset.paginate(
+        user_id=user_id, 
+        node_id=node_id, 
+        job_id=job_id, 
+        limit=10
+    )
+    
+    assert len(assets) == 1
+    assert assets[0].name == "asset_both_ids"
+    assert assets[0].node_id == node_id
+    assert assets[0].job_id == job_id
+
+
 # Search functionality model tests
 @pytest.mark.asyncio
 async def test_search_assets_global_basic(user_id: str):

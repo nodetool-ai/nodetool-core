@@ -212,6 +212,283 @@ class NodeActor:
                 EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained"),
             )
 
+    async def _auto_save_assets(
+        self,
+        node: BaseNode,
+        result: dict[str, Any],
+        context: ProcessingContext,
+    ) -> None:
+        """Automatically save assets from node outputs when auto_save_asset is enabled.
+
+        Scans the result dictionary for AssetRef instances and saves them to storage
+        with proper tracking (node_id, job_id, workflow_id).
+
+        Args:
+            node: The node that produced the result
+            result: The result dictionary containing node outputs
+            context: The processing context with workflow/job information
+        """
+        from io import BytesIO
+
+        from nodetool.metadata.types import AssetRef
+
+        if not result:
+            return
+
+        self.logger.debug(
+            "Auto-saving assets for node %s (%s)",
+            node.get_title(),
+            node._id,
+        )
+
+        # Recursively scan result for AssetRef instances
+        def find_asset_refs(obj: Any, path: str = "") -> list[tuple[str, AssetRef]]:
+            """Recursively find all AssetRef instances in the result."""
+            refs: list[tuple[str, AssetRef]] = []
+
+            if isinstance(obj, AssetRef):
+                refs.append((path, obj))
+            elif isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_path = f"{path}.{key}" if path else key
+                    refs.extend(find_asset_refs(value, new_path))
+            elif isinstance(obj, (list, tuple)):
+                for idx, value in enumerate(obj):
+                    new_path = f"{path}[{idx}]"
+                    refs.extend(find_asset_refs(value, new_path))
+
+            return refs
+
+        asset_refs = find_asset_refs(result)
+
+        if not asset_refs:
+            self.logger.debug(
+                "No AssetRefs found in result for node %s (%s)",
+                node.get_title(),
+                node._id,
+            )
+            return
+
+        self.logger.info(
+            "Found %d asset(s) to auto-save for node %s (%s)",
+            len(asset_refs),
+            node.get_title(),
+            node._id,
+        )
+
+        # Save each asset ref
+        for path, asset_ref in asset_refs:
+            try:
+                # Skip if asset already has an asset_id (already saved)
+                if asset_ref.asset_id:
+                    self.logger.debug(
+                        "Skipping asset at %s - already has asset_id: %s",
+                        path,
+                        asset_ref.asset_id,
+                    )
+                    continue
+
+                # Skip if no data to save
+                if not asset_ref.data and not asset_ref.uri:
+                    self.logger.debug(
+                        "Skipping asset at %s - no data or uri",
+                        path,
+                    )
+                    continue
+
+                # Get content type from asset ref type
+                content_type = self._get_content_type_for_asset_ref(asset_ref)
+
+                # Generate asset name
+                asset_name = f"{node.get_title()}_{path}_{node._id[:8]}"
+
+                # Get data as BytesIO
+                if asset_ref.data:
+                    # Handle DataframeRef specially - data is list of lists, not bytes
+                    from nodetool.metadata.types import DataframeRef, JSONRef, SVGRef
+                    if isinstance(asset_ref, DataframeRef):
+                        import json
+                        # Convert DataFrame data to JSON bytes
+                        json_str = json.dumps(asset_ref.data)
+                        content = BytesIO(json_str.encode("utf-8"))
+                    elif isinstance(asset_ref, (JSONRef, SVGRef)):
+                        # JSONRef and SVGRef have string data
+                        if isinstance(asset_ref.data, str):
+                            content = BytesIO(asset_ref.data.encode("utf-8"))
+                        elif isinstance(asset_ref.data, bytes):
+                            content = BytesIO(asset_ref.data)
+                        else:
+                            self.logger.warning(
+                                "JSONRef/SVGRef data is not string or bytes at %s",
+                                path,
+                            )
+                            continue
+                    elif isinstance(asset_ref.data, bytes):
+                        content = BytesIO(asset_ref.data)
+                    else:
+                        # Try to convert to bytes
+                        try:
+                            content = BytesIO(bytes(asset_ref.data))
+                        except Exception:
+                            self.logger.warning(
+                                "Could not convert data to bytes for asset at %s",
+                                path,
+                            )
+                            continue
+                elif asset_ref.uri.startswith("memory://"):
+                    # Resolve memory URI to get the data
+                    from nodetool.runtime.resources import require_scope
+                    scope = require_scope()
+                    obj = scope.memory_uri_cache.get(asset_ref.uri)
+                    if obj is not None:
+                        # Convert object to bytes based on type
+                        data_bytes = self._object_to_bytes(obj, asset_ref)
+                        if data_bytes:
+                            content = BytesIO(data_bytes)
+                        else:
+                            self.logger.warning(
+                                "Could not convert memory object to bytes for asset at %s",
+                                path,
+                            )
+                            continue
+                    else:
+                        self.logger.warning(
+                            "Memory URI not found in cache for asset at %s",
+                            path,
+                        )
+                        continue
+                else:
+                    # For other URIs, we can't auto-save
+                    self.logger.debug(
+                        "Skipping asset at %s - unsupported URI type: %s",
+                        path,
+                        asset_ref.uri,
+                    )
+                    continue
+
+                # Create and save the asset
+                asset = await context.create_asset(
+                    name=asset_name,
+                    content_type=content_type,
+                    content=content,
+                    node_id=node._id,
+                )
+
+                # Update the AssetRef with the new asset_id
+                asset_ref.asset_id = asset.id
+
+                self.logger.info(
+                    "Auto-saved asset %s for node %s (%s) at %s",
+                    asset.id,
+                    node.get_title(),
+                    node._id,
+                    path,
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    "Failed to auto-save asset at %s for node %s (%s): %s",
+                    path,
+                    node.get_title(),
+                    node._id,
+                    e,
+                    exc_info=True,
+                )
+
+    def _get_content_type_for_asset_ref(self, asset_ref: Any) -> str:
+        """Get the appropriate content type for an AssetRef based on its type."""
+        from nodetool.metadata.types import (
+            AudioRef,
+            DataframeRef,
+            DocumentRef,
+            ExcelRef,
+            FolderRef,
+            ImageRef,
+            JSONRef,
+            Model3DRef,
+            SVGRef,
+            TextRef,
+            VideoRef,
+        )
+
+        if isinstance(asset_ref, ImageRef):
+            return "image/png"
+        elif isinstance(asset_ref, AudioRef):
+            return "audio/mp3"
+        elif isinstance(asset_ref, VideoRef):
+            return "video/mp4"
+        elif isinstance(asset_ref, TextRef):
+            return "text/plain"
+        elif isinstance(asset_ref, DocumentRef):
+            return "application/pdf"
+        elif isinstance(asset_ref, DataframeRef):
+            return "application/json"
+        elif isinstance(asset_ref, ExcelRef):
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif isinstance(asset_ref, Model3DRef):
+            return "model/gltf-binary"
+        elif isinstance(asset_ref, FolderRef):
+            return "folder"
+        elif isinstance(asset_ref, JSONRef):
+            return "application/json"
+        elif isinstance(asset_ref, SVGRef):
+            return "image/svg+xml"
+        else:
+            return "application/octet-stream"
+
+    def _object_to_bytes(self, obj: Any, asset_ref: Any) -> bytes | None:
+        """Convert a Python object to bytes based on the asset ref type."""
+        from nodetool.metadata.types import AudioRef, DataframeRef, ImageRef, TextRef
+
+        if isinstance(asset_ref, ImageRef):
+            # Handle PIL Image
+            try:
+                from io import BytesIO
+
+                from PIL import Image
+
+                if isinstance(obj, Image.Image):
+                    buf = BytesIO()
+                    obj.save(buf, format="PNG")
+                    return buf.getvalue()
+            except Exception as e:
+                self.logger.debug(f"Failed to convert image object: {e}")
+
+        elif isinstance(asset_ref, AudioRef):
+            # Handle AudioSegment
+            try:
+                from io import BytesIO
+
+                from pydub import AudioSegment
+
+                if isinstance(obj, AudioSegment):
+                    buf = BytesIO()
+                    obj.export(buf, format="mp3")
+                    return buf.getvalue()
+            except Exception as e:
+                self.logger.debug(f"Failed to convert audio object: {e}")
+
+        elif isinstance(asset_ref, TextRef):
+            # Handle string
+            if isinstance(obj, str):
+                return obj.encode("utf-8")
+
+        elif isinstance(asset_ref, DataframeRef):
+            # Handle pandas DataFrame
+            try:
+                import pandas as pd
+
+                if isinstance(obj, pd.DataFrame):
+                    return obj.to_json(orient="records").encode("utf-8")
+            except Exception as e:
+                self.logger.debug(f"Failed to convert dataframe object: {e}")
+
+        # For bytes, return as-is
+        if isinstance(obj, bytes):
+            return obj
+
+        return None
+
     async def process_node_with_inputs(
         self,
         inputs: dict[str, Any],
@@ -343,6 +620,11 @@ class NodeActor:
                 await context.cache_result_async(node, result)
 
         span.set_attribute("nodetool.node.output_count", len(result) if result else 0)
+
+        # Auto-save assets if the node has auto_save_asset enabled
+        if node.__class__.auto_save_asset() and result:
+            await self._auto_save_assets(node, result, context)
+
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
         # Note: drained updates are sent at end-of-stream in _mark_downstream_eos, not here
@@ -485,7 +767,13 @@ class NodeActor:
 
     async def _send_completed_update(self, context: Any, node: Any, outputs: NodeOutputs) -> None:
         """Send the completed update with results."""
-        await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
+        result = self._filter_result(outputs.collected())
+
+        # Auto-save assets if the node has auto_save_asset enabled
+        if node.__class__.auto_save_asset() and result:
+            await self._auto_save_assets(node, result, context)
+
+        await node.send_update(context, "completed", result=result)
 
     async def _handle_post_execution(self, context: Any, node: Any) -> None:
         """Handle post-execution cleanup."""
