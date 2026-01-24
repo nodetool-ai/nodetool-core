@@ -339,7 +339,7 @@ async def test_create_asset_with_node_and_job_id(client: TestClient, headers: di
     """Test creating an asset with node_id and job_id via API."""
     node_id = "test_node_api_123"
     job_id = "test_job_api_456"
-    
+
     with open(test_jpg, "rb") as file_handle:
         response = client.post(
             "/api/assets",
@@ -347,7 +347,7 @@ async def test_create_asset_with_node_and_job_id(client: TestClient, headers: di
             data={
                 "json": AssetCreateRequest(
                     parent_id=user_id,
-                    name="test_with_ids.jpeg",
+                    name="test_with_ids.jpg",
                     content_type="image/jpeg",
                     node_id=node_id,
                     job_id=job_id,
@@ -355,12 +355,12 @@ async def test_create_asset_with_node_and_job_id(client: TestClient, headers: di
             },
             headers=headers,
         )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["node_id"] == node_id
     assert data["job_id"] == job_id
-    
+
     # Verify in database
     asset = await Asset.find(user_id, data["id"])
     assert asset is not None
