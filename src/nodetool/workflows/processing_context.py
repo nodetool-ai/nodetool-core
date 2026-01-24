@@ -883,6 +883,7 @@ class ProcessingContext:
         content: IO | None = None,
         parent_id: str | None = None,
         instructions: IO | None = None,
+        node_id: str | None = None,
     ) -> Asset:
         """
         Creates an asset with the given name, content type, content, and optional parent ID.
@@ -892,6 +893,7 @@ class ProcessingContext:
             content_type (str): The content type of the asset.
             content (IO): The content of the asset.
             parent_id (str | None, optional): The ID of the parent asset. Defaults to None.
+            node_id (str | None, optional): The ID of the node that created this asset. Defaults to None.
 
         Returns:
             Asset: The created asset.
@@ -912,6 +914,8 @@ class ProcessingContext:
             content_type=content_type,
             parent_id=parent_id,
             workflow_id=self.workflow_id,
+            job_id=self.job_id,
+            node_id=node_id,
             size=len(content_bytes),
         )
 

@@ -43,6 +43,8 @@ class Asset(DBModel):
     metadata: dict | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
     duration: Optional[float] = DBField(default=None)
+    node_id: str | None = DBField(default=None)
+    job_id: str | None = DBField(default=None)
 
     @property
     def file_extension(self) -> str:
@@ -85,6 +87,8 @@ class Asset(DBModel):
         workflow_id: str | None = None,
         duration: float | None = None,
         size: Optional[int] = None,
+        node_id: str | None = None,
+        job_id: str | None = None,
         **kwargs,
     ):
         """Creates a new asset record in the database.
@@ -101,6 +105,8 @@ class Asset(DBModel):
             workflow_id: Optional ID of an associated workflow.
             duration: Optional duration (e.g., for video/audio assets).
             size: Optional file size in bytes (default: None for folders).
+            node_id: Optional ID of the node that created this asset.
+            job_id: Optional ID of the job that created this asset.
             **kwargs: Additional fields to set on the model.
 
         Returns:
@@ -118,6 +124,8 @@ class Asset(DBModel):
             content_type=content_type,
             duration=duration,
             size=size,
+            node_id=node_id,
+            job_id=job_id,
             created_at=datetime.now(),
             metadata=metadata,
             **kwargs,
@@ -140,13 +148,15 @@ class Asset(DBModel):
         parent_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         content_type: Optional[str] = None,
+        node_id: Optional[str] = None,
+        job_id: Optional[str] = None,
         limit: int = 100,
         start_key: str | None = None,
         reverse: bool = False,
     ):
         """
         Paginate assets for a user using boto3.
-        Applies filters for parent_id if provided.
+        Applies filters for parent_id, workflow_id, node_id, and job_id if provided.
         Returns a tuple of a list of Assets and the last evaluated key for pagination.
         Last key is "" if there are no more items to be returned.
         """
@@ -157,6 +167,10 @@ class Asset(DBModel):
             condition = condition.and_(Field("parent_id").equals(parent_id))
         if workflow_id:
             condition = condition.and_(Field("workflow_id").equals(workflow_id))
+        if node_id:
+            condition = condition.and_(Field("node_id").equals(node_id))
+        if job_id:
+            condition = condition.and_(Field("job_id").equals(job_id))
         if start_key:
             condition = condition.and_(Field("id").greater_than(start_key))
         if content_type:

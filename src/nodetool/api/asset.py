@@ -64,6 +64,8 @@ async def from_model(asset: AssetModel):
         get_url=get_url,
         thumb_url=thumb_url,
         duration=asset.duration,
+        node_id=asset.node_id,
+        job_id=asset.job_id,
     )
 
 
@@ -91,6 +93,9 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 async def index(
     parent_id: Optional[str] = None,
     content_type: Optional[str] = None,
+    workflow_id: Optional[str] = None,
+    node_id: Optional[str] = None,
+    job_id: Optional[str] = None,
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
     user: str = Depends(current_user),
@@ -98,16 +103,20 @@ async def index(
 ) -> AssetList:
     """
     Returns all assets for a given user or workflow.
+    Can be filtered by parent_id, content_type, workflow_id, node_id, or job_id.
     """
     if page_size is None:
         page_size = 10000
 
-    if content_type is None and parent_id is None:
+    if content_type is None and parent_id is None and workflow_id is None and node_id is None and job_id is None:
         parent_id = user
 
     assets, next_cursor = await AssetModel.paginate(
         user_id=user,
         parent_id=parent_id,
+        workflow_id=workflow_id,
+        node_id=node_id,
+        job_id=job_id,
         content_type=content_type,
         limit=page_size,
         start_key=cursor,
@@ -539,6 +548,8 @@ async def create(
             metadata=req.metadata,
             duration=duration,
             size=file_size,
+            node_id=req.node_id,
+            job_id=req.job_id,
         )
         if file_io and storage:
             file_io.seek(0)
