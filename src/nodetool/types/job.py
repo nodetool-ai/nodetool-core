@@ -44,6 +44,7 @@ class JobUpdate(BaseModel):
     error: str | None = None
     traceback: str | None = None
     run_state: RunStateInfo | None = None
+    duration: float | None = None  # Duration in seconds (set on completion)
 
 
 class JobList(BaseModel):

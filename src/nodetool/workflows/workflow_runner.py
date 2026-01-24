@@ -920,6 +920,7 @@ class WorkflowRunner:
                                 workflow_id=context.workflow_id,
                                 result=self.outputs,
                                 message=f"Workflow {self.job_id} completed",
+                                duration=time.time() - start_time,
                             )
                         )
 
