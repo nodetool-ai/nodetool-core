@@ -332,3 +332,182 @@ async def test_search_contains_behavior(client: TestClient, headers: dict[str, s
     data = response.json()
     # Should find all three
     assert len(data["assets"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_create_asset_with_node_and_job_id(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test creating an asset with node_id and job_id via API."""
+    node_id = "test_node_api_123"
+    job_id = "test_job_api_456"
+    
+    with open(test_jpg, "rb") as file_handle:
+        response = client.post(
+            "/api/assets",
+            files={"file": ("test.jpg", file_handle, "image/jpeg")},
+            data={
+                "json": AssetCreateRequest(
+                    parent_id=user_id,
+                    name="test_with_ids.jpeg",
+                    content_type="image/jpeg",
+                    node_id=node_id,
+                    job_id=job_id,
+                ).model_dump_json()
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["node_id"] == node_id
+    assert data["job_id"] == job_id
+    
+    # Verify in database
+    asset = await Asset.find(user_id, data["id"])
+    assert asset is not None
+    assert asset.node_id == node_id
+    assert asset.job_id == job_id
+
+
+@pytest.mark.asyncio
+async def test_filter_assets_by_node_id(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test filtering assets by node_id via API."""
+    node_id = "test_node_filter"
+    
+    # Create asset with node_id
+    asset_with_node = await Asset.create(
+        user_id=user_id,
+        name="asset_with_node",
+        content_type="image/jpeg",
+        node_id=node_id,
+    )
+    
+    # Create asset without node_id
+    await Asset.create(
+        user_id=user_id,
+        name="asset_without_node",
+        content_type="image/jpeg",
+    )
+    
+    # Filter by node_id
+    response = client.get(
+        "/api/assets",
+        params={"node_id": node_id},
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["id"] == asset_with_node.id
+    assert data["assets"][0]["node_id"] == node_id
+
+
+@pytest.mark.asyncio
+async def test_filter_assets_by_job_id(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test filtering assets by job_id via API."""
+    job_id = "test_job_filter"
+    
+    # Create asset with job_id
+    asset_with_job = await Asset.create(
+        user_id=user_id,
+        name="asset_with_job",
+        content_type="image/jpeg",
+        job_id=job_id,
+    )
+    
+    # Create asset without job_id
+    await Asset.create(
+        user_id=user_id,
+        name="asset_without_job",
+        content_type="image/jpeg",
+    )
+    
+    # Filter by job_id
+    response = client.get(
+        "/api/assets",
+        params={"job_id": job_id},
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["id"] == asset_with_job.id
+    assert data["assets"][0]["job_id"] == job_id
+
+
+@pytest.mark.asyncio
+async def test_filter_assets_by_workflow_id(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test filtering assets by workflow_id via API."""
+    workflow_id = "test_workflow_filter"
+    
+    # Create asset with workflow_id
+    asset_with_workflow = await Asset.create(
+        user_id=user_id,
+        name="asset_with_workflow",
+        content_type="image/jpeg",
+        workflow_id=workflow_id,
+    )
+    
+    # Create asset without workflow_id
+    await Asset.create(
+        user_id=user_id,
+        name="asset_without_workflow",
+        content_type="image/jpeg",
+    )
+    
+    # Filter by workflow_id
+    response = client.get(
+        "/api/assets",
+        params={"workflow_id": workflow_id},
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["id"] == asset_with_workflow.id
+    assert data["assets"][0]["workflow_id"] == workflow_id
+
+
+@pytest.mark.asyncio
+async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test filtering assets by multiple criteria simultaneously."""
+    workflow_id = "test_workflow_multi"
+    node_id = "test_node_multi"
+    job_id = "test_job_multi"
+    
+    # Create asset matching all criteria
+    asset_match = await Asset.create(
+        user_id=user_id,
+        name="asset_match_all",
+        content_type="image/jpeg",
+        workflow_id=workflow_id,
+        node_id=node_id,
+        job_id=job_id,
+    )
+    
+    # Create assets matching only some criteria
+    await Asset.create(
+        user_id=user_id,
+        name="asset_partial",
+        content_type="image/jpeg",
+        workflow_id=workflow_id,
+        node_id=node_id,
+    )
+    
+    # Filter by all criteria
+    response = client.get(
+        "/api/assets",
+        params={
+            "workflow_id": workflow_id,
+            "node_id": node_id,
+            "job_id": job_id,
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["id"] == asset_match.id
