@@ -876,13 +876,15 @@ class WorkflowRunner:
                     default_value = getattr(node, "value", None)
                     if default_value is None:
                         continue
-                    # Skip empty values (e.g., default-initialized Message objects)
-                    # This prevents pushing empty messages that would cause downstream
-                    # nodes to execute with empty inputs before real input arrives.
+                    # Skip empty values for STREAMING inputs only.
+                    # For streaming inputs, this prevents pushing empty messages that would cause
+                    # downstream nodes to execute with empty inputs before real input arrives.
+                    # For non-streaming inputs, we must push even empty values so downstream
+                    # nodes can complete (no "real input" will ever arrive for non-streaming).
                     # We use duck-typing here to support any type that implements is_empty(),
                     # such as Message, ImageRef, AudioRef, etc. from nodetool.metadata.types.
                     if hasattr(default_value, "is_empty") and callable(default_value.is_empty):
-                        if default_value.is_empty():
+                        if default_value.is_empty() and node.is_streaming_output():
                             continue
                     try:
                         outputs = node.outputs_for_instance()
