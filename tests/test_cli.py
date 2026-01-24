@@ -6,7 +6,9 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -139,3 +141,238 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "--json" in result.output
         assert "system" in result.output.lower() or "environment" in result.output.lower()
+
+
+class TestInferenceCommandGroup:
+    """Tests for the 'nodetool inference' command group."""
+
+    def test_inference_help(self):
+        """Test that inference command shows help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "--help"])
+        assert result.exit_code == 0
+        assert "text-to-image" in result.output
+        assert "image-to-image" in result.output
+        assert "text-to-speech" in result.output
+        assert "speech-to-text" in result.output
+        assert "text-to-video" in result.output
+        assert "image-to-video" in result.output
+        assert "list-providers" in result.output
+
+    def test_text_to_image_help(self):
+        """Test text-to-image subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "text-to-image", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--prompt" in result.output
+        assert "--width" in result.output
+        assert "--height" in result.output
+        assert "--output" in result.output
+
+    def test_image_to_image_help(self):
+        """Test image-to-image subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "image-to-image", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--input" in result.output
+        assert "--prompt" in result.output
+        assert "--strength" in result.output
+        assert "--output" in result.output
+
+    def test_text_to_speech_help(self):
+        """Test text-to-speech subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "text-to-speech", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--text" in result.output
+        assert "--voice" in result.output
+        assert "--speed" in result.output
+        assert "--output" in result.output
+
+    def test_speech_to_text_help(self):
+        """Test speech-to-text subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "speech-to-text", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--input" in result.output
+        assert "--language" in result.output
+        assert "--temperature" in result.output
+
+    def test_text_to_video_help(self):
+        """Test text-to-video subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "text-to-video", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--prompt" in result.output
+        assert "--aspect-ratio" in result.output
+        assert "--resolution" in result.output
+
+    def test_image_to_video_help(self):
+        """Test image-to-video subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "image-to-video", "--help"])
+        assert result.exit_code == 0
+        assert "--provider" in result.output
+        assert "--model" in result.output
+        assert "--input" in result.output
+        assert "--prompt" in result.output
+
+    def test_list_providers_help(self):
+        """Test list-providers subcommand help."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "list-providers", "--help"])
+        assert result.exit_code == 0
+        assert "--capability" in result.output
+        assert "--user-id" in result.output
+
+    def test_text_to_image_missing_required_options(self):
+        """Test text-to-image fails without required options."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["inference", "text-to-image"])
+        assert result.exit_code != 0
+        # Should mention missing required options
+        assert "Missing option" in result.output or "Error" in result.output
+
+    def test_text_to_image_invalid_provider(self):
+        """Test text-to-image with invalid provider."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "inference",
+                "text-to-image",
+                "--provider",
+                "invalid_provider",
+                "--model",
+                "test-model",
+                "--prompt",
+                "test prompt",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Invalid provider" in result.output or "Error" in result.output
+
+    def test_image_to_image_missing_input_file(self):
+        """Test image-to-image fails when input file doesn't exist."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "inference",
+                "image-to-image",
+                "--provider",
+                "openai",
+                "--model",
+                "test-model",
+                "--input",
+                "/nonexistent/file.png",
+                "--prompt",
+                "test prompt",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_speech_to_text_missing_input_file(self):
+        """Test speech-to-text fails when input file doesn't exist."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "inference",
+                "speech-to-text",
+                "--provider",
+                "openai",
+                "--model",
+                "whisper-1",
+                "--input",
+                "/nonexistent/audio.mp3",
+            ],
+        )
+        assert result.exit_code != 0
+
+
+class TestInferenceHelperFunctions:
+    """Tests for inference helper functions."""
+
+    def test_get_output_path_with_output(self):
+        """Test _get_output_path returns provided output path."""
+        from nodetool.cli import _get_output_path
+
+        result = _get_output_path("my_output.png", "png")
+        assert result == "my_output.png"
+
+    def test_get_output_path_without_output(self):
+        """Test _get_output_path generates UUID-based path."""
+        from nodetool.cli import _get_output_path
+
+        result = _get_output_path(None, "png")
+        assert result.endswith(".png")
+        # Should be a UUID format (36 chars + 4 for ".png")
+        assert len(result) == 40
+
+    def test_read_file_bytes(self):
+        """Test _read_file_bytes reads file correctly."""
+        from nodetool.cli import _read_file_bytes
+
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"test content")
+            temp_path = f.name
+
+        try:
+            result = _read_file_bytes(temp_path)
+            assert result == b"test content"
+        finally:
+            Path(temp_path).unlink()
+
+    def test_write_file_bytes(self):
+        """Test _write_file_bytes writes file correctly."""
+        from nodetool.cli import _write_file_bytes
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.bin"
+            _write_file_bytes(str(output_path), b"test data")
+
+            assert output_path.exists()
+            assert output_path.read_bytes() == b"test data"
+
+    def test_validate_provider_capability_success(self):
+        """Test _validate_provider_capability passes for supported capability."""
+        from nodetool.cli import _validate_provider_capability
+        from nodetool.providers.base import ProviderCapability
+
+        mock_provider = MagicMock()
+        mock_provider.get_capabilities.return_value = {
+            ProviderCapability.TEXT_TO_IMAGE,
+            ProviderCapability.GENERATE_MESSAGE,
+        }
+
+        # Should not raise
+        _validate_provider_capability(mock_provider, "text_to_image", "test_provider")
+
+    def test_validate_provider_capability_failure(self):
+        """Test _validate_provider_capability raises for unsupported capability."""
+        import click
+
+        from nodetool.cli import _validate_provider_capability
+        from nodetool.providers.base import ProviderCapability
+
+        mock_provider = MagicMock()
+        mock_provider.get_capabilities.return_value = {
+            ProviderCapability.GENERATE_MESSAGE,
+        }
+
+        with pytest.raises(click.ClickException) as exc_info:
+            _validate_provider_capability(mock_provider, "text_to_image", "test_provider")
+
+        assert "does not support" in str(exc_info.value)
+        assert "text_to_image" in str(exc_info.value)
