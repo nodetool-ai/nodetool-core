@@ -770,13 +770,11 @@ class WorkflowRunner:
             self.job_model = await Job.get(self.job_id)
             if self.job_model is None:
                 self.job_model = await Job.create(
+                    id=self.job_id,
                     workflow_id=context.workflow_id,
                     user_id=context.user_id,
                     execution_strategy=request.execution_strategy.value if request.execution_strategy else None,
                 )
-                # Override the auto-generated ID with our job_id
-                self.job_model.id = self.job_id
-                await self.job_model.save()
                 log.info(f"Created job_model for {self.job_id} with status={self.job_model.status}")
             else:
                 log.info(f"Loaded job_model for {self.job_id} with status={self.job_model.status}")

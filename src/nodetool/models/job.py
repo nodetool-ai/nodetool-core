@@ -107,6 +107,7 @@ class Job(DBModel):
         user_id: str,
         execution_strategy: str | None = None,
         worker_id: str | None = None,
+        id: str | None = None,
         **kwargs,
     ):  # type: ignore[override]
         """
@@ -117,12 +118,13 @@ class Job(DBModel):
             user_id: The user identifier
             execution_strategy: Execution strategy (threaded/subprocess/docker)
             worker_id: ID of the worker creating this job
+            id: Optional job ID (auto-generated if not provided)
 
         Returns:
             Created Job
         """
         job = await super().create(
-            id=create_time_ordered_uuid(),
+            id=id or create_time_ordered_uuid(),
             workflow_id=workflow_id,
             user_id=user_id,
             status="scheduled",
