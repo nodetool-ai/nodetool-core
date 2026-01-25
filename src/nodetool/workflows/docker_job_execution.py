@@ -383,11 +383,11 @@ class DockerJobExecution(JobExecution):
             if self._status == "running":
                 log.warning("Container finished but status still 'running' - marking as completed")
                 self._status = "completed"
-                from nodetool.models.run_state import RunState
+                from nodetool.models.job import Job
 
-                run_state = await RunState.get(self.job_id)
-                if run_state:
-                    await run_state.mark_completed()
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_completed()
                 if self._job_model:
                     await self._job_model.save()
                 self._context.post_message(
@@ -406,11 +406,11 @@ class DockerJobExecution(JobExecution):
                 log.warning("Docker execution failed in test mode; falling back to local workflow execution")
                 await self._execute_fallback()
                 return
-            from nodetool.models.run_state import RunState
+            from nodetool.models.job import Job
 
-            run_state = await RunState.get(self.job_id)
-            if run_state:
-                await run_state.mark_failed(error=str(e))
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_failed(error=str(e))
             if self._job_model:
                 self._job_model.error = str(e)
                 await self._job_model.save()
@@ -419,11 +419,11 @@ class DockerJobExecution(JobExecution):
             log.error(f"Docker execution error: {e}")
             self._status = "error"
             self._error = str(e)
-            from nodetool.models.run_state import RunState
+            from nodetool.models.job import Job
 
-            run_state = await RunState.get(self.job_id)
-            if run_state:
-                await run_state.mark_failed(error=str(e))
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_failed(error=str(e))
             if self._job_model:
                 self._job_model.error = str(e)
                 await self._job_model.save()
@@ -458,12 +458,12 @@ class DockerJobExecution(JobExecution):
                     # Update database
                     if self._job_model:
                         try:
-                            from nodetool.models.run_state import RunState
+                            from nodetool.models.job import Job
 
-                            run_state = await RunState.get(self.job_id)
-                            if run_state:
-                                run_state.status = self._status
-                                await run_state.save()
+                            job = await Job.get(self.job_id)
+                            if job:
+                                job.status = self._status
+                                await job.save()
                             if self._error:
                                 self._job_model.error = self._error
                             await self._job_model.save()
@@ -493,11 +493,11 @@ class DockerJobExecution(JobExecution):
                     await self._execution_task
 
             # Update database
-            from nodetool.models.run_state import RunState
+            from nodetool.models.job import Job
 
-            run_state = await RunState.get(self.job_id)
-            if run_state:
-                await run_state.mark_cancelled()
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_cancelled()
             if self._job_model:
                 await self._job_model.save()
 
@@ -723,16 +723,16 @@ class DockerJobExecution(JobExecution):
             raise
         finally:
             if self._job_model:
-                from nodetool.models.run_state import RunState
+                from nodetool.models.job import Job
 
-                run_state = await RunState.get(self.job_id)
-                if run_state:
+                job = await Job.get(self.job_id)
+                if job:
                     if self._status == "completed":
-                        await run_state.mark_completed()
+                        await job.mark_completed()
                     elif self._status in ("error", "failed"):
-                        await run_state.mark_failed(error=self._error or "Unknown error")
+                        await job.mark_failed(error=self._error or "Unknown error")
                     elif self._status == "cancelled":
-                        await run_state.mark_cancelled()
+                        await job.mark_cancelled()
                 self._job_model.error = self._error
                 await self._job_model.save()
 

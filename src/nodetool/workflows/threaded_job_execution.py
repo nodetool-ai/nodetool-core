@@ -123,11 +123,11 @@ class ThreadedJobExecution(JobExecution):
                 # Check if workflow was suspended (not completed)
                 if self.runner and self.runner.status == "suspended":
                     log.info("Workflow suspended, not setting completed status")
-                    from nodetool.models.run_state import RunState
+                    from nodetool.models.job import Job
 
-                    run_state = await RunState.get(self.job_id)
-                    if run_state:
-                        await run_state.mark_suspended(
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_suspended(
                             node_id="",
                             reason="Workflow suspended",
                             state={},
@@ -145,11 +145,11 @@ class ThreadedJobExecution(JobExecution):
                 else:
                     # Update job status on completion
                     self._set_status("completed")
-                    from nodetool.models.run_state import RunState
+                    from nodetool.models.job import Job
 
-                    run_state = await RunState.get(self.job_id)
-                    if run_state:
-                        await run_state.mark_completed()
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_completed()
                     await self.job_model.update(finished_at=datetime.now())
 
                     # Post completion message BEFORE finalize_state to avoid race condition
@@ -164,11 +164,11 @@ class ThreadedJobExecution(JobExecution):
 
             except asyncio.CancelledError:
                 self._set_status("cancelled")
-                from nodetool.models.run_state import RunState
+                from nodetool.models.job import Job
 
-                run_state = await RunState.get(self.job_id)
-                if run_state:
-                    await run_state.mark_cancelled()
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_cancelled()
                 await self.job_model.update(finished_at=datetime.now())
 
                 # Post cancellation message BEFORE finalize_state to avoid race condition
@@ -189,11 +189,11 @@ class ThreadedJobExecution(JobExecution):
                 error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
                 tb_text = traceback.format_exc()
                 self._error = error_msg
-                from nodetool.models.run_state import RunState
+                from nodetool.models.job import Job
 
-                run_state = await RunState.get(self.job_id)
-                if run_state:
-                    await run_state.mark_failed(error=error_msg)
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_failed(error=error_msg)
                 await self.job_model.update(error=error_msg, finished_at=datetime.now())
                 log.exception("Background job %s failed: %s", self.job_id, error_msg)
                 self.context.post_message(

@@ -190,13 +190,14 @@ async def test_workflow_runner_logs_events():
 @pytest.mark.asyncio
 async def test_recovery_service_determine_resumption():
     """Test recovery service identifies incomplete nodes."""
+    from nodetool.models.job import Job
     from nodetool.models.run_node_state import RunNodeState
-    from nodetool.models.run_state import RunState
 
     run_id = "test-run-6"
 
-    # Create run state
-    await RunState.create_run(run_id=run_id, execution_strategy="threaded")
+    # Create job with scheduled status
+    job = await Job.create(workflow_id="test-workflow", user_id="test-user", execution_strategy="threaded")
+    run_id = job.id
 
     # Node 1: scheduled but never started
     node1 = await RunNodeState.get_or_create(run_id, "node1")

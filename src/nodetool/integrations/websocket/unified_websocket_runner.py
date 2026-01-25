@@ -135,24 +135,24 @@ class WebSocketMode(str, Enum):
 
 
 async def build_run_state_info(job_id: str) -> RunStateInfo | None:
-    """Build RunStateInfo from persisted RunState for WebSocket messages."""
+    """Build RunStateInfo from persisted Job for WebSocket messages."""
     try:
         async with ResourceScope():
-            from nodetool.models.run_state import RunState
+            from nodetool.models.job import Job
 
-            run_state = await RunState.get(job_id)
-            if run_state:
-                log.info(f"build_run_state_info: Found RunState for job {job_id}, status={run_state.status}")
+            job = await Job.get(job_id)
+            if job:
+                log.info(f"build_run_state_info: Found Job for job {job_id}, status={job.status}")
                 return RunStateInfo(
-                    status=run_state.status,
-                    suspended_node_id=run_state.suspended_node_id,
-                    suspension_reason=run_state.suspension_reason,
-                    error_message=run_state.error_message,
-                    execution_strategy=run_state.execution_strategy,
-                    is_resumable=run_state.is_resumable(),
+                    status=job.status,
+                    suspended_node_id=job.suspended_node_id,
+                    suspension_reason=job.suspension_reason,
+                    error_message=job.error_message,
+                    execution_strategy=job.execution_strategy,
+                    is_resumable=job.is_resumable(),
                 )
             else:
-                log.warning(f"build_run_state_info: No RunState found for job {job_id}")
+                log.warning(f"build_run_state_info: No Job found for job {job_id}")
     except Exception as e:
         log.error(f"build_run_state_info: Failed to build run state info for job {job_id}: {e}")
     return None
@@ -723,17 +723,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             if job_execution is None:
                 async with ResourceScope():
                     db_job = await Job.get(job_id)
-                    from nodetool.models.run_state import RunState
-
-                    run_state = await RunState.get(job_id)
-                    current_status = run_state.status if run_state else None
+                    current_status = db_job.status if db_job else None
 
                     if current_status in {"running", "scheduled", "queued", None}:
                         log.info(
                             "UnifiedWebSocketRunner: Job not in memory but running in DB, attempting recovery",
                             extra={"job_id": job_id, "status": current_status},
                         )
-                        recovered = await job_manager.resume_run(job_id)
+                        recovered = await job_manager.resume_job(job_id)
                         if recovered:
                             job_execution = job_manager.get_job(job_id)
                             if job_execution:
@@ -746,9 +743,8 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                                 "UnifiedWebSocketRunner: Job recovery failed; marking as failed",
                                 extra={"job_id": job_id},
                             )
-                            if run_state:
-                                await run_state.mark_failed(error="Job worker was unavailable")
                             if db_job:
+                                await db_job.mark_failed(error="Job worker was unavailable")
                                 await db_job.update(
                                     error="Job worker was unavailable during reconnect",
                                     finished_at=datetime.now(),
@@ -774,17 +770,15 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             )
 
             async with ResourceScope():
-                from nodetool.models.run_state import RunState
-
-                run_state = await RunState.get(job_id)
-                current_status = run_state.status if run_state else None
+                db_job = await Job.get(job_id)
+                current_status = db_job.status if db_job else None
 
                 if current_status in {"running", "scheduled", "queued"} and not job_execution.is_running():
                     log.warning(
                         "UnifiedWebSocketRunner: Job in memory shows completed but DB shows running, attempting recovery",
                         extra={"job_id": job_id, "in_memory_status": job_execution.status, "db_status": current_status},
                     )
-                    recovered = await job_manager.resume_run(job_id)
+                    recovered = await job_manager.resume_job(job_id)
                     if recovered:
                         job_execution = job_manager.get_job(job_id)
                         if job_execution:
@@ -803,24 +797,22 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 final_status = job_execution.status
                 try:
                     await job_execution.job_model.reload()
-                    from nodetool.models.run_state import RunState
-
-                    run_state = await RunState.get(job_id)
-                    current_status = run_state.status if run_state else None
+                    db_job = await Job.get(job_id)
+                    current_status = db_job.status if db_job else None
 
                     if current_status in {"running", "scheduled", "queued"}:
                         if final_status == "completed":
-                            if run_state:
-                                await run_state.mark_completed()
+                            if db_job:
+                                await db_job.mark_completed()
                         elif final_status in {"error", "failed"}:
                             err_detail = getattr(job_execution, "error", None) or getattr(
                                 job_execution.job_model, "error", None
                             )
-                            if run_state:
-                                await run_state.mark_failed(error=str(err_detail) if err_detail else "Unknown error")
+                            if db_job:
+                                await db_job.mark_failed(error=str(err_detail) if err_detail else "Unknown error")
                         elif final_status == "cancelled":
-                            if run_state:
-                                await run_state.mark_cancelled()
+                            if db_job:
+                                await db_job.mark_cancelled()
                         await job_execution.job_model.update(
                             finished_at=datetime.now(),
                         )

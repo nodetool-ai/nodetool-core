@@ -3,7 +3,7 @@ Trigger Wakeup Service - Durable Cross-Process Trigger Management
 =================================================================
 
 Provides durable trigger wakeup functionality without relying on in-memory state.
-Uses the trigger_inputs and run_state tables to coordinate trigger delivery across
+Uses the trigger_inputs and Job tables to coordinate trigger delivery across
 multiple servers.
 
 Key Features:
@@ -46,7 +46,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_state import RunState
+from nodetool.models.job import Job
 from nodetool.models.trigger_input import TriggerInput
 from nodetool.workflows.durable_inbox import DurableInbox
 
@@ -178,24 +178,24 @@ class TriggerWakeupService:
         from nodetool.models.condition_builder import Field
 
         condition = Field("status").equals("suspended")
-        adapter = await RunState.adapter()
+        adapter = await Job.adapter()
         suspended_runs, _ = await adapter.query(
             condition=condition,
             limit=1000,
         )
 
         results = []
-        for run_state_data in suspended_runs:
-            run_state = RunState.from_dict(run_state_data)
-            if run_state.suspended_node_id:
+        for job_data in suspended_runs:
+            job = Job.from_dict(job_data)
+            if job.suspended_node_id:
                 pending = await self.get_pending_inputs(
-                    run_id=run_state.run_id,
-                    node_id=run_state.suspended_node_id,
+                    run_id=job.id,
+                    node_id=job.suspended_node_id,
                     limit=1,
                 )
 
                 if pending:
-                    results.append((run_state.run_id, run_state.suspended_node_id))
+                    results.append((job.id, job.suspended_node_id))
 
         return results
 
@@ -220,13 +220,13 @@ class TriggerWakeupService:
             True if wake-up was initiated, False otherwise
         """
         # Check if run is actually suspended
-        run_state = await RunState.get(run_id)
-        if not run_state:
+        job = await Job.get(run_id)
+        if not job:
             log.warning(f"Cannot wake trigger: run {run_id} not found")
             return False
 
-        if run_state.status != "suspended":
-            log.warning(f"Cannot wake trigger: run {run_id} is not suspended (status={run_state.status})")
+        if job.status != "suspended":
+            log.warning(f"Cannot wake trigger: run {run_id} is not suspended (status={job.status})")
             return False
 
         log.info(f"Waking up suspended trigger workflow {run_id}")

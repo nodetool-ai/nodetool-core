@@ -11,7 +11,6 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import Field
 from nodetool.models.job import Job
-from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
 from nodetool.models.workspace import Workspace
 from nodetool.runtime.resources import ResourceScope
@@ -66,7 +65,7 @@ class JobExecutionManager:
         await self._reconcile_on_startup()
 
     async def _reconcile_on_startup(self):
-        """Reconcile in-memory state with persisted RunState.
+        """Reconcile in-memory state with persisted Job records.
 
         By default, stale "running" jobs are marked as failed instead of recovered.
         Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable automatic job recovery.
@@ -78,47 +77,47 @@ class JobExecutionManager:
         try:
             worker_id = Environment.get_worker_id()
             async with ResourceScope():
-                # 1. Load active runs
-                runs, _ = await RunState.query(
+                # 1. Load active jobs
+                jobs, _ = await Job.query(
                     Field("status").in_list(["scheduled", "running", "suspended", "paused", "recovering"])
                 )
 
-                log.info(f"Reconciling {len(runs)} active runs on startup (auto_recover={auto_recover})")
+                log.info(f"Reconciling {len(jobs)} active jobs on startup (auto_recover={auto_recover})")
 
-                for run in runs:
-                    if run.worker_id == worker_id:
+                for job in jobs:
+                    if job.worker_id == worker_id:
                         # Owned by us - normally we'd rehydrate, but since we just restarted,
                         # the in-memory state is lost.
-                        log.info(f"Found owned run {run.run_id} with status={run.status}")
-                        if run.status == "running":
+                        log.info(f"Found owned job {job.id} with status={job.status}")
+                        if job.status == "running":
                             if auto_recover:
                                 # Mark as recovering to let resume logic handle it
-                                await run.mark_recovering()
-                                log.info(f"Marked run {run.run_id} as recovering")
+                                await job.mark_recovering()
+                                log.info(f"Marked job {job.id} as recovering")
                             else:
                                 # Mark as failed - server died while running
-                                await run.mark_failed(error="Server shutdown while job was running")
+                                await job.mark_failed(error="Server shutdown while job was running")
                                 log.warning(
-                                    f"Marked run {run.run_id} as failed (server died during execution). "
+                                    f"Marked job {job.id} as failed (server died during execution). "
                                     f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."
                                 )
-                    elif self._is_heartbeat_stale(run):
+                    elif self._is_heartbeat_stale(job):
                         # Owned by dead worker
-                        log.info(f"Found stale run {run.run_id} from worker {run.worker_id}")
+                        log.info(f"Found stale job {job.id} from worker {job.worker_id}")
                         if auto_recover:
-                            await self.claim_and_recover(run)
+                            await self.claim_and_recover(job)
                         else:
                             # Mark as failed instead of recovering
-                            await run.mark_failed(error="Worker died while job was running")
+                            await job.mark_failed(error="Worker died while job was running")
                             log.warning(
-                                f"Marked stale run {run.run_id} as failed. "
+                                f"Marked stale job {job.id} as failed. "
                                 f"Set NODETOOL_AUTO_RECOVER_JOBS=1 to enable auto-recovery."
                             )
         except Exception as e:
             log.error(f"Error during startup reconciliation: {e}")
 
-    def _is_heartbeat_stale(self, run: RunState) -> bool:
-        return run.is_stale(_STALE_THRESHOLD_MINUTES)
+    def _is_heartbeat_stale(self, job: Job) -> bool:
+        return job.is_stale(_STALE_THRESHOLD_MINUTES)
 
     @classmethod
     def get_instance(cls) -> "JobExecutionManager":
@@ -146,45 +145,50 @@ class JobExecutionManager:
         worker_id = Environment.get_worker_id()
         execution_id = str(uuid.uuid4())
         # Use client-provided job_id if available, otherwise generate a new one
-        run_id = request.job_id if request.job_id else str(uuid.uuid4())
+        job_id = request.job_id if request.job_id else str(uuid.uuid4())
 
-        # 1. Create RunState record (DB source of truth)
+        # 1. Create Job record (DB source of truth) with initial scheduled status
         # Using ResourceScope to ensure DB connection
         async with ResourceScope():
-            run_state = await RunState.create_run(
-                run_id=run_id,
+            job_model = await Job.create(
+                workflow_id=request.workflow_id,
+                user_id=request.user_id,
+                job_type=request.job_type or "workflow",
                 execution_strategy=request.execution_strategy.value,
                 worker_id=worker_id,
+                graph=request.graph.model_dump() if request.graph else {},
+                params=request.params or {},
             )
-            run_state.execution_id = execution_id
-            await run_state.save()
+            job_id = job_model.id
+            job_model.execution_id = execution_id
+            await job_model.save()
 
         # Switch on execution strategy
         if request.execution_strategy == ExecutionStrategy.THREADED:
-            job = await ThreadedJobExecution.create_and_start(
-                request, context, job_id=run_id, execution_id=execution_id
+            job_exec = await ThreadedJobExecution.create_and_start(
+                request, context, job_id=job_id, execution_id=execution_id
             )
         elif request.execution_strategy == ExecutionStrategy.SUBPROCESS:
-            job = await SubprocessJobExecution.create_and_start(
-                request, context, job_id=run_id, execution_id=execution_id
+            job_exec = await SubprocessJobExecution.create_and_start(
+                request, context, job_id=job_id, execution_id=execution_id
             )
         elif request.execution_strategy == ExecutionStrategy.DOCKER:
-            job = await DockerJobExecution.create_and_start(request, context, job_id=run_id, execution_id=execution_id)
+            job_exec = await DockerJobExecution.create_and_start(request, context, job_id=job_id, execution_id=execution_id)
         else:
             raise ValueError(f"Unknown execution strategy: {request.execution_strategy}")
 
-        # Update run state to running
+        # Update job status to running
         async with ResourceScope():
-            run_state = await RunState.get(run_id)
-            run_state.status = "running"
-            await run_state.save()
+            job_model = await Job.get(job_id)
+            if job_model:
+                await job_model.mark_running()
 
         # Register the job in the manager
-        self._jobs[job.job_id] = job
+        self._jobs[job_exec.job_id] = job_exec
 
-        log.info(f"Started job {job.job_id} with strategy {request.execution_strategy} (worker: {worker_id})")
+        log.info(f"Started job {job_exec.job_id} with strategy {request.execution_strategy} (worker: {worker_id})")
 
-        return job
+        return job_exec
 
     def get_job(self, job_id: str) -> Optional[JobExecution]:
         """Get a job by ID, scheduling persistence if it has finished."""
@@ -324,9 +328,9 @@ class JobExecutionManager:
                 # Also release ownership in DB
                 try:
                     async with ResourceScope():
-                        run = await RunState.get(job.job_id)
-                        if run:
-                            await run.release()
+                        job_model = await Job.get(job.job_id)
+                        if job_model:
+                            await job_model.release()
                 except Exception:
                     pass
             await job.cleanup_resources()
@@ -350,96 +354,87 @@ class JobExecutionManager:
                         job = self._jobs.get(job_id)
                         if job and job.is_running():
                             try:
-                                run = await RunState.get(job_id)
-                                if run:
-                                    await run.update_heartbeat()
+                                job_model = await Job.get(job_id)
+                                if job_model:
+                                    await job_model.update_heartbeat()
                             except Exception as e:
                                 log.debug(f"Failed to heartbeat job {job_id}: {e}")
 
-                    # Also check for stale runs to recover
-                    await self.recover_stale_runs()
+                    # Also check for stale jobs to recover
+                    await self.recover_stale_jobs()
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 log.error(f"Error in heartbeat loop: {e}")
 
-    async def recover_stale_runs(self):
-        """Scan for and recover stale runs."""
+    async def recover_stale_jobs(self):
+        """Scan for and recover stale jobs."""
         try:
-            runs, _ = await RunState.query(
+            jobs, _ = await Job.query(
                 Field("status").equals("running").and_(Field("execution_strategy").not_equals(None))
             )
 
-            for run in runs:
-                if self._is_heartbeat_stale(run) and not run.is_owned_by(Environment.get_worker_id()):
-                    await self.claim_and_recover(run)
+            for job in jobs:
+                if self._is_heartbeat_stale(job) and not job.is_owned_by(Environment.get_worker_id()):
+                    await self.claim_and_recover(job)
 
         except Exception as e:
-            log.error(f"Error recovering stale runs: {e}")
+            log.error(f"Error recovering stale jobs: {e}")
 
-    async def claim_and_recover(self, run: RunState):
-        """Claim a potentially stale run and schedule recovery."""
+    async def claim_and_recover(self, job: Job):
+        """Claim a potentially stale job and schedule recovery."""
         try:
             # Try to claim
-            await run.save()
-            log.info(f"Claimed stale run {run.run_id} for recovery")
+            await job.save()
+            log.info(f"Claimed stale job {job.id} for recovery")
 
             # Attempt to resume execution
-            success = await self.resume_run(run.run_id)
+            success = await self.resume_job(job.id)
             if not success:
-                log.warning(f"Failed to resume run {run.run_id}, marking as failed")
-                run.status = "failed"
-                run.error_message = "Recovery failed: could not resume execution"
-                await run.save()
+                log.warning(f"Failed to resume job {job.id}, marking as failed")
+                job.status = "failed"
+                job.error_message = "Recovery failed: could not resume execution"
+                await job.save()
 
         except Exception as e:
-            log.error(f"Failed to claim run {run.run_id}: {e}")
+            log.error(f"Failed to claim job {job.id}: {e}")
 
-    async def resume_run(self, run_id: str) -> bool:
+    async def resume_job(self, job_id: str) -> bool:
         """
-        Resume a suspended or recovering run.
+        Resume a suspended or recovering job.
 
-        Reconstructs the execution environment from the persisted Job and RunState
-        records and restarts execution.
+        Reconstructs the execution environment from the persisted Job record
+        and restarts execution.
         """
         try:
-            log.info(f"Attempting to resume run {run_id}")
+            log.info(f"Attempting to resume job {job_id}")
 
             async with ResourceScope():
-                # 1. Fetch RunState to get execution strategy and metadata
-                run_state = await RunState.get(run_id)
-                if not run_state:
-                    log.error(f"RunState not found for {run_id}")
-                    return False
-
-                # 2. Fetch Job model to get graph, params, user info
-                # Note: RunState.run_id corresponds to Job.id
-                job_model = await Job.get(run_id)
+                # 1. Fetch Job model to get execution strategy, graph, params, user info
+                job_model = await Job.get(job_id)
                 if not job_model:
-                    log.error(f"Job model not found for {run_id}")
+                    log.error(f"Job model not found for {job_id}")
                     return False
 
-            # 3. Reconstruct RunJobRequest
-            # Note: We rely on the persisted graph and params in the Job model
+            # 2. Reconstruct RunJobRequest
             try:
-                execution_strategy = ExecutionStrategy(run_state.execution_strategy)
+                execution_strategy = ExecutionStrategy(job_model.execution_strategy)
             except ValueError:
-                log.error(f"Invalid execution strategy in RunState: {run_state.execution_strategy}")
+                log.error(f"Invalid execution strategy in Job: {job_model.execution_strategy}")
                 return False
 
             request = RunJobRequest(
                 workflow_id=job_model.workflow_id,
                 user_id=job_model.user_id,
                 job_type=job_model.job_type,
-                graph=job_model.graph,  # Graph is stored as dict, Pydantic should handle validation if needed
+                graph=job_model.graph,  # Graph is stored as dict
                 params=job_model.params,
                 execution_strategy=execution_strategy,
-                # Contextual fields that might be lost or need defaults
-                auth_token="",  # Auth token is lost, but internal recovery might not need it for all ops
+                auth_token="",  # Auth token is lost, but internal recovery might not need it
             )
 
-            # 4. Resolve workspace_dir from workflow's workspace_id
+            # 3. Resolve workspace_dir from workflow's workspace_id
             workspace_dir: str | None = None
             async with ResourceScope():
                 try:
@@ -452,49 +447,50 @@ class JobExecutionManager:
                         elif workspace:
                             log.warning(f"Workspace {workflow.workspace_id} exists but is not accessible")
                 except Exception as e:
-                    log.error(f"Error resolving workspace for resume {run_id}: {e}")
+                    log.error(f"Error resolving workspace for resume {job_id}: {e}")
 
-            # 5. create ProcessingContext (headless for recovery)
+            # 4. create ProcessingContext (headless for recovery)
             context = ProcessingContext(
                 user_id=request.user_id,
-                job_id=run_id,
+                job_id=job_id,
                 workflow_id=request.workflow_id,
                 workspace_dir=workspace_dir,
-                # In recovery mode, we might not have active websocket clients initially
             )
 
-            # 6. Relaunch Execution
-            # We generate a NEW execution_id for this attempt, preserving the run_id
+            # 5. Relaunch Execution
+            # We generate a NEW execution_id for this attempt, preserving the job_id
             new_execution_id = str(uuid.uuid4())
             worker_id = Environment.get_worker_id()
 
             async with ResourceScope():
-                # Update RunState with new worker and execution ID
-                run_state.worker_id = worker_id
-                run_state.execution_id = new_execution_id
-                run_state.status = "running"
-                await run_state.save()
+                # Update Job with new worker and execution ID
+                job_model = await Job.get(job_id)
+                if job_model:
+                    job_model.worker_id = worker_id
+                    job_model.execution_id = new_execution_id
+                    job_model.status = "running"
+                    await job_model.save()
 
             if execution_strategy == ExecutionStrategy.THREADED:
-                job = await ThreadedJobExecution.create_and_start(
-                    request, context, job_id=run_id, execution_id=new_execution_id
+                job_exec = await ThreadedJobExecution.create_and_start(
+                    request, context, job_id=job_id, execution_id=new_execution_id
                 )
             elif execution_strategy == ExecutionStrategy.SUBPROCESS:
-                job = await SubprocessJobExecution.create_and_start(
-                    request, context, job_id=run_id, execution_id=new_execution_id
+                job_exec = await SubprocessJobExecution.create_and_start(
+                    request, context, job_id=job_id, execution_id=new_execution_id
                 )
             elif execution_strategy == ExecutionStrategy.DOCKER:
-                job = await DockerJobExecution.create_and_start(
-                    request, context, job_id=run_id, execution_id=new_execution_id
+                job_exec = await DockerJobExecution.create_and_start(
+                    request, context, job_id=job_id, execution_id=new_execution_id
                 )
             else:
                 log.error(f"Unknown execution strategy: {execution_strategy}")
                 return False
 
-            self._jobs[run_id] = job
-            log.info(f"Resumed run {run_id} with execution_id {new_execution_id}")
+            self._jobs[job_id] = job_exec
+            log.info(f"Resumed job {job_id} with execution_id {new_execution_id}")
             return True
 
         except Exception as e:
-            log.exception(f"Error resuming run {run_id}: {e}")
+            log.exception(f"Error resuming job {job_id}: {e}")
             return False
