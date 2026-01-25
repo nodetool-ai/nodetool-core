@@ -8,7 +8,6 @@ import os
 import pytest
 
 from nodetool.models.job import Job
-from nodetool.models.run_state import RunState
 from nodetool.models.workflow import Workflow
 from nodetool.types.api_graph import Graph
 from nodetool.types.job import JobUpdate
@@ -239,10 +238,9 @@ async def test_threaded_job_database_record(simple_workflow, cleanup_jobs):
     assert db_job.id == job.job_id
     assert db_job.workflow_id == simple_workflow.id
     assert db_job.user_id == "test_user"
-    # Create RunState for the job (ThreadedJobExecution doesn't create it)
-    run_state = await RunState.create_run(run_id=job.job_id, execution_strategy="threaded")
-    run_state.status = "running"
-    await run_state.save()
+    # Job is created with scheduled status, update to running for test
+    db_job.status = "running"
+    await db_job.save()
     # Empty workflows may complete very quickly, so status could be running, completed, failed, or scheduled
     status = await get_job_status(job.job_id)
     assert status in ["running", "completed", "failed", "scheduled"]

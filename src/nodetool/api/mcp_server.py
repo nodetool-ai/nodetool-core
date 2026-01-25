@@ -4712,8 +4712,8 @@ async def get_run_timeline(run_id: str) -> dict[str, Any]:
 
     return {
         "run_id": run_id,
-        "status": run_state.status,
-        "error_message": run_state.error_message,
+        "status": job.status,
+        "error_message": job.error_message,
         "started_at": first_time.isoformat() if first_time else None,
         "completed_at": last_time.isoformat() if last_time else None,
         "duration_seconds": duration_seconds,
