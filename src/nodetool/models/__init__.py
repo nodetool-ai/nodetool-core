@@ -6,7 +6,6 @@ from nodetool.models.run_event import RunEvent
 from nodetool.models.run_inbox_message import RunInboxMessage
 from nodetool.models.run_lease import RunLease
 from nodetool.models.run_node_state import RunNodeState
-from nodetool.models.run_state import RunState
 from nodetool.models.secret import Secret
 from nodetool.models.thread import Thread
 from nodetool.models.trigger_input import TriggerInput
@@ -21,7 +20,6 @@ __all__ = [
     "RunInboxMessage",
     "RunLease",
     "RunNodeState",
-    "RunState",
     "Secret",
     "Thread",
     "TriggerInput",

@@ -86,13 +86,13 @@ log = get_logger(__name__)
 
 
 async def get_job_status(job_id: str) -> str:
-    """Get the authoritative status for a job from RunState."""
-    from nodetool.models.run_state import RunState
+    """Get the authoritative status for a job from Job model."""
+    from nodetool.models.job import Job
 
     try:
-        run_state = await RunState.get(job_id)
-        if run_state:
-            return run_state.status
+        job = await Job.get(job_id)
+        if job:
+            return job.status
     except Exception:
         pass
     return "unknown"
@@ -1340,7 +1340,6 @@ async def list_jobs(
         Dictionary containing jobs and pagination cursor.
     """
     from nodetool.models.job import Job as JobModel
-    from nodetool.models.run_state import RunState
 
     user_id = "1"
     jobs, next_start_key = await JobModel.paginate(
@@ -1350,26 +1349,14 @@ async def list_jobs(
         start_key=start_key,
     )
 
-    # Batch fetch all RunStates to avoid N+1 query problem
-    job_ids = [job.id for job in jobs]
-    run_state_map: dict[str, Any] = {}
-    if job_ids:
-        try:
-            run_states, _ = await RunState.query(
-                condition=ConditionField("run_id").in_list(job_ids),
-                limit=len(job_ids),
-            )
-            run_state_map = {rs.run_id: rs.status for rs in run_states}
-        except Exception:
-            pass
-
+    # Status is now directly on Job model - no separate fetch needed
     return {
         "jobs": [
             {
                 "id": job.id,
                 "user_id": job.user_id,
                 "job_type": job.job_type,
-                "status": run_state_map.get(job.id, "unknown"),
+                "status": job.status,
                 "workflow_id": job.workflow_id,
                 "started_at": job.started_at.isoformat() if job.started_at else "",
                 "finished_at": job.finished_at.isoformat() if job.finished_at else None,
@@ -4524,36 +4511,36 @@ async def get_run_state(run_id: str) -> dict[str, Any]:
     Returns:
         Run state including status, timestamps, suspension state, and execution metadata
     """
-    from nodetool.models.run_state import RunState
+    from nodetool.models.job import Job
 
-    run_state = await RunState.get(run_id)
-    if not run_state:
+    job = await Job.get(run_id)
+    if not job:
         raise ValueError(f"Run state not found for run_id: {run_id}")
 
     return {
-        "run_id": run_state.run_id,
-        "status": run_state.status,
-        "created_at": run_state.created_at.isoformat() if run_state.created_at else None,
-        "updated_at": run_state.updated_at.isoformat() if run_state.updated_at else None,
-        "completed_at": run_state.completed_at.isoformat() if run_state.completed_at else None,
-        "failed_at": run_state.failed_at.isoformat() if run_state.failed_at else None,
-        "error_message": run_state.error_message,
-        "execution_strategy": run_state.execution_strategy,
-        "execution_id": run_state.execution_id,
-        "worker_id": run_state.worker_id,
-        "heartbeat_at": run_state.heartbeat_at.isoformat() if run_state.heartbeat_at else None,
-        "retry_count": run_state.retry_count,
-        "max_retries": run_state.max_retries,
-        "suspended_node_id": run_state.suspended_node_id,
-        "suspension_reason": run_state.suspension_reason,
-        "suspension_state": run_state.suspension_state_json,
-        "suspension_metadata": run_state.suspension_metadata_json,
-        "metadata": run_state.metadata_json,
-        "version": run_state.version,
-        "is_stale": run_state.is_stale(),
-        "is_complete": run_state.is_complete(),
-        "is_suspended": run_state.is_suspended(),
-        "is_resumable": run_state.is_resumable(),
+        "run_id": job.id,
+        "status": job.status,
+        "created_at": job.started_at.isoformat() if job.started_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "failed_at": job.failed_at.isoformat() if job.failed_at else None,
+        "error_message": job.error_message,
+        "execution_strategy": job.execution_strategy,
+        "execution_id": job.execution_id,
+        "worker_id": job.worker_id,
+        "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
+        "retry_count": job.retry_count,
+        "max_retries": job.max_retries,
+        "suspended_node_id": job.suspended_node_id,
+        "suspension_reason": job.suspension_reason,
+        "suspension_state": job.suspension_state_json,
+        "suspension_metadata": job.suspension_metadata_json,
+        "metadata": job.metadata_json,
+        "version": job.version,
+        "is_stale": job.is_stale(),
+        "is_complete": job.is_complete(),
+        "is_suspended": job.is_suspended(),
+        "is_resumable": job.is_resumable(),
     }
 
 
@@ -4575,7 +4562,7 @@ async def list_run_states(
         List of run states matching the filters
     """
     from nodetool.models.condition_builder import Field
-    from nodetool.models.run_state import RunState
+    from nodetool.models.job import Job
 
     conditions = []
 
@@ -4589,26 +4576,26 @@ async def list_run_states(
 
     if conditions:
         condition = ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND))
-        runs, _ = await RunState.query(condition=condition, limit=limit)
+        jobs, _ = await Job.query(condition=condition, limit=limit)
     else:
-        runs, _ = await RunState.query(limit=limit)
+        jobs, _ = await Job.query(limit=limit)
 
     return {
         "runs": [
             {
-                "run_id": run.run_id,
-                "status": run.status,
-                "created_at": run.created_at.isoformat() if run.created_at else None,
-                "updated_at": run.updated_at.isoformat() if run.updated_at else None,
-                "worker_id": run.worker_id,
-                "execution_strategy": run.execution_strategy,
-                "error_message": run.error_message,
-                "is_stale": run.is_stale(),
-                "is_complete": run.is_complete(),
+                "run_id": job.id,
+                "status": job.status,
+                "created_at": job.started_at.isoformat() if job.started_at else None,
+                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+                "worker_id": job.worker_id,
+                "execution_strategy": job.execution_strategy,
+                "error_message": job.error_message,
+                "is_stale": job.is_stale(),
+                "is_complete": job.is_complete(),
             }
-            for run in runs
+            for job in jobs
         ],
-        "count": len(runs),
+        "count": len(jobs),
     }
 
 
@@ -4678,11 +4665,11 @@ async def get_run_timeline(run_id: str) -> dict[str, Any]:
     Returns:
         Timeline with events, statistics, and duration info
     """
+    from nodetool.models.job import Job
     from nodetool.models.run_event import RunEvent
-    from nodetool.models.run_state import RunState
 
-    run_state = await RunState.get(run_id)
-    if not run_state:
+    job = await Job.get(run_id)
+    if not job:
         raise ValueError(f"Run state not found for run_id: {run_id}")
 
     events = await RunEvent.get_events(run_id=run_id, limit=1000)
@@ -4690,7 +4677,7 @@ async def get_run_timeline(run_id: str) -> dict[str, Any]:
     if not events:
         return {
             "run_id": run_id,
-            "status": run_state.status,
+            "status": job.status,
             "message": "No events recorded for this run",
             "timeline": [],
         }
@@ -4746,30 +4733,30 @@ async def get_active_jobs() -> dict[str, Any]:
     Returns:
         List of active jobs with their current status and metadata
     """
-    from nodetool.models.run_state import RunState
+    from nodetool.models.job import Job
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
     manager = JobExecutionManager.get_instance()
     jobs = manager.list_jobs()
 
     active_jobs = []
-    for job in jobs:
-        if job.is_running():
-            run_state = await RunState.get(job.job_id)
+    for job_exec in jobs:
+        if job_exec.is_running():
+            job = await Job.get(job_exec.job_id)
             active_jobs.append(
                 {
-                    "job_id": job.job_id,
-                    "execution_id": job.execution_id,
-                    "workflow_id": job.request.workflow_id,
-                    "user_id": job.request.user_id,
-                    "status": job.status,
-                    "execution_strategy": job.request.execution_strategy.value
-                    if job.request.execution_strategy
+                    "job_id": job_exec.job_id,
+                    "execution_id": job_exec.execution_id,
+                    "workflow_id": job_exec.request.workflow_id,
+                    "user_id": job_exec.request.user_id,
+                    "status": job_exec.status,
+                    "execution_strategy": job_exec.request.execution_strategy.value
+                    if job_exec.request.execution_strategy
                     else None,
-                    "started_at": job.started_at.isoformat() if job.started_at else None,
+                    "started_at": job_exec.started_at.isoformat() if job_exec.started_at else None,
                     "worker_id": Environment.get_worker_id(),
-                    "run_state_status": run_state.status if run_state else None,
-                    "is_stale": run_state.is_stale() if run_state else None,
+                    "run_state_status": job.status if job else None,
+                    "is_stale": job.is_stale() if job else None,
                 }
             )
 
@@ -4790,22 +4777,22 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
     Returns:
         Cancellation result
     """
-    from nodetool.models.run_state import RunState
+    from nodetool.models.job import Job
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    run_state = await RunState.get(run_id)
-    if not run_state:
+    job = await Job.get(run_id)
+    if not job:
         raise ValueError(f"Run state not found for run_id: {run_id}")
 
-    if run_state.is_complete():
-        raise ValueError(f"Run {run_id} is already complete (status: {run_state.status})")
+    if job.is_complete():
+        raise ValueError(f"Run {run_id} is already complete (status: {job.status})")
 
     manager = JobExecutionManager.get_instance()
     cancelled = await manager.cancel_job(run_id)
 
     if cancelled:
         async with ResourceScope():
-            await run_state.mark_cancelled()
+            await job.mark_cancelled()
 
         return {
             "run_id": run_id,
@@ -4831,18 +4818,18 @@ async def recover_run(run_id: str) -> dict[str, Any]:
     Returns:
         Recovery result
     """
-    from nodetool.models.run_state import RunState
+    from nodetool.models.job import Job
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    run_state = await RunState.get(run_id)
-    if not run_state:
+    job = await Job.get(run_id)
+    if not job:
         raise ValueError(f"Run state not found for run_id: {run_id}")
 
-    if not run_state.is_resumable():
-        raise ValueError(f"Run {run_id} is not resumable (status: {run_state.status})")
+    if not job.is_resumable():
+        raise ValueError(f"Run {run_id} is not resumable (status: {job.status})")
 
     manager = JobExecutionManager.get_instance()
-    success = await manager.resume_run(run_id)
+    success = await manager.resume_job(run_id)
 
     if success:
         return {
@@ -4922,11 +4909,11 @@ async def analyze_run_errors(run_id: str) -> dict[str, Any]:
     Returns:
         Error analysis including failed nodes, error messages, and suggestions
     """
+    from nodetool.models.job import Job
     from nodetool.models.run_event import RunEvent
-    from nodetool.models.run_state import RunState
 
-    run_state = await RunState.get(run_id)
-    if not run_state:
+    job = await Job.get(run_id)
+    if not job:
         raise ValueError(f"Run state not found for run_id: {run_id}")
 
     events = await RunEvent.get_events(run_id=run_id, limit=1000)
@@ -4957,17 +4944,17 @@ async def analyze_run_errors(run_id: str) -> dict[str, Any]:
         )
 
     suggestions = []
-    if run_state.status == "failed":
-        if run_state.error_message:
-            suggestions.append(f"Run failed with error: {run_state.error_message}")
+    if job.status == "failed":
+        if job.error_message:
+            suggestions.append(f"Run failed with error: {job.error_message}")
         for error in errors:
             if error["node_id"]:
                 suggestions.append(f"Node {error['node_id']} failed: {error['error']}")
 
     return {
         "run_id": run_id,
-        "status": run_state.status,
-        "error_message": run_state.error_message,
+        "status": job.status,
+        "error_message": job.error_message,
         "total_events": len(events),
         "failed_nodes": len(failed_node_events),
         "errors": errors,

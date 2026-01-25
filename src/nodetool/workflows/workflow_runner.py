@@ -39,8 +39,8 @@ from typing import Any, Optional
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.models.job import Job
 from nodetool.models.run_node_state import RunNodeState
-from nodetool.models.run_state import RunState
 from nodetool.observability.tracing import (
     get_or_create_tracer,
     remove_tracer,
@@ -313,8 +313,8 @@ class WorkflowRunner:
         if enable_event_logging:
             self.event_logger = WorkflowEventLogger(run_id=job_id)
 
-        # State table tracking (source of truth for correctness)
-        self.run_state: RunState | None = None
+        # Job model tracking (source of truth for correctness)
+        self.job_model: Job | None = None
 
         # State manager for queue-based updates (eliminates DB write contention)
         self.state_manager: StateManager | None = None
@@ -765,19 +765,23 @@ class WorkflowRunner:
             log.debug(f"Posting 'running' job update for job {self.job_id}")
             context.post_message(JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="running"))
 
-        # Create run_state (source of truth) - creates if not exists for direct runner usage
+        # Load/create job_model (source of truth) - creates if not exists for direct runner usage
         try:
-            self.run_state = await RunState.get(self.job_id)
-            if self.run_state is None:
-                self.run_state = await RunState.create_run(
-                    run_id=self.job_id,
+            self.job_model = await Job.get(self.job_id)
+            if self.job_model is None:
+                self.job_model = await Job.create(
+                    workflow_id=context.workflow_id,
+                    user_id=context.user_id,
                     execution_strategy=request.execution_strategy.value if request.execution_strategy else None,
                 )
-                log.info(f"Created run_state for {self.job_id} with status={self.run_state.status}")
+                # Override the auto-generated ID with our job_id
+                self.job_model.id = self.job_id
+                await self.job_model.save()
+                log.info(f"Created job_model for {self.job_id} with status={self.job_model.status}")
             else:
-                log.info(f"Loaded run_state for {self.job_id} with status={self.run_state.status}")
+                log.info(f"Loaded job_model for {self.job_id} with status={self.job_model.status}")
         except Exception as e:
-            log.error(f"Failed to load/create run_state: {e}")
+            log.error(f"Failed to load/create job_model: {e}")
             raise
 
         # Initialize and start StateManager (single writer for node states)
@@ -902,13 +906,13 @@ class WorkflowRunner:
                 if self.status == "running":  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
-                    # Update run_state (source of truth)
-                    if self.run_state:
+                    # Update job_model (source of truth)
+                    if self.job_model:
                         try:
-                            await self.run_state.mark_completed()
-                            log.info(f"Marked run_state as completed for {self.job_id}")
+                            await self.job_model.mark_completed()
+                            log.info(f"Marked job_model as completed for {self.job_id}")
                         except Exception as e:
-                            log.error(f"Failed to mark run_state as completed: {e}")
+                            log.error(f"Failed to mark job_model as completed: {e}")
 
                     # Send completion JobUpdate BEFORE finally block
                     # The WebSocket processor may close during finally, so send this early
@@ -929,13 +933,13 @@ class WorkflowRunner:
                 # We do not emit synthetic per-edge "drained" UI messages.
                 self.status = "cancelled"
 
-                # Update run_state (source of truth)
-                if self.run_state:
+                # Update job_model (source of truth)
+                if self.job_model:
                     try:
-                        await self.run_state.mark_cancelled()
-                        log.info(f"Marked run_state as cancelled for {self.job_id}")
+                        await self.job_model.mark_cancelled()
+                        log.info(f"Marked job_model as cancelled for {self.job_id}")
                     except Exception as e:
-                        log.error(f"Failed to mark run_state as cancelled: {e}")
+                        log.error(f"Failed to mark job_model as cancelled: {e}")
 
                 # Log RunCancelled event (audit-only, non-fatal)
                 if self.event_logger:
@@ -955,18 +959,18 @@ class WorkflowRunner:
 
                 log.info(f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}")
 
-                # Update run_state (source of truth)
-                if self.run_state:
+                # Update job_model (source of truth)
+                if self.job_model:
                     try:
-                        await self.run_state.mark_suspended(
+                        await self.job_model.mark_suspended(
                             node_id=e.node_id,
                             reason=e.reason,
                             state=e.state,
                             metadata=e.metadata,
                         )
-                        log.info(f"Marked run_state as suspended for {self.job_id} at node {e.node_id}")
+                        log.info(f"Marked job_model as suspended for {self.job_id} at node {e.node_id}")
                     except Exception as e2:
-                        log.error(f"Failed to mark run_state as suspended: {e2}")
+                        log.error(f"Failed to mark job_model as suspended: {e2}")
                         raise
 
                 # Update node_state to suspended (source of truth)
@@ -1062,13 +1066,13 @@ class WorkflowRunner:
 
                 self.status = "error"
 
-                # Update run_state (source of truth)
-                if self.run_state:
+                # Update job_model (source of truth)
+                if self.job_model:
                     try:
-                        await self.run_state.mark_failed(error=error_message_for_job_update[:1000])
-                        log.info(f"Marked run_state as failed for {self.job_id}")
+                        await self.job_model.mark_failed(error=error_message_for_job_update[:1000])
+                        log.info(f"Marked job_model as failed for {self.job_id}")
                     except Exception as e2:
-                        log.error(f"Failed to mark run_state as failed: {e2}")
+                        log.error(f"Failed to mark job_model as failed: {e2}")
 
                 # Log RunFailed event (audit-only, non-fatal)
                 if self.event_logger:
@@ -1435,9 +1439,9 @@ class WorkflowRunner:
         # Load existing node states for resumption
         node_states = {}
         log.info(
-            f"Checking for existing node states for run {self.job_id} (status={self.run_state.status if self.run_state else 'None'})"
+            f"Checking for existing node states for run {self.job_id} (status={self.job_model.status if self.job_model else 'None'})"
         )
-        if self.run_state and self.run_state.status in ["suspended", "running"]:
+        if self.job_model and self.job_model.status in ["suspended", "running"]:
             try:
                 # Query all node states for this run
                 condition = Field("run_id") == self.job_id

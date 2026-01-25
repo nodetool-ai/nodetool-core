@@ -167,34 +167,32 @@ class JobExecution(ABC):
         """
         Ensure finished jobs have their status written to the database.
 
-        This method updates RunState for status and Job for logs/finished_at.
+        This method updates Job for status, logs, and finished_at.
         """
-        from nodetool.models.run_state import RunState
+        from nodetool.models.job import Job
 
         try:
             captured_logs = self._uninstall_log_handler()
 
-            run_state = await RunState.get(self.job_id)
-            if run_state and self._status in {"completed", "failed", "cancelled"}:
-                if run_state.status != self._status:
+            # Reload job_model to get latest state
+            job = await Job.get(self.job_id)
+            if job and self._status in {"completed", "failed", "cancelled"}:
+                if job.status != self._status:
                     if self._status == "completed":
-                        await run_state.mark_completed()
+                        await job.mark_completed()
                     elif self._status == "failed":
-                        await run_state.mark_failed(error=self._error or "Unknown error")
+                        await job.mark_failed(error=self._error or "Unknown error")
                     elif self._status == "cancelled":
-                        await run_state.mark_cancelled()
+                        await job.mark_cancelled()
 
-            await self.job_model.reload()
-            update_kwargs = {}
-
-            if self.job_model.finished_at is None:
-                update_kwargs["finished_at"] = datetime.now()
-
-            if captured_logs:
-                update_kwargs["logs"] = captured_logs
-
-            if update_kwargs:
-                await self.job_model.update(**update_kwargs)
+                # Update finished_at and logs
+                update_kwargs = {}
+                if job.finished_at is None:
+                    update_kwargs["finished_at"] = datetime.now()
+                if captured_logs:
+                    update_kwargs["logs"] = captured_logs
+                if update_kwargs:
+                    await job.update(**update_kwargs)
 
         except Exception as e:
             log.exception(

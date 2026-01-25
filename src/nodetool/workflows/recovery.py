@@ -6,7 +6,7 @@ This module implements the recovery algorithm for resuming workflows after
 crashes, restarts, or interruptions using MUTABLE STATE TABLES as source of truth.
 
 IMPORTANT: This is Phase 5 of the architectural refactor. Event log is NOT used
-for correctness - all recovery decisions are based on run_state and run_node_state tables.
+for correctness - all recovery decisions are based on Job and run_node_state tables.
 """
 
 import asyncio
@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from nodetool.workflows.suspendable_node import SuspendableNode
 
 from nodetool.config.logging_config import get_logger
+from nodetool.models.job import Job
 from nodetool.models.run_lease import RunLease
 from nodetool.models.run_node_state import RunNodeState
-from nodetool.models.run_state import RunState
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -37,11 +37,11 @@ class WorkflowRecoveryService:
         self.lease_renewal_interval = 30
 
     async def can_resume(self, run_id: str) -> bool:
-        """Check if a run can be resumed by reading run_state table."""
-        run_state = await RunState.get(run_id)
-        if not run_state:
+        """Check if a run can be resumed by reading Job table."""
+        job = await Job.get(run_id)
+        if not job:
             return False
-        return run_state.status in ["running", "failed", "suspended", "paused", "recovering"]
+        return job.status in ["running", "failed", "suspended", "paused", "recovering"]
 
     async def acquire_run_lease(self, run_id: str) -> RunLease | None:
         """Acquire exclusive lease on a run."""
@@ -133,11 +133,11 @@ class WorkflowRecoveryService:
             return False, f"Run {run_id} is already being processed"
 
         try:
-            run_state = await RunState.get(run_id)
-            if not run_state:
+            job = await Job.get(run_id)
+            if not job:
                 return False, f"Run {run_id} not found"
 
-            await run_state.mark_recovering()
+            await job.mark_recovering()
             resumption_plan = await self.determine_resumption_points(run_id, graph)
 
             if not resumption_plan:
@@ -166,15 +166,15 @@ class WorkflowRecoveryService:
         from nodetool.models.condition_builder import Field
 
         condition = Field("status").equals("running")
-        adapter = await RunState.adapter()
-        runs_data, _ = await adapter.query(condition=condition, limit=1000)
+        adapter = await Job.adapter()
+        jobs_data, _ = await adapter.query(condition=condition, limit=1000)
 
-        runs = [RunState.from_dict(row) for row in runs_data]
+        jobs = [Job.from_dict(row) for row in jobs_data]
 
         stuck_runs = []
-        for run_state in runs:
-            lease = await RunLease.get(run_state.run_id)
+        for job in jobs:
+            lease = await RunLease.get(job.id)
             if not lease or lease.expires_at < datetime.now():
-                stuck_runs.append(run_state.run_id)
+                stuck_runs.append(job.id)
 
         return stuck_runs

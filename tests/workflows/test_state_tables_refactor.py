@@ -2,7 +2,7 @@
 Tests for state table operations (Phase 7 - Testing).
 
 Tests the new mutable state tables that serve as source of truth:
-- RunState
+- Job (unified model for job definition and execution state)
 - RunNodeState
 - RunInboxMessage
 - TriggerInput
@@ -13,77 +13,87 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from nodetool.models.job import Job
 from nodetool.models.run_inbox_message import RunInboxMessage
 from nodetool.models.run_node_state import RunNodeState
-from nodetool.models.run_state import RunState
 from nodetool.models.trigger_input import TriggerInput
 
 pytestmark = pytest.mark.xdist_group(name="database")
 
 
-class TestRunState:
-    """Test RunState model operations."""
+class TestJobExecutionState:
+    """Test Job model execution state operations (formerly RunState)."""
 
     @pytest.mark.asyncio
-    async def test_create_run(self):
-        """Test creating a new run state."""
-        run_id = f"test-run-{datetime.now().timestamp()}"
-        run_state = await RunState.create_run(run_id=run_id)
+    async def test_create_job(self):
+        """Test creating a new job with scheduled state."""
+        job = await Job.create(
+            workflow_id="test-workflow",
+            user_id="test-user",
+        )
 
-        assert run_state.run_id == run_id
-        assert run_state.status == "scheduled"
-        assert run_state.version == 1
+        assert job.id is not None
+        assert job.status == "scheduled"
+        assert job.version == 1
 
     @pytest.mark.asyncio
     async def test_mark_completed(self):
-        """Test marking a run as completed."""
-        run_id = f"test-run-{datetime.now().timestamp()}"
-        run_state = await RunState.create_run(run_id=run_id)
+        """Test marking a job as completed."""
+        job = await Job.create(
+            workflow_id="test-workflow",
+            user_id="test-user",
+        )
 
-        await run_state.mark_completed()
+        await job.mark_completed()
 
-        assert run_state.status == "completed"
-        assert run_state.completed_at is not None
+        assert job.status == "completed"
+        assert job.completed_at is not None
 
     @pytest.mark.asyncio
     async def test_mark_failed(self):
-        """Test marking a run as failed."""
-        run_id = f"test-run-{datetime.now().timestamp()}"
-        run_state = await RunState.create_run(run_id=run_id)
+        """Test marking a job as failed."""
+        job = await Job.create(
+            workflow_id="test-workflow",
+            user_id="test-user",
+        )
 
-        await run_state.mark_failed(error="Something went wrong")
+        await job.mark_failed(error="Something went wrong")
 
-        assert run_state.status == "failed"
-        assert run_state.error_message == "Something went wrong"
+        assert job.status == "failed"
+        assert job.error_message == "Something went wrong"
 
     @pytest.mark.asyncio
     async def test_mark_suspended(self):
-        """Test marking a run as suspended."""
-        run_id = f"test-run-{datetime.now().timestamp()}"
-        run_state = await RunState.create_run(run_id=run_id)
+        """Test marking a job as suspended."""
+        job = await Job.create(
+            workflow_id="test-workflow",
+            user_id="test-user",
+        )
 
-        await run_state.mark_suspended(
+        await job.mark_suspended(
             node_id="approval-node",
             reason="Waiting for approval",
             state={"request_id": "req-123"},
             metadata={"approver": "admin"},
         )
 
-        assert run_state.status == "suspended"
-        assert run_state.suspended_node_id == "approval-node"
-        assert run_state.suspension_reason == "Waiting for approval"
-        assert run_state.suspension_state_json == {"request_id": "req-123"}
+        assert job.status == "suspended"
+        assert job.suspended_node_id == "approval-node"
+        assert job.suspension_reason == "Waiting for approval"
+        assert job.suspension_state_json == {"request_id": "req-123"}
 
     @pytest.mark.asyncio
     async def test_optimistic_locking(self):
         """Test optimistic locking via version field."""
-        run_id = f"test-run-{datetime.now().timestamp()}"
-        run_state = await RunState.create_run(run_id=run_id)
+        job = await Job.create(
+            workflow_id="test-workflow",
+            user_id="test-user",
+        )
 
-        original_version = run_state.version
-        await run_state.mark_completed()
+        original_version = job.version
+        await job.mark_completed()
 
-        assert run_state.version > original_version
+        assert job.version > original_version
 
 
 class TestRunNodeState:
