@@ -359,6 +359,7 @@ async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}
 
+    updates = []
     for job in jobs:
         bg_job = bg_jobs.get(job.id)
 
@@ -378,7 +379,7 @@ async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
                     run_state = await RunState.get(job.id)
                     if run_state:
                         run_state.status = getattr(bg_job, "status", "completed")
-                        await run_state.save_nonblocking()
+                        await run_state.save()
                 elif bg_job.is_running():
                     # Create RunState with running status
                     await RunState.create_run(
@@ -388,7 +389,7 @@ async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
                     run_state = await RunState.get(job.id)
                     if run_state:
                         run_state.status = "running"
-                        await run_state.save_nonblocking()
+                        await run_state.save()
             else:
                 # No RunState and no background job - mark as failed
                 if current_status in {None, "scheduled", "running"}:
@@ -397,16 +398,19 @@ async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
                     if run_state:
                         run_state.status = "failed"
                         run_state.error_message = "Reconciled: execution handle missing"
-                        await run_state.save_nonblocking()
+                        await run_state.save()
         elif bg_job is not None and bg_job.is_completed():
             new_status = getattr(bg_job, "status", "completed")
             if current_status != new_status or run_state.completed_at is None:
                 run_state.status = new_status
                 run_state.error_message = run_state.error_message or bg_job.error
                 run_state.completed_at = datetime.now(UTC)
-                await run_state.save_nonblocking()
+                updates.append(run_state.save())
         elif bg_job is not None and not bg_job.is_running() and current_status in {"running", "scheduled"}:
             run_state.status = "failed"
             run_state.error_message = run_state.error_message or "Reconciled: execution handle stopped unexpectedly"
             run_state.failed_at = datetime.now(UTC)
-            await run_state.save_nonblocking()
+            updates.append(run_state.save())
+
+    if updates:
+        await asyncio.gather(*updates)
