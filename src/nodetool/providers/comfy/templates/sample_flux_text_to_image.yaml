@@ -1,0 +1,91 @@
+# Sample template mapping for testing
+# Based on a typical text-to-image workflow structure
+
+template_id: sample_flux_text_to_image
+template_name: "Sample Flux Text to Image"
+template_type: text_to_image
+description: "Sample Flux text to image workflow for testing the template loader"
+
+inputs:
+  prompt:
+    node_id: 6
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: true
+    description: "Positive prompt for image generation"
+
+  negative_prompt:
+    node_id: 7
+    node_type: CLIPTextEncode
+    input_field: text
+    input_type: STRING
+    required: false
+    default: ""
+    description: "Negative prompt for image generation"
+
+  seed:
+    node_id: 31
+    node_type: KSampler
+    input_field: seed
+    input_type: INT
+    required: false
+    default: 0
+    description: "Random seed for reproducibility"
+
+  steps:
+    node_id: 31
+    node_type: KSampler
+    input_field: steps
+    input_type: INT
+    required: false
+    default: 20
+    description: "Number of sampling steps"
+
+  cfg:
+    node_id: 31
+    node_type: KSampler
+    input_field: cfg
+    input_type: FLOAT
+    required: false
+    default: 1.0
+    description: "Classifier-free guidance scale"
+
+outputs:
+  image:
+    node_id: 9
+    node_type: SaveImage
+    output_field: images
+    output_type: IMAGE
+    description: "Generated image output"
+
+nodes:
+  "6":
+    type: CLIPTextEncode
+    class_type: CLIPTextEncode
+  "7":
+    type: CLIPTextEncode
+    class_type: CLIPTextEncode
+  "31":
+    type: KSampler
+    class_type: KSampler
+    widgets_values_order:
+      - seed
+      - "randomize"
+      - steps
+      - cfg
+      - sampler_name
+      - scheduler
+      - 1
+  "9":
+    type: SaveImage
+    class_type: SaveImage
+    filename_prefix: "ComfyUI"
+
+presets:
+  fast:
+    steps: 10
+    cfg: 1.0
+  quality:
+    steps: 30
+    cfg: 3.0
