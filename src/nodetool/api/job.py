@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Optional
 
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
+from nodetool.models.condition_builder import Field
 from nodetool.models.job import Job
 from nodetool.models.run_state import RunState
 from nodetool.workflows.job_execution_manager import JobExecutionManager
@@ -55,6 +57,20 @@ class JobListResponse(BaseModel):
     next_start_key: Optional[str] = None
 
 
+def build_run_state_response(run_state: Optional[RunState]) -> Optional[RunStateResponse]:
+    """Build RunStateResponse from a RunState instance."""
+    if not run_state:
+        return None
+    return RunStateResponse(
+        status=run_state.status,
+        suspended_node_id=run_state.suspended_node_id,
+        suspension_reason=run_state.suspension_reason,
+        error_message=run_state.error_message,
+        execution_strategy=run_state.execution_strategy,
+        is_resumable=run_state.is_resumable(),
+    )
+
+
 async def get_job_status(job_id: str, job: Job) -> str:
     """Get the authoritative status for a job from RunState."""
     try:
@@ -70,15 +86,7 @@ async def get_run_state_response(job_id: str) -> Optional[RunStateResponse]:
     """Get run state details for API response."""
     try:
         run_state = await RunState.get(job_id)
-        if run_state:
-            return RunStateResponse(
-                status=run_state.status,
-                suspended_node_id=run_state.suspended_node_id,
-                suspension_reason=run_state.suspension_reason,
-                error_message=run_state.error_message,
-                execution_strategy=run_state.execution_strategy,
-                is_resumable=run_state.is_resumable(),
-            )
+        return build_run_state_response(run_state)
     except Exception as e:
         log.debug(f"Failed to get run state for job {job_id}: {e}")
     return None
@@ -124,19 +132,32 @@ async def list_jobs(
         },
     )
 
+    # Batch fetch all RunStates to avoid N+1 query problem
+    job_ids = [job.id for job in jobs]
+    run_state_map: dict[str, RunState] = {}
+    if job_ids:
+        try:
+            run_states, _ = await RunState.query(
+                condition=Field("run_id").in_list(job_ids),
+                limit=len(job_ids),
+            )
+            run_state_map = {rs.run_id: rs for rs in run_states}
+        except Exception as e:
+            log.debug(f"Failed to batch fetch run states: {e}")
+
     return JobListResponse(
         jobs=[
             JobResponse(
                 id=job.id,
                 user_id=job.user_id,
                 job_type=job.job_type,
-                status=await get_job_status(job.id, job),
+                status=run_state.status if (run_state := run_state_map.get(job.id)) else "unknown",
                 workflow_id=job.workflow_id,
                 started_at=job.started_at,
                 finished_at=job.finished_at,
                 error=job.error,
                 cost=job.cost,
-                run_state=await get_run_state_response(job.id),
+                run_state=build_run_state_response(run_state_map.get(job.id)),
             )
             for job in jobs
         ],

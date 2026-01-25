@@ -49,6 +49,7 @@ from nodetool.ml.models.image_models import (
 )
 from nodetool.ml.models.tts_models import get_all_tts_models as get_all_tts_models_func
 from nodetool.models.asset import Asset as AssetModel
+from nodetool.models.condition_builder import Field as ConditionField
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -1339,6 +1340,7 @@ async def list_jobs(
         Dictionary containing jobs and pagination cursor.
     """
     from nodetool.models.job import Job as JobModel
+    from nodetool.models.run_state import RunState
 
     user_id = "1"
     jobs, next_start_key = await JobModel.paginate(
@@ -1348,13 +1350,26 @@ async def list_jobs(
         start_key=start_key,
     )
 
+    # Batch fetch all RunStates to avoid N+1 query problem
+    job_ids = [job.id for job in jobs]
+    run_state_map: dict[str, Any] = {}
+    if job_ids:
+        try:
+            run_states, _ = await RunState.query(
+                condition=ConditionField("run_id").in_list(job_ids),
+                limit=len(job_ids),
+            )
+            run_state_map = {rs.run_id: rs.status for rs in run_states}
+        except Exception:
+            pass
+
     return {
         "jobs": [
             {
                 "id": job.id,
                 "user_id": job.user_id,
                 "job_type": job.job_type,
-                "status": await get_job_status(job.id),
+                "status": run_state_map.get(job.id, "unknown"),
                 "workflow_id": job.workflow_id,
                 "started_at": job.started_at.isoformat() if job.started_at else "",
                 "finished_at": job.finished_at.isoformat() if job.finished_at else None,
