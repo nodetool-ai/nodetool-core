@@ -15,10 +15,17 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
-class RunStateResponse(BaseModel):
-    """Subset of Job execution state for API responses."""
-
-    status: str
+class JobResponse(BaseModel):
+    id: str
+    user_id: str
+    job_type: str
+    status: str | None
+    workflow_id: str
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error: Optional[str] = None
+    cost: Optional[float] = None
+    status: Optional[str]
     suspended_node_id: Optional[str] = None
     suspension_reason: Optional[str] = None
     error_message: Optional[str] = None
@@ -26,17 +33,6 @@ class RunStateResponse(BaseModel):
     is_resumable: bool = False
 
 
-class JobResponse(BaseModel):
-    id: str
-    user_id: str
-    job_type: str
-    status: str
-    workflow_id: str
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    error: Optional[str] = None
-    cost: Optional[float] = None
-    run_state: Optional[RunStateResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,20 +49,6 @@ class BackgroundJobResponse(BaseModel):
 class JobListResponse(BaseModel):
     jobs: list[JobResponse]
     next_start_key: Optional[str] = None
-
-
-def build_run_state_response(job: Optional[Job]) -> Optional[RunStateResponse]:
-    """Build RunStateResponse from a Job instance."""
-    if not job:
-        return None
-    return RunStateResponse(
-        status=job.status,
-        suspended_node_id=job.suspended_node_id,
-        suspension_reason=job.suspension_reason,
-        error_message=job.error_message,
-        execution_strategy=job.execution_strategy,
-        is_resumable=job.is_resumable(),
-    )
 
 
 @router.get("/", response_model=JobListResponse)
@@ -88,10 +70,10 @@ async def list_jobs(
     Returns:
         List of jobs
     """
-    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    one_day_ago = datetime.now(UTC) - timedelta(hours=24)
 
     jobs, next_start_key = await Job.paginate(
-        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key, started_after=one_hour_ago
+        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key, started_after=one_day_ago
     )
 
     log.info(
@@ -119,7 +101,11 @@ async def list_jobs(
                 finished_at=job.finished_at,
                 error=job.error,
                 cost=job.cost,
-                run_state=build_run_state_response(job),
+                suspended_node_id=job.suspended_node_id,
+                suspension_reason=job.suspension_reason,
+                error_message=job.error_message,
+                execution_strategy=job.execution_strategy,
+                is_resumable=job.is_resumable(),
             )
             for job in jobs
         ],
@@ -155,7 +141,11 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
         finished_at=job.finished_at,
         error=job.error,
         cost=job.cost,
-        run_state=build_run_state_response(job),
+        suspended_node_id=job.suspended_node_id,
+        suspension_reason=job.suspension_reason,
+        error_message=job.error_message,
+        execution_strategy=job.execution_strategy,
+        is_resumable=job.is_resumable(),
     )
 
 

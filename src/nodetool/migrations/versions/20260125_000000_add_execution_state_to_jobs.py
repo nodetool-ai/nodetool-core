@@ -19,6 +19,7 @@ async def up(db: "MigrationDBAdapter") -> None:
     """Add execution state columns to nodetool_jobs table."""
     # These columns are from the RunState model that we're merging into Job
     columns = [
+        ("status", "TEXT"),
         ("updated_at", "TEXT"),
         ("suspended_node_id", "TEXT"),
         ("suspension_reason", "TEXT"),
@@ -61,6 +62,7 @@ async def down(db: "MigrationDBAdapter") -> None:
 
     # Drop columns (if SQLite >= 3.35 supports it)
     columns = [
+        "status",
         "version",
         "metadata_json",
         "max_retries",

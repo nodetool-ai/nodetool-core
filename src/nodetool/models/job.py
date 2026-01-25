@@ -56,8 +56,8 @@ class Job(DBModel):
     logs: list[dict] | None = DBField(default=None)
 
     # Fields from RunState - execution state
-    status: str = DBField(default="scheduled")  # scheduled | running | suspended | completed | failed | cancelled | recovering
-    updated_at: datetime = DBField(default_factory=datetime.now)
+    status: str | None = DBField(default="scheduled")  # scheduled | running | suspended | completed | failed | cancelled | recovering
+    updated_at: datetime | None = DBField(default=None)
 
     # Suspension state (populated when status=suspended)
     suspended_node_id: str | None = DBField(default=None)
@@ -149,6 +149,8 @@ class Job(DBModel):
             items, key = await cls.query(
                 Field("workflow_id").equals(workflow_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
+                order_by="started_at",
+                reverse=True,
                 columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
             )
             return items, key
@@ -156,12 +158,16 @@ class Job(DBModel):
             items, key = await cls.query(
                 Field("user_id").equals(user_id).and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
+                order_by="started_at",
+                reverse=True,
                 columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
             )
             return items, key
         elif started_after:
             items, key = await cls.query(
                 Field("started_at").greater_than(started_after).and_(Field("id").greater_than(start_key or "")),
+                order_by="started_at",
+                reverse=True,
                 limit=limit,
                 columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
             )

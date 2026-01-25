@@ -169,6 +169,7 @@ class DBModel(BaseModel):
         cls,
         condition: ConditionBuilder | None = None,
         limit: int = 100,
+        order_by: str | None = None,
         reverse: bool = False,
         columns: list[str] | None = None,
     ):
@@ -180,6 +181,7 @@ class DBModel(BaseModel):
         Args:
             condition: The condition for the query.
             limit: The maximum number of items to retrieve.
+            order_by: The column to order the results by.
             reverse: Whether to reverse the order of the results.
             columns: The columns to retrieve.
 
@@ -190,6 +192,7 @@ class DBModel(BaseModel):
         items, key = await adapter.query(
             condition=condition,
             limit=limit,
+            order_by=order_by,
             reverse=reverse,
             columns=columns,
         )
