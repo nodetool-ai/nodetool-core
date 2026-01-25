@@ -9,6 +9,7 @@ that nodes typically interact with via the ProcessingContext.
 from __future__ import annotations
 
 import io
+import json
 import queue
 import uuid
 from dataclasses import dataclass, field
@@ -157,8 +158,6 @@ class MockHttpClient:
         mock_resp = self._find_response(url)
         content = mock_resp.content
         if mock_resp.json_data is not None:
-            import json
-
             content = json.dumps(mock_resp.json_data).encode()
 
         return httpx.Response(

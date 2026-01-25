@@ -7,7 +7,8 @@ Provides assertion helpers for workflow test results.
 
 from __future__ import annotations
 
-from typing import Any, Type
+import re
+from typing import Any, Callable, Type
 
 
 def assert_output(
@@ -87,7 +88,7 @@ def assert_output_type(
 def assert_output_value(
     result: dict[str, Any],
     node_name: str,
-    check_fn: callable,
+    check_fn: Callable[[Any], bool],
     message: str | None = None,
 ) -> None:
     """
@@ -257,8 +258,6 @@ def assert_output_matches(
         result = await run_workflow_test(text_node)
         assert_output_matches(result, "FormatText", r"Hello, \\w+!")
     """
-    import re
-
     if node_name not in result:
         available = list(result.keys())
         raise AssertionError(
