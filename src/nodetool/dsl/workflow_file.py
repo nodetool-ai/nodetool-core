@@ -48,7 +48,15 @@ from typing import Any
 
 from nodetool.types.api_graph import Graph as ApiGraph
 
-from .export import _literal, _sanitize_ident, _snake_case, _split_type, _topo_order
+from .export import (
+    _dynamic_outputs_literal,
+    _literal,
+    _map_api_key_to_dsl_arg,
+    _sanitize_ident,
+    _snake_case,
+    _split_type,
+    _topo_order,
+)
 
 
 @dataclass
@@ -228,7 +236,7 @@ def _ast_to_value(node: ast.expr) -> Any:
     elif isinstance(node, ast.Dict):
         keys = [_ast_to_value(k) if k else None for k in node.keys]
         values = [_ast_to_value(v) for v in node.values]
-        return dict(zip(keys, values, strict=False))
+        return dict(zip(keys, values, strict=True))
     elif isinstance(node, ast.Tuple):
         return tuple(_ast_to_value(elt) for elt in node.elts)
     elif isinstance(node, ast.Set):
@@ -378,8 +386,6 @@ def workflow_file_to_py(
             kwargs.append(f"sync_mode={_literal(sync_mode)}")
 
         if node.dynamic_outputs:
-            from .export import _dynamic_outputs_literal
-
             dyn = _dynamic_outputs_literal(dict(node.dynamic_outputs))
             kwargs.append(f"dynamic_outputs={dyn}")
 
@@ -388,8 +394,6 @@ def workflow_file_to_py(
         for key, value in data.items():
             if key in used_keys:
                 continue
-            from .export import _map_api_key_to_dsl_arg
-
             kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}")
 
         dyn_props_attr = node.dynamic_properties or {}
@@ -397,8 +401,6 @@ def workflow_file_to_py(
         for key, value in dyn_props.items():
             if key in used_keys:
                 continue
-            from .export import _map_api_key_to_dsl_arg
-
             kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(key))}={_literal(value)}")
 
         for handle, edge in sorted(incoming_edges.items()):
@@ -409,7 +411,6 @@ def workflow_file_to_py(
                 src_expr = f"{src_var}.output"
             else:
                 src_expr = f"{src_var}.out[{_literal(edge.sourceHandle)}]"
-            from .export import _map_api_key_to_dsl_arg
 
             kwargs.append(f"{_sanitize_ident(_map_api_key_to_dsl_arg(handle))}={src_expr}")
 
