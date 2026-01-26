@@ -25,8 +25,8 @@ from supabase import AsyncClient, create_async_client
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
-from nodetool.config.settings import get_system_data_path
 from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_system_data_path
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.chat_workflow_message_processor import (
     ChatWorkflowMessageProcessor,
@@ -412,7 +412,8 @@ class BaseChatRunner(ABC):
         last_message = chat_history[-1]
         # Set up workspace directory for agent mode
         thread_id = last_message.thread_id or "default"
-        workspace_path = get_system_data_path("agent_workspaces") / self.user_id / thread_id
+        user_id = self.user_id or "default"
+        workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
         workspace_path.mkdir(parents=True, exist_ok=True)
 
         processing_context = ProcessingContext(
@@ -485,7 +486,8 @@ class BaseChatRunner(ABC):
 
         # Set up workspace directory for agent mode
         thread_id = last_message.thread_id or "default"
-        workspace_path = get_system_data_path("agent_workspaces") / self.user_id / thread_id
+        user_id = self.user_id or "default"
+        workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
         workspace_path.mkdir(parents=True, exist_ok=True)
 
         processing_context = ProcessingContext(
