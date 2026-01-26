@@ -1,9 +1,6 @@
 """Tests for environment configuration security features."""
 
-import os
 from unittest.mock import patch
-
-import pytest
 
 from nodetool.config.environment import Environment
 
