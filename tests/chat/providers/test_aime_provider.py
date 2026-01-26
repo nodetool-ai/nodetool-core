@@ -8,7 +8,7 @@ This test suite verifies that the AIME provider correctly:
 - Supports streaming and non-streaming completions via progress polling
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

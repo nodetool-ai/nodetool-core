@@ -10,7 +10,6 @@ AIME API Documentation: https://www.aime.info/api
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
