@@ -3,6 +3,7 @@ import time
 from typing import Any, ClassVar, TypeVar
 
 from nodetool.agents.serp_providers.apify_provider import ApifyProvider
+from nodetool.agents.serp_providers.brave_search_provider import BraveSearchProvider
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
@@ -522,7 +523,7 @@ async def _get_configured_serp_provider(
     """
     Selects and returns a configured SERP provider based on environment variables.
     If SERP_PROVIDER setting is defined, uses that specific provider.
-    Otherwise, auto-selects based on available API keys (SerpApi > Apify > DataForSEO).
+    Otherwise, auto-selects based on available API keys (SerpApi > Brave Search > DataForSEO).
 
     Returns:
         A tuple containing an instance of a SerpProvider and None if successful,
@@ -534,6 +535,7 @@ async def _get_configured_serp_provider(
 
     serpapi_key = await context.get_secret("SERPAPI_API_KEY")
     apify_key = await context.get_secret("APIFY_API_KEY")
+    brave_api_key = await context.get_secret("BRAVE_API_KEY")
     d4seo_login = await context.get_secret("DATA_FOR_SEO_LOGIN")
     d4seo_password = await context.get_secret("DATA_FOR_SEO_PASSWORD")
 
@@ -550,23 +552,34 @@ async def _get_configured_serp_provider(
                 return ApifyProvider(api_key=apify_key), None
             else:
                 return None, {"error": "SERP_PROVIDER is set to 'apify' but APIFY_API_KEY is not configured."}
+        elif serp_provider == "brave":
+            if brave_api_key:
+                return BraveSearchProvider(api_key=brave_api_key), None
+            else:
+                return None, {"error": "SERP_PROVIDER is set to 'brave' but BRAVE_API_KEY is not configured."}
         elif serp_provider == "dataforseo":
             if d4seo_login and d4seo_password:
                 return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
             else:
-                return None, {"error": "SERP_PROVIDER is set to 'dataforseo' but DATA_FOR_SEO_LOGIN and/or DATA_FOR_SEO_PASSWORD are not configured."}
+                return None, {
+                    "error": "SERP_PROVIDER is set to 'dataforseo' but DATA_FOR_SEO_LOGIN and/or DATA_FOR_SEO_PASSWORD are not configured."
+                }
         else:
-            return None, {"error": f"Invalid SERP_PROVIDER value '{serp_provider}'. Valid options are: 'serpapi', 'apify', 'dataforseo'."}
+            return None, {
+                "error": f"Invalid SERP_PROVIDER value '{serp_provider}'. Valid options are: 'serpapi', 'apify', 'brave', 'dataforseo'."
+            }
 
-    # Auto-select based on available API keys (SerpApi > Apify > DataForSEO)
+    # Auto-select based on available API keys (SerpApi > Brave Search > DataForSEO)
     if serpapi_key:
         return SerpApiProvider(api_key=serpapi_key), None
-    elif apify_key:
-        return ApifyProvider(api_key=apify_key), None
+    elif brave_api_key:
+        return BraveSearchProvider(api_key=brave_api_key), None
     elif d4seo_login and d4seo_password:
         return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
-        return None, {"error": "No SERP provider is configured. Please set credentials for SerpApi, Apify, or DataForSEO."}
+        return None, {
+            "error": "No SERP provider is configured. Please set credentials for SerpApi, Brave Search, or DataForSEO."
+        }
 
 
 if __name__ == "__main__":
