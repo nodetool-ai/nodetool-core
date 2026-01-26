@@ -28,6 +28,7 @@ def sample_global_config() -> GlobalConfig:
         connect_mode="docker_dns",
         http_redirect_to_https=True,
         log_level="INFO",
+        trusted_proxies=[],
     )
 
 
@@ -87,6 +88,7 @@ def config_yaml_content(sample_proxy_config: ProxyConfig) -> str:
             "connect_mode": sample_proxy_config.global_.connect_mode,
             "http_redirect_to_https": sample_proxy_config.global_.http_redirect_to_https,
             "log_level": sample_proxy_config.global_.log_level,
+            "trusted_proxies": sample_proxy_config.global_.trusted_proxies,
         },
         "services": [
             {

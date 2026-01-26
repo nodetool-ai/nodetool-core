@@ -4,6 +4,7 @@ Configuration loader and validator for the async reverse proxy.
 Handles loading YAML configuration files and validating service/global settings.
 """
 
+import ipaddress
 import os
 from pathlib import Path
 from typing import ClassVar, Literal, Optional
@@ -72,6 +73,14 @@ class GlobalConfig(BaseModel):
         "docker_dns", description="How proxy connects to services (Docker DNS or host port)"
     )
     http_redirect_to_https: bool = Field(True, description="Redirect HTTP to HTTPS (except ACME paths)")
+    trusted_proxies: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of trusted proxy IP addresses or CIDR ranges. "
+            "When a request comes from a trusted proxy, the real client IP "
+            "is extracted from X-Forwarded-For header. Empty list means no proxies are trusted."
+        ),
+    )
 
     @field_validator("bearer_token")
     @classmethod
@@ -80,6 +89,23 @@ class GlobalConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("bearer_token cannot be empty")
         return v.strip()
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def validate_trusted_proxies(cls, v: list[str]) -> list[str]:
+        """Validate that all entries are valid IP addresses or CIDR ranges."""
+        validated = []
+        for entry in v:
+            entry = entry.strip()
+            if not entry:
+                continue
+            try:
+                # Try parsing as network (covers both single IPs and CIDR notation)
+                ipaddress.ip_network(entry, strict=False)
+                validated.append(entry)
+            except ValueError as e:
+                raise ValueError(f"Invalid IP address or CIDR range: {entry!r}") from e
+        return validated
 
 
 class ProxyConfig(BaseModel):
@@ -190,4 +216,101 @@ def load_config_with_env(config_path: str) -> ProxyConfig:
             "yes",
         }
 
+    # PROXY_GLOBAL_TRUSTED_PROXIES: comma-separated list of IPs or CIDR ranges
+    env_trusted_proxies = os.getenv("PROXY_GLOBAL_TRUSTED_PROXIES")
+    if env_trusted_proxies:
+        proxies = [p.strip() for p in env_trusted_proxies.split(",") if p.strip()]
+        # Validate each entry
+        validated_proxies = []
+        for proxy in proxies:
+            try:
+                ipaddress.ip_network(proxy, strict=False)
+                validated_proxies.append(proxy)
+            except ValueError:
+                # Skip invalid entries (or could raise - skip for resilience)
+                pass
+        config.global_.trusted_proxies = validated_proxies
+
     return config
+
+
+def is_ip_trusted(client_ip: str, trusted_proxies: list[str]) -> bool:
+    """
+    Check if a client IP is in the list of trusted proxies.
+
+    Args:
+        client_ip: The IP address to check (from request.client.host).
+        trusted_proxies: List of trusted IP addresses or CIDR ranges.
+
+    Returns:
+        True if the client IP is trusted, False otherwise.
+    """
+    if not trusted_proxies:
+        return False
+
+    try:
+        client_addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+
+    for proxy in trusted_proxies:
+        try:
+            network = ipaddress.ip_network(proxy, strict=False)
+            if client_addr in network:
+                return True
+        except ValueError:
+            continue
+
+    return False
+
+
+def get_real_client_ip(
+    request_client_ip: str,
+    x_forwarded_for: Optional[str],
+    trusted_proxies: list[str],
+) -> str:
+    """
+    Extract the real client IP address, considering trusted proxies.
+
+    When the request comes from a trusted proxy, the real client IP is extracted
+    from the X-Forwarded-For header. The rightmost IP that is NOT a trusted proxy
+    is considered the real client IP.
+
+    Security note: X-Forwarded-For can be spoofed by clients. Only trust this header
+    when the immediate connecting IP (request_client_ip) is in the trusted_proxies list.
+
+    Args:
+        request_client_ip: The immediate client IP from the connection (request.client.host).
+        x_forwarded_for: Value of the X-Forwarded-For header (comma-separated IPs).
+        trusted_proxies: List of trusted proxy IP addresses or CIDR ranges.
+
+    Returns:
+        The real client IP address.
+    """
+    # If no trusted proxies configured, always use the direct client IP
+    if not trusted_proxies:
+        return request_client_ip
+
+    # If the connecting IP is not trusted, don't trust X-Forwarded-For
+    if not is_ip_trusted(request_client_ip, trusted_proxies):
+        return request_client_ip
+
+    # If no X-Forwarded-For header, use the direct client IP
+    if not x_forwarded_for:
+        return request_client_ip
+
+    # Parse X-Forwarded-For header (format: "client, proxy1, proxy2")
+    # IPs are in order from original client to most recent proxy
+    forwarded_ips = [ip.strip() for ip in x_forwarded_for.split(",") if ip.strip()]
+
+    if not forwarded_ips:
+        return request_client_ip
+
+    # Walk backwards through the chain to find the first non-trusted IP
+    # This is the rightmost IP that is not a known proxy
+    for ip in reversed(forwarded_ips):
+        if not is_ip_trusted(ip, trusted_proxies):
+            return ip
+
+    # All IPs in the chain are trusted proxies, use the leftmost (original) IP
+    return forwarded_ips[0]
