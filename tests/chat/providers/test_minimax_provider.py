@@ -268,3 +268,147 @@ class TestMiniMaxProviderInit:
     def test_base_url_constant(self):
         """Test MINIMAX_BASE_URL constant."""
         assert MINIMAX_BASE_URL == "https://api.minimax.io/anthropic"
+
+
+class TestMiniMaxImageGeneration:
+    """Test suite for MiniMax image generation functionality."""
+
+    @pytest.fixture
+    def provider(self):
+        """Create a MiniMax provider instance for testing."""
+        return MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-api-key"})
+
+    @pytest.mark.asyncio
+    async def test_get_available_image_models(self, provider):
+        """Test get_available_image_models returns known models."""
+        from nodetool.providers.minimax_provider import MINIMAX_IMAGE_MODELS
+
+        models = await provider.get_available_image_models()
+        assert len(models) == len(MINIMAX_IMAGE_MODELS)
+        assert models[0].id == "image-01"
+        assert models[0].name == "MiniMax Image-01"
+        assert models[0].provider.value == "minimax"
+
+    @pytest.mark.asyncio
+    async def test_get_available_image_models_no_api_key(self):
+        """Test get_available_image_models returns empty list without API key."""
+        # Create provider with empty api_key
+        provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
+        provider.api_key = ""  # Ensure api_key is empty
+        models = await provider.get_available_image_models()
+        assert models == []
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_empty_prompt(self, provider):
+        """Test text_to_image raises ValueError for empty prompt."""
+        from nodetool.metadata.types import ImageModel, Provider
+        from nodetool.providers.types import TextToImageParams
+
+        params = TextToImageParams(
+            model=ImageModel(id="image-01", name="MiniMax Image-01", provider=Provider.MiniMax),
+            prompt="",
+        )
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            await provider.text_to_image(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_no_api_key(self):
+        """Test text_to_image raises ValueError without API key."""
+        from nodetool.metadata.types import ImageModel, Provider
+        from nodetool.providers.types import TextToImageParams
+
+        provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
+        provider.api_key = ""
+
+        params = TextToImageParams(
+            model=ImageModel(id="image-01", name="MiniMax Image-01", provider=Provider.MiniMax),
+            prompt="A beautiful sunset",
+        )
+
+        with pytest.raises(ValueError, match="MINIMAX_API_KEY is required"):
+            await provider.text_to_image(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_success(self, provider):
+        """Test successful text_to_image generation with mocked API."""
+        import base64
+
+        from nodetool.metadata.types import ImageModel, Provider
+        from nodetool.providers.types import TextToImageParams
+
+        # Create test image data
+        test_image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        test_image_b64 = base64.b64encode(test_image_bytes).decode()
+
+        mock_response = {"data": [{"b64_image": test_image_b64}]}
+
+        params = TextToImageParams(
+            model=ImageModel(id="image-01", name="MiniMax Image-01", provider=Provider.MiniMax),
+            prompt="A beautiful sunset over the ocean",
+            width=1024,
+            height=1024,
+        )
+
+        # Create proper async mock for aiohttp
+        class MockResponse:
+            status = 200
+
+            async def json(self):
+                return mock_response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def post(self, url, json, headers):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            result = await provider.text_to_image(params)
+            # Verify we get the expected image bytes back
+            assert result == test_image_bytes
+
+    def test_calculate_aspect_ratio_square(self, provider):
+        """Test aspect ratio calculation for square images."""
+        assert provider._calculate_aspect_ratio(1024, 1024) == "1:1"
+
+    def test_calculate_aspect_ratio_16_9(self, provider):
+        """Test aspect ratio calculation for 16:9 images."""
+        assert provider._calculate_aspect_ratio(1920, 1080) == "16:9"
+
+    def test_calculate_aspect_ratio_9_16(self, provider):
+        """Test aspect ratio calculation for 9:16 images."""
+        assert provider._calculate_aspect_ratio(1080, 1920) == "9:16"
+
+    def test_calculate_aspect_ratio_4_3(self, provider):
+        """Test aspect ratio calculation for 4:3 images."""
+        assert provider._calculate_aspect_ratio(1600, 1200) == "4:3"
+
+    def test_calculate_aspect_ratio_3_4(self, provider):
+        """Test aspect ratio calculation for 3:4 images."""
+        assert provider._calculate_aspect_ratio(1200, 1600) == "3:4"
+
+    def test_calculate_aspect_ratio_unknown(self, provider):
+        """Test aspect ratio calculation returns None for non-standard ratios."""
+        # 5:8 ratio is not in the common ratios (0.625, which is far from any standard ratio)
+        result = provider._calculate_aspect_ratio(500, 800)
+        assert result is None
+
+    def test_image_api_url_constant(self):
+        """Test MINIMAX_IMAGE_API_URL constant."""
+        from nodetool.providers.minimax_provider import MINIMAX_IMAGE_API_URL
+
+        assert MINIMAX_IMAGE_API_URL == "https://api.minimax.io/v1/text_to_image"
