@@ -93,7 +93,12 @@ class GlobalConfig(BaseModel):
     @field_validator("trusted_proxies")
     @classmethod
     def validate_trusted_proxies(cls, v: list[str]) -> list[str]:
-        """Validate that all entries are valid IP addresses or CIDR ranges."""
+        """Validate that all entries are valid IP addresses or CIDR ranges.
+
+        Note: CIDR ranges are parsed with strict=False, which means that
+        '192.168.1.5/24' is treated as '192.168.1.0/24' (the entire subnet).
+        Single IP addresses like '10.0.0.1' are valid and treated as /32.
+        """
         validated = []
         for entry in v:
             entry = entry.strip()
@@ -101,6 +106,7 @@ class GlobalConfig(BaseModel):
                 continue
             try:
                 # Try parsing as network (covers both single IPs and CIDR notation)
+                # strict=False allows single IPs and normalizes network addresses
                 ipaddress.ip_network(entry, strict=False)
                 validated.append(entry)
             except ValueError as e:
@@ -217,17 +223,18 @@ def load_config_with_env(config_path: str) -> ProxyConfig:
         }
 
     # PROXY_GLOBAL_TRUSTED_PROXIES: comma-separated list of IPs or CIDR ranges
+    # Note: Uses strict=False so single IPs and network ranges are both accepted.
+    # Invalid entries are silently skipped for resilience during startup.
     env_trusted_proxies = os.getenv("PROXY_GLOBAL_TRUSTED_PROXIES")
     if env_trusted_proxies:
         proxies = [p.strip() for p in env_trusted_proxies.split(",") if p.strip()]
-        # Validate each entry
         validated_proxies = []
         for proxy in proxies:
             try:
                 ipaddress.ip_network(proxy, strict=False)
                 validated_proxies.append(proxy)
             except ValueError:
-                # Skip invalid entries (or could raise - skip for resilience)
+                # Skip invalid entries for resilience during startup
                 pass
         config.global_.trusted_proxies = validated_proxies
 
@@ -241,6 +248,8 @@ def is_ip_trusted(client_ip: str, trusted_proxies: list[str]) -> bool:
     Args:
         client_ip: The IP address to check (from request.client.host).
         trusted_proxies: List of trusted IP addresses or CIDR ranges.
+            Uses strict=False for network parsing, so single IPs and
+            CIDR ranges are both accepted.
 
     Returns:
         True if the client IP is trusted, False otherwise.
@@ -255,6 +264,7 @@ def is_ip_trusted(client_ip: str, trusted_proxies: list[str]) -> bool:
 
     for proxy in trusted_proxies:
         try:
+            # strict=False allows both single IPs (10.0.0.1) and CIDR notation
             network = ipaddress.ip_network(proxy, strict=False)
             if client_addr in network:
                 return True
