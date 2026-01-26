@@ -115,7 +115,7 @@ class BaseChatRunner(ABC):
         """
         pass
 
-    def _db_message_to_metadata_message(self, db_message: DBMessage) -> ApiMessage:
+    async def _db_message_to_metadata_message(self, db_message: DBMessage) -> ApiMessage:
         """
         Convert a database Message to a metadata Message.
 
@@ -134,9 +134,13 @@ class BaseChatRunner(ABC):
                 log.warning(f"Failed to convert graph to Graph object: {e}")
                 graph_obj = None
 
-        content = getattr(db_message, "content", None)
-        if content is None:
-            content = getattr(db_message, "instructions", None)
+        # Get decrypted content if available
+        if hasattr(db_message, "get_decrypted_content"):
+            content = await db_message.get_decrypted_content()
+        else:
+            content = getattr(db_message, "content", None)
+            if content is None:
+                content = getattr(db_message, "instructions", None)
 
         return ApiMessage(
             id=db_message.id,
@@ -242,8 +246,8 @@ class BaseChatRunner(ABC):
             # Only user, assistant, system (non-execution), and tool messages should be included
             filtered_messages = [db_msg for db_msg in db_messages if db_msg.role != "agent_execution"]
 
-            # Convert database messages to metadata messages
-            chat_history = [self._db_message_to_metadata_message(db_msg) for db_msg in filtered_messages]
+            # Convert database messages to metadata messages (with decryption)
+            chat_history = [await self._db_message_to_metadata_message(db_msg) for db_msg in filtered_messages]
             log.debug(
                 f"Fetched {len(filtered_messages)} messages from database for thread {thread_id} "
                 f"(filtered {len(db_messages) - len(filtered_messages)} agent_execution messages)"
