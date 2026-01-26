@@ -6,6 +6,7 @@ A workflow file is a Python module that defines:
 - Module-level docstring with background and context
 - Top-level variables for workflow attributes (name, description, tags, etc.)
 - A `graph` variable containing the workflow graph created from DSL nodes
+- A one-line `run(graph)` call to make the file executable
 
 Example workflow file structure:
 ```python
@@ -34,7 +35,19 @@ input_node = TextInput(value="Sample text")
 sentiment_node = Sentiment(text=input_node.output)
 
 graph = graph(input_node, sentiment_node)
+
+# Make this file executable
+if __name__ == '__main__':
+    from nodetool.dsl.workflow_file import run
+    run(graph)
 ```
+
+The workflow can then be executed from the command line:
+```bash
+python my_workflow.py --text "Analyze this text"
+```
+
+Input nodes are automatically converted to CLI arguments.
 """
 
 from __future__ import annotations
@@ -424,6 +437,13 @@ def workflow_file_to_py(
     lines.append(f"graph = graph({all_vars})")
     lines.append("")
 
+    # Add the run helper for CLI execution
+    lines.append("# Make this file executable")
+    lines.append("if __name__ == '__main__':")
+    lines.append("    from nodetool.dsl.workflow_file import run")
+    lines.append("    run(graph)")
+    lines.append("")
+
     return "\n".join(lines)
 
 
@@ -480,9 +500,139 @@ def workflow_to_workflow_file(workflow: WorkflowFile | Any) -> str:
         )
 
 
+def run(graph_or_workflow: ApiGraph | Any) -> None:
+    """
+    Execute a workflow with command-line argument support.
+
+    This function provides a one-line entry point for making workflow files
+    executable. It automatically:
+    - Parses command-line arguments based on input nodes in the graph
+    - Maps arguments to workflow inputs based on their names and types
+    - Runs the workflow and prints results
+
+    Usage in workflow file:
+    ```python
+    from nodetool.dsl.workflow_file import run
+
+    # ... define your graph ...
+
+    if __name__ == "__main__":
+        run(graph)
+    ```
+
+    Then execute from command line:
+    ```bash
+    python my_workflow.py --input_text "Hello" --count 5
+    ```
+
+    Args:
+        graph_or_workflow: Either an ApiGraph or an object with a `graph` attribute
+    """
+    import argparse
+    import asyncio
+
+    from nodetool.dsl.graph import run_graph_async
+    from nodetool.runtime.resources import ResourceScope
+
+    # Extract graph from workflow object if needed
+    if isinstance(graph_or_workflow, ApiGraph):
+        graph = graph_or_workflow
+    elif hasattr(graph_or_workflow, "graph") and isinstance(graph_or_workflow.graph, ApiGraph):
+        graph = graph_or_workflow.graph
+    else:
+        raise TypeError(
+            f"Expected ApiGraph or object with 'graph' attribute, got {type(graph_or_workflow).__name__}"
+        )
+
+    # Build argument parser from input nodes
+    parser = argparse.ArgumentParser(
+        description="Run this workflow with the specified inputs."
+    )
+
+    # Find input nodes and create CLI arguments
+    input_nodes: dict[str, dict[str, Any]] = {}
+    for node in graph.nodes:
+        if node.type.startswith("nodetool.input."):
+            input_type = node.type.split(".")[-1]
+            input_name = node.data.get("name", node.id)
+            default_value = node.data.get("value")
+
+            input_nodes[input_name] = {
+                "node_id": node.id,
+                "type": input_type,
+                "default": default_value,
+            }
+
+            # Add argument to parser based on type
+            arg_name = f"--{input_name}"
+            help_text = node.data.get("label", "") or f"{input_type} input"
+
+            if input_type == "BooleanInput":
+                parser.add_argument(
+                    arg_name,
+                    type=lambda x: x.lower() in ("true", "1", "yes"),
+                    default=default_value,
+                    help=help_text,
+                )
+            elif input_type == "IntegerInput":
+                parser.add_argument(
+                    arg_name,
+                    type=int,
+                    default=default_value,
+                    help=help_text,
+                )
+            elif input_type == "FloatInput":
+                parser.add_argument(
+                    arg_name,
+                    type=float,
+                    default=default_value,
+                    help=help_text,
+                )
+            elif input_type == "StringInput":
+                parser.add_argument(
+                    arg_name,
+                    type=str,
+                    default=default_value,
+                    help=help_text,
+                )
+            else:
+                # For other input types (Image, Audio, Video, Document),
+                # accept file paths as strings
+                parser.add_argument(
+                    arg_name,
+                    type=str,
+                    default=str(default_value) if default_value else None,
+                    help=help_text,
+                )
+
+    args = parser.parse_args()
+
+    # Update graph nodes with CLI argument values
+    for input_name, node_info in input_nodes.items():
+        arg_value = getattr(args, input_name, None)
+        if arg_value is not None:
+            # Find and update the node's data
+            for node in graph.nodes:
+                if node.id == node_info["node_id"]:
+                    node.data["value"] = arg_value
+                    break
+
+    # Run the workflow
+    async def _run():
+        async with ResourceScope():
+            result = await run_graph_async(graph)
+            if result:
+                print("\n--- Workflow Results ---")
+                for key, value in result.items():
+                    print(f"{key}: {value}")
+
+    asyncio.run(_run())
+
+
 __all__ = [
     "WorkflowFile",
     "load_workflow_file",
+    "run",
     "workflow_file_to_py",
     "workflow_to_workflow_file",
 ]
