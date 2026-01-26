@@ -11,6 +11,7 @@ Authentication: https://docs.together.ai/reference/authentication
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
@@ -165,8 +166,11 @@ class TogetherProvider(OpenAIProvider):
                     )
                 log.debug(f"Fetched {len(models)} Together AI models")
                 return models
-        except Exception as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             log.error(f"Error fetching Together AI models: {e}")
+            return []
+        except Exception as e:
+            log.error(f"Unexpected error fetching Together AI models: {e}")
             return []
 
     async def generate_message(  # type: ignore[override]
