@@ -327,6 +327,7 @@ def create_app(
     setup_ollama_url()
 
     # Run startup security checks to warn about insecure configurations
+    # Import is local to avoid circular imports (security module imports config which may import api)
     from nodetool.security.startup_checks import run_startup_security_checks
 
     run_startup_security_checks(raise_on_critical=False)

@@ -80,7 +80,7 @@ def check_debug_mode() -> SecurityWarning | None:
 
     if Environment.is_production():
         debug_value = os.environ.get("DEBUG", "")
-        if debug_value and debug_value.lower() not in ("0", "false", "no", "off", ""):
+        if debug_value and debug_value.lower() not in ("0", "false", "no", "off"):
             return SecurityWarning(
                 message=(
                     "DEBUG mode is enabled in production. "
@@ -128,7 +128,7 @@ def check_terminal_websocket() -> SecurityWarning | None:
 
     # Terminal is enabled by default in dev, check if explicitly enabled in production
     if Environment.is_production():
-        if terminal_enabled and terminal_enabled.lower() not in ("0", "false", "no", "off", ""):
+        if terminal_enabled and terminal_enabled.lower() not in ("0", "false", "no", "off"):
             return SecurityWarning(
                 message=(
                     "Terminal WebSocket is configured as enabled (NODETOOL_ENABLE_TERMINAL_WS=1). "
