@@ -319,6 +319,18 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="MESHY_API_KEY",
+    group="Meshy",
+    description="Meshy AI API key for 3D model generation (text-to-3D, image-to-3D)",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="RODIN_API_KEY",
+    group="Rodin",
+    description="Rodin AI API key for 3D model generation",
+)
+register_secret(
+    package_name="nodetool",
     env_var="GITHUB_CLIENT_ID",
     group="GitHub",
     description="GitHub OAuth App Client ID for OAuth PKCE authentication flow",
