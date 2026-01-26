@@ -190,22 +190,23 @@ class TestMistralProvider:
     @pytest.mark.asyncio
     async def test_get_available_embedding_models_no_api_key(self):
         """Test that Mistral returns empty list when no API key is configured."""
-        # Create provider without API key by patching the assertion
-        provider = MistralProvider.__new__(MistralProvider)
-        provider.api_key = None
-        provider.client = None
-        provider.cost = 0.0
+        # Create provider with API key then set it to None for testing
+        with patch.object(MistralProvider, "__init__", lambda self, secrets: None):
+            provider = MistralProvider(secrets={})
+            provider.api_key = None
+            provider.client = None
+            provider.cost = 0.0
 
-        models = await provider.get_available_embedding_models()
-        assert models == []
+            models = await provider.get_available_embedding_models()
+            assert models == []
 
     @pytest.mark.asyncio
     async def test_generate_embedding_single_text(self):
         """Test generating embedding for a single text."""
         provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
 
-        # Mock the embeddings response
-        mock_embedding = [0.1, 0.2, 0.3, 0.4, 0.5] * 205  # ~1025 dimensions
+        # Mock the embeddings response with exactly 1024 dimensions (matches mistral-embed)
+        mock_embedding = [0.1] * 1024
 
         class MockData:
             def __init__(self, embedding):
