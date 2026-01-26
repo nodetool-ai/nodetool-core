@@ -326,8 +326,10 @@ def create_app(
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
 
-    if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
-        raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for production API deployments.")
+    # Run startup security checks to warn about insecure configurations
+    from nodetool.security.startup_checks import run_startup_security_checks
+
+    run_startup_security_checks(raise_on_critical=False)
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
