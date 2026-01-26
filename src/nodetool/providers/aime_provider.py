@@ -10,6 +10,7 @@ AIME API Documentation: https://www.aime.info/api
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
@@ -19,18 +20,19 @@ if TYPE_CHECKING:
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    ASRModel,
+    ImageModel,
     LanguageModel,
     Message,
     Provider,
     ToolCall,
+    TTSModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
-# AIME API version string
-AIME_API_VERSION = "Python AIME API Client Interface 0.1.0"
 
 
 @register_provider(Provider.AIME)
@@ -38,52 +40,45 @@ class AIMEProvider(BaseProvider):
     """AIME implementation of the ChatProvider interface.
 
     AIME provides access to AI models through the AIME Model API.
-    This provider implements the AIME-specific authentication and request flow:
-    1. Login with user/apiKey to get a session auth key
-    2. Make API requests with the session auth key
+    Authentication uses the API key directly:
+    1. API key is sent as "key" in the JSON request body
+    2. API key is sent as query parameter for progress endpoint
     3. Poll for progress until the job is done
 
     Key features:
     1. Base URL: https://api.aime.info/api/
-    2. Uses AIME_USER and AIME_API_KEY for authentication
+    2. Uses AIME_API_KEY for authentication
     3. Supports progress polling for long-running requests
     """
 
     provider: Provider = Provider.AIME
 
     DEFAULT_API_URL = "https://api.aime.info/api/"
-    DEFAULT_ENDPOINT = "llm_chat"
     DEFAULT_PROGRESS_INTERVAL = 0.3  # 300ms like the JS client
 
     @classmethod
     def required_secrets(cls) -> list[str]:
-        return ["AIME_USER", "AIME_API_KEY"]
+        return ["AIME_API_KEY"]
 
     def __init__(self, secrets: dict[str, str]):
-        """Initialize the AIME provider with client credentials.
+        """Initialize the AIME provider with API key.
 
-        Reads ``AIME_USER`` and ``AIME_API_KEY`` from secrets.
+        Reads ``AIME_API_KEY`` from secrets.
         """
         super().__init__(secrets=secrets)
-        assert "AIME_USER" in secrets, "AIME_USER is required"
         assert "AIME_API_KEY" in secrets, "AIME_API_KEY is required"
-        self.user = secrets["AIME_USER"]
         self.api_key = secrets["AIME_API_KEY"]
         self.api_url = self.DEFAULT_API_URL
-        self.endpoint = self.DEFAULT_ENDPOINT
-        self.client_session_auth_key: str | None = None
         self.cost = 0.0
-        log.debug("AIMEProvider initialized. User present: True, API key present: True")
+        log.debug("AIMEProvider initialized. API key present: True")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables required for containerized execution.
 
         Returns:
-            A mapping containing ``AIME_USER`` and ``AIME_API_KEY`` if available.
+            A mapping containing ``AIME_API_KEY`` if available.
         """
         env = {}
-        if self.user:
-            env["AIME_USER"] = self.user
         if self.api_key:
             env["AIME_API_KEY"] = self.api_key
         return env
@@ -114,46 +109,11 @@ class AIMEProvider(BaseProvider):
             async with session.get(url) as response:
                 return await response.json()
 
-    async def _login(self, session: aiohttp.ClientSession) -> str:
-        """Login to the AIME API and get a session auth key.
-
-        Args:
-            session: The aiohttp session to use
-
-        Returns:
-            The client session auth key
-
-        Raises:
-            RuntimeError: If login fails
-        """
-        url = f"{self.api_url}{self.endpoint}/login?user={self.user}&key={self.api_key}&version={AIME_API_VERSION}"
-        log.debug(f"AIME login URL: {url}")
-
-        response = await self._fetch_async(session, url, do_post=False)
-
-        if response.get("success"):
-            auth_key = response.get("client_session_auth_key")
-            log.debug("AIME login successful, got session auth key")
-            return auth_key
-        else:
-            error_msg = response.get("error", "Unknown login error")
-            ep_version = response.get("ep_version", "")
-            if ep_version:
-                error_msg += f" Endpoint version: {ep_version}"
-            raise RuntimeError(f"AIME login failed: {error_msg}")
-
-    async def _ensure_authenticated(self, session: aiohttp.ClientSession) -> None:
-        """Ensure we have a valid session auth key.
-
-        Args:
-            session: The aiohttp session to use
-        """
-        if self.client_session_auth_key is None:
-            self.client_session_auth_key = await self._login(session)
 
     async def _poll_progress(
         self,
         session: aiohttp.ClientSession,
+        model: str,
         job_id: str,
         progress_callback: Any | None = None,
     ) -> dict[str, Any]:
@@ -161,15 +121,17 @@ class AIMEProvider(BaseProvider):
 
         Args:
             session: The aiohttp session to use
+            model: The model/endpoint name for the progress URL
             job_id: The job ID to poll for
             progress_callback: Optional callback for progress updates
 
         Returns:
             The final job result
         """
-        progress_url = f"{self.api_url}{self.endpoint}/progress?key={self.api_key}&job_id={job_id}"
+        progress_url = f"{self.api_url}{model}/progress?key={self.api_key}&job_id={job_id}"
 
         while True:
+            log.debug(f"Polling progress for job {job_id}")
             response = await self._fetch_async(session, progress_url, do_post=False)
 
             if not response.get("success"):
@@ -197,19 +159,18 @@ class AIMEProvider(BaseProvider):
 
             await asyncio.sleep(self.DEFAULT_PROGRESS_INTERVAL)
 
-    def _messages_to_prompt(self, messages: Sequence[Message]) -> str:
-        """Convert messages to a prompt string for AIME.
+    def _messages_to_chat_context(self, messages: Sequence[Message]) -> str:
+        """Convert messages to a chat_context JSON string for AIME.
 
         Args:
             messages: The messages to convert
 
         Returns:
-            A formatted prompt string
+            A JSON string containing the message array
         """
-        prompt_parts = []
+        chat_messages = []
 
         for msg in messages:
-            role = msg.role.capitalize()
             content = ""
 
             if isinstance(msg.content, str):
@@ -218,19 +179,15 @@ class AIMEProvider(BaseProvider):
                 # Extract text from content list
                 for item in msg.content:
                     if hasattr(item, "text"):
-                        content += item.text
+                        content += str(item.text)
                     elif isinstance(item, dict) and "text" in item:
                         content += item["text"]
                     elif isinstance(item, str):
                         content += item
 
-            if content:
-                prompt_parts.append(f"{role}: {content}")
+            chat_messages.append({"role": msg.role, "content": content})
 
-        # Add the assistant prefix for the response
-        prompt_parts.append("Assistant:")
-
-        return "\n".join(prompt_parts)
+        return json.dumps(chat_messages)
 
     async def generate_message(  # type: ignore[override]
         self,
@@ -266,34 +223,29 @@ class AIMEProvider(BaseProvider):
         if not messages:
             raise ValueError("messages must not be empty")
 
-        prompt = self._messages_to_prompt(messages)
+        chat_context = self._messages_to_chat_context(messages)
 
         # Build request parameters
         params: dict[str, Any] = {
-            "prompt_input": prompt,
+            "chat_context": chat_context,
+            "prompt_input": "",
             "wait_for_result": True,
             "key": self.api_key,
+            "client_session_auth_key": None,
         }
 
-        # Add optional parameters
-        if temperature is not None:
-            params["temperature"] = temperature
-        if top_p is not None:
-            params["top_p"] = top_p
-        if top_k is not None:
-            params["top_k"] = top_k
-        if max_tokens:
-            params["max_new_tokens"] = max_tokens
+        # Add optional parameters with defaults matching AIME API
+        params["temperature"] = temperature if temperature is not None else 0.8
+        params["top_p"] = top_p if top_p is not None else 0.9
+        params["top_k"] = top_k if top_k is not None else 40
+        params["max_gen_tokens"] = max_tokens
 
         self._log_api_request("chat", messages, **params)
 
         timeout = aiohttp.ClientTimeout(total=300)  # 5 minute timeout for long requests
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            await self._ensure_authenticated(session)
-            params["client_session_auth_key"] = self.client_session_auth_key
-
-            url = f"{self.api_url}{self.endpoint}"
+            url = f"{self.api_url}{model}"
             log.debug(f"AIME API URL: {url}")
 
             response = await self._fetch_async(session, url, params, do_post=True)
@@ -303,7 +255,7 @@ class AIMEProvider(BaseProvider):
                 job_result = response.get("job_result", {})
                 if not job_result and response.get("job_id"):
                     # Need to poll for result
-                    job_result = await self._poll_progress(session, response["job_id"])
+                    job_result = await self._poll_progress(session, model, response["job_id"])
 
                 text = job_result.get("text", "")
                 log.debug(f"AIME response text length: {len(text)}")
@@ -357,34 +309,29 @@ class AIMEProvider(BaseProvider):
         if not messages:
             raise ValueError("messages must not be empty")
 
-        prompt = self._messages_to_prompt(messages)
+        chat_context = self._messages_to_chat_context(messages)
 
         # Build request parameters - wait_for_result=False for streaming
         params: dict[str, Any] = {
-            "prompt_input": prompt,
+            "chat_context": chat_context,
+            "prompt_input": "",
             "wait_for_result": False,
             "key": self.api_key,
+            "client_session_auth_key": None,
         }
 
-        # Add optional parameters
-        if temperature is not None:
-            params["temperature"] = temperature
-        if top_p is not None:
-            params["top_p"] = top_p
-        if top_k is not None:
-            params["top_k"] = top_k
-        if max_tokens:
-            params["max_new_tokens"] = max_tokens
+        # Add optional parameters with defaults matching AIME API
+        params["temperature"] = temperature if temperature is not None else 0.8
+        params["top_p"] = top_p if top_p is not None else 0.9
+        params["top_k"] = top_k if top_k is not None else 40
+        params["max_gen_tokens"] = max_tokens
 
         self._log_api_request("chat_stream", messages, **params)
 
         timeout = aiohttp.ClientTimeout(total=300)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            await self._ensure_authenticated(session)
-            params["client_session_auth_key"] = self.client_session_auth_key
-
-            url = f"{self.api_url}{self.endpoint}"
+            url = f"{self.api_url}{model}"
             log.debug(f"AIME API URL: {url}")
 
             response = await self._fetch_async(session, url, params, do_post=True)
@@ -399,7 +346,7 @@ class AIMEProvider(BaseProvider):
 
             # Track the previous text to yield only new content
             previous_text = ""
-            progress_url = f"{self.api_url}{self.endpoint}/progress?key={self.api_key}&job_id={job_id}"
+            progress_url = f"{self.api_url}{model}/progress?key={self.api_key}&job_id={job_id}"
 
             while True:
                 progress_response = await self._fetch_async(session, progress_url, do_post=False)
@@ -445,25 +392,131 @@ class AIMEProvider(BaseProvider):
                 await asyncio.sleep(self.DEFAULT_PROGRESS_INTERVAL)
 
     async def get_available_language_models(self) -> list[LanguageModel]:
-        """Get available AIME models.
+        """Get available AIME language models.
 
-        Returns a list of known AIME models. AIME doesn't have a public
+        Returns a list of known AIME LLM models. AIME doesn't have a public
         models endpoint, so we return a static list of known models.
 
         Returns:
             List of LanguageModel instances for AIME
         """
-        # AIME models - based on their documentation
-        # These may need to be updated as AIME adds/removes models
+        # AIME LLM chat models - based on their API endpoints
         models = [
             LanguageModel(
-                id="Mistral-Small-3.1-24B-Instruct",
-                name="Mistral Small 3.1 24B Instruct",
+                id="llama4_chat",
+                name="Llama 4 Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="qwen3_chat",
+                name="Qwen 3 Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="llama3_r1_chat",
+                name="Llama 3 R1 Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="mistral_chat",
+                name="Mistral Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="llama3_chat",
+                name="Llama 3 Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="mixtral_chat",
+                name="Mixtral Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="gpt_oss_chat",
+                name="GPT OSS Chat",
+                provider=Provider.AIME,
+            ),
+            LanguageModel(
+                id="llama3_8b_chat",
+                name="Llama 3 8B Chat",
                 provider=Provider.AIME,
             ),
         ]
 
-        log.debug(f"Returning {len(models)} AIME models")
+        log.debug(f"Returning {len(models)} AIME language models")
+        return models
+
+    async def get_available_image_models(self) -> list[ImageModel]:
+        """Get available AIME image models.
+
+        Returns a list of known AIME image generation models.
+
+        Returns:
+            List of ImageModel instances for AIME
+        """
+        models = [
+            ImageModel(
+                id="stable_diffusion_3",
+                name="Stable Diffusion 3",
+                provider=Provider.AIME,
+            ),
+            ImageModel(
+                id="stable_diffusion_3_5",
+                name="Stable Diffusion 3.5",
+                provider=Provider.AIME,
+            ),
+            ImageModel(
+                id="flux-dev",
+                name="Flux Dev",
+                provider=Provider.AIME,
+            ),
+            ImageModel(
+                id="stable_diffusion_xl_txt2img",
+                name="Stable Diffusion XL Text to Image",
+                provider=Provider.AIME,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} AIME image models")
+        return models
+
+    async def get_available_tts_models(self) -> list[TTSModel]:
+        """Get available AIME text-to-speech models.
+
+        Returns a list of known AIME TTS models.
+
+        Returns:
+            List of TTSModel instances for AIME
+        """
+        models = [
+            TTSModel(
+                id="tts_tortoise",
+                name="Tortoise TTS",
+                provider=Provider.AIME,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} AIME TTS models")
+        return models
+
+    async def get_available_asr_models(self) -> list[ASRModel]:
+        """Get available AIME automatic speech recognition models.
+
+        Returns a list of known AIME ASR models.
+
+        Returns:
+            List of ASRModel instances for AIME
+        """
+        models = [
+            ASRModel(
+                id="whisper_x",
+                name="Whisper X",
+                provider=Provider.AIME,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} AIME ASR models")
         return models
 
     def has_tool_support(self, model: str) -> bool:
