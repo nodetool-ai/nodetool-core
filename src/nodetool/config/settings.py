@@ -208,6 +208,12 @@ register_secret(
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
 )
+register_secret(
+    package_name="nodetool",
+    env_var="MISTRAL_API_KEY",
+    group="Mistral",
+    description="Mistral API key for accessing Mistral AI models through Mistral's OpenAI-compatible API",
+)
 register_setting(
     package_name="nodetool",
     env_var="ZAI_USE_CODING_PLAN",
