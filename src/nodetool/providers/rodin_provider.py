@@ -106,7 +106,7 @@ class RodinProvider(BaseProvider):
         prompt: str | None = None,
         seed: int | None = None,
         geometry_file_format: str = "glb",
-    ) -> str:
+    ) -> tuple[str, str]:
         """Submit a Rodin generation task.
 
         Args:
@@ -117,7 +117,7 @@ class RodinProvider(BaseProvider):
             geometry_file_format: Output format (glb, fbx, obj, usdz)
 
         Returns:
-            Task UUID for polling status
+            Tuple of (task_uuid, subscription_key) for polling status
         """
         payload: dict[str, Any] = {
             "images": images,
@@ -135,11 +135,14 @@ class RodinProvider(BaseProvider):
                 error_text = await response.text()
                 raise RuntimeError(f"Rodin API error ({response.status}): {error_text}")
             data = await response.json()
-            # Extract UUID from response
+            # Extract UUID and subscription_key from response
             uuids = data.get("uuids", [])
             if not uuids:
                 raise RuntimeError("No task UUID returned from Rodin API")
-            return uuids[0]
+            subscription_key = data.get("subscription_key", "")
+            if not subscription_key:
+                raise RuntimeError("No subscription key returned from Rodin API")
+            return uuids[0], subscription_key
 
     async def _poll_task_status(
         self,
@@ -304,25 +307,13 @@ class RodinProvider(BaseProvider):
             async with aiohttp.ClientSession() as session:
                 # Rodin text-to-3D uses a sketch/prompt-based approach
                 # Submit with empty images but with prompt
-                payload: dict[str, Any] = {
-                    "prompt": params.prompt,
-                    "geometry_file_format": params.output_format.upper(),
-                }
-
-                if params.seed is not None:
-                    payload["seed"] = params.seed
-
-                url = f"{RODIN_API_BASE_URL}/v2/rodin"
-                async with session.post(url, json=payload, headers=self._get_headers()) as response:
-                    if response.status != 200 and response.status != 202:
-                        error_text = await response.text()
-                        raise RuntimeError(f"Rodin API error ({response.status}): {error_text}")
-                    data = await response.json()
-                    task_uuid = data.get("uuids", [None])[0]
-                    subscription_key = data.get("subscription_key")
-
-                    if not task_uuid:
-                        raise RuntimeError("No task UUID returned from Rodin API")
+                task_uuid, subscription_key = await self._submit_rodin_task(
+                    session,
+                    images=[],  # Empty images for text-to-3D
+                    prompt=params.prompt,
+                    seed=params.seed,
+                    geometry_file_format=params.output_format,
+                )
 
                 log.debug(f"Rodin text-to-3D task submitted: {task_uuid}")
 
@@ -386,28 +377,14 @@ class RodinProvider(BaseProvider):
                 # Encode image
                 encoded_image = await self._encode_image(image)
 
-                # Submit the task
-                task_uuid = await self._submit_rodin_task(
+                # Submit the task and get both task_uuid and subscription_key
+                task_uuid, subscription_key = await self._submit_rodin_task(
                     session,
                     images=[encoded_image],
                     prompt=params.prompt,
                     seed=params.seed,
                     geometry_file_format=params.output_format,
                 )
-
-                # Get subscription key for polling
-                # We need to make another call to get the subscription key
-                payload = {
-                    "images": [encoded_image],
-                    "geometry_file_format": params.output_format.upper(),
-                }
-                if params.prompt:
-                    payload["prompt"] = params.prompt
-
-                url = f"{RODIN_API_BASE_URL}/v2/rodin"
-                async with session.post(url, json=payload, headers=self._get_headers()) as response:
-                    data = await response.json()
-                    subscription_key = data.get("subscription_key")
 
                 log.debug(f"Rodin image-to-3D task submitted: {task_uuid}")
 
