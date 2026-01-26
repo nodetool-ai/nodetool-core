@@ -88,10 +88,13 @@ class TestMistralProvider:
             usage=CompletionUsage(completion_tokens=12, prompt_tokens=9, total_tokens=21),
         )
 
+        async def mock_create(*args, **kwargs):
+            return mock_response
+
         with patch.object(provider, "get_client") as mock_get_client:
             mock_client = MagicMock()
             mock_get_client.return_value = mock_client
-            mock_client.chat.completions.create = MagicMock(return_value=mock_response)
+            mock_client.chat.completions.create = mock_create
 
             from nodetool.metadata.types import Message
 
