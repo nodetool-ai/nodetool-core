@@ -6,6 +6,8 @@ This test suite verifies that the Mistral provider correctly:
 - Initializes with the correct base URL
 - Supports streaming and non-streaming completions
 - Handles function calling
+- Supports embedding generation
+- Supports vision/image-to-text through Pixtral models
 """
 
 from unittest.mock import MagicMock, patch
@@ -15,6 +17,8 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from openai.types.completion_usage import CompletionUsage
 
+from nodetool.metadata.types import EmbeddingModel, Provider
+from nodetool.providers.base import ProviderCapability
 from nodetool.providers.mistral_provider import MistralProvider
 
 
@@ -165,3 +169,195 @@ class TestMistralProvider:
             # Verify provider is set correctly
             for model in models:
                 assert model.provider.value == "mistral"
+
+    @pytest.mark.asyncio
+    async def test_get_available_embedding_models(self):
+        """Test that Mistral returns available embedding models."""
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+        models = await provider.get_available_embedding_models()
+
+        assert len(models) == 1
+        assert all(isinstance(m, EmbeddingModel) for m in models)
+        assert all(m.provider == Provider.Mistral for m in models)
+
+        model_ids = [m.id for m in models]
+        assert "mistral-embed" in model_ids
+
+        # Check dimensions
+        mistral_embed = next(m for m in models if m.id == "mistral-embed")
+        assert mistral_embed.dimensions == 1024
+
+    @pytest.mark.asyncio
+    async def test_get_available_embedding_models_no_api_key(self):
+        """Test that Mistral returns empty list when no API key is configured."""
+        # Create provider without API key by patching the assertion
+        provider = MistralProvider.__new__(MistralProvider)
+        provider.api_key = None
+        provider.client = None
+        provider.cost = 0.0
+
+        models = await provider.get_available_embedding_models()
+        assert models == []
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_single_text(self):
+        """Test generating embedding for a single text."""
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+
+        # Mock the embeddings response
+        mock_embedding = [0.1, 0.2, 0.3, 0.4, 0.5] * 205  # ~1025 dimensions
+
+        class MockData:
+            def __init__(self, embedding):
+                self.embedding = embedding
+
+        class MockResponse:
+            def __init__(self, embeddings):
+                self.data = [MockData(emb) for emb in embeddings]
+
+        async def mock_create(**kwargs):
+            return MockResponse([mock_embedding])
+
+        with patch.object(provider, "get_client") as mock_client:
+            mock_client.return_value.embeddings.create = mock_create
+
+            result = await provider.generate_embedding(
+                text="Hello, world!",
+                model="mistral-embed",
+            )
+
+            assert len(result) == 1
+            assert result[0] == mock_embedding
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_multiple_texts(self):
+        """Test generating embeddings for multiple texts."""
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+
+        mock_embeddings = [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9],
+        ]
+
+        class MockData:
+            def __init__(self, embedding):
+                self.embedding = embedding
+
+        class MockResponse:
+            def __init__(self, embeddings):
+                self.data = [MockData(emb) for emb in embeddings]
+
+        async def mock_create(**kwargs):
+            return MockResponse(mock_embeddings)
+
+        with patch.object(provider, "get_client") as mock_client:
+            mock_client.return_value.embeddings.create = mock_create
+
+            result = await provider.generate_embedding(
+                text=["Text 1", "Text 2", "Text 3"],
+                model="mistral-embed",
+            )
+
+            assert len(result) == 3
+            assert result == mock_embeddings
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_empty_text_raises_error(self):
+        """Test that empty text raises ValueError."""
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+
+        with pytest.raises(ValueError, match="text must not be empty"):
+            await provider.generate_embedding(text="", model="mistral-embed")
+
+    def test_embedding_capability_detected(self):
+        """Test that the GENERATE_EMBEDDING capability is detected."""
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+        capabilities = provider.get_capabilities()
+
+        assert ProviderCapability.GENERATE_EMBEDDING in capabilities
+
+
+class TestMistralVisionSupport:
+    """Test suite for Mistral vision/image-to-text support (Pixtral models)."""
+
+    @pytest.mark.asyncio
+    async def test_convert_message_with_image_content(self):
+        """Test that image content is properly converted for Pixtral models."""
+        from nodetool.metadata.types import (
+            ImageRef,
+            Message,
+            MessageImageContent,
+            MessageTextContent,
+        )
+
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+
+        # Create a message with text and image content
+        # Using a minimal valid base64 1x1 pixel PNG
+        import base64
+
+        # 1x1 transparent PNG pixel
+        pixel_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+        message = Message(
+            role="user",
+            content=[
+                MessageTextContent(text="What is in this image?"),
+                MessageImageContent(
+                    image=ImageRef(data=pixel_png)
+                ),
+            ],
+        )
+
+        result = await provider.convert_message(message)
+
+        # Verify the message structure
+        assert result["role"] == "user"
+        assert isinstance(result["content"], list)
+        assert len(result["content"]) == 2
+
+        # First content part should be text
+        assert result["content"][0]["type"] == "text"
+        assert result["content"][0]["text"] == "What is in this image?"
+
+        # Second content part should be image
+        assert result["content"][1]["type"] == "image_url"
+        assert "image_url" in result["content"][1]
+        assert "url" in result["content"][1]["image_url"]
+
+    @pytest.mark.asyncio
+    async def test_convert_message_with_image_uri(self):
+        """Test that image URLs are properly converted for vision models."""
+        from nodetool.metadata.types import (
+            ImageRef,
+            Message,
+            MessageImageContent,
+            MessageTextContent,
+        )
+
+        provider = MistralProvider(secrets={"MISTRAL_API_KEY": "test-key"})
+
+        message = Message(
+            role="user",
+            content=[
+                MessageTextContent(text="Describe this image"),
+                MessageImageContent(
+                    image=ImageRef(uri="https://example.com/image.jpg")
+                ),
+            ],
+        )
+
+        # Mock the uri_to_base64 to avoid actual fetch
+        with patch.object(provider, "uri_to_base64") as mock_uri:
+            mock_uri.return_value = "data:image/jpeg;base64,/9j/4AAQ..."
+
+            result = await provider.convert_message(message)
+
+            # Verify image URL was converted
+            assert result["role"] == "user"
+            assert len(result["content"]) == 2
+            assert result["content"][1]["type"] == "image_url"
+            mock_uri.assert_called_once_with("https://example.com/image.jpg")
