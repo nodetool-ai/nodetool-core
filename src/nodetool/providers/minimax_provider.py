@@ -1,17 +1,20 @@
 """
-MiniMax provider implementation for chat completions, image generation, and text-to-speech.
+MiniMax provider implementation for chat completions, image generation, video generation, and text-to-speech.
 
 This module implements the ChatProvider interface for MiniMax models,
 using their Anthropic-compatible API endpoint for chat, their
-image generation API for text-to-image, and their T2A API for text-to-speech.
+image generation API for text-to-image, their video generation API for
+text-to-video and image-to-video, and their T2A API for text-to-speech.
 
 MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
 MiniMax Image Generation API: https://platform.minimax.io/docs/guides/image-generation
+MiniMax Video Generation API: https://platform.minimax.io/api-reference/video/generation/api/text-to-video
 MiniMax T2A API Documentation: https://platform.minimax.io/docs/api-reference/speech-t2a-intro
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
@@ -20,7 +23,7 @@ import anthropic
 import numpy as np
 
 if TYPE_CHECKING:
-    from nodetool.providers.types import TextToImageParams
+    from nodetool.providers.types import ImageToVideoParams, TextToImageParams, TextToVideoParams
     from nodetool.workflows.processing_context import ProcessingContext
 
 from nodetool.config.logging_config import get_logger
@@ -29,6 +32,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
     TTSModel,
+    VideoModel,
 )
 from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.providers.base import register_provider
@@ -43,6 +47,11 @@ MINIMAX_IMAGE_API_URL = "https://api.minimax.io/v1/image_generation"
 
 # MiniMax Text-to-Audio (TTS) API base URL
 MINIMAX_TTS_API_URL = "https://api.minimax.io/v1/t2a_v2"
+
+# MiniMax Video Generation API URLs
+MINIMAX_VIDEO_GENERATION_URL = "https://api.minimax.io/v1/video_generation"
+MINIMAX_VIDEO_QUERY_URL = "https://api.minimax.io/v1/query/video_generation"
+MINIMAX_FILE_RETRIEVE_URL = "https://api.minimax.io/v1/files/retrieve"
 
 # Known MiniMax image models
 MINIMAX_IMAGE_MODELS = [
@@ -89,6 +98,49 @@ MINIMAX_TTS_VOICES = [
     "Chinese (Mandarin)_HK_Flight_Attendant",
     # Japanese voices
     "Japanese_Whisper_Belle",
+]
+
+# Known MiniMax video models
+# Based on: https://platform.minimax.io/api-reference/video/generation/api/text-to-video
+# Models: MiniMax-Hailuo-2.3, MiniMax-Hailuo-02, T2V-01-Director, T2V-01
+MINIMAX_VIDEO_MODELS = [
+    VideoModel(
+        id="MiniMax-Hailuo-2.3",
+        name="MiniMax Hailuo 2.3",
+        provider=Provider.MiniMax,
+        supported_tasks=["text_to_video", "image_to_video"],
+    ),
+    VideoModel(
+        id="MiniMax-Hailuo-02",
+        name="MiniMax Hailuo 02",
+        provider=Provider.MiniMax,
+        supported_tasks=["text_to_video", "image_to_video"],
+    ),
+    VideoModel(
+        id="T2V-01-Director",
+        name="T2V-01 Director",
+        provider=Provider.MiniMax,
+        supported_tasks=["text_to_video"],
+    ),
+    VideoModel(
+        id="T2V-01",
+        name="T2V-01",
+        provider=Provider.MiniMax,
+        supported_tasks=["text_to_video"],
+    ),
+    # Image-to-video specific models (I2V prefix)
+    VideoModel(
+        id="I2V-01-Director",
+        name="I2V-01 Director",
+        provider=Provider.MiniMax,
+        supported_tasks=["image_to_video"],
+    ),
+    VideoModel(
+        id="I2V-01",
+        name="I2V-01",
+        provider=Provider.MiniMax,
+        supported_tasks=["image_to_video"],
+    ),
 ]
 
 
@@ -508,3 +560,420 @@ class MiniMaxProvider(AnthropicProvider):
         except Exception as exc:
             log.error(f"MiniMax text-to-speech generation failed: {exc}")
             raise RuntimeError(f"MiniMax text-to-speech generation failed: {exc}") from exc
+
+    async def get_available_video_models(self) -> list[VideoModel]:
+        """Get available MiniMax video generation models.
+
+        Returns a list of known MiniMax video models supporting text-to-video
+        and image-to-video generation.
+
+        Returns:
+            List of VideoModel instances for MiniMax
+        """
+        if not self.api_key:
+            log.debug("No MiniMax API key configured, returning empty video model list")
+            return []
+
+        log.debug(f"Returning {len(MINIMAX_VIDEO_MODELS)} known MiniMax video models")
+        return MINIMAX_VIDEO_MODELS
+
+    async def _poll_video_task(
+        self,
+        task_id: str,
+        timeout_s: int = 600,
+        poll_interval: int = 10,
+    ) -> dict[str, Any]:
+        """Poll MiniMax video generation task until completion.
+
+        Args:
+            task_id: The video generation task ID
+            timeout_s: Maximum time to wait for completion (default 600s)
+            poll_interval: Time between status checks in seconds (default 10s)
+
+        Returns:
+            Dict containing task status and file_id on success
+
+        Raises:
+            TimeoutError: If task doesn't complete within timeout
+            RuntimeError: If task fails
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        elapsed_time = 0
+        timeout = aiohttp.ClientTimeout(total=60)  # Timeout per request
+
+        while elapsed_time < timeout_s:
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(
+                    f"{MINIMAX_VIDEO_QUERY_URL}?task_id={task_id}",
+                    headers=headers,
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"MiniMax video query API error: {response.status} - {error_text}")
+                    raise RuntimeError(
+                        f"MiniMax video query failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Check for API errors
+                base_resp = result.get("base_resp", {})
+                status_code = base_resp.get("status_code", 0)
+                if status_code != 0:
+                    status_msg = base_resp.get("status_msg", "Unknown error")
+                    log.error(f"MiniMax video query error: {status_code} - {status_msg}")
+                    raise RuntimeError(f"MiniMax video query failed: {status_msg} (code: {status_code})")
+
+                status = result.get("status")
+                log.debug(f"Video task {task_id} status: {status} ({elapsed_time}s elapsed)")
+
+                if status == "success":
+                    file_id = result.get("file_id")
+                    if not file_id:
+                        raise RuntimeError("Video generation succeeded but no file_id returned")
+                    return {"status": "success", "file_id": file_id}
+                elif status == "failed":
+                    raise RuntimeError(f"Video generation task failed: {result}")
+                # Status is "processing" or "queued", continue polling
+
+            await asyncio.sleep(poll_interval)
+            elapsed_time += poll_interval
+
+        raise TimeoutError(f"Video generation timed out after {timeout_s} seconds")
+
+    async def _download_video_file(self, file_id: str) -> bytes:
+        """Download video file from MiniMax using file_id.
+
+        Args:
+            file_id: The file ID returned from video generation task
+
+        Returns:
+            Raw video bytes
+
+        Raises:
+            RuntimeError: If download fails
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        timeout = aiohttp.ClientTimeout(total=300)  # 5 minute timeout for download
+
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                f"{MINIMAX_FILE_RETRIEVE_URL}?file_id={file_id}",
+                headers=headers,
+            ) as response,
+        ):
+            if response.status != 200:
+                error_text = await response.text()
+                log.error(f"MiniMax file retrieve API error: {response.status} - {error_text}")
+                raise RuntimeError(
+                    f"MiniMax file retrieve failed with status {response.status}: {error_text}"
+                )
+
+            result = await response.json()
+
+            # Check for API errors
+            base_resp = result.get("base_resp", {})
+            status_code = base_resp.get("status_code", 0)
+            if status_code != 0:
+                status_msg = base_resp.get("status_msg", "Unknown error")
+                raise RuntimeError(f"MiniMax file retrieve failed: {status_msg} (code: {status_code})")
+
+            # Get the download URL from the response
+            file_data = result.get("file", {})
+            download_url = file_data.get("download_url")
+
+            if not download_url:
+                raise RuntimeError("No download URL returned in file retrieve response")
+
+            # Download the actual video file
+            async with session.get(download_url) as video_response:
+                if video_response.status != 200:
+                    raise RuntimeError(f"Failed to download video: HTTP {video_response.status}")
+                video_bytes = await video_response.read()
+
+            log.debug(f"Downloaded video, size: {len(video_bytes)} bytes")
+            return video_bytes
+
+    async def text_to_video(
+        self,
+        params: TextToVideoParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate a video from a text prompt using MiniMax's Video Generation API.
+
+        Uses the MiniMax video_generation endpoint which supports models like
+        MiniMax-Hailuo-2.3, MiniMax-Hailuo-02, T2V-01-Director, and T2V-01.
+
+        API Reference: https://platform.minimax.io/api-reference/video/generation/api/text-to-video
+
+        Args:
+            params: Text-to-video generation parameters including:
+                - model: VideoModel with model ID
+                - prompt: Text description of the desired video (max 2000 chars)
+                - resolution: "720P", "768P", or "1080P"
+            timeout_s: Optional timeout in seconds (default 600)
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw video bytes (MP4 format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("MINIMAX_API_KEY is required for video generation.")
+
+        model_id = params.model.id if params.model and params.model.id else "MiniMax-Hailuo-2.3"
+
+        prompt = params.prompt.strip()
+        if len(prompt) > 2000:
+            log.warning(f"Prompt too long ({len(prompt)} chars), truncating to 2000 chars")
+            prompt = prompt[:2000]
+
+        log.debug(f"Generating video with MiniMax model: {model_id}")
+        log.debug(f"Prompt: {prompt[:100]}...")
+
+        self._log_api_request("text_to_video", params=params)
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 600
+
+            # Build the request payload according to MiniMax API
+            payload: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+            }
+
+            # Add optional resolution (720P, 768P, 1080P)
+            if params.resolution:
+                # Normalize resolution format
+                resolution = params.resolution.upper()
+                if resolution in ["720P", "768P", "1080P"]:
+                    payload["resolution"] = resolution
+                elif resolution in ["720", "768", "1080"]:
+                    payload["resolution"] = f"{resolution}P"
+
+            # Add duration if specified (convert num_frames to seconds, assuming 24fps)
+            if params.num_frames:
+                duration = params.num_frames // 24
+                if duration in [6, 10]:
+                    payload["duration"] = duration
+                else:
+                    payload["duration"] = 6  # Default to 6 seconds
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            timeout = aiohttp.ClientTimeout(total=120)  # Initial request timeout
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(
+                    MINIMAX_VIDEO_GENERATION_URL,
+                    json=payload,
+                    headers=headers,
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"MiniMax video API error: {response.status} - {error_text}")
+                    raise RuntimeError(
+                        f"MiniMax text-to-video generation failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Check for API errors
+                base_resp = result.get("base_resp", {})
+                status_code = base_resp.get("status_code", 0)
+                if status_code != 0:
+                    status_msg = base_resp.get("status_msg", "Unknown error")
+                    raise RuntimeError(
+                        f"MiniMax text-to-video generation failed: {status_msg} (code: {status_code})"
+                    )
+
+                task_id = result.get("task_id")
+                if not task_id:
+                    raise RuntimeError("No task_id returned from video generation API")
+
+                log.debug(f"Video generation task started: {task_id}")
+
+            # Poll for task completion
+            task_result = await self._poll_video_task(task_id, timeout_s=request_timeout)
+
+            # Download the video file
+            file_id = task_result["file_id"]
+            video_bytes = await self._download_video_file(file_id)
+
+            log.debug(f"Generated video, size: {len(video_bytes)} bytes")
+            self._log_api_response("text_to_video", video_bytes=len(video_bytes))
+
+            return video_bytes
+
+        except aiohttp.ClientError as e:
+            log.error(f"MiniMax text-to-video request failed: {e}")
+            raise RuntimeError(f"MiniMax text-to-video generation failed: {e}") from e
+        except TimeoutError as e:
+            log.error(f"MiniMax text-to-video generation timed out: {e}")
+            raise RuntimeError(f"MiniMax text-to-video generation timed out: {e}") from e
+        except Exception as exc:
+            log.error(f"MiniMax text-to-video generation failed: {exc}")
+            raise RuntimeError(f"MiniMax text-to-video generation failed: {exc}") from exc
+
+    async def image_to_video(  # type: ignore[override]
+        self,
+        image: bytes,
+        params: ImageToVideoParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate a video from an input image using MiniMax's Video Generation API.
+
+        Uses the MiniMax video_generation endpoint with first_frame_image parameter
+        to animate an image into a video.
+
+        API Reference: https://platform.minimax.io/api-reference/video/generation/api/image-to-video
+
+        Args:
+            image: Input image as bytes (will be base64 encoded)
+            params: Image-to-video generation parameters including:
+                - model: VideoModel with model ID (e.g., I2V-01, MiniMax-Hailuo-2.3)
+                - prompt: Optional text description to guide animation
+                - resolution: "720P", "768P", or "1080P"
+            timeout_s: Optional timeout in seconds (default 600)
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw video bytes (MP4 format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not image:
+            raise ValueError("Input image cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("MINIMAX_API_KEY is required for video generation.")
+
+        model_id = params.model.id if params.model and params.model.id else "I2V-01"
+
+        # Use prompt if provided, otherwise use a default animation prompt
+        prompt = params.prompt.strip() if params.prompt else "Animate this image with natural motion"
+        if len(prompt) > 2000:
+            log.warning(f"Prompt too long ({len(prompt)} chars), truncating to 2000 chars")
+            prompt = prompt[:2000]
+
+        log.debug(f"Generating video from image with MiniMax model: {model_id}")
+
+        self._log_api_request("image_to_video", params=params)
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 600
+
+            # Base64 encode the image
+            image_base64 = base64.b64encode(image).decode("utf-8")
+
+            # Build the request payload according to MiniMax API
+            payload: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+                "first_frame_image": image_base64,
+            }
+
+            # Add optional resolution (720P, 768P, 1080P)
+            if params.resolution:
+                # Normalize resolution format
+                resolution = params.resolution.upper()
+                if resolution in ["720P", "768P", "1080P"]:
+                    payload["resolution"] = resolution
+                elif resolution in ["720", "768", "1080"]:
+                    payload["resolution"] = f"{resolution}P"
+
+            # Add duration if specified (convert num_frames to seconds, assuming 24fps)
+            if params.num_frames:
+                duration = params.num_frames // 24
+                if duration in [6, 10]:
+                    payload["duration"] = duration
+                else:
+                    payload["duration"] = 6  # Default to 6 seconds
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            timeout = aiohttp.ClientTimeout(total=120)  # Initial request timeout
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(
+                    MINIMAX_VIDEO_GENERATION_URL,
+                    json=payload,
+                    headers=headers,
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"MiniMax video API error: {response.status} - {error_text}")
+                    raise RuntimeError(
+                        f"MiniMax image-to-video generation failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Check for API errors
+                base_resp = result.get("base_resp", {})
+                status_code = base_resp.get("status_code", 0)
+                if status_code != 0:
+                    status_msg = base_resp.get("status_msg", "Unknown error")
+                    raise RuntimeError(
+                        f"MiniMax image-to-video generation failed: {status_msg} (code: {status_code})"
+                    )
+
+                task_id = result.get("task_id")
+                if not task_id:
+                    raise RuntimeError("No task_id returned from video generation API")
+
+                log.debug(f"Image-to-video generation task started: {task_id}")
+
+            # Poll for task completion
+            task_result = await self._poll_video_task(task_id, timeout_s=request_timeout)
+
+            # Download the video file
+            file_id = task_result["file_id"]
+            video_bytes = await self._download_video_file(file_id)
+
+            log.debug(f"Generated video from image, size: {len(video_bytes)} bytes")
+            self._log_api_response("image_to_video", video_bytes=len(video_bytes))
+
+            return video_bytes
+
+        except aiohttp.ClientError as e:
+            log.error(f"MiniMax image-to-video request failed: {e}")
+            raise RuntimeError(f"MiniMax image-to-video generation failed: {e}") from e
+        except TimeoutError as e:
+            log.error(f"MiniMax image-to-video generation timed out: {e}")
+            raise RuntimeError(f"MiniMax image-to-video generation timed out: {e}") from e
+        except Exception as exc:
+            log.error(f"MiniMax image-to-video generation failed: {exc}")
+            raise RuntimeError(f"MiniMax image-to-video generation failed: {exc}") from exc
