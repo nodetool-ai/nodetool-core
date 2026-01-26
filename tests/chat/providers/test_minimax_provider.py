@@ -437,8 +437,9 @@ class TestMiniMaxTTS:
     @pytest.mark.asyncio
     async def test_get_available_tts_models_no_api_key(self):
         """Test get_available_tts_models returns empty list without API key."""
+        # Create provider with empty api_key
         provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
-        provider.api_key = ""
+        provider.api_key = ""  # Ensure api_key is empty
         models = await provider.get_available_tts_models()
         assert models == []
 
@@ -452,8 +453,9 @@ class TestMiniMaxTTS:
     @pytest.mark.asyncio
     async def test_text_to_speech_no_api_key(self):
         """Test text_to_speech raises ValueError without API key."""
+        # Create provider with empty api_key
         provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
-        provider.api_key = ""
+        provider.api_key = ""  # Ensure api_key is empty
 
         with pytest.raises(ValueError, match="MINIMAX_API_KEY is required"):
             async for _ in provider.text_to_speech(text="Hello world", model="speech-2.8-hd"):
