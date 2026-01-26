@@ -463,6 +463,9 @@ class Provider(str, enum.Enum):
     HuggingFaceScaleway = "huggingface_scaleway"
     HuggingFaceTogether = "huggingface_together"
     HuggingFaceZAI = "huggingface_zai"
+    # 3D generation providers
+    Meshy = "meshy"
+    Rodin = "rodin"
 
 
 class InferenceProvider(str, Enum):
@@ -614,6 +617,18 @@ class VideoModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+
+
+class Model3DModel(BaseType):
+    """A model for 3D generation (text-to-3D, image-to-3D)."""
+
+    type: Literal["model_3d_model"] = "model_3d_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    path: str | None = None
+    supported_tasks: list[str] = Field(default_factory=list)
+    output_formats: list[str] = Field(default_factory=lambda: ["glb"])
 
 
 class EmbeddingModel(BaseType):

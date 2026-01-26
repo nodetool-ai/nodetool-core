@@ -28,6 +28,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageFile,
+    Model3DModel,
     Provider,
     ToolCall,
     TTSModel,
@@ -60,6 +61,8 @@ class ProviderCapability(str, Enum):
     AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
     TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
+    TEXT_TO_3D = "text_to_3d"  # Text → 3D model generation
+    IMAGE_TO_3D = "image_to_3d"  # Image → 3D model generation
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[type["BaseProvider"], dict[str, Any]]] = {}
@@ -142,6 +145,8 @@ class BaseProvider:
         ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
         ProviderCapability.TEXT_TO_VIDEO: "text_to_video",
         ProviderCapability.IMAGE_TO_VIDEO: "image_to_video",
+        ProviderCapability.TEXT_TO_3D: "text_to_3d",
+        ProviderCapability.IMAGE_TO_3D: "image_to_3d",
     }
 
     log_file: str | None = None
@@ -385,17 +390,32 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_models(
-        self,
-    ) -> list[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel | EmbeddingModel]:
-        """Get a list of all available models for this provider.
+    async def get_available_3d_models(self) -> list[Model3DModel]:
+        """Get a list of available 3D generation models for this provider.
 
-        Returns language, image, TTS, ASR, video, and embedding models combined. Use get_available_language_models(),
-        get_available_image_models(), get_available_tts_models(), get_available_asr_models(),
-        get_available_video_models(), or get_available_embedding_models() to filter to specific model types.
+        This method should return all 3D models that are available for use with this provider.
+        The implementation may check for API keys, local cache, or other requirements.
 
         Returns:
-            List containing LanguageModel, ImageModel, TTSModel, ASRModel, VideoModel, and EmbeddingModel instances
+            List of Model3DModel instances available for this provider.
+            Returns empty list if provider doesn't support 3D generation.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(
+        self,
+    ) -> list[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel | EmbeddingModel | Model3DModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, TTS, ASR, video, embedding, and 3D models combined. Use get_available_language_models(),
+        get_available_image_models(), get_available_tts_models(), get_available_asr_models(),
+        get_available_video_models(), get_available_embedding_models(), or get_available_3d_models() to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, TTSModel, ASRModel, VideoModel, EmbeddingModel, and Model3DModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -406,7 +426,8 @@ class BaseProvider:
         asr_models = await self.get_available_asr_models()
         video_models = await self.get_available_video_models()
         embedding_models = await self.get_available_embedding_models()
-        return language_models + image_models + tts_models + asr_models + video_models + embedding_models  # type: ignore
+        model_3d_models = await self.get_available_3d_models()
+        return language_models + image_models + tts_models + asr_models + video_models + embedding_models + model_3d_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -849,6 +870,69 @@ class BaseProvider:
             RuntimeError: If embedding generation fails
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_EMBEDDING capability")
+
+    async def text_to_3d(
+        self,
+        params: Any,  # TextTo3DParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate a 3D model from a text prompt.
+
+        Only implemented by providers with TEXT_TO_3D capability.
+
+        Args:
+            params: Text-to-3D generation parameters including:
+                - prompt: Text description of the 3D model to generate
+                - negative_prompt: Elements to exclude from generation
+                - model: 3D model to use
+                - output_format: Output format (glb, obj, fbx, etc.)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            node_id: Optional node ID for progress tracking
+
+        Returns:
+            Raw 3D model bytes (GLB, OBJ, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support TEXT_TO_3D capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_3D capability")
+
+    async def image_to_3d(
+        self,
+        image: bytes,
+        params: Any,  # ImageTo3DParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate a 3D model from an input image.
+
+        Only implemented by providers with IMAGE_TO_3D capability.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-3D generation parameters including:
+                - prompt: Optional text description to guide 3D generation
+                - model: 3D model to use
+                - output_format: Output format (glb, obj, fbx, etc.)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            node_id: Optional node ID for progress tracking
+
+        Returns:
+            Raw 3D model bytes (GLB, OBJ, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support IMAGE_TO_3D capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_3D capability")
 
 
 class MockProvider(BaseProvider):
