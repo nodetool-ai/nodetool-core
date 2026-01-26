@@ -390,7 +390,8 @@ class TestIsAssignable:
         )
         assert is_assignable(list_of_lists_int, [[1, 2], [3, 4]]) is True
         assert is_assignable(list_of_lists_int, [[1, 2], ["3", "4"]]) is False
-        # With auto-wrapping, each int element can be wrapped into a list
+        # With auto-wrapping: [1, 2, 3] has each element checked against list[int].
+        # Each int is assignable to list[int] via auto-wrap, so this passes.
         assert is_assignable(list_of_lists_int, [1, 2, 3]) is True
 
         # Dict of lists
@@ -403,7 +404,8 @@ class TestIsAssignable:
         )
         assert is_assignable(dict_of_lists, {"a": [1, 2], "b": [3, 4]}) is True
         assert is_assignable(dict_of_lists, {"a": [1, 2], "b": ["3", "4"]}) is False
-        # With auto-wrapping, each int value can be wrapped into a list
+        # With auto-wrapping: each dict value (1, 2) is checked against list[int].
+        # Each int is assignable to list[int] via auto-wrap, so this passes.
         assert is_assignable(dict_of_lists, {"a": 1, "b": 2}) is True
 
         # Union in list

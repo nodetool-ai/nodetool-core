@@ -178,7 +178,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             assert isinstance(value, ImageRef)
             if type(value.data) is list:
                 return True
-            # If ImageRef.data is not a list, fall through to auto-wrap check below
+            # Fall through to auto-wrap check - ImageRef can be wrapped if assignable to element type
         # Handle single value auto-wrapping: T -> list[T]
         # A single value can be assigned to list[T] if the value is assignable to T
         if len(type_meta.type_args) > 0:
