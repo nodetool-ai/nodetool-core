@@ -53,6 +53,11 @@ MINIMAX_VIDEO_GENERATION_URL = "https://api.minimax.io/v1/video_generation"
 MINIMAX_VIDEO_QUERY_URL = "https://api.minimax.io/v1/query/video_generation"
 MINIMAX_FILE_RETRIEVE_URL = "https://api.minimax.io/v1/files/retrieve"
 
+# Default frame rate for video duration calculation
+MINIMAX_VIDEO_DEFAULT_FPS = 24
+# Valid video durations in seconds
+MINIMAX_VIDEO_VALID_DURATIONS = [6, 10]
+
 # Known MiniMax image models
 MINIMAX_IMAGE_MODELS = [
     ImageModel(
@@ -404,6 +409,36 @@ class MiniMaxProvider(AnthropicProvider):
                 return ratio_str
 
         return None
+
+    def _add_video_params_to_payload(
+        self,
+        payload: dict[str, Any],
+        resolution: str | None,
+        num_frames: int | None,
+    ) -> None:
+        """Add resolution and duration parameters to video payload.
+
+        Args:
+            payload: The payload dict to modify in-place
+            resolution: Optional resolution string (e.g., "720P", "1080P")
+            num_frames: Optional number of frames to convert to duration
+        """
+        # Add optional resolution (720P, 768P, 1080P)
+        if resolution:
+            # Normalize resolution format
+            resolution_upper = resolution.upper()
+            if resolution_upper in ["720P", "768P", "1080P"]:
+                payload["resolution"] = resolution_upper
+            elif resolution_upper in ["720", "768", "1080"]:
+                payload["resolution"] = f"{resolution_upper}P"
+
+        # Add duration if specified (convert num_frames to seconds)
+        if num_frames:
+            duration = num_frames // MINIMAX_VIDEO_DEFAULT_FPS
+            if duration in MINIMAX_VIDEO_VALID_DURATIONS:
+                payload["duration"] = duration
+            else:
+                payload["duration"] = MINIMAX_VIDEO_VALID_DURATIONS[0]  # Default to 6 seconds
 
     async def get_available_tts_models(self) -> list[TTSModel]:
         """Get available MiniMax text-to-speech models.
@@ -761,22 +796,8 @@ class MiniMaxProvider(AnthropicProvider):
                 "prompt": prompt,
             }
 
-            # Add optional resolution (720P, 768P, 1080P)
-            if params.resolution:
-                # Normalize resolution format
-                resolution = params.resolution.upper()
-                if resolution in ["720P", "768P", "1080P"]:
-                    payload["resolution"] = resolution
-                elif resolution in ["720", "768", "1080"]:
-                    payload["resolution"] = f"{resolution}P"
-
-            # Add duration if specified (convert num_frames to seconds, assuming 24fps)
-            if params.num_frames:
-                duration = params.num_frames // 24
-                if duration in [6, 10]:
-                    payload["duration"] = duration
-                else:
-                    payload["duration"] = 6  # Default to 6 seconds
+            # Add optional resolution and duration
+            self._add_video_params_to_payload(payload, params.resolution, params.num_frames)
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -901,22 +922,8 @@ class MiniMaxProvider(AnthropicProvider):
                 "first_frame_image": image_base64,
             }
 
-            # Add optional resolution (720P, 768P, 1080P)
-            if params.resolution:
-                # Normalize resolution format
-                resolution = params.resolution.upper()
-                if resolution in ["720P", "768P", "1080P"]:
-                    payload["resolution"] = resolution
-                elif resolution in ["720", "768", "1080"]:
-                    payload["resolution"] = f"{resolution}P"
-
-            # Add duration if specified (convert num_frames to seconds, assuming 24fps)
-            if params.num_frames:
-                duration = params.num_frames // 24
-                if duration in [6, 10]:
-                    payload["duration"] = duration
-                else:
-                    payload["duration"] = 6  # Default to 6 seconds
+            # Add optional resolution and duration
+            self._add_video_params_to_payload(payload, params.resolution, params.num_frames)
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
