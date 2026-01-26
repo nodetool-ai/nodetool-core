@@ -172,10 +172,19 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         if python_type is list:
             t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else TypeMetadata(type="any")
             return all(is_assignable(t, v) for v in value)
-        # Handle ImageRef containing a list.
+        # Handle ImageRef containing a list data field.
+        # This is a special case where ImageRef.data can hold list data.
         if python_type == ImageRef:
             assert isinstance(value, ImageRef)
-            return type(value.data) is list
+            if type(value.data) is list:
+                return True
+            # If ImageRef.data is not a list, fall through to auto-wrap check below
+        # Handle single value auto-wrapping: T -> list[T]
+        # A single value can be assigned to list[T] if the value is assignable to T
+        if len(type_meta.type_args) > 0:
+            element_type = type_meta.type_args[0]
+            return is_assignable(element_type, value)
+        return False
     # Handle dictionary types.
     if type_meta.type == "dict" and python_type is dict:
         if len(type_meta.type_args) != 2:
