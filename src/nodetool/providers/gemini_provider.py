@@ -1,7 +1,7 @@
 import asyncio
 import mimetypes
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
@@ -1123,10 +1123,10 @@ class GeminiProvider(BaseProvider):
         for config in embedding_models_config:
             models.append(
                 EmbeddingModel(
-                    id=config["id"],  # type: ignore[arg-type]
-                    name=config["name"],  # type: ignore[arg-type]
+                    id=cast("str", config["id"]),
+                    name=cast("str", config["name"]),
                     provider=Provider.Gemini,
-                    dimensions=config["dimensions"],  # type: ignore[arg-type]
+                    dimensions=cast("int", config["dimensions"]),
                 )
             )
 
@@ -1191,7 +1191,8 @@ class GeminiProvider(BaseProvider):
 
             embeddings = [emb.values for emb in response.embeddings if emb.values]
 
-            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}")
+            dim_str = str(len(embeddings[0])) if embeddings and embeddings[0] else "0"
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {dim_str}")
 
             return embeddings  # type: ignore[return-value]
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
 
 import aiohttp
 import openai
@@ -449,10 +449,10 @@ class MistralProvider(OpenAIProvider):
         for config in embedding_models_config:
             models.append(
                 EmbeddingModel(
-                    id=config["id"],  # type: ignore[arg-type]
-                    name=config["name"],  # type: ignore[arg-type]
+                    id=cast("str", config["id"]),
+                    name=cast("str", config["name"]),
                     provider=Provider.Mistral,
-                    dimensions=config["dimensions"],  # type: ignore[arg-type]
+                    dimensions=cast("int", config["dimensions"]),
                 )
             )
 
