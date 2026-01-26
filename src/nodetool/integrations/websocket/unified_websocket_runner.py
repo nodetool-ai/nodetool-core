@@ -912,7 +912,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 return await self.reconnect_job(job_id, workflow_id)
 
             # Trigger resumption
-            success = await job_manager.resume_run(job_id)
+            success = await job_manager.resume_job(job_id)
 
             if not success:
                 raise ValueError(f"Failed to resume job {job_id}. Check server logs for details.")
