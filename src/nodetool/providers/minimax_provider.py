@@ -1,26 +1,34 @@
 """
-MiniMax provider implementation for chat completions.
+MiniMax provider implementation for chat completions, image generation, and text-to-speech.
 
 This module implements the ChatProvider interface for MiniMax models,
-using their Anthropic-compatible API endpoint.
+using their Anthropic-compatible API endpoint for chat, their
+image generation API for text-to-image, and their T2A API for text-to-speech.
 
 MiniMax Anthropic API Documentation: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
+MiniMax Image Generation API: https://platform.minimax.io/docs/guides/image-generation
+MiniMax T2A API Documentation: https://platform.minimax.io/docs/api-reference/speech-t2a-intro
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import base64
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
+import aiohttp
 import anthropic
+import numpy as np
 
 if TYPE_CHECKING:
-
+    from nodetool.providers.types import TextToImageParams
     from nodetool.workflows.processing_context import ProcessingContext
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    ImageModel,
     LanguageModel,
     Provider,
+    TTSModel,
 )
 from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.providers.base import register_provider
@@ -29,6 +37,59 @@ log = get_logger(__name__)
 
 # MiniMax Anthropic-compatible API base URL
 MINIMAX_BASE_URL = "https://api.minimax.io/anthropic"
+
+# MiniMax Image Generation API base URL
+MINIMAX_IMAGE_API_URL = "https://api.minimax.io/v1/image_generation"
+
+# MiniMax Text-to-Audio (TTS) API base URL
+MINIMAX_TTS_API_URL = "https://api.minimax.io/v1/t2a_v2"
+
+# Known MiniMax image models
+MINIMAX_IMAGE_MODELS = [
+    ImageModel(
+        id="image-01",
+        name="MiniMax Image-01",
+        provider=Provider.MiniMax,
+    ),
+]
+
+# Known MiniMax TTS models
+# Based on: https://platform.minimax.io/docs/api-reference/speech-t2a-intro
+MINIMAX_TTS_MODELS = [
+    {
+        "id": "speech-2.8-hd",
+        "name": "MiniMax Speech 2.8 HD",
+    },
+    {
+        "id": "speech-2.8-turbo",
+        "name": "MiniMax Speech 2.8 Turbo",
+    },
+    {
+        "id": "speech-2.6-hd",
+        "name": "MiniMax Speech 2.6 HD",
+    },
+    {
+        "id": "speech-2.6-turbo",
+        "name": "MiniMax Speech 2.6 Turbo",
+    },
+]
+
+# MiniMax TTS system voices
+# Based on: https://platform.minimax.io/docs/api-reference/speech-t2a-intro
+MINIMAX_TTS_VOICES = [
+    # English voices
+    "English_Graceful_Lady",
+    "English_Insightful_Speaker",
+    "English_radiant_girl",
+    "English_Persuasive_Man",
+    "English_Lucky_Robot",
+    "English_expressive_narrator",
+    # Chinese voices
+    "Chinese (Mandarin)_Lyrical_Voice",
+    "Chinese (Mandarin)_HK_Flight_Attendant",
+    # Japanese voices
+    "Japanese_Whisper_Belle",
+]
 
 
 @register_provider(Provider.MiniMax)
@@ -134,3 +195,316 @@ class MiniMaxProvider(AnthropicProvider):
 
         log.debug(f"Returning {len(models)} known MiniMax models")
         return models
+
+    async def get_available_image_models(self) -> list[ImageModel]:
+        """Get available MiniMax image generation models.
+
+        Returns a list of known MiniMax image models. MiniMax currently
+        supports the image-01 model for text-to-image generation.
+
+        Returns:
+            List of ImageModel instances for MiniMax
+        """
+        if not self.api_key:
+            log.debug("No MiniMax API key configured, returning empty image model list")
+            return []
+
+        log.debug(f"Returning {len(MINIMAX_IMAGE_MODELS)} known MiniMax image models")
+        return MINIMAX_IMAGE_MODELS
+
+    async def text_to_image(
+        self,
+        params: TextToImageParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using MiniMax's Image Generation API.
+
+        Uses the MiniMax text_to_image endpoint which supports the image-01 model
+        for high-quality image generation.
+
+        API Reference: https://platform.minimax.io/docs/guides/image-generation
+
+        Args:
+            params: Text-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "image-01")
+                - prompt: Text description of the desired image
+                - width/height: Desired dimensions
+                - aspect_ratio: Optional aspect ratio
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("MINIMAX_API_KEY is required for image generation.")
+
+        model_id = params.model.id if params.model and params.model.id else "image-01"
+
+        prompt = params.prompt.strip()
+
+        log.debug(f"Generating image with MiniMax model: {model_id}")
+        log.debug(f"Prompt: {prompt[:100]}...")
+
+        self._log_api_request("text_to_image", params=params)
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+
+            # Build the request payload according to MiniMax API
+            payload: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+                "response_format": "base64",
+            }
+
+            # Add optional aspect_ratio if width/height suggest a specific ratio
+            if params.width and params.height:
+                aspect_ratio = self._calculate_aspect_ratio(params.width, params.height)
+                if aspect_ratio:
+                    payload["aspect_ratio"] = aspect_ratio
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            timeout = aiohttp.ClientTimeout(total=request_timeout)
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(
+                    MINIMAX_IMAGE_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"MiniMax API error: {response.status} - {error_text}")
+                    raise RuntimeError(
+                        f"MiniMax text-to-image generation failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Extract image data from response
+                # MiniMax API returns base64-encoded image data
+                if "data" in result and "image_base64" in result["data"]:
+                    images = result["data"]["image_base64"]
+                    if images and len(images) > 0:
+                        image_bytes = base64.b64decode(images[0])
+                    else:
+                        raise RuntimeError("No image data returned in MiniMax response")
+                else:
+                    raise RuntimeError("No image data returned in MiniMax response")
+
+            log.debug(f"Generated image, size: {len(image_bytes)} bytes")
+            self._log_api_response("text_to_image", image_bytes=len(image_bytes))
+
+            return image_bytes
+
+        except aiohttp.ClientError as e:
+            log.error(f"MiniMax text-to-image request failed: {e}")
+            raise RuntimeError(f"MiniMax text-to-image generation failed: {e}") from e
+        except Exception as exc:
+            log.error(f"MiniMax text-to-image generation failed: {exc}")
+            raise RuntimeError(f"MiniMax text-to-image generation failed: {exc}") from exc
+
+    def _calculate_aspect_ratio(self, width: int, height: int) -> str | None:
+        """Calculate aspect ratio string from width and height.
+
+        Args:
+            width: Image width in pixels
+            height: Image height in pixels
+
+        Returns:
+            Aspect ratio string (e.g., "16:9", "1:1") or None if non-standard
+        """
+        if width == height:
+            return "1:1"
+
+        # Common aspect ratios
+        ratio = width / height
+        common_ratios = {
+            16 / 9: "16:9",
+            9 / 16: "9:16",
+            4 / 3: "4:3",
+            3 / 4: "3:4",
+            3 / 2: "3:2",
+            2 / 3: "2:3",
+            21 / 9: "21:9",
+            9 / 21: "9:21",
+        }
+
+        # Find closest match with 5% tolerance
+        for known_ratio, ratio_str in common_ratios.items():
+            if abs(ratio - known_ratio) / known_ratio < 0.05:
+                return ratio_str
+
+        return None
+
+    async def get_available_tts_models(self) -> list[TTSModel]:
+        """Get available MiniMax text-to-speech models.
+
+        Returns a list of known MiniMax TTS models. MiniMax supports several
+        speech synthesis models with various voices.
+
+        Returns:
+            List of TTSModel instances for MiniMax TTS
+        """
+        if not self.api_key:
+            log.debug("No MiniMax API key configured, returning empty TTS model list")
+            return []
+
+        models: list[TTSModel] = []
+        for config in MINIMAX_TTS_MODELS:
+            models.append(
+                TTSModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.MiniMax,
+                    voices=MINIMAX_TTS_VOICES,
+                )
+            )
+
+        log.debug(f"Returning {len(models)} MiniMax TTS models")
+        return models
+
+    async def text_to_speech(
+        self,
+        text: str,
+        model: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]:
+        """Generate speech audio from text using MiniMax T2A API.
+
+        Uses MiniMax's T2A (Text-to-Audio) API to generate speech from text.
+        The audio is returned as int16 PCM samples at 24kHz mono.
+
+        API Reference: https://platform.minimax.io/docs/api-reference/speech-t2a-intro
+
+        Args:
+            text: Input text to convert to speech (max 10,000 characters)
+            model: Model identifier (e.g., "speech-2.8-hd", "speech-2.8-turbo")
+            voice: Voice identifier (e.g., "English_Graceful_Lady")
+            speed: Speech speed multiplier (0.5 to 2.0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional MiniMax parameters
+
+        Yields:
+            numpy.ndarray: Int16 audio chunks at 24kHz mono
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        log.debug(f"Generating speech for model: {model}, voice: {voice}, speed: {speed}")
+
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("MINIMAX_API_KEY is required for text-to-speech generation")
+
+        # Default voice if not specified
+        voice = voice or "English_Graceful_Lady"
+
+        # Clamp speed to MiniMax's supported range
+        speed = max(0.5, min(2.0, speed))
+
+        log.debug(f"Making TTS API call with model={model}, voice={voice}, speed={speed}")
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+
+            # Build the request payload according to MiniMax T2A API
+            payload: dict[str, Any] = {
+                "model": model,
+                "text": text,
+                "stream": False,
+                "output_format": "hex",
+                "voice_setting": {
+                    "voice_id": voice,
+                    "speed": speed,
+                    "vol": 1.0,
+                    "pitch": 0,
+                },
+                "audio_setting": {
+                    "sample_rate": 24000,
+                    "format": "pcm",
+                    "channel": 1,
+                },
+            }
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            timeout = aiohttp.ClientTimeout(total=request_timeout)
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(
+                    MINIMAX_TTS_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"MiniMax TTS API error: {response.status} - {error_text}")
+                    raise RuntimeError(
+                        f"MiniMax text-to-speech generation failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Check for API errors in response
+                base_resp = result.get("base_resp", {})
+                status_code = base_resp.get("status_code", 0)
+                if status_code != 0:
+                    status_msg = base_resp.get("status_msg", "Unknown error")
+                    log.error(f"MiniMax TTS API returned error: {status_code} - {status_msg}")
+                    raise RuntimeError(
+                        f"MiniMax text-to-speech generation failed: {status_msg} (code: {status_code})"
+                    )
+
+                # Extract audio data from response
+                data = result.get("data", {})
+                audio_hex = data.get("audio")
+
+                if not audio_hex:
+                    raise RuntimeError("No audio data returned in MiniMax TTS response")
+
+                # Decode hex-encoded audio to bytes
+                audio_bytes = bytes.fromhex(audio_hex)
+
+                # Convert to int16 numpy array
+                audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+
+                log.debug(f"Generated audio, samples: {len(audio_array)}")
+                self._log_api_response("text_to_speech", audio_samples=len(audio_array))
+
+                yield audio_array
+
+        except aiohttp.ClientError as e:
+            log.error(f"MiniMax text-to-speech request failed: {e}")
+            raise RuntimeError(f"MiniMax text-to-speech generation failed: {e}") from e
+        except Exception as exc:
+            log.error(f"MiniMax text-to-speech generation failed: {exc}")
+            raise RuntimeError(f"MiniMax text-to-speech generation failed: {exc}") from exc

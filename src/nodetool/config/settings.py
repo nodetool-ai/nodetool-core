@@ -204,9 +204,27 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="TOGETHER_API_KEY",
+    group="Together",
+    description="Together AI API key for accessing open-source LLMs through Together's inference API",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="GROQ_API_KEY",
+    group="Groq",
+    description="Groq API key for accessing ultra-fast LLM inference on Groq's LPU hardware",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ZHIPU_API_KEY",
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="MISTRAL_API_KEY",
+    group="Mistral",
+    description="Mistral API key for accessing Mistral AI models through Mistral's OpenAI-compatible API",
 )
 register_setting(
     package_name="nodetool",
