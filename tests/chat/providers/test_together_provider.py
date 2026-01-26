@@ -11,6 +11,7 @@ This test suite verifies that the Together AI provider correctly:
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
+import httpx
 import openai
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
@@ -32,6 +33,41 @@ from openai.types.completion_usage import CompletionUsage
 from nodetool.providers.together_provider import TogetherProvider
 
 
+# Mock classes for aiohttp testing
+class MockResponse:
+    """Mock aiohttp response for testing."""
+
+    def __init__(self, data: dict, status: int = 200):
+        self._data = data
+        self.status = status
+
+    async def json(self):
+        return self._data
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+
+class MockSession:
+    """Mock aiohttp session for testing."""
+
+    def __init__(self, response_data: dict, status: int = 200, *args, **kwargs):
+        self._response_data = response_data
+        self._status = status
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    def get(self, *args, **kwargs):
+        return MockResponse(self._response_data, self._status)
+
+
 class TestTogetherProvider:
     """Test suite for Together AI provider."""
 
@@ -44,8 +80,6 @@ class TestTogetherProvider:
     def test_get_client_configuration(self):
         """Test that Together AI client is configured with correct base URL."""
         provider = TogetherProvider(secrets={"TOGETHER_API_KEY": "test-key"})
-
-        import httpx
 
         with patch("nodetool.runtime.resources.require_scope") as mock_scope:
             # Create a real httpx.AsyncClient instead of a mock
@@ -146,34 +180,11 @@ class TestTogetherProvider:
             ]
         }
 
-        # Create mock response object
-        class MockResponse:
-            status = 200
+        # Create a factory function that returns a new MockSession for each call
+        def mock_session_factory(*args, **kwargs):
+            return MockSession(mock_models_data, 200, *args, **kwargs)
 
-            async def json(self):
-                return mock_models_data
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                return None
-
-        # Create mock session
-        class MockSession:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                return None
-
-            def get(self, *args, **kwargs):
-                return MockResponse()
-
-        with patch("aiohttp.ClientSession", MockSession):
+        with patch("aiohttp.ClientSession", mock_session_factory):
             models = await provider.get_available_language_models()
 
             # Should only get chat/language models, not image models

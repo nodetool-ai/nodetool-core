@@ -193,11 +193,11 @@ class TogetherProvider(OpenAIProvider):
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
             json_schema: Optional JSON schema for structured output
-            temperature: Optional sampling temperature
-            top_p: Optional nucleus sampling parameter
-            presence_penalty: Optional presence penalty
-            frequency_penalty: Optional frequency penalty
-            response_format: The format of the response
+            temperature: Optional sampling temperature (0.0-1.0)
+            top_p: Optional nucleus sampling parameter (0.0-1.0)
+            presence_penalty: Optional presence penalty (-2.0 to 2.0)
+            frequency_penalty: Optional frequency penalty (-2.0 to 2.0)
+            response_format: Optional format specification for the response (e.g., {"type": "json_object"})
             **kwargs: Additional arguments to pass to the API
 
         Returns:
