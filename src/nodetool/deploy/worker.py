@@ -286,6 +286,10 @@ def run_worker(
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])
 
+    # Check for insecure authentication configuration when binding to network interfaces
+    for warning in Environment.check_insecure_auth_binding(host):
+        console.print(f"[bold red]{warning}[/bold red]")
+
     # Run the server
     try:
         loop = "asyncio" if platform.system() == "Windows" else "uvloop"
