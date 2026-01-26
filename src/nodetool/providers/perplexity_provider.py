@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
-import aiohttp
 import openai
 
 if TYPE_CHECKING:
@@ -121,52 +120,67 @@ class PerplexityProvider(OpenAIProvider):
         """
         Get available Perplexity models.
 
-        Fetches models dynamically from the Perplexity API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Returns a static list of Perplexity models according to their documentation.
+        See: https://docs.perplexity.ai/getting-started/models
 
         Returns:
             List of LanguageModel instances for Perplexity
         """
-        if not self.api_key:
-            log.debug("No Perplexity API key configured, returning empty model list")
-            return []
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-            }
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get("https://api.perplexity.ai/models") as response,
-            ):
-                if response.status != 200:
-                    log.warning(f"Failed to fetch Perplexity models: HTTP {response.status}")
-                    return []
-                payload = await response.json()
-                data = payload.get("data", [])
-
-                models: list[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id")
-                    if not model_id:
-                        continue
-
-                    # Use the name field if available, otherwise use id
-                    model_name = item.get("name", model_id)
-
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_name,
-                            provider=Provider.Perplexity,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Perplexity models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching Perplexity models: {e}")
-            return []
+        # Static list of Perplexity models from official documentation
+        models = [
+            LanguageModel(
+                id="sonar",
+                name="Sonar",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="sonar-pro",
+                name="Sonar Pro",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="sonar-reasoning",
+                name="Sonar Reasoning",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-sonar-small-128k-online",
+                name="Llama 3.1 Sonar Small 128k (Online)",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-sonar-large-128k-online",
+                name="Llama 3.1 Sonar Large 128k (Online)",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-sonar-huge-128k-online",
+                name="Llama 3.1 Sonar Huge 128k (Online)",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-sonar-small-128k-chat",
+                name="Llama 3.1 Sonar Small 128k (Chat)",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-sonar-large-128k-chat",
+                name="Llama 3.1 Sonar Large 128k (Chat)",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-8b-instruct",
+                name="Llama 3.1 8B Instruct",
+                provider=Provider.Perplexity,
+            ),
+            LanguageModel(
+                id="llama-3.1-70b-instruct",
+                name="Llama 3.1 70B Instruct",
+                provider=Provider.Perplexity,
+            ),
+        ]
+        log.debug(f"Returning {len(models)} Perplexity models from static list")
+        return models
 
     async def generate_message(  # type: ignore[override]
         self,
