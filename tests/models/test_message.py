@@ -252,7 +252,7 @@ class TestMessageEncryption:
         assert await message2.get_decrypted_content() == content
 
     async def test_same_content_different_ciphertext(self, user_id: str):
-        """Test that encrypting the same content produces different ciphertext (IV randomization)."""
+        """Test that encrypting the same content produces different ciphertext."""
         content = "Same content to encrypt"
 
         message1 = await Message.create(
@@ -269,7 +269,7 @@ class TestMessageEncryption:
             role="user",
         )
 
-        # Fernet uses random IV, so encrypted values should be different
+        # Fernet includes random nonce, so encrypted values should be different
         assert message1.encrypted_content != message2.encrypted_content
 
         # But both should decrypt to the same value

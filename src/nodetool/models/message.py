@@ -25,6 +25,16 @@ from nodetool.metadata.types import (
 from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field as CondField
 
+# Type alias for message content (matches metadata.types.MessageContent)
+MessageContentType = (
+    MessageTextContent
+    | MessageImageContent
+    | MessageAudioContent
+    | MessageVideoContent
+    | MessageDocumentContent
+    | MessageThoughtContent
+)
+
 # Map type discriminator to class for deserialization
 _MESSAGE_CONTENT_TYPES = {
     "text": MessageTextContent,
@@ -62,7 +72,9 @@ class Message(DBModel):
     name: str | None = DBField(default=None)
     # content field is no longer persisted - we use encrypted_content instead
     # Keep this field for in-memory operations and backwards compatibility
-    content: str | dict[str, Any] | list | None = Field(default=None)
+    content: str | dict[str, Any] | list[MessageContentType] | None = Field(
+        default=None
+    )
     # Encrypted content stored in database
     encrypted_content: str | None = DBField(default=None)
     tool_calls: list[ToolCall] | None = DBField(default=None)
@@ -129,7 +141,7 @@ class Message(DBModel):
 
     def _deserialize_content(
         self, serialized: str
-    ) -> str | dict[str, Any] | list | None:
+    ) -> str | dict[str, Any] | list[MessageContentType] | None:
         """Deserialize content from JSON string after decryption."""
         data = json.loads(serialized)
         if data is None:
@@ -170,7 +182,7 @@ class Message(DBModel):
 
     async def get_decrypted_content(
         self,
-    ) -> str | dict[str, Any] | list | None:
+    ) -> str | dict[str, Any] | list[MessageContentType] | None:
         """
         Decrypt and return the message content.
 
@@ -235,7 +247,7 @@ class Message(DBModel):
         return temp_instance
 
     async def update_content(
-        self, new_content: str | dict[str, Any] | list | None
+        self, new_content: str | dict[str, Any] | list[MessageContentType] | None
     ) -> None:
         """
         Update the message content with encryption.
