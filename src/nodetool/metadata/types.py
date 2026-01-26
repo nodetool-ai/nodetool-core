@@ -429,6 +429,7 @@ class Provider(str, enum.Enum):
     Ollama = "ollama"
     LMStudio = "lmstudio"
     KIE = "kie"
+    Together = "together"
     # Comfy providers (two explicit entries)
     ComfyLocal = "comfy_local"
     ComfyRunpod = "comfy_runpod"

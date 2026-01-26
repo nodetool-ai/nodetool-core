@@ -204,6 +204,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="TOGETHER_API_KEY",
+    group="Together",
+    description="Together AI API key for accessing open-source LLMs through Together's inference API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="GROQ_API_KEY",
     group="Groq",
     description="Groq API key for accessing ultra-fast LLM inference on Groq's LPU hardware",
