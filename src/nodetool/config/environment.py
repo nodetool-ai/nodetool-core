@@ -1,3 +1,4 @@
+import logging
 import os
 import socket
 import uuid
@@ -279,6 +280,66 @@ class Environment:
         - static/supabase: enforce
         """
         return cls.get_auth_provider_kind() in ("static", "supabase")
+
+    @classmethod
+    def check_insecure_auth_binding(cls, host: str) -> list[str]:
+        """Check for insecure authentication configuration when binding to network interfaces.
+
+        Returns a list of warning messages if the configuration is potentially insecure.
+        An empty list means the configuration is acceptable.
+
+        A configuration is considered insecure when:
+        - AUTH_PROVIDER is 'none' or 'local' (no authentication enforcement)
+        - AND the server is bound to 0.0.0.0 or :: (all network interfaces)
+
+        This combination exposes the server to the network without authentication,
+        making it accessible to anyone who can reach the host.
+
+        Args:
+            host: The host address the server is binding to.
+
+        Returns:
+            List of warning messages (empty if configuration is secure).
+        """
+        warnings: list[str] = []
+        auth_provider = cls.get_auth_provider_kind()
+
+        # Hosts that expose the server to the network
+        network_exposed_hosts = ("0.0.0.0", "::", "")
+
+        if host in network_exposed_hosts and auth_provider in ("none", "local"):
+            warnings.append(
+                f"⚠️  SECURITY WARNING: Server is binding to '{host}' (all network interfaces) "
+                f"with AUTH_PROVIDER='{auth_provider}' which does NOT enforce authentication."
+            )
+            warnings.append(
+                "   This configuration allows unauthenticated access from any network host."
+            )
+            warnings.append(
+                "   For production or network-exposed deployments, set AUTH_PROVIDER to 'static' or 'supabase'."
+            )
+            warnings.append(
+                "   Example: AUTH_PROVIDER=static or use --auth-provider static"
+            )
+
+        return warnings
+
+    @classmethod
+    def emit_auth_warnings(cls, host: str, logger: logging.Logger | None = None) -> None:
+        """Check and emit warnings for insecure authentication configurations.
+
+        This method should be called during server startup to alert operators
+        about potentially insecure configurations.
+
+        Args:
+            host: The host address the server is binding to.
+            logger: Optional logger to use. If None, uses the module logger.
+        """
+        log = logger or get_logger(__name__)
+        warnings = cls.check_insecure_auth_binding(host)
+
+        for warning in warnings:
+            log.warning(warning)
 
     @classmethod
     def _get_int_setting(cls, key: str, default: int) -> int:

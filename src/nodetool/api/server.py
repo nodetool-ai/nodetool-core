@@ -588,6 +588,9 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         )
     )
 
+    # Check for insecure authentication configuration when binding to network interfaces
+    Environment.emit_auth_warnings(host, logger=log)
+
     # Uvicorn uses its own logging; keep level name plain for compatibility
     formatter = {
         "format": os.getenv(

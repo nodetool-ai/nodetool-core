@@ -409,6 +409,10 @@ def run_chat_server(
     console.print("Workflows:", [w.name for w in workflows])
     console.print("\nSend POST requests with Authorization: Bearer YOUR_TOKEN header")
 
+    # Check for insecure authentication configuration when binding to network interfaces
+    for warning in Environment.check_insecure_auth_binding(host):
+        console.print(f"[bold red]{warning}[/bold red]")
+
     # Run the server
     try:
         uvicorn.run(app, host=host, port=port, log_level="info")
