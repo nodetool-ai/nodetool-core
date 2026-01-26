@@ -36,7 +36,7 @@ log = get_logger(__name__)
 MINIMAX_BASE_URL = "https://api.minimax.io/anthropic"
 
 # MiniMax Image Generation API base URL
-MINIMAX_IMAGE_API_URL = "https://api.minimax.io/v1/text_to_image"
+MINIMAX_IMAGE_API_URL = "https://api.minimax.io/v1/image_generation"
 
 # Known MiniMax image models
 MINIMAX_IMAGE_MODELS = [
@@ -221,6 +221,7 @@ class MiniMaxProvider(AnthropicProvider):
             payload: dict[str, Any] = {
                 "model": model_id,
                 "prompt": prompt,
+                "response_format": "base64",
             }
 
             # Add optional aspect_ratio if width/height suggest a specific ratio
@@ -228,10 +229,6 @@ class MiniMaxProvider(AnthropicProvider):
                 aspect_ratio = self._calculate_aspect_ratio(params.width, params.height)
                 if aspect_ratio:
                     payload["aspect_ratio"] = aspect_ratio
-
-            # Add optional parameters if provided
-            if hasattr(params, "n") and params.n:
-                payload["n"] = params.n
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -258,16 +255,10 @@ class MiniMaxProvider(AnthropicProvider):
 
                 # Extract image data from response
                 # MiniMax API returns base64-encoded image data
-                if "data" in result and len(result["data"]) > 0:
-                    image_data = result["data"][0]
-                    if "b64_image" in image_data:
-                        image_bytes = base64.b64decode(image_data["b64_image"])
-                    elif "url" in image_data:
-                        # Fallback to URL if base64 not provided
-                        async with session.get(image_data["url"]) as img_response:
-                            if img_response.status != 200:
-                                raise RuntimeError("Failed to download generated image from URL")
-                            image_bytes = await img_response.read()
+                if "data" in result and "image_base64" in result["data"]:
+                    images = result["data"]["image_base64"]
+                    if images and len(images) > 0:
+                        image_bytes = base64.b64decode(images[0])
                     else:
                         raise RuntimeError("No image data returned in MiniMax response")
                 else:

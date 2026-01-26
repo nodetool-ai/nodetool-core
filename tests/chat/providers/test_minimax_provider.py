@@ -341,7 +341,7 @@ class TestMiniMaxImageGeneration:
         test_image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         test_image_b64 = base64.b64encode(test_image_bytes).decode()
 
-        mock_response = {"data": [{"b64_image": test_image_b64}]}
+        mock_response = {"data": {"image_base64": [test_image_b64]}}
 
         params = TextToImageParams(
             model=ImageModel(id="image-01", name="MiniMax Image-01", provider=Provider.MiniMax),
@@ -411,4 +411,4 @@ class TestMiniMaxImageGeneration:
         """Test MINIMAX_IMAGE_API_URL constant."""
         from nodetool.providers.minimax_provider import MINIMAX_IMAGE_API_URL
 
-        assert MINIMAX_IMAGE_API_URL == "https://api.minimax.io/v1/text_to_image"
+        assert MINIMAX_IMAGE_API_URL == "https://api.minimax.io/v1/image_generation"
