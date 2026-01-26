@@ -109,6 +109,7 @@ def import_providers():
         kie_provider,
         lmstudio_provider,
         minimax_provider,
+        mistral_provider,
         ollama_provider,
         openai_provider,
         openrouter_provider,

@@ -438,6 +438,7 @@ class Provider(str, enum.Enum):
     Gemini = "gemini"
     VLLM = "vllm"
     ZAI = "zai"
+    Mistral = "mistral"
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"
