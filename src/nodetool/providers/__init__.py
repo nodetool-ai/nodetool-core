@@ -107,10 +107,12 @@ def import_providers():
         huggingface_provider,
         kie_provider,
         lmstudio_provider,
+        meshy_provider,
         minimax_provider,
         ollama_provider,
         openai_provider,
         openrouter_provider,
+        rodin_provider,
         vllm_provider,
         zai_provider,
     )
