@@ -204,6 +204,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="GROQ_API_KEY",
+    group="Groq",
+    description="Groq API key for accessing ultra-fast LLM inference on Groq's LPU hardware",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ZHIPU_API_KEY",
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
