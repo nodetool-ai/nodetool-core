@@ -111,6 +111,7 @@ def import_providers():
         ollama_provider,
         openai_provider,
         openrouter_provider,
+        perplexity_provider,
         vllm_provider,
         zai_provider,
     )
@@ -300,10 +301,10 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 __all__ = [
     "BaseProvider",
     "Chunk",
-    "clear_provider_cache",
     "FakeProvider",
     "MockProvider",
     "ProviderCapability",
+    "clear_provider_cache",
     "create_fake_tool_call",
     "create_simple_fake_provider",
     "create_streaming_fake_provider",

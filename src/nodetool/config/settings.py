@@ -192,6 +192,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="PERPLEXITY_API_KEY",
+    group="Perplexity",
+    description="Perplexity API key for accessing Perplexity AI models through OpenAI-compatible API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ANTHROPIC_API_KEY",
     group="Anthropic",
     description="Anthropic API key for accessing Claude models and other Anthropic services",
