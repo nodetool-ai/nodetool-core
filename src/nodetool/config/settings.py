@@ -204,6 +204,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="TOGETHER_API_KEY",
+    group="Together",
+    description="Together AI API key for accessing open-source LLMs through Together's inference API",
+)
+register_secret(
+    package_name="nodetool",
     env_var="ZHIPU_API_KEY",
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
