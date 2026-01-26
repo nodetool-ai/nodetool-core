@@ -107,7 +107,9 @@ class GroqProvider(OpenAIProvider):
             True if the model supports function calling, False otherwise.
         """
         log.debug(f"Checking tool support for model: {model}")
-        # Groq models generally support tool calling
+        # Groq models generally support tool calling according to their API documentation.
+        # All recent Groq models (Llama 3.x, Qwen, etc.) support function calling.
+        # If specific models don't support tools, they will simply ignore the tools parameter.
         log.debug(f"Model {model} supports tool calling")
         return True
 
