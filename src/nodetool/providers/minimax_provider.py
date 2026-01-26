@@ -293,7 +293,7 @@ class MiniMaxProvider(AnthropicProvider):
             height: Image height in pixels
 
         Returns:
-            Aspect ratio string (e.g., "16:9", "1:1") or None if standard
+            Aspect ratio string (e.g., "16:9", "1:1") or None if non-standard
         """
         if width == height:
             return "1:1"
