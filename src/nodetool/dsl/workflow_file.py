@@ -534,6 +534,10 @@ def run(graph_or_workflow: ApiGraph | Any) -> None:
     from nodetool.dsl.graph import run_graph_async
     from nodetool.runtime.resources import ResourceScope
 
+    def _parse_bool(value: str) -> bool:
+        """Parse a string value to boolean."""
+        return value.lower() in ("true", "1", "yes")
+
     # Extract graph from workflow object if needed
     if isinstance(graph_or_workflow, ApiGraph):
         graph = graph_or_workflow
@@ -550,7 +554,10 @@ def run(graph_or_workflow: ApiGraph | Any) -> None:
     )
 
     # Find input nodes and create CLI arguments
+    # Also build a lookup dict for O(1) node access
+    node_by_id: dict[str, Any] = {node.id: node for node in graph.nodes}
     input_nodes: dict[str, dict[str, Any]] = {}
+
     for node in graph.nodes:
         if node.type.startswith("nodetool.input."):
             input_type = node.type.split(".")[-1]
@@ -570,7 +577,7 @@ def run(graph_or_workflow: ApiGraph | Any) -> None:
             if input_type == "BooleanInput":
                 parser.add_argument(
                     arg_name,
-                    type=lambda x: x.lower() in ("true", "1", "yes"),
+                    type=_parse_bool,
                     default=default_value,
                     help=help_text,
                 )
@@ -601,21 +608,19 @@ def run(graph_or_workflow: ApiGraph | Any) -> None:
                 parser.add_argument(
                     arg_name,
                     type=str,
-                    default=str(default_value) if default_value else None,
+                    default=str(default_value) if default_value is not None else None,
                     help=help_text,
                 )
 
     args = parser.parse_args()
 
-    # Update graph nodes with CLI argument values
+    # Update graph nodes with CLI argument values using O(1) lookup
     for input_name, node_info in input_nodes.items():
         arg_value = getattr(args, input_name, None)
         if arg_value is not None:
-            # Find and update the node's data
-            for node in graph.nodes:
-                if node.id == node_info["node_id"]:
-                    node.data["value"] = arg_value
-                    break
+            node = node_by_id.get(node_info["node_id"])
+            if node is not None:
+                node.data["value"] = arg_value
 
     # Run the workflow
     async def _run():
