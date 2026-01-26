@@ -36,6 +36,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -1084,6 +1085,119 @@ class GeminiProvider(BaseProvider):
 
         log.debug(f"Returning {len(models)} Gemini video models")
         return models
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """Get available Gemini embedding models.
+
+        Returns embedding models only if GEMINI_API_KEY is configured.
+        Source: https://ai.google.dev/gemini-api/docs/embeddings
+
+        Returns:
+            List of EmbeddingModel instances for Gemini
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty embedding model list")
+            return []
+
+        # Gemini embedding models
+        # Source: https://ai.google.dev/gemini-api/docs/models/gemini#text-embedding
+        embedding_models_config = [
+            {
+                "id": "text-embedding-004",
+                "name": "Text Embedding 004",
+                "dimensions": 768,
+            },
+            {
+                "id": "text-embedding-005",
+                "name": "Text Embedding 005",
+                "dimensions": 768,
+            },
+            {
+                "id": "gemini-embedding-exp-03-07",
+                "name": "Gemini Embedding Experimental",
+                "dimensions": 3072,
+            },
+        ]
+
+        models: list[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=config["id"],  # type: ignore[arg-type]
+                    name=config["name"],  # type: ignore[arg-type]
+                    provider=Provider.Gemini,
+                    dimensions=config["dimensions"],  # type: ignore[arg-type]
+                )
+            )
+
+        log.debug(f"Returning {len(models)} Gemini embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs: Any,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using Gemini's Embeddings API.
+
+        Uses the embed_content endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "text-embedding-004", "text-embedding-005")
+            **kwargs: Additional parameters:
+                - dimensions: Optional output dimensions (for models that support it)
+                - task_type: Optional task type for the embedding
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build optional config
+            config: dict[str, Any] = {}
+            if kwargs.get("dimensions"):
+                config["output_dimensionality"] = kwargs["dimensions"]
+            if kwargs.get("task_type"):
+                config["task_type"] = kwargs["task_type"]
+
+            # Generate embeddings using Gemini API
+            response = await client.models.embed_content(
+                model=model,
+                contents=texts,
+                config=config if config else None,
+            )
+
+            # Extract embeddings from response
+            if not response.embeddings:
+                raise RuntimeError("No embeddings returned from Gemini API")
+
+            embeddings = [emb.values for emb in response.embeddings if emb.values]
+
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}")
+
+            return embeddings  # type: ignore[return-value]
+
+        except Exception as e:
+            log.error(f"Gemini embedding generation failed: {e}")
+            raise RuntimeError(f"Gemini embedding generation failed: {str(e)}") from e
 
     async def automatic_speech_recognition(
         self,

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    EmbeddingModel,
     LanguageModel,
     Message,
     Provider,
@@ -420,3 +421,40 @@ class MistralProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching Mistral models: {e}")
             return []
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """Get available Mistral embedding models.
+
+        Returns embedding models only if MISTRAL_API_KEY is configured.
+        Source: https://docs.mistral.ai/capabilities/embeddings/
+
+        Returns:
+            List of EmbeddingModel instances for Mistral
+        """
+        if not self.api_key:
+            log.debug("No Mistral API key configured, returning empty embedding model list")
+            return []
+
+        # Mistral embedding models
+        # Source: https://docs.mistral.ai/capabilities/embeddings/
+        embedding_models_config = [
+            {
+                "id": "mistral-embed",
+                "name": "Mistral Embed",
+                "dimensions": 1024,
+            },
+        ]
+
+        models: list[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=config["id"],  # type: ignore[arg-type]
+                    name=config["name"],  # type: ignore[arg-type]
+                    provider=Provider.Mistral,
+                    dimensions=config["dimensions"],  # type: ignore[arg-type]
+                )
+            )
+
+        log.debug(f"Returning {len(models)} Mistral embedding models")
+        return models
