@@ -10,12 +10,11 @@ These tests verify:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from nodetool.metadata.types import Model3DModel, Provider
 from nodetool.providers.base import ProviderCapability
-from nodetool.providers.meshy_provider import MeshyProvider, MESHY_3D_MODELS
-from nodetool.providers.types import TextTo3DParams, ImageTo3DParams
+from nodetool.providers.meshy_provider import MESHY_3D_MODELS, MeshyProvider
+from nodetool.providers.types import ImageTo3DParams, TextTo3DParams
 
 
 class TestMeshyProviderInitialization:
