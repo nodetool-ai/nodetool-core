@@ -104,6 +104,7 @@ def import_providers():
         comfy_runpod_provider,
         fake_provider,
         gemini_provider,
+        groq_provider,
         huggingface_provider,
         kie_provider,
         lmstudio_provider,
