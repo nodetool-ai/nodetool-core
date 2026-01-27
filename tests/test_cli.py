@@ -233,6 +233,7 @@ class TestWorkflowsListDiagnostics:
         import click
 
         import nodetool.cli as cli_mod
+        import nodetool.runtime.db_sqlite as db_sqlite
         import nodetool.runtime.resources as resources
         from nodetool.tools.workflow_tools import WorkflowTools
 
@@ -249,14 +250,39 @@ class TestWorkflowsListDiagnostics:
         def fake_diag(*args, **kwargs) -> None:
             click.echo("[diagnostics] FAKE", err=True)
 
+        shutdown_called = {"value": False}
+
+        async def fake_shutdown_all_sqlite_pools() -> None:
+            shutdown_called["value"] = True
+
         monkeypatch.setattr(resources, "ResourceScope", DummyScope)
         monkeypatch.setattr(WorkflowTools, "list_workflows", staticmethod(fake_list_workflows))
         monkeypatch.setattr(cli_mod, "_print_thread_diagnostics", fake_diag)
+        monkeypatch.setattr(db_sqlite, "shutdown_all_sqlite_pools", fake_shutdown_all_sqlite_pools)
 
         runner = CliRunner()
         result = runner.invoke(cli, ["workflows", "list", "--debug-threads"])
         assert result.exit_code == 0
         assert "[diagnostics] FAKE" in result.output
+        assert shutdown_called["value"] is True
+
+
+class TestCliAsyncRunnerCleanup:
+    def test_run_async_shuts_down_sqlite_pools(self, monkeypatch: pytest.MonkeyPatch):
+        import nodetool.cli as cli_mod
+        import nodetool.runtime.db_sqlite as db_sqlite
+
+        called = {"value": False}
+
+        async def fake_shutdown_all_sqlite_pools() -> None:
+            called["value"] = True
+
+        async def do_work() -> int:
+            return 123
+
+        monkeypatch.setattr(db_sqlite, "shutdown_all_sqlite_pools", fake_shutdown_all_sqlite_pools)
+        assert cli_mod._run_async(do_work()) == 123
+        assert called["value"] is True
     def test_node_tools_import_is_clean(self):
         """Test that importing node_tools does not trigger heavy imports."""
         script = """
