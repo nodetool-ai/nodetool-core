@@ -19,7 +19,7 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 
 # System prompt template for HTML generation
-SYSTEM_PROMPT_TEMPLATE = '''You are VibeCoder, an expert frontend developer that creates beautiful, self-contained HTML applications for Nodetool workflows.
+SYSTEM_PROMPT_TEMPLATE = """You are VibeCoder, an expert frontend developer that creates beautiful, self-contained HTML applications for Nodetool workflows.
 
 ## Your Task
 Generate a complete, production-ready HTML file that serves as a custom UI for the workflow described below. The HTML must be fully self-contained with embedded CSS and JavaScript.
@@ -70,23 +70,18 @@ class NodeToolRunner {{
   async run(params = {{}}) {{
     return new Promise((resolve, reject) => {{
       this.socket = new WebSocket(this.wsUrl);
-      this.socket.binaryType = 'arraybuffer';
 
       this.socket.onopen = () => {{
         this.onStatusChange('running');
         const request = {{
-          type: 'run_job_request',
-          api_url: this.apiUrl,
           workflow_id: this.workflowId,
-          job_type: 'workflow',
-          auth_token: 'local_token',
           params: params
         }};
-        this.socket.send(msgpack.encode({{ command: 'run_job', data: request }}));
+        this.socket.send(JSON.stringify({{ command: 'run_job', data: request }}));
       }};
 
       this.socket.onmessage = (event) => {{
-        const data = msgpack.decode(new Uint8Array(event.data));
+        const data = JSON.parse(event.data);
         if (data.job_id) this.jobId = data.job_id;
 
         switch (data.type) {{
@@ -128,16 +123,10 @@ class NodeToolRunner {{
 
   cancel() {{
     if (this.socket && this.socket.readyState === WebSocket.OPEN && this.jobId) {{
-      this.socket.send(msgpack.encode({{ command: 'cancel_job', data: {{ job_id: this.jobId }} }}));
+      this.socket.send(JSON.stringify({{ command: 'cancel_job', data: {{ job_id: this.jobId }} }}));
     }}
   }}
 }}
-```
-
-### 3. Required CDN
-Add this in <head>:
-```html
-<script src="https://unpkg.com/msgpack-lite@0.1.26/dist/msgpack.min.js"></script>
 ```
 
 ### 4. Form Generation Rules
@@ -183,7 +172,7 @@ Return ONLY the complete HTML file wrapped in a code block:
 ```
 
 Do not include any explanation before or after the code block. The HTML must be immediately usable.
-'''
+"""
 
 
 # Default max tokens for HTML generation (large to accommodate full HTML apps)
