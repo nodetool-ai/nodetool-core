@@ -384,7 +384,7 @@ class Graph(BaseModel):
                     if source_type.is_list_type() and source_type.type_args:
                         # Source is a list - check its element type compatibility
                         type_to_check = source_type.type_args[0]
-                    
+
                     if not typecheck(type_to_check, element_type):
                         validation_errors.append(
                             f"{target_id}: Edge from {edge.source}.{edge.sourceHandle} "
