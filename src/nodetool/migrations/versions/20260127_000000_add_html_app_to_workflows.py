@@ -1,6 +1,6 @@
 """
 Migration: Add html_app column to workflows
-Version: 20260126_000000
+Version: 20260127_000000
 """
 
 from typing import TYPE_CHECKING
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nodetool.migrations.db_adapter import MigrationDBAdapter
 
-version = "20260126_000000"
+version = "20260127_000000"
 name = "add_html_app_to_workflows"
 
 creates_tables = []
