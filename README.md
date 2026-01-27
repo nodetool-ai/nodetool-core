@@ -395,7 +395,6 @@ Configuration is loaded in this order (later sources override earlier ones):
 | `REPLICATE_API_TOKEN` | Replicate API token                     | Replicate    |
 | `ELEVENLABS_API_KEY`  | ElevenLabs text-to-speech API key       | ElevenLabs   |
 | `FAL_API_KEY`         | FAL.ai serverless AI infrastructure key | FAL          |
-| `AIME_USER`           | Aime service username                   | Aime         |
 | `AIME_API_KEY`        | Aime API key                            | Aime         |
 
 #### Database & Storage
