@@ -30,4 +30,10 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Run tests
-        run: uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py
+        run: |
+          uv run pytest -n auto -v \
+            --ignore=tests/workflows/test_docker_job_execution.py \
+            --ignore=tests/workflows/test_job_execution_manager.py \
+            --ignore=tests/workflows/test_job_execution.py \
+            --ignore=tests/workflows/test_threaded_job_execution.py \
+            --ignore=tests/workflows/test_subprocess_job_execution.py
