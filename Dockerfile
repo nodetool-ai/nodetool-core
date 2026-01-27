@@ -26,6 +26,7 @@ RUN rm -rf /var/lib/apt/lists/* && \
     git \
     wget \
     curl \
+    python3-pip \
     # System Libraries often needed for Python compilation or packages
     libssl-dev \
     libffi-dev \
@@ -58,20 +59,7 @@ RUN rm -rf /var/lib/apt/lists/* && \
     libxslt1-dev \
     libsqlite3-dev \
     # Document Processing
-    tesseract-ocr && \
-    # Playwright browser dependencies
-    # libgtk-4-1 \
-    # libgraphene-1.0-0 \
-    # libwoff2-1.0.2 \
-    # libevent-2.1-7 \
-    # libgstreamer-gl1.0-0 \
-    # libgstreamer-plugins-bad1.0-0 \
-    # libavif13 \
-    # libharfbuzz-icu0 \
-    # libenchant-2-2 \
-    # libsecret-1-0 \
-    # libhyphen0 \
-    # libmanette-0.2-0 && \
+     tesseract-ocr && \
     # Clean up apt cache
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -87,7 +75,7 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 FROM base AS pip-deps
 
-ARG USE_LOCAL_REPO=0
+ARG USE_LOCAL_REPO=1
 
 # Copy local repository if using local installation
 COPY --chown=root:root . /tmp/nodetool-core
@@ -122,23 +110,24 @@ COPY --chown=root:root . /tmp/nodetool-core
 
 FROM base AS final
 
-ARG USE_LOCAL_REPO=0
+ARG USE_LOCAL_REPO=1
 
 COPY --from=pip-deps $VIRTUAL_ENV $VIRTUAL_ENV
 
     # Copy source code if using local repo (for editable install)
-    COPY --chown=root:root . /app/nodetool-core
-    RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
-            echo "Reinstalling local repository in final image..." && \
-            cd /app/nodetool-core && \
-            uv pip install -e . ; \
-        else \
-            rm -rf /app/nodetool-core ; \
-        fi
+COPY --chown=root:root . /app/nodetool-core
+RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
+        echo "Reinstalling local repository in final image..." && \
+        cd /app/nodetool-core && \
+        uv pip install -e . ; \
+    else \
+        rm -rf /app/nodetool-core ; \
+    fi
 
-# Install Playwright browsers
+# Install Playwright browsers and system dependencies
 # Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
-RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
+RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install-deps chromium firefox webkit && \
+    TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
     rm -rf /var/tmp/* /tmp/*
 
 # Expose port for the worker

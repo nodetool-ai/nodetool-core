@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from nodetool.api.utils import current_user
@@ -97,6 +97,7 @@ async def from_model(
         settings=workflow.settings,
         run_mode=workflow.run_mode,
         workspace_id=workflow.workspace_id,
+        html_app=workflow.html_app,
     )
 
 
@@ -168,6 +169,7 @@ async def create(
                 user_id=user,
                 run_mode=workflow_request.run_mode,
                 workspace_id=workflow_request.workspace_id,
+                html_app=workflow_request.html_app,
             )
         )
     elif workflow_request.comfy_workflow:
@@ -190,6 +192,7 @@ async def create(
                 },
                 run_mode=workflow_request.run_mode,
                 workspace_id=workflow_request.workspace_id,
+                html_app=workflow_request.html_app,
             )
         )
     else:
@@ -463,6 +466,49 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
     return await from_model(workflow)
 
 
+@router.get("/{id}/app", response_class=HTMLResponse)
+async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLResponse:
+    """
+    Serve the HTML app for a workflow as a website.
+
+    Returns the stored html_app content as an HTML response that can be
+    rendered directly in a browser. Injects runtime configuration (API URL,
+    WS URL, workflow ID) so the app works in any environment.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if not workflow.html_app:
+        raise HTTPException(status_code=404, detail="No HTML app configured for this workflow")
+
+    # Inject runtime configuration using JSON for safety
+    import json as json_module
+    api_url = Environment.get_api_url()
+    ws_url = Environment.get_ws_url()
+
+    config_script = f"""
+    <script>
+      window.NODETOOL_API_URL = {json_module.dumps(api_url)};
+      window.NODETOOL_WS_URL = {json_module.dumps(ws_url)};
+      window.NODETOOL_WORKFLOW_ID = {json_module.dumps(id)};
+    </script>
+    """
+
+    # Inject before </head> or at start of body
+    html = workflow.html_app
+    if "</head>" in html:
+        html = html.replace("</head>", f"{config_script}</head>")
+    elif "<body>" in html:
+        html = html.replace("<body>", f"<body>{config_script}")
+    else:
+        # Fallback: prepend to the HTML
+        html = config_script + html
+
+    return HTMLResponse(content=html, status_code=200)
+
+
 @router.put("/{id}")
 async def update_workflow(
     id: str,
@@ -497,6 +543,7 @@ async def update_workflow(
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
     workflow.workspace_id = workflow_request.workspace_id
+    workflow.html_app = workflow_request.html_app
     workflow.updated_at = datetime.now()
     await workflow.save()
 

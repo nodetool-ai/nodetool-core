@@ -176,7 +176,7 @@ class Asset(DBModel):
         if content_type:
             condition = condition.and_(Field("content_type").like((content_type or "") + "%"))
 
-        return await cls.query(condition, limit, reverse)
+        return await cls.query(condition, limit=limit, reverse=reverse)
 
     @classmethod
     async def get_children(cls, parent_id: str) -> Sequence["Asset"]:

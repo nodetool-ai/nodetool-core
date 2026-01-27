@@ -342,7 +342,7 @@ async def start_huggingface_oauth(
     # Extract just the host and port, handle both with and without scheme
     if "://" in host:
         host = host.split("://")[1]
-    
+
     # Normalize 127.0.0.1 to localhost to match registered OAuth callback keys
     if host.startswith("127.0.0.1"):
         host = host.replace("127.0.0.1", "localhost")
@@ -822,11 +822,11 @@ async def start_github_oauth(
     host = request.headers.get("host", "127.0.0.1:7777")
     if "://" in host:
         host = host.split("://")[1]
-    
+
     # Normalize 127.0.0.1 to localhost
     if host.startswith("127.0.0.1"):
         host = host.replace("127.0.0.1", "localhost")
-        
+
     scheme = "https" if "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/github/callback"
     log.info(f"GitHub OAuth redirect_uri: {redirect_uri}")

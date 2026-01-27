@@ -98,6 +98,7 @@ def import_providers():
 
     # import providers to ensure they are registered
     from nodetool.providers import (
+        aime_provider,
         anthropic_provider,
         cerebras_provider,
         comfy_local_provider,
@@ -109,6 +110,7 @@ def import_providers():
         kie_provider,
         lmstudio_provider,
         minimax_provider,
+        mistral_provider,
         ollama_provider,
         openai_provider,
         openrouter_provider,

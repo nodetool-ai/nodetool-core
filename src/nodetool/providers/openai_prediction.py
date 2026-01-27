@@ -296,6 +296,24 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
     )
 
 
+async def create_moderation(prediction: Prediction, client: openai.AsyncClient):
+    """Creates a moderation check using the OpenAI API."""
+    model_id = prediction.model
+    assert model_id is not None, "Model is not set"
+    res = await client.moderations.create(
+        input=prediction.params["input"],
+        model=model_id,
+    )
+
+    prediction.cost = 0.0  # Default cost in credits
+
+    return PredictionResult(
+        prediction=prediction,
+        content=res.model_dump(),
+        encoding="json",
+    )
+
+
 async def create_chat_completion(prediction: Prediction, client: openai.AsyncClient) -> Any:
     """Creates a chat completion and calculates cost in credits."""
     model_id = prediction.model
@@ -461,6 +479,10 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 
     elif model_id.startswith("whisper-") or "transcribe" in model_id:
         yield await create_whisper(prediction, client)
+
+    elif "moderation" in model_id:
+        yield await create_moderation(prediction, client)
+
     else:
         yield await create_chat_completion(prediction, client)
 

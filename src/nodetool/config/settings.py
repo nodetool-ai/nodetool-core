@@ -220,6 +220,12 @@ register_secret(
     group="ZAI",
     description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
 )
+register_secret(
+    package_name="nodetool",
+    env_var="MISTRAL_API_KEY",
+    group="Mistral",
+    description="Mistral API key for accessing Mistral AI models through Mistral's OpenAI-compatible API",
+)
 register_setting(
     package_name="nodetool",
     env_var="ZAI_USE_CODING_PLAN",
@@ -247,12 +253,6 @@ register_secret(
     env_var="REPLICATE_API_TOKEN",
     group="Replicate",
     description="Replicate API Token for running models on Replicate's cloud infrastructure",
-)
-register_secret(
-    package_name="nodetool",
-    env_var="AIME_USER",
-    group="Aime",
-    description="Aime user credential for authentication with Aime services",
 )
 register_secret(
     package_name="nodetool",

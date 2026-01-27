@@ -152,6 +152,7 @@ def _load_default_routers() -> list[APIRouter]:
         settings,
         storage,
         thread,
+        vibecoding,
         workflow,
         workspace,
     )
@@ -174,6 +175,7 @@ def _load_default_routers() -> list[APIRouter]:
         job.router,
         settings.router,
         memory.router,
+        vibecoding.router,
     ]
 
     if not Environment.is_production():
@@ -326,8 +328,11 @@ def create_app(
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
 
-    if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
-        raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for production API deployments.")
+    # Run startup security checks to warn about insecure configurations
+    # Import is local to avoid circular imports (security module imports config which may import api)
+    from nodetool.security.startup_checks import run_startup_security_checks
+
+    run_startup_security_checks(raise_on_critical=False)
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
@@ -587,6 +592,9 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s" if use_color else None
         )
     )
+
+    # Check for insecure authentication configuration when binding to network interfaces
+    Environment.emit_auth_warnings(host, logger=log)
 
     # Uvicorn uses its own logging; keep level name plain for compatibility
     formatter = {

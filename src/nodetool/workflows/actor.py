@@ -339,7 +339,7 @@ class NodeActor:
                     # Resolve memory URI to get the data
                     from nodetool.runtime.resources import require_scope
                     scope = require_scope()
-                    obj = scope.memory_uri_cache.get(asset_ref.uri)
+                    obj = scope.get_memory_uri_cache().get(asset_ref.uri)
                     if obj is not None:
                         # Convert object to bytes based on type
                         data_bytes = self._object_to_bytes(obj, asset_ref)

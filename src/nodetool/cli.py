@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -605,6 +606,119 @@ def chat():
     from nodetool.chat.chat_cli import chat_cli
 
     asyncio.run(chat_cli())
+
+
+@cli.command("vibecoding")
+@click.argument("workflow_id", required=True, type=str)
+@click.option(
+    "--prompt",
+    "-p",
+    default="Create a clean, modern interface for this workflow.",
+    help="Description of the UI style you want (e.g., 'dark mode', 'minimal', 'playful').",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(resolve_path=True, dir_okay=False, file_okay=True),
+    default=None,
+    help="Save the generated HTML to a file instead of stdout.",
+)
+@click.option(
+    "--save",
+    "-s",
+    is_flag=True,
+    help="Save the generated HTML directly to the workflow's html_app field.",
+)
+@click.option(
+    "--model",
+    "-m",
+    default="claude-sonnet-4-20250514",
+    help="Model to use for generation.",
+)
+def vibecoding(
+    workflow_id: str,
+    prompt: str,
+    output: Optional[str],
+    save: bool,
+    model: str,
+):
+    """Generate a custom HTML app for a workflow using AI.
+
+    Uses the VibeCoding agent to create a self-contained HTML/CSS/JS application
+    that serves as a custom frontend for the specified workflow. The generated app
+    includes all necessary code to connect to and run the workflow.
+
+    Examples:
+      # Generate HTML for a workflow and print to stdout
+      nodetool vibecoding my-workflow-id
+
+      # Generate with a specific style
+      nodetool vibecoding my-workflow-id --prompt "Create a dark-themed interface"
+
+      # Save to a file
+      nodetool vibecoding my-workflow-id -o app.html
+
+      # Save directly to the workflow
+      nodetool vibecoding my-workflow-id --save
+    """
+    import asyncio
+
+    from nodetool.agents.vibecoding import VibeCodingAgent, extract_html_from_response
+    from nodetool.api.workflow import from_model
+    from nodetool.models.workflow import Workflow as WorkflowModel
+    from nodetool.runtime.resources import ResourceScope
+
+    async def run_vibecoding():
+        async with ResourceScope():
+            # Load the workflow
+            workflow = await WorkflowModel.get(workflow_id)
+            if not workflow:
+                console.print(f"[red]Error: Workflow '{workflow_id}' not found.[/red]")
+                sys.exit(1)
+
+            # Convert to API type with schemas
+            workflow_data = await from_model(workflow)
+
+            # Create agent and generate
+            agent = VibeCodingAgent(workflow_data, model=model)
+
+            console.print(f"[bold blue]Generating HTML app for workflow:[/bold blue] {workflow.name or workflow_id}")
+            console.print(f"[dim]Prompt: {prompt}[/dim]\n")
+
+            # Collect the streamed response
+            full_response = ""
+            with console.status("[bold green]Generating...[/bold green]"):
+                async for chunk in agent.generate(prompt, user_id="1"):
+                    full_response += chunk
+
+            # Extract HTML from the response
+            html_content = extract_html_from_response(full_response)
+            if not html_content:
+                # If no code block, use the full response
+                html_content = full_response.strip()
+
+            # Handle output
+            if save:
+                # Save to workflow
+                workflow.html_app = html_content
+                await workflow.save()
+                console.print(f"\n[green]✅ Saved HTML app to workflow '{workflow.name or workflow_id}'[/green]")
+                console.print(f"[dim]View at: /api/workflows/{workflow_id}/app[/dim]")
+            elif output:
+                # Save to file
+                try:
+                    with open(output, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+                    console.print(f"\n[green]✅ Saved HTML app to {output}[/green]")
+                except Exception as e:
+                    console.print(f"[red]Error writing file: {e}[/red]")
+                    sys.exit(1)
+            else:
+                # Print to stdout
+                console.print("\n[bold]Generated HTML:[/bold]\n")
+                console.print(Syntax(html_content, "html", theme="monokai", line_numbers=True))
+
+    asyncio.run(run_vibecoding())
 
 
 @cli.command("worker")

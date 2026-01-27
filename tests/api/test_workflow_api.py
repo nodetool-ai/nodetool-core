@@ -313,3 +313,105 @@ async def test_gradio_export_with_defaults(client: TestClient, workflow: Workflo
     assert response.status_code == 200
     assert "NodeTool Workflow" in response.text  # Default app title
 
+
+@pytest.mark.asyncio
+async def test_create_workflow_with_html_app(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test creating a workflow with an html_app field."""
+    html_content = "<html><body><h1>Hello World</h1></body></html>"
+    params = {
+        "name": "Test Workflow with HTML App",
+        "graph": {
+            "nodes": [],
+            "edges": [],
+        },
+        "description": "Test Workflow Description",
+        "access": "private",
+        "html_app": html_content,
+    }
+    request = WorkflowRequest(**params)
+    json = request.model_dump()
+    response = client.post("/api/workflows/", json=json, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["name"] == "Test Workflow with HTML App"
+    assert response.json()["html_app"] == html_content
+
+    w = await Workflow.get(response.json()["id"])
+    assert w is not None
+    assert w.html_app == html_content
+
+
+@pytest.mark.asyncio
+async def test_update_workflow_with_html_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test updating a workflow with an html_app field."""
+    html_content = "<html><body><h1>Updated App</h1></body></html>"
+    request = WorkflowRequest(
+        name="Updated Workflow",
+        description="Updated Workflow Description",
+        access="public",
+        graph=APIGraph(
+            nodes=[Node(**n) for n in workflow.graph["nodes"]],
+            edges=[Edge(**e) for e in workflow.graph["edges"]],
+        ),
+        html_app=html_content,
+    )
+    response = client.put(f"/api/workflows/{workflow.id}", json=request.model_dump(), headers=headers)
+    assert response.status_code == 200
+    assert response.json()["html_app"] == html_content
+
+    saved_workflow = await Workflow.get(response.json()["id"])
+    assert saved_workflow is not None
+    assert saved_workflow.html_app == html_content
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting the HTML app for a workflow with config injection."""
+    html_content = "<html><body><h1>My App</h1></body></html>"
+    workflow.html_app = html_content
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    # Verify the original content is present
+    assert "<h1>My App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_API_URL" in response.text
+    assert "window.NODETOOL_WS_URL" in response.text
+    assert f'window.NODETOOL_WORKFLOW_ID = "{workflow.id}"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app_not_found(client: TestClient, headers: dict[str, str]):
+    """Test getting HTML app for non-existent workflow returns 404."""
+    response = client.get("/api/workflows/nonexistent-id/app", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app_no_html(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting HTML app when no html_app is configured returns 404."""
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No HTML app configured for this workflow"
+
+
+@pytest.mark.asyncio
+async def test_get_public_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting HTML app for a public workflow with config injection."""
+    html_content = "<html><body><h1>Public App</h1></body></html>"
+    workflow.html_app = html_content
+    workflow.access = "public"
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 200
+    # Verify the original content is present
+    assert "<h1>Public App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_WORKFLOW_ID" in response.text
+
+

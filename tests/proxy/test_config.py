@@ -13,6 +13,8 @@ from nodetool.proxy.config import (
     GlobalConfig,
     ProxyConfig,
     ServiceConfig,
+    get_real_client_ip,
+    is_ip_trusted,
     load_config,
     load_config_with_env,
 )
@@ -303,3 +305,227 @@ class TestLoadConfigWithEnv:
         config = load_config_with_env(str(temp_config_file))
         assert config.global_.domain == "example.com"
         assert config.global_.bearer_token == "test-token-123"
+
+    def test_env_override_trusted_proxies(self, temp_config_file: Path):
+        """Test that environment variable can override trusted_proxies."""
+        os.environ["PROXY_GLOBAL_TRUSTED_PROXIES"] = "10.0.0.1,192.168.1.0/24"
+        try:
+            config = load_config_with_env(str(temp_config_file))
+            assert config.global_.trusted_proxies == ["10.0.0.1", "192.168.1.0/24"]
+        finally:
+            del os.environ["PROXY_GLOBAL_TRUSTED_PROXIES"]
+
+    def test_env_override_trusted_proxies_with_invalid(self, temp_config_file: Path):
+        """Test that invalid entries in trusted_proxies env var are skipped."""
+        os.environ["PROXY_GLOBAL_TRUSTED_PROXIES"] = "10.0.0.1,invalid,192.168.1.0/24"
+        try:
+            config = load_config_with_env(str(temp_config_file))
+            # Invalid entry should be skipped
+            assert config.global_.trusted_proxies == ["10.0.0.1", "192.168.1.0/24"]
+        finally:
+            del os.environ["PROXY_GLOBAL_TRUSTED_PROXIES"]
+
+
+class TestTrustedProxiesConfig:
+    """Tests for trusted_proxies configuration."""
+
+    def test_trusted_proxies_default_empty(self):
+        """Test that trusted_proxies defaults to empty list."""
+        cfg = GlobalConfig(
+            domain="example.com",
+            email="admin@example.com",
+            bearer_token="secret123",
+        )
+        assert cfg.trusted_proxies == []
+
+    def test_trusted_proxies_with_single_ip(self):
+        """Test trusted_proxies with a single IP address."""
+        cfg = GlobalConfig(
+            domain="example.com",
+            email="admin@example.com",
+            bearer_token="secret123",
+            trusted_proxies=["10.0.0.1"],
+        )
+        assert cfg.trusted_proxies == ["10.0.0.1"]
+
+    def test_trusted_proxies_with_cidr(self):
+        """Test trusted_proxies with CIDR notation."""
+        cfg = GlobalConfig(
+            domain="example.com",
+            email="admin@example.com",
+            bearer_token="secret123",
+            trusted_proxies=["192.168.1.0/24", "10.0.0.0/8"],
+        )
+        assert cfg.trusted_proxies == ["192.168.1.0/24", "10.0.0.0/8"]
+
+    def test_trusted_proxies_with_ipv6(self):
+        """Test trusted_proxies with IPv6 addresses."""
+        cfg = GlobalConfig(
+            domain="example.com",
+            email="admin@example.com",
+            bearer_token="secret123",
+            trusted_proxies=["::1", "2001:db8::/32"],
+        )
+        assert cfg.trusted_proxies == ["::1", "2001:db8::/32"]
+
+    def test_trusted_proxies_invalid_ip_rejected(self):
+        """Test that invalid IP address is rejected."""
+        with pytest.raises(ValueError, match="Invalid IP address or CIDR range"):
+            GlobalConfig(
+                domain="example.com",
+                email="admin@example.com",
+                bearer_token="secret123",
+                trusted_proxies=["not-an-ip"],
+            )
+
+    def test_trusted_proxies_invalid_cidr_rejected(self):
+        """Test that invalid CIDR notation is rejected."""
+        with pytest.raises(ValueError, match="Invalid IP address or CIDR range"):
+            GlobalConfig(
+                domain="example.com",
+                email="admin@example.com",
+                bearer_token="secret123",
+                trusted_proxies=["192.168.1.0/99"],  # Invalid prefix
+            )
+
+    def test_trusted_proxies_empty_entries_filtered(self):
+        """Test that empty entries are filtered out."""
+        cfg = GlobalConfig(
+            domain="example.com",
+            email="admin@example.com",
+            bearer_token="secret123",
+            trusted_proxies=["10.0.0.1", "", "  ", "192.168.1.1"],
+        )
+        assert cfg.trusted_proxies == ["10.0.0.1", "192.168.1.1"]
+
+
+class TestIsIpTrusted:
+    """Tests for is_ip_trusted function."""
+
+    def test_empty_trusted_list(self):
+        """Test that empty trusted list returns False."""
+        assert is_ip_trusted("10.0.0.1", []) is False
+
+    def test_exact_ip_match(self):
+        """Test exact IP address matching."""
+        assert is_ip_trusted("10.0.0.1", ["10.0.0.1"]) is True
+        assert is_ip_trusted("10.0.0.2", ["10.0.0.1"]) is False
+
+    def test_cidr_match(self):
+        """Test CIDR range matching."""
+        trusted = ["192.168.1.0/24"]
+        assert is_ip_trusted("192.168.1.1", trusted) is True
+        assert is_ip_trusted("192.168.1.254", trusted) is True
+        assert is_ip_trusted("192.168.2.1", trusted) is False
+
+    def test_multiple_ranges(self):
+        """Test matching against multiple trusted ranges."""
+        trusted = ["10.0.0.0/8", "192.168.0.0/16"]
+        assert is_ip_trusted("10.1.2.3", trusted) is True
+        assert is_ip_trusted("192.168.100.50", trusted) is True
+        assert is_ip_trusted("172.16.0.1", trusted) is False
+
+    def test_ipv6_match(self):
+        """Test IPv6 address matching."""
+        assert is_ip_trusted("::1", ["::1"]) is True
+        assert is_ip_trusted("2001:db8::1", ["2001:db8::/32"]) is True
+        assert is_ip_trusted("2001:db9::1", ["2001:db8::/32"]) is False
+
+    def test_invalid_client_ip(self):
+        """Test that invalid client IP returns False."""
+        assert is_ip_trusted("not-an-ip", ["10.0.0.1"]) is False
+
+
+class TestGetRealClientIp:
+    """Tests for get_real_client_ip function."""
+
+    def test_no_trusted_proxies(self):
+        """Test that without trusted proxies, direct IP is returned."""
+        result = get_real_client_ip("1.2.3.4", "5.6.7.8, 9.10.11.12", [])
+        assert result == "1.2.3.4"
+
+    def test_untrusted_connection(self):
+        """Test that untrusted connection IP ignores X-Forwarded-For."""
+        result = get_real_client_ip(
+            "1.2.3.4",  # Not in trusted list
+            "5.6.7.8, 9.10.11.12",
+            ["10.0.0.1"],  # Different from connection IP
+        )
+        assert result == "1.2.3.4"
+
+    def test_trusted_proxy_single_hop(self):
+        """Test single hop through trusted proxy."""
+        # Connection from trusted proxy, X-Forwarded-For has real client
+        result = get_real_client_ip(
+            "10.0.0.1",  # Trusted proxy
+            "1.2.3.4",  # Real client
+            ["10.0.0.1"],
+        )
+        assert result == "1.2.3.4"
+
+    def test_trusted_proxy_multiple_hops(self):
+        """Test multiple hops through trusted proxies."""
+        # Format: client, proxy1, proxy2 (rightmost is most recent)
+        result = get_real_client_ip(
+            "10.0.0.2",  # Trusted proxy (most recent)
+            "1.2.3.4, 10.0.0.1",  # client, then first proxy
+            ["10.0.0.1", "10.0.0.2"],
+        )
+        assert result == "1.2.3.4"
+
+    def test_no_x_forwarded_for(self):
+        """Test trusted proxy without X-Forwarded-For header."""
+        result = get_real_client_ip(
+            "10.0.0.1",
+            None,
+            ["10.0.0.1"],
+        )
+        assert result == "10.0.0.1"
+
+    def test_empty_x_forwarded_for(self):
+        """Test trusted proxy with empty X-Forwarded-For header."""
+        result = get_real_client_ip(
+            "10.0.0.1",
+            "",
+            ["10.0.0.1"],
+        )
+        assert result == "10.0.0.1"
+
+    def test_all_ips_trusted(self):
+        """Test when all IPs in chain are trusted proxies."""
+        result = get_real_client_ip(
+            "10.0.0.3",
+            "10.0.0.1, 10.0.0.2",
+            ["10.0.0.0/8"],
+        )
+        # When all are trusted, return leftmost (original)
+        assert result == "10.0.0.1"
+
+    def test_cidr_trusted_proxy(self):
+        """Test trusted proxy matching with CIDR range."""
+        result = get_real_client_ip(
+            "10.0.1.50",  # In 10.0.0.0/8 range
+            "1.2.3.4",
+            ["10.0.0.0/8"],
+        )
+        assert result == "1.2.3.4"
+
+    def test_mixed_ipv4_ipv6(self):
+        """Test with IPv6 trusted proxy."""
+        result = get_real_client_ip(
+            "::1",  # Trusted IPv6 proxy
+            "1.2.3.4",
+            ["::1"],
+        )
+        assert result == "1.2.3.4"
+
+    def test_spoofed_header_blocked(self):
+        """Test that spoofed X-Forwarded-For is blocked when not from trusted proxy."""
+        # Attacker connects directly and tries to spoof the header
+        result = get_real_client_ip(
+            "1.2.3.4",  # Attacker's real IP (not trusted)
+            "fake.internal.ip",  # Spoofed header
+            ["10.0.0.1"],  # Trusted proxy is different
+        )
+        # Should return the real connection IP, not the spoofed one
+        assert result == "1.2.3.4"

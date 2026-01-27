@@ -1,3 +1,4 @@
+import logging
 import os
 import socket
 import uuid
@@ -42,6 +43,7 @@ DEFAULT_ENV = {
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
     "SUPABASE_KEY": None,
+    "SUPABASE_POSTGRES_URL": None,
     "NODE_SUPABASE_URL": None,
     "NODE_SUPABASE_KEY": None,
     "NODE_SUPABASE_SCHEMA": None,
@@ -281,6 +283,66 @@ class Environment:
         return cls.get_auth_provider_kind() in ("static", "supabase")
 
     @classmethod
+    def check_insecure_auth_binding(cls, host: str) -> list[str]:
+        """Check for insecure authentication configuration when binding to network interfaces.
+
+        Returns a list of warning messages if the configuration is potentially insecure.
+        An empty list means the configuration is acceptable.
+
+        A configuration is considered insecure when:
+        - AUTH_PROVIDER is 'none' or 'local' (no authentication enforcement)
+        - AND the server is bound to 0.0.0.0 or :: (all network interfaces)
+
+        This combination exposes the server to the network without authentication,
+        making it accessible to anyone who can reach the host.
+
+        Args:
+            host: The host address the server is binding to.
+
+        Returns:
+            List of warning messages (empty if configuration is secure).
+        """
+        warnings: list[str] = []
+        auth_provider = cls.get_auth_provider_kind()
+
+        # Hosts that expose the server to the network
+        network_exposed_hosts = ("0.0.0.0", "::", "")
+
+        if host in network_exposed_hosts and auth_provider in ("none", "local"):
+            warnings.append(
+                f"⚠️  SECURITY WARNING: Server is binding to '{host}' (all network interfaces) "
+                f"with AUTH_PROVIDER='{auth_provider}' which does NOT enforce authentication."
+            )
+            warnings.append(
+                "   This configuration allows unauthenticated access from any network host."
+            )
+            warnings.append(
+                "   For production or network-exposed deployments, set AUTH_PROVIDER to 'static' or 'supabase'."
+            )
+            warnings.append(
+                "   Example: AUTH_PROVIDER=static or use --auth-provider static"
+            )
+
+        return warnings
+
+    @classmethod
+    def emit_auth_warnings(cls, host: str, logger: logging.Logger | None = None) -> None:
+        """Check and emit warnings for insecure authentication configurations.
+
+        This method should be called during server startup to alert operators
+        about potentially insecure configurations.
+
+        Args:
+            host: The host address the server is binding to.
+            logger: Optional logger to use. If None, uses the module logger.
+        """
+        log = logger or get_logger(__name__)
+        warnings = cls.check_insecure_auth_binding(host)
+
+        for warning in warnings:
+            log.warning(warning)
+
+    @classmethod
     def _get_int_setting(cls, key: str, default: int) -> int:
         value = get_system_env_value(key)
         if value is not None:
@@ -480,6 +542,34 @@ class Environment:
         return f"{cls.get_nodetool_api_url()}/api/storage/temp"
 
     @classmethod
+    def get_api_url(cls) -> str:
+        """
+        Get the full API URL for client-side use (includes /api suffix).
+
+        Returns the URL where the API endpoints can be accessed.
+        """
+        base_url = cls.get_nodetool_api_url()
+        if base_url.endswith("/api"):
+            return base_url
+        return f"{base_url}/api"
+
+    @classmethod
+    def get_ws_url(cls) -> str:
+        """
+        Get the WebSocket URL for client-side use.
+
+        Converts the API URL to a WebSocket URL by replacing http(s) with ws(s).
+        """
+        base_url = cls.get_nodetool_api_url()
+        ws_url = cls.get("NODETOOL_WS_URL")
+        if ws_url:
+            return ws_url
+        # Convert http(s) to ws(s)
+        if base_url.startswith("https://"):
+            return base_url.replace("https://", "wss://") + "/ws"
+        return base_url.replace("http://", "ws://") + "/ws"
+
+    @classmethod
     def get_chroma_token(cls):
         """
         The chroma token is the token of the chroma server.
@@ -613,38 +703,44 @@ class Environment:
     @classmethod
     async def get_supabase_postgres_uri(cls) -> Optional[str]:
         """
-        Fetch PostgreSQL connection URI from Supabase API.
+        Get PostgreSQL connection URI for Supabase.
 
-        Uses the Supabase Management API to retrieve a pooled connection URI
-        for the project's postgres database.
+        First checks for SUPABASE_POSTGRES_URL env var, then falls back to
+        fetching from Supabase Management API.
 
         Returns:
-            PostgreSQL connection URI string, or None if not configured or on error.
+            PostgreSQL connection URI string, or None if not configured.
 
-        Requires:
+        Requires (one of):
+            SUPABASE_POSTGRES_URL - Direct PostgreSQL connection URL (recommended)
+                Get from Supabase Dashboard > Settings > Database > Connection String
+                Format: postgresql://postgres.project-ref:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+
+            OR
+
             SUPABASE_URL - The Supabase project URL
-            SUPABASE_KEY - The Supabase service key for API authentication
+            SUPABASE_MANAGEMENT_TOKEN - Supabase Management API token (from https://supabase.com/dashboard/account/tokens)
         """
+        postgres_url = cls.get("SUPABASE_POSTGRES_URL")
+        if postgres_url:
+            return postgres_url
+
         import httpx
 
         supabase_url = cls.get("SUPABASE_URL")
-        service_key = cls.get_supabase_key()
+        management_token = cls.get("SUPABASE_MANAGEMENT_TOKEN")
 
         if not supabase_url:
             return None
 
-        if not service_key:
+        if not management_token:
             return None
 
         try:
             from urllib.parse import urlparse
 
             parsed = urlparse(supabase_url)
-            # Extract project ref from hostname (e.g., "xyz123.supabase.co" -> "xyz123")
-            if parsed.hostname:
-                project_ref = parsed.hostname.split(".")[0]
-            else:
-                project_ref = None
+            project_ref = parsed.hostname.split(".")[0] if parsed.hostname else None
             if not project_ref:
                 logger = get_logger(__name__)
                 logger.warning(
@@ -659,7 +755,7 @@ class Environment:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"https://api.supabase.com/v1/projects/{project_ref}/connections/uri",
-                    headers={"Authorization": f"Bearer {service_key}"},
+                    headers={"Authorization": f"Bearer {management_token}"},
                     timeout=30.0,
                 )
                 if response.status_code == 401:
