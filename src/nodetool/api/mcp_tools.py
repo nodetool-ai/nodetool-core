@@ -378,9 +378,7 @@ def register_all_tools():
         StorageTools,
         HfTools,
     ]:
-        if TYPE_CHECKING:
-            tools = module.get_tool_functions()
-            for _tool_name in tools:
-                tool_count += 1
+        tools = module.get_tool_functions()
+        tool_count += len(tools)
 
     return tool_count
