@@ -43,6 +43,7 @@ DEFAULT_ENV = {
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
     "SUPABASE_KEY": None,
+    "SUPABASE_POSTGRES_URL": None,
     "NODE_SUPABASE_URL": None,
     "NODE_SUPABASE_KEY": None,
     "NODE_SUPABASE_SCHEMA": None,
@@ -702,38 +703,44 @@ class Environment:
     @classmethod
     async def get_supabase_postgres_uri(cls) -> Optional[str]:
         """
-        Fetch PostgreSQL connection URI from Supabase API.
+        Get PostgreSQL connection URI for Supabase.
 
-        Uses the Supabase Management API to retrieve a pooled connection URI
-        for the project's postgres database.
+        First checks for SUPABASE_POSTGRES_URL env var, then falls back to
+        fetching from Supabase Management API.
 
         Returns:
-            PostgreSQL connection URI string, or None if not configured or on error.
+            PostgreSQL connection URI string, or None if not configured.
 
-        Requires:
+        Requires (one of):
+            SUPABASE_POSTGRES_URL - Direct PostgreSQL connection URL (recommended)
+                Get from Supabase Dashboard > Settings > Database > Connection String
+                Format: postgresql://postgres.project-ref:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+
+            OR
+
             SUPABASE_URL - The Supabase project URL
-            SUPABASE_KEY - The Supabase service key for API authentication
+            SUPABASE_MANAGEMENT_TOKEN - Supabase Management API token (from https://supabase.com/dashboard/account/tokens)
         """
+        postgres_url = cls.get("SUPABASE_POSTGRES_URL")
+        if postgres_url:
+            return postgres_url
+
         import httpx
 
         supabase_url = cls.get("SUPABASE_URL")
-        service_key = cls.get_supabase_key()
+        management_token = cls.get("SUPABASE_MANAGEMENT_TOKEN")
 
         if not supabase_url:
             return None
 
-        if not service_key:
+        if not management_token:
             return None
 
         try:
             from urllib.parse import urlparse
 
             parsed = urlparse(supabase_url)
-            # Extract project ref from hostname (e.g., "xyz123.supabase.co" -> "xyz123")
-            if parsed.hostname:
-                project_ref = parsed.hostname.split(".")[0]
-            else:
-                project_ref = None
+            project_ref = parsed.hostname.split(".")[0] if parsed.hostname else None
             if not project_ref:
                 logger = get_logger(__name__)
                 logger.warning(
@@ -748,7 +755,7 @@ class Environment:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"https://api.supabase.com/v1/projects/{project_ref}/connections/uri",
-                    headers={"Authorization": f"Bearer {service_key}"},
+                    headers={"Authorization": f"Bearer {management_token}"},
                     timeout=30.0,
                 )
                 if response.status_code == 401:
