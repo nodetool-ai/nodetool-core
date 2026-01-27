@@ -472,7 +472,8 @@ async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLRe
     Serve the HTML app for a workflow as a website.
 
     Returns the stored html_app content as an HTML response that can be
-    rendered directly in a browser.
+    rendered directly in a browser. Injects runtime configuration (API URL,
+    WS URL, workflow ID) so the app works in any environment.
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
@@ -481,7 +482,30 @@ async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLRe
         raise HTTPException(status_code=404, detail="Workflow not found")
     if not workflow.html_app:
         raise HTTPException(status_code=404, detail="No HTML app configured for this workflow")
-    return HTMLResponse(content=workflow.html_app, status_code=200)
+
+    # Inject runtime configuration
+    api_url = Environment.get_api_url()
+    ws_url = Environment.get_ws_url()
+
+    config_script = f"""
+    <script>
+      window.NODETOOL_API_URL = "{api_url}";
+      window.NODETOOL_WS_URL = "{ws_url}";
+      window.NODETOOL_WORKFLOW_ID = "{id}";
+    </script>
+    """
+
+    # Inject before </head> or at start of body
+    html = workflow.html_app
+    if "</head>" in html:
+        html = html.replace("</head>", f"{config_script}</head>")
+    elif "<body>" in html:
+        html = html.replace("<body>", f"<body>{config_script}")
+    else:
+        # Fallback: prepend to the HTML
+        html = config_script + html
+
+    return HTMLResponse(content=html, status_code=200)
 
 
 @router.put("/{id}")

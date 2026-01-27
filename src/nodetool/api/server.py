@@ -152,6 +152,7 @@ def _load_default_routers() -> list[APIRouter]:
         settings,
         storage,
         thread,
+        vibecoding,
         workflow,
         workspace,
     )
@@ -174,6 +175,7 @@ def _load_default_routers() -> list[APIRouter]:
         job.router,
         settings.router,
         memory.router,
+        vibecoding.router,
     ]
 
     if not Environment.is_production():

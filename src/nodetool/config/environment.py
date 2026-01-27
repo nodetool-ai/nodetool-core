@@ -541,6 +541,34 @@ class Environment:
         return f"{cls.get_nodetool_api_url()}/api/storage/temp"
 
     @classmethod
+    def get_api_url(cls) -> str:
+        """
+        Get the full API URL for client-side use (includes /api suffix).
+
+        Returns the URL where the API endpoints can be accessed.
+        """
+        base_url = cls.get_nodetool_api_url()
+        if base_url.endswith("/api"):
+            return base_url
+        return f"{base_url}/api"
+
+    @classmethod
+    def get_ws_url(cls) -> str:
+        """
+        Get the WebSocket URL for client-side use.
+
+        Converts the API URL to a WebSocket URL by replacing http(s) with ws(s).
+        """
+        base_url = cls.get_nodetool_api_url()
+        ws_url = cls.get("NODETOOL_WS_URL")
+        if ws_url:
+            return ws_url
+        # Convert http(s) to ws(s)
+        if base_url.startswith("https://"):
+            return base_url.replace("https://", "wss://") + "/ws"
+        return base_url.replace("http://", "ws://") + "/ws"
+
+    @classmethod
     def get_chroma_token(cls):
         """
         The chroma token is the token of the chroma server.

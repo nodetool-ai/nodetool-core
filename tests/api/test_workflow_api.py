@@ -365,7 +365,7 @@ async def test_update_workflow_with_html_app(client: TestClient, workflow: Workf
 
 @pytest.mark.asyncio
 async def test_get_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    """Test getting the HTML app for a workflow."""
+    """Test getting the HTML app for a workflow with config injection."""
     html_content = "<html><body><h1>My App</h1></body></html>"
     workflow.html_app = html_content
     await workflow.save()
@@ -373,7 +373,12 @@ async def test_get_workflow_app(client: TestClient, workflow: Workflow, headers:
     response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    assert response.text == html_content
+    # Verify the original content is present
+    assert "<h1>My App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_API_URL" in response.text
+    assert "window.NODETOOL_WS_URL" in response.text
+    assert f'window.NODETOOL_WORKFLOW_ID = "{workflow.id}"' in response.text
 
 
 @pytest.mark.asyncio
@@ -396,7 +401,7 @@ async def test_get_workflow_app_no_html(client: TestClient, workflow: Workflow, 
 
 @pytest.mark.asyncio
 async def test_get_public_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    """Test getting HTML app for a public workflow."""
+    """Test getting HTML app for a public workflow with config injection."""
     html_content = "<html><body><h1>Public App</h1></body></html>"
     workflow.html_app = html_content
     workflow.access = "public"
@@ -404,6 +409,9 @@ async def test_get_public_workflow_app(client: TestClient, workflow: Workflow, h
 
     response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
     assert response.status_code == 200
-    assert response.text == html_content
+    # Verify the original content is present
+    assert "<h1>Public App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_WORKFLOW_ID" in response.text
 
 
