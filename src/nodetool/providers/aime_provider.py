@@ -2,59 +2,58 @@
 AIME provider implementation for chat completions.
 
 This module implements the ChatProvider interface for AIME,
-which provides access to AI models through the AIME Model API.
+which provides access to AI models through the AIME OpenAI-compatible API.
 
 AIME API Documentation: https://www.aime.info/api
+OpenAI-compatible endpoint: https://api.aime.info/v1/chat/completions
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
-import aiohttp
-
-if TYPE_CHECKING:
-    from nodetool.workflows.processing_context import ProcessingContext
+import httpx
+import openai
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
-    ASRModel,
-    ImageModel,
     LanguageModel,
     Message,
     Provider,
     ToolCall,
-    TTSModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
+from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.workflows.types import Chunk
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
+    from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
 
 
-
 @register_provider(Provider.AIME)
-class AIMEProvider(BaseProvider):
-    """AIME implementation of the ChatProvider interface.
+class AIMEProvider(BaseProvider, OpenAICompat):
+    """AIME implementation of the ChatProvider interface using OpenAI-compatible API.
 
-    AIME provides access to AI models through the AIME Model API.
-    Authentication uses the API key directly:
-    1. API key is sent as "key" in the JSON request body
-    2. API key is sent as query parameter for progress endpoint
-    3. Poll for progress until the job is done
+    AIME provides access to AI models through an OpenAI-compatible API endpoint.
+    This provider extends BaseProvider with OpenAICompat for message/tool formatting.
 
     Key features:
-    1. Base URL: https://api.aime.info/api/
-    2. Uses AIME_API_KEY for authentication
-    3. Supports progress polling for long-running requests
+    1. Base URL: https://api.aime.info/v1
+    2. Uses AIME_API_KEY for authentication (as Bearer token)
+    3. OpenAI-compatible chat completions API
+
+    For details, see: https://www.aime.info/api
     """
 
     provider: Provider = Provider.AIME
+    provider_name: str = "aime"
 
-    DEFAULT_API_URL = "https://api.aime.info/api/"
-    DEFAULT_PROGRESS_INTERVAL = 0.3  # 300ms like the JS client
+    DEFAULT_BASE_URL = "https://api.aime.info/v1"
+    DEFAULT_TIMEOUT = 300.0  # 5 minutes for long requests
 
     @classmethod
     def required_secrets(cls) -> list[str]:
@@ -68,8 +67,17 @@ class AIMEProvider(BaseProvider):
         super().__init__(secrets=secrets)
         assert "AIME_API_KEY" in secrets, "AIME_API_KEY is required"
         self.api_key = secrets["AIME_API_KEY"]
-        self.api_url = self.DEFAULT_API_URL
+        self._base_url = self.DEFAULT_BASE_URL
+        self._timeout = self.DEFAULT_TIMEOUT
         self.cost = 0.0
+        self._fallback_http_client: httpx.AsyncClient | None = None
+        self._usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "reasoning_tokens": 0,
+        }
         log.debug("AIMEProvider initialized. API key present: True")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
@@ -83,122 +91,50 @@ class AIMEProvider(BaseProvider):
             env["AIME_API_KEY"] = self.api_key
         return env
 
-    async def _fetch_async(
-        self,
-        session: aiohttp.ClientSession,
-        url: str,
-        params: dict[str, Any] | None = None,
-        do_post: bool = True,
-    ) -> dict[str, Any]:
-        """Make an async HTTP request to the AIME API.
+    def _ensure_client(self) -> openai.AsyncClient:
+        """Get the OpenAI async client for AIME.
 
-        Args:
-            session: The aiohttp session to use
-            url: The URL to request
-            params: Optional parameters to send
-            do_post: Whether to use POST (True) or GET (False)
+        Uses a dedicated HTTP client to avoid ResourceScope lifecycle issues.
 
         Returns:
-            The JSON response as a dictionary
+            Configured OpenAI AsyncClient instance.
         """
-        if do_post:
-            headers = {"Content-type": "application/json; charset=UTF-8"}
-            async with session.post(url, json=params, headers=headers) as response:
-                return await response.json()
-        else:
-            async with session.get(url) as response:
-                return await response.json()
+        # Always use a dedicated HTTP client for AIME to avoid premature closure
+        # during streaming responses
+        if self._fallback_http_client is None or self._fallback_http_client.is_closed:
+            log.debug("Creating dedicated HTTP client for AIME")
+            self._fallback_http_client = httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=self._timeout,
+            )
 
+        return openai.AsyncClient(
+            base_url=self._base_url,
+            api_key=self.api_key,
+            http_client=self._fallback_http_client,
+        )
 
-    async def _poll_progress(
-        self,
-        session: aiohttp.ClientSession,
-        model: str,
-        job_id: str,
-        progress_callback: Any | None = None,
-    ) -> dict[str, Any]:
-        """Poll for job progress until completion.
+    def format_tools(self, tools: Sequence[Tool]) -> list[dict[str, Any]]:
+        """Convert tools to OpenAI-compatible format.
 
         Args:
-            session: The aiohttp session to use
-            model: The model/endpoint name for the progress URL
-            job_id: The job ID to poll for
-            progress_callback: Optional callback for progress updates
+            tools: Sequence of Tool instances
 
         Returns:
-            The final job result
+            List of tool definitions in OpenAI format.
         """
-        progress_url = f"{self.api_url}{model}/progress?key={self.api_key}&job_id={job_id}"
-
-        while True:
-            log.debug(f"Polling progress for job {job_id}")
-            response = await self._fetch_async(session, progress_url, do_post=False)
-
-            if not response.get("success"):
-                raise RuntimeError(f"AIME progress check failed: {response}")
-
-            job_state = response.get("job_state")
-            progress = response.get("progress", {})
-
-            if progress_callback and progress:
-                progress_info = {
-                    "progress": progress.get("progress", 0),
-                    "queue_position": progress.get("queue_position", -1),
-                    "estimate": progress.get("estimate", -1),
-                    "num_workers_online": progress.get("num_workers_online", -1),
-                }
-                progress_data = progress.get("progress_data")
-                progress_callback(progress_info, progress_data)
-
-            if job_state == "done":
-                return response.get("job_result", {})
-            elif job_state == "canceled":
-                raise RuntimeError("AIME job was canceled")
-            elif job_state == "failed":
-                raise RuntimeError(f"AIME job failed: {response}")
-
-            await asyncio.sleep(self.DEFAULT_PROGRESS_INTERVAL)
-
-    def _messages_to_chat_context(self, messages: Sequence[Message]) -> str:
-        """Convert messages to a chat_context JSON string for AIME.
-
-        Args:
-            messages: The messages to convert
-
-        Returns:
-            A JSON string containing the message array
-        """
-        chat_messages = []
-
-        for msg in messages:
-            content = ""
-
-            if isinstance(msg.content, str):
-                content = msg.content
-            elif isinstance(msg.content, list):
-                # Extract text from content list
-                for item in msg.content:
-                    if hasattr(item, "text"):
-                        content += str(item.text)
-                    elif isinstance(item, dict) and "text" in item:
-                        content += item["text"]
-                    elif isinstance(item, str):
-                        content += item
-
-            chat_messages.append({"role": msg.role, "content": content})
-
-        return json.dumps(chat_messages)
+        return super().format_tools(tools)
 
     async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
-        max_tokens: int = 8192,
+        tools: Sequence[Any] | None = None,
+        max_tokens: int = 16384,
         json_schema: dict | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
-        top_k: int | None = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> Message:
         """Generate a non-streaming completion from AIME.
@@ -206,12 +142,12 @@ class AIMEProvider(BaseProvider):
         Args:
             messages: The message history
             model: The model to use
-            tools: Optional tools to provide to the model (not currently supported by AIME)
+            tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
             json_schema: Optional JSON schema for structured output
             temperature: Optional sampling temperature
             top_p: Optional nucleus sampling parameter
-            top_k: Optional top-k sampling parameter
+            response_format: Optional response format specification
             **kwargs: Additional arguments to pass to the API
 
         Returns:
@@ -223,85 +159,106 @@ class AIMEProvider(BaseProvider):
         if not messages:
             raise ValueError("messages must not be empty")
 
-        chat_context = self._messages_to_chat_context(messages)
-
-        # Build request parameters
-        params: dict[str, Any] = {
-            "chat_context": chat_context,
-            "prompt_input": "",
-            "wait_for_result": True,
-            "key": self.api_key,
-            "client_session_auth_key": None,
+        client = self._ensure_client()
+        request_payload: dict[str, Any] = {
+            "max_completion_tokens": max_tokens,
+            "stream": False,
         }
 
-        # Add optional parameters with defaults matching AIME API
-        params["temperature"] = temperature if temperature is not None else 0.8
-        params["top_p"] = top_p if top_p is not None else 0.9
-        params["top_k"] = top_k if top_k is not None else 40
-        params["max_gen_tokens"] = max_tokens
+        if response_format is not None:
+            request_payload["response_format"] = response_format
+        elif json_schema is not None:
+            request_payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
 
-        self._log_api_request("chat", messages, **params)
+        if tools:
+            request_payload["tools"] = self.format_tools(tools)
 
-        timeout = aiohttp.ClientTimeout(total=300)  # 5 minute timeout for long requests
+        if temperature is not None:
+            request_payload["temperature"] = temperature
+        if top_p is not None:
+            request_payload["top_p"] = top_p
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            url = f"{self.api_url}{model}"
-            log.debug(f"AIME API URL: {url}")
+        self._log_api_request("chat", messages, model=model, **request_payload)
 
-            response = await self._fetch_async(session, url, params, do_post=True)
+        openai_messages = [await self.convert_message(m) for m in messages]
 
-            if response.get("success"):
-                # If wait_for_result=True, the response should contain the result
-                job_result = response.get("job_result", {})
-                if not job_result and response.get("job_id"):
-                    # Need to poll for result
-                    job_result = await self._poll_progress(session, model, response["job_id"])
+        try:
+            completion = await client.chat.completions.create(
+                model=model,
+                messages=openai_messages,
+                **request_payload,
+            )
+        except openai.OpenAIError as exc:
+            log.error(f"AIME API error: {exc}")
+            raise
 
-                text = job_result.get("text", "")
-                log.debug(f"AIME response text length: {len(text)}")
+        if completion.usage:
+            self._usage["prompt_tokens"] += completion.usage.prompt_tokens
+            self._usage["completion_tokens"] += completion.usage.completion_tokens
+            self._usage["total_tokens"] += completion.usage.total_tokens
+            if completion.usage.prompt_tokens_details and completion.usage.prompt_tokens_details.cached_tokens:
+                self._usage["cached_prompt_tokens"] += completion.usage.prompt_tokens_details.cached_tokens
+            if (
+                completion.usage.completion_tokens_details
+                and completion.usage.completion_tokens_details.reasoning_tokens
+            ):
+                self._usage["reasoning_tokens"] += completion.usage.completion_tokens_details.reasoning_tokens
 
-                message = Message(
-                    role="assistant",
-                    content=text,
+        choice = completion.choices[0]
+        response_message = choice.message
+
+        tool_calls = None
+        if response_message.tool_calls:
+            tool_calls = []
+            for tool_call in response_message.tool_calls:
+                args_raw = tool_call.function.arguments if tool_call.function else ""
+                try:
+                    parsed_args = json.loads(args_raw)
+                except Exception:
+                    parsed_args = {}
+                name = tool_call.function.name if tool_call.function else ""
+                tool_calls.append(
+                    ToolCall(
+                        id=tool_call.id,
+                        name=name,
+                        args=parsed_args,
+                    )
                 )
 
-                self._log_api_response("chat", message)
-                return message
-            else:
-                error_msg = response.get("error", "Unknown error")
-                raise RuntimeError(f"AIME API error: {error_msg}")
+        message = Message(role="assistant", content=response_message.content, tool_calls=tool_calls)
+        self._log_api_response("chat", message)
+        return message
 
     async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
-        tools: Sequence[Any] = [],
-        max_tokens: int = 8192,
+        tools: Sequence[Any] | None = None,
+        max_tokens: int = 16384,
         json_schema: dict | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        top_k: int | None = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
-        """Stream assistant deltas from AIME using progress polling.
-
-        AIME doesn't support true streaming, but provides progress updates
-        with partial text during generation. This method polls for progress
-        and yields chunks as they become available.
+        """Stream assistant deltas and tool calls from AIME.
 
         Args:
             messages: Conversation history to send.
-            model: Target model.
-            tools: Optional tool definitions (not currently supported by AIME).
-            max_tokens: Maximum tokens to generate.
+            model: Model identifier to use for generation.
+            tools: Optional tool definitions.
+            max_tokens: Maximum new tokens to generate.
             json_schema: Optional response schema.
-            temperature: Optional sampling temperature.
-            top_p: Optional nucleus sampling parameter.
-            top_k: Optional top-k sampling parameter.
-            **kwargs: Additional parameters.
+            response_format: Optional response format specification.
+            **kwargs: Additional OpenAI-compatible parameters.
 
         Yields:
-            Text ``Chunk`` items as progress updates arrive.
+            Chunk objects for text deltas and ToolCall entries when
+            the model requests tool execution.
+
+        Raises:
+            ValueError: If messages is empty.
         """
         log.debug(f"AIME starting streaming generation for model: {model}")
         log.debug(f"AIME streaming with {len(messages)} messages")
@@ -309,225 +266,158 @@ class AIMEProvider(BaseProvider):
         if not messages:
             raise ValueError("messages must not be empty")
 
-        chat_context = self._messages_to_chat_context(messages)
-
-        # Build request parameters - wait_for_result=False for streaming
-        params: dict[str, Any] = {
-            "chat_context": chat_context,
-            "prompt_input": "",
-            "wait_for_result": False,
-            "key": self.api_key,
-            "client_session_auth_key": None,
+        client = self._ensure_client()
+        request_payload: dict[str, Any] = {
+            "model": model,
+            "max_completion_tokens": max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
-        # Add optional parameters with defaults matching AIME API
-        params["temperature"] = temperature if temperature is not None else 0.8
-        params["top_p"] = top_p if top_p is not None else 0.9
-        params["top_k"] = top_k if top_k is not None else 40
-        params["max_gen_tokens"] = max_tokens
+        if response_format is not None:
+            request_payload["response_format"] = response_format
+        elif json_schema is not None:
+            request_payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
 
-        self._log_api_request("chat_stream", messages, **params)
+        if tools:
+            request_payload["tools"] = self.format_tools(tools)
 
-        timeout = aiohttp.ClientTimeout(total=300)
+        for param in ("temperature", "top_p", "presence_penalty", "frequency_penalty"):
+            if param in kwargs and kwargs[param] is not None:
+                request_payload[param] = kwargs[param]
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            url = f"{self.api_url}{model}"
-            log.debug(f"AIME API URL: {url}")
+        self._log_api_request("chat_stream", messages, **request_payload)
 
-            response = await self._fetch_async(session, url, params, do_post=True)
+        openai_messages = [await self.convert_message(m) for m in messages]
+        completion = await client.chat.completions.create(
+            messages=openai_messages,
+            **request_payload,
+        )
 
-            if not response.get("success"):
-                error_msg = response.get("error", "Unknown error")
-                raise RuntimeError(f"AIME API error: {error_msg}")
+        delta_tool_calls: dict[int, dict[str, Any]] = {}
+        current_chunk = ""
 
-            job_id = response.get("job_id")
-            if not job_id:
-                raise RuntimeError("AIME API did not return a job_id")
+        async for chunk in completion:
+            if chunk.usage:
+                self._usage["prompt_tokens"] += chunk.usage.prompt_tokens
+                self._usage["completion_tokens"] += chunk.usage.completion_tokens
+                self._usage["total_tokens"] += chunk.usage.total_tokens
+                if chunk.usage.prompt_tokens_details and chunk.usage.prompt_tokens_details.cached_tokens:
+                    self._usage["cached_prompt_tokens"] += chunk.usage.prompt_tokens_details.cached_tokens
+                if chunk.usage.completion_tokens_details and chunk.usage.completion_tokens_details.reasoning_tokens:
+                    self._usage["reasoning_tokens"] += chunk.usage.completion_tokens_details.reasoning_tokens
 
-            # Track the previous text to yield only new content
-            previous_text = ""
-            progress_url = f"{self.api_url}{model}/progress?key={self.api_key}&job_id={job_id}"
+            if not chunk.choices:
+                continue
 
-            while True:
-                progress_response = await self._fetch_async(session, progress_url, do_post=False)
+            delta = chunk.choices[0].delta
+            finish_reason = chunk.choices[0].finish_reason
 
-                if not progress_response.get("success"):
-                    raise RuntimeError(f"AIME progress check failed: {progress_response}")
+            if delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    tc = delta_tool_calls.get(tool_call.index) or {"id": tool_call.id}
+                    delta_tool_calls[tool_call.index] = tc
+                    if tool_call.id:
+                        tc["id"] = tool_call.id
+                    if tool_call.function and tool_call.function.name:
+                        tc["name"] = tool_call.function.name
+                    if tool_call.function and tool_call.function.arguments:
+                        tc.setdefault("function", {})
+                        tc["function"].setdefault("arguments", "")
+                        tc["function"]["arguments"] += tool_call.function.arguments
 
-                job_state = progress_response.get("job_state")
-                progress = progress_response.get("progress", {})
-                progress_data = progress.get("progress_data", {})
-
-                # Get the current text from progress data
-                current_text = progress_data.get("text", "")
-
-                # Yield only the new content
-                if len(current_text) > len(previous_text):
-                    new_content = current_text[len(previous_text) :]
-                    previous_text = current_text
-                    yield Chunk(content=new_content, done=False)
-
-                if job_state == "done":
-                    # Get the final result
-                    job_result = progress_response.get("job_result", {})
-                    final_text = job_result.get("text", "")
-
-                    # Yield any remaining content
-                    if len(final_text) > len(previous_text):
-                        remaining = final_text[len(previous_text) :]
-                        yield Chunk(content=remaining, done=True)
-                    else:
-                        yield Chunk(content="", done=True)
-
+            if delta.content or finish_reason == "stop":
+                current_chunk += delta.content or ""
+                if finish_reason == "stop":
                     self._log_api_response(
                         "chat_stream",
-                        Message(role="assistant", content=final_text),
+                        Message(role="assistant", content=current_chunk),
                     )
-                    break
-                elif job_state == "canceled":
-                    raise RuntimeError("AIME job was canceled")
-                elif job_state == "failed":
-                    raise RuntimeError(f"AIME job failed: {progress_response}")
+                yield Chunk(content=delta.content or "", done=finish_reason == "stop")
 
-                await asyncio.sleep(self.DEFAULT_PROGRESS_INTERVAL)
+            if finish_reason == "tool_calls" and delta_tool_calls:
+                for tc in delta_tool_calls.values():
+                    function = tc.get("function", {})
+                    arguments = function.get("arguments", "") if isinstance(function, dict) else ""
+                    try:
+                        args = json.loads(arguments)
+                    except Exception:
+                        args = {}
+                    tool_call = ToolCall(
+                        id=tc.get("id") or "",
+                        name=tc.get("name") or "",
+                        args=args or {},
+                    )
+                    self._log_tool_call(tool_call)
+                    yield tool_call
 
     async def get_available_language_models(self) -> list[LanguageModel]:
         """Get available AIME language models.
 
-        Returns a list of known AIME LLM models. AIME doesn't have a public
-        models endpoint, so we return a static list of known models.
+        Queries the AIME server's /models endpoint to discover available models.
+        Returns an empty list if the server is not accessible.
 
         Returns:
             List of LanguageModel instances for AIME
         """
-        # AIME LLM chat models - based on their API endpoints
-        models = [
-            LanguageModel(
-                id="llama4_chat",
-                name="Llama 4 Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="qwen3_chat",
-                name="Qwen 3 Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="llama3_r1_chat",
-                name="Llama 3 R1 Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="mistral_chat",
-                name="Mistral Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="llama3_chat",
-                name="Llama 3 Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="mixtral_chat",
-                name="Mixtral Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="gpt_oss_chat",
-                name="GPT OSS Chat",
-                provider=Provider.AIME,
-            ),
-            LanguageModel(
-                id="llama3_8b_chat",
-                name="Llama 3 8B Chat",
-                provider=Provider.AIME,
-            ),
-        ]
+        try:
+            client = self._ensure_client()
+            models_response = await client.models.list()
+            models: list[LanguageModel] = []
 
-        log.debug(f"Returning {len(models)} AIME language models")
-        return models
+            for model in models_response.data:
+                models.append(
+                    LanguageModel(
+                        id=model.id,
+                        name=model.id,
+                        provider=Provider.AIME,
+                    )
+                )
 
-    async def get_available_image_models(self) -> list[ImageModel]:
-        """Get available AIME image models.
-
-        Returns a list of known AIME image generation models.
-
-        Returns:
-            List of ImageModel instances for AIME
-        """
-        models = [
-            ImageModel(
-                id="stable_diffusion_3",
-                name="Stable Diffusion 3",
-                provider=Provider.AIME,
-            ),
-            ImageModel(
-                id="stable_diffusion_3_5",
-                name="Stable Diffusion 3.5",
-                provider=Provider.AIME,
-            ),
-            ImageModel(
-                id="flux-dev",
-                name="Flux Dev",
-                provider=Provider.AIME,
-            ),
-            ImageModel(
-                id="stable_diffusion_xl_txt2img",
-                name="Stable Diffusion XL Text to Image",
-                provider=Provider.AIME,
-            ),
-        ]
-
-        log.debug(f"Returning {len(models)} AIME image models")
-        return models
-
-    async def get_available_tts_models(self) -> list[TTSModel]:
-        """Get available AIME text-to-speech models.
-
-        Returns a list of known AIME TTS models.
-
-        Returns:
-            List of TTSModel instances for AIME
-        """
-        models = [
-            TTSModel(
-                id="tts_tortoise",
-                name="Tortoise TTS",
-                provider=Provider.AIME,
-            ),
-        ]
-
-        log.debug(f"Returning {len(models)} AIME TTS models")
-        return models
-
-    async def get_available_asr_models(self) -> list[ASRModel]:
-        """Get available AIME automatic speech recognition models.
-
-        Returns a list of known AIME ASR models.
-
-        Returns:
-            List of ASRModel instances for AIME
-        """
-        models = [
-            ASRModel(
-                id="whisper_x",
-                name="Whisper X",
-                provider=Provider.AIME,
-            ),
-        ]
-
-        log.debug(f"Returning {len(models)} AIME ASR models")
-        return models
+            log.debug(f"Fetched {len(models)} AIME models")
+            return models
+        except Exception as e:
+            log.error(f"Error fetching AIME models: {e}")
+            # Return a fallback list of known models
+            return [
+                LanguageModel(
+                    id="gpt-oss:20b",
+                    name="GPT OSS 20B",
+                    provider=Provider.AIME,
+                ),
+            ]
 
     def has_tool_support(self, model: str) -> bool:
         """Return True if the given model supports tools/function calling.
 
-        AIME currently does not support function calling.
+        AIME OpenAI-compatible API supports function calling for compatible models.
 
         Args:
             model: Model identifier string.
 
         Returns:
-            False, as AIME doesn't support tools.
+            True if the model supports function calling, False otherwise.
         """
-        return False
+        # AIME models with OpenAI-compatible API generally support tool calling
+        return True
+
+    def get_usage(self) -> dict[str, int]:
+        """Return a shallow copy of accumulated usage counters.
+
+        Returns:
+            Dictionary with token usage statistics.
+        """
+        return self._usage.copy()
+
+    def reset_usage(self) -> None:
+        """Reset all usage counters to zero."""
+        self._usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "reasoning_tokens": 0,
+        }
