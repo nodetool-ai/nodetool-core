@@ -11,6 +11,7 @@ This test suite verifies that the Qwen provider correctly:
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
@@ -33,8 +34,6 @@ class TestQwenProvider:
     def test_get_client_configuration(self):
         """Test that Qwen client is configured with correct base URL."""
         provider = QwenProvider(secrets={"DASHSCOPE_API_KEY": "test-key"})
-
-        import httpx
 
         with patch("nodetool.runtime.resources.require_scope") as mock_scope:
             # Create a real httpx.AsyncClient instead of a mock

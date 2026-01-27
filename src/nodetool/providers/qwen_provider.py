@@ -181,7 +181,6 @@ class QwenProvider(OpenAIProvider):
         chunk_count = 0
 
         try:
-            import asyncio
 
             async for chunk in completion:
                 chunk: ChatCompletionChunk = chunk
@@ -284,8 +283,6 @@ class QwenProvider(OpenAIProvider):
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
-        import json
-
         log.debug(f"Generating non-streaming message for model: {model}")
         log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
 
