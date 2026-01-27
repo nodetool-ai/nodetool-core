@@ -67,7 +67,7 @@ async def generate_html(
                 yield chunk
         except Exception as e:
             log.error(f"Error generating HTML: {e}", exc_info=True)
-            yield f"\n\nError: {str(e)}"
+            yield "\n\nError: An error occurred while generating the HTML. Please try again."
 
     return StreamingResponse(
         stream_response(),

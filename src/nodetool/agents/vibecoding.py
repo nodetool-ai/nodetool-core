@@ -186,6 +186,10 @@ Do not include any explanation before or after the code block. The HTML must be 
 '''
 
 
+# Default max tokens for HTML generation (large to accommodate full HTML apps)
+DEFAULT_MAX_TOKENS = 16384
+
+
 class VibeCodingAgent:
     """Agent that generates self-contained HTML apps for workflows."""
 
@@ -194,6 +198,7 @@ class VibeCodingAgent:
         workflow: Workflow,
         provider: BaseProvider | None = None,
         model: str = "claude-sonnet-4-20250514",
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ):
         """
         Initialize the VibeCodingAgent.
@@ -202,10 +207,12 @@ class VibeCodingAgent:
             workflow: The workflow to generate an HTML app for.
             provider: Optional provider instance. If not provided, will be created.
             model: The model to use for generation.
+            max_tokens: Maximum tokens for the response. Defaults to DEFAULT_MAX_TOKENS.
         """
         self.workflow = workflow
         self.provider = provider
         self.model = model
+        self.max_tokens = max_tokens
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
@@ -250,7 +257,7 @@ class VibeCodingAgent:
         async for chunk in self.provider.generate_messages(
             messages=messages,
             model=self.model,
-            max_tokens=16384,
+            max_tokens=self.max_tokens,
         ):
             if isinstance(chunk, Chunk) and chunk.content:
                 yield chunk.content

@@ -483,15 +483,16 @@ async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLRe
     if not workflow.html_app:
         raise HTTPException(status_code=404, detail="No HTML app configured for this workflow")
 
-    # Inject runtime configuration
+    # Inject runtime configuration using JSON for safety
+    import json as json_module
     api_url = Environment.get_api_url()
     ws_url = Environment.get_ws_url()
 
     config_script = f"""
     <script>
-      window.NODETOOL_API_URL = "{api_url}";
-      window.NODETOOL_WS_URL = "{ws_url}";
-      window.NODETOOL_WORKFLOW_ID = "{id}";
+      window.NODETOOL_API_URL = {json_module.dumps(api_url)};
+      window.NODETOOL_WS_URL = {json_module.dumps(ws_url)};
+      window.NODETOOL_WORKFLOW_ID = {json_module.dumps(id)};
     </script>
     """
 
