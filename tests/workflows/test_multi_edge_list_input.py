@@ -167,8 +167,13 @@ class TestClassifyListInputs:
         runner._classify_list_inputs(graph)
         assert runner.multi_edge_list_inputs == {}
 
-    def test_single_edge_to_list_classified(self):
-        """Single edge to list property should be classified for list aggregation."""
+    def test_single_edge_to_list_not_classified(self):
+        """Single edge to list property should NOT be classified for multi-edge aggregation.
+
+        With auto-wrapping, single values are automatically wrapped into lists,
+        so there's no need for list aggregation. Only multiple edges to the same
+        list property require aggregation.
+        """
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
         edges = [
@@ -185,9 +190,8 @@ class TestClassifyListInputs:
         runner = WorkflowRunner(job_id="test")
         runner._classify_list_inputs(graph)
 
-        # Single edge to list property should now be classified
-        assert "c1" in runner.multi_edge_list_inputs
-        assert "items" in runner.multi_edge_list_inputs["c1"]
+        # Single edge to list property should NOT be classified (auto-wrapping handles it)
+        assert "c1" not in runner.multi_edge_list_inputs
 
     def test_multiple_edges_to_list_classified(self):
         """Multiple edges to list property should be classified."""
@@ -596,8 +600,12 @@ class TestActorGetListHandles:
         assert list_handles == {"items"}
 
     @pytest.mark.asyncio
-    async def test_get_list_handles_returns_single_edge_list(self):
-        """_get_list_handles should return handles for single-edge list inputs too."""
+    async def test_get_list_handles_returns_empty_for_single_edge(self):
+        """_get_list_handles should return empty set for single-edge list inputs.
+
+        Single-edge list inputs are handled by auto-wrapping, not aggregation.
+        Only multi-edge list inputs need special aggregation handling.
+        """
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
         edges = [
@@ -621,4 +629,4 @@ class TestActorGetListHandles:
         actor = NodeActor(runner, consumer, ctx, inbox)
 
         list_handles = actor._get_list_handles()
-        assert list_handles == {"items"}
+        assert list_handles == set()  # No multi-edge aggregation for single edge
