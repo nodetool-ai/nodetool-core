@@ -38,7 +38,7 @@ class SQLiteConnectionPool:
     _pools: ClassVar[dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
     _loop_locks: ClassVar[dict[int, asyncio.Lock]] = {}
 
-    def __init__(self, db_path: str, pool_size: int = 10):
+    def __init__(self, db_path: str, pool_size: int = 5):
         """Initialize the connection pool with lazy slots.
 
         Args:
@@ -61,7 +61,7 @@ class SQLiteConnectionPool:
         return cls._loop_locks[loop_id]
 
     @classmethod
-    async def get_shared(cls, db_path: str, pool_size: int = 10) -> "SQLiteConnectionPool":
+    async def get_shared(cls, db_path: str, pool_size: int = 5) -> "SQLiteConnectionPool":
         """Get or create a shared connection pool for a database path and loop.
 
         Pools are keyed by (event_loop_id, db_path) to avoid sharing asyncio

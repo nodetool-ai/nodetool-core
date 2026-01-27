@@ -26,6 +26,7 @@ class Workflow(BaseModel):
     workspace_id: str | None = None
     required_providers: list[str] | None = None
     required_models: list[str] | None = None
+    html_app: str | None = None
 
 
 class WorkflowRequest(BaseModel):
@@ -43,6 +44,7 @@ class WorkflowRequest(BaseModel):
     settings: dict[str, str | bool | int | float | None] | None = None
     run_mode: str | None = None
     workspace_id: str | None = None
+    html_app: str | None = None
 
 
 class WorkflowList(BaseModel):

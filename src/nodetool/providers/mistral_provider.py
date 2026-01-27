@@ -1,8 +1,13 @@
 """
-Mistral AI provider implementation for chat completions.
+Mistral AI provider implementation for chat completions, embeddings, and vision.
 
 This module implements the ChatProvider interface for Mistral AI,
 which provides access to Mistral models through an OpenAI-compatible API.
+
+Supported capabilities:
+- Chat completions: All Mistral language models
+- Vision (image-to-text): Pixtral models (pixtral-12b, pixtral-large)
+- Embeddings: mistral-embed model
 
 Mistral AI API Documentation: https://docs.mistral.ai/api/
 Mistral AI Models: https://docs.mistral.ai/getting-started/models/
@@ -13,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
 
 import aiohttp
 import openai
@@ -23,6 +28,7 @@ if TYPE_CHECKING:
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    EmbeddingModel,
     LanguageModel,
     Message,
     Provider,
@@ -420,3 +426,102 @@ class MistralProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching Mistral models: {e}")
             return []
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """
+        Get available Mistral embedding models.
+
+        Returns embedding models available from Mistral AI.
+        Returns an empty list if no API key is configured.
+
+        Mistral currently provides the mistral-embed model for text embeddings.
+        Source: https://docs.mistral.ai/capabilities/embeddings/
+
+        Returns:
+            List of EmbeddingModel instances for Mistral
+        """
+        if not self.api_key:
+            log.debug("No Mistral API key configured, returning empty embedding model list")
+            return []
+
+        # Mistral embedding models
+        # Source: https://docs.mistral.ai/capabilities/embeddings/
+        embedding_models_config = [
+            {
+                "id": "mistral-embed",
+                "name": "Mistral Embed",
+                "dimensions": 1024,
+            },
+        ]
+
+        models: list[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.Mistral,
+                    dimensions=config["dimensions"],
+                )
+            )
+
+        log.debug(f"Returning {len(models)} Mistral embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using Mistral's Embeddings API.
+
+        Uses the OpenAI-compatible embeddings endpoint at https://api.mistral.ai/v1
+        to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "mistral-embed")
+            **kwargs: Additional parameters (not used currently by Mistral)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("MISTRAL_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating Mistral embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build API parameters - Mistral uses OpenAI-compatible format
+            api_params: dict[str, Any] = {
+                "input": texts,
+                "model": model,
+            }
+
+            response = await client.embeddings.create(**api_params)
+
+            # Extract embeddings from response
+            embeddings = [data.embedding for data in response.data]
+
+            log.debug(
+                f"Generated {len(embeddings)} Mistral embeddings, dimension: {len(embeddings[0]) if embeddings else 0}"
+            )
+
+            return embeddings
+
+        except Exception as e:
+            log.error(f"Mistral embedding generation failed: {e}")
+            raise RuntimeError(f"Mistral embedding generation failed: {str(e)}") from e

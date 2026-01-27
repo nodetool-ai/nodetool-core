@@ -56,13 +56,13 @@ class ManualSaveImageNode(BaseNode):
         image_data = BytesIO(b"example image data")
 
         # Manually create asset with tracking information
-        asset = await context.create_asset(
+        # workflow_id and job_id are automatically included by create_asset
+        await context.create_asset(
             name=f"output_{self.id}.png",
             content_type="image/png",
             content=image_data,
             node_id=self.id,  # Tag with node that created it
         )
-        # Note: workflow_id and job_id are automatically included by create_asset
 
         # Return the asset as an ImageRef
         return await context.image_from_io(image_data)
