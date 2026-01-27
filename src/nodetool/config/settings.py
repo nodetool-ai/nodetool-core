@@ -256,12 +256,6 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
-    env_var="AIME_USER",
-    group="Aime",
-    description="Aime user credential for authentication with Aime services",
-)
-register_secret(
-    package_name="nodetool",
     env_var="AIME_API_KEY",
     group="Aime",
     description="Aime API key for accessing Aime AI services",

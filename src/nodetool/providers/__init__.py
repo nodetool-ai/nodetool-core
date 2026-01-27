@@ -98,6 +98,7 @@ def import_providers():
 
     # import providers to ensure they are registered
     from nodetool.providers import (
+        aime_provider,
         anthropic_provider,
         cerebras_provider,
         comfy_local_provider,
