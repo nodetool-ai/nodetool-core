@@ -29,6 +29,24 @@ if TYPE_CHECKING:
     from nodetool.types.model import UnifiedModel
 
 
+def _print_thread_diagnostics(*, include_daemon: bool = True) -> None:
+    """Print basic thread diagnostics to stderr (useful for debugging CLI hangs)."""
+    import threading
+
+    threads = threading.enumerate()
+    non_daemon = [t for t in threads if not t.daemon]
+    click.echo(
+        f"[diagnostics] threads: total={len(threads)} non_daemon={len(non_daemon)}",
+        err=True,
+    )
+    to_print = threads if include_daemon else non_daemon
+    for t in to_print:
+        click.echo(
+            f"[diagnostics] thread name={t.name!r} ident={t.ident} daemon={t.daemon} alive={t.is_alive()}",
+            err=True,
+        )
+
+
 def _get_progress_manager() -> ProgressManager:
     """Lazily create and return the shared ProgressManager."""
     global _progress_manager
@@ -151,6 +169,41 @@ def _get_version() -> str:
         except PackageNotFoundError:
             continue
     return "unknown"
+
+
+def _json_default(obj: Any) -> Any:
+    if hasattr(obj, "model_dump") and callable(obj.model_dump):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "__dict__"):
+        try:
+            return obj.__dict__
+        except Exception:
+            pass
+    return str(obj)
+
+
+def _echo_json(data: Any) -> None:
+    click.echo(json.dumps(data, indent=2, default=_json_default))
+
+
+def _load_json_input(
+    json_text: str | None,
+    json_file: str | None,
+    *,
+    json_option: str,
+    json_file_option: str,
+) -> Any:
+    if json_text and json_file:
+        raise click.UsageError(f"Use only one of {json_option} or {json_file_option}.")
+    if json_file:
+        with open(json_file, encoding="utf-8") as f:
+            return json.load(f)
+    if json_text:
+        return json.loads(json_text)
+    return None
 
 
 @click.group()
@@ -276,16 +329,433 @@ def info_cmd(as_json: bool):
     console.print(keys_table)
     console.print()
 
+@click.group(name="workflows")
+def workflows() -> None:
+    """Workflow management commands (mirrors MCP workflow tools)."""
 
-@cli.command("mcp")
-def mcp():
-    """Start the NodeTool Model Context Protocol (MCP) server.
 
-    Enables IDE integrations (e.g., Claude Code, other MCP-compatible IDEs) to
-    access NodeTool workflows and capabilities."""
-    from nodetool.api.mcp_server import mcp
+@workflows.command("list")
+@click.option(
+    "--type",
+    "workflow_type",
+    type=click.Choice(["user", "example", "all"], case_sensitive=False),
+    default="user",
+    show_default=True,
+    help="Which workflows to list.",
+)
+@click.option("--query", default=None, help="Optional search query.")
+@click.option("--limit", default=100, show_default=True, type=int, help="Maximum number of workflows to return.")
+@click.option("--user-id", "-u", default="1", help="User ID (for user workflows).")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON instead of a table.")
+@click.option(
+    "--debug-threads",
+    is_flag=True,
+    help="Print thread diagnostics after the command completes (to help debug hangs on exit).",
+)
+def workflows_list(
+    workflow_type: str,
+    query: str | None,
+    limit: int,
+    user_id: str,
+    as_json: bool,
+    debug_threads: bool,
+) -> None:
+    """List workflows (user, example, or both)."""
+    import asyncio
 
-    mcp.run()
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.workflow_tools import WorkflowTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await WorkflowTools.list_workflows(workflow_type, query, limit, user_id)
+
+    data = asyncio.run(_run())
+    if as_json:
+        _echo_json(data)
+        if debug_threads:
+            _print_thread_diagnostics()
+        return
+
+    items = data.get("workflows") or []
+    if not items:
+        console.print("[yellow]No workflows found.[/]")
+        if debug_threads:
+            _print_thread_diagnostics()
+        return
+
+    table = Table(title="Workflows")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Type", style="magenta")
+    table.add_column("Package", style="yellow")
+    table.add_column("Updated", style="white")
+
+    for wf in items:
+        table.add_row(
+            str(wf.get("id", "")),
+            str(wf.get("name", "")),
+            str(wf.get("workflow_type", "")),
+            str(wf.get("package_name", "") or "-"),
+            str(wf.get("updated_at", "") or "-"),
+        )
+
+    console.print(table)
+    if debug_threads:
+        _print_thread_diagnostics()
+
+
+@workflows.command("get")
+@click.argument("workflow_id", required=True)
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def workflows_get(workflow_id: str, user_id: str, as_json: bool) -> None:
+    """Get workflow details by ID."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.workflow_tools import WorkflowTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await WorkflowTools.get_workflow(workflow_id, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@workflows.command("run")
+@click.argument("workflow_id", required=True)
+@click.option("--params", "params_json", default=None, help="JSON string of workflow params.")
+@click.option(
+    "--params-file",
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    default=None,
+    help="Path to JSON file with workflow params.",
+)
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def workflows_run(workflow_id: str, params_json: str | None, params_file: str | None, user_id: str, as_json: bool):
+    """Run a workflow by ID (single-shot result)."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.workflow_tools import WorkflowTools
+
+    params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
+    if params is not None and not isinstance(params, dict):
+        raise click.UsageError("--params/--params-file must decode to a JSON object.")
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await WorkflowTools.run_workflow_tool(workflow_id, params, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@click.group(name="assets")
+def assets() -> None:
+    """Asset management commands (mirrors MCP asset tools)."""
+
+
+@assets.command("list")
+@click.option(
+    "--source",
+    type=click.Choice(["user", "package"], case_sensitive=False),
+    default="user",
+    show_default=True,
+    help="Asset source.",
+)
+@click.option("--parent-id", default=None, help="Parent folder asset id (user assets only).")
+@click.option("--query", default=None, help="Search query (min 2 chars).")
+@click.option("--content-type", default=None, help="Filter by content type (e.g. image, video, folder).")
+@click.option("--package-name", default=None, help="Filter package assets by package name.")
+@click.option("--limit", default=100, show_default=True, type=int, help="Maximum number of assets to return.")
+@click.option("--user-id", "-u", default="1", help="User ID (for user assets).")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON instead of a table.")
+def assets_list(
+    source: str,
+    parent_id: str | None,
+    query: str | None,
+    content_type: str | None,
+    package_name: str | None,
+    limit: int,
+    user_id: str,
+    as_json: bool,
+) -> None:
+    """List/search assets."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.asset_tools import AssetTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await AssetTools.list_assets(source, parent_id, query, content_type, package_name, limit, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+
+    items = data.get("assets") or []
+    if not items:
+        console.print("[yellow]No assets found.[/]")
+        return
+
+    table = Table(title="Assets")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Type", style="magenta")
+    table.add_column("Size", style="white")
+    table.add_column("Source", style="yellow")
+
+    for asset in items:
+        size = asset.get("size")
+        table.add_row(
+            str(asset.get("id", "")),
+            str(asset.get("name", "")),
+            str(asset.get("content_type", "") or "-"),
+            _format_size(int(size)) if isinstance(size, int) else "-",
+            str(asset.get("source", source)),
+        )
+
+    console.print(table)
+
+
+@assets.command("get")
+@click.argument("asset_id", required=True)
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def assets_get(asset_id: str, user_id: str, as_json: bool) -> None:
+    """Get asset details by ID."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.asset_tools import AssetTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await AssetTools.get_asset(asset_id, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@click.group(name="jobs")
+def jobs() -> None:
+    """Job management commands (mirrors MCP job tools)."""
+
+
+@jobs.command("list")
+@click.option("--workflow-id", default=None, help="Filter by workflow ID.")
+@click.option("--limit", default=100, show_default=True, type=int, help="Maximum number of jobs to return.")
+@click.option("--start-key", default=None, help="Pagination cursor.")
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON instead of a table.")
+def jobs_list(workflow_id: str | None, limit: int, start_key: str | None, user_id: str, as_json: bool) -> None:
+    """List jobs for a user."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.job_tools import JobTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await JobTools.list_jobs(workflow_id, limit, start_key, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+
+    items = data.get("jobs") or []
+    if not items:
+        console.print("[yellow]No jobs found.[/]")
+        return
+
+    table = Table(title="Jobs")
+    table.add_column("ID", style="cyan")
+    table.add_column("Workflow", style="magenta")
+    table.add_column("Status", style="green")
+    table.add_column("Started", style="white")
+
+    for job in items:
+        table.add_row(
+            str(job.get("id", "")),
+            str(job.get("workflow_id", "") or "-"),
+            str(job.get("status", "") or "-"),
+            str(job.get("started_at", "") or "-"),
+        )
+
+    console.print(table)
+
+
+@jobs.command("get")
+@click.argument("job_id", required=True)
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def jobs_get(job_id: str, user_id: str, as_json: bool) -> None:
+    """Get job details by ID."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.job_tools import JobTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await JobTools.get_job(job_id, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@jobs.command("logs")
+@click.argument("job_id", required=True)
+@click.option("--limit", default=200, show_default=True, type=int, help="Maximum number of logs to return.")
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def jobs_logs(job_id: str, limit: int, user_id: str, as_json: bool) -> None:
+    """Get logs for a job."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.job_tools import JobTools
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await JobTools.get_job_logs(job_id, limit, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@jobs.command("start")
+@click.argument("workflow_id", required=True)
+@click.option("--params", "params_json", default=None, help="JSON string of workflow params.")
+@click.option(
+    "--params-file",
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    default=None,
+    help="Path to JSON file with workflow params.",
+)
+@click.option(
+    "--execution-strategy",
+    type=click.Choice(["threaded", "asyncio", "process"], case_sensitive=False),
+    default="threaded",
+    show_default=True,
+    help="Execution strategy for background job.",
+)
+@click.option("--user-id", "-u", default="1", help="User ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (no rich formatting).")
+def jobs_start(
+    workflow_id: str,
+    params_json: str | None,
+    params_file: str | None,
+    execution_strategy: str,
+    user_id: str,
+    as_json: bool,
+) -> None:
+    """Start a background job for a workflow."""
+    import asyncio
+
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.tools.job_tools import JobTools
+
+    params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
+    if params is not None and not isinstance(params, dict):
+        raise click.UsageError("--params/--params-file must decode to a JSON object.")
+
+    async def _run() -> dict[str, Any]:
+        async with ResourceScope():
+            return await JobTools.start_background_job(workflow_id, params, execution_strategy, user_id)
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]❌ {exc}[/]")
+        raise SystemExit(1) from exc
+
+    if as_json:
+        _echo_json(data)
+        return
+    console.print(Syntax(json.dumps(data, indent=2, default=_json_default), "json"))
+
+
+@cli.group("mcp", invoke_without_command=True)
+@click.pass_context
+def mcp(ctx: click.Context) -> None:
+    """Model Context Protocol (MCP) server and tool helpers."""
+    if ctx.invoked_subcommand is None:
+        from nodetool.api.mcp_server import mcp as mcp_server
+
+        mcp_server.run()
+
+
+@mcp.command("serve")
+def mcp_serve() -> None:
+    """Start the NodeTool Model Context Protocol (MCP) server."""
+    from nodetool.api.mcp_server import mcp as mcp_server
+
+    mcp_server.run()
+
+
+# Mirror tool groups under `nodetool mcp ...` for discoverability.
+mcp.add_command(workflows)
+mcp.add_command(assets)
+mcp.add_command(jobs)
 
 
 @cli.command("serve")
@@ -1833,6 +2303,11 @@ def workflow_docs(examples_dir: str, output_dir: str, package_name: str | None, 
         traceback.print_exc()
         sys.exit(1)
 
+
+# MCP tool groups exposed as CLI command groups
+cli.add_command(workflows)
+cli.add_command(assets)
+cli.add_command(jobs)
 
 # Add package group to the main CLI
 cli.add_command(package)

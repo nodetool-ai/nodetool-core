@@ -1,6 +1,8 @@
-from huggingface_hub import ModelInfo
-from huggingface_hub.inference._providers import PROVIDER_T
+from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from huggingface_hub import ModelInfo
 
 
 class UnifiedModel(BaseModel):
@@ -64,7 +66,4 @@ class CachedFileInfo(BaseModel):
     repo_id: str
     file_name: str
     size_on_disk: int
-    model_info: ModelInfo | None = None
-
-
-CachedFileInfo.model_rebuild()
+    model_info: Any = None

@@ -5,10 +5,11 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, TYPE_CHECKING, Union
 
-import numpy as np
-import pandas as pd
+if TYPE_CHECKING:
+    import numpy as np
+    import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -1439,6 +1440,7 @@ class TorchTensor(BaseType):
         return self.value is None or len(self.value) == 0
 
     def _validate_nbytes(self) -> None:
+        import numpy as np
         assert self.value is not None, "No bytes stored"
         itemsize = np.dtype(self.dtype).itemsize
         expected = int(np.prod(self.shape)) * itemsize
@@ -1450,6 +1452,7 @@ class TorchTensor(BaseType):
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
         import torch
+        import numpy as np
 
         assert self.value is not None, "No bytes stored"
         self._validate_nbytes()
@@ -1490,7 +1493,7 @@ class TorchTensor(BaseType):
         )
 
     @staticmethod
-    def from_numpy(arr: np.ndarray, **kwargs) -> "TorchTensor":
+    def from_numpy(arr: "np.ndarray", **kwargs) -> "TorchTensor":
         import torch
 
         t = torch.from_numpy(arr)
@@ -1498,6 +1501,7 @@ class TorchTensor(BaseType):
 
     @staticmethod
     def from_list(arr: list, **kwargs) -> "TorchTensor":
+        import numpy as np
         np_arr = np.array(arr)
         return TorchTensor.from_numpy(np_arr, **kwargs)
 
@@ -1514,7 +1518,8 @@ class NPArray(BaseType):
     def is_empty(self):
         return self.value is None or len(self.value) == 0
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> "np.ndarray":
+        import numpy as np
         assert self.value is not None
         return np.frombuffer(self.value, dtype=np.dtype(self.dtype)).reshape(self.shape)
 
@@ -1522,16 +1527,18 @@ class NPArray(BaseType):
         return self.to_numpy().tolist()
 
     @staticmethod
-    def from_numpy(arr: np.ndarray, **kwargs):
+    def from_numpy(arr: "np.ndarray", **kwargs):
         return NPArray(value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs)
 
     @staticmethod
     def from_list(arr: list, **_kwargs):
+        import numpy as np
         return NPArray.from_numpy(np.array(arr))
 
 
-def to_numpy(num: float | int | NPArray) -> np.ndarray:
+def to_numpy(num: float | int | NPArray) -> "np.ndarray":
     if type(num) in (float, int, list):
+        import numpy as np
         return np.array(num)
     elif type(num) is NPArray:
         return num.to_numpy()
@@ -1569,7 +1576,7 @@ class DataframeRef(AssetRef):
     data: list[list[Any]] | None = None
 
     @staticmethod
-    def from_pandas(data: pd.DataFrame):
+    def from_pandas(data: "pd.DataFrame"):
         rows = data.values.tolist()
         column_defs = [
             ColumnDef(name=name, data_type=dtype_name(dtype.name))

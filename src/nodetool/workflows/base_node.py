@@ -144,12 +144,14 @@ from nodetool.types.model import UnifiedModel
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.types import NodeUpdate
 
-try:
-    import torch
 
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+def _is_torch_available() -> bool:
+    try:
+        import torch
+        return True
+    except ImportError:
+        return False
+
 
 NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
 COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
@@ -1140,7 +1142,17 @@ class BaseNode(BaseModel):
         # Include both class-declared and instance-declared dynamic outputs
         for o in self.outputs_for_instance():
             value = result.get(o.name)
-            if TORCH_AVAILABLE and isinstance(value, torch.Tensor):  # type: ignore
+            is_torch_tensor = False
+            if _is_torch_available():
+                try:
+                    import torch
+                    if isinstance(value, torch.Tensor):
+                        is_torch_tensor = True
+                except ImportError:
+                    pass
+
+            if is_torch_tensor:
+
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
@@ -1174,7 +1186,16 @@ class BaseNode(BaseModel):
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)
-                if (TORCH_AVAILABLE and isinstance(value, torch.Tensor)) or isinstance(value, ComfyData):  # type: ignore
+                is_torch_tensor = False
+                if _is_torch_available():
+                    try:
+                        import torch
+                        if isinstance(value, torch.Tensor):
+                            is_torch_tensor = True
+                    except ImportError:
+                        pass
+
+                if is_torch_tensor or isinstance(value, ComfyData):  # type: ignore
                     pass
                 elif isinstance(value, ComfyModel):
                     value_without_model = value.model_dump()
@@ -1675,8 +1696,12 @@ class BaseNode(BaseModel):
         Default implementation calls the process method in inference mode.
         For training nodes, this method should be overridden.
         """
-        if TORCH_AVAILABLE:
-            with torch.no_grad():  # type: ignore
+        if _is_torch_available():
+            try:
+                import torch
+                with torch.no_grad():  # type: ignore
+                    return await self.process(context)
+            except ImportError:
                 return await self.process(context)
         else:
             return await self.process(context)

@@ -18,7 +18,19 @@ log = get_logger(__name__)
 
 # Module-level thread pool for running async code in sync contexts
 # This avoids creating a new ThreadPoolExecutor for each embedding call
-_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="embedding-")
+# Lazily initialized to avoid creating threads at import time
+_THREAD_POOL: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
+    """Get or create the module-level thread pool (lazy initialization)."""
+    global _THREAD_POOL
+    if _THREAD_POOL is None:
+        _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="embedding-"
+        )
+    return _THREAD_POOL
+
 
 # Default fallback model for SentenceTransformer
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "all-MiniLM-L6-v2"
@@ -89,7 +101,7 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
         if loop is not None and loop.is_running():
             # We're in an async context but need to run sync
             # Use the module-level thread pool to avoid overhead of creating new threads
-            future = _THREAD_POOL.submit(
+            future = _get_thread_pool().submit(
                 asyncio.run,
                 provider.generate_embedding(
                     text=list(input),

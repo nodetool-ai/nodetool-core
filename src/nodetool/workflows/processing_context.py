@@ -49,9 +49,8 @@ from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
+# NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
+# heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
@@ -2424,6 +2423,11 @@ class ProcessingContext:
             ClientAPI: ChromaDB client instance
         """
         if self.chroma_client is None:
+            # Lazy import to avoid loading chromadb/langchain during CLI startup
+            from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+                get_async_chroma_client,
+            )
+
             self.chroma_client = await get_async_chroma_client(self.user_id)
         return self.chroma_client
 
