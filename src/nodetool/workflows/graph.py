@@ -377,8 +377,15 @@ class Graph(BaseModel):
 
                     source_type = source_output.type
 
+
                     # For multi-edge list inputs, source type must be compatible with element type
-                    if not typecheck(source_type, element_type):
+                    # If source is also a list, check if its element type is compatible
+                    type_to_check = source_type
+                    if source_type.is_list_type() and source_type.type_args:
+                        # Source is a list - check its element type compatibility
+                        type_to_check = source_type.type_args[0]
+
+                    if not typecheck(type_to_check, element_type):
                         validation_errors.append(
                             f"{target_id}: Edge from {edge.source}.{edge.sourceHandle} "
                             f"has incompatible type '{source_type.type}' for list element type '{element_type.type}' "

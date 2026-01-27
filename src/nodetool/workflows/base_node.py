@@ -863,6 +863,9 @@ class BaseNode(BaseModel):
                             converted = python_type(value)
                         elif tm.is_list_type() and len(type_args) == 1:
                             subtype = type_args[0].get_python_type()
+                            # Auto-wrap single value into a list if it's not already a list
+                            if not isinstance(value, list):
+                                value = [value]
                             if hasattr(subtype, "from_dict") and all(
                                 isinstance(x, dict) and "type" in x for x in value
                             ):
@@ -905,6 +908,9 @@ class BaseNode(BaseModel):
                 v = python_type(value)
             elif prop.type.is_list_type() and len(type_args) == 1:
                 subtype = prop.type.type_args[0].get_python_type()
+                # Auto-wrap single value into a list if it's not already a list
+                if not isinstance(value, list):
+                    value = [value]
                 if hasattr(subtype, "from_dict") and all(isinstance(x, dict) and "type" in x for x in value):
                     # Handle lists of dicts with 'type' field as BaseType instances
                     v = [subtype.from_dict(x) for x in value]

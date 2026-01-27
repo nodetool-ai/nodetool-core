@@ -880,9 +880,13 @@ class NodeActor:
                 continue
 
             if handle in list_handles:
-                # Aggregate into list buffer
-                list_buffers[handle].append(item)
-                self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
+                # Aggregate into list buffer - flatten if item is a list
+                if isinstance(item, list):
+                    list_buffers[handle].extend(item)
+                    self.logger.debug(f"List aggregation: {handle} extended with {len(item)} items, buffer size={len(list_buffers[handle])}")
+                else:
+                    list_buffers[handle].append(item)
+                    self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
             else:
                 # Non-list handle: take first value (like standard on_any)
                 if handle not in non_list_values:

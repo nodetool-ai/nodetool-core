@@ -170,7 +170,9 @@ class TestClassifyListInputs:
     def test_single_edge_to_list_not_classified(self):
         """Single edge to list property should NOT be classified for multi-edge aggregation.
 
-        Single-edge list inputs are handled by sync_mode/streaming logic, not multi-edge aggregation.
+        With auto-wrapping, single values are automatically wrapped into lists,
+        so there's no need for list aggregation. Only multiple edges to the same
+        list property require aggregation.
         """
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
@@ -188,7 +190,7 @@ class TestClassifyListInputs:
         runner = WorkflowRunner(job_id="test")
         runner._classify_list_inputs(graph)
 
-        # Single edge to list property should NOT be classified for multi-edge aggregation
+        # Single edge to list property should NOT be classified (auto-wrapping handles it)
         assert "c1" not in runner.multi_edge_list_inputs
 
     def test_multiple_edges_to_list_classified(self):
@@ -601,8 +603,8 @@ class TestActorGetListHandles:
     async def test_get_list_handles_returns_empty_for_single_edge(self):
         """_get_list_handles should return empty set for single-edge list inputs.
 
-        Single-edge list inputs are handled by sync_mode/streaming logic, not multi-edge aggregation.
-        Only multi-edge cases are tracked in multi_edge_list_inputs.
+        Single-edge list inputs are handled by auto-wrapping, not aggregation.
+        Only multi-edge list inputs need special aggregation handling.
         """
         producer = IntProducer(id="p1", value=42)
         consumer = ListConsumer(id="c1")
@@ -627,4 +629,4 @@ class TestActorGetListHandles:
         actor = NodeActor(runner, consumer, ctx, inbox)
 
         list_handles = actor._get_list_handles()
-        assert list_handles == set()  # Empty for single-edge list inputs
+        assert list_handles == set()  # No multi-edge aggregation for single edge
