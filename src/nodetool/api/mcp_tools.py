@@ -6,12 +6,7 @@ so they can be used by MCP-compatible clients.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from fastmcp import Context, FastMCP
-
-if TYPE_CHECKING:
-    from fastmcp import Context as FastMCPContext
+from fastmcp import Context
 
 from nodetool.api.mcp_server import mcp
 from nodetool.tools import (
@@ -28,122 +23,69 @@ from nodetool.tools import (
 
 
 # Register all workflow tools
-if TYPE_CHECKING:
-    from fastmcp import Context
+@mcp.tool()
+async def get_workflow(workflow_id: str, user_id: str = "1") -> dict:
+    """Get detailed information about a specific workflow."""
+    return await WorkflowTools.get_workflow(workflow_id, user_id)
 
-    @mcp.tool()
-    async def get_workflow(workflow_id: str, user_id: str = "1") -> dict:
-        """Get detailed information about a specific workflow."""
-        return await WorkflowTools.get_workflow(workflow_id, user_id)
 
-    @mcp.tool()
-    async def create_workflow(
-        name: str,
-        graph: dict,
-        description: str | None = None,
-        tags: list[str] | None = None,
-        access: str = "private",
-        settings: dict | None = None,
-        run_mode: str | None = None,
-        user_id: str = "1",
-    ) -> dict:
-        """Create a new workflow in the database."""
-        return await WorkflowTools.create_workflow(name, graph, description, tags, access, settings, run_mode, user_id)
+@mcp.tool()
+async def create_workflow(
+    name: str,
+    graph: dict,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    access: str = "private",
+    settings: dict | None = None,
+    run_mode: str | None = None,
+    user_id: str = "1",
+) -> dict:
+    """Create a new workflow in the database."""
+    return await WorkflowTools.create_workflow(name, graph, description, tags, access, settings, run_mode, user_id)
 
-    @mcp.tool()
-    async def run_workflow_tool(workflow_id: str, params: dict | None = None, user_id: str = "1") -> dict:
-        """Execute a NodeTool workflow with given parameters."""
-        return await WorkflowTools.run_workflow_tool(workflow_id, params, user_id)
 
-    @mcp.tool()
-    async def run_graph(graph: dict, params: dict | None = None, user_id: str = "1") -> dict:
-        """Execute a workflow graph directly without saving it as a workflow."""
-        return await WorkflowTools.run_graph(graph, params, user_id)
+@mcp.tool()
+async def run_workflow_tool(workflow_id: str, params: dict | None = None, user_id: str = "1") -> dict:
+    """Execute a NodeTool workflow with given parameters."""
+    return await WorkflowTools.run_workflow_tool(workflow_id, params, user_id)
 
-    @mcp.tool()
-    async def list_workflows(
-        workflow_type: str = "user", query: str | None = None, limit: int = 100, user_id: str = "1"
-    ) -> dict:
-        """List workflows with flexible filtering and search options."""
-        return await WorkflowTools.list_workflows(workflow_type, query, limit, user_id)
 
-    @mcp.tool()
-    async def get_example_workflow(package_name: str, example_name: str) -> dict:
-        """Load a specific example workflow from disk by package name and example name."""
-        return await WorkflowTools.get_example_workflow(package_name, example_name)
+@mcp.tool()
+async def run_graph(graph: dict, params: dict | None = None, user_id: str = "1") -> dict:
+    """Execute a workflow graph directly without saving it as a workflow."""
+    return await WorkflowTools.run_graph(graph, params, user_id)
 
-    @mcp.tool()
-    async def validate_workflow(workflow_id: str, user_id: str = "1") -> dict:
-        """Validate a workflow's structure, connectivity, and type compatibility."""
-        return await WorkflowTools.validate_workflow(workflow_id, user_id)
 
-    @mcp.tool()
-    async def generate_dot_graph(graph: dict, graph_name: str = "workflow") -> dict:
-        """Generate a Graphviz DOT graph from a workflow graph structure."""
-        return await WorkflowTools.generate_dot_graph(graph, graph_name)
+@mcp.tool()
+async def list_workflows(
+    workflow_type: str = "user", query: str | None = None, limit: int = 100, user_id: str = "1"
+) -> dict:
+    """List workflows with flexible filtering and search options."""
+    return await WorkflowTools.list_workflows(workflow_type, query, limit, user_id)
 
-    @mcp.tool()
-    async def export_workflow_digraph(workflow_id: str, descriptive_names: bool = True, user_id: str = "1") -> dict:
-        """Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing."""
-        return await WorkflowTools.export_workflow_digraph(workflow_id, descriptive_names, user_id)
-else:
-    from fastmcp import Context
 
-    @mcp.tool()
-    async def get_workflow(workflow_id: str, user_id: str = "1") -> dict:
-        """Get detailed information about a specific workflow."""
-        return await WorkflowTools.get_workflow(workflow_id, user_id)
+@mcp.tool()
+async def get_example_workflow(package_name: str, example_name: str) -> dict:
+    """Load a specific example workflow from disk by package name and example name."""
+    return await WorkflowTools.get_example_workflow(package_name, example_name)
 
-    @mcp.tool()
-    async def create_workflow(
-        name: str,
-        graph: dict,
-        description: str | None = None,
-        tags: list[str] | None = None,
-        access: str = "private",
-        settings: dict | None = None,
-        run_mode: str | None = None,
-        user_id: str = "1",
-    ) -> dict:
-        """Create a new workflow in the database."""
-        return await WorkflowTools.create_workflow(name, graph, description, tags, access, settings, run_mode, user_id)
 
-    @mcp.tool()
-    async def run_workflow_tool(workflow_id: str, params: dict | None = None, user_id: str = "1") -> dict:
-        """Execute a NodeTool workflow with given parameters."""
-        return await WorkflowTools.run_workflow_tool(workflow_id, params, user_id)
+@mcp.tool()
+async def validate_workflow(workflow_id: str, user_id: str = "1") -> dict:
+    """Validate a workflow's structure, connectivity, and type compatibility."""
+    return await WorkflowTools.validate_workflow(workflow_id, user_id)
 
-    @mcp.tool()
-    async def run_graph(graph: dict, params: dict | None = None, user_id: str = "1") -> dict:
-        """Execute a workflow graph directly without saving it as a workflow."""
-        return await WorkflowTools.run_graph(graph, params, user_id)
 
-    @mcp.tool()
-    async def list_workflows(
-        workflow_type: str = "user", query: str | None = None, limit: int = 100, user_id: str = "1"
-    ) -> dict:
-        """List workflows with flexible filtering and search options."""
-        return await WorkflowTools.list_workflows(workflow_type, query, limit, user_id)
+@mcp.tool()
+async def generate_dot_graph(graph: dict, graph_name: str = "workflow") -> dict:
+    """Generate a Graphviz DOT graph from a workflow graph structure."""
+    return await WorkflowTools.generate_dot_graph(graph, graph_name)
 
-    @mcp.tool()
-    async def get_example_workflow(package_name: str, example_name: str) -> dict:
-        """Load a specific example workflow from disk by package name and example name."""
-        return await WorkflowTools.get_example_workflow(package_name, example_name)
 
-    @mcp.tool()
-    async def validate_workflow(workflow_id: str, user_id: str = "1") -> dict:
-        """Validate a workflow's structure, connectivity, and type compatibility."""
-        return await WorkflowTools.validate_workflow(workflow_id, user_id)
-
-    @mcp.tool()
-    async def generate_dot_graph(graph: dict, graph_name: str = "workflow") -> dict:
-        """Generate a Graphviz DOT graph from a workflow graph structure."""
-        return await WorkflowTools.generate_dot_graph(graph, graph_name)
-
-    @mcp.tool()
-    async def export_workflow_digraph(workflow_id: str, descriptive_names: bool = True, user_id: str = "1") -> dict:
-        """Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing."""
-        return await WorkflowTools.export_workflow_digraph(workflow_id, descriptive_names, user_id)
+@mcp.tool()
+async def export_workflow_digraph(workflow_id: str, descriptive_names: bool = True, user_id: str = "1") -> dict:
+    """Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing."""
+    return await WorkflowTools.export_workflow_digraph(workflow_id, descriptive_names, user_id)
 
 
 # Register all asset tools
