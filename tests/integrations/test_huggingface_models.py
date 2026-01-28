@@ -20,7 +20,7 @@ class TestHuggingFaceModels(unittest.TestCase):
             shutil.rmtree(self.test_dir)
 
     @patch("nodetool.integrations.huggingface.huggingface_models.HF_FAST_CACHE")
-    @patch("nodetool.integrations.huggingface.huggingface_models.inspect_paths")
+    @patch("nodetool.integrations.huggingface.artifact_inspector.inspect_paths")
     @patch("nodetool.integrations.huggingface.huggingface_models._get_file_size")
     def test_build_cached_repo_entry(self, mock_get_size, mock_inspect, mock_cache):
         # Setup
