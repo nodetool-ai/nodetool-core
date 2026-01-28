@@ -156,6 +156,56 @@ class BaseProvider:
 
     def __init__(self, secrets: dict[str, str] | None = None):
         self.secrets = secrets or {}
+        self._usage_info: "UsageInfo | None" = None
+
+    def track_usage(
+        self,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_tokens: int = 0,
+        input_characters: int = 0,
+        duration_seconds: float = 0.0,
+        image_count: int = 0,
+    ) -> float:
+        """
+        Track usage and calculate cost for the current operation.
+
+        This method should be called by provider implementations after
+        each API call to record usage and accumulate cost.
+
+        Args:
+            model: The model used
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            cached_tokens: Number of cached tokens
+            input_characters: Number of input characters (for TTS)
+            duration_seconds: Duration in seconds (for ASR)
+            image_count: Number of images generated
+
+        Returns:
+            The cost of this operation in credits
+        """
+        from nodetool.providers.cost_calculator import CostCalculator, UsageInfo
+
+        usage = UsageInfo(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            input_characters=input_characters,
+            duration_seconds=duration_seconds,
+            image_count=image_count,
+        )
+        self._usage_info = usage
+
+        cost = CostCalculator.calculate(model, usage, provider=self.provider_name)
+        self.cost += cost
+        return cost
+
+    def reset_cost(self) -> None:
+        """Reset accumulated cost to zero."""
+        self.cost = 0.0
+        self._usage_info = None
 
     async def log_provider_call(
         self,
