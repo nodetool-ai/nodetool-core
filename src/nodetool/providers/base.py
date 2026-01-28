@@ -145,7 +145,6 @@ class BaseProvider:
     }
 
     log_file: str | None = None
-    cost: float = 0.0
     provider_name: str = ""
     usage: ClassVar[dict[str, Any]] = {}
 
@@ -156,6 +155,7 @@ class BaseProvider:
 
     def __init__(self, secrets: dict[str, str] | None = None):
         self.secrets = secrets or {}
+        self.cost = 0.0  # Instance cost tracking
         self._usage_info: Any = None
 
     def track_usage(

@@ -326,10 +326,12 @@ class CostCalculator:
         if model_lower in MODEL_TO_TIER:
             return MODEL_TO_TIER[model_lower]
 
-        # Prefix match for versioned models
-        for model_prefix, tier in MODEL_TO_TIER.items():
+        # Prefix match for versioned models - sort by length descending to match
+        # longest (most specific) prefix first
+        sorted_prefixes = sorted(MODEL_TO_TIER.keys(), key=len, reverse=True)
+        for model_prefix in sorted_prefixes:
             if model_lower.startswith(model_prefix):
-                return tier
+                return MODEL_TO_TIER[model_prefix]
 
         return None
 
