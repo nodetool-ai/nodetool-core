@@ -458,22 +458,6 @@ class ProcessingContext:
 
         provider = await get_provider(provider_enum, self.user_id)
 
-        # Defensive check: if provider is still awaitable, await it again
-        # This handles edge cases where get_provider might return a coroutine
-        if inspect.isawaitable(provider):
-            log.warning(f"Provider was still awaitable after await, re-awaiting. type={type(provider)}")
-            provider = await provider
-
-        if not hasattr(provider, "generate_messages"):
-            log.error(
-                f"Provider missing generate_messages method. type={type(provider)}, "
-                f"attributes={[x for x in dir(provider) if not x.startswith('_')][:10]}"
-            )
-            raise ValueError(
-                f"Provider {type(provider)} does not have generate_messages method. "
-                f"This indicates get_provider returned an unexpected type."
-            )
-
         return provider
 
     def copy(self):
@@ -743,43 +727,6 @@ class ProcessingContext:
             Workflow: The retrieved workflow.
         """
         return await Workflow.find(self.user_id, workflow_id)
-
-    async def get_provider(self, provider_enum: Provider) -> "BaseProvider":
-        """
-        Get or create a provider instance for the given provider enum.
-
-        This method caches provider instances for reuse within the same context.
-
-        Args:
-            provider_enum: The provider enum value
-
-        Returns:
-            An initialized provider instance
-
-        Raises:
-            ValueError: If the provider is not registered
-        """
-        from nodetool.providers.base import BaseProvider, get_registered_provider
-
-        # Use cached provider if available
-        if not hasattr(self, "_provider_cache"):
-            self._provider_cache: dict[Provider, BaseProvider] = {}
-
-        if provider_enum in self._provider_cache:
-            return self._provider_cache[provider_enum]
-
-        provider_cls, kwargs = get_registered_provider(provider_enum)
-
-        # Get secrets from environment
-        secrets: dict[str, str] = {}
-        for secret_name in provider_cls.required_secrets():
-            value = self.environment.get(secret_name)
-            if value:
-                secrets[secret_name] = value
-
-        provider = provider_cls(secrets=secrets, **kwargs)
-        self._provider_cache[provider_enum] = provider
-        return provider
 
     async def _prepare_prediction(
         self,

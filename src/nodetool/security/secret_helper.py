@@ -102,6 +102,7 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
     except Exception as e:
         # If database lookup fails (e.g. no ResourceScope), fall back to environment
         log.debug(f"Database lookup failed for secret '{key}': {e}. Falling back to environment.")
+
     # 3. Check environment variable
     if check_env and os.environ.get(key):
         log.debug(f"Secret '{key}' found in environment variable")
@@ -109,6 +110,7 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         if value is not None:
             _SECRET_CACHE[(user_id, key)] = value
             return value
+
     # 4. Return default
     if default is not None:
         log.debug(f"Secret '{key}' not found, using default value")
