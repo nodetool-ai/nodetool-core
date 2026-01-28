@@ -6,6 +6,7 @@ language models (OpenAI, Anthropic, Ollama) and image generation services
 (DALL-E, Gemini, FAL, etc.). Providers declare their capabilities and
 implement the corresponding methods.
 """
+import traceback
 
 import asyncio
 import os
@@ -40,34 +41,7 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
-_SAFE_IMPORT_CACHE: dict[str, bool] = {}
 _providers_imported = False
-
-
-def _safe_import_check(module_name: str) -> bool:
-    """Return True if importing `module_name` appears safe in this process.
-
-    Some optional providers can hard-crash the interpreter on import when native
-    dependencies are missing or misconfigured. Probe importability in a
-    subprocess to avoid taking down the current process.
-    """
-    cached = _SAFE_IMPORT_CACHE.get(module_name)
-    if cached is not None:
-        return cached
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", f"import {module_name}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        ok = result.returncode == 0
-    except Exception:
-        ok = False
-
-    _SAFE_IMPORT_CACHE[module_name] = ok
-    return ok
 
 
 def _is_llama_server_available() -> bool:
@@ -140,27 +114,33 @@ def import_providers():
 
     # Optional providers that may have missing dependencies
     # These are imported with better error handling and logging
+
+    fal_module = "nodetool.fal.fal_provider"
+    if RUNNING_PYTEST:
+        log.debug("Skipping FAL provider import under pytest")
+    else:
+        try:
+            import nodetool.fal.fal_provider  # type: ignore
+
+            log.debug("FAL provider imported successfully")
+        except ImportError as e:
+            log.warning(f"FAL provider could not be imported (some features may be unavailable): {e}")
+        except Exception as e:
+            traceback.print_exc()
+            log.warning(f"Unexpected error importing FAL provider: {e}")
+
     mlx_module = "nodetool.mlx.mlx_provider"
     if RUNNING_PYTEST:
         log.debug("Skipping MLX provider import under pytest")
-    elif _safe_import_check(mlx_module):
+    else:
         try:
             import nodetool.mlx.mlx_provider  # type: ignore
 
             log.debug("MLX provider imported successfully")
         except ImportError as e:
-            log.warning(
-                f"MLX provider could not be imported (some features may be unavailable): {e}. "
-                "This is expected if optional MLX dependencies (e.g., mflux) are not installed. "
-                "MLX language models can still be discovered from the HuggingFace cache."
-            )
+            log.warning(f"MLX provider could not be imported (some features may be unavailable): {e}")
         except Exception as e:
-            log.warning(
-                f"Unexpected error importing MLX provider: {e}. "
-                "MLX language models can still be discovered from the HuggingFace cache."
-            )
-    else:
-        log.warning("MLX provider import skipped: module failed a safe-import probe (likely missing native deps).")
+            log.warning(f"Unexpected error importing MLX provider: {e}")
 
     try:
         import nodetool.huggingface.huggingface_local_provider  # type: ignore

@@ -198,36 +198,16 @@ async def get_providers_info(user: str) -> list[ProviderInfo]:
             log.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
             continue
 
-        # Initialize provider to get capabilities
-        try:
-            # Some providers (like MLX) don't accept secrets parameter
-            # Check if __init__ accepts secrets parameter
-            import inspect
+        provider = provider_cls(secrets=provider_secrets, **kwargs)
+        capabilities = provider.get_capabilities()
+        capabilities_list = [cap.value for cap in capabilities]
 
-            init_signature = inspect.signature(provider_cls.__init__)
-            init_params = list(init_signature.parameters.keys())
-
-            if "secrets" in init_params:
-                provider = provider_cls(secrets=provider_secrets, **kwargs)
-            else:
-                # Provider doesn't accept secrets, initialize without it
-                provider = provider_cls(**kwargs)
-
-            capabilities = provider.get_capabilities()
-            capabilities_list = [cap.value for cap in capabilities]
-
-            providers_info.append(
-                ProviderInfo(
-                    provider=provider_enum,
-                    capabilities=capabilities_list,
-                )
+        providers_info.append(
+            ProviderInfo(
+                provider=provider_enum,
+                capabilities=capabilities_list,
             )
-        except Exception as e:
-            log.warning(
-                f"Failed to initialize provider {provider_enum.value}: {e}",
-                exc_info=True,
-            )
-            continue
+        )
 
     return providers_info
 
