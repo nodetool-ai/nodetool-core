@@ -83,7 +83,6 @@ from nodetool.metadata.types import (
     VideoModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk, NodeProgress
 
@@ -1357,13 +1356,13 @@ class OpenAIProvider(BaseProvider):
         # Update cost
         if completion.usage:
             log.debug("Processing usage statistics")
-            cost = await calculate_chat_cost(
-                model,
-                completion.usage.prompt_tokens,
-                completion.usage.completion_tokens,
+            self.track_usage(
+                model=model,
+                input_tokens=completion.usage.prompt_tokens or 0,
+                output_tokens=completion.usage.completion_tokens or 0,
+                cached_tokens=getattr(completion.usage, "cached_tokens", 0) or 0,
             )
-            self.cost += cost
-            log.debug(f"Updated cost: {cost}")
+            log.debug(f"Updated cost: {self.cost}")
 
         choice = completion.choices[0]
         response_message = choice.message

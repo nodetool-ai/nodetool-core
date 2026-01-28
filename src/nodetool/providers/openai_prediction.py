@@ -487,11 +487,26 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
         yield await create_chat_completion(prediction, client)
 
 
-# --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
+# --- Cost Calculation Helpers (DEPRECATED) ---
+# These functions are deprecated. Please use the new centralized cost calculator instead:
+# from nodetool.providers.cost_calculator import (
+#     calculate_chat_cost,
+#     calculate_embedding_cost,
+#     calculate_speech_cost,
+#     calculate_whisper_cost,
+#     calculate_image_cost,
+# )
+# Or use BaseProvider.track_usage() for automatic cost tracking.
+
+
+import warnings
 
 
 async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> float:
     """Calculates cost in CREDITS for chat models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_chat_cost` instead.
 
     Args:
         model_id: Model identifier
@@ -502,6 +517,12 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
     Returns:
         Cost in credits
     """
+    warnings.warn(
+        "calculate_chat_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_chat_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -535,7 +556,17 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
 
 
 async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
-    """Calculates cost in CREDITS for embedding models."""
+    """Calculates cost in CREDITS for embedding models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_embedding_cost` instead.
+    """
+    warnings.warn(
+        "calculate_embedding_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_embedding_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -556,7 +587,17 @@ async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
 
 
 async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
-    """Calculates cost in CREDITS for speech (TTS) models."""
+    """Calculates cost in CREDITS for speech (TTS) models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_speech_cost` instead.
+    """
+    warnings.warn(
+        "calculate_speech_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_speech_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -577,7 +618,17 @@ async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
 
 
 async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> float:
-    """Calculates cost in CREDITS for Whisper models."""
+    """Calculates cost in CREDITS for Whisper models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_whisper_cost` instead.
+    """
+    warnings.warn(
+        "calculate_whisper_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_whisper_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0

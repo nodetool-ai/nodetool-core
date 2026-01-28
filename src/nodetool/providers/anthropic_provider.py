@@ -34,7 +34,6 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -591,13 +590,12 @@ class AnthropicProvider(BaseProvider):
         if hasattr(response, "usage"):
             log.debug("Processing usage statistics")
             usage = response.usage
-            cost = await calculate_chat_cost(
-                model,
-                usage.input_tokens,
-                usage.output_tokens,
+            self.track_usage(
+                model=model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
             )
-            self.cost += cost
-            log.debug(f"Updated cost: {cost}")
+            log.debug(f"Updated cost: {self.cost}")
 
         log.debug(f"Processing {len(response.content)} content blocks")
         content = []
