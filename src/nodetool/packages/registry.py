@@ -57,7 +57,7 @@ from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import click
@@ -65,17 +65,13 @@ import httpx
 import requests
 import tomli
 import tomlkit
-from huggingface_hub import ModelInfo
 from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import (
-    fetch_model_info,
-    has_model_index,
-    model_type_from_model_info,
-    size_on_disk,
-)
+
+if TYPE_CHECKING:
+    from huggingface_hub import ModelInfo
 from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
 from nodetool.packages.package_types import AssetInfo, PackageInfo
 from nodetool.types.api_graph import Graph as APIGraph
@@ -970,8 +966,10 @@ class Registry:
         return matching_workflows
 
 
-def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | None:
+def _model_size_from_info(model: UnifiedModel, model_info: "ModelInfo") -> int | None:
     """Calculate model size using HF metadata, respecting optional path filters."""
+    from nodetool.integrations.huggingface.huggingface_models import size_on_disk
+
     if model_info is None:
         return None
 
@@ -994,6 +992,12 @@ def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | N
 
 async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool = False) -> None:
     """Fetch HF model metadata to populate recommended model details (size, tags, etc.)."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        fetch_model_info,
+        has_model_index,
+        model_type_from_model_info,
+    )
+
     repo_to_models: dict[str, list[UnifiedModel]] = defaultdict(list)
     for node in nodes:
         for model in node.recommended_models or []:
@@ -1009,7 +1013,7 @@ async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool
         return_exceptions=True,
     )
 
-    model_info_map: dict[str, ModelInfo] = {}
+    model_info_map: dict[str, "ModelInfo"] = {}
     for repo_id, info in zip(repo_ids, results, strict=False):
         if isinstance(info, Exception):
             if verbose:

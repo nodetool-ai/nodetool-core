@@ -18,6 +18,7 @@ Wherever possible, the code avoids expensive I/O and network calls, preferring c
 information and shallow file inspections to keep UI interactions fast and reliable.
 """
 
+from __future__ import annotations
 import asyncio
 import json
 import os
@@ -29,13 +30,15 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import aiofiles
-from huggingface_hub import HfApi, ModelInfo
+from typing import TYPE_CHECKING
 
-from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.artifact_inspector import (
-    ArtifactDetection,
-    inspect_paths,
-)
+if TYPE_CHECKING:
+    from huggingface_hub import HfApi, ModelInfo
+    from nodetool.integrations.huggingface.artifact_inspector import (
+        ArtifactDetection,
+        inspect_paths,
+    )
+
 from nodetool.integrations.huggingface.async_downloader import async_hf_download
 from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
@@ -45,6 +48,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
+from nodetool.config.logging_config import get_logger
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -291,7 +295,7 @@ _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING = {}
 
 
 def size_on_disk(
-    model_info: ModelInfo,
+    model_info: "ModelInfo",
     allow_patterns: list[str] | None = None,
     ignore_patterns: list[str] | None = None,
 ) -> int:
@@ -324,7 +328,7 @@ def size_on_disk(
     return total_size
 
 
-def has_model_index(model_info: ModelInfo) -> bool:
+def has_model_index(model_info: "ModelInfo") -> bool:
     """Return True when hub metadata lists a `model_index.json` sibling."""
     siblings = getattr(model_info, "siblings", None)
     return any(sib.rfilename == "model_index.json" for sib in (siblings or []))
@@ -378,7 +382,7 @@ _ADAPTER_MARKERS = (
 
 def detect_repo_packaging(
     repo_id: str,
-    model_info: ModelInfo | None,
+    model_info: "ModelInfo | None",
     file_entries: Sequence[tuple[str, int]],
 ) -> RepoPackagingHint:
     """
@@ -416,7 +420,7 @@ def _is_weight_file(file_name: str) -> bool:
     return lower.endswith(_WEIGHT_EXTENSIONS)
 
 
-def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
+def _has_bundle_metadata(model_info: "ModelInfo | None") -> bool:
     """Detect diffusers/transformers repos that advertise a full pipeline bundle."""
     if model_info is None:
         return False
@@ -558,7 +562,10 @@ async def _repo_has_diffusion_artifacts(
         return False
 
     try:
+        from nodetool.integrations.huggingface.artifact_inspector import inspect_paths
+
         detection = await asyncio.to_thread(inspect_paths, candidate_paths)
+
     except Exception as exc:  # pragma: no cover - best effort
         log.debug("inspect_paths failed for %s: %s", repo_id, exc)
         _DIFFUSION_REPO_CACHE[repo_id] = False
@@ -571,7 +578,7 @@ async def _repo_has_diffusion_artifacts(
 
 async def unified_model(
     model: HuggingFaceModel,
-    model_info: ModelInfo | None = None,
+    model_info: "ModelInfo | None" = None,
     size: int | None = None,
     user_id: str | None = None,
 ) -> UnifiedModel | None:
@@ -691,15 +698,17 @@ class _RecursiveNamespace:
         return f"_RecursiveNamespace({repr(self._data)})"
 
 
-async def fetch_model_info(model_id: str) -> ModelInfo | None:
+async def fetch_model_info(model_id: str) -> "ModelInfo | None":
     """
     Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
     """
+    from huggingface_hub import HfApi
+
     token = await get_hf_token()
     api = HfApi(token=token) if token else HfApi()
 
     try:
-        model_info: ModelInfo = await asyncio.to_thread(
+        model_info: "ModelInfo" = await asyncio.to_thread(
             api.model_info,
             model_id,
             files_metadata=True,
@@ -714,7 +723,7 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
 def model_type_from_model_info(
     recommended_models: dict[str, list[UnifiedModel]],
     repo_id: str,
-    model_info: ModelInfo | None,
+    model_info: "ModelInfo | None",
 ) -> str | None:
     """
     Resolve a model's canonical hf.* type using multiple sources of truth.
@@ -830,7 +839,7 @@ async def _build_cached_repo_entry(
     recommended_models: dict[str, list[UnifiedModel]],
     snapshot_dir: Path | None = None,
     file_list: list[str] | None = None,
-    model_info: ModelInfo | None = None,
+    model_info: "ModelInfo | None" = None,
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
     """
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
@@ -861,7 +870,10 @@ async def _build_cached_repo_entry(
     if file_entries and snapshot_path:
         artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
         try:
+            from nodetool.integrations.huggingface.artifact_inspector import inspect_paths
+
             artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
+
         except Exception:
             artifact_detection = None
 
@@ -1786,7 +1798,7 @@ async def get_mlx_image_models_from_hf_cache() -> list[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
+async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list["ModelInfo"]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
@@ -1798,11 +1810,15 @@ async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[
         log.debug(
             f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)"
         )
+        from huggingface_hub import HfApi
+
         api = HfApi(token=token)
     else:
         log.debug(
             f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible"
         )
+        from huggingface_hub import HfApi
+
         api = HfApi()
     # Run the blocking call in a thread executor
     models = await asyncio.get_event_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
@@ -1845,7 +1861,7 @@ async def get_gguf_language_models_from_authors(
     model_infos = await asyncio.gather(*[fetch_model_info(repo.id) for repo in repos])
 
     # Collect all unified_model tasks
-    tasks: list[tuple[HuggingFaceModel, ModelInfo, int | None]] = []
+    tasks: list[tuple[HuggingFaceModel, "ModelInfo", int | None]] = []
     seen_file: set[tuple[str, str]] = set()
     for info in model_infos:
         if info is None:
