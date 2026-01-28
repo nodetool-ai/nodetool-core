@@ -186,8 +186,8 @@ class TestHFTokenFromDatabase:
         try:
             from huggingface_hub import ModelInfo
 
-            # Mock HfApi and model_info
-            with patch("nodetool.integrations.huggingface.huggingface_models.HfApi") as mock_hf_api_class:
+            # Mock HfApi at the source module since it's imported inside the function
+            with patch("huggingface_hub.HfApi") as mock_hf_api_class:
                 mock_api = MagicMock()
                 mock_model_info = MagicMock(spec=ModelInfo)
                 mock_model_info.siblings = []

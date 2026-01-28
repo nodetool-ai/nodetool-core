@@ -5,7 +5,15 @@ from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.packages.registry import Registry
 
-registry = Registry()
+_registry: Registry | None = None
+
+
+def get_registry() -> Registry:
+    global _registry
+    if _registry is None:
+        _registry = Registry()
+    return _registry
+
 
 _CAMEL_SPLIT_1 = re.compile(r"([a-z0-9])([A-Z])")
 _CAMEL_SPLIT_2 = re.compile(r"([A-Z]+)([A-Z][a-z])")
@@ -88,7 +96,7 @@ def search_nodes(
     Returns:
         A list of search results from keyword matching.
     """
-    node_metadata_list = registry.get_all_installed_nodes()
+    node_metadata_list = get_registry().get_all_installed_nodes()
     query_tokens = _normalize_query_tokens(query)
     query_lower = [q.lower() for q in query_tokens]
     phrase_regexes = _compile_phrase_regexes(query_tokens)
