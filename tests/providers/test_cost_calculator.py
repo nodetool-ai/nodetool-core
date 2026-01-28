@@ -83,69 +83,68 @@ class TestCostCalculator:
     """Tests for CostCalculator class."""
 
     def test_get_tier_direct_match(self):
-        assert CostCalculator.get_tier("gpt-4o-mini") == "low_tier_chat"
-        assert CostCalculator.get_tier("gpt-4o") == "top_tier_chat"
-        assert CostCalculator.get_tier("text-embedding-3-small") == "embedding_small"
-        assert CostCalculator.get_tier("whisper-1") == "whisper_standard"
+        """Test direct model lookup with provider."""
+        assert CostCalculator.get_tier("gpt-4o-mini", "openai") == "low_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o", "openai") == "top_tier_chat"
+        assert CostCalculator.get_tier("text-embedding-3-small", "openai") == "embedding_small"
+        assert CostCalculator.get_tier("whisper-1", "openai") == "whisper_standard"
 
     def test_get_tier_case_insensitive(self):
-        assert CostCalculator.get_tier("GPT-4O-MINI") == "low_tier_chat"
-        assert CostCalculator.get_tier("GPT-4O") == "top_tier_chat"
+        """Test that model and provider matching is case-insensitive."""
+        assert CostCalculator.get_tier("GPT-4O-MINI", "openai") == "low_tier_chat"
+        assert CostCalculator.get_tier("GPT-4O", "OpenAI") == "top_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o-mini", "OPENAI") == "low_tier_chat"
 
     def test_get_tier_prefix_match(self):
-        # Models with version suffixes should match their prefix
-        assert CostCalculator.get_tier("gpt-4o-2024-11-20") == "top_tier_chat"
-        assert CostCalculator.get_tier("gpt-4o-mini-2024-07-18") == "low_tier_chat"
+        """Models with version suffixes should match their prefix."""
+        assert CostCalculator.get_tier("gpt-4o-2024-11-20", "openai") == "top_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o-mini-2024-07-18", "openai") == "low_tier_chat"
 
     def test_get_tier_unknown_model(self):
-        assert CostCalculator.get_tier("unknown-model") is None
-        assert CostCalculator.get_tier("my-custom-model") is None
+        """Test that unknown models return None."""
+        assert CostCalculator.get_tier("unknown-model", "openai") is None
+        assert CostCalculator.get_tier("my-custom-model", "anthropic") is None
 
-    def test_get_tier_with_provider(self):
-        """Test provider-specific tier lookup."""
-        # OpenAI-specific lookup
-        assert CostCalculator.get_tier("gpt-4o-mini", provider="openai") == "low_tier_chat"
-        assert CostCalculator.get_tier("gpt-4o", provider="openai") == "top_tier_chat"
-        
-        # Anthropic-specific lookup
-        assert CostCalculator.get_tier("claude-3-5-sonnet-latest", provider="anthropic") == "claude_3_5_sonnet"
-        assert CostCalculator.get_tier("claude-3-haiku-20240307", provider="anthropic") == "claude_3_haiku"
+    def test_get_tier_unknown_provider(self):
+        """Test that unknown provider returns None."""
+        assert CostCalculator.get_tier("gpt-4o-mini", "unknown-provider") is None
 
-    def test_get_tier_provider_case_insensitive(self):
-        """Test that provider matching is case-insensitive."""
-        assert CostCalculator.get_tier("gpt-4o-mini", provider="OpenAI") == "low_tier_chat"
-        assert CostCalculator.get_tier("gpt-4o-mini", provider="OPENAI") == "low_tier_chat"
-        assert CostCalculator.get_tier("claude-3-5-sonnet-latest", provider="Anthropic") == "claude_3_5_sonnet"
+    def test_get_tier_with_openai(self):
+        """Test OpenAI-specific tier lookup."""
+        assert CostCalculator.get_tier("gpt-4o-mini", "openai") == "low_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o", "openai") == "top_tier_chat"
+        assert CostCalculator.get_tier("gpt-5.2", "openai") == "gpt5_tier"
 
-    def test_get_tier_fallback_without_provider(self):
-        """Test that model-only lookup still works when provider is not specified."""
-        # Should still work with model-only fallback
-        assert CostCalculator.get_tier("gpt-4o-mini") == "low_tier_chat"
-        assert CostCalculator.get_tier("claude-3-5-sonnet-latest") == "claude_3_5_sonnet"
+    def test_get_tier_with_anthropic(self):
+        """Test Anthropic-specific tier lookup."""
+        assert CostCalculator.get_tier("claude-3-5-sonnet-latest", "anthropic") == "claude_3_5_sonnet"
+        assert CostCalculator.get_tier("claude-3-haiku-20240307", "anthropic") == "claude_3_haiku"
 
-    def test_calculate_with_provider(self):
-        """Test cost calculation with provider specified."""
+    def test_calculate_with_openai(self):
+        """Test cost calculation with OpenAI provider."""
         usage = UsageInfo(input_tokens=1000, output_tokens=500)
-        
-        # OpenAI provider
-        cost = CostCalculator.calculate("gpt-4o-mini", usage, provider="openai")
+        cost = CostCalculator.calculate("gpt-4o-mini", usage, "openai")
+        # Expected: (1000/1000 * 0.0225) + (500/1000 * 0.09) = 0.0225 + 0.045 = 0.0675
         assert cost == pytest.approx(0.0675, rel=1e-6)
-        
-        # Anthropic provider
-        cost = CostCalculator.calculate("claude-3-5-sonnet-latest", usage, provider="anthropic")
+
+    def test_calculate_with_anthropic(self):
+        """Test cost calculation with Anthropic provider."""
+        usage = UsageInfo(input_tokens=1000, output_tokens=500)
+        cost = CostCalculator.calculate("claude-3-5-sonnet-latest", usage, "anthropic")
+        # Expected: (1000/1000 * 0.0075) + (500/1000 * 0.0225) = 0.0075 + 0.01125 = 0.01875
         assert cost == pytest.approx(0.01875, rel=1e-6)
 
     def test_calculate_token_based_cost(self):
         # GPT-4o-mini: input=0.0225/1k, output=0.09/1k
         usage = UsageInfo(input_tokens=1000, output_tokens=500)
-        cost = CostCalculator.calculate("gpt-4o-mini", usage)
+        cost = CostCalculator.calculate("gpt-4o-mini", usage, "openai")
         # Expected: (1000/1000 * 0.0225) + (500/1000 * 0.09) = 0.0225 + 0.045 = 0.0675
         assert cost == pytest.approx(0.0675, rel=1e-6)
 
     def test_calculate_token_based_with_cached_tokens(self):
         # gpt-5.2: input=0.002625, output=0.021, cached=0.0002625
         usage = UsageInfo(input_tokens=1000, output_tokens=500, cached_tokens=200)
-        cost = CostCalculator.calculate("gpt-5.2", usage)
+        cost = CostCalculator.calculate("gpt-5.2", usage, "openai")
         # Expected: 
         # non_cached_input = 1000 - 200 = 800
         # input_cost = (800/1000 * 0.002625) = 0.0021
@@ -157,35 +156,33 @@ class TestCostCalculator:
     def test_calculate_embedding_cost(self):
         # text-embedding-3-small: 0.003/1k tokens
         usage = UsageInfo(input_tokens=1000)
-        cost = CostCalculator.calculate("text-embedding-3-small", usage)
+        cost = CostCalculator.calculate("text-embedding-3-small", usage, "openai")
         # Expected: 1000/1000 * 0.003 = 0.003
         assert cost == pytest.approx(0.003, rel=1e-6)
 
     def test_calculate_character_based_cost(self):
         # tts-1: 2.25/1k chars
         usage = UsageInfo(input_characters=500)
-        cost = CostCalculator.calculate("tts-1", usage)
+        cost = CostCalculator.calculate("tts-1", usage, "openai")
         # Expected: 500/1000 * 2.25 = 1.125
         assert cost == pytest.approx(1.125, rel=1e-6)
 
     def test_calculate_duration_based_cost(self):
         # whisper-1: 0.9/minute
         usage = UsageInfo(duration_seconds=120)  # 2 minutes
-        cost = CostCalculator.calculate("whisper-1", usage)
+        cost = CostCalculator.calculate("whisper-1", usage, "openai")
         # Expected: (120/60) * 0.9 = 2 * 0.9 = 1.8
         assert cost == pytest.approx(1.8, rel=1e-6)
 
     def test_calculate_unknown_model_returns_zero(self):
         usage = UsageInfo(input_tokens=1000, output_tokens=500)
-        cost = CostCalculator.calculate("unknown-model", usage)
+        cost = CostCalculator.calculate("unknown-model", usage, "openai")
         assert cost == 0.0
 
-    def test_calculate_anthropic_models(self):
-        # claude-3-5-sonnet: input=0.0075, output=0.0225
+    def test_calculate_unknown_provider_returns_zero(self):
         usage = UsageInfo(input_tokens=1000, output_tokens=500)
-        cost = CostCalculator.calculate("claude-3-5-sonnet-latest", usage)
-        # Expected: (1000/1000 * 0.0075) + (500/1000 * 0.0225) = 0.0075 + 0.01125 = 0.01875
-        assert cost == pytest.approx(0.01875, rel=1e-6)
+        cost = CostCalculator.calculate("gpt-4o-mini", usage, "unknown-provider")
+        assert cost == 0.0
 
 
 class TestBackwardCompatibleFunctions:
@@ -248,10 +245,18 @@ class TestPricingTiersCompleteness:
 
     def test_all_model_tiers_exist(self):
         """Verify all model mappings point to existing tiers."""
-        for model_id, tier_name in MODEL_TO_TIER.items():
+        for key, tier_name in MODEL_TO_TIER.items():
             assert (
                 tier_name in PRICING_TIERS
-            ), f"Model {model_id} maps to undefined tier {tier_name}"
+            ), f"Model {key} maps to undefined tier {tier_name}"
+
+    def test_all_entries_are_provider_keyed(self):
+        """Verify all entries in MODEL_TO_TIER are (provider, model) tuples."""
+        for key in MODEL_TO_TIER.keys():
+            assert isinstance(key, tuple), f"Key {key} should be a tuple"
+            assert len(key) == 2, f"Key {key} should have 2 elements"
+            assert isinstance(key[0], str), f"Provider in {key} should be a string"
+            assert isinstance(key[1], str), f"Model in {key} should be a string"
 
     def test_token_based_tiers_have_required_fields(self):
         """Verify token-based tiers have input and output pricing."""

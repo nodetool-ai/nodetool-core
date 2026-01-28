@@ -11,7 +11,7 @@ from nodetool.metadata.types import Provider, Message
 class MockProvider(BaseProvider):
     """Mock provider for testing."""
 
-    provider_name = "mock"
+    provider_name = "openai"  # Use openai for cost lookup tests
 
     def __init__(self, secrets=None):
         super().__init__(secrets or {})

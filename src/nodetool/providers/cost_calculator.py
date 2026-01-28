@@ -299,61 +299,6 @@ MODEL_TO_TIER: dict[str | tuple[str, str], str] = {
     ("anthropic", "claude-3-sonnet-latest"): "claude_3_sonnet",
     ("anthropic", "claude-3-haiku-20240307"): "claude_3_haiku",
     ("anthropic", "claude-3-haiku-latest"): "claude_3_haiku",
-    # Fallback model-only entries (for backward compatibility)
-    "gpt-5.2": "gpt5_tier",
-    "gpt-5.2-pro": "gpt5_pro_tier",
-    "gpt-5-mini": "gpt5_mini_tier",
-    "gpt-4.1": "gpt4_1_tier",
-    "gpt-4.1-mini": "gpt4_1_mini_tier",
-    "gpt-4.1-nano": "gpt4_1_nano_tier",
-    "o4-mini": "o4_mini_tier",
-    "o1": "o1_tier",
-    "o1-preview": "o1_tier",
-    "o1-mini": "o1_mini_tier",
-    "o3": "o1_tier",
-    "o3-mini": "o1_mini_tier",
-    "gpt-4o": "top_tier_chat",
-    "gpt-4o-2024-11-20": "top_tier_chat",
-    "gpt-4o-2024-08-06": "top_tier_chat",
-    "gpt-4o-2024-05-13": "top_tier_chat",
-    "gpt-4o-search-preview": "top_tier_chat",
-    "gpt-4o-mini": "low_tier_chat",
-    "gpt-4o-mini-2024-07-18": "low_tier_chat",
-    "gpt-4o-mini-search-preview": "low_tier_chat",
-    "gpt-4-turbo": "gpt4_turbo",
-    "gpt-4-turbo-2024-04-09": "gpt4_turbo",
-    "gpt-4-turbo-preview": "gpt4_turbo",
-    "gpt-4-0125-preview": "gpt4_turbo",
-    "gpt-4-1106-preview": "gpt4_turbo",
-    "computer-use-preview": "top_tier_chat",
-    "gpt-image-1.5": "image_gpt_1_5",
-    "whisper-1": "whisper_standard",
-    "gpt-4o-transcribe": "whisper_standard",
-    "gpt-4o-mini-transcribe": "whisper_low_cost",
-    "gpt-4o-mini-tts": "tts_standard",
-    "tts-1": "tts_hd",
-    "tts-1-hd": "tts_ultra_hd",
-    "text-embedding-3-small": "embedding_small",
-    "text-embedding-3-large": "embedding_large",
-    "claude-opus-4-20250514": "claude_opus_4",
-    "claude-opus-4-20250501": "claude_opus_4",
-    "claude-sonnet-4-20250514": "claude_sonnet_4",
-    "claude-sonnet-4-20250501": "claude_sonnet_4",
-    "claude-haiku-4-20250514": "claude_haiku_4",
-    "claude-haiku-4-20250501": "claude_haiku_4",
-    "claude-3-7-sonnet-20250511": "claude_3_7_sonnet",
-    "claude-3-7-sonnet-20250219": "claude_3_7_sonnet",
-    "claude-3-5-sonnet-20241022": "claude_3_5_sonnet",
-    "claude-3-5-sonnet-20240620": "claude_3_5_sonnet",
-    "claude-3-5-sonnet-latest": "claude_3_5_sonnet",
-    "claude-3-5-haiku-20241022": "claude_3_5_haiku",
-    "claude-3-5-haiku-latest": "claude_3_5_haiku",
-    "claude-3-opus-20240229": "claude_3_opus",
-    "claude-3-opus-latest": "claude_3_opus",
-    "claude-3-sonnet-20240229": "claude_3_sonnet",
-    "claude-3-sonnet-latest": "claude_3_sonnet",
-    "claude-3-haiku-20240307": "claude_3_haiku",
-    "claude-3-haiku-latest": "claude_3_haiku",
 }
 
 
@@ -375,50 +320,38 @@ class CostCalculator:
     """Centralized cost calculator for all providers."""
 
     @staticmethod
-    def get_tier(model_id: str, provider: str | None = None) -> str | None:
-        """Get the pricing tier for a model ID, optionally scoped by provider.
+    def get_tier(model_id: str, provider: str) -> str | None:
+        """Get the pricing tier for a model ID scoped by provider.
+
+        Provider is required for unambiguous pricing lookup.
 
         Args:
             model_id: The model identifier
-            provider: Optional provider name (e.g., "openai", "anthropic")
+            provider: Provider name (e.g., "openai", "anthropic")
 
         Returns:
             The pricing tier name, or None if not found
         """
         model_lower = model_id.lower()
-        provider_lower = provider.lower() if provider else None
+        provider_lower = provider.lower()
 
-        # First, try provider-specific lookup if provider is given
-        if provider_lower:
-            provider_key = (provider_lower, model_lower)
-            if provider_key in MODEL_TO_TIER:
-                return MODEL_TO_TIER[provider_key]
+        # Direct lookup with (provider, model) key
+        provider_key = (provider_lower, model_lower)
+        if provider_key in MODEL_TO_TIER:
+            return MODEL_TO_TIER[provider_key]
 
-            # Try prefix match with provider key - sort by model length descending
-            # Only look at tuple keys that match the provider
-            provider_prefixes = [
-                key for key in MODEL_TO_TIER.keys()
-                if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
-            ]
-            sorted_provider_prefixes = sorted(
-                provider_prefixes, key=lambda x: len(x[1]), reverse=True
-            )
-            for prefix_key in sorted_provider_prefixes:
-                if model_lower.startswith(prefix_key[1]):
-                    return MODEL_TO_TIER[prefix_key]
-
-        # Fallback to model-only lookup (for backward compatibility)
-        if model_lower in MODEL_TO_TIER:
-            tier = MODEL_TO_TIER[model_lower]
-            if isinstance(tier, str):
-                return tier
-
-        # Prefix match for versioned models - only use string keys
-        string_keys = [k for k in MODEL_TO_TIER.keys() if isinstance(k, str)]
-        sorted_prefixes = sorted(string_keys, key=len, reverse=True)
-        for model_prefix in sorted_prefixes:
-            if model_lower.startswith(model_prefix):
-                return MODEL_TO_TIER[model_prefix]
+        # Try prefix match with provider key - sort by model length descending
+        # Only look at tuple keys that match the provider
+        provider_prefixes = [
+            key for key in MODEL_TO_TIER.keys()
+            if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
+        ]
+        sorted_provider_prefixes = sorted(
+            provider_prefixes, key=lambda x: len(x[1]), reverse=True
+        )
+        for prefix_key in sorted_provider_prefixes:
+            if model_lower.startswith(prefix_key[1]):
+                return MODEL_TO_TIER[prefix_key]
 
         return None
 
@@ -426,7 +359,7 @@ class CostCalculator:
     def calculate(
         model_id: str,
         usage: UsageInfo,
-        provider: str | None = None,
+        provider: str,
     ) -> float:
         """
         Calculate cost in credits for an API call.
@@ -434,7 +367,7 @@ class CostCalculator:
         Args:
             model_id: The model identifier
             usage: Usage information from the API response
-            provider: Provider name for provider-specific pricing lookup
+            provider: Provider name for pricing lookup (required)
 
         Returns:
             Cost in credits (1 credit = $0.01 USD)
@@ -496,6 +429,7 @@ async def calculate_chat_cost(
     input_tokens: int,
     output_tokens: int,
     cached_tokens: int = 0,
+    provider: str = "openai",
 ) -> float:
     """Calculate chat completion cost. Backward-compatible function."""
     usage = UsageInfo(
@@ -503,31 +437,44 @@ async def calculate_chat_cost(
         output_tokens=output_tokens,
         cached_tokens=cached_tokens,
     )
-    return CostCalculator.calculate(model_id, usage)
+    return CostCalculator.calculate(model_id, usage, provider)
 
 
-async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
+async def calculate_embedding_cost(
+    model_id: str,
+    input_tokens: int,
+    provider: str = "openai",
+) -> float:
     """Calculate embedding cost. Backward-compatible function."""
     usage = UsageInfo(input_tokens=input_tokens)
-    return CostCalculator.calculate(model_id, usage)
+    return CostCalculator.calculate(model_id, usage, provider)
 
 
-async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
+async def calculate_speech_cost(
+    model_id: str,
+    input_chars: int,
+    provider: str = "openai",
+) -> float:
     """Calculate TTS cost. Backward-compatible function."""
     usage = UsageInfo(input_characters=input_chars)
-    return CostCalculator.calculate(model_id, usage)
+    return CostCalculator.calculate(model_id, usage, provider)
 
 
-async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> float:
+async def calculate_whisper_cost(
+    model_id: str,
+    duration_seconds: float,
+    provider: str = "openai",
+) -> float:
     """Calculate ASR/Whisper cost. Backward-compatible function."""
     usage = UsageInfo(duration_seconds=duration_seconds)
-    return CostCalculator.calculate(model_id, usage)
+    return CostCalculator.calculate(model_id, usage, provider)
 
 
 async def calculate_image_cost(
     model_id: str,
     image_count: int = 1,
     quality: str = "medium",
+    provider: str = "openai",
 ) -> float:
     """Calculate image generation cost. Backward-compatible function."""
     # Adjust tier based on quality for gpt-image models
@@ -547,4 +494,4 @@ async def calculate_image_cost(
         if tier:
             return CostCalculator._calculate_for_tier(tier, usage)
 
-    return CostCalculator.calculate(model_id, usage)
+    return CostCalculator.calculate(model_id, usage, provider)
