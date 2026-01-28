@@ -229,25 +229,89 @@ PRICING_TIERS: dict[str, PricingTier] = {
 }
 
 # Model ID to tier mapping - derived from openai_prediction.py MODEL_TO_TIER_MAP
-MODEL_TO_TIER: dict[str, str] = {
-    # GPT-5 Series (newest models)
+# Keys can be either:
+#   - str: model ID (provider-agnostic, used as fallback)
+#   - tuple[str, str]: (provider, model_id) for provider-specific pricing
+MODEL_TO_TIER: dict[str | tuple[str, str], str] = {
+    # GPT-5 Series (newest models) - OpenAI specific
+    ("openai", "gpt-5.2"): "gpt5_tier",
+    ("openai", "gpt-5.2-pro"): "gpt5_pro_tier",
+    ("openai", "gpt-5-mini"): "gpt5_mini_tier",
+    # GPT-4.1 Family - OpenAI specific
+    ("openai", "gpt-4.1"): "gpt4_1_tier",
+    ("openai", "gpt-4.1-mini"): "gpt4_1_mini_tier",
+    ("openai", "gpt-4.1-nano"): "gpt4_1_nano_tier",
+    # O4 Series (reasoning models) - OpenAI specific
+    ("openai", "o4-mini"): "o4_mini_tier",
+    # O1 Series (existing reasoning models) - OpenAI specific
+    ("openai", "o1"): "o1_tier",
+    ("openai", "o1-preview"): "o1_tier",
+    ("openai", "o1-mini"): "o1_mini_tier",
+    # O3 Series (future models) - OpenAI specific
+    ("openai", "o3"): "o1_tier",
+    ("openai", "o3-mini"): "o1_mini_tier",
+    # GPT-4o Series - OpenAI specific
+    ("openai", "gpt-4o"): "top_tier_chat",
+    ("openai", "gpt-4o-2024-11-20"): "top_tier_chat",
+    ("openai", "gpt-4o-2024-08-06"): "top_tier_chat",
+    ("openai", "gpt-4o-2024-05-13"): "top_tier_chat",
+    ("openai", "gpt-4o-search-preview"): "top_tier_chat",
+    ("openai", "gpt-4o-mini"): "low_tier_chat",
+    ("openai", "gpt-4o-mini-2024-07-18"): "low_tier_chat",
+    ("openai", "gpt-4o-mini-search-preview"): "low_tier_chat",
+    # GPT-4 Turbo Series - OpenAI specific
+    ("openai", "gpt-4-turbo"): "gpt4_turbo",
+    ("openai", "gpt-4-turbo-2024-04-09"): "gpt4_turbo",
+    ("openai", "gpt-4-turbo-preview"): "gpt4_turbo",
+    ("openai", "gpt-4-0125-preview"): "gpt4_turbo",
+    ("openai", "gpt-4-1106-preview"): "gpt4_turbo",
+    ("openai", "computer-use-preview"): "top_tier_chat",
+    # Image models - OpenAI specific
+    ("openai", "gpt-image-1.5"): "image_gpt_1_5",
+    # Whisper / Speech-to-Text - OpenAI specific
+    ("openai", "whisper-1"): "whisper_standard",
+    ("openai", "gpt-4o-transcribe"): "whisper_standard",
+    ("openai", "gpt-4o-mini-transcribe"): "whisper_low_cost",
+    # TTS / Text-to-Speech - OpenAI specific
+    ("openai", "gpt-4o-mini-tts"): "tts_standard",
+    ("openai", "tts-1"): "tts_hd",
+    ("openai", "tts-1-hd"): "tts_ultra_hd",
+    # Embeddings - OpenAI specific
+    ("openai", "text-embedding-3-small"): "embedding_small",
+    ("openai", "text-embedding-3-large"): "embedding_large",
+    # Anthropic Models - Anthropic specific
+    ("anthropic", "claude-opus-4-20250514"): "claude_opus_4",
+    ("anthropic", "claude-opus-4-20250501"): "claude_opus_4",
+    ("anthropic", "claude-sonnet-4-20250514"): "claude_sonnet_4",
+    ("anthropic", "claude-sonnet-4-20250501"): "claude_sonnet_4",
+    ("anthropic", "claude-haiku-4-20250514"): "claude_haiku_4",
+    ("anthropic", "claude-haiku-4-20250501"): "claude_haiku_4",
+    ("anthropic", "claude-3-7-sonnet-20250511"): "claude_3_7_sonnet",
+    ("anthropic", "claude-3-7-sonnet-20250219"): "claude_3_7_sonnet",
+    ("anthropic", "claude-3-5-sonnet-20241022"): "claude_3_5_sonnet",
+    ("anthropic", "claude-3-5-sonnet-20240620"): "claude_3_5_sonnet",
+    ("anthropic", "claude-3-5-sonnet-latest"): "claude_3_5_sonnet",
+    ("anthropic", "claude-3-5-haiku-20241022"): "claude_3_5_haiku",
+    ("anthropic", "claude-3-5-haiku-latest"): "claude_3_5_haiku",
+    ("anthropic", "claude-3-opus-20240229"): "claude_3_opus",
+    ("anthropic", "claude-3-opus-latest"): "claude_3_opus",
+    ("anthropic", "claude-3-sonnet-20240229"): "claude_3_sonnet",
+    ("anthropic", "claude-3-sonnet-latest"): "claude_3_sonnet",
+    ("anthropic", "claude-3-haiku-20240307"): "claude_3_haiku",
+    ("anthropic", "claude-3-haiku-latest"): "claude_3_haiku",
+    # Fallback model-only entries (for backward compatibility)
     "gpt-5.2": "gpt5_tier",
     "gpt-5.2-pro": "gpt5_pro_tier",
     "gpt-5-mini": "gpt5_mini_tier",
-    # GPT-4.1 Family
     "gpt-4.1": "gpt4_1_tier",
     "gpt-4.1-mini": "gpt4_1_mini_tier",
     "gpt-4.1-nano": "gpt4_1_nano_tier",
-    # O4 Series (reasoning models)
     "o4-mini": "o4_mini_tier",
-    # O1 Series (existing reasoning models)
     "o1": "o1_tier",
     "o1-preview": "o1_tier",
     "o1-mini": "o1_mini_tier",
-    # O3 Series (future models)
     "o3": "o1_tier",
     "o3-mini": "o1_mini_tier",
-    # GPT-4o Series
     "gpt-4o": "top_tier_chat",
     "gpt-4o-2024-11-20": "top_tier_chat",
     "gpt-4o-2024-08-06": "top_tier_chat",
@@ -256,28 +320,21 @@ MODEL_TO_TIER: dict[str, str] = {
     "gpt-4o-mini": "low_tier_chat",
     "gpt-4o-mini-2024-07-18": "low_tier_chat",
     "gpt-4o-mini-search-preview": "low_tier_chat",
-    # GPT-4 Turbo Series
     "gpt-4-turbo": "gpt4_turbo",
     "gpt-4-turbo-2024-04-09": "gpt4_turbo",
     "gpt-4-turbo-preview": "gpt4_turbo",
     "gpt-4-0125-preview": "gpt4_turbo",
     "gpt-4-1106-preview": "gpt4_turbo",
     "computer-use-preview": "top_tier_chat",
-    # Image models
     "gpt-image-1.5": "image_gpt_1_5",
-    # Image models like "gpt-image-1" are handled by create_image based on params.quality.
-    # Whisper / Speech-to-Text
     "whisper-1": "whisper_standard",
     "gpt-4o-transcribe": "whisper_standard",
     "gpt-4o-mini-transcribe": "whisper_low_cost",
-    # TTS / Text-to-Speech
     "gpt-4o-mini-tts": "tts_standard",
     "tts-1": "tts_hd",
     "tts-1-hd": "tts_ultra_hd",
-    # Embeddings
     "text-embedding-3-small": "embedding_small",
     "text-embedding-3-large": "embedding_large",
-    # Anthropic Models
     "claude-opus-4-20250514": "claude_opus_4",
     "claude-opus-4-20250501": "claude_opus_4",
     "claude-sonnet-4-20250514": "claude_sonnet_4",
@@ -318,17 +375,47 @@ class CostCalculator:
     """Centralized cost calculator for all providers."""
 
     @staticmethod
-    def get_tier(model_id: str) -> str | None:
-        """Get the pricing tier for a model ID."""
+    def get_tier(model_id: str, provider: str | None = None) -> str | None:
+        """Get the pricing tier for a model ID, optionally scoped by provider.
+
+        Args:
+            model_id: The model identifier
+            provider: Optional provider name (e.g., "openai", "anthropic")
+
+        Returns:
+            The pricing tier name, or None if not found
+        """
         model_lower = model_id.lower()
+        provider_lower = provider.lower() if provider else None
 
-        # Direct match
+        # First, try provider-specific lookup if provider is given
+        if provider_lower:
+            provider_key = (provider_lower, model_lower)
+            if provider_key in MODEL_TO_TIER:
+                return MODEL_TO_TIER[provider_key]
+
+            # Try prefix match with provider key - sort by model length descending
+            # Only look at tuple keys that match the provider
+            provider_prefixes = [
+                key for key in MODEL_TO_TIER.keys()
+                if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
+            ]
+            sorted_provider_prefixes = sorted(
+                provider_prefixes, key=lambda x: len(x[1]), reverse=True
+            )
+            for prefix_key in sorted_provider_prefixes:
+                if model_lower.startswith(prefix_key[1]):
+                    return MODEL_TO_TIER[prefix_key]
+
+        # Fallback to model-only lookup (for backward compatibility)
         if model_lower in MODEL_TO_TIER:
-            return MODEL_TO_TIER[model_lower]
+            tier = MODEL_TO_TIER[model_lower]
+            if isinstance(tier, str):
+                return tier
 
-        # Prefix match for versioned models - sort by length descending to match
-        # longest (most specific) prefix first
-        sorted_prefixes = sorted(MODEL_TO_TIER.keys(), key=len, reverse=True)
+        # Prefix match for versioned models - only use string keys
+        string_keys = [k for k in MODEL_TO_TIER.keys() if isinstance(k, str)]
+        sorted_prefixes = sorted(string_keys, key=len, reverse=True)
         for model_prefix in sorted_prefixes:
             if model_lower.startswith(model_prefix):
                 return MODEL_TO_TIER[model_prefix]
@@ -347,12 +434,12 @@ class CostCalculator:
         Args:
             model_id: The model identifier
             usage: Usage information from the API response
-            provider: Optional provider name for context
+            provider: Provider name for provider-specific pricing lookup
 
         Returns:
             Cost in credits (1 credit = $0.01 USD)
         """
-        tier_name = CostCalculator.get_tier(model_id)
+        tier_name = CostCalculator.get_tier(model_id, provider)
         if tier_name is None:
             log.warning(
                 f"No pricing tier found for model: {model_id} (provider: {provider})"

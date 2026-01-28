@@ -101,6 +101,40 @@ class TestCostCalculator:
         assert CostCalculator.get_tier("unknown-model") is None
         assert CostCalculator.get_tier("my-custom-model") is None
 
+    def test_get_tier_with_provider(self):
+        """Test provider-specific tier lookup."""
+        # OpenAI-specific lookup
+        assert CostCalculator.get_tier("gpt-4o-mini", provider="openai") == "low_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o", provider="openai") == "top_tier_chat"
+        
+        # Anthropic-specific lookup
+        assert CostCalculator.get_tier("claude-3-5-sonnet-latest", provider="anthropic") == "claude_3_5_sonnet"
+        assert CostCalculator.get_tier("claude-3-haiku-20240307", provider="anthropic") == "claude_3_haiku"
+
+    def test_get_tier_provider_case_insensitive(self):
+        """Test that provider matching is case-insensitive."""
+        assert CostCalculator.get_tier("gpt-4o-mini", provider="OpenAI") == "low_tier_chat"
+        assert CostCalculator.get_tier("gpt-4o-mini", provider="OPENAI") == "low_tier_chat"
+        assert CostCalculator.get_tier("claude-3-5-sonnet-latest", provider="Anthropic") == "claude_3_5_sonnet"
+
+    def test_get_tier_fallback_without_provider(self):
+        """Test that model-only lookup still works when provider is not specified."""
+        # Should still work with model-only fallback
+        assert CostCalculator.get_tier("gpt-4o-mini") == "low_tier_chat"
+        assert CostCalculator.get_tier("claude-3-5-sonnet-latest") == "claude_3_5_sonnet"
+
+    def test_calculate_with_provider(self):
+        """Test cost calculation with provider specified."""
+        usage = UsageInfo(input_tokens=1000, output_tokens=500)
+        
+        # OpenAI provider
+        cost = CostCalculator.calculate("gpt-4o-mini", usage, provider="openai")
+        assert cost == pytest.approx(0.0675, rel=1e-6)
+        
+        # Anthropic provider
+        cost = CostCalculator.calculate("claude-3-5-sonnet-latest", usage, provider="anthropic")
+        assert cost == pytest.approx(0.01875, rel=1e-6)
+
     def test_calculate_token_based_cost(self):
         # GPT-4o-mini: input=0.0225/1k, output=0.09/1k
         usage = UsageInfo(input_tokens=1000, output_tokens=500)
