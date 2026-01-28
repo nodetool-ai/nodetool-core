@@ -64,3 +64,32 @@ async def test_get_messages_reverse(client: TestClient, message: Message, thread
     assert len(message_list.messages) == 2
     assert message_list.messages[0].id == last_message.id
     assert message_list.messages[1].id == message.id
+
+
+@pytest.mark.asyncio
+async def test_search_messages_fts(client: TestClient, thread: Thread, headers: dict[str, str], user_id: str):
+    await Message.create(user_id=user_id, thread_id=thread.id, role="user", content="Find me please")
+    response = client.get(
+        "/api/messages/search",
+        headers=headers,
+        params={"query": "find", "thread_id": thread.id},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"]
+    assert payload["messages"][0]["content"] == "Find me please"
+
+
+@pytest.mark.asyncio
+async def test_search_messages_similar_returns_empty_during_tests(
+    client: TestClient, thread: Thread, headers: dict[str, str], user_id: str
+):
+    await Message.create(user_id=user_id, thread_id=thread.id, role="user", content="Semantic search text")
+    response = client.get(
+        "/api/messages/similar",
+        headers=headers,
+        params={"query": "semantic", "thread_id": thread.id},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"] == []

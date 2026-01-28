@@ -938,7 +938,7 @@ class ProcessingContext:
         if not req.thread_id:
             raise ValueError("Thread ID is required")
 
-        return await DBMessage.create(
+        message = await DBMessage.create(
             thread_id=req.thread_id,
             user_id=self.user_id,
             role=req.role,
@@ -948,6 +948,8 @@ class ProcessingContext:
             name=getattr(req, "name", None),
             tool_call_id=getattr(req, "tool_call_id", None),
         )
+        await DBMessage.index_message(message)
+        return message
 
     async def get_messages(
         self,
