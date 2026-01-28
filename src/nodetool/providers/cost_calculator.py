@@ -17,7 +17,6 @@ Usage:
 """
 
 from enum import Enum
-from typing import Any
 from dataclasses import dataclass
 
 from nodetool.config.logging_config import get_logger

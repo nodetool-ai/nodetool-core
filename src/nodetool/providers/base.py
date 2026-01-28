@@ -156,7 +156,7 @@ class BaseProvider:
 
     def __init__(self, secrets: dict[str, str] | None = None):
         self.secrets = secrets or {}
-        self._usage_info: "UsageInfo | None" = None
+        self._usage_info: Any = None
 
     def track_usage(
         self,

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator
 
+    from nodetool.providers.base import BaseProvider, ProviderCapability
     from nodetool.types.message_types import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.property import Property
@@ -743,6 +744,43 @@ class ProcessingContext:
         """
         return await Workflow.find(self.user_id, workflow_id)
 
+    async def get_provider(self, provider_enum: Provider) -> "BaseProvider":
+        """
+        Get or create a provider instance for the given provider enum.
+
+        This method caches provider instances for reuse within the same context.
+
+        Args:
+            provider_enum: The provider enum value
+
+        Returns:
+            An initialized provider instance
+
+        Raises:
+            ValueError: If the provider is not registered
+        """
+        from nodetool.providers.base import BaseProvider, get_registered_provider
+
+        # Use cached provider if available
+        if not hasattr(self, "_provider_cache"):
+            self._provider_cache: dict[Provider, BaseProvider] = {}
+
+        if provider_enum in self._provider_cache:
+            return self._provider_cache[provider_enum]
+
+        provider_cls, kwargs = get_registered_provider(provider_enum)
+
+        # Get secrets from environment
+        secrets: dict[str, str] = {}
+        for secret_name in provider_cls.required_secrets():
+            value = self.environment.get(secret_name)
+            if value:
+                secrets[secret_name] = value
+
+        provider = provider_cls(secrets=secrets, **kwargs)
+        self._provider_cache[provider_enum] = provider
+        return provider
+
     async def _prepare_prediction(
         self,
         node_id: str,
@@ -852,6 +890,279 @@ class ProcessingContext:
 
         async for msg in run_prediction_function(prediction, self.environment):
             yield msg
+
+    async def run_provider_prediction(
+        self,
+        node_id: str,
+        provider: Provider | str,
+        model: str,
+        capability: "ProviderCapability",
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Run a prediction using the specified provider and capability.
+
+        This method resolves the provider from the registry, dispatches to the
+        appropriate capability method, and logs the prediction with cost information.
+
+        Args:
+            node_id: The ID of the node making the prediction
+            provider: The provider enum or string name
+            model: The model to use
+            capability: The capability to invoke (GENERATE_MESSAGE, TEXT_TO_IMAGE, etc.)
+            params: Parameters for the prediction
+            **kwargs: Additional arguments passed to the capability method
+
+        Returns:
+            The prediction result
+
+        Raises:
+            ValueError: If the provider doesn't support the requested capability
+        """
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.providers.base import ProviderCapability
+
+        if params is None:
+            params = {}
+
+        # Convert string provider to enum if needed
+        if isinstance(provider, str):
+            provider_enum = Provider(provider)
+        else:
+            provider_enum = provider
+
+        # Get provider instance
+        provider_instance = await self.get_provider(provider_enum)
+
+        # Verify capability
+        if capability not in provider_instance.get_capabilities():
+            raise ValueError(
+                f"Provider {provider_enum} does not support capability {capability}"
+            )
+
+        started_at = datetime.now()
+        cost_before = provider_instance.cost
+
+        try:
+            # Dispatch to appropriate method based on capability
+            result = await self._dispatch_capability(
+                provider_instance, capability, model, params, **kwargs
+            )
+
+            # Calculate cost from provider's accumulated cost
+            cost = provider_instance.cost - cost_before
+
+            # Log the prediction
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="completed",
+                cost=cost,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+
+            return result
+
+        except Exception as e:
+            # Log failed prediction
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="failed",
+                error=str(e),
+                cost=0,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+            raise
+
+    async def _dispatch_capability(
+        self,
+        provider: "BaseProvider",
+        capability: "ProviderCapability",
+        model: str,
+        params: dict[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        """Dispatch to the appropriate provider method based on capability."""
+        from nodetool.providers.base import ProviderCapability
+
+        if capability == ProviderCapability.GENERATE_MESSAGE:
+            messages = params.get("messages", [])
+            tools = params.get("tools", [])
+            max_tokens = params.get("max_tokens", 8192)
+            return await provider.generate_message(
+                messages=messages,
+                model=model,
+                tools=tools,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.GENERATE_EMBEDDING:
+            text = params.get("text", params.get("input", ""))
+            return await provider.generate_embedding(
+                text=text,
+                model=model,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_IMAGE:
+            return await provider.text_to_image(
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_SPEECH:
+            text = params.get("text", params.get("input", ""))
+            voice = params.get("voice")
+            speed = params.get("speed", 1.0)
+            # Collect all chunks into bytes
+            chunks: list[Any] = []
+            async for chunk in provider.text_to_speech(
+                text=text,
+                model=model,
+                voice=voice,
+                speed=speed,
+                context=self,
+                **kwargs,
+            ):
+                chunks.append(chunk)
+            return chunks
+
+        elif capability == ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION:
+            audio = params.get("audio", params.get("file"))
+            language = params.get("language")
+            return await provider.automatic_speech_recognition(
+                audio=audio,
+                model=model,
+                language=language,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_VIDEO:
+            return await provider.text_to_video(
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.IMAGE_TO_VIDEO:
+            image = params.get("image")
+            return await provider.image_to_video(
+                image=image,
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        else:
+            raise ValueError(f"Unsupported capability: {capability}")
+
+    async def stream_provider_prediction(
+        self,
+        node_id: str,
+        provider: Provider | str,
+        model: str,
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        """
+        Stream prediction results from a provider.
+
+        Uses GENERATE_MESSAGES capability for streaming chat completions.
+
+        Args:
+            node_id: The ID of the node making the prediction
+            provider: The provider enum or string name
+            model: The model to use
+            params: Parameters for the prediction
+            **kwargs: Additional arguments passed to the capability method
+
+        Yields:
+            Streaming chunks from the provider
+        """
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.providers.base import ProviderCapability
+
+        if params is None:
+            params = {}
+
+        if isinstance(provider, str):
+            provider_enum = Provider(provider)
+        else:
+            provider_enum = provider
+
+        provider_instance = await self.get_provider(provider_enum)
+
+        if ProviderCapability.GENERATE_MESSAGES not in provider_instance.get_capabilities():
+            raise ValueError(
+                f"Provider {provider_enum} does not support streaming (GENERATE_MESSAGES)"
+            )
+
+        started_at = datetime.now()
+        cost_before = provider_instance.cost
+
+        messages = params.get("messages", [])
+        tools = params.get("tools", [])
+        max_tokens = params.get("max_tokens", 8192)
+
+        try:
+            async for chunk in provider_instance.generate_messages(
+                messages=messages,
+                model=model,
+                tools=tools,
+                max_tokens=max_tokens,
+                **kwargs,
+            ):
+                yield chunk
+
+            # Log completed streaming prediction
+            cost = provider_instance.cost - cost_before
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="completed",
+                cost=cost,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+
+        except Exception as e:
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="failed",
+                error=str(e),
+                cost=0,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+            raise
 
     async def refresh_uri(self, asset: AssetRef):
         """
