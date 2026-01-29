@@ -1188,6 +1188,214 @@ def vibecoding(
     _run_async(run_vibecoding())
 
 
+@cli.command("agent")
+@click.argument("prompt", required=True, type=str)
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="Path to agent configuration YAML file",
+)
+@click.option(
+    "--provider",
+    default=None,
+    help="LLM provider (e.g., 'openai', 'anthropic', 'ollama'). Overrides config file.",
+)
+@click.option(
+    "--model",
+    default=None,
+    help="Model to use. Overrides config file.",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=None,
+    help="Enable verbose output. Overrides config file.",
+)
+@click.option(
+    "--max-steps",
+    type=int,
+    default=None,
+    help="Maximum number of steps. Overrides config file.",
+)
+@click.option(
+    "--tools",
+    default=None,
+    help="Comma-separated list of tools to enable. Overrides config file.",
+)
+def agent(
+    prompt: str,
+    config: Optional[str],
+    provider: Optional[str],
+    model: Optional[str],
+    verbose: Optional[bool],
+    max_steps: Optional[int],
+    tools: Optional[str],
+):
+    """Run an agent from start to end with a given prompt.
+
+    The agent uses a planning approach to break down the prompt into steps
+    and executes them sequentially. You can optionally provide a YAML
+    configuration file to customize the agent's behavior.
+
+    Examples:
+      # Run agent with inline prompt
+      nodetool agent "Research the latest AI developments and create a summary"
+
+      # Run agent with YAML configuration
+      nodetool agent "Analyze this dataset" --config my_agent.yaml
+
+      # Override specific settings
+      nodetool agent "Write a blog post" --config agent.yaml --model gpt-4o --verbose
+
+      # Use specific tools
+      nodetool agent "Search and summarize news" --tools "google_search,browser"
+    """
+    import asyncio
+    import sys
+    import traceback
+
+    from nodetool.agents.agent import Agent
+    from nodetool.agents.agent_config import AgentConfig, load_agent_config_from_yaml
+    from nodetool.agents.tool_registry import get_tool_instance
+    from nodetool.metadata.types import Provider
+    from nodetool.providers import get_provider
+    from nodetool.runtime.resources import ResourceScope
+    from nodetool.workflows.processing_context import ProcessingContext
+    from nodetool.workflows.workflow_types import Chunk
+
+    async def run_agent():
+        agent_config = None  # Initialize to avoid potential NameError
+        try:
+            # Load configuration from YAML if provided
+            if config:
+                console.print(f"[cyan]Loading agent configuration from {config}[/]")
+                agent_config = load_agent_config_from_yaml(config)
+            else:
+                # Use default configuration
+                agent_config = AgentConfig(
+                    name="CLI Agent",
+                    description="Agent running from CLI",
+                )
+
+            # Override config with CLI arguments if provided
+            if provider is not None:
+                agent_config.provider = provider
+            if model is not None:
+                agent_config.model = model
+            if verbose is not None:
+                agent_config.verbose = verbose
+            if max_steps is not None:
+                agent_config.max_steps = max_steps
+            if tools is not None:
+                agent_config.tools = [t.strip() for t in tools.split(",") if t.strip()]
+
+            # Display configuration
+            console.print()
+            console.print(Panel.fit(
+                f"[bold cyan]Agent: {agent_config.name}[/]\n"
+                f"Provider: {agent_config.provider}\n"
+                f"Model: {agent_config.model}\n"
+                f"Max Steps: {agent_config.max_steps}\n"
+                f"Tools: {', '.join(agent_config.tools) if agent_config.tools else 'None'}",
+                title="Agent Configuration"
+            ))
+            console.print()
+            console.print(Panel.fit(
+                f"[bold white]{prompt}[/]",
+                title="Objective"
+            ))
+            console.print()
+
+            # Convert provider string to Provider enum
+            provider_map = {
+                "openai": Provider.OpenAI,
+                "anthropic": Provider.Anthropic,
+                "ollama": Provider.Ollama,
+                "huggingface": Provider.HuggingFace,
+                "google": Provider.Google,
+                "cerebras": Provider.HuggingFaceCerebras,
+            }
+
+            provider_enum = provider_map.get(agent_config.provider.lower())
+            if provider_enum is None:
+                console.print(
+                    f"[red]Unknown provider: {agent_config.provider}[/]\n"
+                    f"[yellow]Available: {', '.join(provider_map.keys())}[/]"
+                )
+                sys.exit(1)
+
+            # Initialize tools
+            tool_instances = []
+            for tool_name in agent_config.tools:
+                try:
+                    tool_instance = get_tool_instance(tool_name)
+                    tool_instances.append(tool_instance)
+                except ValueError as e:
+                    console.print(f"[yellow]Warning: {e}[/]")
+
+            # Create provider and agent
+            async with ResourceScope():
+                llm_provider = await get_provider(provider_enum)
+
+                processing_context = ProcessingContext()
+
+                agent = Agent(
+                    name=agent_config.name,
+                    objective=prompt,
+                    provider=llm_provider,
+                    model=agent_config.model,
+                    planning_model=agent_config.planning_model,
+                    reasoning_model=agent_config.reasoning_model,
+                    tools=tool_instances,
+                    description=agent_config.description,
+                    system_prompt=agent_config.system_prompt,
+                    max_steps=agent_config.max_steps,
+                    max_step_iterations=agent_config.max_step_iterations,
+                    max_token_limit=agent_config.max_token_limit,
+                    verbose=agent_config.verbose,
+                    docker_image=agent_config.docker_image,
+                    use_sandbox=agent_config.use_sandbox,
+                )
+
+                console.print("[bold cyan]🤖 Agent starting...[/]")
+                console.print()
+
+                # Execute agent and stream output
+                async for item in agent.execute(processing_context):
+                    if isinstance(item, Chunk):
+                        console.print(item.content, end="", style="white")
+
+                console.print()
+                console.print()
+
+                # Display results
+                results = agent.get_results()
+                if results:
+                    console.print(Panel.fit(
+                        str(results),
+                        title="[bold green]Results[/]",
+                        border_style="green"
+                    ))
+                else:
+                    console.print("[yellow]No results returned[/]")
+
+                console.print()
+                console.print(f"[cyan]Workspace: {processing_context.workspace_dir}[/]")
+
+        except FileNotFoundError as e:
+            console.print(f"[red]Error: {e}[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]Error running agent: {e}[/]")
+            if verbose or (agent_config and agent_config.verbose):
+                traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_agent())
+
+
 @cli.command("worker")
 @click.option("--host", default="0.0.0.0", help="Host address to bind to (listen on all interfaces for deployments).")
 @click.option("--port", default=7777, help="Port to listen on.", type=int)
