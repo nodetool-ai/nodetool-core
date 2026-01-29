@@ -70,7 +70,8 @@ register_setting(
     group="ComfyUI",
     description=(
         "ComfyUI server address for API/WebSocket access (e.g., 127.0.0.1:8188). "
-        "Used by the Comfy provider and scripts."
+        "Used by the Comfy provider and scripts. "
+        "Default: Not set (ComfyUI features will be disabled)."
     ),
 )
 register_setting(
@@ -80,7 +81,8 @@ register_setting(
     description=(
         "Location of ChromaDB folder for vector database storage. "
         "ChromaDB is used to store and retrieve embeddings for semantic search and RAG applications. "
-        "In Docker deployments, this path is mounted as a volume to persist data between container restarts."
+        "In Docker deployments, this path is mounted as a volume to persist data between container restarts. "
+        "Default: ~/.local/share/nodetool/chroma on Linux/macOS, %APPDATA%\\nodetool\\chroma on Windows."
     ),
 )
 
@@ -88,7 +90,10 @@ register_setting(
     package_name="nodetool",
     env_var="VLLM_BASE_URL",
     group="vLLM",
-    description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:7777)",
+    description=(
+        "Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:7777). "
+        "Default: Not set (vLLM provider will not be available)."
+    ),
 )
 
 # Ollama settings
