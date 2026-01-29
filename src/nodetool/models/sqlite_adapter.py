@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Optional, Union, get_args, get_origin
+from typing import Any, Optional, Union, get_args, get_origin, TYPE_CHECKING
 
 import aiosqlite
 from pydantic.fields import FieldInfo
@@ -21,6 +21,9 @@ from nodetool.models.condition_builder import (
 )
 
 from .database_adapter import DatabaseAdapter
+
+if TYPE_CHECKING:
+    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
 log = get_logger(__name__)
 
@@ -326,7 +329,7 @@ class SQLiteAdapter(DatabaseAdapter):
     table_name: str
     table_schema: dict[str, Any]
     indexes: list[dict[str, Any]]
-    _connection: aiosqlite.Connection
+    _pool: "SQLiteConnectionPool"
     query_timeout: Optional[float]
     _is_shutting_down: bool
 
@@ -335,16 +338,16 @@ class SQLiteAdapter(DatabaseAdapter):
         fields: dict[str, FieldInfo],
         table_schema: dict[str, Any],
         indexes: list[dict[str, Any]],
-        connection: aiosqlite.Connection,
+        pool: "SQLiteConnectionPool",
         query_timeout: Optional[float] = None,
     ):
-        """Initializes the SQLite adapter with an existing connection.
+        """Initializes the SQLite adapter with a connection pool.
 
         Args:
             fields: Dictionary of Pydantic field info.
             table_schema: Dictionary defining the table schema.
             indexes: List of index configurations.
-            connection: Existing aiosqlite.Connection instance.
+            pool: SQLiteConnectionPool instance for acquiring connections.
             query_timeout: Optional timeout in seconds for queries. If None, queries
                           will not have a timeout (except during shutdown).
         """
@@ -352,7 +355,7 @@ class SQLiteAdapter(DatabaseAdapter):
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
-        self._connection = connection
+        self._pool = pool
         self.query_timeout = query_timeout
         self._is_shutting_down = False
 
@@ -408,23 +411,25 @@ class SQLiteAdapter(DatabaseAdapter):
         pass
 
     @property
-    def connection(self) -> aiosqlite.Connection:
-        return self._connection
+    def pool(self) -> "SQLiteConnectionPool":
+        return self._pool
 
     async def table_exists(self) -> bool:
         """Checks if the table associated with this adapter exists in the database."""
-        cursor = await self.connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (self.table_name,),
-        )
-        return (await cursor.fetchone()) is not None
+        async with self._pool.acquire_context() as conn:
+            cursor = await conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (self.table_name,),
+            )
+            return (await cursor.fetchone()) is not None
 
     async def get_current_schema(self) -> set[str]:
         """Retrieves the current schema of the table from the database."""
-        cursor = await self.connection.execute(f"PRAGMA table_info({self.table_name})")
-        rows = await cursor.fetchall()
-        current_schema = {row[1] for row in rows}
-        return current_schema
+        async with self._pool.acquire_context() as conn:
+            cursor = await conn.execute(f"PRAGMA table_info({self.table_name})")
+            rows = await cursor.fetchall()
+            current_schema = {row[1] for row in rows}
+            return current_schema
 
     def get_desired_schema(self) -> set[str]:
         """
@@ -453,8 +458,9 @@ class SQLiteAdapter(DatabaseAdapter):
         sql += f"PRIMARY KEY ({primary_key}))"
 
         async def _create():
-            await self.connection.execute(sql)
-            await self.connection.commit()
+            async with self._pool.acquire_context() as conn:
+                await conn.execute(sql)
+                await conn.commit()
 
         try:
             await retry_on_locked(_create)
@@ -468,8 +474,9 @@ class SQLiteAdapter(DatabaseAdapter):
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
 
         async def _drop():
-            await self.connection.execute(sql)
-            await self.connection.commit()
+            async with self._pool.acquire_context() as conn:
+                await conn.execute(sql)
+                await conn.commit()
 
         await retry_on_locked(_drop)
 
@@ -491,8 +498,9 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
 
         async def _save():
-            await self._execute_with_timeout(self.connection.execute(query, values))
-            await self._execute_with_timeout(self.connection.commit())
+            async with self._pool.acquire_context() as conn:
+                await self._execute_with_timeout(conn.execute(query, values))
+                await self._execute_with_timeout(conn.commit())
 
         await retry_on_locked(_save)
 
@@ -511,11 +519,12 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
 
         async def _get():
-            cursor = await self._execute_with_timeout(self.connection.execute(query, (key,)))
-            item = await self._execute_with_timeout(cursor.fetchone())
-            if item is None:
-                return None
-            return convert_from_sqlite_attributes(dict(item), self.fields)
+            async with self._pool.acquire_context() as conn:
+                cursor = await self._execute_with_timeout(conn.execute(query, (key,)))
+                item = await self._execute_with_timeout(cursor.fetchone())
+                if item is None:
+                    return None
+                return convert_from_sqlite_attributes(dict(item), self.fields)
 
         return await _get()
 
@@ -530,8 +539,9 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
 
         async def _delete():
-            await self._execute_with_timeout(self.connection.execute(query, (primary_key,)))
-            await self._execute_with_timeout(self.connection.commit())
+            async with self._pool.acquire_context() as conn:
+                await self._execute_with_timeout(conn.execute(query, (primary_key,)))
+                await self._execute_with_timeout(conn.commit())
 
         await retry_on_locked(_delete)
 
@@ -602,20 +612,21 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {fetch_limit}"
 
         async def _query():
-            cursor = await self._execute_with_timeout(self.connection.execute(query, params))
-            rows = await self._execute_with_timeout(cursor.fetchall())
-            res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
+            async with self._pool.acquire_context() as conn:
+                cursor = await self._execute_with_timeout(conn.execute(query, params))
+                rows = await self._execute_with_timeout(cursor.fetchall())
+                res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
 
-            if len(res) <= limit:
-                return res, ""
+                if len(res) <= limit:
+                    return res, ""
 
-            # Pop the extra record used to detect another page
-            extra_record = res.pop()
-            last_evaluated_key = str(res[-1].get(pk))
-            # Guard: if extra record does not advance, fall back to extra key
-            if not last_evaluated_key:
-                last_evaluated_key = str(extra_record.get(pk))
-            return res, last_evaluated_key
+                # Pop the extra record used to detect another page
+                extra_record = res.pop()
+                last_evaluated_key = str(res[-1].get(pk))
+                # Guard: if extra record does not advance, fall back to extra key
+                if not last_evaluated_key:
+                    last_evaluated_key = str(extra_record.get(pk))
+                return res, last_evaluated_key
 
         return await _query()
 
@@ -632,14 +643,15 @@ class SQLiteAdapter(DatabaseAdapter):
         """
 
         async def _execute():
-            cursor = await self._execute_with_timeout(self.connection.execute(sql, params or {}))
-            if cursor.description:
-                columns = [col[0] for col in cursor.description]
-                rows = await self._execute_with_timeout(cursor.fetchall())
-                return [
-                    convert_from_sqlite_attributes(dict(zip(columns, row, strict=False)), self.fields) for row in rows
-                ]
-            return []
+            async with self._pool.acquire_context() as conn:
+                cursor = await self._execute_with_timeout(conn.execute(sql, params or {}))
+                if cursor.description:
+                    columns = [col[0] for col in cursor.description]
+                    rows = await self._execute_with_timeout(cursor.fetchall())
+                    return [
+                        convert_from_sqlite_attributes(dict(zip(columns, row, strict=False)), self.fields) for row in rows
+                    ]
+                return []
 
         return await _execute()
 
@@ -650,8 +662,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
         log.info(f"Creating index {index_name} on {self.table_name}")
         try:
-            await self.connection.execute(sql)
-            await self.connection.commit()
+            async with self._pool.acquire_context() as conn:
+                await conn.execute(sql)
+                await conn.commit()
         except aiosqlite.Error as e:
             log.error(f"SQLite error during index creation: {e}")
             raise e
@@ -661,8 +674,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
         log.info(f"Dropping index {index_name}")
         try:
-            await self.connection.execute(sql)
-            await self.connection.commit()
+            async with self._pool.acquire_context() as conn:
+                await conn.execute(sql)
+                await conn.commit()
         except aiosqlite.Error as e:
             log.error(f"SQLite error during index deletion: {e}")
             raise e
@@ -671,31 +685,32 @@ class SQLiteAdapter(DatabaseAdapter):
         sql = "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name=?"
 
         try:
-            cursor = await self.connection.execute(sql, (self.table_name,))
-            rows = await cursor.fetchall()
-            indexes = []
-            for row in rows:
-                # Skip system indexes (those starting with sqlite_)
-                if row["name"].startswith("sqlite_"):
-                    continue
+            async with self._pool.acquire_context() as conn:
+                cursor = await conn.execute(sql, (self.table_name,))
+                rows = await cursor.fetchall()
+                indexes = []
+                for row in rows:
+                    # Skip system indexes (those starting with sqlite_)
+                    if row["name"].startswith("sqlite_"):
+                        continue
 
-                # Parse the CREATE INDEX statement to extract column names
-                create_stmt = row["sql"]
-                if not create_stmt:  # Add check for None or empty string
-                    continue
+                    # Parse the CREATE INDEX statement to extract column names
+                    create_stmt = row["sql"]
+                    if not create_stmt:  # Add check for None or empty string
+                        continue
 
-                columns = create_stmt.split("(")[-1].split(")")[0].split(",")
-                columns = [col.strip() for col in columns]
+                    columns = create_stmt.split("(")[-1].split(")")[0].split(",")
+                    columns = [col.strip() for col in columns]
 
-                indexes.append(
-                    {
-                        "name": row["name"],
-                        "columns": columns,
-                        "unique": "UNIQUE" in create_stmt.upper(),
-                        "sql": create_stmt,
-                    }
-                )
-            return indexes
+                    indexes.append(
+                        {
+                            "name": row["name"],
+                            "columns": columns,
+                            "unique": "UNIQUE" in create_stmt.upper(),
+                            "sql": create_stmt,
+                        }
+                    )
+                return indexes
         except aiosqlite.Error as e:
             log.error(f"SQLite error during index listing: {e}")
             raise e

@@ -198,7 +198,6 @@ class ResourceScope:
             if self.db is None:
                 self.db = await self._acquire_db_resources()
                 self._owns_db = True  # Mark that we own these resources
-                log.debug(f"Acquired database resources: {type(self.db).__name__}")
 
             # Bind this scope to the context variable
             self._token = _current_scope.set(self)
@@ -223,18 +222,15 @@ class ResourceScope:
             if self._token is not None:
                 try:
                     _current_scope.reset(self._token)
-                    log.debug("ResourceScope unbound from context")
                 except ValueError:
                     # Token was created in a different context (e.g., nested task)
                     # This is expected in some test scenarios, log and continue
-                    log.debug("ResourceScope token reset skipped (different context)")
                     pass
 
             # Only clean up database resources if we own them (not borrowed from parent)
             if self.db is not None and self._owns_db:
                 try:
                     await self.db.cleanup()
-                    log.debug("Cleaned up owned database resources")
                 except Exception as e:
                     log.warning(f"Error cleaning up database resources: {e}")
         except Exception as e:
@@ -245,7 +241,6 @@ class ResourceScope:
             if self._http_client is not None and self._owns_http_client:
                 try:
                     await self._http_client.aclose()
-                    log.debug("Closed HTTP client")
                 except Exception as e:
                     log.warning(f"Error closing HTTP client: {e}")
 

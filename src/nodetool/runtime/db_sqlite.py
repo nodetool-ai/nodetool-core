@@ -435,11 +435,9 @@ class SQLiteScopeResources(DBResources):
             return self._adapters[table_name]
 
         # Create new adapter
-        log.debug(f"Creating new SQLite adapter for table '{table_name}'")
         assert self.pool is not None
-        connection = await self.pool.acquire()
         adapter = SQLiteAdapter(
-            connection=connection,
+            pool=self.pool,
             fields=model_cls.db_fields(),
             table_schema=model_cls.get_table_schema(),
             indexes=model_cls.get_indexes(),
@@ -450,25 +448,13 @@ class SQLiteScopeResources(DBResources):
         return adapter
 
     async def cleanup(self) -> None:
-        """Clean up scope resources and return connection to pool.
-
-        Rolls back any pending transactions before releasing connections
-        to prevent database locks.
+        """Clean up scope resources.
+        
+        Since adapters now acquire connections from the pool on-demand,
+        there are no connections to release. We just clear the adapter cache.
         """
         try:
-            # Release all connections held by adapters back to the pool
-            if self.pool is not None:
-                for adapter in self._adapters.values():
-                    if hasattr(adapter, "connection") and adapter.connection is not None:
-                        conn = adapter.connection
-                        # Rollback any pending transactions to prevent locks
-                        try:
-                            await conn.rollback()
-                        except Exception:
-                            pass
-                        await self.pool.release(conn)
-
             # Clear adapter cache
             self._adapters.clear()
         except Exception as e:
-            log.warning(f"Error releasing SQLite connection: {e}")
+            log.warning(f"Error cleaning up SQLite scope: {e}")

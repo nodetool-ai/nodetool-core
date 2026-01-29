@@ -1,9 +1,11 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Protocol, AsyncIterator
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
+import aiosqlite
 
 from nodetool.models.base_model import DBField, DBModel
 from nodetool.models.condition_builder import Field
@@ -45,15 +47,27 @@ class TestModel(DBModel):
 @pytest_asyncio.fixture
 async def db_adapter():
     import aiosqlite
+    from contextlib import asynccontextmanager
 
     # Create a connection to an in-memory database
     connection = await aiosqlite.connect(":memory:")
     # Enable row factory to return rows as dict-like objects
     connection.row_factory = aiosqlite.Row
 
+    # Create a simple mock pool that wraps this single connection
+    class MockPool:
+        def __init__(self, conn: aiosqlite.Connection):
+            self.conn = conn
+
+        @asynccontextmanager
+        async def acquire_context(self) -> AsyncIterator[aiosqlite.Connection]:
+            yield self.conn
+
+    pool = MockPool(connection)
+
     # Create the adapter
     adapter = SQLiteAdapter(
-        connection=connection,
+        pool=pool,  # type: ignore  # MockPool duck-types the pool interface
         fields=TestModel.db_fields(),
         table_schema=TestModel.get_table_schema(),
         indexes=[
@@ -116,7 +130,7 @@ async def test_update(db_adapter):
     )
     await db_adapter.save(item.model_dump())
 
-    updated_item = item.copy()
+    updated_item = item.model_copy()
     updated_item.name = "Jane Doe"
     updated_item.age = 31
     await db_adapter.save(updated_item.model_dump())
