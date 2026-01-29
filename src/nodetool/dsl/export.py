@@ -460,4 +460,15 @@ def graph_to_gradio_py(
     return "\n".join(lines)
 
 
-__all__ = ["graph_to_dsl_py", "graph_to_gradio_py"]
+__all__ = ["graph_to_dsl_py", "graph_to_gradio_py", "workflow_file_to_py"]
+
+
+# Re-export workflow_file_to_py from workflow_file module for convenience
+def workflow_file_to_py(*args, **kwargs):
+    """
+    Generate a Python workflow file from a graph.
+    Re-exported from nodetool.dsl.workflow_file for convenience.
+    """
+    from nodetool.dsl.workflow_file import workflow_file_to_py as _workflow_file_to_py
+
+    return _workflow_file_to_py(*args, **kwargs)
