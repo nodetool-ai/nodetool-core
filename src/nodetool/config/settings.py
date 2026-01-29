@@ -292,6 +292,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="BRAVE_API_KEY",
+    group="BraveSearch",
+    description="API key for accessing Brave Search API for web, news, and image search",
+)
+register_secret(
+    package_name="nodetool",
     env_var="BROWSER_URL",
     group="Browser",
     description="Browser URL for accessing a browser instance",
