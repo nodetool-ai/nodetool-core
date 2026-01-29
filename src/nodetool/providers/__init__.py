@@ -88,6 +88,7 @@ def import_providers():
         ollama_provider,
         openai_provider,
         openrouter_provider,
+        qwen_provider,
         together_provider,
         vllm_provider,
         zai_provider,
