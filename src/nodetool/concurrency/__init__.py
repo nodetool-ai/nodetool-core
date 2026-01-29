@@ -1,3 +1,4 @@
+from .async_cache import AsyncLRUCache, async_lru_cache
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
@@ -20,6 +21,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 __all__ = [
     "AsyncByteStream",
     "AsyncEvent",
+    "AsyncLRUCache",
     "AsyncLock",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
@@ -38,6 +40,7 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "async_lru_cache",
     "batched_async_iterable",
     "gather_with_concurrency",
     "process_in_batches",
