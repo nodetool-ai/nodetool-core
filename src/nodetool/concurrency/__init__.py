@@ -1,6 +1,7 @@
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
+from .async_pool import AsyncPool, AsyncPoolClosedError, AsyncPoolFullError, PoolConfig, PoolStats
 from .async_priority_queue import AsyncPriorityQueue
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
@@ -21,6 +22,9 @@ __all__ = [
     "AsyncByteStream",
     "AsyncEvent",
     "AsyncLock",
+    "AsyncPool",
+    "AsyncPoolClosedError",
+    "AsyncPoolFullError",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
     "AsyncSemaphore",
@@ -32,6 +36,8 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "PoolConfig",
+    "PoolStats",
     "TaskExecutionError",
     "TaskResult",
     "TaskStats",
