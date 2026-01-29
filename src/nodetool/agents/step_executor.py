@@ -1493,7 +1493,9 @@ class StepExecutor:
 
         raise ValueError(f"Tool '{tool_call.name}' not found")
 
-    async def _compress_tool_result(self, result_content: Any, tool_name: str, tool_args: dict[str, Any]) -> dict | str:
+    async def _compress_tool_result(
+        self, result_content: Any, tool_name: str, tool_args: dict[str, Any]
+    ) -> dict[str, Any] | str:
         """
         Compresses large tool result content using an LLM call.
 
