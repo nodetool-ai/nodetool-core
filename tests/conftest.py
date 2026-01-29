@@ -25,9 +25,21 @@ from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.storage.memory_storage import MemoryStorage
-from nodetool.types.graph import Edge, Node
+from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
+
+
+async def get_job_status(job_id: str) -> str:
+    """Get the authoritative status for a job from Job model."""
+    try:
+        job = await Job.get(job_id)
+        if job:
+            return job.status
+    except Exception:
+        pass
+    return "unknown"
+
 
 configure_logging("DEBUG")
 
@@ -130,23 +142,32 @@ async def _truncate_all_tables(pool):
         )
         tables = await cursor.fetchall()
 
+        # Use a single transaction for all deletes
         for table in tables:
             table_name = table[0]
             try:
                 await connection.execute(f"DELETE FROM {table_name}")
-            except Exception:
+            except Exception as e:
+                import logging
+
+                logging.debug(f"Failed to truncate table {table_name}: {e}")
                 pass
 
-        try:
-            await connection.commit()
-        except Exception:
-            pass
-    finally:
+        # Commit all deletes in a single transaction
+        await connection.commit()
+    except Exception as e:
+        # Rollback on error
+        import logging
+
+        logging.debug(f"Error during table truncation, rolling back: {e}")
         if connection is not None:
             try:
                 await connection.rollback()
             except Exception:
                 pass
+        raise
+    finally:
+        if connection is not None:
             await pool.release(connection)
 
 
@@ -166,25 +187,36 @@ async def setup_and_teardown(request, test_db_pool):
 
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    # Use ResourceScope with the shared test database
     async with ResourceScope(pool=test_db_pool):
         try:
             yield
         finally:
-            # Clean up JobExecutionManager after test
             try:
                 if JobExecutionManager._instance is not None:
-                    await JobExecutionManager.get_instance().shutdown()
+                    manager = JobExecutionManager.get_instance()
+                    for _job_id, job in list(manager._jobs.items()):
+                        try:
+                            await job.cleanup_resources()
+                        except Exception:
+                            pass
+                    manager._jobs.clear()
+                    await manager.shutdown()
             except Exception:
                 pass
 
-    # Truncate all tables to reset state for next test
-    try:
-        await _truncate_all_tables(test_db_pool)
-    except Exception as e:
-        import logging
+    max_truncate_retries = 3
+    for attempt in range(max_truncate_retries):
+        try:
+            await _truncate_all_tables(test_db_pool)
+            break
+        except Exception as e:
+            import logging
 
-        logging.warning(f"Error truncating tables: {e}")
+            if attempt < max_truncate_retries - 1:
+                logging.debug(f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}")
+                await asyncio.sleep(0.1 * (attempt + 1))
+            else:
+                logging.warning(f"Error truncating tables after {max_truncate_retries} attempts: {e}")
 
 
 @pytest.fixture(autouse=True)

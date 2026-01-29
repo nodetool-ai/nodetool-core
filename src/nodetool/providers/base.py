@@ -15,10 +15,7 @@ from typing import (
     AsyncIterator,
     Callable,
     ClassVar,
-    List,
     Sequence,
-    Set,
-    Type,
 )
 
 import numpy as np
@@ -26,6 +23,7 @@ import numpy as np
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -55,6 +53,7 @@ class ProviderCapability(str, Enum):
 
     GENERATE_MESSAGE = "generate_message"  # Single message generation
     GENERATE_MESSAGES = "generate_messages"  # Streaming message generation
+    GENERATE_EMBEDDING = "generate_embedding"  # Text → Embedding vectors
     TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
@@ -63,13 +62,13 @@ class ProviderCapability(str, Enum):
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
 
 
-_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = {}
+_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[type["BaseProvider"], dict[str, Any]]] = {}
 
 
 def register_provider(
     provider: ProviderEnum,
     **kwargs: Any,
-) -> Callable[[Type["BaseProvider"]], Type["BaseProvider"]]:
+) -> Callable[[type["BaseProvider"]], type["BaseProvider"]]:
     """Decorator to register a Provider implementation.
 
     Args:
@@ -80,7 +79,7 @@ def register_provider(
         Decorator function for registering the provider class
     """
 
-    def decorator(cls: Type["BaseProvider"]) -> Type["BaseProvider"]:
+    def decorator(cls: type["BaseProvider"]) -> type["BaseProvider"]:
         _PROVIDER_REGISTRY[provider] = (cls, kwargs)
         return cls
 
@@ -89,7 +88,7 @@ def register_provider(
 
 def get_registered_provider(
     provider: ProviderEnum,
-) -> tuple[Type["BaseProvider"], dict[str, Any]]:
+) -> tuple[type["BaseProvider"], dict[str, Any]]:
     """Get a registered provider class and its configuration.
 
     Args:
@@ -136,6 +135,7 @@ class BaseProvider:
     _CAPABILITY_METHODS: ClassVar[dict[ProviderCapability, str]] = {
         ProviderCapability.GENERATE_MESSAGE: "generate_message",
         ProviderCapability.GENERATE_MESSAGES: "generate_messages",
+        ProviderCapability.GENERATE_EMBEDDING: "generate_embedding",
         ProviderCapability.TEXT_TO_IMAGE: "text_to_image",
         ProviderCapability.IMAGE_TO_IMAGE: "image_to_image",
         ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
@@ -145,9 +145,8 @@ class BaseProvider:
     }
 
     log_file: str | None = None
-    cost: float = 0.0
     provider_name: str = ""
-    usage: dict[str, Any] = {}
+    usage: ClassVar[dict[str, Any]] = {}
 
     @classmethod
     def required_secrets(cls) -> list[str]:
@@ -156,6 +155,57 @@ class BaseProvider:
 
     def __init__(self, secrets: dict[str, str] | None = None):
         self.secrets = secrets or {}
+        self.cost = 0.0  # Instance cost tracking
+        self._usage_info: Any = None
+
+    def track_usage(
+        self,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_tokens: int = 0,
+        input_characters: int = 0,
+        duration_seconds: float = 0.0,
+        image_count: int = 0,
+    ) -> float:
+        """
+        Track usage and calculate cost for the current operation.
+
+        This method should be called by provider implementations after
+        each API call to record usage and accumulate cost.
+
+        Args:
+            model: The model used
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            cached_tokens: Number of cached tokens
+            input_characters: Number of input characters (for TTS)
+            duration_seconds: Duration in seconds (for ASR)
+            image_count: Number of images generated
+
+        Returns:
+            The cost of this operation in credits
+        """
+        from nodetool.providers.cost_calculator import CostCalculator, UsageInfo
+
+        usage = UsageInfo(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            input_characters=input_characters,
+            duration_seconds=duration_seconds,
+            image_count=image_count,
+        )
+        self._usage_info = usage
+
+        cost = CostCalculator.calculate(model, usage, provider=self.provider_name)
+        self.cost += cost
+        return cost
+
+    def reset_cost(self) -> None:
+        """Reset accumulated cost to zero."""
+        self.cost = 0.0
+        self._usage_info = None
 
     async def log_provider_call(
         self,
@@ -225,7 +275,7 @@ class BaseProvider:
             # Don't fail the API call if logging fails
             log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
 
-    def get_capabilities(self) -> Set[ProviderCapability]:
+    def get_capabilities(self) -> set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""
         return {
             capability
@@ -246,7 +296,7 @@ class BaseProvider:
         """Return environment variables needed when running inside Docker."""
         return {}
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Get a list of available language models for this provider.
 
         This method should return all language models that are available for use with this provider.
@@ -262,7 +312,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Get a list of available image models for this provider.
 
         This method should return all image models that are available for use with this provider.
@@ -277,7 +327,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """Get a list of available text-to-speech models for this provider.
 
         This method should return all TTS models that are available for use with this provider.
@@ -292,7 +342,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """Get a list of available automatic speech recognition models for this provider.
 
         This method should return all ASR models that are available for use with this provider.
@@ -307,7 +357,7 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get a list of available video generation models for this provider.
 
         This method should return all video models that are available for use with this provider.
@@ -322,17 +372,30 @@ class BaseProvider:
         """
         return []
 
-    async def get_available_models(
-        self,
-    ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
-        """Get a list of all available models for this provider.
-
-        Returns language, image, TTS, ASR, and video models combined. Use get_available_language_models(),
-        get_available_image_models(), get_available_tts_models(), get_available_asr_models(), or
-        get_available_video_models() to filter to specific model types.
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """Get a list of available embedding models for this provider.
+        The implementation may check for API keys, local cache, or other requirements.
 
         Returns:
-            List containing LanguageModel, ImageModel, TTSModel, ASRModel, and VideoModel instances
+            List of EmbeddingModel instances available for this provider.
+            Returns empty list if provider doesn't support embeddings.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(
+        self,
+    ) -> list[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel | EmbeddingModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, TTS, ASR, video, and embedding models combined. Use get_available_language_models(),
+        get_available_image_models(), get_available_tts_models(), get_available_asr_models(),
+        get_available_video_models(), or get_available_embedding_models() to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, TTSModel, ASRModel, VideoModel, and EmbeddingModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -342,7 +405,8 @@ class BaseProvider:
         tts_models = await self.get_available_tts_models()
         asr_models = await self.get_available_asr_models()
         video_models = await self.get_available_video_models()
-        return language_models + image_models + tts_models + asr_models + video_models  # type: ignore
+        embedding_models = await self.get_available_embedding_models()
+        return language_models + image_models + tts_models + asr_models + video_models + embedding_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -506,7 +570,7 @@ class BaseProvider:
         except Exception as e:
             print(f"Error logging API response: {e}")
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -591,7 +655,7 @@ class BaseProvider:
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability")
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams, but imported later to avoid circular deps
@@ -724,7 +788,7 @@ class BaseProvider:
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability")
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToVideoParams, but imported later to avoid circular deps
@@ -760,6 +824,32 @@ class BaseProvider:
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability")
 
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs: Any,
+    ) -> list[list[float]]:
+        """Generate embedding vectors for the given text input(s).
+
+        Only implemented by providers with GENERATE_EMBEDDING capability.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier for embedding generation (e.g., "text-embedding-3-small")
+            **kwargs: Additional provider-specific parameters (e.g., dimensions)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+            Each embedding is a list of floats representing the vector.
+
+        Raises:
+            NotImplementedError: If provider doesn't support GENERATE_EMBEDDING capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If embedding generation fails
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_EMBEDDING capability")
+
 
 class MockProvider(BaseProvider):
     """
@@ -793,11 +883,11 @@ class MockProvider(BaseProvider):
         else:
             raise IndexError("MockProvider has run out of predefined responses.")
 
-    async def get_available_models(self) -> List[LanguageModel]:
+    async def get_available_models(self) -> list[LanguageModel]:  # type: ignore[override]
         """Mock provider has no models."""
         return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -826,7 +916,7 @@ class MockProvider(BaseProvider):
 
         return response
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

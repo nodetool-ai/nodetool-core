@@ -57,7 +57,7 @@ from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import click
@@ -65,20 +65,16 @@ import httpx
 import requests
 import tomli
 import tomlkit
-from huggingface_hub import ModelInfo
 from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.huggingface_models import (
-    fetch_model_info,
-    has_model_index,
-    model_type_from_model_info,
-    size_on_disk,
-)
+
+if TYPE_CHECKING:
+    from huggingface_hub import ModelInfo
 from nodetool.metadata.node_metadata import ExampleMetadata, NodeMetadata, PackageModel
-from nodetool.packages.types import AssetInfo, PackageInfo
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.packages.package_types import AssetInfo, PackageInfo
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.model import UnifiedModel
 from nodetool.types.workflow import Workflow
 
@@ -100,7 +96,7 @@ def json_serializer(obj: Any) -> dict:
     raise TypeError("Type not serializable")
 
 
-def validate_repo_id(repo_id: str) -> Tuple[bool, Optional[str]]:
+def validate_repo_id(repo_id: str) -> tuple[bool, Optional[str]]:
     """
     Validate that a repo_id follows the <owner>/<project> format.
 
@@ -197,7 +193,7 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     )
 
 
-def get_package_manager_command() -> List[str]:
+def get_package_manager_command() -> list[str]:
     """
     Return the appropriate package manager command (uv or pip).
 
@@ -238,11 +234,11 @@ class Registry:
         self._node_cache = None  # Cache for node metadata
         self._packages_cache = None  # Cache for installed packages
         self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
-        self._example_search_cache: Optional[Dict[str, Any]] = None
+        self._example_search_cache: Optional[dict[str, Any]] = None
         self._index_available = None  # Cache for package index availability
         self.logger = log
 
-    def list_installed_packages(self) -> List[PackageModel]:
+    def list_installed_packages(self) -> list[PackageModel]:
         """List all installed node packages."""
         if self._packages_cache is None:
             self._packages_cache = discover_node_packages()
@@ -255,7 +251,7 @@ class Registry:
             None,
         )
 
-    def list_available_packages(self) -> List[PackageInfo]:
+    def list_available_packages(self) -> list[PackageInfo]:
         """
         List all available packages from the registry.
 
@@ -328,7 +324,7 @@ class Registry:
         else:
             return f"pip install git+https://github.com/{repo_id}"
 
-    def get_package_installation_info(self, repo_id: str) -> Dict[str, Any]:
+    def get_package_installation_info(self, repo_id: str) -> dict[str, Any]:
         """Get comprehensive installation information for a package.
 
         Args:
@@ -350,7 +346,7 @@ class Registry:
             "package_index_url": PACKAGE_INDEX_URL,
         }
 
-    async def search_nodes(self, query: str = "") -> List[Dict[str, Any]]:
+    async def search_nodes(self, query: str = "") -> list[dict[str, Any]]:
         """
         Search for nodes across all available packages asynchronously.
 
@@ -381,7 +377,7 @@ class Registry:
             if query in node.get("name", "").lower() or query in node.get("description", "").lower()
         ]
 
-    async def _fetch_all_nodes_async(self) -> List[Dict[str, Any]]:
+    async def _fetch_all_nodes_async(self) -> list[dict[str, Any]]:
         """
         Fetch node metadata from all available packages asynchronously.
 
@@ -417,7 +413,7 @@ class Registry:
 
         return all_nodes
 
-    async def _fetch_package_nodes(self, client: httpx.AsyncClient, url: str, repo_id: str) -> List[Dict[str, Any]]:
+    async def _fetch_package_nodes(self, client: httpx.AsyncClient, url: str, repo_id: str) -> list[dict[str, Any]]:
         """
         Fetch node metadata for a single package.
 
@@ -499,7 +495,7 @@ class Registry:
 
         return all_nodes
 
-    def find_node_by_type(self, node_type: str) -> Optional[Dict[str, Any]]:
+    def find_node_by_type(self, node_type: str) -> Optional[dict[str, Any]]:
         """
         Find a node by its type identifier from installed packages.
 
@@ -622,7 +618,7 @@ class Registry:
             ExampleWorkflow: The loaded example workflow with metadata
         """
         try:
-            with open(file_path) as f:
+            with open(file_path, encoding="utf-8") as f:
                 props = json.load(f)
                 props["package_name"] = package_name
                 if not Environment.is_production():
@@ -646,7 +642,7 @@ class Registry:
                 path=file_path,
             )
 
-    def _load_examples_from_directory(self, directory: str, package_name: str) -> List[ExampleMetadata]:
+    def _load_examples_from_directory(self, directory: str, package_name: str) -> list[ExampleMetadata]:
         """
         Load all example workflows from a directory.
 
@@ -695,7 +691,7 @@ class Registry:
         self.clear_examples_cache()
         self.clear_index_cache()
 
-    def list_examples(self) -> List[Workflow]:
+    def list_examples(self) -> list[Workflow]:
         """
         List all example workflows from installed packages.
 
@@ -804,7 +800,7 @@ class Registry:
 
         return workflow
 
-    def _load_assets_from_directory(self, directory: str, package_name: str) -> List[AssetInfo]:
+    def _load_assets_from_directory(self, directory: str, package_name: str) -> list[AssetInfo]:
         """
         Load all asset files from a directory.
 
@@ -825,7 +821,7 @@ class Registry:
         if not os.path.exists(package_dir):
             return []
 
-        assets: List[AssetInfo] = []
+        assets: list[AssetInfo] = []
         for name in os.listdir(package_dir):
             if name.startswith("_"):
                 continue
@@ -833,7 +829,7 @@ class Registry:
 
         return assets
 
-    def list_assets(self) -> List[AssetInfo]:
+    def list_assets(self) -> list[AssetInfo]:
         """
         List all asset files from installed packages.
 
@@ -915,7 +911,7 @@ class Registry:
         self._examples_cache[cache_key] = workflow
         return workflow
 
-    def search_example_workflows(self, query: str = "") -> List[Workflow]:
+    def search_example_workflows(self, query: str = "") -> list[Workflow]:
         """
         Search for example workflows that contain nodes matching the query.
 
@@ -970,8 +966,10 @@ class Registry:
         return matching_workflows
 
 
-def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | None:
+def _model_size_from_info(model: UnifiedModel, model_info: "ModelInfo") -> int | None:
     """Calculate model size using HF metadata, respecting optional path filters."""
+    from nodetool.integrations.huggingface.huggingface_models import size_on_disk
+
     if model_info is None:
         return None
 
@@ -994,6 +992,12 @@ def _model_size_from_info(model: UnifiedModel, model_info: ModelInfo) -> int | N
 
 async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool = False) -> None:
     """Fetch HF model metadata to populate recommended model details (size, tags, etc.)."""
+    from nodetool.integrations.huggingface.huggingface_models import (
+        fetch_model_info,
+        has_model_index,
+        model_type_from_model_info,
+    )
+
     repo_to_models: dict[str, list[UnifiedModel]] = defaultdict(list)
     for node in nodes:
         for model in node.recommended_models or []:
@@ -1009,7 +1013,7 @@ async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool
         return_exceptions=True,
     )
 
-    model_info_map: dict[str, ModelInfo] = {}
+    model_info_map: dict[str, "ModelInfo"] = {}
     for repo_id, info in zip(repo_ids, results, strict=False):
         if isinstance(info, Exception):
             if verbose:
@@ -1153,7 +1157,7 @@ def discover_node_packages() -> list[PackageModel]:
     return packages
 
 
-def get_nodetool_package_source_folders() -> List[Path]:
+def get_nodetool_package_source_folders() -> list[Path]:
     """
     Get a list of all editable source folders from nodetool packages.
 

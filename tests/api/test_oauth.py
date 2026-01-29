@@ -208,9 +208,7 @@ async def test_oauth_callback_invalid_state(client):
 @pytest.mark.asyncio
 async def test_oauth_callback_error(client):
     """Test OAuth callback with error from provider."""
-    response = client.get(
-        "/api/oauth/hf/callback?error=access_denied&error_description=User+denied+access"
-    )
+    response = client.get("/api/oauth/hf/callback?error=access_denied&error_description=User+denied+access")
 
     assert response.status_code == 200
     assert "access_denied" in response.text
@@ -301,9 +299,7 @@ async def test_refresh_huggingface_token_success(user_id):
     }
 
     with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
 
         success = await refresh_huggingface_token(user_id, account_id)
 
@@ -341,9 +337,7 @@ async def test_get_huggingface_whoami_success(user_id):
     }
 
     with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
 
         whoami_data = await get_huggingface_whoami(user_id, account_id)
 
@@ -395,9 +389,7 @@ async def test_oauth_whoami_endpoint(client, headers, user_id):
     }
 
     with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
 
         response = client.get(f"/api/oauth/hf/whoami?account_id={account_id}", headers=headers)
 
@@ -443,9 +435,7 @@ async def test_github_oauth_credential_create_and_find(user_id):
     assert credential.username == "testgithubuser"
 
     # Find the credential
-    found = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="github", account_id="12345678"
-    )
+    found = await OAuthCredential.find_by_account(user_id=user_id, provider="github", account_id="12345678")
 
     assert found is not None
     assert found.id == credential.id
@@ -494,9 +484,7 @@ async def test_github_oauth_callback_invalid_state(client):
 @pytest.mark.asyncio
 async def test_github_oauth_callback_error(client):
     """Test GitHub OAuth callback with error from provider."""
-    response = client.get(
-        "/api/oauth/github/callback?error=access_denied&error_description=User+denied+access"
-    )
+    response = client.get("/api/oauth/github/callback?error=access_denied&error_description=User+denied+access")
 
     assert response.status_code == 200
     assert "access_denied" in response.text
@@ -622,9 +610,7 @@ async def test_get_github_user_info_success(user_id):
     }
 
     with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
 
         user_info = await get_github_user_info(user_id, account_id)
 
@@ -661,9 +647,7 @@ async def test_github_user_endpoint(client, headers, user_id):
     }
 
     with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
 
         response = client.get(f"/api/oauth/github/user?account_id={account_id}", headers=headers)
 

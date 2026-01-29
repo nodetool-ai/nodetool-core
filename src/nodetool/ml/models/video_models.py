@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import asyncio
-from typing import List
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import VideoModel
@@ -10,7 +8,7 @@ from nodetool.providers import list_providers
 log = get_logger(__name__)
 
 
-async def get_all_video_models(user_id: str) -> List[VideoModel]:
+async def get_all_video_models(user_id: str) -> list[VideoModel]:
     """
     Get all video models from all registered providers.
     Results are cached for 6 hours to reduce API calls.

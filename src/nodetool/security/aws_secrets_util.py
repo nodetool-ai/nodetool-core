@@ -102,7 +102,6 @@ class AWSSecretsUtil:
             The master key if found, None otherwise.
         """
         try:
-            from botocore.exceptions import ClientError
 
             client = AWSSecretsUtil.get_aws_client(region)
 
@@ -214,9 +213,11 @@ def main():
         if args.key:
             master_key = args.key
         else:
+            import asyncio
+
             from nodetool.security.master_key import MasterKeyManager
 
-            master_key = MasterKeyManager.export_master_key()
+            master_key = asyncio.run(MasterKeyManager.export_master_key())
 
         success = util.store_master_key(args.secret_name, master_key, args.region)
         sys.exit(0 if success else 1)

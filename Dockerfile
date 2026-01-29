@@ -1,11 +1,6 @@
-FROM nvidia/cuda:12.6.0-base-ubuntu22.04 AS base
+FROM ubuntu:22.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
-# Note: llama-server is optional and may not be available on all platforms
-# If you need llama-server support, you can add this line manually:
-COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /app/llama-server /usr/local/bin/llama-server
-
-# Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     LC_ALL=C.UTF-8 \
@@ -31,6 +26,7 @@ RUN rm -rf /var/lib/apt/lists/* && \
     git \
     wget \
     curl \
+    python3-pip \
     # System Libraries often needed for Python compilation or packages
     libssl-dev \
     libffi-dev \
@@ -63,20 +59,7 @@ RUN rm -rf /var/lib/apt/lists/* && \
     libxslt1-dev \
     libsqlite3-dev \
     # Document Processing
-    tesseract-ocr && \
-    # Playwright browser dependencies
-    # libgtk-4-1 \
-    # libgraphene-1.0-0 \
-    # libwoff2-1.0.2 \
-    # libevent-2.1-7 \
-    # libgstreamer-gl1.0-0 \
-    # libgstreamer-plugins-bad1.0-0 \
-    # libavif13 \
-    # libharfbuzz-icu0 \
-    # libenchant-2-2 \
-    # libsecret-1-0 \
-    # libhyphen0 \
-    # libmanette-0.2-0 && \
+     tesseract-ocr && \
     # Clean up apt cache
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -92,61 +75,59 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 FROM base AS pip-deps
 
-ARG USE_LOCAL_REPO=0
+ARG USE_LOCAL_REPO=1
 
 # Copy local repository if using local installation
 COPY --chown=root:root . /tmp/nodetool-core
 
-# Install dependencies - either from local repo or from nodetool-registry
-RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
-        echo "Installing from local repository..." && \
-        uv pip install --no-cache-dir \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-            --extra-index-url https://download.pytorch.org/whl/cu128 \
-            nodetool-base nodetool-huggingface && \
-        cd /tmp/nodetool-core && \
-        uv pip install --no-cache-dir \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            --extra-index-url https://download.pytorch.org/whl/cu128 \
-            -e . ; \
-    else \
-        echo "Installing from nodetool-registry..." && \
-        uv pip install --no-cache-dir \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-            --extra-index-url https://download.pytorch.org/whl/cu128 \
-            nodetool-core==0.6.2-rc.17 nodetool-base==0.6.2-rc.17 nodetool-huggingface==0.6.2-rc.17 ; \
-    fi && \
-    # Clean up
-    rm -rf /tmp/nodetool-core && \
-    find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /root/.cache/pip && \
-    rm -rf /tmp/* && \
-    rm -rf /var/tmp/*
+    # Install dependencies - either from local repo or from nodetool-registry
+    RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
+            echo "Installing from local repository..." && \
+            uv pip install \
+                --index-strategy unsafe-best-match \
+                --index-url https://pypi.org/simple \
+                --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+                nodetool-base && \
+            cd /tmp/nodetool-core && \
+            uv pip install \
+                --index-strategy unsafe-best-match \
+                --index-url https://pypi.org/simple \
+                -e . ; \
+        else \
+            echo "Installing from nodetool-registry..." && \
+            uv pip install \
+                --index-strategy unsafe-best-match \
+                --index-url https://pypi.org/simple \
+                --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+                nodetool-core==0.6.3-rc.9 nodetool-base==0.6.3-rc.9 ; \
+        fi && \
+        # Clean up
+        rm -rf /tmp/nodetool-core && \
+        find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
+        rm -rf /root/.cache/pip && \
+        rm -rf /tmp/* && \
+        rm -rf /var/tmp/*
 
 FROM base AS final
 
-ARG USE_LOCAL_REPO=0
+ARG USE_LOCAL_REPO=1
 
 COPY --from=pip-deps $VIRTUAL_ENV $VIRTUAL_ENV
 
-# Copy source code if using local repo (for editable install)
+    # Copy source code if using local repo (for editable install)
 COPY --chown=root:root . /app/nodetool-core
 RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
         echo "Reinstalling local repository in final image..." && \
         cd /app/nodetool-core && \
-        uv pip install --no-cache-dir -e . ; \
+        uv pip install -e . ; \
     else \
         rm -rf /app/nodetool-core ; \
     fi
 
-# Install Playwright browsers
+# Install Playwright browsers and system dependencies
 # Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
-RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
+RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install-deps chromium firefox webkit && \
+    TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
     rm -rf /var/tmp/* /tmp/*
 
 # Expose port for the worker

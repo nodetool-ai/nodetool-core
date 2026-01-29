@@ -7,7 +7,7 @@ minimizing token usage while preserving essential information.
 
 from typing import Any
 
-from nodetool.types.graph import Edge, Graph, Node
+from nodetool.types.api_graph import Graph
 
 
 def estimate_tokens(content: str) -> int:

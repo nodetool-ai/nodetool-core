@@ -5,7 +5,7 @@ import os
 import platform
 import sys
 from contextlib import asynccontextmanager
-from typing import Any, ClassVar, List
+from typing import Any, ClassVar
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -111,7 +111,7 @@ def get_nodetool_package_source_folders() -> list[str]:
 
 class ExtensionRouterRegistry:
     _instance = None
-    _routers: ClassVar[List[APIRouter]] = []
+    _routers: ClassVar[list[APIRouter]] = []
 
     def __new__(cls):
         if cls._instance is None:
@@ -125,12 +125,12 @@ class ExtensionRouterRegistry:
             cls._routers.append(router)
 
     @classmethod
-    def get_routers(cls) -> List[APIRouter]:
+    def get_routers(cls) -> list[APIRouter]:
         """Get all registered extension routers."""
         return cls._routers.copy()
 
 
-def _load_default_routers() -> List[APIRouter]:
+def _load_default_routers() -> list[APIRouter]:
     """
     Lazily import and assemble the default routers to avoid heavy imports at
     module import time.
@@ -144,6 +144,7 @@ def _load_default_routers() -> List[APIRouter]:
         file,
         font,
         job,
+        memory,
         message,
         model,
         node,
@@ -151,7 +152,9 @@ def _load_default_routers() -> List[APIRouter]:
         settings,
         storage,
         thread,
+        vibecoding,
         workflow,
+        workspace,
     )
 
     routers: list[APIRouter] = [
@@ -164,12 +167,15 @@ def _load_default_routers() -> List[APIRouter]:
         node.router,
         oauth.router,
         workflow.router,
+        workspace.router,
         storage.router,
         storage.temp_router,
         font.router,
         debug.router,
         job.router,
         settings.router,
+        memory.router,
+        vibecoding.router,
     ]
 
     if not Environment.is_production():
@@ -260,6 +266,10 @@ def create_app(
 
     load_dotenv_files()
 
+    from nodetool.observability.tracing import init_tracing
+
+    init_tracing(service_name="nodetool-api")
+
     # Log loaded environment configuration
     env_name = os.environ.get("ENV", "development")
     log_level = os.environ.get("LOG_LEVEL", "INFO")
@@ -318,8 +328,11 @@ def create_app(
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
 
-    if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
-        raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for production API deployments.")
+    # Run startup security checks to warn about insecure configurations
+    # Import is local to avoid circular imports (security module imports config which may import api)
+    from nodetool.security.startup_checks import run_startup_security_checks
+
+    run_startup_security_checks(raise_on_critical=False)
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
@@ -334,6 +347,19 @@ def create_app(
             except Exception as e:
                 log.error(f"Failed to run database migrations: {e}", exc_info=True)
                 raise
+
+        # Populate mock data if --mock flag is enabled
+        if os.environ.get("NODETOOL_MOCK_MODE") == "1":
+            log.info("Mock mode enabled - populating database with test data")
+            try:
+                from nodetool.api.mock_data import populate_mock_data
+                from nodetool.runtime.resources import ResourceScope
+
+                async with ResourceScope():
+                    result = await populate_mock_data(user_id="1")
+                    log.info(f"Mock data populated successfully: {result}")
+            except Exception as e:
+                log.error(f"Failed to populate mock data: {e}", exc_info=True)
 
         # Start job execution manager cleanup task
         from nodetool.workflows.job_execution_manager import JobExecutionManager
@@ -367,7 +393,7 @@ def create_app(
     app = FastAPI(lifespan=lifespan)
 
     app.add_middleware(
-        CORSMiddleware,
+        CORSMiddleware,  # type: ignore[arg-type]
         allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
@@ -406,7 +432,7 @@ def create_app(
     app.middleware("http")(auth_middleware)
 
     if not RUNNING_PYTEST:
-        app.add_middleware(ResourceScopeMiddleware)
+        app.add_middleware(ResourceScopeMiddleware)  # type: ignore[arg-type]
 
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     if not Environment.is_production():
@@ -566,6 +592,9 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s" if use_color else None
         )
     )
+
+    # Check for insecure authentication configuration when binding to network interfaces
+    Environment.emit_auth_warnings(host, logger=log)
 
     # Uvicorn uses its own logging; keep level name plain for compatibility
     formatter = {

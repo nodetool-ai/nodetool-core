@@ -4,7 +4,6 @@ HTTP header filtering utilities for the async reverse proxy.
 Filters hop-by-hop headers and other headers that should not be forwarded.
 """
 
-from typing import Dict, Set
 
 # RFC 7230: Hop-by-hop headers that must not be forwarded
 HOP_BY_HOP_HEADERS = {
@@ -26,7 +25,7 @@ EXCLUDED_HEADERS = HOP_BY_HOP_HEADERS | {
 }
 
 
-def filter_headers(headers: Dict[str, str], exclude: Set[str] | None = None) -> Dict[str, str]:
+def filter_headers(headers: dict[str, str], exclude: set[str] | None = None) -> dict[str, str]:
     """
     Filter out hop-by-hop and other excluded headers.
 
@@ -43,7 +42,7 @@ def filter_headers(headers: Dict[str, str], exclude: Set[str] | None = None) -> 
     return {k: v for k, v in headers.items() if k.lower() not in exclude}
 
 
-def filter_request_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def filter_request_headers(headers: dict[str, str]) -> dict[str, str]:
     """
     Filter request headers for forwarding to upstream.
 
@@ -58,7 +57,7 @@ def filter_request_headers(headers: Dict[str, str]) -> Dict[str, str]:
     return filter_headers(headers)
 
 
-def filter_response_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def filter_response_headers(headers: dict[str, str]) -> dict[str, str]:
     """
     Filter response headers for returning to client.
 

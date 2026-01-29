@@ -10,7 +10,7 @@ OpenRouter Usage Accounting: https://openrouter.ai/docs/use-cases/usage-accounti
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
 import openai
@@ -133,7 +133,7 @@ class OpenRouterProvider(OpenAIProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available OpenRouter models.
 
@@ -164,7 +164,7 @@ class OpenRouterProvider(OpenAIProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:
@@ -186,7 +186,7 @@ class OpenRouterProvider(OpenAIProvider):
             log.error(f"Error fetching OpenRouter models: {e}")
             return []
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available OpenRouter image generation models.
 
@@ -219,7 +219,7 @@ class OpenRouterProvider(OpenAIProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[ImageModel] = []
+                models: list[ImageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:
@@ -376,7 +376,7 @@ class OpenRouterProvider(OpenAIProvider):
             log.error(f"OpenRouter text-to-image generation failed: {exc}")
             raise RuntimeError(f"OpenRouter text-to-image generation failed: {exc}") from exc
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -519,8 +519,7 @@ class OpenRouterProvider(OpenAIProvider):
             try:
                 return json.loads(args)
             except Exception:
-                log.warning(f"Error parsing tool call arguments: {args}")
-                print(f"Warning: Error parsing tool call arguments: {args}")
+                log.warning("Error parsing tool call arguments: %s", args)
                 return {}
 
         # Create tool calls if present
@@ -549,7 +548,7 @@ class OpenRouterProvider(OpenAIProvider):
 
         return message
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

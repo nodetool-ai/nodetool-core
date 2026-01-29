@@ -6,7 +6,7 @@ import mimetypes
 import os
 import zipfile
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -64,6 +64,8 @@ async def from_model(asset: AssetModel):
         get_url=get_url,
         thumb_url=thumb_url,
         duration=asset.duration,
+        node_id=asset.node_id,
+        job_id=asset.job_id,
     )
 
 
@@ -76,7 +78,7 @@ class PackageAsset(BaseModel):
 
 
 class PackageAssetList(BaseModel):
-    assets: List[PackageAsset]
+    assets: list[PackageAsset]
 
 
 # Constants
@@ -91,6 +93,9 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 async def index(
     parent_id: Optional[str] = None,
     content_type: Optional[str] = None,
+    workflow_id: Optional[str] = None,
+    node_id: Optional[str] = None,
+    job_id: Optional[str] = None,
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
     user: str = Depends(current_user),
@@ -98,16 +103,20 @@ async def index(
 ) -> AssetList:
     """
     Returns all assets for a given user or workflow.
+    Can be filtered by parent_id, content_type, workflow_id, node_id, or job_id.
     """
     if page_size is None:
         page_size = 10000
 
-    if content_type is None and parent_id is None:
+    if content_type is None and parent_id is None and workflow_id is None and node_id is None and job_id is None:
         parent_id = user
 
     assets, next_cursor = await AssetModel.paginate(
         user_id=user,
         parent_id=parent_id,
+        workflow_id=workflow_id,
+        node_id=node_id,
+        job_id=job_id,
         content_type=content_type,
         limit=page_size,
         start_key=cursor,
@@ -383,6 +392,48 @@ async def update(
     return await from_model(asset)
 
 
+@router.post("/{id}/thumbnail")
+async def generate_thumbnail(id: str, user: str = Depends(current_user)):
+    """
+    Generate a thumbnail for a video asset.
+    """
+    asset = await AssetModel.find(user, id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not asset.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Asset is not a video")
+
+    storage = require_scope().get_asset_storage()
+
+    # Download video file
+    video_content = BytesIO()
+    try:
+        await storage.download(asset.file_name, video_content)
+        video_content.seek(0)
+    except Exception as e:
+        log.error(f"Error downloading video asset {id}: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving video file") from e
+
+    # Generate thumbnail
+    try:
+        thumbnail = await create_video_thumbnail(video_content, 512, 512)
+    except Exception as e:
+        log.exception(f"Error generating thumbnail for asset {id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}") from e
+
+    # Upload thumbnail
+    try:
+        if thumbnail:
+            await storage.upload(asset.thumb_file_name, thumbnail)
+    except Exception as e:
+        log.error(f"Error uploading thumbnail for asset {id}: {e}")
+        raise HTTPException(status_code=500, detail="Error uploading thumbnail") from e
+
+    # Return updated asset
+    return await from_model(asset)
+
+
 @router.delete("/{id}")
 async def delete(id: str, user: str = Depends(current_user)):
     """
@@ -405,7 +456,7 @@ async def delete(id: str, user: str = Depends(current_user)):
         raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}") from e
 
 
-async def delete_folder(user_id: str, folder_id: str) -> List[str]:
+async def delete_folder(user_id: str, folder_id: str) -> list[str]:
     deleted_asset_ids = []
     try:
         assets, _next_cursor = await AssetModel.paginate(user_id=user_id, parent_id=folder_id, limit=10000)
@@ -497,6 +548,8 @@ async def create(
             metadata=req.metadata,
             duration=duration,
             size=file_size,
+            node_id=req.node_id,
+            job_id=req.job_id,
         )
         if file_io and storage:
             file_io.seek(0)
@@ -531,9 +584,9 @@ async def download_assets(
     storage = require_scope().get_asset_storage()
 
     # This dictionary will hold all assets to be included in the zip, plus their parents for path construction.
-    all_assets_with_parents: Dict[str, AssetModel] = {}
+    all_assets_with_parents: dict[str, AssetModel] = {}
     # This set will hold just the assets that should be included in the zip file content.
-    assets_to_zip: Dict[str, AssetModel] = {}
+    assets_to_zip: dict[str, AssetModel] = {}
 
     # Step 1: Fetch the requested assets and all their descendants.
     queue = list(req.asset_ids)
@@ -570,7 +623,7 @@ async def download_assets(
             if parent_asset.parent_id and parent_asset.parent_id not in all_assets_with_parents:
                 parents_to_fetch.add(parent_asset.parent_id)
 
-    asset_paths: Dict[str, str] = {}
+    asset_paths: dict[str, str] = {}
 
     def get_asset_path(asset: AssetModel) -> str:
         if asset.id in asset_paths:
@@ -587,7 +640,7 @@ async def download_assets(
 
     async def fetch_asset_content(
         asset: AssetModel,
-    ) -> Tuple[str, BytesIO | None]:
+    ) -> tuple[str, BytesIO | None]:
         try:
             if asset.user_id != user:
                 raise HTTPException(
@@ -619,7 +672,7 @@ async def download_assets(
         content = await fetch_asset_content(asset)
         asset_contents.append(content)
 
-    used_paths: Dict[str, int] = {}
+    used_paths: dict[str, int] = {}
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for file_path, content in asset_contents:
             if file_path and content is not None:

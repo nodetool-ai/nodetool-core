@@ -10,7 +10,7 @@ This module encapsulates:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -25,6 +25,8 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
 
+logger = get_logger("nodetool.deploy")
+
 if TYPE_CHECKING:
     from nodetool.types.workflow import Workflow
 
@@ -37,6 +39,7 @@ _workflow_registry: dict[str, Workflow] = {}
 def get_workflow_by_id(workflow_id: str) -> Workflow:
     """Deprecated: Use WorkflowModel.get and from_model instead."""
     import warnings
+
     warnings.warn(
         "get_workflow_by_id is deprecated. Use WorkflowModel.get and from_model instead.",
         DeprecationWarning,
@@ -110,7 +113,7 @@ def create_workflow_router() -> APIRouter:
 
             context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
-            results: Dict[str, object] = {}
+            results: dict[str, object] = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
                 if isinstance(msg, JobUpdate) and msg.status == "error":
                     raise HTTPException(status_code=500, detail=msg.error)
@@ -127,7 +130,7 @@ def create_workflow_router() -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
-            print(f"Workflow execution error: {e}")
+            logger.error("Workflow execution error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/workflows/{id}/run/stream")
@@ -139,7 +142,7 @@ def create_workflow_router() -> APIRouter:
             context = ProcessingContext(user_id=user, asset_output_mode=AssetOutputMode.DATA_URI)
 
             async def generate_sse():
-                results: Dict[str, object] = {}
+                results: dict[str, object] = {}
                 try:
                     async for msg in run_workflow(req, context=context, use_thread=True):
                         if isinstance(msg, JobUpdate):
@@ -189,7 +192,7 @@ def create_workflow_router() -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
-            print(f"Workflow streaming error: {e}")
+            logger.error("Workflow streaming error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router

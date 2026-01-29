@@ -1,5 +1,5 @@
+import logging
 from importlib import import_module
-from typing import Type
 
 from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.node_tool import NodeTool
@@ -8,13 +8,15 @@ from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.models.workflow import Workflow
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 
+log = logging.getLogger(__name__)
+
 # Tool registry to keep track of all tool subclasses
 _tool_node_registry: dict[str, NodeMetadata] = {}
-_tool_class_registry: dict[str, Type[Tool]] = {}
+_tool_class_registry: dict[str, type[Tool]] = {}
 _builtin_tool_classes_loaded = False
 
 
-def register_tool_class(tool_cls: Type[Tool]) -> None:
+def register_tool_class(tool_cls: type[Tool]) -> None:
     """Register a Tool subclass so it can be resolved by name."""
     name = getattr(tool_cls, "name", None)
     if not name:
@@ -153,7 +155,8 @@ async def resolve_tool_by_name(
         else:
             raise ValueError(f"Workflow tool with tool name {name} not found")
 
-    raise ValueError(f"Tool {name} not found")
+    log.warning(f"Tool {name} not found in registry")
+    return None
 
 
 if __name__ == "__main__":

@@ -2,8 +2,7 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 import aiofiles
 import aiofiles.os
@@ -66,7 +65,7 @@ def ensure_within_root(root: str, path: str, error_message: str) -> str:
 
 
 @router.get("/list")
-async def list_files(path: str = ".", __user: str = Depends(current_user)) -> List[FileInfo]:
+async def list_files(path: str = ".", __user: str = Depends(current_user)) -> list[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
@@ -91,7 +90,7 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> Li
                 # Fetch mtimes concurrently for existing roots
                 mtimes = await asyncio.gather(*[get_drive_mtime(root) for root in existing_roots])
 
-                files: List[FileInfo] = []
+                files: list[FileInfo] = []
                 now_iso = datetime.now(UTC).isoformat()
                 for root, mtime in zip(existing_roots, mtimes, strict=False):
                     modified = datetime.fromtimestamp(mtime, tz=UTC).isoformat() if mtime is not None else now_iso
@@ -161,12 +160,27 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+SENSITIVE_PATHS = {"/etc/passwd", "/etc/shadow", "/root", "/home", "/var/log", "/proc", "/sys"}
+
+
+def _is_safe_download_path(path: str) -> bool:
+    """Check if the path is safe for download (not a sensitive system path)."""
+    abs_path = os.path.abspath(path)
+    return all(not (abs_path == sensitive or abs_path.startswith(sensitive + os.sep)) for sensitive in SENSITIVE_PATHS)
+
+
 @router.get("/download/{path:path}")
 async def download_file(path: str, __user: str = Depends(current_user)):
     """
-    Download a file from the specified path
+    Download a file from the specified path.
+
+    Security Note: This endpoint restricts downloads to prevent access to sensitive
+    system paths like /etc, /root, /proc, etc.
     """
     try:
+        if not _is_safe_download_path(path):
+            raise HTTPException(status_code=403, detail="Access to this path is forbidden")
+
         abs_path = path
         exists = await asyncio.to_thread(os.path.exists, abs_path)
         is_dir = await asyncio.to_thread(os.path.isdir, abs_path)
@@ -218,11 +232,6 @@ async def upload_file(path: str, file: UploadFile, __user: str = Depends(current
 # Workspace-specific endpoints
 
 
-def get_workspace_root() -> str:
-    """Get the root directory for all workspaces"""
-    return os.path.abspath(os.path.expanduser("~/.nodetool-workspaces"))
-
-
 async def get_workspace_info_from_path(workspace_path: str, workspace_id: str) -> WorkspaceInfo:
     """Helper function to get workspace information"""
     try:
@@ -262,188 +271,3 @@ async def get_workspace_info_from_path(workspace_path: str, workspace_id: str) -
     except Exception as e:
         log.error(f"Error getting workspace info for {workspace_path}: {str(e)}")
         raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}") from e
-
-
-@router.get("/workspaces")
-async def list_workspaces(__user: str = Depends(current_user)) -> List[WorkspaceInfo]:
-    """
-    List all workspaces in ~/.nodetool-workspaces
-    """
-    try:
-        workspace_root = get_workspace_root()
-
-        # Create workspace root if it doesn't exist
-        await asyncio.to_thread(os.makedirs, workspace_root, exist_ok=True)
-
-        workspaces = []
-        entries = await aiofiles.os.listdir(workspace_root)
-
-        for entry in entries:
-            # Skip hidden directories
-            if entry.startswith("."):
-                continue
-
-            entry_path = os.path.join(workspace_root, entry)
-            is_dir = await asyncio.to_thread(os.path.isdir, entry_path)
-
-            if is_dir:
-                try:
-                    workspace_info = await get_workspace_info_from_path(entry_path, entry)
-                    workspaces.append(workspace_info)
-                except Exception as e:
-                    log.warning(f"Skipping workspace {entry}: {str(e)}")
-                    continue
-
-        # Sort by modified_at descending (most recent first)
-        workspaces.sort(key=lambda w: w.modified_at, reverse=True)
-
-        return workspaces
-    except Exception as e:
-        log.error(f"Error listing workspaces: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.get("/workspaces/{workspace_id}/info")
-async def get_workspace_info(workspace_id: str, __user: str = Depends(current_user)) -> WorkspaceInfo:
-    """
-    Get information about a specific workspace
-    """
-    try:
-        workspace_root = get_workspace_root()
-        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
-
-        exists = await asyncio.to_thread(os.path.exists, workspace_path)
-        if not exists:
-            raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}")
-
-        return await get_workspace_info_from_path(workspace_path, workspace_id)
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error getting workspace info for {workspace_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.get("/workspaces/{workspace_id}/list")
-async def list_workspace_files(
-    workspace_id: str, path: str = ".", __user: str = Depends(current_user)
-) -> List[FileInfo]:
-    """
-    List files and directories in a workspace, including hidden entries.
-    """
-    try:
-        workspace_root = get_workspace_root()
-        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
-
-        # Construct full path within workspace
-        full_path = workspace_path if path == "." else os.path.join(workspace_path, path)
-
-        resolved_path = ensure_within_root(
-            workspace_path,
-            full_path,
-            "Access denied: path outside workspace",
-        )
-
-        files = []
-
-        entries = await aiofiles.os.listdir(resolved_path)
-        for entry in entries:
-            # Include hidden files in workspace view (unlike general file listing)
-            entry_path = os.path.join(resolved_path, entry)
-            log.info(f"Listing workspace file {entry_path}")
-            try:
-                file_info = await get_file_info(entry_path)
-                files.append(file_info)
-            except Exception as e:
-                log.warning(f"Skipping {entry_path}: {str(e)}")
-                continue
-
-        return files
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error listing workspace files for {workspace_id}/{path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.get("/workspaces/{workspace_id}/download/{file_path:path}")
-async def download_workspace_file(workspace_id: str, file_path: str, __user: str = Depends(current_user)):
-    """
-    Download a file from a workspace
-    """
-    try:
-        workspace_root = get_workspace_root()
-        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
-
-        exists = await asyncio.to_thread(os.path.exists, workspace_path)
-        if not exists:
-            raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace_id}")
-
-        # Construct full file path
-        full_path = ensure_within_root(
-            workspace_path,
-            os.path.join(workspace_path, file_path),
-            "Access denied: path outside workspace",
-        )
-
-        exists = await asyncio.to_thread(os.path.exists, full_path)
-        is_dir = await asyncio.to_thread(os.path.isdir, full_path)
-        if not exists or is_dir:
-            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
-
-        async def file_iterator():
-            chunk_size = 8192  # 8KB chunks
-            async with aiofiles.open(full_path, "rb") as f:
-                while chunk := await f.read(chunk_size):
-                    yield chunk
-
-        return StreamingResponse(
-            file_iterator(),
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{os.path.basename(file_path)}"'},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error downloading file {workspace_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.post("/workspaces/{workspace_id}/upload/{file_path:path}")
-async def upload_workspace_file(
-    workspace_id: str,
-    file_path: str,
-    file: UploadFile,
-    __user: str = Depends(current_user),
-):
-    """
-    Upload a file to a workspace
-    """
-    try:
-        workspace_root = get_workspace_root()
-        workspace_path = os.path.abspath(os.path.join(workspace_root, workspace_id))
-
-        # Create workspace if it doesn't exist
-        await asyncio.to_thread(os.makedirs, workspace_path, exist_ok=True)
-
-        # Construct full file path
-        full_path = ensure_within_root(
-            workspace_path,
-            os.path.join(workspace_path, file_path),
-            "Access denied: path outside workspace",
-        )
-
-        # Create parent directories if needed
-        await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
-
-        # Read and write in chunks to handle large files
-        async with aiofiles.open(full_path, "wb") as f:
-            while chunk := await file.read(8192):
-                await f.write(chunk)
-
-        return await get_file_info(full_path)
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error uploading file to {workspace_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e

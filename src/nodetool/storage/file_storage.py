@@ -53,7 +53,9 @@ class FileStorage(AbstractStorage):
                 stream.write(chunk)
 
     async def upload(self, key: str, content: IO) -> str:
-        async with aiofiles.open(os.path.join(self.base_path, key), "wb") as f:
+        full_path = os.path.join(self.base_path, key)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        async with aiofiles.open(full_path, "wb") as f:
             while True:
                 chunk = content.read(1024 * 1024)  # Read in 1MB chunks
                 if not chunk:
@@ -64,7 +66,9 @@ class FileStorage(AbstractStorage):
 
     def upload_sync(self, key: str, content: IO) -> str:
         async def _write():
-            async with aiofiles.open(os.path.join(self.base_path, key), "wb") as f:
+            full_path = os.path.join(self.base_path, key)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            async with aiofiles.open(full_path, "wb") as f:
                 while True:
                     chunk = content.read(1024 * 1024)
                     if not chunk:

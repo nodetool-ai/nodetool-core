@@ -109,9 +109,7 @@ class OAuthCredential(DBModel):
         )
 
     @classmethod
-    async def find_by_account(
-        cls, user_id: str, provider: str, account_id: str
-    ) -> Optional["OAuthCredential"]:
+    async def find_by_account(cls, user_id: str, provider: str, account_id: str) -> Optional["OAuthCredential"]:
         """
         Find an OAuth credential by user_id, provider, and account_id.
 
@@ -133,9 +131,7 @@ class OAuthCredential(DBModel):
         return results[0] if results else None
 
     @classmethod
-    async def list_for_user_and_provider(
-        cls, user_id: str, provider: str, limit: int = 100
-    ) -> list["OAuthCredential"]:
+    async def list_for_user_and_provider(cls, user_id: str, provider: str, limit: int = 100) -> list["OAuthCredential"]:
         """
         List all OAuth credentials for a user and provider.
 
@@ -204,9 +200,7 @@ class OAuthCredential(DBModel):
         self.encrypted_access_token = SecretCrypto.encrypt(access_token, master_key, self.user_id)
 
         if refresh_token is not None:
-            self.encrypted_refresh_token = SecretCrypto.encrypt(
-                refresh_token, master_key, self.user_id
-            )
+            self.encrypted_refresh_token = SecretCrypto.encrypt(refresh_token, master_key, self.user_id)
 
         if token_type is not None:
             self.token_type = token_type

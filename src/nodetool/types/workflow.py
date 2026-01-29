@@ -1,8 +1,8 @@
-from typing import Any, List
+﻿from typing import Any
 
 from pydantic import BaseModel
 
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 
 class Workflow(BaseModel):
@@ -23,8 +23,10 @@ class Workflow(BaseModel):
     package_name: str | None = None
     path: str | None = None
     run_mode: str | None = None
+    workspace_id: str | None = None
     required_providers: list[str] | None = None
     required_models: list[str] | None = None
+    html_app: str | None = None
 
 
 class WorkflowRequest(BaseModel):
@@ -41,11 +43,13 @@ class WorkflowRequest(BaseModel):
     comfy_workflow: dict[str, Any] | None = None
     settings: dict[str, str | bool | int | float | None] | None = None
     run_mode: str | None = None
+    workspace_id: str | None = None
+    html_app: str | None = None
 
 
 class WorkflowList(BaseModel):
     next: str | None
-    workflows: List[Workflow]
+    workflows: list[Workflow]
 
 
 class WorkflowTool(BaseModel):
@@ -56,7 +60,7 @@ class WorkflowTool(BaseModel):
 
 class WorkflowToolList(BaseModel):
     next: str | None
-    workflows: List[WorkflowTool]
+    workflows: list[WorkflowTool]
 
 
 class WorkflowVersion(BaseModel):
@@ -69,13 +73,15 @@ class WorkflowVersion(BaseModel):
     name: str
     description: str = ""
     graph: Graph
+    save_type: str = "manual"
+    autosave_metadata: dict[str, Any] = {}
 
 
 class WorkflowVersionList(BaseModel):
     """List of workflow versions with pagination support."""
 
     next: str | None
-    versions: List[WorkflowVersion]
+    versions: list[WorkflowVersion]
 
 
 class CreateWorkflowVersionRequest(BaseModel):
@@ -83,3 +89,23 @@ class CreateWorkflowVersionRequest(BaseModel):
 
     name: str = ""
     description: str = ""
+
+
+class AutosaveWorkflowRequest(BaseModel):
+    """Request to autosave a workflow version."""
+
+    save_type: str = "autosave"
+    description: str = ""
+    force: bool = False
+    client_id: str | None = None
+    graph: dict[str, Any] | None = None  # Current workflow graph from frontend
+    max_versions: int | None = None  # Max autosave versions to keep (from user settings)
+
+
+class AutosaveResponse(BaseModel):
+    """Response from an autosave request."""
+
+    version: WorkflowVersion | None = None
+    message: str
+    skipped: bool = False
+

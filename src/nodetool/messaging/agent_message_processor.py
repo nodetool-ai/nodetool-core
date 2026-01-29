@@ -6,7 +6,7 @@ This module provides the processor for agent mode messages.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
@@ -25,7 +25,6 @@ from nodetool.workflows.types import (
     PlanningUpdate,
     StepResult,
     TaskUpdate,
-    TaskUpdateEvent,
 )
 
 from .message_processor import MessageProcessor
@@ -90,7 +89,7 @@ class AgentMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -108,9 +107,10 @@ class AgentMessageProcessor(MessageProcessor):
         selected_tools: list[Tool] = []
         if last_message.tools:
             tool_names = set(last_message.tools)
-            selected_tools = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in tool_names]
             )
+            selected_tools = [t for t in resolved_tools if t is not None]
             log.debug(f"Selected tools for agent: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
@@ -175,12 +175,16 @@ class AgentMessageProcessor(MessageProcessor):
 
                 log.debug(f"Agent yielded item type: {type(item).__name__}")
                 if isinstance(item, Chunk):
+                    # Set thread_id if available
+                    if last_message.thread_id and not item.thread_id:
+                        item.thread_id = last_message.thread_id
                     # Stream chunk to client
                     await self.send_message(
                         {
                             "type": "chunk",
                             "content": item.content,
                             "done": item.done if hasattr(item, "done") else False,
+                            "thread_id": item.thread_id,
                         }
                     )
                 elif isinstance(item, ToolCall):
@@ -189,6 +193,8 @@ class AgentMessageProcessor(MessageProcessor):
                         await self.send_message(
                             {
                                 "type": "tool_call_update",
+                                "thread_id": last_message.thread_id,
+                                "workflow_id": last_message.workflow_id,
                                 "tool_call_id": item.id,
                                 "name": item.name,
                                 "message": f"Calling {item.name}...",
@@ -384,17 +390,41 @@ class AgentMessageProcessor(MessageProcessor):
             )
 
             # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
         except Exception as e:
             log.error(f"Error in agent execution: {e}", exc_info=True)
             error_msg = f"Agent execution error: {str(e)}"
 
             # Send error message to client
-            await self.send_message({"type": "error", "message": error_msg, "error_type": "agent_error"})
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_msg,
+                    "error_type": "agent_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Return error message
             await self.send_message(

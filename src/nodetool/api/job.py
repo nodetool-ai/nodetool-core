@@ -1,9 +1,9 @@
 import asyncio
-from datetime import UTC, datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
@@ -19,15 +19,22 @@ class JobResponse(BaseModel):
     id: str
     user_id: str
     job_type: str
-    status: str
+    status: str | None
     workflow_id: str
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     error: Optional[str] = None
     cost: Optional[float] = None
+    status: Optional[str]
+    suspended_node_id: Optional[str] = None
+    suspension_reason: Optional[str] = None
+    error_message: Optional[str] = None
+    execution_strategy: Optional[str] = None
+    is_resumable: bool = False
 
-    class Config:
-        from_attributes = True
+
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BackgroundJobResponse(BaseModel):
@@ -40,7 +47,7 @@ class BackgroundJobResponse(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    jobs: List[JobResponse]
+    jobs: list[JobResponse]
     next_start_key: Optional[str] = None
 
 
@@ -63,12 +70,11 @@ async def list_jobs(
     Returns:
         List of jobs
     """
-    jobs, next_start_key = await Job.paginate(
-        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key
-    )
+    one_day_ago = datetime.now(UTC) - timedelta(hours=24)
 
-    # Reconcile DB status with the background manager for this page of jobs
-    await reconcile_jobs_for_user(user_id, jobs)
+    jobs, next_start_key = await Job.paginate(
+        user_id=user_id, workflow_id=workflow_id, limit=limit, start_key=start_key, started_after=one_day_ago
+    )
 
     log.info(
         "Jobs API list_jobs",
@@ -82,6 +88,7 @@ async def list_jobs(
         },
     )
 
+    # Status is now directly on the Job model - no join needed
     return JobListResponse(
         jobs=[
             JobResponse(
@@ -94,6 +101,11 @@ async def list_jobs(
                 finished_at=job.finished_at,
                 error=job.error,
                 cost=job.cost,
+                suspended_node_id=job.suspended_node_id,
+                suspension_reason=job.suspension_reason,
+                error_message=job.error_message,
+                execution_strategy=job.execution_strategy,
+                is_resumable=job.is_resumable(),
             )
             for job in jobs
         ],
@@ -118,6 +130,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # Status is now directly on the Job model
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
@@ -128,10 +141,15 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
         finished_at=job.finished_at,
         error=job.error,
         cost=job.cost,
+        suspended_node_id=job.suspended_node_id,
+        suspension_reason=job.suspension_reason,
+        error_message=job.error_message,
+        execution_strategy=job.execution_strategy,
+        is_resumable=job.is_resumable(),
     )
 
 
-@router.get("/running/all", response_model=List[BackgroundJobResponse])
+@router.get("/running/all", response_model=list[BackgroundJobResponse])
 async def list_running_jobs(user_id: str = Depends(current_user)):
     """
     List all currently running background jobs for the current user.
@@ -198,7 +216,7 @@ class TriggerWorkflowResponse(BaseModel):
 
 
 class TriggerWorkflowListResponse(BaseModel):
-    workflows: List[TriggerWorkflowResponse]
+    workflows: list[TriggerWorkflowResponse]
 
 
 @router.get("/triggers/running", response_model=TriggerWorkflowListResponse)
@@ -303,36 +321,38 @@ async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current
     )
 
 
-async def reconcile_jobs_for_user(user_id: str, jobs: List[Job]) -> None:
+async def reconcile_jobs_for_user(user_id: str, jobs: list[Job]) -> None:
     """
     Ensure job status reflects the background execution manager.
-    Syncs completed/failed states from the background manager; marks missing handles as failed.
+    Syncs completed/failed states from Job model and background manager.
     """
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = {job.job_id: job for job in job_manager.list_jobs(user_id=user_id)}
 
     updates = []
     for job in jobs:
         bg_job = bg_jobs.get(job.id)
-        if bg_job is None and job.status in {"running", "starting", "queued"}:
-            job.status = "failed"
-            job.error = job.error or "Reconciled: execution handle missing"
-            job.finished_at = job.finished_at or datetime.now(UTC)
-            updates.append(job.save())
-        elif bg_job is not None and bg_job.is_completed():
+        current_status = job.status
+
+        if bg_job is not None and bg_job.is_completed():
             new_status = getattr(bg_job, "status", "completed")
-            if job.status != new_status or job.finished_at is None:
+            if current_status != new_status or job.completed_at is None:
                 job.status = new_status
-                job.error = job.error or bg_job.error
-                job.finished_at = job.finished_at or datetime.now(UTC)
+                job.error_message = job.error_message or bg_job.error
+                job.completed_at = datetime.now(UTC)
                 updates.append(job.save())
-        elif bg_job is not None and not bg_job.is_running():
-            # Not running but not completed: mark as failed
-            if job.status in {"running", "starting", "queued"}:
-                job.status = "failed"
-                job.error = job.error or "Reconciled: execution handle stopped unexpectedly"
-                job.finished_at = job.finished_at or datetime.now(UTC)
-                updates.append(job.save())
+        elif bg_job is not None and not bg_job.is_running() and current_status in {"running", "scheduled"}:
+            job.status = "failed"
+            job.error_message = job.error_message or "Reconciled: execution handle stopped unexpectedly"
+            job.failed_at = datetime.now(UTC)
+            updates.append(job.save())
+        elif bg_job is None and current_status in {"scheduled", "running"}:
+            # No background job and status indicates it should be running - mark as failed
+            job.status = "failed"
+            job.error_message = "Reconciled: execution handle missing"
+            updates.append(job.save())
 
     if updates:
         await asyncio.gather(*updates)

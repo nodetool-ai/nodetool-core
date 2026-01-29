@@ -22,7 +22,7 @@ from nodetool.integrations.websocket.unified_websocket_runner import (
     WebSocketMode,
 )
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 
@@ -455,9 +455,7 @@ class TestUnifiedWebSocketRunnerAuthentication:
         ):
             # Mock the auth provider
             mock_auth = AsyncMock()
-            mock_auth.verify_token = AsyncMock(
-                return_value=MagicMock(ok=True, user_id="authenticated_user")
-            )
+            mock_auth.verify_token = AsyncMock(return_value=MagicMock(ok=True, user_id="authenticated_user"))
             mock_provider.return_value = mock_auth
 
             runner = UnifiedWebSocketRunner(auth_token="valid_token")

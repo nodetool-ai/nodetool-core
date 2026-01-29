@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import HTTPException, Request, status
 
 from nodetool.config.environment import Environment
@@ -8,23 +10,19 @@ from nodetool.security.auth_provider import TokenType
 log = get_logger(__name__)
 
 
-async def current_user(request: Request = None) -> str:
+async def current_user(request: Request) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
-    if request is not None:
-        user_id = getattr(request.state, "user_id", None)
-        if user_id:
-            return str(user_id)
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return str(user_id)
 
     from nodetool.runtime.resources import get_static_auth_provider
 
     static_provider = get_static_auth_provider()
-    token = None
-    if request is not None:
-        token = static_provider.extract_token_from_headers(request.headers)
+    token = static_provider.extract_token_from_headers(request.headers)
 
-    # Local development fallback when authentication is not enforced.
     if not Environment.enforce_auth():
         if token:
             static_result = await static_provider.verify_token(token)
@@ -34,14 +32,7 @@ async def current_user(request: Request = None) -> str:
                 return static_result.user_id
         return "1"
 
-    if request is None and Environment.enforce_auth():
-        # In enforced mode a Request is required to read headers
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required.",
-        )
-
-    if not token and request is not None:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
@@ -81,7 +72,7 @@ async def current_user(request: Request = None) -> str:
     )
 
 
-async def abort(status_code: int, detail: str | None = None) -> None:
+async def abort(status_code: int, detail: Optional[str] = None) -> None:
     """
     Abort the current request with the given status code and detail.
     """

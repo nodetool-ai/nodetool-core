@@ -5,9 +5,11 @@ Provides disk-based caching for model discovery across all providers.
 Caches model lists with a 6-hour TTL to reduce API calls.
 """
 
+import base64
 import hashlib
-import pickle
+import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -17,6 +19,49 @@ from nodetool.config.settings import get_system_cache_path
 log = get_logger(__name__)
 
 T = TypeVar("T")
+
+
+class CacheJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles bytes, datetime, and other non-serializable types."""
+
+    def default(self, o: Any) -> Any:
+        if isinstance(o, bytes):
+            return {"__bytes__": base64.b64encode(o).decode("ascii")}
+        if isinstance(o, datetime):
+            return {"__datetime__": o.isoformat()}
+        if isinstance(o, set):
+            return {"__set__": list(o)}
+        if hasattr(o, "model_dump"):
+            return {"__pydantic__": {"__model__": type(o).__name__, "__data__": o.model_dump(mode="json")}}
+        try:
+            return super().default(o)
+        except TypeError:
+            return {"__repr__": repr(o)}
+
+
+def _decode_cache_obj(obj: Any) -> Any:
+    """Object hook for json.loads to decode special types."""
+    if isinstance(obj, dict):
+        if "__bytes__" in obj and len(obj) == 1:
+            return base64.b64decode(obj["__bytes__"])
+        if "__datetime__" in obj and len(obj) == 1:
+            return datetime.fromisoformat(obj["__datetime__"])
+        if "__set__" in obj and len(obj) == 1:
+            return set(obj["__set__"])
+        if "__pydantic__" in obj:
+            data = obj["__pydantic__"]
+            if isinstance(data, dict) and "__model__" in data:
+                model_name = data["__model__"]
+                model_data = data["__data__"]
+                try:
+                    from nodetool.types.model import UnifiedModel
+
+                    if model_name == "UnifiedModel":
+                        return UnifiedModel(**model_data)
+                except ImportError:
+                    pass
+            return data
+    return obj
 
 
 class ModelCache:
@@ -56,20 +101,20 @@ class ModelCache:
             return None
 
         try:
-            with open(cache_path, "rb") as f:
-                _stored_key, value, expiry_time = pickle.load(f)
+            with open(cache_path) as f:
+                data = json.load(f, object_hook=_decode_cache_obj)
+                value = data["value"]
+                expiry_time = data["expiry"]
 
             if time.time() < expiry_time:
                 log.debug(f"Cache hit for key: {key}")
                 return value
             else:
-                # Remove expired cache file
                 log.debug(f"Cache expired for key: {key}")
                 cache_path.unlink(missing_ok=True)
                 return None
         except Exception as e:
             log.warning(f"Error reading cache for key {key}: {e}")
-            # Remove corrupted cache file
             cache_path.unlink(missing_ok=True)
             return None
 
@@ -89,9 +134,8 @@ class ModelCache:
             log.debug(
                 f"Attempting to cache key: {key}, value type: {type(value)}, length: {len(value) if hasattr(value, '__len__') else 'N/A'}"
             )
-            with open(cache_path, "wb") as f:
-                # Store key along with value and expiry for pattern matching
-                pickle.dump((key, value, expiry_time), f)
+            with open(cache_path, "w") as f:
+                json.dump({"key": key, "value": value, "expiry": expiry_time}, f, cls=CacheJSONEncoder)
             log.debug(f"✓ Successfully cached value for key: {key} (TTL: {ttl}s) at {cache_path}")
         except Exception as e:
             log.error(f"✗ Error writing cache for key {key}: {e}", exc_info=True)
@@ -124,8 +168,9 @@ class ModelCache:
         deleted_count = 0
         for cache_file in self.cache_dir.glob("*.cache"):
             try:
-                with open(cache_file, "rb") as f:
-                    stored_key, _, _ = pickle.load(f)
+                with open(cache_file) as f:
+                    data = json.load(f, object_hook=_decode_cache_obj)
+                    stored_key = data["key"]
 
                 if fnmatch.fnmatch(stored_key, pattern):
                     cache_file.unlink(missing_ok=True)
@@ -146,7 +191,3 @@ class ModelCache:
         for cache_file in self.cache_dir.glob("*.cache"):
             cache_file.unlink(missing_ok=True)
         log.info("Model cache cleared")
-
-
-# Global cache instance
-_model_cache = ModelCache()

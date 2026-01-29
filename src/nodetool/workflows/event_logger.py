@@ -72,7 +72,11 @@ class WorkflowEventLogger:
                 log.error(f"Error in event flush loop: {e}", exc_info=True)
 
     async def _flush_pending(self):
-        """Flush all pending events from the queue."""
+        """Flush all pending events from the queue.
+
+        Events are flushed with a short timeout to prevent blocking.
+        Failed events are logged but not retried to avoid contention.
+        """
         events_to_flush = []
         while not self._event_queue.empty() and len(events_to_flush) < self.BATCH_SIZE:
             try:
@@ -90,15 +94,23 @@ class WorkflowEventLogger:
                 payload = event_data["payload"]
                 node_id = event_data.get("node_id")
 
-                await RunEvent.append_event(
-                    run_id=self.run_id,
-                    event_type=event_type,
-                    payload=payload,
-                    node_id=node_id,
-                )
-                log.debug(f"Flushed event {event_type} for run {self.run_id}")
+                # Use a short timeout to prevent blocking on database locks
+                try:
+                    await asyncio.wait_for(
+                        RunEvent.append_event(
+                            run_id=self.run_id,
+                            event_type=event_type,
+                            payload=payload,
+                            node_id=node_id,
+                        ),
+                        timeout=2.0,  # 2 second timeout for audit events
+                    )
+                    log.debug(f"Flushed event {event_type} for run {self.run_id}")
+                except TimeoutError:
+                    log.warning(f"Timeout flushing event {event_type} (non-fatal)")
             except Exception as e:
-                log.error(f"Error flushing event: {e}", exc_info=True)
+                # Log but don't retry - these are audit events, not critical
+                log.warning(f"Error flushing event (non-fatal): {e}")
 
     async def log_event(
         self,
@@ -177,6 +189,7 @@ class WorkflowEventLogger:
             event_type="NodeScheduled",
             payload={"node_type": node_type, "attempt": attempt},
             node_id=node_id,
+            blocking=False,
         )
 
     async def log_node_started(
@@ -190,6 +203,7 @@ class WorkflowEventLogger:
             event_type="NodeStarted",
             payload={"attempt": attempt, "inputs": inputs or {}},
             node_id=node_id,
+            blocking=False,
         )
 
     async def log_node_completed(
@@ -204,6 +218,7 @@ class WorkflowEventLogger:
             event_type="NodeCompleted",
             payload={"attempt": attempt, "outputs": outputs or {}, "duration_ms": duration_ms},
             node_id=node_id,
+            blocking=False,
         )
 
     async def log_node_failed(
@@ -218,6 +233,7 @@ class WorkflowEventLogger:
             event_type="NodeFailed",
             payload={"attempt": attempt, "error": error, "retryable": retryable},
             node_id=node_id,
+            blocking=False,
         )
 
     async def log_run_cancelled(self, reason: str = "") -> RunEvent | None:

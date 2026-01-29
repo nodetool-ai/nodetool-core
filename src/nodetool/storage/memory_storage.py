@@ -1,14 +1,14 @@
 import io
 from datetime import datetime
-from typing import IO, AsyncIterator, Dict, Iterator
+from typing import IO, AsyncIterator, Iterator
 
 from nodetool.concurrency.async_iterators import AsyncByteStream
 from nodetool.storage.abstract_storage import AbstractStorage
 
 
 class MemoryStorage(AbstractStorage):
-    storage: Dict[str, bytes]
-    mtimes: Dict[str, datetime]
+    storage: dict[str, bytes]
+    mtimes: dict[str, datetime]
     base_url: str
 
     def __init__(self, base_url: str):

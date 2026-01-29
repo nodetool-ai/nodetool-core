@@ -6,7 +6,7 @@ It processes user input, generates responses, and handles tool calls and their r
 """
 
 import json
-from typing import List, Sequence
+from typing import Sequence
 
 from rich.console import Console
 from rich.status import Status
@@ -97,14 +97,14 @@ async def run_tool(
 
 async def process_regular_chat(
     user_input: str,
-    messages: List[Message],
+    messages: list[Message],
     model: str,
     provider: BaseProvider,
     status: Status,
     context: ProcessingContext,
     console: Console,
     debug_mode: bool = False,
-) -> List[Message]:
+) -> list[Message]:
     """
     Process a user message in regular chat mode (non-agent).
 
@@ -128,7 +128,7 @@ async def process_regular_chat(
     # Process messages
     messages_to_send = messages
 
-    tools: List[Tool] = [
+    tools: list[Tool] = [
         AddLabelToEmailTool(),
         ArchiveEmailTool(),
         BrowserTool(),
@@ -162,7 +162,7 @@ async def process_regular_chat(
                 console.print(chunk.content, end="", highlight=False)
                 if messages[-1].role == "assistant":
                     assert isinstance(messages[-1].content, str)
-                    messages[-1].content += current_chunk
+                    messages[-1].content += current_chunk  # type: ignore[operator]
                 else:
                     messages.append(Message(role="assistant", content=current_chunk))
 

@@ -20,14 +20,10 @@ Key Functions:
     - get_all_collections(): Retrieve all collections with configured embedding functions
 """
 
-from typing import List
 from urllib.parse import urlparse
 
 import chromadb
 from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
-from chromadb.utils.embedding_functions.ollama_embedding_function import (
-    OllamaEmbeddingFunction,
-)
 from chromadb.utils.embedding_functions.sentence_transformer_embedding_function import (
     SentenceTransformerEmbeddingFunction,
 )
@@ -149,8 +145,8 @@ def split_document(
     source_id: str,
     chunk_size: int = 2000,
     chunk_overlap: int = 1000,
-    separators: List[str] = DEFAULT_SEPARATORS,
-) -> List[TextChunk]:
+    separators: list[str] = DEFAULT_SEPARATORS,
+) -> list[TextChunk]:
     """
     Split text using markdown headers and/or chunk size.
 
@@ -188,37 +184,42 @@ def split_document(
     ]
 
 
-def get_all_collections() -> List[chromadb.Collection]:
+def get_all_collections() -> list[chromadb.Collection]:
     """
     Get all collections from the ChromaDB instance.
     Automatically handles embedding model selection for each collection.
 
+    Uses the provider-based embedding functions when a provider is available,
+    falling back to SentenceTransformer for local embeddings.
+
     Returns:
         List[Collection]: List of ChromaDB collections with appropriate embedding functions
     """
+    from nodetool.integrations.vectorstores.chroma.provider_embedding_function import (
+        DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+        get_provider_embedding_function,
+    )
+
     client = get_chroma_client()
     collections = client.list_collections()
 
-    ollama_url = Environment.get("OLLAMA_API_URL")
     result = []
 
     for collection in collections:
-        model = collection.metadata.get("embedding_model")
-        print(model)
+        metadata = collection.metadata or {}
+        model = metadata.get("embedding_model")
+        provider = metadata.get("embedding_provider")
+
         if model:
-            embedding_function = OllamaEmbeddingFunction(
-                url=f"{ollama_url}/api/embeddings", model_name=model, timeout=300
+            log.debug(f"Getting embedding function for collection '{collection.name}' with model '{model}'")
+            embedding_function = get_provider_embedding_function(
+                embedding_model=model,
+                provider=provider,
             )
-            try:
-                embedding_function(["test"])
-            except Exception as e:
-                log.error(f"Failed to connect or use Ollama model '{model}' for collection '{collection.name}': {e}")
-                raise ValueError(
-                    f"Ollama model '{model}' for collection '{collection.name}' not available at {ollama_url}. Error: {e}"
-                ) from e
         else:
+            log.debug(f"No embedding model specified for collection '{collection.name}', using SentenceTransformer")
             embedding_function = SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2",
+                model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
             )
 
         result.append(

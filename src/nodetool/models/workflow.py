@@ -14,7 +14,7 @@ from nodetool.models.condition_builder import (
     Field,
     LogicalOperator,
 )
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 
@@ -55,6 +55,8 @@ class Workflow(DBModel):
     settings: dict[str, Any] | None = DBField(default_factory=dict)
     receive_clipboard: bool | None = DBField(default=False)
     run_mode: str | None = DBField(default=None)
+    workspace_id: str | None = DBField(default=None)  # Optional foreign key to nodetool_workspaces
+    html_app: str | None = DBField(default=None)  # HTML content for the workflow app
 
     def before_save(self):
         """Updates the `updated_at` timestamp before saving."""
@@ -94,6 +96,8 @@ class Workflow(DBModel):
                 },
             ),
             run_mode=data.get("run_mode"),
+            workspace_id=data.get("workspace_id"),
+            html_app=data.get("html_app"),
         )
 
     @classmethod

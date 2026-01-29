@@ -31,7 +31,7 @@ Environment Variables:
 
 import sys
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -284,7 +284,7 @@ def print_gcp_deployment_summary(
     service_name: str,
     region: str,
     project_id: str,
-    deployment_info: Optional[Dict[str, Any]] = None,
+    deployment_info: Optional[dict[str, Any]] = None,
 ) -> None:
     """
     Print a summary of the Google Cloud Run deployment results.

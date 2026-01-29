@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from nodetool.agents.tools.base import Tool
 from nodetool.code_runners.bash_runner import BashDockerRunner
@@ -41,7 +41,7 @@ def _docker_available() -> bool:
     try:
         import docker
 
-        client = docker.from_env()
+        client = docker.from_env()  # type: ignore[attr-defined]
         client.ping()
         return True
     except Exception:

@@ -5,14 +5,15 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Literal, Optional, TYPE_CHECKING, Union
 
-import numpy as np
-import pandas as pd
+if TYPE_CHECKING:
+    import numpy as np
+    import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 #######################
 # Type Name Mappings
@@ -23,7 +24,7 @@ TypeToName = {}
 NameToType = {}
 
 
-def add_type_name(type: Type, name: str):
+def add_type_name(type: type, name: str):
     """
     Adds a type name to the TypeToEnum and EnumToType mappings.
     """
@@ -249,7 +250,7 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
-    metadata: Dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
 
     @staticmethod
     def from_file(path: str):
@@ -382,9 +383,39 @@ class NodeRef(BaseType):
     id: str = ""
 
 
+class FontSource(str, enum.Enum):
+    """Source of a font file."""
+
+    SYSTEM = "system"  # Local system font
+    GOOGLE_FONTS = "google_fonts"  # Google Fonts (auto-downloaded)
+    URL = "url"  # Custom URL to a TTF/OTF file
+
+
 class FontRef(BaseType):
+    """Reference to a font for text rendering.
+
+    Supports three sources:
+    - system: Local system fonts (default, backwards compatible)
+    - google_fonts: Google Fonts that are auto-downloaded and cached
+    - url: Custom URL to a TTF/OTF font file
+
+    Examples:
+        # System font (default behavior)
+        FontRef(name="Arial")
+
+        # Google Font
+        FontRef(name="Roboto", source=FontSource.GOOGLE_FONTS)
+        FontRef(name="Open Sans", source=FontSource.GOOGLE_FONTS, weight="bold")
+
+        # Custom URL
+        FontRef(name="CustomFont", source=FontSource.URL, url="https://example.com/font.ttf")
+    """
+
     type: Literal["font"] = "font"
     name: str = ""
+    source: FontSource = FontSource.SYSTEM
+    url: str = ""  # Custom URL for URL source
+    weight: str = "regular"  # Font weight: regular, bold, italic, etc.
 
 
 class LayoutElement(BaseModel):
@@ -440,11 +471,14 @@ class Provider(str, enum.Enum):
     OpenAI = "openai"
     OpenRouter = "openrouter"
     Anthropic = "anthropic"
+    Cerebras = "cerebras"
+    Groq = "groq"
     MiniMax = "minimax"
     Replicate = "replicate"
     Ollama = "ollama"
     LMStudio = "lmstudio"
     KIE = "kie"
+    Together = "together"
     # Comfy providers (two explicit entries)
     ComfyLocal = "comfy_local"
     ComfyRunpod = "comfy_runpod"
@@ -452,9 +486,12 @@ class Provider(str, enum.Enum):
     LlamaCpp = "llama_cpp"
     Gemini = "gemini"
     VLLM = "vllm"
+    ZAI = "zai"
+    Mistral = "mistral"
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"
+    Fake = "fake"  # fake provider for testing
     HuggingFace = "huggingface"  # local hf models
     # Providers for HuggingFace Inference Providers
     HuggingFaceCohere = "huggingface_cohere"
@@ -625,6 +662,14 @@ class VideoModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+
+
+class EmbeddingModel(BaseType):
+    type: Literal["embedding_model"] = "embedding_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    dimensions: int = 0
 
 
 class LlamaModel(BaseType):
@@ -1443,6 +1488,7 @@ class TorchTensor(BaseType):
         return self.value is None or len(self.value) == 0
 
     def _validate_nbytes(self) -> None:
+        import numpy as np
         assert self.value is not None, "No bytes stored"
         itemsize = np.dtype(self.dtype).itemsize
         expected = int(np.prod(self.shape)) * itemsize
@@ -1454,6 +1500,7 @@ class TorchTensor(BaseType):
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
         import torch
+        import numpy as np
 
         assert self.value is not None, "No bytes stored"
         self._validate_nbytes()
@@ -1494,7 +1541,7 @@ class TorchTensor(BaseType):
         )
 
     @staticmethod
-    def from_numpy(arr: np.ndarray, **kwargs) -> "TorchTensor":
+    def from_numpy(arr: "np.ndarray", **kwargs) -> "TorchTensor":
         import torch
 
         t = torch.from_numpy(arr)
@@ -1502,6 +1549,7 @@ class TorchTensor(BaseType):
 
     @staticmethod
     def from_list(arr: list, **kwargs) -> "TorchTensor":
+        import numpy as np
         np_arr = np.array(arr)
         return TorchTensor.from_numpy(np_arr, **kwargs)
 
@@ -1518,7 +1566,8 @@ class NPArray(BaseType):
     def is_empty(self):
         return self.value is None or len(self.value) == 0
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> "np.ndarray":
+        import numpy as np
         assert self.value is not None
         return np.frombuffer(self.value, dtype=np.dtype(self.dtype)).reshape(self.shape)
 
@@ -1526,16 +1575,18 @@ class NPArray(BaseType):
         return self.to_numpy().tolist()
 
     @staticmethod
-    def from_numpy(arr: np.ndarray, **kwargs):
+    def from_numpy(arr: "np.ndarray", **kwargs):
         return NPArray(value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs)
 
     @staticmethod
     def from_list(arr: list, **_kwargs):
+        import numpy as np
         return NPArray.from_numpy(np.array(arr))
 
 
-def to_numpy(num: float | int | NPArray) -> np.ndarray:
+def to_numpy(num: float | int | NPArray) -> "np.ndarray":
     if type(num) in (float, int, list):
+        import numpy as np
         return np.array(num)
     elif type(num) is NPArray:
         return num.to_numpy()
@@ -1573,7 +1624,7 @@ class DataframeRef(AssetRef):
     data: list[list[Any]] | None = None
 
     @staticmethod
-    def from_pandas(data: pd.DataFrame):
+    def from_pandas(data: "pd.DataFrame"):
         rows = data.values.tolist()
         column_defs = [
             ColumnDef(name=name, data_type=dtype_name(dtype.name))
@@ -1711,8 +1762,34 @@ class MessageDocumentContent(BaseModel):
     document: DocumentRef = DocumentRef()
 
 
+class MessageThoughtContent(BaseModel):
+    """
+    A message content type for storing Gemini thinking/thought content.
+
+    When Gemini's thinking mode is enabled, the model returns thought parts
+    with a cryptographic signature. This signature must be preserved and
+    passed back to the API for multi-turn conversations to verify the
+    authenticity of the thought content.
+
+    See: https://ai.google.dev/gemini-api/docs/thought-signatures
+    """
+
+    type: Literal["thought"] = "thought"
+    text: str = ""
+    thought_signature: bytes | None = None
+    """
+    Cryptographic signature of the thought content from Gemini API.
+    Must be preserved for multi-turn conversations.
+    """
+
+
 MessageContent = (
-    MessageTextContent | MessageImageContent | MessageAudioContent | MessageVideoContent | MessageDocumentContent
+    MessageTextContent
+    | MessageImageContent
+    | MessageAudioContent
+    | MessageVideoContent
+    | MessageDocumentContent
+    | MessageThoughtContent
 )
 
 
@@ -1726,10 +1803,13 @@ class Chunk(BaseType):
 
     type: Literal["chunk"] = "chunk"
     node_id: str | None = None
+    thread_id: str | None = None
+    workflow_id: str | None = None
     content_type: Literal["text", "audio", "image", "video", "document"] = "text"
     content: str = ""
     content_metadata: dict[str, Any] = {}
     done: bool = False
+    thinking: bool = False
 
 
 class MessageFile(BaseModel):
@@ -2271,15 +2351,6 @@ class ChartConfigSchema(BaseModel):
 # Email Types
 #######################
 # Types for handling email data
-
-
-class Email(BaseType):
-    type: Literal["email"] = "email"
-    id: str = Field(default="", description="Message ID")
-    sender: str = Field(default="", description="Sender email address")
-    subject: str = Field(default="", description="Email subject line")
-    date: Datetime = Field(default=Datetime(), description="Email date")
-    body: str | TextRef = Field(default="", description="Email body content")
 
 
 class EmailFlag(str, Enum):

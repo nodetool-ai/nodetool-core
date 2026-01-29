@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
-import socket
 import tempfile
 import time
-import traceback
 import urllib.parse
 import urllib.request
 import uuid
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import requests
 import websocket
+
+logger = logging.getLogger("nodetool.comfy")
 
 # Time to wait between API check attempts in milliseconds
 COMFY_API_AVAILABLE_INTERVAL_MS: int = 50
@@ -35,7 +36,7 @@ COMFY_HOST: str = os.environ.get("COMFYUI_ADDR", "127.0.0.1:8188")
 REFRESH_WORKER: bool = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
 
 
-def _comfy_server_status() -> Dict[str, Any]:
+def _comfy_server_status() -> dict[str, Any]:
     """Return a dictionary with basic reachability info for the ComfyUI HTTP server."""
     try:
         resp = requests.get(f"http://{COMFY_HOST}/", timeout=5)
@@ -65,41 +66,44 @@ def _attempt_websocket_reconnect(
     Raises:
         websocket.WebSocketConnectionClosedException: If reconnection fails after all attempts.
     """
-    print(f"worker-comfyui - Websocket connection closed unexpectedly: {initial_error}. Attempting to reconnect...")
+    logger.info("Websocket connection closed unexpectedly: %s. Attempting to reconnect...", initial_error)
     last_reconnect_error: Exception = initial_error
     for attempt in range(max_attempts):
         srv_status = _comfy_server_status()
         if not srv_status.get("reachable", False):
-            print(
-                "worker-comfyui - ComfyUI HTTP unreachable - aborting websocket reconnect: "
-                f"{srv_status.get('error', 'status ' + str(srv_status.get('status_code')))}"
+            logger.warning(
+                "ComfyUI HTTP unreachable - aborting websocket reconnect: %s",
+                srv_status.get("error", "status " + str(srv_status.get("status_code"))),
             )
             raise websocket.WebSocketConnectionClosedException("ComfyUI HTTP unreachable during websocket reconnect")
 
-        print(
-            f"worker-comfyui - Reconnect attempt {attempt + 1}/{max_attempts}... (ComfyUI HTTP reachable, status {srv_status.get('status_code')})"
-        )
+            logger.info(
+                "Reconnect attempt %d/%d... (ComfyUI HTTP reachable, status %d)",
+                attempt + 1,
+                max_attempts,
+                srv_status.get("status_code"),
+            )
         try:
             new_ws = websocket.WebSocket()
             new_ws.connect(ws_url, timeout=10)
-            print("worker-comfyui - Websocket reconnected successfully.")
+            logger.info("Websocket reconnected successfully.")
             return new_ws
         except (TimeoutError, websocket.WebSocketException, ConnectionRefusedError, OSError) as reconn_err:
             last_reconnect_error = reconn_err
-            print(f"worker-comfyui - Reconnect attempt {attempt + 1} failed: {reconn_err}")
+            logger.warning("Reconnect attempt %d failed: %s", attempt + 1, reconn_err)
             if attempt < max_attempts - 1:
-                print(f"worker-comfyui - Waiting {delay_s} seconds before next attempt...")
+                logger.info("Waiting %d seconds before next attempt...", delay_s)
                 time.sleep(delay_s)
             else:
-                print("worker-comfyui - Max reconnection attempts reached.")
+                logger.info("Max reconnection attempts reached.")
 
-    print("worker-comfyui - Failed to reconnect websocket after connection closed.")
+    logger.info("Failed to reconnect websocket after connection closed.")
     raise websocket.WebSocketConnectionClosedException(
         f"Connection closed and failed to reconnect. Last error: {last_reconnect_error}"
     )
 
 
-def validate_input(job_input: Dict[str, Any] | str | None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def validate_input(job_input: dict[str, Any] | str | None) -> tuple[Optional[dict[str, Any]], Optional[str]]:
     """
     Validates the input for the handler function.
 
@@ -139,12 +143,12 @@ def check_server(url: str, retries: int = 500, delay: int = 50) -> bool:
     """
     Check if a server is reachable via HTTP GET request.
     """
-    print(f"worker-comfyui - Checking API server at {url}...")
+    logger.info("Checking API server at %s...", url)
     for _ in range(retries):
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                print("worker-comfyui - API is reachable")
+                logger.info("API is reachable")
                 return True
         except requests.Timeout:
             pass
@@ -152,21 +156,21 @@ def check_server(url: str, retries: int = 500, delay: int = 50) -> bool:
             pass
         time.sleep(delay / 1000)
 
-    print(f"worker-comfyui - Failed to connect to server at {url} after {retries} attempts.")
+    logger.error("Failed to connect to server at %s after %d attempts.", url, retries)
     return False
 
 
-def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
+def upload_images(images: list[dict[str, str]]) -> dict[str, Any]:
     """
     Upload a list of base64 encoded images to the ComfyUI server using the /upload/image endpoint.
     """
     if not images:
         return {"status": "success", "message": "No images to upload", "details": []}
 
-    responses: List[str] = []
-    upload_errors: List[str] = []
+    responses: list[str] = []
+    upload_errors: list[str] = []
 
-    print(f"worker-comfyui - Uploading {len(images)} image(s)...")
+    logger.info("Uploading %d image(s)...", len(images))
 
     for image in images:
         try:
@@ -186,41 +190,41 @@ def upload_images(images: List[Dict[str, str]]) -> Dict[str, Any]:
             response.raise_for_status()
 
             responses.append(f"Successfully uploaded {name}")
-            print(f"worker-comfyui - Successfully uploaded {name}")
+            logger.info("Successfully uploaded %s", name)
 
         except base64.binascii.Error as e:  # type: ignore[attr-defined]
             error_msg = f"Error decoding base64 for {image.get('name', 'unknown')}: {e}"
-            print(f"worker-comfyui - {error_msg}")
+            logger.error("%s", error_msg)
             upload_errors.append(error_msg)
         except requests.Timeout:
             error_msg = f"Timeout uploading {image.get('name', 'unknown')}"
-            print(f"worker-comfyui - {error_msg}")
+            logger.error("%s", error_msg)
             upload_errors.append(error_msg)
         except requests.RequestException as e:
             error_msg = f"Error uploading {image.get('name', 'unknown')}: {e}"
-            print(f"worker-comfyui - {error_msg}")
+            logger.error("%s", error_msg)
             upload_errors.append(error_msg)
         except Exception as e:
             error_msg = f"Unexpected error uploading {image.get('name', 'unknown')}: {e}"
-            print(f"worker-comfyui - {error_msg}")
+            logger.error("%s", error_msg)
             upload_errors.append(error_msg)
 
     if upload_errors:
-        print("worker-comfyui - image(s) upload finished with errors")
+        logger.warning("Image(s) upload finished with errors")
         return {"status": "error", "message": "Some images failed to upload", "details": upload_errors}
 
-    print("worker-comfyui - image(s) upload complete")
+    logger.info("Image(s) upload complete")
     return {"status": "success", "message": "All images uploaded successfully", "details": responses}
 
 
-def get_available_models() -> Dict[str, List[str]]:
+def get_available_models() -> dict[str, list[str]]:
     """Get list of available models from ComfyUI."""
     try:
         response = requests.get(f"http://{COMFY_HOST}/object_info", timeout=10)
         response.raise_for_status()
         object_info = response.json()
 
-        available_models: Dict[str, List[str]] = {}
+        available_models: dict[str, list[str]] = {}
         if "CheckpointLoaderSimple" in object_info:
             checkpoint_info = object_info["CheckpointLoaderSimple"]
             if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
@@ -230,15 +234,15 @@ def get_available_models() -> Dict[str, List[str]]:
 
         return available_models
     except Exception as e:
-        print(f"worker-comfyui - Warning: Could not fetch available models: {e}")
+        logger.warning("Could not fetch available models: %s", e)
         return {}
 
 
-def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: Optional[str] = None) -> Dict[str, Any]:
+def queue_workflow(workflow: dict[str, Any], client_id: str, comfy_org_api_key: Optional[str] = None) -> dict[str, Any]:
     """
     Queue a workflow to be processed by ComfyUI.
     """
-    payload: Dict[str, Any] = {"prompt": workflow, "client_id": client_id}
+    payload: dict[str, Any] = {"prompt": workflow, "client_id": client_id}
 
     key_from_env = os.environ.get("COMFY_ORG_API_KEY")
     effective_key = comfy_org_api_key if comfy_org_api_key else key_from_env
@@ -250,13 +254,13 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
     response = requests.post(f"http://{COMFY_HOST}/prompt", data=data, headers=headers, timeout=30)
 
     if response.status_code == 400:
-        print(f"worker-comfyui - ComfyUI returned 400. Response body: {response.text}")
+        logger.error("ComfyUI returned 400. Response body: %s", response.text)
         try:
             error_data = response.json()
-            print(f"worker-comfyui - Parsed error data: {error_data}")
+            logger.debug("Parsed error data: %s", error_data)
 
             error_message = "Workflow validation failed"
-            error_details: List[str] = []
+            error_details: list[str] = []
 
             if "error" in error_data:
                 error_info = error_data["error"]
@@ -314,7 +318,7 @@ def queue_workflow(workflow: Dict[str, Any], client_id: str, comfy_org_api_key: 
     return response.json()
 
 
-def get_history(prompt_id: str) -> Dict[str, Any]:
+def get_history(prompt_id: str) -> dict[str, Any]:
     """Retrieve the history for a given prompt ID."""
     response = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
     response.raise_for_status()
@@ -323,26 +327,26 @@ def get_history(prompt_id: str) -> Dict[str, Any]:
 
 def get_image_data(filename: str, subfolder: str, image_type: str) -> Optional[bytes]:
     """Fetch image bytes from the ComfyUI /view endpoint."""
-    print(f"worker-comfyui - Fetching image data: type={image_type}, subfolder={subfolder}, filename={filename}")
+    logger.info("Fetching image data: type=%s, subfolder=%s, filename=%s", image_type, subfolder, filename)
     data = {"filename": filename, "subfolder": subfolder, "type": image_type}
     url_values = urllib.parse.urlencode(data)
     try:
         response = requests.get(f"http://{COMFY_HOST}/view?{url_values}", timeout=60)
         response.raise_for_status()
-        print(f"worker-comfyui - Successfully fetched image data for {filename}")
+        logger.info("Successfully fetched image data for %s", filename)
         return response.content
     except requests.Timeout:
-        print(f"worker-comfyui - Timeout fetching image data for {filename}")
+        logger.error("Timeout fetching image data for %s", filename)
         return None
     except requests.RequestException as e:
-        print(f"worker-comfyui - Error fetching image data for {filename}: {e}")
+        logger.error("Error fetching image data for %s: %s", filename, e)
         return None
-    except Exception as e:
-        print(f"worker-comfyui - Unexpected error fetching image data for {filename}: {e}")
+    except Exception:
+        logger.exception("Unexpected error fetching image data for %s", filename)
         return None
 
 
-def handler(job: Dict[str, Any]) -> Dict[str, Any]:
+def handler(job: dict[str, Any]) -> dict[str, Any]:
     """Handle a job using ComfyUI via websockets for status and image retrieval."""
     job_input = job["input"]
 
@@ -368,15 +372,15 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     ws: Optional[websocket.WebSocket] = None
     client_id = str(uuid.uuid4())
     prompt_id: Optional[str] = None
-    output_data: List[Dict[str, str]] = []
-    errors: List[str] = []
+    output_data: list[dict[str, str]] = []
+    errors: list[str] = []
 
     try:
         ws_url = f"ws://{COMFY_HOST}/ws?clientId={client_id}"
-        print(f"worker-comfyui - Connecting to websocket: {ws_url}")
+        logger.info("Connecting to websocket: %s", ws_url)
         ws = websocket.WebSocket()
         ws.connect(ws_url, timeout=10)
-        print("worker-comfyui - Websocket connected")
+        logger.info("Websocket connected")
 
         try:
             queued_workflow = queue_workflow(
@@ -385,18 +389,18 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             prompt_id = queued_workflow.get("prompt_id")
             if not prompt_id:
                 raise ValueError(f"Missing 'prompt_id' in queue response: {queued_workflow}")
-            print(f"worker-comfyui - Queued workflow with ID: {prompt_id}")
+            logger.info("Queued workflow with ID: %s", prompt_id)
         except requests.RequestException as e:
-            print(f"worker-comfyui - Error queuing workflow: {e}")
+            logger.error("Error queuing workflow: %s", e)
             raise ValueError(f"Error queuing workflow: {e}") from e
         except Exception as e:
-            print(f"worker-comfyui - Unexpected error queuing workflow: {e}")
+            logger.exception("Unexpected error queuing workflow")
             if isinstance(e, ValueError):
                 raise e
             else:
                 raise ValueError(f"Unexpected error queuing workflow: {e}") from e
 
-        print(f"worker-comfyui - Waiting for workflow execution ({prompt_id})...")
+        logger.info("Waiting for workflow execution (%s)...", prompt_id)
         execution_done = False
         while True:
             try:
@@ -405,14 +409,14 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                     message = json.loads(out)
                     if message.get("type") == "status":
                         status_data = message.get("data", {}).get("status", {})
-                        print(
-                            "worker-comfyui - Status update: "
-                            f"{status_data.get('exec_info', {}).get('queue_remaining', 'N/A')} items remaining in queue"
+                        logger.info(
+                            "Status update: %s items remaining in queue",
+                            status_data.get("exec_info", {}).get("queue_remaining", "N/A"),
                         )
                     elif message.get("type") == "executing":
                         data = message.get("data", {})
                         if data.get("node") is None and data.get("prompt_id") == prompt_id:
-                            print(f"worker-comfyui - Execution finished for prompt {prompt_id}")
+                            logger.info("Execution finished for prompt %s", prompt_id)
                             execution_done = True
                             break
                     elif message.get("type") == "execution_error":
@@ -422,13 +426,13 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                                 f"Node Type: {data.get('node_type')}, Node ID: {data.get('node_id')}, "
                                 f"Message: {data.get('exception_message')}"
                             )
-                            print(f"worker-comfyui - Execution error received: {error_details}")
+                            logger.error("Execution error received: %s", error_details)
                             errors.append(f"Workflow execution error: {error_details}")
                             break
                 else:
                     continue
             except websocket.WebSocketTimeoutException:
-                print("worker-comfyui - Websocket receive timed out. Still waiting...")
+                logger.warning("Websocket receive timed out. Still waiting...")
                 continue
             except websocket.WebSocketConnectionClosedException as closed_err:
                 try:
@@ -438,22 +442,22 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                         WEBSOCKET_RECONNECT_DELAY_S,
                         closed_err,
                     )
-                    print("worker-comfyui - Resuming message listening after successful reconnect.")
+                    logger.info("Resuming message listening after successful reconnect.")
                     continue
                 except websocket.WebSocketConnectionClosedException as reconn_failed_err:
                     raise reconn_failed_err
             except json.JSONDecodeError:
-                print("worker-comfyui - Received invalid JSON message via websocket.")
+                logger.warning("Received invalid JSON message via websocket.")
 
         if not execution_done and not errors:
             raise ValueError("Workflow monitoring loop exited without confirmation of completion or error.")
 
-        print(f"worker-comfyui - Fetching history for prompt {prompt_id}...")
+        logger.info("Fetching history for prompt %s...", prompt_id)
         history = get_history(prompt_id or "")
 
         if not prompt_id or prompt_id not in history:
             error_msg = f"Prompt ID {prompt_id} not found in history after execution."
-            print(f"worker-comfyui - {error_msg}")
+            logger.error("%s", error_msg)
             if not errors:
                 return {"error": error_msg}
             else:
@@ -465,26 +469,26 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         if not outputs:
             warning_msg = f"No outputs found in history for prompt {prompt_id}."
-            print(f"worker-comfyui - {warning_msg}")
+            logger.warning("%s", warning_msg)
             if not errors:
                 errors.append(warning_msg)
 
-        print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
+        logger.info("Processing %d output nodes...", len(outputs))
         for node_id, node_output in outputs.items():
             if "images" in node_output:
-                print(f"worker-comfyui - Node {node_id} contains {len(node_output['images'])} image(s)")
+                logger.info("Node %s contains %d image(s)", node_id, len(node_output["images"]))
                 for image_info in node_output["images"]:
                     filename = image_info.get("filename")
                     subfolder = image_info.get("subfolder", "")
                     img_type = image_info.get("type")
 
                     if img_type == "temp":
-                        print(f"worker-comfyui - Skipping image {filename} because type is 'temp'")
+                        logger.info("Skipping image %s because type is 'temp'", filename)
                         continue
 
                     if not filename:
                         warn_msg = f"Skipping image in node {node_id} due to missing filename: {image_info}"
-                        print(f"worker-comfyui - {warn_msg}")
+                        logger.warning("%s", warn_msg)
                         errors.append(warn_msg)
                         continue
 
@@ -498,9 +502,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                                 with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
                                     temp_file.write(image_bytes)
                                     temp_file_path = temp_file.name
-                                print(f"worker-comfyui - Wrote image bytes to temporary file: {temp_file_path}")
+                                logger.info("Wrote image bytes to temporary file: %s", temp_file_path)
 
-                                print(f"worker-comfyui - Uploading {filename} to S3...")
+                                logger.info("Uploading %s to S3...", filename)
                                 # Placeholder for rp_upload usage; integrate as needed
                                 # s3_url = rp_upload.upload_image(job_id, temp_file_path)
                                 # os.remove(temp_file_path)
@@ -508,16 +512,16 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                                 output_data.append({"filename": filename, "type": "file", "data": temp_file_path})
                             except Exception as e:
                                 error_msg = f"Error handling upload for {filename}: {e}"
-                                print(f"worker-comfyui - {error_msg}")
+                                logger.error("%s", error_msg)
                                 errors.append(error_msg)
                         else:
                             try:
                                 base64_image = base64.b64encode(image_bytes).decode("utf-8")
                                 output_data.append({"filename": filename, "type": "base64", "data": base64_image})
-                                print(f"worker-comfyui - Encoded {filename} as base64")
+                                logger.info("Encoded %s as base64", filename)
                             except Exception as e:
                                 error_msg = f"Error encoding {filename} to base64: {e}"
-                                print(f"worker-comfyui - {error_msg}")
+                                logger.error("%s", error_msg)
                                 errors.append(error_msg)
                     else:
                         error_msg = f"Failed to fetch image data for {filename} from /view endpoint."
@@ -526,48 +530,44 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             other_keys = [k for k in node_output if k != "images"]
             if other_keys:
                 warn_msg = f"Node {node_id} produced unhandled output keys: {other_keys}."
-                print(f"worker-comfyui - WARNING: {warn_msg}")
-                print(
-                    "worker-comfyui - --> If this output is useful, please consider opening an issue on GitHub to discuss adding support."
+                logger.warning("WARNING: %s", warn_msg)
+                logger.info(
+                    "--> If this output is useful, please consider opening an issue on GitHub to discuss adding support."
                 )
 
     except websocket.WebSocketException as e:
-        print(f"worker-comfyui - WebSocket Error: {e}")
-        print(traceback.format_exc())
+        logger.exception("WebSocket Error")
         return {"error": f"WebSocket communication error: {e}"}
     except requests.RequestException as e:
-        print(f"worker-comfyui - HTTP Request Error: {e}")
-        print(traceback.format_exc())
+        logger.exception("HTTP Request Error")
         return {"error": f"HTTP communication error with ComfyUI: {e}"}
     except ValueError as e:
-        print(f"worker-comfyui - Value Error: {e}")
-        print(traceback.format_exc())
+        logger.exception("Value Error")
         return {"error": str(e)}
     except Exception as e:
-        print(f"worker-comfyui - Unexpected Handler Error: {e}")
-        print(traceback.format_exc())
+        logger.exception("Unexpected Handler Error")
         return {"error": f"An unexpected error occurred: {e}"}
     finally:
         if ws and ws.connected:
-            print("worker-comfyui - Closing websocket connection.")
+            logger.info("Closing websocket connection.")
             ws.close()
 
-    final_result: Dict[str, Any] = {}
+    final_result: dict[str, Any] = {}
 
     if output_data:
         final_result["images"] = output_data
 
     if errors:
         final_result["errors"] = errors
-        print(f"worker-comfyui - Job completed with errors/warnings: {errors}")
+        logger.warning("Job completed with errors/warnings: %s", errors)
 
     if not output_data and errors:
-        print("worker-comfyui - Job failed with no output images.")
+        logger.error("Job failed with no output images.")
         return {"error": "Job processing failed", "details": errors}
     elif not output_data and not errors:
-        print("worker-comfyui - Job completed successfully, but the workflow produced no images.")
+        logger.warning("Job completed successfully, but the workflow produced no images.")
         final_result["status"] = "success_no_images"
         final_result["images"] = []
 
-    print(f"worker-comfyui - Job completed. Returning {len(output_data)} image(s).")
+    logger.info("Job completed. Returning %d image(s).", len(output_data))
     return final_result

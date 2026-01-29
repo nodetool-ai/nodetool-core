@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,14 @@ from nodetool.cli import _get_version, cli
 
 # Mark subprocess/CLI tests to run sequentially to avoid conflicts
 pytestmark = pytest.mark.xdist_group(name="subprocess_execution")
+
+
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    src_path = str(Path.cwd() / "src")
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else src_path
+    return env
 
 
 class TestVersionOption:
@@ -34,6 +43,7 @@ class TestVersionOption:
             capture_output=True,
             text=True,
             cwd=Path.cwd(),
+            env=_subprocess_env(),
             check=False,
         )
         assert result.returncode == 0
@@ -94,6 +104,7 @@ class TestInfoCommand:
             capture_output=True,
             text=True,
             cwd=Path.cwd(),
+            env=_subprocess_env(),
             check=False,
         )
         assert result.returncode == 0
@@ -121,6 +132,25 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "info" in result.output
 
+    def test_help_shows_mcp_tool_groups(self):
+        """Test that help output shows MCP tool command groups."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "workflows" in result.output
+        assert "assets" in result.output
+        assert "jobs" in result.output
+
+    def test_mcp_help_shows_subcommands(self):
+        """Test that mcp help includes tool groups and serve."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["mcp", "--help"])
+        assert result.exit_code == 0
+        assert "serve" in result.output
+        assert "workflows" in result.output
+        assert "assets" in result.output
+        assert "jobs" in result.output
+
     def test_info_help(self):
         """Test that info command has its own help."""
         runner = CliRunner()
@@ -128,3 +158,158 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "--json" in result.output
         assert "system" in result.output.lower() or "environment" in result.output.lower()
+
+
+class TestLazyImports:
+    """Tests for ensuring heavy dependencies are lazily imported."""
+
+    def test_workflow_tools_import_is_clean(self):
+        """Test that importing WorkflowTools does not trigger ChromaDB/LangChain load."""
+        script = """
+import sys
+# Ensure we start clean
+modules_before = set(sys.modules.keys())
+
+from nodetool.tools.workflow_tools import WorkflowTools
+
+modules_after = set(sys.modules.keys())
+new_modules = modules_after - modules_before
+
+# Check that heavy modules weren't loaded
+heavy_modules = ['chromadb', 'langchain', 'numpy', 'pandas', 'torch']
+loaded_heavy = [m for m in new_modules if any(m.startswith(h) for h in heavy_modules)]
+
+# We might see numpy if it's used elsewhere, but definitely shouldn't see chromadb
+chroma_loaded = any('chromadb' in m for m in loaded_heavy)
+if chroma_loaded:
+    print(f"FAILED: ChromaDB modules loaded: {[m for m in loaded_heavy if 'chromadb' in m]}")
+    sys.exit(1)
+print("SUCCESS")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd(),
+            env=_subprocess_env(),
+            check=False,
+        )
+        if result.returncode != 0:
+            pytest.fail(f"Lazy import check failed:\n{result.stdout}\n{result.stderr}")
+
+    def test_collection_tools_import_is_clean(self):
+        """Test that importing CollectionTools does not trigger ChromaDB load."""
+        script = """
+import sys
+from nodetool.tools.collection_tools import CollectionTools
+
+# Check for ChromaDB
+chroma_modules = [m for m in sys.modules.keys() if 'chromadb' in m]
+if chroma_modules:
+    print(f"FAILED: ChromaDB modules loaded: {chroma_modules}")
+    sys.exit(1)
+print("SUCCESS")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd(),
+            env=_subprocess_env(),
+            check=False,
+        )
+        if result.returncode != 0:
+            pytest.fail(f"Lazy import check failed:\n{result.stdout}\n{result.stderr}")
+
+
+class TestWorkflowsListDiagnostics:
+    def test_workflows_list_help_includes_debug_threads_option(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["workflows", "list", "--help"])
+        assert result.exit_code == 0
+        assert "--debug-threads" in result.output
+
+    def test_workflows_list_debug_threads_emits_diagnostics(self, monkeypatch: pytest.MonkeyPatch):
+        import click
+
+        import nodetool.cli as cli_mod
+        import nodetool.runtime.db_sqlite as db_sqlite
+        import nodetool.runtime.resources as resources
+        from nodetool.tools.workflow_tools import WorkflowTools
+
+        class DummyScope:
+            async def __aenter__(self):  # noqa: D401
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):  # noqa: D401
+                return None
+
+        async def fake_list_workflows(workflow_type: str, query: str | None, limit: int, user_id: str):
+            return {"workflows": []}
+
+        def fake_diag(*args, **kwargs) -> None:
+            click.echo("[diagnostics] FAKE", err=True)
+
+        shutdown_called = {"value": False}
+
+        async def fake_shutdown_all_sqlite_pools() -> None:
+            shutdown_called["value"] = True
+
+        monkeypatch.setattr(resources, "ResourceScope", DummyScope)
+        monkeypatch.setattr(WorkflowTools, "list_workflows", staticmethod(fake_list_workflows))
+        monkeypatch.setattr(cli_mod, "_print_thread_diagnostics", fake_diag)
+        monkeypatch.setattr(db_sqlite, "shutdown_all_sqlite_pools", fake_shutdown_all_sqlite_pools)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["workflows", "list", "--debug-threads"])
+        assert result.exit_code == 0
+        assert "[diagnostics] FAKE" in result.output
+        assert shutdown_called["value"] is True
+
+
+class TestCliAsyncRunnerCleanup:
+    def test_run_async_shuts_down_sqlite_pools(self, monkeypatch: pytest.MonkeyPatch):
+        import nodetool.cli as cli_mod
+        import nodetool.runtime.db_sqlite as db_sqlite
+
+        called = {"value": False}
+
+        async def fake_shutdown_all_sqlite_pools() -> None:
+            called["value"] = True
+
+        async def do_work() -> int:
+            return 123
+
+        monkeypatch.setattr(db_sqlite, "shutdown_all_sqlite_pools", fake_shutdown_all_sqlite_pools)
+        assert cli_mod._run_async(do_work()) == 123
+        assert called["value"] is True
+    def test_node_tools_import_is_clean(self):
+        """Test that importing node_tools does not trigger heavy imports."""
+        script = """
+import sys
+from nodetool.tools.node_tools import NodeTools
+
+# Check for heavy libs
+heavy_libs = ['numpy', 'torch', 'PIL', 'huggingface_hub']
+loaded_heavy = []
+for m in sys.modules.keys():
+    for h in heavy_libs:
+        if m == h or m.startswith(h + '.'):
+            loaded_heavy.append(m)
+
+if loaded_heavy:
+    print(f"FAILED: Heavy modules loaded: {loaded_heavy}")
+    sys.exit(1)
+
+print("SUCCESS")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd(),
+            env=_subprocess_env(),
+            check=False,
+        )
+        if result.returncode != 0:
+            pytest.fail(f"Lazy import check failed:\n{result.stdout}\n{result.stderr}")

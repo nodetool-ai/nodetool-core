@@ -9,7 +9,7 @@ This module handles deployment to RunPod serverless infrastructure, including:
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nodetool.config.deployment import (
     DeploymentStatus,
@@ -50,7 +50,7 @@ class RunPodDeployer:
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
 
-    def plan(self) -> Dict[str, Any]:
+    def plan(self) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
 
@@ -87,7 +87,7 @@ class RunPodDeployer:
 
         return plan
 
-    def apply(self, dry_run: bool = False) -> Dict[str, Any]:
+    def apply(self, dry_run: bool = False) -> dict[str, Any]:
         """
         Apply the deployment to RunPod.
 
@@ -142,7 +142,7 @@ class RunPodDeployer:
             }
 
             # Call legacy deploy function
-            deploy_to_runpod(**deploy_kwargs)
+            deploy_to_runpod(**deploy_kwargs)  # type: ignore[arg-type]
 
             results["steps"].append("RunPod deployment completed")
 
@@ -168,7 +168,7 @@ class RunPodDeployer:
 
         return results
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """
         Get current deployment status.
 
@@ -216,7 +216,7 @@ class RunPodDeployer:
             "RunPod serverless endpoints don't provide direct log access. Check logs via RunPod web console or API."
         )
 
-    def destroy(self) -> Dict[str, Any]:
+    def destroy(self) -> dict[str, Any]:
         """
         Destroy the deployment (delete endpoint).
 

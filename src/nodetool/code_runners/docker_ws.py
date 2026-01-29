@@ -68,7 +68,7 @@ if __name__ == "__main__":
         'read line; echo "stdout:$line"; echo "stderr:$line" 1>&2',
     ]
 
-    client = docker.from_env()
+    client = docker.from_env()  # type: ignore[attr-defined]
     try:
         client.ping()
     except Exception as e:  # pragma: no cover - environment dependent
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     container = None
     sock = None
     try:
-        api_client = docker.APIClient()
+        api_client = docker.APIClient()  # type: ignore[union-attr]
         container = api_client.create_container(
             image=image,
             command=cmd,

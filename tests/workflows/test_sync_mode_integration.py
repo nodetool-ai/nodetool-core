@@ -3,8 +3,8 @@ from typing import AsyncGenerator, TypedDict
 import pytest
 
 from nodetool.metadata.types import Any
-from nodetool.types.graph import Edge, Node
-from nodetool.types.graph import Graph as ApiGraph
+from nodetool.types.api_graph import Edge, Node
+from nodetool.types.api_graph import Graph as ApiGraph
 from nodetool.workflows.base_node import BaseNode, Preview
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest

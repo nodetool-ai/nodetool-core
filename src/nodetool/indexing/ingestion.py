@@ -8,25 +8,42 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any
 
-import pymupdf
-import pymupdf4llm
 from markitdown import MarkItDown
+
+# Lazy imports for heavy modules (pymupdf takes ~10s to import)
+_pymupdf = None
+_pymupdf4llm = None
+
+def _get_pymupdf():
+    global _pymupdf
+    if _pymupdf is None:
+        import pymupdf
+        _pymupdf = pymupdf
+    return _pymupdf
+
+def _get_pymupdf4llm():
+    global _pymupdf4llm
+    if _pymupdf4llm is None:
+        import pymupdf4llm
+        _pymupdf4llm = pymupdf4llm
+    return _pymupdf4llm
+
 
 if TYPE_CHECKING:
     import chromadb
 
 
 class Document:
-    def __init__(self, text: str, doc_id: str, metadata: Dict[str, str] | None = None):
+    def __init__(self, text: str, doc_id: str, metadata: dict[str, str] | None = None):
         self.text = text
         self.doc_id = doc_id
         self.metadata = metadata or {}
 
 
 def chunk_documents_recursive(
-    documents: List[Document],
+    documents: list[Document],
     chunk_size: int = 4096,
     chunk_overlap: int = 2048,
 ) -> tuple[dict[str, str], list[dict]]:
@@ -44,8 +61,8 @@ def chunk_documents_recursive(
         add_start_index=True,
     )
 
-    ids_docs: Dict[str, str] = {}
-    metadatas: List[dict] = []
+    ids_docs: dict[str, str] = {}
+    metadatas: list[dict] = []
 
     for doc in documents:
         splits = splitter.split_text(doc.text)
@@ -58,7 +75,7 @@ def chunk_documents_recursive(
 
 
 def chunk_documents_markdown(
-    documents: List[Document],
+    documents: list[Document],
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
 ) -> tuple[dict[str, str], list[dict]]:
@@ -77,8 +94,8 @@ def chunk_documents_markdown(
     )
     recursive_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-    ids_docs: Dict[str, str] = {}
-    metadatas: List[dict] = []
+    ids_docs: dict[str, str] = {}
+    metadatas: list[dict] = []
     chunk_index = 0
 
     for doc in documents:
@@ -100,8 +117,8 @@ def default_ingestion_workflow(collection: chromadb.Collection, file_path: str, 
     if mime_type == "application/pdf":
         with open(file_path, "rb") as f:
             pdf_data = f.read()
-            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
-            md_text = pymupdf4llm.to_markdown(doc)
+            doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
+            md_text = _get_pymupdf4llm().to_markdown(doc)
             documents = [Document(text=md_text, doc_id=file_path)]
     else:
         md = MarkItDown()
@@ -129,9 +146,9 @@ async def default_ingestion_workflow_async(collection: Any, file_path: str, mime
         def pdf_to_markdown(path: str) -> str:
             with open(path, "rb") as f:
                 pdf_data = f.read()
-            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
+            doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
             try:
-                return pymupdf4llm.to_markdown(doc)
+                return _get_pymupdf4llm().to_markdown(doc)
             finally:
                 with suppress(Exception):
                     doc.close()
@@ -162,7 +179,7 @@ async def default_ingestion_workflow_async(collection: Any, file_path: str, mime
     )
 
 
-def find_input_nodes(graph: dict) -> Tuple[str | None, str | None]:
+def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
     """Find the collection and file input node names from a workflow graph."""
     collection_input = None
     file_input = None

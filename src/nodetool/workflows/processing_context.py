@@ -4,14 +4,13 @@ import asyncio
 import base64
 import imaplib
 import inspect
-import io
 import json
 import os
-import platform
 import queue
+import threading
 import urllib.parse
 import uuid
-from contextlib import asynccontextmanager, suppress
+from contextlib import suppress
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -21,7 +20,8 @@ from urllib.parse import urlparse
 import httpx
 
 if TYPE_CHECKING:
-    import joblib
+    import builtins
+
     import numpy as np
     import pandas as pd
     import PIL.Image
@@ -30,7 +30,8 @@ if TYPE_CHECKING:
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator
 
-    from nodetool.types.chat import MessageCreateRequest
+    from nodetool.providers.base import BaseProvider, ProviderCapability
+    from nodetool.types.message_types import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.property import Property
     from nodetool.workflows.types import ProcessingMessage
@@ -45,14 +46,12 @@ except ImportError:  # pragma: no cover - playwright is optional
 
 from io import BytesIO
 from pickle import loads
-from typing import IO, Any, AsyncGenerator, Callable, Dict, Set
+from typing import IO, Any, AsyncGenerator, Callable
 
-from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
+# NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
+# heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
@@ -61,6 +60,7 @@ from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
     DataframeRef,
+    FontRef,
     ImageRef,
     Model3DRef,
     ModelRef,
@@ -79,7 +79,29 @@ from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
+from nodetool.workflows.channel import ChannelManager
 from nodetool.workflows.graph import Graph
+from nodetool.workflows.processing_offload import (
+    _audio_segment_from_file,
+    _audio_segment_to_mp3_bytes,
+    _audio_segment_to_numpy,
+    _audio_segment_to_wav_bytes,
+    _b64decode_to_bytes,
+    _b64encode_to_str,
+    _in_thread,
+    _joblib_dump_to_bytes,
+    _joblib_load_from_io,
+    _numpy_audio_to_mp3_bytes,
+    _numpy_image_to_png_bytes,
+    _numpy_video_to_mp4_bytes,
+    _open_image_as_rgb,
+    _pil_to_jpeg_bytes,
+    _pil_to_png_bytes,
+    _pil_to_png_bytes_with_exif,
+    _read_all_bytes_from_start,
+    _read_base64,
+    _read_utf8,
+)
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     detach_tensors_recursively,
@@ -90,6 +112,7 @@ from nodetool.workflows.torch_support import (
 )
 
 log = get_logger(__name__)
+
 
 
 def _ensure_numpy():
@@ -259,7 +282,7 @@ class ProcessingContext:
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
-        ui_tool_names: Set[str] | None = None,
+        ui_tool_names: builtins.set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"
@@ -290,13 +313,15 @@ class ProcessingContext:
         # Store passed client only as fallback if no scope is available
         if http_client is not None:
             self._http_client = http_client
-        self.workspace_dir = workspace_dir or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
+        self.workspace_dir = workspace_dir  # User-defined workspace only; None if not provided
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}
         # Store current status for each node and edge for reconnection
         self.node_statuses: dict[str, ProcessingMessage] = {}
         self.edge_statuses: dict[str, ProcessingMessage] = {}
+        # Streaming channels for named, many-to-many communication
+        self.channels = ChannelManager()
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
@@ -398,33 +423,6 @@ class ProcessingContext:
             raise last_exc
         raise RuntimeError("HTTP request failed without exception")
 
-    async def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
-        """
-        Creates a Gmail connection configuration.
-
-        Args:
-            email_address: Gmail address to connect to
-            app_password: Google App Password for authentication
-
-        Returns:
-            IMAPConnection configured for Gmail
-
-        Raises:
-            ValueError: If email_address or app_password is empty
-        """
-        from nodetool.security.secret_helper import get_secret_required
-
-        if hasattr(self, "_gmail_connection"):
-            return self._gmail_connection
-
-        email_address = await get_secret_required("GOOGLE_MAIL_USER", self.user_id)
-        app_password = await get_secret_required("GOOGLE_APP_PASSWORD", self.user_id)
-
-        imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        imap.login(email_address, app_password)
-        self._gmail_connection = imap
-        return imap
-
     async def get_secret(self, key: str) -> str | None:
         """
         Get a secret value.
@@ -459,22 +457,6 @@ class ProcessingContext:
         provider_enum = Provider(provider_type) if isinstance(provider_type, str) else provider_type
 
         provider = await get_provider(provider_enum, self.user_id)
-
-        # Defensive check: if provider is still awaitable, await it again
-        # This handles edge cases where get_provider might return a coroutine
-        if inspect.isawaitable(provider):
-            log.warning(f"Provider was still awaitable after await, re-awaiting. type={type(provider)}")
-            provider = await provider
-
-        if not hasattr(provider, "generate_messages"):
-            log.error(
-                f"Provider missing generate_messages method. type={type(provider)}, "
-                f"attributes={[x for x in dir(provider) if not x.startswith('_')][:10]}"
-            )
-            raise ValueError(
-                f"Provider {type(provider)} does not have generate_messages method. "
-                f"This indicates get_provider returned an unexpected type."
-            )
 
         return provider
 
@@ -576,7 +558,7 @@ class ProcessingContext:
         Returns:
             The retrieved message from the message queue.
         """
-        return self.message_queue.get()
+        return await _in_thread(self.message_queue.get)
 
     # def pop_message(self) -> ProcessingMessage:
     #     """
@@ -660,6 +642,19 @@ class ProcessingContext:
 
             cache_value = detach_tensors_recursively(result)
             require_scope().get_node_cache().set(key, cache_value, ttl)
+
+    async def cache_result_async(self, node: BaseNode, result: Any, ttl: int = 3600) -> None:
+        """
+        Async variant of cache_result that offloads potentially expensive tensor detaching
+        to a thread to avoid blocking the event loop.
+        """
+        all_cacheable = all(out.type.is_cacheable_type() for out in node.outputs())
+        if not all_cacheable:
+            return
+
+        key = self.generate_node_cache_key(node)
+        cache_value = await _in_thread(detach_tensors_recursively, result)
+        require_scope().get_node_cache().set(key, cache_value, ttl)
 
     async def find_asset(self, asset_id: str):
         """
@@ -843,6 +838,279 @@ class ProcessingContext:
         async for msg in run_prediction_function(prediction, self.environment):
             yield msg
 
+    async def run_provider_prediction(
+        self,
+        node_id: str,
+        provider: Provider | str,
+        model: str,
+        capability: "ProviderCapability",
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Run a prediction using the specified provider and capability.
+
+        This method resolves the provider from the registry, dispatches to the
+        appropriate capability method, and logs the prediction with cost information.
+
+        Args:
+            node_id: The ID of the node making the prediction
+            provider: The provider enum or string name
+            model: The model to use
+            capability: The capability to invoke (GENERATE_MESSAGE, TEXT_TO_IMAGE, etc.)
+            params: Parameters for the prediction
+            **kwargs: Additional arguments passed to the capability method
+
+        Returns:
+            The prediction result
+
+        Raises:
+            ValueError: If the provider doesn't support the requested capability
+        """
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.providers.base import ProviderCapability
+
+        if params is None:
+            params = {}
+
+        # Convert string provider to enum if needed
+        if isinstance(provider, str):
+            provider_enum = Provider(provider)
+        else:
+            provider_enum = provider
+
+        # Get provider instance
+        provider_instance = await self.get_provider(provider_enum)
+
+        # Verify capability
+        if capability not in provider_instance.get_capabilities():
+            raise ValueError(
+                f"Provider {provider_enum} does not support capability {capability}"
+            )
+
+        started_at = datetime.now()
+        cost_before = provider_instance.cost
+
+        try:
+            # Dispatch to appropriate method based on capability
+            result = await self._dispatch_capability(
+                provider_instance, capability, model, params, **kwargs
+            )
+
+            # Calculate cost from provider's accumulated cost
+            cost = provider_instance.cost - cost_before
+
+            # Log the prediction
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="completed",
+                cost=cost,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+
+            return result
+
+        except Exception as e:
+            # Log failed prediction
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="failed",
+                error=str(e),
+                cost=0,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+            raise
+
+    async def _dispatch_capability(
+        self,
+        provider: "BaseProvider",
+        capability: "ProviderCapability",
+        model: str,
+        params: dict[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        """Dispatch to the appropriate provider method based on capability."""
+        from nodetool.providers.base import ProviderCapability
+
+        if capability == ProviderCapability.GENERATE_MESSAGE:
+            messages = params.get("messages", [])
+            tools = params.get("tools", [])
+            max_tokens = params.get("max_tokens", 8192)
+            return await provider.generate_message(
+                messages=messages,
+                model=model,
+                tools=tools,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.GENERATE_EMBEDDING:
+            text = params.get("text", params.get("input", ""))
+            return await provider.generate_embedding(
+                text=text,
+                model=model,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_IMAGE:
+            return await provider.text_to_image(
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_SPEECH:
+            text = params.get("text", params.get("input", ""))
+            voice = params.get("voice")
+            speed = params.get("speed", 1.0)
+            # Collect all chunks into bytes
+            chunks: list[Any] = []
+            async for chunk in provider.text_to_speech(
+                text=text,
+                model=model,
+                voice=voice,
+                speed=speed,
+                context=self,
+                **kwargs,
+            ):
+                chunks.append(chunk)
+            return chunks
+
+        elif capability == ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION:
+            audio = params.get("audio", params.get("file"))
+            language = params.get("language")
+            return await provider.automatic_speech_recognition(
+                audio=audio,
+                model=model,
+                language=language,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.TEXT_TO_VIDEO:
+            return await provider.text_to_video(
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        elif capability == ProviderCapability.IMAGE_TO_VIDEO:
+            image = params.get("image")
+            return await provider.image_to_video(
+                image=image,
+                params=params,
+                context=self,
+                **kwargs,
+            )
+
+        else:
+            raise ValueError(f"Unsupported capability: {capability}")
+
+    async def stream_provider_prediction(
+        self,
+        node_id: str,
+        provider: Provider | str,
+        model: str,
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        """
+        Stream prediction results from a provider.
+
+        Uses GENERATE_MESSAGES capability for streaming chat completions.
+
+        Args:
+            node_id: The ID of the node making the prediction
+            provider: The provider enum or string name
+            model: The model to use
+            params: Parameters for the prediction
+            **kwargs: Additional arguments passed to the capability method
+
+        Yields:
+            Streaming chunks from the provider
+        """
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.providers.base import ProviderCapability
+
+        if params is None:
+            params = {}
+
+        if isinstance(provider, str):
+            provider_enum = Provider(provider)
+        else:
+            provider_enum = provider
+
+        provider_instance = await self.get_provider(provider_enum)
+
+        if ProviderCapability.GENERATE_MESSAGES not in provider_instance.get_capabilities():
+            raise ValueError(
+                f"Provider {provider_enum} does not support streaming (GENERATE_MESSAGES)"
+            )
+
+        started_at = datetime.now()
+        cost_before = provider_instance.cost
+
+        messages = params.get("messages", [])
+        tools = params.get("tools", [])
+        max_tokens = params.get("max_tokens", 8192)
+
+        try:
+            async for chunk in provider_instance.generate_messages(
+                messages=messages,
+                model=model,
+                tools=tools,
+                max_tokens=max_tokens,
+                **kwargs,
+            ):
+                yield chunk
+
+            # Log completed streaming prediction
+            cost = provider_instance.cost - cost_before
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="completed",
+                cost=cost,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+
+        except Exception as e:
+            await PredictionModel.create(
+                user_id=self.user_id,
+                node_id=node_id,
+                provider=str(provider_enum.value),
+                model=model,
+                workflow_id=self.workflow_id,
+                status="failed",
+                error=str(e),
+                cost=0,
+                created_at=started_at,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration=(datetime.now() - started_at).total_seconds(),
+            )
+            raise
+
     async def refresh_uri(self, asset: AssetRef):
         """
         Refreshes the URI of the asset.
@@ -872,6 +1140,7 @@ class ProcessingContext:
         content: IO | None = None,
         parent_id: str | None = None,
         instructions: IO | None = None,
+        node_id: str | None = None,
     ) -> Asset:
         """
         Creates an asset with the given name, content type, content, and optional parent ID.
@@ -881,6 +1150,7 @@ class ProcessingContext:
             content_type (str): The content type of the asset.
             content (IO): The content of the asset.
             parent_id (str | None, optional): The ID of the parent asset. Defaults to None.
+            node_id (str | None, optional): The ID of the node that created this asset. Defaults to None.
 
         Returns:
             Asset: The created asset.
@@ -890,9 +1160,9 @@ class ProcessingContext:
         if content is None:
             raise ValueError("Asset content is required")
 
-        content.seek(0)
-        content_bytes = content.read()
-        content.seek(0)
+        content_bytes = await _in_thread(_read_all_bytes_from_start, content)
+        with suppress(Exception):
+            content.seek(0)
 
         # Create the asset record in the database
         asset = await Asset.create(
@@ -901,6 +1171,8 @@ class ProcessingContext:
             content_type=content_type,
             parent_id=parent_id,
             workflow_id=self.workflow_id,
+            job_id=self.job_id,
+            node_id=node_id,
             size=len(content_bytes),
         )
 
@@ -1089,6 +1361,20 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the file does not exist (for local files).
         """
+        # Handle local storage URLs that are provided as relative API paths
+        if url.startswith("/api/storage/temp/"):
+            key = url.split("/api/storage/temp/", 1)[1]
+            io = BytesIO()
+            await require_scope().get_temp_storage().download(key, io)
+            io.seek(0)
+            return io
+        if url.startswith("/api/storage/"):
+            key = url.split("/api/storage/", 1)[1]
+            io = BytesIO()
+            await require_scope().get_asset_storage().download(key, io)
+            io.seek(0)
+            return io
+
         # Handle paths that start with "/" by converting to proper file:// URI
         if url.startswith("/") and not url.startswith("//"):
             url = create_file_uri(url)
@@ -1099,12 +1385,13 @@ class ProcessingContext:
         if url_parsed.scheme == "" and not url.startswith("data:"):
             local_path = Path(url).expanduser()
             if local_path.exists():
-                return open(local_path, "rb")
+                content = await asyncio.to_thread(local_path.read_bytes)
+                return BytesIO(content)
 
         if url_parsed.scheme == "data":
             fname, data = url.split(",", 1)
-            image_bytes = base64.b64decode(data)
-            file = io.BytesIO(image_bytes)
+            image_bytes = await _in_thread(_b64decode_to_bytes, data)
+            file = BytesIO(image_bytes)
             # parse file ext from data uri
             ext = fname.split(";")[0].split("/")[1]
             file.name = f"{uuid.uuid4()}.{ext}"
@@ -1137,7 +1424,8 @@ class ProcessingContext:
                 if not resolved_path.exists():
                     raise FileNotFoundError(f"No such file or directory: '{resolved_path}'")
 
-                return open(resolved_path, "rb")
+                content = await asyncio.to_thread(resolved_path.read_bytes)
+                return BytesIO(content)
             except Exception as e:
                 raise FileNotFoundError(f"Failed to access file: {e}") from e
 
@@ -1199,7 +1487,7 @@ class ProcessingContext:
         Raises:
             ValueError: If the AssetRef is empty or contains unsupported data.
         """
-        PIL_Image, PIL_ImageOps = _ensure_pil()
+        PIL_Image, _ = _ensure_pil()
         np = _ensure_numpy()
         AudioSegment = _ensure_audio_segment()
 
@@ -1213,67 +1501,27 @@ class ProcessingContext:
                     return BytesIO(obj)
                 elif isinstance(obj, PIL_Image.Image):
                     # Convert PIL Image to PNG bytes
-                    buffer = BytesIO()
-                    obj.save(buffer, format="PNG")
-                    buffer.seek(0)
-                    return buffer
+                    return BytesIO(await _in_thread(_pil_to_png_bytes, obj))
                 elif isinstance(obj, AudioSegment):
                     # Convert AudioSegment to MP3 bytes
-                    buffer = BytesIO()
-                    obj.export(buffer, format="mp3")
-                    buffer.seek(0)
-                    return buffer
+                    return BytesIO(await _in_thread(_audio_segment_to_mp3_bytes, obj))
                 elif isinstance(obj, np.ndarray):
                     # Handle numpy arrays stored in memory depending on the asset type
                     if isinstance(asset_ref, ImageRef):
                         # Encode numpy image array as PNG
-                        img = self._numpy_to_pil_image(obj)
-                        buf = BytesIO()
-                        img.convert("RGB").save(buf, format="PNG")
-                        buf.seek(0)
-                        return buf
+                        return BytesIO(await _in_thread(_numpy_image_to_png_bytes, obj))
                     elif isinstance(asset_ref, AudioRef):
                         # Encode numpy audio array as MP3
-                        # Infer channels: (samples,) -> 1, (samples, channels) -> channels
-                        channels = 1
-                        audio_arr = obj
-                        if audio_arr.ndim == 2:
-                            # pydub expects interleaved samples for multi-channel when building from raw bytes.
-                            # If provided in shape (samples, channels), interleave by reshaping C-order.
-                            channels = audio_arr.shape[1]
-                        # Normalize/convert dtype similarly to audio_from_numpy
-                        if audio_arr.dtype == np.int16:
-                            raw = audio_arr.tobytes()
-                        elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-                            raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
-                        else:
-                            raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
-                        seg = AudioSegment(
-                            data=raw,
-                            frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,  # default sample rate
-                            sample_width=2,  # 16-bit
-                            channels=int(channels),
-                        )
-                        out = BytesIO()
-                        seg.export(out, format="mp3")
-                        out.seek(0)
-                        return out
+                        return BytesIO(await _in_thread(_numpy_audio_to_mp3_bytes, obj))
                     elif isinstance(asset_ref, VideoRef):
                         # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:
-                            # Convert numpy array to list of frames for the utility function
-                            video_frames = list(obj)
-
-                            # Use shared video utility for consistent behavior
-                            video_bytes = _export_to_video_bytes(video_frames, fps=30)
-                            out = BytesIO(video_bytes)
-                            out.seek(0)
-                            return out
+                            return BytesIO(await _in_thread(_numpy_video_to_mp4_bytes, obj, 30))
                         except Exception as e:
                             raise ValueError(f"Failed to encode numpy video: {e}") from e
                     else:
                         # Generic fallback: return raw bytes
-                        return BytesIO(obj.tobytes())
+                        return BytesIO(await _in_thread(obj.tobytes))
                 elif isinstance(obj, str):
                     # Convert string to UTF-8 bytes
                     return BytesIO(obj.encode("utf-8"))
@@ -1291,18 +1539,9 @@ class ProcessingContext:
                 if isinstance(data, bytes):
                     return BytesIO(data)
                 elif isinstance(data, PIL_Image.Image):
-                    buf = BytesIO()
-                    PIL_ImageOps.exif_transpose(data).convert("RGB").save(  # type: ignore
-                        buf, format="PNG"
-                    )
-                    buf.seek(0)
-                    return buf
+                    return BytesIO(await _in_thread(_pil_to_png_bytes_with_exif, data))
                 elif isinstance(data, np.ndarray):
-                    img = self._numpy_to_pil_image(data)
-                    buf = BytesIO()
-                    img.convert("RGB").save(buf, format="PNG")
-                    buf.seek(0)
-                    return buf
+                    return BytesIO(await _in_thread(_numpy_image_to_png_bytes, data))
                 else:
                     raise ValueError(f"Unsupported ImageRef data type {type(data)}")
             # Audio: always encode to MP3
@@ -1310,32 +1549,9 @@ class ProcessingContext:
                 if isinstance(data, bytes):
                     return BytesIO(data)
                 elif isinstance(data, AudioSegment):
-                    buf = BytesIO()
-                    data.export(buf, format="mp3")
-                    buf.seek(0)
-                    return buf
+                    return BytesIO(await _in_thread(_audio_segment_to_mp3_bytes, data))
                 elif isinstance(data, np.ndarray):
-                    # Convert numpy audio to MP3 bytes
-                    channels = 1
-                    audio_arr = data
-                    if audio_arr.ndim == 2:
-                        channels = audio_arr.shape[1]
-                    if audio_arr.dtype == np.int16:
-                        raw = audio_arr.tobytes()
-                    elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-                        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
-                    else:
-                        raise ValueError(f"Unsupported AudioRef ndarray dtype {audio_arr.dtype}")
-                    seg = AudioSegment(
-                        data=raw,
-                        frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,
-                        sample_width=2,
-                        channels=int(channels),
-                    )
-                    out = BytesIO()
-                    seg.export(out, format="mp3")
-                    out.seek(0)
-                    return out
+                    return BytesIO(await _in_thread(_numpy_audio_to_mp3_bytes, data))
                 else:
                     raise ValueError(f"Unsupported AudioRef data type {type(data)}")
             # Text
@@ -1372,14 +1588,14 @@ class ProcessingContext:
             bytes: The asset content as bytes.
         """
         io = await self.asset_to_io(asset_ref)
-        return io.read()
+        return await _in_thread(io.read)
 
     async def asset_to_base64(self, asset_ref: AssetRef) -> str:
         """
         Converts an AssetRef to a base64-encoded string.
         """
         io = await self.asset_to_io(asset_ref)
-        return base64.b64encode(io.read()).decode("utf-8")
+        return await _in_thread(_read_base64, io)
 
     async def asset_to_data_uri(self, asset_ref: AssetRef) -> str:
         """
@@ -1415,29 +1631,17 @@ class ProcessingContext:
         Returns:
             PIL.Image.Image: The converted PIL Image object.
         """
-        PIL_Image, PIL_ImageOps = _ensure_pil()
+        PIL_Image, _ = _ensure_pil()
         # Check for memory:// protocol URI first (preferred for performance)
         if hasattr(image_ref, "uri") and image_ref.uri and image_ref.uri.startswith("memory://"):
             key = image_ref.uri
             obj = self._memory_get(key)
             if obj is not None and isinstance(obj, PIL_Image.Image):
-                return obj.convert("RGB")
+                return await _in_thread(obj.convert, "RGB")
                 # Fall through to regular conversion if not a PIL Image
 
         buffer = await self.asset_to_io(image_ref)
-        image = PIL_Image.open(buffer)
-
-        # Apply EXIF orientation if present
-        try:
-            # Use PIL's built-in method to handle EXIF orientation
-            rotated_image = PIL_ImageOps.exif_transpose(image)
-            # exif_transpose can return None in some cases, so fallback to original
-            image = rotated_image if rotated_image is not None else image
-        except (AttributeError, KeyError, TypeError):
-            # If EXIF data is not available or malformed, continue without rotation
-            pass
-
-        return image.convert("RGB")
+        return await _in_thread(_open_image_as_rgb, buffer)
 
     async def image_to_numpy(self, image_ref: ImageRef) -> np.ndarray:
         """
@@ -1451,7 +1655,7 @@ class ProcessingContext:
         """
         np = _ensure_numpy()
         image = await self.image_to_pil(image_ref)
-        return np.array(image)
+        return await _in_thread(np.array, image)
 
     async def image_to_tensor(self, image_ref: ImageRef) -> Any:
         """
@@ -1470,7 +1674,7 @@ class ProcessingContext:
             raise ImportError("torch is required for image_to_tensor")
 
         image = await self.image_to_pil(image_ref)
-        return tensor_from_pil(image)
+        return await _in_thread(tensor_from_pil, image)
 
     async def image_to_torch_tensor(self, image_ref: ImageRef) -> Any:
         """
@@ -1486,7 +1690,7 @@ class ProcessingContext:
             raise ImportError("torch is required for image_to_torch_tensor")
 
         image = await self.image_to_pil(image_ref)
-        return tensor_from_pil(image)
+        return await _in_thread(tensor_from_pil, image)
 
     async def image_to_base64(self, image_ref: ImageRef) -> str:
         """
@@ -1498,8 +1702,7 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded string representation of the image.
         """
-        buffer = await self.asset_to_io(image_ref)
-        return base64.b64encode(buffer.read()).decode("utf-8")
+        return await self.asset_to_base64(image_ref)
 
     async def audio_to_audio_segment(self, audio_ref: AudioRef) -> AudioSegment:
         """
@@ -1521,7 +1724,7 @@ class ProcessingContext:
                 # Fall through to regular conversion if not an AudioSegment
 
         audio_bytes = await self.asset_to_io(audio_ref)
-        return AudioSegment.from_file(audio_bytes)
+        return await _in_thread(_audio_segment_from_file, audio_bytes)
 
     async def audio_to_numpy(
         self,
@@ -1541,16 +1744,14 @@ class ProcessingContext:
             tuple[np.ndarray, int, int]: A tuple containing the audio samples as a numpy array,
                 the frame rate, and the number of channels.
         """
-        np = _ensure_numpy()
         segment = await self.audio_to_audio_segment(audio_ref)
-        segment = segment.set_frame_rate(sample_rate)
-        if mono and segment.channels > 1:
-            segment = segment.set_channels(1)
-        samples = np.array(segment.get_array_of_samples())
-        max_value = float(2 ** (8 * segment.sample_width - 1))
-        samples = samples.astype(np.float32) / max_value
-
-        return samples, segment.frame_rate, segment.channels
+        samples, frame_rate, channels = await _in_thread(
+            _audio_segment_to_numpy,
+            segment,
+            sample_rate=sample_rate,
+            mono=mono,
+        )
+        return samples, frame_rate, channels
 
     async def audio_to_base64(self, audio_ref: AudioRef) -> str:
         """
@@ -1562,9 +1763,7 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded string.
         """
-        audio_bytes = await self.asset_to_io(audio_ref)
-        audio_bytes.seek(0)
-        return base64.b64encode(audio_bytes.read()).decode("utf-8")
+        return await self.asset_to_base64(audio_ref)
 
     async def audio_from_io(
         self,
@@ -1596,7 +1795,7 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return AudioRef(asset_id=asset.id, uri=url)
         else:
-            return AudioRef(data=buffer.read())
+            return AudioRef(data=await _in_thread(buffer.read))
 
     async def audio_from_bytes(
         self,
@@ -1629,7 +1828,8 @@ class ProcessingContext:
         Returns:
             AudioRef: The AudioRef object.
         """
-        return await self.audio_from_io(BytesIO(base64.b64decode(b64)), name=name, parent_id=parent_id)
+        decoded = await _in_thread(_b64decode_to_bytes, b64)
+        return await self.audio_from_io(BytesIO(decoded), name=name, parent_id=parent_id)
 
     async def audio_from_numpy(
         self,
@@ -1650,21 +1850,23 @@ class ProcessingContext:
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
         """
-        np = _ensure_numpy()
-        AudioSegment = _ensure_audio_segment()
-        if data.dtype == np.int16:
-            data_bytes = data.tobytes()
-        elif data.dtype == np.float32 or data.dtype == np.float64 or data.dtype == np.float16:
-            data_bytes = (data * (2**14)).astype(np.int16).tobytes()
-        else:
-            raise ValueError(f"Unsupported dtype {data.dtype}")
+        def _segment_from_numpy() -> Any:
+            np = _ensure_numpy()
+            AudioSegment = _ensure_audio_segment()
+            if data.dtype == np.int16:
+                data_bytes = data.tobytes()
+            elif data.dtype in (np.float32, np.float64, np.float16):
+                data_bytes = (data * (2**14)).astype(np.int16).tobytes()
+            else:
+                raise ValueError(f"Unsupported dtype {data.dtype}")
+            return AudioSegment(
+                data=data_bytes,
+                frame_rate=sample_rate,
+                sample_width=2,  # 16-bit
+                channels=num_channels,
+            )
 
-        audio_segment = AudioSegment(
-            data=data_bytes,
-            frame_rate=sample_rate,
-            sample_width=2,  # 16-bit
-            channels=num_channels,
-        )
+        audio_segment = await _in_thread(_segment_from_numpy)
         return await self.audio_from_segment(audio_segment, name=name, parent_id=parent_id)
 
     async def audio_from_segment(
@@ -1694,26 +1896,18 @@ class ProcessingContext:
             "duration_seconds": audio_segment.duration_seconds,
         }
 
+        wav_bytes = await _in_thread(_audio_segment_to_wav_bytes, audio_segment)
+
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the AudioSegment directly for fast retrieval
             self._memory_set(memory_uri, audio_segment)
-            # Also populate data field with binary representation for consistency
-            buffer = BytesIO()
-            audio_segment.export(buffer, format="wav")
-            buffer.seek(0)
-            return AudioRef(uri=memory_uri, data=buffer.read(), metadata=metadata)
-        else:
-            # Create asset when name is provided (persistence needed)
-            buffer = BytesIO()
-            audio_segment.export(buffer, format="wav")
-            buffer.seek(0)
-            ref = await self.audio_from_io(
-                buffer, name=name, parent_id=parent_id, content_type="audio/wav"
-            )
-            ref.metadata = metadata
-            return ref
+            return AudioRef(uri=memory_uri, data=wav_bytes, metadata=metadata)
+
+        ref = await self.audio_from_io(BytesIO(wav_bytes), name=name, parent_id=parent_id, content_type="audio/wav")
+        ref.metadata = metadata
+        return ref
 
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
@@ -1739,12 +1933,13 @@ class ProcessingContext:
 
         if df.columns:
             column_names = [col.name for col in df.columns]
-            return pd.DataFrame(df.data, columns=column_names)  # type: ignore
+            return await _in_thread(pd.DataFrame, df.data, columns=column_names)  # type: ignore[arg-type]
         else:
             io = await self.asset_to_io(df)
-            df = loads(io.read())
-            assert isinstance(df, pd.DataFrame), "Is not a dataframe"
-            return df
+            raw = await _in_thread(io.read)
+            loaded = await _in_thread(loads, raw)
+            assert isinstance(loaded, pd.DataFrame), "Is not a dataframe"
+            return loaded
 
     async def dataframe_from_pandas(
         self, data: pd.DataFrame, name: str | None = None, parent_id: str | None = None
@@ -1771,7 +1966,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from an IO object.
@@ -1791,8 +1986,8 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            buffer.seek(0)
-            return ImageRef(data=buffer.read(), metadata=metadata)
+            data_bytes = await _in_thread(_read_all_bytes_from_start, buffer)
+            return ImageRef(data=data_bytes, metadata=metadata)
 
     async def image_from_url(
         self,
@@ -1818,7 +2013,7 @@ class ProcessingContext:
         b: bytes,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a bytes object.
@@ -1839,7 +2034,7 @@ class ProcessingContext:
         b64: str,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a base64-encoded string.
@@ -1853,14 +2048,15 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_bytes(base64.b64decode(b64), name=name, parent_id=parent_id, metadata=metadata)
+        decoded = await _in_thread(_b64decode_to_bytes, b64)
+        return await self.image_from_bytes(decoded, name=name, parent_id=parent_id, metadata=metadata)
 
     async def image_from_pil(
         self,
         image: PIL.Image.Image,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a PIL Image object.
@@ -1890,18 +2086,15 @@ class ProcessingContext:
             self._memory_set(memory_uri, image)
             return ImageRef(uri=memory_uri, metadata=metadata)
         else:
-            # Create asset when name is provided (persistence needed)
-            buffer = BytesIO()
-            image.save(buffer, format="png")
-            buffer.seek(0)
-            return await self.image_from_io(buffer, name=name, parent_id=parent_id, metadata=metadata)
+            png_bytes = await _in_thread(_pil_to_png_bytes, image)
+            return await self.image_from_io(BytesIO(png_bytes), name=name, parent_id=parent_id, metadata=metadata)
 
     async def image_from_numpy(
         self,
         image: np.ndarray,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ImageRef:
         """
         Creates an ImageRef from a numpy array.
@@ -1931,7 +2124,7 @@ class ProcessingContext:
                 "format": "png",
             }
 
-        pil_img = self._numpy_to_pil_image(image)
+        pil_img = await _in_thread(self._numpy_to_pil_image, image)
         return await self.image_from_pil(pil_img, name=name, metadata=metadata)
 
     async def image_from_tensor(
@@ -1939,7 +2132,7 @@ class ProcessingContext:
         image_tensor: Any,  # Change type hint to Any since torch.Tensor may not be available
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """
         Creates an ImageRef from a tensor.
@@ -1959,19 +2152,17 @@ class ProcessingContext:
         if not TORCH_AVAILABLE:
             raise ImportError("torch is required for image_from_tensor")
 
-        img = tensor_to_image_array(image_tensor)
+        img = await _in_thread(tensor_to_image_array, image_tensor)
         if img.ndim == 5:
             img = img[0]
         if img.shape[0] == 1:
             return await self.image_from_numpy(img[0], name=name, parent_id=parent_id, metadata=metadata)
 
-        batch = []
-        PIL_Image, _ = _ensure_pil()
-        for i in range(img.shape[0]):
-            buffer = BytesIO()
-            PIL_Image.fromarray(img[i]).save(buffer, format="png")
-            batch.append(buffer.getvalue())
+        def _tensor_batch_to_png_bytes() -> list[bytes]:
+            PIL_Image, _ = _ensure_pil()
+            return [_pil_to_png_bytes(PIL_Image.fromarray(img[i])) for i in range(img.shape[0])]
 
+        batch = await _in_thread(_tensor_batch_to_png_bytes)
         return ImageRef(data=batch, metadata=metadata)
 
     async def text_to_str(self, text_ref: TextRef | str) -> str:
@@ -1994,7 +2185,7 @@ class ProcessingContext:
                     # Fall through to regular conversion if not a string
 
             stream = await self.asset_to_io(text_ref)
-            return stream.read().decode("utf-8")
+            return await _in_thread(_read_utf8, stream)
         else:
             return text_ref
 
@@ -2053,9 +2244,10 @@ class ProcessingContext:
         }
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
-            export_to_video(frames, temp.name, fps=fps)
-            with open(temp.name, "rb") as f:
-                ref = await self.video_from_io(f)
+            await _in_thread(export_to_video, frames, temp.name, fps=fps)
+            temp.seek(0)
+            content = await asyncio.to_thread(temp.read)
+            ref = await self.video_from_bytes(content, name=name, parent_id=parent_id)
             ref.metadata = metadata
             return ref
 
@@ -2077,11 +2269,8 @@ class ProcessingContext:
         Returns:
             VideoRef: The VideoRef object.
         """
-        # Convert numpy array to list of frames for the utility function
-        video_frames = list(video)
-
         # Build metadata from numpy array shape (T, H, W, C)
-        frame_count = len(video_frames)
+        frame_count = int(video.shape[0]) if hasattr(video, "shape") and len(video.shape) > 0 else 0
         width, height = 0, 0
         if frame_count > 0 and video.ndim >= 3:
             height, width = video.shape[1], video.shape[2]
@@ -2096,7 +2285,7 @@ class ProcessingContext:
         }
 
         # Use shared video utility for consistent behavior
-        video_bytes = _export_to_video_bytes(video_frames, fps=fps)
+        video_bytes = await _in_thread(_numpy_video_to_mp4_bytes, video, fps)
 
         # Create BytesIO from the video bytes
         buffer = BytesIO(video_bytes)
@@ -2116,8 +2305,7 @@ class ProcessingContext:
             str: The base64-encoded content.
         """
         file_io = await self.download_file(url)
-        content = file_io.read()
-        return base64.b64encode(content).decode("utf-8")
+        return await _in_thread(_read_base64, file_io)
 
     async def urls_to_base64_list(self, urls: list[str]) -> list[str]:
         """
@@ -2141,13 +2329,14 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded image content.
         """
-        import PIL.Image
-
         img = await self.image_to_numpy(image_ref)
-        buffer = BytesIO()
-        PIL.Image.fromarray(img).save(buffer, format="JPEG")
-        buffer.seek(0)
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        def _encode() -> str:
+            PIL_Image, _ = _ensure_pil()
+            jpeg_bytes = _pil_to_jpeg_bytes(PIL_Image.fromarray(img))
+            return _b64encode_to_str(jpeg_bytes)
+
+        return await _in_thread(_encode)
 
     async def image_ref_to_data_uri(self, image_ref: ImageRef) -> str:
         """
@@ -2171,8 +2360,7 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded audio content.
         """
-        io = await self.asset_to_io(audio_ref)
-        return base64.b64encode(io.read()).decode("utf-8")
+        return await self.asset_to_base64(audio_ref)
 
     async def audio_ref_to_data_uri(self, audio_ref: AudioRef) -> str:
         """
@@ -2196,8 +2384,7 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded video content.
         """
-        io = await self.asset_to_io(video_ref)
-        return base64.b64encode(io.read()).decode("utf-8")
+        return await self.asset_to_base64(video_ref)
 
     async def video_ref_to_data_uri(self, video_ref: VideoRef) -> str:
         """
@@ -2216,7 +2403,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> VideoRef:
         """
         Creates an VideoRef from an IO object.
@@ -2236,14 +2423,14 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            return VideoRef(data=buffer.read(), metadata=metadata)
+            return VideoRef(data=await _in_thread(buffer.read), metadata=metadata)
 
     async def video_from_bytes(
         self,
         b: bytes,
         name: str | None = None,
         parent_id: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> VideoRef:
         """
         Creates a VideoRef from a bytes object.
@@ -2284,7 +2471,7 @@ class ProcessingContext:
         name: str | None = None,
         parent_id: str | None = None,
         format: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Model3DRef:
         """
         Creates a Model3DRef from an IO object.
@@ -2308,8 +2495,8 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return Model3DRef(asset_id=asset.id, uri=url, format=format, metadata=metadata)
         else:
-            buffer.seek(0)
-            return Model3DRef(data=buffer.read(), format=format, metadata=metadata)
+            data_bytes = await _in_thread(_read_all_bytes_from_start, buffer)
+            return Model3DRef(data=data_bytes, format=format, metadata=metadata)
 
     async def model3d_from_bytes(
         self,
@@ -2317,7 +2504,7 @@ class ProcessingContext:
         name: str | None = None,
         parent_id: str | None = None,
         format: str | None = None,
-        metadata: Dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Model3DRef:
         """
         Creates a Model3DRef from a bytes object.
@@ -2368,8 +2555,7 @@ class ProcessingContext:
         Returns:
             str: The base64-encoded string representation of the 3D model.
         """
-        model3d_bytes = await self.asset_to_io(model3d_ref)
-        return base64.b64encode(model3d_bytes.read()).decode("utf-8")
+        return await self.asset_to_base64(model3d_ref)
 
     async def model3d_ref_to_data_uri(self, model3d_ref: Model3DRef) -> str:
         """
@@ -2409,9 +2595,8 @@ class ProcessingContext:
 
         if model_ref.asset_id is None:
             raise ValueError("ModelRef is empty")
-        joblib = _ensure_joblib()
         file = await self.asset_to_io(model_ref)
-        return joblib.load(file)
+        return await _in_thread(_joblib_load_from_io, file)
 
     async def from_estimator(self, est: BaseEstimator, name: str | None = None, **kwargs):  # type: ignore
         """
@@ -2426,7 +2611,6 @@ class ProcessingContext:
             ModelRef: A reference to the created model asset.
 
         """
-        joblib = _ensure_joblib()
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
@@ -2435,10 +2619,8 @@ class ProcessingContext:
             return ModelRef(uri=memory_uri, **kwargs)
         else:
             # Create asset when name is provided (persistence needed)
-            stream = BytesIO()
-            joblib.dump(est, stream)
-            stream.seek(0)
-            asset = await self.create_asset(name, "application/model", stream)
+            payload = await _in_thread(_joblib_dump_to_bytes, est)
+            asset = await self.create_asset(name, "application/model", BytesIO(payload))
 
             storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
@@ -2466,10 +2648,9 @@ class ProcessingContext:
                 return None
             io = await self.asset_to_io(value)
             if isinstance(value, TextRef):
-                return io.read().decode("utf-8")
+                return await _in_thread(_read_utf8, io)
             else:
-                img_bytes = io.read()
-                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                b64 = await _in_thread(_read_base64, io)
                 if isinstance(value, ImageRef):
                     return "data:image/png;base64," + b64
                 elif isinstance(value, AudioRef):
@@ -2500,6 +2681,11 @@ class ProcessingContext:
             ClientAPI: ChromaDB client instance
         """
         if self.chroma_client is None:
+            # Lazy import to avoid loading chromadb/langchain during CLI startup
+            from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+                get_async_chroma_client,
+            )
+
             self.chroma_client = await get_async_chroma_client(self.user_id)
         return self.chroma_client
 
@@ -2515,7 +2701,7 @@ class ProcessingContext:
         """
         from nodetool.integrations.huggingface.hf_utils import is_model_cached
 
-        return is_model_cached(repo_id)
+        return await _in_thread(is_model_cached, repo_id)
 
     def encode_assets_as_uri(self, value: Any) -> Any:
         """
@@ -2556,7 +2742,8 @@ class ProcessingContext:
             return asset
         data_bytes = await self.asset_to_bytes(asset)
         mime, _ = self._guess_asset_mime_ext(asset)
-        uri = f"data:{mime};base64,{base64.b64encode(data_bytes).decode('utf-8')}"
+        b64 = await _in_thread(_b64encode_to_str, data_bytes)
+        uri = f"data:{mime};base64,{b64}"
         return asset.model_copy(update={"uri": uri, "data": None})
 
     async def _asset_to_storage_url(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
@@ -2604,9 +2791,9 @@ class ProcessingContext:
         data_bytes = await self.asset_to_bytes(asset)
         _, ext = self._guess_asset_mime_ext(asset)
         assets_dir = Path(self.workspace_dir) / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
+        await _in_thread(assets_dir.mkdir, parents=True, exist_ok=True)
         file_path = assets_dir / f"{uuid.uuid4().hex}.{ext}"
-        file_path.write_bytes(data_bytes)
+        await _in_thread(file_path.write_bytes, data_bytes)
         return {
             "type": asset.type,
             "path": str(file_path),
@@ -2765,6 +2952,42 @@ class ProcessingContext:
         from nodetool.media.image.font_utils import get_system_font_path
 
         return get_system_font_path(font_name, self.environment)
+
+    def get_font_path(self, font_ref: FontRef) -> str:
+        """
+        Get the path to a font file, handling both system fonts and web fonts.
+
+        This method supports three font sources:
+        - system: Uses the local system font path (default, backwards compatible)
+        - google_fonts: Downloads and caches fonts from Google Fonts
+        - url: Downloads and caches fonts from a custom URL
+
+        Args:
+            font_ref (FontRef): The font reference containing name, source, and optional URL.
+
+        Returns:
+            str: Full path to the font file
+
+        Raises:
+            FileNotFoundError: If a system font cannot be found
+            ValueError: If a Google Font is not in the catalog or URL is invalid
+            ConnectionError: If downloading a web font fails
+        """
+        from nodetool.metadata.types import FontSource
+
+        # Handle backwards compatibility - if no source specified, treat as system font
+        if not hasattr(font_ref, "source") or font_ref.source == FontSource.SYSTEM:
+            return self.get_system_font_path(font_ref.name)
+
+        # Handle web fonts (Google Fonts or custom URL)
+        from nodetool.media.image.web_font_utils import get_web_font_path
+
+        return get_web_font_path(
+            font_name=font_ref.name,
+            source=font_ref.source.value,
+            url=getattr(font_ref, "url", ""),
+            weight=getattr(font_ref, "weight", "regular"),
+        )
 
     def resolve_workspace_path(self, path: str) -> str:
         """
@@ -2928,8 +3151,12 @@ class ProcessingContext:
 
     async def cleanup(self):
         """
-        Cleanup the browser context and pages.
+        Cleanup the browser context, streaming channels, and memory.
         """
+        # Close all streaming channels
+        if hasattr(self, "channels"):
+            await self.channels.close_all()
+
         if getattr(self, "_browser", None):
             await self._browser.close()  # type: ignore
             self._browser = None

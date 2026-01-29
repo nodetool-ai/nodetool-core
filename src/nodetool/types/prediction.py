@@ -1,5 +1,5 @@
 import base64
-from typing import Any, List, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -35,7 +35,7 @@ class Prediction(BaseModel):
 
 class PredictionList(BaseModel):
     next: str | None
-    predictions: List[Prediction]
+    predictions: list[Prediction]
 
 
 class PredictionCreateRequest(BaseModel):

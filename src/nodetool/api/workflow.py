@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from nodetool.api.utils import current_user
@@ -19,8 +19,10 @@ from nodetool.models.workflow_version import WorkflowVersion as WorkflowVersionM
 from nodetool.packages.registry import Registry
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import require_scope
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
+from nodetool.types.api_graph import Graph, get_input_schema, get_output_schema, remove_connected_slots
 from nodetool.types.workflow import (
+    AutosaveResponse,
+    AutosaveWorkflowRequest,
     CreateWorkflowVersionRequest,
     Workflow,
     WorkflowList,
@@ -94,6 +96,8 @@ async def from_model(
         output_schema=output_schema,
         settings=workflow.settings,
         run_mode=workflow.run_mode,
+        workspace_id=workflow.workspace_id,
+        html_app=workflow.html_app,
     )
 
 
@@ -146,6 +150,7 @@ async def create(
                     graph=example_workflow.graph.model_dump(),
                     user_id=user,
                     run_mode=workflow_request.run_mode,
+                    workspace_id=workflow_request.workspace_id,
                 )
             )
         except ValueError as e:
@@ -163,6 +168,8 @@ async def create(
                 graph=remove_connected_slots(workflow_request.graph).model_dump(),
                 user_id=user,
                 run_mode=workflow_request.run_mode,
+                workspace_id=workflow_request.workspace_id,
+                html_app=workflow_request.html_app,
             )
         )
     elif workflow_request.comfy_workflow:
@@ -184,6 +191,8 @@ async def create(
                     "edges": [edge.model_dump() for edge in edges],
                 },
                 run_mode=workflow_request.run_mode,
+                workspace_id=workflow_request.workspace_id,
+                html_app=workflow_request.html_app,
             )
         )
     else:
@@ -457,13 +466,61 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
     return await from_model(workflow)
 
 
+@router.get("/{id}/app", response_class=HTMLResponse)
+async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLResponse:
+    """
+    Serve the HTML app for a workflow as a website.
+
+    Returns the stored html_app content as an HTML response that can be
+    rendered directly in a browser. Injects runtime configuration (API URL,
+    WS URL, workflow ID) so the app works in any environment.
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if not workflow.html_app:
+        raise HTTPException(status_code=404, detail="No HTML app configured for this workflow")
+
+    # Inject runtime configuration using JSON for safety
+    import json as json_module
+    api_url = Environment.get_api_url()
+    ws_url = Environment.get_ws_url()
+
+    config_script = f"""
+    <script>
+      window.NODETOOL_API_URL = {json_module.dumps(api_url)};
+      window.NODETOOL_WS_URL = {json_module.dumps(ws_url)};
+      window.NODETOOL_WORKFLOW_ID = {json_module.dumps(id)};
+    </script>
+    """
+
+    # Inject before </head> or at start of body
+    html = workflow.html_app
+    if "</head>" in html:
+        html = html.replace("</head>", f"{config_script}</head>")
+    elif "<body>" in html:
+        html = html.replace("<body>", f"<body>{config_script}")
+    else:
+        # Fallback: prepend to the HTML
+        html = config_script + html
+
+    return HTMLResponse(content=html, status_code=200)
+
+
 @router.put("/{id}")
 async def update_workflow(
     id: str,
     workflow_request: WorkflowRequest,
-    background_tasks: BackgroundTasks,
     user: str = Depends(current_user),
 ) -> Workflow:
+    """
+    Update an existing workflow.
+
+    Note: This endpoint does NOT create a version. Use POST /versions for manual
+    version creation, or POST /autosave for automatic version saving.
+    """
     log.debug(f"Updating workflow {id} with settings: {workflow_request.settings}")
     workflow = await WorkflowModel.get(id)
     if not workflow:
@@ -472,6 +529,8 @@ async def update_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
+
+    new_graph = remove_connected_slots(workflow_request.graph).model_dump()
     workflow.name = workflow_request.name
     workflow.tool_name = workflow_request.tool_name
     workflow.description = workflow_request.description
@@ -480,11 +539,14 @@ async def update_workflow(
     if workflow_request.thumbnail is not None:
         workflow.thumbnail = workflow_request.thumbnail
     workflow.access = workflow_request.access
-    workflow.graph = remove_connected_slots(workflow_request.graph).model_dump()
+    workflow.graph = new_graph
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
+    workflow.workspace_id = workflow_request.workspace_id
+    workflow.html_app = workflow_request.html_app
     workflow.updated_at = datetime.now()
     await workflow.save()
+
     updated_workflow = await from_model(workflow)
 
     return updated_workflow
@@ -605,7 +667,7 @@ async def run_workflow_by_id(
                             )
                         value["data"] = None
                 elif isinstance(msg, Error):
-                    raise HTTPException(status_code=500, detail=msg.error)
+                    raise HTTPException(status_code=500, detail=msg.message)
                 result[name] = value
         return result
 
@@ -647,7 +709,11 @@ async def generate_workflow_name(
 
     workflow_content = (
         f"Workflow with {len(graph.nodes)} nodes: {', '.join(node_descriptions[:MAX_NODES_IN_DESCRIPTION])}"
-        + (f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more" if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION else "")
+        + (
+            f"... and {len(graph.nodes) - MAX_NODES_IN_DESCRIPTION} more"
+            if len(graph.nodes) > MAX_NODES_IN_DESCRIPTION
+            else ""
+        )
     )
     if workflow.description:
         workflow_content = f"Description: {workflow.description}\n{workflow_content}"
@@ -703,6 +769,8 @@ def from_version_model(version: WorkflowVersionModel) -> WorkflowVersion:
             nodes=version.graph.get("nodes", []),
             edges=version.graph.get("edges", []),
         ),
+        save_type=version.save_type,
+        autosave_metadata=version.autosave_metadata,
     )
 
 
@@ -822,3 +890,257 @@ async def restore_version(
     await workflow.save()
 
     return await from_model(workflow)
+
+
+@router.delete("/{id}/versions/{version_id}")
+async def delete_version(
+    id: str,
+    version_id: str,
+    user: str = Depends(current_user),
+) -> dict[str, bool]:
+    """
+    Delete a specific workflow version.
+
+    Args:
+        id: Workflow ID
+        version_id: Version ID to delete
+
+    Returns:
+        Success status
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    deleted = await WorkflowVersionModel.delete_by_id(version_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return {"success": True}
+
+@router.post("/{id}/autosave")
+async def autosave_workflow(
+    id: str,
+    autosave_request: AutosaveWorkflowRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(current_user),
+) -> AutosaveResponse:
+    """
+    Create an autosave version of a workflow.
+
+    The backend decides whether to create a version based on:
+    - Rate limiting (minimum interval between saves)
+    - Max versions per workflow limit
+
+    Args:
+        id: Workflow ID
+        autosave_request: Autosave request with save_type, description, force flag
+        background_tasks: Background tasks for cleanup operations
+        user: Current authenticated user
+
+    Returns:
+        AutosaveResponse with version info or skipped status
+    """
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    if autosave_request.save_type == "autosave" and not autosave_request.force:
+        latest_autosave = await WorkflowVersionModel.get_latest_autosave(id)
+        if latest_autosave:
+            min_interval = 30
+            elapsed = (datetime.now() - latest_autosave.created_at).total_seconds()
+            if elapsed < min_interval:
+                log.debug(f"Autosave skipped for workflow {id}: too soon ({elapsed:.1f}s < {min_interval}s)")
+                return AutosaveResponse(version=None, message="skipped (too soon)", skipped=True)
+
+    # Use user's max_versions setting, default to 50
+    max_versions = autosave_request.max_versions or 50
+
+    # FIFO: Delete oldest autosaves to make room before creating new one
+    autosave_count = await WorkflowVersionModel.count_autosaves(id)
+    if autosave_count >= max_versions:
+        # Delete oldest autosaves, keeping max_versions - 1 to make room for new one
+        deleted = await WorkflowVersionModel.delete_old_autosaves(
+            workflow_id=id,
+            keep_count=max_versions - 1,
+        )
+        if deleted > 0:
+            log.debug(f"Deleted {deleted} old autosaves for workflow {id} (FIFO)")
+
+    next_version = await WorkflowVersionModel.get_next_version(id)
+    version_name = f"Autosave {next_version}"
+
+    autosave_metadata: dict[str, Any] = {
+        "client_id": autosave_request.client_id,
+        "trigger_reason": autosave_request.save_type,
+    }
+
+    # Convert dict to Graph if provided
+    graph_to_save = workflow.graph
+    if autosave_request.graph:
+        try:
+            graph_to_save = Graph(**autosave_request.graph).model_dump()
+        except Exception as e:
+            log.warning(f"Failed to parse graph from request, using database graph: {e}")
+            graph_to_save = workflow.graph
+
+    # Skip empty workflows (no nodes)
+    nodes = graph_to_save.get("nodes", []) if isinstance(graph_to_save, dict) else []
+    if not nodes:
+        log.debug(f"Autosave skipped for workflow {id}: empty workflow")
+        return AutosaveResponse(version=None, message="skipped (empty workflow)", skipped=True)
+
+    version = await WorkflowVersionModel.create(
+        workflow_id=id,
+        user_id=user,
+        graph=graph_to_save,
+        name=version_name,
+        description=autosave_request.description,
+        save_type=autosave_request.save_type,
+        autosave_metadata=autosave_metadata,
+    )
+
+    log.info(f"Autosave created for workflow {id}: version {version.version}")
+
+    background_tasks.add_task(
+        cleanup_old_autosaves,
+        workflow_id=id,
+        max_versions=max_versions,
+        keep_days=7,
+    )
+
+    return AutosaveResponse(
+        version=from_version_model(version),
+        message="autosaved",
+        skipped=False,
+    )
+
+
+async def cleanup_old_autosaves(
+    workflow_id: str,
+    max_versions: int = 20,
+    keep_days: int = 7,
+) -> None:
+    """
+    Cleanup old autosave versions for a workflow.
+
+    Args:
+        workflow_id: The workflow ID to clean up
+        max_versions: Maximum autosaves to keep per workflow
+        keep_days: Number of days to keep autosaves
+    """
+    try:
+        from datetime import timedelta
+
+        cutoff_date = datetime.now() - timedelta(days=keep_days)
+        deleted_count = await WorkflowVersionModel.delete_old_autosaves(
+            workflow_id=workflow_id,
+            keep_count=max_versions,
+            older_than=cutoff_date,
+        )
+        if deleted_count > 0:
+            log.info(f"Cleaned up {deleted_count} old autosaves for workflow {workflow_id}")
+    except Exception as e:
+        log.error(f"Error cleaning up autosaves for workflow {workflow_id}: {e}")
+
+
+class GradioExportRequest(BaseModel):
+    """Request model for Gradio export configuration."""
+
+    app_title: str = Field(default="NodeTool Workflow", description="Title for the Gradio app")
+    theme: Optional[str] = Field(default=None, description="Gradio theme to use")
+    description: Optional[str] = Field(default=None, description="Description for the Gradio app")
+    allow_flagging: bool = Field(default=False, description="Allow flagging in the Gradio app")
+    queue: bool = Field(default=True, description="Enable request queuing")
+
+
+@router.get("/{id}/dsl-export", response_class=PlainTextResponse)
+async def dsl_export(
+    id: str,
+    user: str = Depends(current_user),
+) -> str:
+    """
+    Export a workflow to Python DSL code.
+
+    Returns Python code that reconstructs the workflow using DSL node wrappers
+    and connections. The generated code can be saved to a .py file and executed
+    to recreate the workflow graph.
+
+    Args:
+        id: Workflow ID
+
+    Returns:
+        Python source code as a plain text response
+    """
+    from nodetool.dsl.export import graph_to_dsl_py
+
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    api_graph = workflow.get_api_graph()
+    if api_graph is None:
+        raise HTTPException(status_code=400, detail="Workflow has no associated graph")
+
+    try:
+        code = graph_to_dsl_py(api_graph)
+    except Exception as e:
+        log.error(f"Error exporting workflow {id} to DSL: {e}")
+        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+
+    return code
+
+
+@router.post("/{id}/gradio-export", response_class=PlainTextResponse)
+async def gradio_export(
+    id: str,
+    config: GradioExportRequest,
+    user: str = Depends(current_user),
+) -> str:
+    """
+    Export a workflow to a Gradio app Python script.
+
+    Returns Python code that reconstructs the workflow using DSL node wrappers
+    and wraps it in a Gradio app for interactive execution.
+
+    Args:
+        id: Workflow ID
+        config: Gradio app configuration options
+
+    Returns:
+        Python source code as a plain text response
+    """
+    from nodetool.dsl.export import graph_to_gradio_py
+
+    workflow = await WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    api_graph = workflow.get_api_graph()
+    if api_graph is None:
+        raise HTTPException(status_code=400, detail="Workflow has no associated graph")
+
+    try:
+        code = graph_to_gradio_py(
+            api_graph,
+            app_title=config.app_title,
+            theme=config.theme,
+            description=config.description,
+            allow_flagging=config.allow_flagging,
+            queue=config.queue,
+        )
+    except Exception as e:
+        log.error(f"Error exporting workflow {id} to Gradio: {e}")
+        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+
+    return code
+

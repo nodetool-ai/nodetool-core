@@ -8,16 +8,21 @@ from nodetool.metadata.types import LlamaModel
 from nodetool.types.model import UnifiedModel
 
 
-def get_ollama_client() -> AsyncClient:
+def get_ollama_client() -> AsyncClient | None:
     api_url = Environment.get("OLLAMA_API_URL")
-    assert api_url, "OLLAMA_API_URL not set"
+    if not api_url:
+        return None
 
     return AsyncClient(api_url)
 
 
 async def get_ollama_models() -> list[LlamaModel]:
     ollama = get_ollama_client()
+    if not ollama:
+        return []
     models = await ollama.list()
+    if not models or not models.models:
+        return []
     result = [
         LlamaModel(
             name=model.model or "",
@@ -56,6 +61,7 @@ async def get_ollama_models_unified() -> list[UnifiedModel]:
             downloads=0,
             likes=0,
             trending_score=0,
+            downloaded=True,
         )
         for model in models
     ]
@@ -63,6 +69,8 @@ async def get_ollama_models_unified() -> list[UnifiedModel]:
 
 async def get_ollama_model_info(model_name: str) -> dict | None:
     ollama = get_ollama_client()
+    if not ollama:
+        return None
     res = await ollama.show(model_name)
     return res.model_dump()
 
@@ -70,6 +78,17 @@ async def get_ollama_model_info(model_name: str) -> dict | None:
 async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[str, None]:
     try:
         ollama = get_ollama_client()
+        if not ollama:
+            error_payload = {
+                "status": "error",
+                "message": (
+                    "OLLAMA_API_URL not set. Please set the OLLAMA_API_URL environment variable to use Ollama models."
+                ),
+                "error": "OLLAMA_API_URL not set",
+                "model": model_name,
+            }
+            yield json.dumps(error_payload) + "\n"
+            return
         res = await ollama.pull(model_name, stream=True)
         async for chunk in res:
             yield json.dumps(chunk.model_dump()) + "\n"
@@ -95,5 +114,7 @@ async def delete_ollama_model(model_name: str) -> bool:
     False on error.
     """
     ollama = get_ollama_client()
+    if not ollama:
+        return False
     await ollama.delete(model_name)
     return True

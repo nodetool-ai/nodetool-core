@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+import aiofiles
+
 ProviderKey = str
 ModelName = str
 
@@ -280,24 +282,33 @@ class AgentEvaluator:
                 stderr_path_obj = Path(stderr_path)
                 output_json_path_obj = Path(output_json_path)
                 stdout_path_obj.parent.mkdir(parents=True, exist_ok=True)
-                with (
-                    stdout_path_obj.open("a", encoding="utf-8") as stdout_file,
-                    stderr_path_obj.open("a", encoding="utf-8") as stderr_file,
-                ):
+
+                def _open_log_files() -> tuple[Any, Any]:
+                    return (
+                        stdout_path_obj.open("a", encoding="utf-8"),
+                        stderr_path_obj.open("a", encoding="utf-8"),
+                    )
+
+                loop = asyncio.get_running_loop()
+                stdout_file, stderr_file = await loop.run_in_executor(None, _open_log_files)
+                try:
                     proc = await asp.create_subprocess_exec(
                         *clean_cmd,
                         stdout=stdout_file,
                         stderr=stderr_file,
                     )
                     await proc.wait()
+                finally:
+                    stdout_file.close()
+                    stderr_file.close()
                 elapsed_seconds = time.perf_counter() - start_time
                 # Read JSON output
                 result: Any | None = None
                 input_toks = 0
                 output_toks = 0
                 if output_json_path_obj.exists():
-                    with output_json_path_obj.open(encoding="utf-8") as f:
-                        payload = json.load(f)
+                    async with aiofiles.open(output_json_path, encoding="utf-8") as f:
+                        payload = json.loads(await f.read())
                     result = payload.get("result")
                     input_toks = int(payload.get("input_tokens", 0))
                     output_toks = int(payload.get("output_tokens", 0))

@@ -147,8 +147,11 @@ async def test_task_planner_batch_processing(
             print(f"   - {bf.name} ({size:,} bytes)")
 
             # Count entries in JSONL
-            with open(bf) as f:
-                entries = sum(1 for _ in f)
+            def count_entries(path=bf):
+                with open(path) as f:
+                    return sum(1 for _ in f)
+
+            entries = await asyncio.to_thread(count_entries)
             print(f"     Entries: {entries}")
 
     # Display final results summary

@@ -12,7 +12,8 @@ import ast
 import base64
 import io
 import json
-from typing import TYPE_CHECKING, Any, Sequence
+import logging
+from typing import TYPE_CHECKING, Any, Literal, Sequence, cast
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -41,6 +42,7 @@ from nodetool.metadata.types import (
 )
 
 log = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from nodetool.agents.tools.base import Tool
@@ -69,7 +71,10 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError):
+                logger.exception(
+                    "Failed to convert audio to MP3 (uri=%s, mime_type=%s, size=%d)", uri, mime_type, len(data_bytes)
+                )
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(data_bytes).decode("utf-8")
@@ -104,7 +109,8 @@ class OpenAICompat:
                     mp3_data = buffer.getvalue()
                 mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
-            except Exception:
+            except (OSError, ValueError):
+                logger.exception("Failed to convert audio to MP3 (mime_type=%s, size=%d)", mime_type, len(raw_bytes))
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
@@ -113,33 +119,33 @@ class OpenAICompat:
 
     async def message_content_to_openai_content_part(self, content: MessageContent) -> ChatCompletionContentPartParam:
         if isinstance(content, MessageTextContent):
-            return {"type": "text", "text": content.text}
+            return {"type": "text", "text": content.text}  # type: ignore[return-value]
         elif isinstance(content, MessageAudioContent):
             if content.audio.uri:
                 data_uri = await self.uri_to_base64(content.audio.uri)
                 base64_data = data_uri.split(",", 1)[1]
-                return {
+                return {  # type: ignore[return-value]
                     "type": "input_audio",
                     "input_audio": {"format": "mp3", "data": base64_data},
                 }
             else:
                 data = base64.b64encode(content.audio.data).decode("utf-8")
-                return {
+                return {  # type: ignore[return-value]
                     "type": "input_audio",
                     "input_audio": {"format": "mp3", "data": data},
                 }
         elif isinstance(content, MessageImageContent):
             if content.image.uri:
                 image_url = await self.uri_to_base64(content.image.uri)
-                return {"type": "image_url", "image_url": {"url": image_url}}
+                return {"type": "image_url", "image_url": {"url": image_url}}  # type: ignore[return-value]
             else:
                 data = image_data_to_base64_jpeg(content.image.data)
                 image_url = f"data:image/jpeg;base64,{data}"
-                return {"type": "image_url", "image_url": {"url": image_url}}
+                return {"type": "image_url", "image_url": {"url": image_url}}  # type: ignore[return-value]
         else:
             raise ValueError(f"Unknown content type {content}")
 
-    async def convert_message(self, message: Message):
+    async def convert_message(self, message: Message) -> Any:
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
@@ -151,21 +157,23 @@ class OpenAICompat:
                 content = json.dumps(message.content)
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=message.role,
+                role=cast("Literal['tool']", message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
-            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
+            return ChatCompletionSystemMessageParam(
+                role=cast("Literal['system']", message.role), content=str(message.content)
+            )
         elif message.role == "user":
             assert message.content is not None, "User message content must not be None"
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=message.role, content=content)
+            return ChatCompletionUserMessageParam(role=cast("Literal['user']", message.role), content=content)
         elif message.role == "ipython":
             # Handle ipython role used by Llama models for tool results
             if isinstance(message.content, BaseModel):
@@ -196,12 +204,12 @@ class OpenAICompat:
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 content = None
 
             result = ChatCompletionAssistantMessageParam(
-                role=message.role,
+                role=cast("Literal['assistant']", message.role),
                 content=content,  # type: ignore
             )
             if tool_calls:  # Only add tool_calls if they exist

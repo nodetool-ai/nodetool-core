@@ -40,12 +40,11 @@ This implements Phase 3 of the architectural refactor:
 """
 
 import hashlib
-import json
 from datetime import datetime
 from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_inbox_message import MessageStatus, RunInboxMessage
+from nodetool.models.run_inbox_message import RunInboxMessage
 
 log = get_logger(__name__)
 
@@ -109,23 +108,22 @@ class DurableInbox:
 
         # Generate message_id if not provided
         if message_id is None:
-            message_id = self.generate_message_id(
-                self.run_id, self.node_id, handle, next_seq
-            )
+            message_id = self.generate_message_id(self.run_id, self.node_id, handle, next_seq)
 
         # Check if message already exists (idempotency)
-        existing = await RunInboxMessage.find_one({"message_id": message_id})
+        existing = await RunInboxMessage.get_by_message_id(message_id)
         if existing:
             log.debug(f"Message {message_id} already exists (idempotent)")
             return existing
 
-        # Serialize payload
-        payload_json = json.dumps(payload) if payload is not None else None
+        # Use payload directly (will be JSON serialized by DB adapter if needed)
+        payload_dict: dict[str, Any] = payload if payload is not None else {}
 
         # Detect large payloads (>1MB) and warn
-        if payload_json and len(payload_json) > 1_000_000:
+        payload_json_str = str(payload_dict)
+        if len(payload_json_str) > 1_000_000:
             log.warning(
-                f"Large payload ({len(payload_json)} bytes) in inbox message. "
+                f"Large payload ({len(payload_json_str)} bytes) in inbox message. "
                 f"Consider using payload_ref for large data."
             )
 
@@ -136,17 +134,14 @@ class DurableInbox:
             handle=handle,
             message_id=message_id,
             msg_seq=next_seq,
-            payload_json=payload_json,
+            payload_json=payload_dict,
             payload_ref=payload_ref,
             status="pending",
             created_at=datetime.now(),
         )
 
         await message.save()
-        log.debug(
-            f"Appended message {message_id} to inbox "
-            f"({self.run_id}/{self.node_id}/{handle}), seq={next_seq}"
-        )
+        log.debug(f"Appended message {message_id} to inbox ({self.run_id}/{self.node_id}/{handle}), seq={next_seq}")
 
         return message
 
@@ -167,15 +162,13 @@ class DurableInbox:
         Returns:
             List of pending messages in sequence order
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "pending",
-                "msg_seq": {"$gte": min_seq},
-            },
-            sort=[("msg_seq", 1)],
+        messages = await RunInboxMessage._find_messages(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
+            status_filter="pending",
+            min_seq=min_seq,
+            sort_order=1,
             limit=limit,
         )
 
@@ -207,13 +200,14 @@ class DurableInbox:
         Returns:
             Maximum sequence number (0 if no messages exist)
         """
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-            },
-            sort=[("msg_seq", -1)],
+        messages = await RunInboxMessage._find_messages(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
+            status_filter=None,
+            min_seq=0,
+            max_seq=None,
+            sort_order=-1,
             limit=1,
         )
 
@@ -248,14 +242,15 @@ class DurableInbox:
             Number of messages deleted
         """
         # Find consumed messages to delete
-        messages = await RunInboxMessage.find(
-            {
-                "run_id": self.run_id,
-                "node_id": self.node_id,
-                "handle": handle,
-                "status": "consumed",
-                "msg_seq": {"$lt": older_than_seq},
-            }
+        messages = await RunInboxMessage._find_messages(
+            run_id=self.run_id,
+            node_id=self.node_id,
+            handle=handle,
+            status_filter="consumed",
+            min_seq=0,
+            max_seq=older_than_seq - 1,
+            sort_order=1,
+            limit=1000,
         )
 
         # Delete them
@@ -265,9 +260,6 @@ class DurableInbox:
             count += 1
 
         if count > 0:
-            log.info(
-                f"Cleaned up {count} consumed messages from inbox "
-                f"({self.run_id}/{self.node_id}/{handle})"
-            )
+            log.info(f"Cleaned up {count} consumed messages from inbox ({self.run_id}/{self.node_id}/{handle})")
 
         return count

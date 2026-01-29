@@ -8,7 +8,7 @@ with proper cleanup and connection pooling.
 from __future__ import annotations
 
 import contextvars
-from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import httpx
 
@@ -17,11 +17,11 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 if TYPE_CHECKING:
+
     from nodetool.models.database_adapter import DatabaseAdapter
     from nodetool.storage.abstract_storage import AbstractStorage
     from nodetool.storage.memcache_node_cache import AbstractNodeCache
     from nodetool.storage.memory_uri_cache import MemoryUriCache
-    from supabase import AsyncClient
 
 log = get_logger(__name__)
 
@@ -29,7 +29,7 @@ log = get_logger(__name__)
 class DBResources(Protocol):
     """Protocol for database resources (connection + adapters)."""
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> DatabaseAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> DatabaseAdapter:
         """Get or create an adapter for the given model class.
 
         Args:
@@ -221,8 +221,14 @@ class ResourceScope:
         try:
             # Unbind the scope from the context variable
             if self._token is not None:
-                _current_scope.reset(self._token)
-                log.debug("ResourceScope unbound from context")
+                try:
+                    _current_scope.reset(self._token)
+                    log.debug("ResourceScope unbound from context")
+                except ValueError:
+                    # Token was created in a different context (e.g., nested task)
+                    # This is expected in some test scenarios, log and continue
+                    log.debug("ResourceScope token reset skipped (different context)")
+                    pass
 
             # Only clean up database resources if we own them (not borrowed from parent)
             if self.db is not None and self._owns_db:
@@ -258,10 +264,11 @@ class ResourceScope:
         connection from shared pool.
 
         Returns:
-            DBResources instance (SQLiteScopeResources or similar)
+            DBResources instance (SQLiteScopeResources, PostgresScopeResources, or SupabaseScopeResources)
         """
         supabase_url = Environment.get_supabase_url()
         supabase_key = Environment.get_supabase_key()
+        postgres_db = Environment.get("POSTGRES_DB")
 
         if supabase_url and supabase_key:
             from nodetool.runtime.db_supabase import SupabaseScopeResources
@@ -276,6 +283,16 @@ class ResourceScope:
 
             client = AsyncClient(supabase_url, supabase_key)
             return SupabaseScopeResources(client)
+        elif postgres_db:
+            from nodetool.runtime.db_postgres import PostgresConnectionPool, PostgresScopeResources
+
+            db_params = Environment.get_postgres_params()
+            conninfo = (
+                f"dbname={db_params['database']} user={db_params['user']} "
+                f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
+            )
+            pool = await PostgresConnectionPool.get_shared(conninfo)
+            return PostgresScopeResources(pool)
         else:
             from nodetool.runtime.db_sqlite import (
                 SQLiteConnectionPool,
@@ -283,7 +300,6 @@ class ResourceScope:
             )
 
             if self.pool is None:
-                # Use provided db_path or fall back to environment config
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
                 return SQLiteScopeResources(pool)
             else:
@@ -306,8 +322,9 @@ class ResourceScope:
                 supabase_url = Environment.get_supabase_url()
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key:
-                    from nodetool.storage.supabase_storage import SupabaseStorage
                     from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                    from nodetool.storage.supabase_storage import SupabaseStorage
 
                     log.info("Using Supabase storage for asset storage")
                     client = SupabaseAsyncClient(supabase_url, supabase_key)
@@ -379,8 +396,9 @@ class ResourceScope:
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key and Environment.get_asset_temp_bucket():
                     try:
-                        from nodetool.storage.supabase_storage import SupabaseStorage
                         from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                        from nodetool.storage.supabase_storage import SupabaseStorage
 
                         log.info("Using Supabase storage for temp storage")
                         client = SupabaseAsyncClient(supabase_url, supabase_key)
@@ -409,8 +427,9 @@ class ResourceScope:
                 supabase_key = Environment.get_supabase_key()
                 if supabase_url and supabase_key and Environment.get_asset_temp_bucket():
                     try:
-                        from nodetool.storage.supabase_storage import SupabaseStorage
                         from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                        from nodetool.storage.supabase_storage import SupabaseStorage
 
                         log.info("Using Supabase storage for temp asset storage")
                         client = SupabaseAsyncClient(supabase_url, supabase_key)

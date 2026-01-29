@@ -1,4 +1,4 @@
-"""
+﻿"""
 Anthropic provider implementation for chat completions.
 
 This module implements the ChatProvider interface for Anthropic Claude models,
@@ -7,12 +7,12 @@ handling message conversion, streaming, and tool integration.
 
 import base64
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
 
-if TYPE_CHECKING:
-    import asyncio
+import asyncio
 
+if TYPE_CHECKING:
     import httpx
 
 import aiohttp
@@ -23,8 +23,6 @@ from anthropic.types.message_param import MessageParam
 from anthropic.types.tool_param import ToolParam
 from pydantic import BaseModel
 
-from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (
@@ -36,7 +34,6 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -178,12 +175,13 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling (all Claude models do)")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Anthropic models.
 
         Fetches models dynamically from the Anthropic API if an API key is available.
-        Returns an empty list if no API key is configured or if the fetch fails.
+        Implements retry with exponential backoff for transient failures.
+        Does not retry on authentication errors (401/403).
 
         Returns:
             List of LanguageModel instances for Anthropic
@@ -192,39 +190,75 @@ class AnthropicProvider(BaseProvider):
             log.debug("No Anthropic API key configured, returning empty model list")
             return []
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            headers = {
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-            }
-            async with (
-                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
-                session.get("https://api.anthropic.com/v1/models") as response,
-            ):
-                if response.status != 200:
-                    log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
-                    return []
-                payload: Dict[str, Any] = await response.json()
-                data = payload.get("data", [])
+        max_retries = 3
+        base_delay = 1.0  # seconds
 
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id") or item.get("name")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.Anthropic,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Anthropic models")
-                return models
-        except Exception as e:
-            log.error(f"Error fetching Anthropic models: {e}")
-            return []
+        # Granular timeouts: 5s connect, 10s total
+        timeout = aiohttp.ClientTimeout(connect=5, total=10)
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+
+        last_error: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.get("https://api.anthropic.com/v1/models") as response:
+                        # Don't retry on auth errors
+                        if response.status in (401, 403):
+                            log.warning(f"Anthropic API auth error: HTTP {response.status} (not retrying)")
+                            return []
+
+                        # Retry on rate limit or server errors
+                        if response.status in (429, 500, 502, 503, 504):
+                            log.warning(f"Anthropic API error: HTTP {response.status}, attempt {attempt + 1}/{max_retries}")
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2**attempt)
+                                await asyncio.sleep(delay)
+                                continue
+                            return []
+
+                        if response.status != 200:
+                            log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
+                            return []
+
+                        payload: dict[str, Any] = await response.json()
+                        data = payload.get("data", [])
+
+                        models: list[LanguageModel] = []
+                        for item in data:
+                            model_id = item.get("id") or item.get("name")
+                            if not model_id:
+                                continue
+                            models.append(
+                                LanguageModel(
+                                    id=model_id,
+                                    name=model_id,
+                                    provider=Provider.Anthropic,
+                                )
+                            )
+                        log.debug(f"Fetched {len(models)} Anthropic models")
+                        return models
+
+            except asyncio.TimeoutError as e:
+                last_error = e
+                log.warning(f"Anthropic API timeout, attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    await asyncio.sleep(delay)
+            except aiohttp.ClientError as e:
+                last_error = e
+                log.warning(f"Anthropic API connection error: {e}, attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    await asyncio.sleep(delay)
+            except Exception as e:
+                log.error(f"Unexpected error fetching Anthropic models: {e}")
+                return []
+
+        log.error(f"Failed to fetch Anthropic models after {max_retries} attempts: {last_error}")
+        return []
 
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
@@ -244,19 +278,22 @@ class AnthropicProvider(BaseProvider):
                 content = json.dumps(message.content)
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
-            return {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": message.tool_call_id,
-                        "content": str(message.content),
-                    }
-                ],
-            }
+            return cast(
+                "MessageParam",
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": message.tool_call_id,
+                            "content": str(message.content),
+                        }
+                    ],
+                },
+            )
         elif message.role == "system":
             log.debug("Converting system message")
-            return {
+            return {  # type: ignore[return-value]
                 "role": "assistant",
                 "content": str(message.content),
             }
@@ -265,7 +302,7 @@ class AnthropicProvider(BaseProvider):
             assert message.content is not None, "User message content must not be None"
             if isinstance(message.content, str):
                 log.debug("User message has string content")
-                return {"role": "user", "content": message.content}
+                return {"role": "user", "content": message.content}  # type: ignore[return-value]
             else:
                 log.debug(f"Converting {len(message.content)} content parts")
                 content = []
@@ -308,7 +345,7 @@ class AnthropicProvider(BaseProvider):
                             )
                         )
                 log.debug(f"Converted to {len(content)} content parts")
-                return {"role": "user", "content": content}
+                return {"role": "user", "content": content}  # type: ignore[return-value]
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             # Skip assistant messages with empty content
@@ -318,21 +355,24 @@ class AnthropicProvider(BaseProvider):
 
             if message.tool_calls:
                 log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
-                return {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "name": tool_call.name,
-                            "id": tool_call.id,
-                            "input": tool_call.args,
-                        }
-                        for tool_call in message.tool_calls
-                    ],
-                }
+                return cast(
+                    "MessageParam",
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": tool_call.name,
+                                "id": tool_call.id,
+                                "input": tool_call.args,
+                            }
+                            for tool_call in message.tool_calls
+                        ],
+                    },
+                )
             elif isinstance(message.content, str):
                 log.debug("Assistant message has string content")
-                return {"role": "assistant", "content": message.content}
+                return {"role": "assistant", "content": message.content}  # type: ignore[return-value]
             elif isinstance(message.content, list):
                 log.debug(f"Assistant message has {len(message.content)} content parts")
                 content = []
@@ -340,7 +380,7 @@ class AnthropicProvider(BaseProvider):
                 for part in message.content:
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
-                return {"role": "assistant", "content": content}
+                return {"role": "assistant", "content": content}  # type: ignore[return-value]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
@@ -364,7 +404,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -431,36 +471,39 @@ class AnthropicProvider(BaseProvider):
         log.debug("Streaming response initialized")
         log.debug("Streaming response initialized")
         client = self.get_client()
-        async with client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
-            async for event in ctx_stream:  # type: ignore
-                etype = getattr(event, "type", "")
-                if etype == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    # Prefer text; fall back to partial_json/thinking if present
-                    text = getattr(delta, "text", None)
-                    getattr(delta, "partial_json", None)
-                    thinking = getattr(delta, "thinking", None)
-                    if isinstance(text, str):
-                        yield Chunk(content=text, done=False)
-                    # Note: partial_json contains tool call input fragments and should NOT
-                    # be yielded as message content. The complete tool call is emitted
-                    # at content_block_stop event.
-                    elif isinstance(thinking, str):
-                        yield Chunk(content=thinking, done=False)
-                elif etype == "content_block_stop":
-                    # Tool use may appear here in real SDK; tests often omit attributes
-                    content_block = getattr(event, "content_block", None)
-                    if content_block is not None and getattr(content_block, "type", "") == "tool_use":
-                        tool_call = ToolCall(
-                            id=str(getattr(content_block, "id", "")),
-                            name=getattr(content_block, "name", ""),
-                            args=getattr(content_block, "input", {}) or {},  # type: ignore
-                        )
-                        yield tool_call
-                elif etype == "message_stop":
-                    yield Chunk(content="", done=True)
+        try:
+            async with client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
+                async for event in ctx_stream:  # type: ignore
+                    etype = getattr(event, "type", "")
+                    if etype == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        # Prefer text; fall back to partial_json/thinking if present
+                        text = getattr(delta, "text", None)
+                        getattr(delta, "partial_json", None)
+                        thinking = getattr(delta, "thinking", None)
+                        if isinstance(text, str):
+                            yield Chunk(content=text, done=False)
+                        # Note: partial_json contains tool call input fragments and should NOT
+                        # be yielded as message content. The complete tool call is emitted
+                        # at content_block_stop event.
+                        elif isinstance(thinking, str):
+                            yield Chunk(content=thinking, done=False, thinking=True)
+                    elif etype == "content_block_stop":
+                        # Tool use may appear here in real SDK; tests often omit attributes
+                        content_block = getattr(event, "content_block", None)
+                        if content_block is not None and getattr(content_block, "type", "") == "tool_use":
+                            tool_call = ToolCall(
+                                id=str(getattr(content_block, "id", "")),
+                                name=getattr(content_block, "name", ""),
+                                args=getattr(content_block, "input", {}) or {},  # type: ignore
+                            )
+                            yield tool_call
+                    elif etype == "message_stop":
+                        yield Chunk(content="", done=True)
+        except anthropic.AnthropicError as exc:
+            raise self._as_httpx_status_error(exc) from exc
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -547,13 +590,12 @@ class AnthropicProvider(BaseProvider):
         if hasattr(response, "usage"):
             log.debug("Processing usage statistics")
             usage = response.usage
-            cost = await calculate_chat_cost(
-                model,
-                usage.input_tokens,
-                usage.output_tokens,
+            self.track_usage(
+                model=model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
             )
-            self.cost += cost
-            log.debug(f"Updated cost: {cost}")
+            log.debug(f"Updated cost: {self.cost}")
 
         log.debug(f"Processing {len(response.content)} content blocks")
         content = []

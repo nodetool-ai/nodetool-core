@@ -21,12 +21,25 @@ from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 
+def _shell_escape(value: str) -> str:
+    """Escape a string for safe shell inclusion using shlex.quote()."""
+    return shlex.quote(value)
+
+
 def run_command(command: str, capture_output: bool = False) -> str:
-    """Run a shell command with streaming output and return output if requested."""
+    """Run a command safely without shell expansion.
+
+    Args:
+        command: Shell command string to run.
+        capture_output: If True, capture and return output. If False, stream output.
+
+    Returns:
+        Captured output if capture_output=True, empty string otherwise.
+    """
     try:
+        cmd_list = shlex.split(command)
         if capture_output:
-            # For commands that need to return output, capture but still stream
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True, check=True)
             output = result.stdout.strip()
             if output:
                 print(output)
@@ -34,10 +47,9 @@ def run_command(command: str, capture_output: bool = False) -> str:
                 print(result.stderr.strip(), file=sys.stderr)
             return output
         else:
-            # For commands that don't need return value, stream in real-time
             process = subprocess.Popen(
-                command,
-                shell=True,
+                cmd_list,
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -45,13 +57,11 @@ def run_command(command: str, capture_output: bool = False) -> str:
                 universal_newlines=True,
             )
 
-            # Stream output line by line
             if process.stdout:
                 for line in process.stdout:
                     print(line.rstrip())
                     sys.stdout.flush()
 
-            # Wait for process to complete and check return code
             return_code = process.wait()
             if return_code != 0:
                 raise subprocess.CalledProcessError(return_code, command)
@@ -271,7 +281,7 @@ def build_docker_image(
             discovered: list[dict] = []
             for dist in importlib_metadata.distributions():
                 try:
-                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
+                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""  # type: ignore[union-attr]
                 except Exception:
                     continue
                 if not raw_name:
@@ -347,33 +357,28 @@ def build_docker_image(
             run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
 
             # Try to build with cache from/to Docker Hub registry
-            cache_from = f"--cache-from=type=registry,ref={image_name}:buildcache"
-            cache_to = f"--cache-to=type=registry,ref={image_name}:buildcache,mode=max"
+            cache_from = f"--cache-from=type=registry,ref={_shell_escape(image_name)}:buildcache"
+            cache_to = f"--cache-to=type=registry,ref={_shell_escape(image_name)}:buildcache,mode=max"
 
             push_flag = "--push" if auto_push else "--load"
 
-            build_cmd_with_cache = (
-                f"docker buildx build --platform {platform} -t {image_name}:{tag} {cache_from} {cache_to} {push_flag} ."
-            )
+            build_cmd_with_cache = f"docker buildx build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} {cache_from} {cache_to} {push_flag} ."
 
             print(f"Cache image: {image_name}:buildcache")
 
             try:
-                # Try building with cache first
                 run_command(build_cmd_with_cache)
                 image_pushed = auto_push
             except subprocess.CalledProcessError:
                 print("Cache build failed, falling back to build without cache import...")
-                # Fallback to build without cache import (but still export cache)
-                build_cmd_fallback = (
-                    f"docker buildx build --platform {platform} -t {image_name}:{tag} {cache_to} {push_flag} ."
-                )
+                build_cmd_fallback = f"docker buildx build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} {cache_to} {push_flag} ."
                 run_command(build_cmd_fallback)
                 image_pushed = auto_push
         else:
-            # Traditional docker build without cache optimization
             print("Building without cache optimization...")
-            run_command(f"docker build --platform {platform} -t {image_name}:{tag} .")
+            run_command(
+                f"docker build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} ."
+            )
             image_pushed = False
 
         os.chdir(original_dir)
@@ -399,12 +404,10 @@ def push_to_registry(image_name: str, tag: str, registry: str = "docker.io"):
     """
     print(f"Pushing Docker image {image_name}:{tag} to registry {registry}...")
 
-    # Ensure we're authenticated with the registry
     ensure_docker_auth(registry)
 
-    # Push the image
     try:
-        run_command(f"docker push {image_name}:{tag}")
+        run_command(f"docker push {_shell_escape(image_name)}:{_shell_escape(tag)}")
         print(f"Docker image {image_name}:{tag} pushed successfully")
 
     except subprocess.CalledProcessError:

@@ -83,7 +83,7 @@ async def test_result_for_client_image_memory_uri():
     assert isinstance(client_result["image"]["data"], bytes)
     assert len(client_result["image"]["data"]) > 0
     # Should be PNG bytes (starts with PNG header)
-    assert client_result["image"]["data"][:8] == b'\x89PNG\r\n\x1a\n'
+    assert client_result["image"]["data"][:8] == b"\x89PNG\r\n\x1a\n"
 
 
 @pytest.mark.asyncio
@@ -225,6 +225,20 @@ def test_result_for_client_bytes_placeholder():
     client_result = node.result_for_client(result)
 
     assert client_result["data"] == "<10 bytes>"
+
+
+def test_result_for_client_assetref_large_data_is_not_inlined():
+    """Large AssetRef.data should not be inlined into websocket updates."""
+    node = TestAssetReturningNode(test_mode="simple")
+
+    # 5 MiB payload - larger than BaseNode's MAX_INLINE_ASSET_BYTES (4 MiB)
+    big = AssetRef(data=b"x" * (5 * 1024 * 1024))
+    client_result = node.result_for_client({"asset": big})
+
+    assert isinstance(client_result["asset"], dict)
+    assert client_result["asset"].get("data") is None
+    assert isinstance(client_result["asset"].get("metadata"), dict)
+    assert client_result["asset"]["metadata"].get("inlined_data") is False
 
 
 @pytest.mark.asyncio

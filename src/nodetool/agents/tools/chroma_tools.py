@@ -11,6 +11,7 @@ This module provides tools for semantic and keyword searching:
 import uuid
 from typing import Any, ClassVar
 
+import aiofiles
 import chromadb
 
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -304,10 +305,14 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
         from langchain_core.documents import Document
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+        separators = params.get("separators", ["\n\n", "\n", "."])
+        if isinstance(separators, str):
+            separators = [separators]
+
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=params.get("chunk_size", 1000),
             chunk_overlap=params.get("chunk_overlap", 200),
-            separators=params.get("separators", ["\n\n", "\n", "."]),
+            separators=separators,
             length_function=len,
             is_separator_regex=False,
             add_start_index=True,
@@ -454,8 +459,8 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             doc_id = file_path
             resolved_file_path = context.resolve_workspace_path(file_path)
 
-            with open(resolved_file_path) as f:
-                text = f.read()
+            async with aiofiles.open(resolved_file_path) as f:
+                text = await f.read()
         else:
             text = params.get("text")
             doc_id = str(uuid.uuid4())
@@ -530,6 +535,8 @@ class ChromaBatchIndexTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
         chunks = params["chunks"]
+        if isinstance(chunks, str):
+            chunks = [chunks]
         base_metadata = params.get("base_metadata", {})
 
         if not chunks:

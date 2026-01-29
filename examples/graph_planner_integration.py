@@ -14,7 +14,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import ColumnDef, DataframeRef, Provider
 from nodetool.providers import get_provider
-from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest

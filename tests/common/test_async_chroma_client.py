@@ -477,7 +477,9 @@ class TestAsyncChromaCollectionPeekOperations:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(
+        not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()"
+    )
     async def test_peek_default(self, test_collection):
         """Test peeking with default limit."""
         ids = [f"peek{i}" for i in range(15)]
@@ -490,7 +492,9 @@ class TestAsyncChromaCollectionPeekOperations:
         assert len(result["ids"]) == 10
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(
+        not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()"
+    )
     async def test_peek_with_limit(self, test_collection):
         """Test peeking with custom limit."""
         ids = [f"peek_lim{i}" for i in range(10)]
@@ -503,7 +507,9 @@ class TestAsyncChromaCollectionPeekOperations:
         assert len(result["ids"]) == 5
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()")
+    @pytest.mark.skipif(
+        not PEEK_INCLUDE_SUPPORT, reason="ChromaDB < 1.5.0 does not support include parameter in peek()"
+    )
     async def test_peek_returns_documents_and_metadata(self, test_collection):
         """Test that peek returns documents and metadata by default."""
         ids = ["peek_inc1"]

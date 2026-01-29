@@ -3,7 +3,7 @@ Trigger Wakeup Service - Durable Cross-Process Trigger Management
 =================================================================
 
 Provides durable trigger wakeup functionality without relying on in-memory state.
-Uses the trigger_inputs and run_state tables to coordinate trigger delivery across
+Uses the trigger_inputs and Job tables to coordinate trigger delivery across
 multiple servers.
 
 Key Features:
@@ -42,12 +42,11 @@ This implements Phase 4 of the architectural refactor:
 - Recovery service handles actual resumption
 """
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
-from nodetool.models.run_state import RunState
+from nodetool.models.job import Job
 from nodetool.models.trigger_input import TriggerInput
 from nodetool.workflows.durable_inbox import DurableInbox
 
@@ -87,7 +86,7 @@ class TriggerWakeupService:
             True if input was newly created, False if it already existed
         """
         # Check if input already exists (idempotency)
-        existing = await TriggerInput.find_one({"input_id": input_id})
+        existing = await TriggerInput.get_by_input_id(input_id)
         if existing:
             log.debug(f"Trigger input {input_id} already exists (idempotent)")
             return False
@@ -97,17 +96,14 @@ class TriggerWakeupService:
             run_id=run_id,
             node_id=node_id,
             input_id=input_id,
-            payload_json=json.dumps(payload),
+            payload_json=payload,
             cursor=cursor,
             processed=False,
             created_at=datetime.now(),
         )
 
         await trigger_input.save()
-        log.info(
-            f"Stored trigger input {input_id} for {run_id}/{node_id}"
-            + (f" (cursor={cursor})" if cursor else "")
-        )
+        log.info(f"Stored trigger input {input_id} for {run_id}/{node_id}" + (f" (cursor={cursor})" if cursor else ""))
 
         # Also append as inbox message to wake the node
         inbox = DurableInbox(run_id=run_id, node_id=node_id)
@@ -138,17 +134,26 @@ class TriggerWakeupService:
         Returns:
             List of pending trigger inputs in creation order
         """
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": False,
-            },
-            sort=[("created_at", 1)],
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(False),
+                ],
+                LogicalOperator.AND,
+            )
+        )
+
+        adapter = await TriggerInput.adapter()
+        results, _ = await adapter.query(
+            condition=condition,
             limit=limit,
         )
 
-        return inputs
+        return [TriggerInput.from_dict(row) for row in results]
 
     async def mark_processed(self, trigger_input: TriggerInput) -> None:
         """
@@ -170,24 +175,27 @@ class TriggerWakeupService:
         Returns:
             List of (run_id, node_id) tuples for suspended triggers with pending inputs
         """
-        # Find runs in suspended state
-        suspended_runs = await RunState.find(
-            {"status": "suspended"},
+        from nodetool.models.condition_builder import Field
+
+        condition = Field("status").equals("suspended")
+        adapter = await Job.adapter()
+        suspended_runs, _ = await adapter.query(
+            condition=condition,
             limit=1000,
         )
 
         results = []
-        for run_state in suspended_runs:
-            # Check if this run has pending trigger inputs
-            if run_state.suspended_node_id:
+        for job_data in suspended_runs:
+            job = Job.from_dict(job_data)
+            if job.suspended_node_id:
                 pending = await self.get_pending_inputs(
-                    run_id=run_state.run_id,
-                    node_id=run_state.suspended_node_id,
+                    run_id=job.id,
+                    node_id=job.suspended_node_id,
                     limit=1,
                 )
 
                 if pending:
-                    results.append((run_state.run_id, run_state.suspended_node_id))
+                    results.append((job.id, job.suspended_node_id))
 
         return results
 
@@ -212,16 +220,13 @@ class TriggerWakeupService:
             True if wake-up was initiated, False otherwise
         """
         # Check if run is actually suspended
-        run_state = await RunState.get(run_id)
-        if not run_state:
+        job = await Job.get(run_id)
+        if not job:
             log.warning(f"Cannot wake trigger: run {run_id} not found")
             return False
 
-        if run_state.status != "suspended":
-            log.warning(
-                f"Cannot wake trigger: run {run_id} is not suspended "
-                f"(status={run_state.status})"
-            )
+        if job.status != "suspended":
+            log.warning(f"Cannot wake trigger: run {run_id} is not suspended (status={job.status})")
             return False
 
         log.info(f"Waking up suspended trigger workflow {run_id}")
@@ -233,9 +238,7 @@ class TriggerWakeupService:
             log.info(f"Recovery service will resume {run_id}")
             # await recovery_service.resume_workflow(run_id, graph, context)
         else:
-            log.info(
-                f"No recovery service provided, trigger wake-up logged for {run_id}"
-            )
+            log.info(f"No recovery service provided, trigger wake-up logged for {run_id}")
 
         return True
 
@@ -260,27 +263,36 @@ class TriggerWakeupService:
         """
         from datetime import timedelta
 
+        from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup, Field, LogicalOperator
+
         cutoff = datetime.now() - timedelta(hours=older_than_hours)
 
-        # Find old processed inputs
-        inputs = await TriggerInput.find(
-            {
-                "run_id": run_id,
-                "node_id": node_id,
-                "processed": True,
-                "processed_at": {"$lt": cutoff},
-            }
+        condition = ConditionBuilder(
+            ConditionGroup(
+                [
+                    Field("run_id").equals(run_id),
+                    Field("node_id").equals(node_id),
+                    Field("processed").equals(True),
+                    Field("processed_at").less_than(cutoff),
+                ],
+                LogicalOperator.AND,
+            )
         )
 
-        # Delete them
+        adapter = await TriggerInput.adapter()
+        results, _ = await adapter.query(
+            condition=condition,
+            limit=1000,
+        )
+
+        inputs = [TriggerInput.from_dict(row) for row in results]
+
         count = 0
         for inp in inputs:
             await inp.delete()
             count += 1
 
         if count > 0:
-            log.info(
-                f"Cleaned up {count} processed trigger inputs for {run_id}/{node_id}"
-            )
+            log.info(f"Cleaned up {count} processed trigger inputs for {run_id}/{node_id}")
 
         return count

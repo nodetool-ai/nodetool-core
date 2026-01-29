@@ -104,11 +104,9 @@ import hashlib
 import json
 import logging
 import mimetypes
-import tempfile
 from datetime import date, datetime
 from io import BytesIO
-from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import httpx
 from pydantic import BaseModel
@@ -127,7 +125,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider
 from nodetool.runtime.resources import require_scope
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
@@ -170,18 +168,6 @@ def detect_mime_type(data: bytes) -> str:
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
 
-Operating mode:
-- If something is ambiguous, choose the most reasonable assumption, proceed.
-- Prefer tool calls and concrete actions over clarifying questions.
-
-Control of eagerness:
-- Keep scope tightly focused.
-- Avoid unnecessary exploration.
-- Be concise and minimize tokens.
-
-Tool preambles:
-- Before each tool call, emit a one-sentence assistant message describing what you're doing and why.
-
 # IMAGE TOOLS
 When using image tools, you will get an image url as result.
 ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
@@ -190,16 +176,6 @@ ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
 References to documents, images, videos or audio files are objects with following structure:
 - type: either document, image, video, audio
 - uri: either local "file:///path/to/file" or "http://"
-
-# Date and time
-Date and time are objects with following structure:
-- type: either date, datetime
-- year: int
-- month: int
-- day: int
-- hour: int (optional)
-- minute: int (optional)
-- second: int (optional)
 """
 
 
@@ -295,9 +271,9 @@ class RegularChatProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
-        collections: Optional[List[str]] = None,
+        collections: Optional[list[str]] = None,
         graph: Optional[Graph] = None,
         **kwargs,
     ):
@@ -307,9 +283,10 @@ class RegularChatProcessor(MessageProcessor):
         unprocessed_messages = []
 
         if last_message.tools:
-            tools = await asyncio.gather(
+            resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in last_message.tools]
             )
+            tools = [t for t in resolved_tools if t is not None]
         else:
             tools = []
 
@@ -330,6 +307,11 @@ class RegularChatProcessor(MessageProcessor):
             if collection_context:
                 log.debug(f"Retrieved collection context: {len(collection_context)} characters")
 
+        # Track whether we should include tools in the next generation call
+        # Only include tools when they were actually used in the previous response
+        # to avoid wasting tokens on unused tool definitions
+        should_include_tools = True
+
         assert last_message.model, "Model is required"
 
         try:
@@ -344,20 +326,32 @@ class RegularChatProcessor(MessageProcessor):
 
                 unprocessed_messages = []
 
-                _log_tool_definition_token_breakdown(tools, last_message.model)
-                log.debug(f"Calling provider.generate_messages with {len(messages_to_send)} messages")
+                # Only pass tools to the provider if they were actually used
+                tools_to_use = tools if should_include_tools and tools else []
+
+                _log_tool_definition_token_breakdown(tools_to_use, last_message.model)
+                log.debug(
+                    f"Calling provider.generate_messages with {len(messages_to_send)} messages, tools={'enabled' if tools_to_use else 'disabled'}"
+                )
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
-                    tools=tools,
+                    tools=tools_to_use,
                     context_window=32000,
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         content += chunk.content
+                        # Set thread_id if available
+                        if last_message.thread_id and not chunk.thread_id:
+                            chunk.thread_id = last_message.thread_id
                         await self.send_message(chunk.model_dump())
                     elif isinstance(chunk, ToolCall):
                         # Resolve tool and prepare message
                         tool = await resolve_tool_by_name(chunk.name, processing_context.user_id)
+                        if not tool:
+                            log.warning(f"LLM called unknown tool: {chunk.name}")
+                            continue
+
                         message_text = tool.user_message(chunk.args)
 
                         # Create assistant message with tool call
@@ -430,7 +424,7 @@ class RegularChatProcessor(MessageProcessor):
                     log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
 
             # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
             await self.send_message(
                 Message(
                     role="assistant",
@@ -454,17 +448,69 @@ class RegularChatProcessor(MessageProcessor):
                     "type": "error",
                     "message": error_msg,
                     "error_type": "connection_error",
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
                 }
             )
 
             # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
 
             # Return an error message
             await self.send_message(
                 Message(
                     role="assistant",
                     content=f"I encountered a connection error: {error_msg}. Please check your network connection and try again.",
+                    thread_id=last_message.thread_id,
+                    workflow_id=last_message.workflow_id,
+                    provider=last_message.provider,
+                    model=last_message.model,
+                    agent_mode=last_message.agent_mode or False,
+                ).model_dump()
+            )
+
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP status errors (4xx, 5xx)
+            status_code = e.response.status_code if e.response else 0
+            error_details = self._format_http_status_error(e)
+            log.error(f"httpx.HTTPStatusError in process: {e}", exc_info=True)
+
+            # Send structured error message to client
+            await self.send_message(
+                {
+                    "type": "error",
+                    "message": error_details,
+                    "error_type": "http_status_error",
+                    "status_code": status_code,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
+
+            # Signal completion even on error
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "thread_id": last_message.thread_id,
+                    "workflow_id": last_message.workflow_id,
+                }
+            )
+
+            # Return an error message
+            await self.send_message(
+                Message(
+                    role="assistant",
+                    content=f"I encountered an API error (HTTP {status_code}): {error_details}",
                     thread_id=last_message.thread_id,
                     workflow_id=last_message.workflow_id,
                     provider=last_message.provider,
@@ -487,7 +533,7 @@ class RegularChatProcessor(MessageProcessor):
                     return content_item.text
         return ""
 
-    async def _query_collections(self, collections: List[str], query_text: str, n_results: int) -> str:
+    async def _query_collections(self, collections: list[str], query_text: str, n_results: int) -> str:
         """Query ChromaDB collections and return concatenated results."""
         if not collections or not query_text:
             return ""
@@ -520,7 +566,7 @@ class RegularChatProcessor(MessageProcessor):
 
         return "\n".join(all_results) if all_results else ""
 
-    def _add_collection_context(self, messages: List[Message], collection_context: str) -> List[Message]:
+    def _add_collection_context(self, messages: list[Message], collection_context: str) -> list[Message]:
         """Add collection context as a system message before the last user message."""
         # Find the last user message index
         last_user_index = -1
@@ -677,6 +723,36 @@ class RegularChatProcessor(MessageProcessor):
             return "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
         else:
             return f"Connection error: {error_msg}"
+
+    def _format_http_status_error(self, e: httpx.HTTPStatusError) -> str:
+        """Format HTTP status error message."""
+        status_code = e.response.status_code if e.response else 0
+        error_msg = str(e)
+
+        try:
+            if e.response and e.response.content:
+                body = e.response.json()
+                if isinstance(body, dict) and "error" in body:
+                    error_detail = body["error"]
+                    if isinstance(error_detail, dict) and "message" in error_detail:
+                        return str(error_detail["message"])
+        except Exception:
+            pass
+
+        if status_code == 400:
+            return f"Bad request: {error_msg}"
+        elif status_code == 401:
+            return "Authentication failed: Invalid API key or token"
+        elif status_code == 403:
+            return "Access forbidden: You don't have permission for this resource"
+        elif status_code == 404:
+            return "Not found: The requested resource was not found"
+        elif status_code == 429:
+            return "Rate limited: Too many requests, please slow down"
+        elif status_code >= 500:
+            return f"Server error ({status_code}): The service is temporarily unavailable"
+        else:
+            return f"HTTP error ({status_code}): {error_msg}"
 
     async def _log_provider_call(
         self,

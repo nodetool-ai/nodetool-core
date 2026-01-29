@@ -119,9 +119,7 @@ def generate_pkce_pair() -> tuple[str, str]:
     # Generate code_challenge: base64url(sha256(code_verifier))
     # Per RFC 7636, use base64url encoding (not hex)
     challenge_bytes = hashlib.sha256(code_verifier.encode("utf-8")).digest()
-    code_challenge = (
-        base64.urlsafe_b64encode(challenge_bytes).decode("utf-8").rstrip("=")
-    )
+    code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode("utf-8").rstrip("=")
 
     return code_verifier, code_challenge
 
@@ -166,9 +164,7 @@ def oauth_html_response(
     if success:
         heading = "Authentication Successful"
         message = "Your Hugging Face account has been connected successfully."
-        details = (
-            f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
-        )
+        details = f"<strong>Username:</strong> {username or 'Unknown'}" if username else ""
     else:
         heading = "Authentication Failed"
         message = error_description or "An error occurred during authentication."
@@ -301,7 +297,7 @@ def oauth_html_response(
         <div class="icon">{icon}</div>
         <h1>{heading}</h1>
         <p class="message">{message}</p>
-        {f'<div class="details">{details}</div>' if details else ''}
+        {f'<div class="details">{details}</div>' if details else ""}
         <button class="close-button" onclick="window.close()">Close Window</button>
         <div class="close-hint">
             You can also close this window manually
@@ -346,9 +342,15 @@ async def start_huggingface_oauth(
     # Extract just the host and port, handle both with and without scheme
     if "://" in host:
         host = host.split("://")[1]
+
+    # Normalize 127.0.0.1 to localhost to match registered OAuth callback keys
+    if host.startswith("127.0.0.1"):
+        host = host.replace("127.0.0.1", "localhost")
+
     # Use http for local, https for production
-    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+    scheme = "https" if "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/hf/callback"
+    log.warning(f"Hugging Face OAuth redirect_uri: {redirect_uri}")
 
     # Store state and verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
@@ -378,9 +380,7 @@ async def start_huggingface_oauth(
 
 @router.get("/hf/callback")
 async def huggingface_oauth_callback(
-    code: Optional[str] = Query(
-        None, description="Authorization code from Hugging Face"
-    ),
+    code: Optional[str] = Query(None, description="Authorization code from Hugging Face"),
     state: Optional[str] = Query(None, description="State parameter to prevent CSRF"),
     error: Optional[str] = Query(None, description="Error from OAuth provider"),
     error_description: Optional[str] = Query(None, description="Error description"),
@@ -465,9 +465,7 @@ async def huggingface_oauth_callback(
             )
 
             if token_response.status_code != 200:
-                log.error(
-                    f"Token exchange failed: {token_response.status_code}, {token_response.text}"
-                )
+                log.error(f"Token exchange failed: {token_response.status_code}, {token_response.text}")
                 return oauth_html_response(
                     title="OAuth Error",
                     success=False,
@@ -529,9 +527,7 @@ async def huggingface_oauth_callback(
 
             log.info("Successfully stored Hugging Face credential")
 
-            return oauth_html_response(
-                title="OAuth Success", success=True, username=username, auto_close=True
-            )
+            return oauth_html_response(title="OAuth Success", success=True, username=username, auto_close=True)
 
     except httpx.HTTPError as e:
         log.error(f"HTTP error during token exchange: {e}")
@@ -564,9 +560,7 @@ async def list_huggingface_tokens(
     Returns:
         OAuthTokensResponse with list of token metadata.
     """
-    credentials = await OAuthCredential.list_for_user_and_provider(
-        user_id=user_id, provider="huggingface"
-    )
+    credentials = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="huggingface")
 
     tokens = [
         OAuthTokenMetadata(
@@ -603,14 +597,10 @@ async def refresh_huggingface_token(
         OAuthRefreshResponse indicating success or failure.
     """
     # Find the credential
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="huggingface", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="huggingface", account_id=account_id)
 
     if not credential:
-        raise HTTPException(
-            status_code=404, detail=f"No credential found for account_id: {account_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No credential found for account_id: {account_id}")
 
     # Get the refresh token
     refresh_token = await credential.get_decrypted_refresh_token()
@@ -635,9 +625,7 @@ async def refresh_huggingface_token(
             )
 
             if token_response.status_code != 200:
-                log.error(
-                    f"Token refresh failed: {token_response.status_code}, {token_response.text}"
-                )
+                log.error(f"Token refresh failed: {token_response.status_code}, {token_response.text}")
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -680,9 +668,7 @@ async def refresh_huggingface_token(
 
             log.info(f"Successfully refreshed token for account {account_id}")
 
-            return OAuthRefreshResponse(
-                success=True, message="Token refreshed successfully"
-            )
+            return OAuthRefreshResponse(success=True, message="Token refreshed successfully")
 
     except httpx.HTTPError as e:
         log.error(f"HTTP error during token refresh: {e}")
@@ -728,14 +714,10 @@ async def get_huggingface_whoami_endpoint(
         OAuthWhoamiResponse with account information.
     """
     # Find the credential
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="huggingface", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="huggingface", account_id=account_id)
 
     if not credential:
-        raise HTTPException(
-            status_code=404, detail=f"No credential found for account_id: {account_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No credential found for account_id: {account_id}")
 
     # Get the access token
     access_token = await credential.get_decrypted_access_token()
@@ -759,9 +741,7 @@ async def get_huggingface_whoami_endpoint(
                 )
 
             if response.status_code != 200:
-                log.error(
-                    f"Failed to get whoami: {response.status_code}, {response.text}"
-                )
+                log.error(f"Failed to get whoami: {response.status_code}, {response.text}")
                 raise HTTPException(
                     status_code=response.status_code,
                     detail={
@@ -842,8 +822,14 @@ async def start_github_oauth(
     host = request.headers.get("host", "127.0.0.1:7777")
     if "://" in host:
         host = host.split("://")[1]
-    scheme = "https" if "127.0.0.1" not in host and "localhost" not in host else "http"
+
+    # Normalize 127.0.0.1 to localhost
+    if host.startswith("127.0.0.1"):
+        host = host.replace("127.0.0.1", "localhost")
+
+    scheme = "https" if "localhost" not in host else "http"
     redirect_uri = f"{scheme}://{host}/api/oauth/github/callback"
+    log.info(f"GitHub OAuth redirect_uri: {redirect_uri}")
 
     # Store state and PKCE verifier temporarily (5 minutes TTL)
     _oauth_state_store[state] = {
@@ -974,9 +960,7 @@ async def github_oauth_callback(
             )
 
             if token_response.status_code != 200:
-                log.error(
-                    f"Token exchange failed: {token_response.status_code}, {token_response.text}"
-                )
+                log.error(f"Token exchange failed: {token_response.status_code}, {token_response.text}")
                 return oauth_html_response(
                     title="OAuth Error",
                     success=False,
@@ -1034,9 +1018,7 @@ async def github_oauth_callback(
 
             log.info("Successfully stored GitHub credential")
 
-            return oauth_html_response(
-                title="OAuth Success", success=True, username=username, auto_close=True
-            )
+            return oauth_html_response(title="OAuth Success", success=True, username=username, auto_close=True)
 
     except httpx.HTTPError as e:
         log.error(f"HTTP error during token exchange: {e}")
@@ -1069,9 +1051,7 @@ async def list_github_tokens(
     Returns:
         OAuthTokensResponse with list of token metadata.
     """
-    credentials = await OAuthCredential.list_for_user_and_provider(
-        user_id=user_id, provider="github"
-    )
+    credentials = await OAuthCredential.list_for_user_and_provider(user_id=user_id, provider="github")
 
     tokens = [
         OAuthTokenMetadata(
@@ -1132,14 +1112,10 @@ async def get_github_user(
         GitHubUserResponse with account information.
     """
     # Find the credential
-    credential = await OAuthCredential.find_by_account(
-        user_id=user_id, provider="github", account_id=account_id
-    )
+    credential = await OAuthCredential.find_by_account(user_id=user_id, provider="github", account_id=account_id)
 
     if not credential:
-        raise HTTPException(
-            status_code=404, detail=f"No credential found for account_id: {account_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No credential found for account_id: {account_id}")
 
     # Get the access token
     access_token = await credential.get_decrypted_access_token()
@@ -1166,9 +1142,7 @@ async def get_github_user(
                 )
 
             if response.status_code != 200:
-                log.error(
-                    f"Failed to get user info: {response.status_code}, {response.text}"
-                )
+                log.error(f"Failed to get user info: {response.status_code}, {response.text}")
                 raise HTTPException(
                     status_code=response.status_code,
                     detail={

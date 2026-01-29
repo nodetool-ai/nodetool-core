@@ -13,7 +13,7 @@ from asyncio import subprocess as aio_subprocess
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
@@ -23,9 +23,6 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import (
-    Error as WorkflowError,
-)
 from nodetool.workflows.types import (
     ProcessingMessage,
 )
@@ -71,7 +68,6 @@ def _create_macos_sandbox_profile(
     # Default paths where writes are allowed
     default_write_paths = [
         f"{home}/.cache",  # User cache directory
-        f"{home}/.nodetool-workspaces",  # NodeTool workspaces directory
         f"{home}/.config/nodetool",  # NodeTool config directory
         f"{home}/.local/share/nodetool",  # NodeTool data directory
         f"{home}/Library/Caches",  # macOS cache location
@@ -348,6 +344,20 @@ def _wrap_command_with_sandbox(
         return cmd, None
 
 
+def _build_subprocess_command() -> tuple[list[str], dict[str, str] | None]:
+    nodetool_path = shutil.which("nodetool")
+    if nodetool_path:
+        return [nodetool_path, "run", "--stdin", "--jsonl"], None
+
+    env = os.environ.copy()
+    src_path = Path(__file__).resolve().parents[3] / "src"
+    if src_path.exists():
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(src_path)
+
+    return [sys.executable, "-m", "nodetool.cli", "run", "--stdin", "--jsonl"], env
+
+
 def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
     """
     Get CPU limit percentage from RunJobRequest or environment.
@@ -501,7 +511,7 @@ class SubprocessJobExecution(JobExecution):
         self._stderr_task: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
         self._completed_event = asyncio.Event()
-        self._status = "running"
+        self._update_status("running")
         self._sandbox_profile_path = sandbox_profile_path
 
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
@@ -615,6 +625,15 @@ class SubprocessJobExecution(JobExecution):
                 # Successful completion - update both internal status and database
                 self._status = "completed"
                 await self.job_model.update(status="completed", finished_at=datetime.now())
+
+                # Post completion message to avoid race condition
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="completed",
+                        message=f"Subprocess job {self.job_id} completed successfully",
+                    )
+                )
                 log.info(f"Subprocess job {self.job_id} completed successfully")
             else:
                 # Failed completion - the subprocess may not have sent a proper update
@@ -651,6 +670,15 @@ class SubprocessJobExecution(JobExecution):
         except asyncio.CancelledError:
             self._status = "cancelled"
             await self.job_model.update(status="cancelled", finished_at=datetime.now())
+
+            # Post cancellation message to avoid race condition
+            self.context.post_message(
+                JobUpdate(
+                    job_id=self.job_id,
+                    status="cancelled",
+                    message=f"Subprocess job {self.job_id} was cancelled",
+                )
+            )
             self._completed_event.set()
             log.info(f"Subprocess job {self.job_id} was cancelled")
         except Exception as e:
@@ -713,7 +741,6 @@ class SubprocessJobExecution(JobExecution):
             workflow_id=request.workflow_id,
             user_id=request.user_id,
             job_type=request.job_type,
-            status="running",
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )
@@ -732,7 +759,7 @@ class SubprocessJobExecution(JobExecution):
 
         # Spawn subprocess using 'nodetool run --stdin --jsonl' CLI command
         # This will read the request JSON from stdin and output JSONL
-        cmd = ["nodetool", "run", "--stdin", "--jsonl"]
+        cmd, subprocess_env = _build_subprocess_command()
 
         # Apply CPU limit using cpulimit if available
         cmd, resource_info = _wrap_command_with_cpu_limit(cmd, request.resource_limits)
@@ -752,6 +779,7 @@ class SubprocessJobExecution(JobExecution):
             stdout=aio_subprocess.PIPE,
             stderr=aio_subprocess.PIPE,
             stdin=aio_subprocess.PIPE,
+            env=subprocess_env,
         )
 
         # Write request JSON to stdin and close it

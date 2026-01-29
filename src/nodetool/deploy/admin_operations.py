@@ -204,7 +204,7 @@ class AdminDownloadManager:
 
             # Get file list
             raw_files = self.api.list_repo_tree(repo_id, recursive=True)
-            files = [file for file in raw_files if isinstance(file, RepoFile) or hasattr(file, "path")]
+            files: list[RepoFile] = [file for file in raw_files if isinstance(file, RepoFile)]
             files = filter_repo_paths(files, allow_patterns, ignore_patterns)
 
             # Filter out cached files
@@ -386,6 +386,15 @@ async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[dict, None
     """
     try:
         ollama = get_ollama_client()
+        if not ollama:
+            yield {
+                "status": "error",
+                "model": model_name,
+                "error": "OLLAMA_API_URL not set",
+                "message": "OLLAMA_API_URL environment variable is not configured. Please set it to use Ollama models.",
+            }
+            return
+
         logger.info(f"Starting Ollama model pull: {model_name}")
 
         # Send initial status
@@ -483,7 +492,7 @@ async def download_hf_model(
         if user_id is not None:
             stream_kwargs["user_id"] = user_id
 
-        async for chunk in stream_hf_model_download(**stream_kwargs):
+        async for chunk in stream_hf_model_download(**stream_kwargs):  # type: ignore[arg-type]
             yield chunk
     else:
         # Non-streaming download - still use the download manager but just return final result
@@ -520,6 +529,14 @@ async def download_ollama_model(model_name: str, stream: bool = True) -> AsyncGe
         # Non-streaming download
         try:
             ollama = get_ollama_client()
+            if not ollama:
+                yield {
+                    "status": "error",
+                    "model": model_name,
+                    "error": "OLLAMA_API_URL not set",
+                    "message": "OLLAMA_API_URL environment variable is not configured. Please set it to use Ollama models.",
+                }
+                return
             await ollama.pull(model_name)
             yield {
                 "status": "completed",

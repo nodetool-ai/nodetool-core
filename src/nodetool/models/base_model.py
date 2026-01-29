@@ -1,13 +1,9 @@
-import asyncio
-import atexit
-import signal
 from random import randint
 from typing import Any
 from uuid import uuid1
 
 from pydantic import BaseModel, Field
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import ConditionBuilder
 from nodetool.models.database_adapter import DatabaseAdapter
@@ -173,7 +169,9 @@ class DBModel(BaseModel):
         cls,
         condition: ConditionBuilder | None = None,
         limit: int = 100,
+        order_by: str | None = None,
         reverse: bool = False,
+        columns: list[str] | None = None,
     ):
         """
         Query the DB table for the model to retrieve a list of items.
@@ -183,7 +181,9 @@ class DBModel(BaseModel):
         Args:
             condition: The condition for the query.
             limit: The maximum number of items to retrieve.
+            order_by: The column to order the results by.
             reverse: Whether to reverse the order of the results.
+            columns: The columns to retrieve.
 
         Returns:
             A tuple containing a list of items that match the query conditions and the last evaluated key.
@@ -192,7 +192,9 @@ class DBModel(BaseModel):
         items, key = await adapter.query(
             condition=condition,
             limit=limit,
+            order_by=order_by,
             reverse=reverse,
+            columns=columns,
         )
 
         def try_load_model(item: dict[str, Any]) -> Any:

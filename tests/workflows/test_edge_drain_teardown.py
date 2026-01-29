@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import queue
 
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext

@@ -9,9 +9,8 @@ import asyncio
 import json
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 
 import tiktoken
 from ollama import AsyncClient, Client
@@ -25,6 +24,7 @@ from nodetool.media.image.image_utils import (
     image_ref_to_base64_jpeg,
 )
 from nodetool.metadata.types import (
+    EmbeddingModel,
     ImageRef,
     LanguageModel,
     Message,
@@ -45,7 +45,8 @@ log.setLevel(logging.DEBUG)
 DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096
 
 # Only register the provider if OLLAMA_API_URL is explicitly set
-_ollama_api_url = Environment.get("OLLAMA_API_URL")
+# Use os.environ directly to avoid triggering early Environment loading
+_ollama_api_url = os.environ.get("OLLAMA_API_URL")
 
 
 def _resolve_ollama_api_url(explicit: str | None = None) -> str:
@@ -142,7 +143,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
-        self._model_info_cache: Dict[str, Any] = {}
+        self._model_info_cache: dict[str, Any] = {}
         log.debug(
             f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}, default_context_length: {self.default_context_length}"
         )
@@ -213,7 +214,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.debug(f"Defaulting to True for model {model} due to error")
             return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Ollama models.
 
@@ -226,7 +227,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         try:
             async with get_ollama_client(self.api_url) as client:
                 models_response = await client.list()
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 # The Ollama client returns an object with a .models attribute
                 for model in models_response.models:
                     model_name = model.model
@@ -250,7 +251,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(self, message: Message, use_tool_emulation: bool = False) -> Dict[str, Any]:
+    async def convert_message(self, message: Message, use_tool_emulation: bool = False) -> dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -300,7 +301,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
-            message_dict: Dict[str, Any] = {"role": "user"}
+            message_dict: dict[str, Any] = {"role": "user"}
 
             if isinstance(message.content, str):
                 message_dict["content"] = message.content
@@ -366,7 +367,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Formatted tools: {[tool.get('function', {}).get('name', 'unknown') for tool in formatted_tools]}")
         return formatted_tools
 
-    def _prepare_request_params(
+    async def _prepare_request_params(
         self,
         messages: Sequence[Message],
         model: str,
@@ -374,7 +375,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         response_format: dict | None = None,
         max_tokens: int = 4096,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Prepare common parameters for Ollama API requests.
 
@@ -441,11 +442,14 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     *modified_messages,
                 ]
 
-            ollama_messages = [self.convert_message(m, use_tool_emulation=True) for m in modified_messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=True) for m in modified_messages)
+            )
             log.debug("Using tool emulation: added tool definitions to system message")
         else:
-            # Regular message conversion
-            ollama_messages = [self.convert_message(m, use_tool_emulation=False) for m in messages]
+            ollama_messages = await asyncio.gather(
+                *(self.convert_message(m, use_tool_emulation=False) for m in messages)
+            )
 
         log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
@@ -479,7 +483,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"Prepared request params with keys: {list(params.keys())}")
         return params
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -511,7 +515,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.info(f"Using tool emulation for model {model}")
 
         async with get_ollama_client(self.api_url) as client:
-            params = self._prepare_request_params(
+            params = await self._prepare_request_params(
                 messages,
                 model,
                 tools,
@@ -566,7 +570,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     log.debug(f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}")
                     break
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -598,7 +602,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.info(f"Using tool emulation for model {model}")
 
         async with get_ollama_client(self.api_url) as client:
-            params = self._prepare_request_params(
+            params = await self._prepare_request_params(
                 messages,
                 model,
                 tools,
@@ -677,6 +681,89 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         result = image_ref_to_base64_jpeg(image)
         log.debug(f"Processed image to base64 string of length: {len(result)}")
         return result
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """
+        Get available Ollama embedding models.
+
+        Returns embedding models available in the local Ollama installation.
+        Returns an empty list if Ollama is not available.
+
+        Returns:
+            List of EmbeddingModel instances for Ollama
+        """
+        try:
+            async with get_ollama_client(self.api_url) as client:
+                models_response = await client.list()
+                models: list[EmbeddingModel] = []
+                # The Ollama client returns an object with a .models attribute
+                for model in models_response.models:
+                    model_name = model.model
+                    if model_name:
+                        # Ollama models can be used for both chat and embeddings
+                        # Common embedding models include nomic-embed-text, all-minilm, etc.
+                        models.append(
+                            EmbeddingModel(
+                                id=model_name,
+                                name=model_name,
+                                provider=Provider.Ollama,
+                                dimensions=0,  # Dimensions vary by model
+                            )
+                        )
+                log.debug(f"Fetched {len(models)} Ollama embedding models")
+                return models
+        except Exception as e:
+            log.error(f"Error fetching Ollama embedding models: {e}")
+            return []
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using Ollama's embed API.
+
+        Uses the embed endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "nomic-embed-text", "all-minilm")
+            **kwargs: Additional parameters (unused, for compatibility)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            async with get_ollama_client(self.api_url) as client:
+                # Ollama's embed endpoint can handle multiple inputs
+                response = await client.embed(model=model, input=texts)
+
+                # Extract embeddings from response
+                # The response has an 'embeddings' field with the list of vectors
+                embeddings = response.embeddings
+
+                log.debug(
+                    f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}"
+                )
+
+                return [list(e) for e in embeddings]  # type: ignore[misc]
+
+        except Exception as e:
+            log.error(f"Ollama embedding generation failed: {e}")
+            raise RuntimeError(f"Ollama embedding generation failed: {str(e)}") from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()
@@ -778,7 +865,7 @@ async def main():
     print(f"{'=' * 60}\n")
 
     # Define a JSON schema for structured output
-    response_format = {
+    response_format: dict[str, Any] = {
         "type": "json_schema",
         "json_schema": {
             "name": "calculation_result",

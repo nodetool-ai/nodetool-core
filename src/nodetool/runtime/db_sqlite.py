@@ -2,16 +2,16 @@
 SQLite connection pool for ResourceScope.
 
 Provides async connection pooling for SQLite with per-scope adapter memoization.
+Uses the "Lazy Slot" algorithm for efficient connection management.
 """
 
 import asyncio
-import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Optional, Type
+from typing import Any, AsyncIterator, ClassVar, Optional
 
 import aiosqlite
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.sqlite_adapter import SQLiteAdapter
 from nodetool.runtime.resources import DBResources
@@ -20,24 +20,38 @@ log = get_logger(__name__)
 
 
 class SQLiteConnectionPool:
-    """Simple async connection pool for SQLite."""
+    """Async connection pool for SQLite using the "Lazy Slot" algorithm.
+
+    This pool uses a queue-based slot system with lazy connection initialization.
+    Each slot in the queue can be either None (empty) or an active connection.
+    Connections are created lazily on first acquire and validated on each borrow.
+
+    Features:
+    - Lazy connection initialization (connections created only when needed)
+    - "Validate on Borrow" health checks (SELECT 1)
+    - Self-healing: dead connections are replaced automatically
+    - WAL mode for better concurrency
+    - Proper cleanup with rollback before release
+    """
 
     # Class-level pools per database path and event loop
-    _pools: ClassVar[Dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
-    _loop_locks: ClassVar[Dict[int, asyncio.Lock]] = {}
+    _pools: ClassVar[dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
+    _loop_locks: ClassVar[dict[int, asyncio.Lock]] = {}
 
-    def __init__(self, db_path: str, pool_size: int = 10):
-        """Initialize the connection pool.
+    def __init__(self, db_path: str, pool_size: int = 5):
+        """Initialize the connection pool with lazy slots.
 
         Args:
             db_path: Path to SQLite database file
-            pool_size: Maximum number of pooled connections
+            pool_size: Maximum number of concurrent connections (slots)
         """
         self.db_path = db_path
         self.pool_size = pool_size
-        self.available: asyncio.Queue = asyncio.Queue(maxsize=pool_size)
-        self.active_count = 0
-        self._lock = asyncio.Lock()
+        # Initialize queue with None values (lazy slots)
+        self._slots: asyncio.Queue[Optional[aiosqlite.Connection]] = asyncio.Queue(maxsize=pool_size)
+        for _ in range(pool_size):
+            self._slots.put_nowait(None)
+        self._closed = False
 
     @classmethod
     def _get_loop_lock(cls, loop_id: int) -> asyncio.Lock:
@@ -47,14 +61,14 @@ class SQLiteConnectionPool:
         return cls._loop_locks[loop_id]
 
     @classmethod
-    async def get_shared(cls, db_path: str, pool_size: int = 10) -> "SQLiteConnectionPool":
+    async def get_shared(cls, db_path: str, pool_size: int = 5) -> "SQLiteConnectionPool":
         """Get or create a shared connection pool for a database path and loop.
 
         Pools are keyed by (event_loop_id, db_path) to avoid sharing asyncio
         primitives across event loops, which triggers RuntimeError on Windows.
 
         Args:
-            db_path: Path to database (defaults to environment config)
+            db_path: Path to database
             pool_size: Maximum connections in pool
 
         Returns:
@@ -79,58 +93,21 @@ class SQLiteConnectionPool:
 
             return cls._pools[pool_key]
 
-    async def acquire(self) -> aiosqlite.Connection:
-        """Acquire a connection from the pool.
-
-        Creates a new connection if the pool is empty and below max size.
-        Otherwise waits for a connection to be returned.
-
-        Returns:
-            An aiosqlite connection
-        """
-        # Try to get an existing connection
-        try:
-            return self.available.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-
-        # Create a new connection if below pool size
-        async with self._lock:
-            if self.active_count < self.pool_size:
-                log.debug("Create new sqlite connection")
-                self.active_count += 1
-                conn = await self._create_connection()
-                return conn
-
-        # Wait for a connection to become available
-        return await self.available.get()
-
-    async def release(self, connection: aiosqlite.Connection) -> None:
-        """Release a connection back to the pool.
-
-        Args:
-            connection: The connection to release
-        """
-        try:
-            self.available.put_nowait(connection)
-        except asyncio.QueueFull:
-            # Pool is full, close the connection with WAL checkpoint
-            await self._close_connection_with_checkpoint(connection)
-            async with self._lock:
-                self.active_count -= 1
-
     async def _create_connection(self) -> aiosqlite.Connection:
-        """Create a new SQLite connection with proper configuration.
+        """Create a new SQLite connection with WAL mode enabled.
 
         Returns:
-            A configured aiosqlite connection
+            A configured aiosqlite connection with WAL mode and performance pragmas.
+
+        Raises:
+            Exception: If connection creation or configuration fails after retries.
         """
         # Determine connection settings
-        connect_kwargs: Dict[str, Any] = {"timeout": 30}
+        connect_kwargs: dict[str, Any] = {"timeout": 30}
         if ":memory:" in self.db_path:
             connect_kwargs["check_same_thread"] = False
 
-        # Ensure the parent directory exists for file-based databases.
+        # Ensure the parent directory exists for file-based databases
         resolved_path = self.db_path
         if not self.db_path.startswith("file:"):
             resolved_path = str(Path(self.db_path).expanduser())
@@ -141,49 +118,220 @@ class SQLiteConnectionPool:
         connection = await aiosqlite.connect(resolved_path, **connect_kwargs)
         connection.row_factory = aiosqlite.Row
 
-        # Apply pragmas for concurrency and performance
+        # Apply pragmas for concurrency and performance with retry logic
+        max_retries = 5
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                # Enable WAL mode immediately (required by spec)
+                if ":memory:" in self.db_path:
+                    await connection.execute("PRAGMA journal_mode=DELETE")
+                else:
+                    await connection.execute("PRAGMA journal_mode=WAL")
+                # Increased busy_timeout to 30 seconds for high-concurrency scenarios
+                await connection.execute("PRAGMA busy_timeout=30000")  # 30 seconds
+                await connection.execute("PRAGMA synchronous=NORMAL")
+                await connection.execute("PRAGMA cache_size=-64000")  # 64MB
+                # Enable memory-mapped I/O for better read performance
+                await connection.execute("PRAGMA mmap_size=268435456")  # 256MB
+                await connection.commit()
+                log.debug("SQLite connection configured with WAL mode and PRAGMA settings")
+                return connection
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                if "locked" in error_msg or "busy" in error_msg:
+                    if attempt < max_retries - 1:
+                        # Wait with exponential backoff before retrying
+                        delay = 0.05 * (2**attempt)  # 50ms, 100ms, 200ms, 400ms
+                        log.debug(
+                            f"PRAGMA setup locked, retrying in {delay:.3f}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                # For non-lock errors or final attempt, close and raise
+                log.warning(f"Error applying SQLite pragmas: {e}")
+                try:
+                    await connection.close()
+                except Exception:
+                    pass
+                raise
+
+        # Should not reach here, but if it does, close and raise last error
         try:
-            if ":memory:" in self.db_path:
-                await connection.execute("PRAGMA journal_mode=DELETE")
-            else:
-                await connection.execute("PRAGMA journal_mode=WAL")
-            # Increased busy_timeout to 30 seconds for high-concurrency scenarios
-            await connection.execute("PRAGMA busy_timeout=30000")  # 30 seconds
-            await connection.execute("PRAGMA synchronous=NORMAL")
-            await connection.execute("PRAGMA cache_size=-64000")  # 64MB
-            # Enable memory-mapped I/O for better read performance
-            await connection.execute("PRAGMA mmap_size=268435456")  # 256MB
-            await connection.commit()
-            log.debug("SQLite connection configured with PRAGMA settings")
-        except Exception as e:
-            log.warning(f"Error applying SQLite pragmas: {e}")
             await connection.close()
-            raise
+        except Exception:
+            pass
+        raise last_error or RuntimeError("Failed to configure connection after retries")
 
-        return connection
-
-    async def _close_connection_with_checkpoint(self, connection: aiosqlite.Connection) -> None:
-        """Close a connection and checkpoint the WAL file.
-
-        This ensures WAL data is written back to the main database file
-        and helps prevent orphaned WAL files.
+    async def _validate_connection(self, conn: aiosqlite.Connection) -> bool:
+        """Validate a connection using "Validate on Borrow" health check.
 
         Args:
-            connection: The connection to close
+            conn: The connection to validate.
+
+        Returns:
+            True if the connection is healthy, False otherwise.
         """
         try:
-            if ":memory:" not in self.db_path:
-                # Checkpoint WAL to write data back to main database
-                await connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                await connection.commit()
-                log.debug(f"WAL checkpoint completed for {self.db_path}")
+            await conn.execute("SELECT 1")
+            return True
         except Exception as e:
-            log.warning(f"Error during WAL checkpoint for {self.db_path}: {e}")
-        finally:
+            log.debug(f"Connection validation failed: {e}")
+            return False
+
+    async def _close_connection_safely(self, conn: aiosqlite.Connection) -> None:
+        """Close a connection safely, ignoring any errors.
+
+        Args:
+            conn: The connection to close.
+        """
+        try:
+            await conn.close()
+        except Exception as e:
+            log.debug(f"Error closing connection: {e}")
+
+    async def _acquire_connection(self) -> aiosqlite.Connection:
+        """Internal method to acquire a connection from the pool.
+
+        This implements the "Lazy Slot" algorithm:
+        - Pop a slot from the queue
+        - If slot is None: create a fresh connection with WAL mode
+        - If slot is a connection: validate it, self-heal if invalid
+
+        Returns:
+            An aiosqlite connection that is guaranteed to be healthy.
+
+        Raises:
+            RuntimeError: If the pool is closed.
+            Exception: If connection creation fails.
+        """
+        if self._closed:
+            raise RuntimeError("Pool is closed")
+
+        # Pop a slot from the queue (blocks if all slots are in use)
+        slot: Optional[aiosqlite.Connection] = await self._slots.get()
+
+        try:
+            if slot is None:
+                # Case A: Empty slot - create a fresh connection
+                log.debug("Creating new connection for empty slot")
+                return await self._create_connection()
+            else:
+                # Case B: Existing connection - validate with "Validate on Borrow"
+                if await self._validate_connection(slot):
+                    return slot
+                else:
+                    # Connection is dead - self-healing: close and create fresh
+                    log.debug("Connection validation failed, self-healing by creating new connection")
+                    await self._close_connection_safely(slot)
+                    return await self._create_connection()
+        except Exception:
+            # On failure, return the None slot to the pool
+            await self._slots.put(None)
+            raise
+
+    async def acquire(self) -> aiosqlite.Connection:
+        """Acquire a connection from the pool (direct method for backward compatibility).
+
+        The caller is responsible for calling `release()` when done with the connection.
+        For automatic cleanup, use the context manager with `async with pool.acquire_context()`.
+
+        Returns:
+            An aiosqlite connection that is guaranteed to be healthy.
+
+        Raises:
+            RuntimeError: If the pool is closed.
+            Exception: If connection creation fails.
+        """
+        return await self._acquire_connection()
+
+    @asynccontextmanager
+    async def acquire_context(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Acquire a connection from the pool using the context manager pattern.
+
+        This implements the "Lazy Slot" algorithm with automatic cleanup:
+        - Pop a slot from the queue
+        - If slot is None: create a fresh connection with WAL mode
+        - If slot is a connection: validate it, self-heal if invalid
+        - On exit: rollback and return to pool, or close and return None slot on error
+
+        Yields:
+            An aiosqlite connection that is guaranteed to be healthy.
+
+        Raises:
+            RuntimeError: If the pool is closed.
+            Exception: If connection creation fails.
+        """
+        conn = await self._acquire_connection()
+        try:
+            yield conn
+
+            # Success path: rollback to clean state and return connection to pool
             try:
-                await connection.close()
+                await conn.rollback()
+                await self._slots.put(conn)
             except Exception as e:
-                log.warning(f"Error closing connection for {self.db_path}: {e}")
+                # Rollback failed - close connection and return None slot
+                log.warning(f"Rollback failed during release: {e}")
+                await self._close_connection_safely(conn)
+                await self._slots.put(None)
+
+        except Exception:
+            # Failure/crash path: close connection and return None slot
+            await self._close_connection_safely(conn)
+            await self._slots.put(None)
+            raise
+
+    async def release(self, connection: aiosqlite.Connection) -> None:
+        """Release a connection back to the pool (legacy API compatibility).
+
+        This method is provided for backward compatibility with existing code.
+        The preferred way to use the pool is via the `acquire()` context manager.
+
+        Args:
+            connection: The connection to release
+        """
+        try:
+            await connection.rollback()
+            await self._slots.put(connection)
+        except Exception as e:
+            log.warning(f"Error releasing connection: {e}")
+            await self._close_connection_safely(connection)
+            await self._slots.put(None)
+
+    async def close_all(self) -> None:
+        """Close all pooled connections and mark pool as closed.
+
+        Drains the queue and closes all underlying connections.
+        After calling this, the pool cannot be used.
+        """
+        self._closed = True
+        connections_closed = 0
+
+        # Drain all slots and close any connections
+        while True:
+            try:
+                slot = self._slots.get_nowait()
+                if slot is not None:
+                    try:
+                        # Checkpoint WAL before closing (for file-based databases)
+                        if ":memory:" not in self.db_path:
+                            try:
+                                await slot.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                                await slot.commit()
+                            except Exception:
+                                pass
+                        await slot.close()
+                        connections_closed += 1
+                        log.debug(f"Closed SQLite connection from pool for {self.db_path}")
+                    except Exception as e:
+                        log.warning(f"Error closing connection for {self.db_path}: {e}")
+            except asyncio.QueueEmpty:
+                break
+
+        log.info(f"Closed {connections_closed} connections for pool {self.db_path}")
 
     @staticmethod
     def _cleanup_orphaned_wal_files(db_path: str) -> None:
@@ -191,7 +339,7 @@ class SQLiteConnectionPool:
 
         This should be called before opening a new connection if you suspect
         orphaned files. Only removes -wal and -shm files if the main database
-        file is very small or appears corrupted.
+        file doesn't exist.
 
         Args:
             db_path: Path to the database file
@@ -236,27 +384,6 @@ class SQLiteConnectionPool:
             if removed:
                 log.info(f"Removed orphaned WAL files: {removed}")
 
-    async def close_all(self) -> None:
-        """Close all pooled connections with proper WAL checkpointing."""
-        connections_closed = 0
-        while not self.available.empty():
-            try:
-                conn = self.available.get_nowait()
-                # Rollback any pending transactions first
-                try:
-                    await conn.rollback()
-                except Exception:
-                    pass
-                await self._close_connection_with_checkpoint(conn)
-                connections_closed += 1
-                log.debug(f"Closed SQLite connection from pool for {self.db_path}")
-            except asyncio.QueueEmpty:
-                break
-
-        # Reset active count since we closed all connections
-        async with self._lock:
-            self.active_count = 0
-
 
 async def shutdown_all_sqlite_pools() -> None:
     """Shutdown SQLite connection pools for the current event loop.
@@ -288,9 +415,9 @@ class SQLiteScopeResources(DBResources):
             pool: The pool to return connection to on cleanup
         """
         self.pool = pool
-        self._adapters: Dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
 
-    async def adapter_for_model(self, model_cls: Type[Any]) -> SQLiteAdapter:
+    async def adapter_for_model(self, model_cls: type[Any]) -> SQLiteAdapter:
         """Get or create an adapter for the given model class.
 
         Memoizes adapters per table within this scope.

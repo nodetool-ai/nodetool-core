@@ -39,7 +39,7 @@ Usage:
 import datetime
 import os
 import platform
-from typing import List
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -73,8 +73,8 @@ log = get_logger(__name__)
 def create_worker_app(
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] | None = None,
-    workflows: List[Workflow] | None = None,
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ) -> FastAPI:
     """Create a FastAPI worker application for NodeTool operations.
 
@@ -100,13 +100,42 @@ def create_worker_app(
     """
     tools = tools or []
     workflows = workflows or []
+
+    from nodetool.config.environment import load_dotenv_files
+    from nodetool.observability.tracing import init_tracing
+
+    load_dotenv_files()
+    init_tracing(service_name="nodetool-worker")
+
     if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
         raise RuntimeError("SECRETS_MASTER_KEY environment variable must be set for deployed workers.")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        console.print("NodeTool worker started successfully")
+        try:
+            app.include_router(
+                create_openai_compatible_router(
+                    provider=provider,
+                    default_model=default_model,
+                    tools=tools,
+                )
+            )
+            app.include_router(create_workflow_router())
+            app.include_router(create_admin_router())
+            app.include_router(create_collection_router())
+            app.include_router(create_admin_storage_router())
+            app.include_router(create_public_storage_router())
+        except Exception as e:
+            log.error(f"Failed to include routers: {e}")
+        yield
+        console.print("NodeTool worker shutting down...")
 
     app = FastAPI(
         title="NodeTool Worker",
         version="1.0.0",
         description="Deployable NodeTool worker with OpenAI-compatible API, workflow execution, and admin operations",
+        lifespan=lifespan,
     )
 
     # Add authentication middleware
@@ -116,37 +145,9 @@ def create_worker_app(
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
         user_provider=user_provider,
-        use_remote_auth=(Environment.get_auth_provider_kind() == "supabase"),
         enforce_auth=enforce_auth,
     )
     app.middleware("http")(auth_middleware)
-
-    @app.on_event("startup")
-    async def startup_event():
-        """Initialize worker on startup."""
-        console.print("NodeTool worker started successfully")
-        # Include routers after initialization
-        try:
-            app.include_router(
-                create_openai_compatible_router(
-                    provider=provider,
-                    default_model=default_model,
-                    tools=tools,
-                )
-            )
-            # Include lightweight workflow, admin, and collection routers
-            app.include_router(create_workflow_router())
-            app.include_router(create_admin_router())
-            app.include_router(create_collection_router())
-            # Include storage routers (admin and public)
-            app.include_router(create_admin_storage_router())
-            app.include_router(create_public_storage_router())
-        except Exception as e:
-            log.error(f"Failed to include routers: {e}")
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        console.print("NodeTool worker shutting down...")
 
     @app.get("/health")
     async def health_check():
@@ -173,8 +174,8 @@ def run_worker(
     port: int = 8000,
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
-    tools: List[str] | None = None,
-    workflows: List[Workflow] | None = None,
+    tools: list[str] | None = None,
+    workflows: list[Workflow] | None = None,
 ):
     """Run the NodeTool worker.
 
@@ -284,6 +285,10 @@ def run_worker(
     console.print("Default model:", f"{default_model} (provider: {provider})")
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])
+
+    # Check for insecure authentication configuration when binding to network interfaces
+    for warning in Environment.check_insecure_auth_binding(host):
+        console.print(f"[bold red]{warning}[/bold red]")
 
     # Run the server
     try:

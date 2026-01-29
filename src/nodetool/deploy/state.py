@@ -5,14 +5,25 @@ This module provides utilities for managing deployment state with atomic operati
 locking, and timestamp tracking to ensure safe concurrent access.
 """
 
-import fcntl
 import secrets
 import threading
 import time
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Generator, Optional
+
+# Cross-platform file locking:
+# - Unix: fcntl.flock
+# - Windows: msvcrt.locking
+try:  # pragma: no cover - platform-specific
+    import fcntl  # type: ignore
+
+    _HAS_FCNTL = True
+except ModuleNotFoundError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore
+    _HAS_FCNTL = False
+    import msvcrt  # type: ignore
 
 from nodetool.config.deployment import (
     DeploymentConfig,
@@ -83,7 +94,20 @@ class StateManager:
                     # Try to acquire lock with timeout
                     while time.time() - start_time < timeout:
                         try:
-                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            if _HAS_FCNTL:
+                                # Unix-style advisory lock
+                                fcntl.flock(  # type: ignore[union-attr]
+                                    lock_file.fileno(),
+                                    fcntl.LOCK_EX | fcntl.LOCK_NB,  # type: ignore[union-attr]
+                                )
+                            else:
+                                # Windows: lock 1 byte in the lock file (non-blocking)
+                                lock_file.seek(0, 2)
+                                if lock_file.tell() == 0:
+                                    lock_file.write("0")
+                                    lock_file.flush()
+                                lock_file.seek(0)
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[name-defined]
                             acquired = True
                             break
                         except OSError:
@@ -97,7 +121,11 @@ class StateManager:
                 finally:
                     if acquired:
                         with suppress(OSError):
-                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                            if _HAS_FCNTL:
+                                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # type: ignore[union-attr]
+                            else:
+                                lock_file.seek(0)
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[name-defined]
                 lock_file.close()
 
                 # Clean up lock file
@@ -106,7 +134,7 @@ class StateManager:
         finally:
             self._thread_lock.release()
 
-    def read_state(self, deployment_name: str) -> Optional[Dict[str, Any]]:
+    def read_state(self, deployment_name: str) -> Optional[dict[str, Any]]:
         """
         Read the state for a specific deployment.
 
@@ -139,7 +167,7 @@ class StateManager:
     def write_state(
         self,
         deployment_name: str,
-        state_updates: Dict[str, Any],
+        state_updates: dict[str, Any],
         update_timestamp: bool = True,
     ) -> None:
         """
@@ -177,7 +205,7 @@ class StateManager:
             current_state.update(state_updates)
 
             # Re-validate and update
-            deployment.state = deployment.state.__class__.model_validate(current_state)
+            deployment.state = deployment.state.__class__.model_validate(current_state)  # type: ignore[assignment]
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -203,7 +231,7 @@ class StateManager:
         """
         self.write_state(deployment_name, {"status": status}, update_timestamp=update_timestamp)
 
-    def get_all_states(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_states(self) -> dict[str, dict[str, Any]]:
         """
         Get state for all deployments.
 
@@ -256,7 +284,7 @@ class StateManager:
             secret_value = secrets.token_urlsafe(byte_length)
             state_dict[field_name] = secret_value
 
-            deployment.state = deployment.state.__class__.model_validate(state_dict)
+            deployment.state = deployment.state.__class__.model_validate(state_dict)  # type: ignore[assignment]
 
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
@@ -299,7 +327,7 @@ class StateManager:
                 raise KeyError(f"Deployment '{deployment_name}' not found")
 
             # Reset to default state for this deployment type
-            deployment.state = deployment.state.__class__()
+            deployment.state = deployment.state.__class__()  # type: ignore[assignment]
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -346,7 +374,7 @@ class StateManager:
         return self.get_last_deployed(deployment_name) is not None
 
 
-def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> Dict[str, Any]:
+def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path | str] = None) -> dict[str, Any]:
     """
     Create a snapshot of the current state of all deployments.
 
@@ -358,7 +386,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
     Returns:
         Dictionary containing snapshot of all deployment states
     """
-    snapshot: Dict[str, Any] = {
+    snapshot: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
         "version": config.version,
         "deployments": {},
@@ -378,7 +406,7 @@ def create_state_snapshot(config: DeploymentConfig, config_path: Optional[Path |
 
 
 def restore_state_from_snapshot(
-    snapshot: Dict[str, Any],
+    snapshot: dict[str, Any],
     deployment_name: Optional[str] = None,
     config_path: Optional[Path | str] = None,
 ) -> None:
@@ -422,7 +450,7 @@ def restore_state_from_snapshot(
             deployment = config.deployments[name]
 
             # Restore state
-            deployment.state = deployment.state.__class__.model_validate(snapshot_state)
+            deployment.state = deployment.state.__class__.model_validate(snapshot_state)  # type: ignore[assignment]
 
         if resolved_config_path:
             import yaml

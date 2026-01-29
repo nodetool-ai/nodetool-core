@@ -7,7 +7,7 @@ and optional workflow association.
 """
 
 from datetime import datetime
-from typing import Dict, Literal, Optional, Sequence
+from typing import Literal, Optional, Sequence
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.base_model import (
@@ -43,6 +43,8 @@ class Asset(DBModel):
     metadata: dict | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
     duration: Optional[float] = DBField(default=None)
+    node_id: str | None = DBField(default=None)
+    job_id: str | None = DBField(default=None)
 
     @property
     def file_extension(self) -> str:
@@ -75,7 +77,7 @@ class Asset(DBModel):
         return f"{self.id}_thumb.jpg"
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         user_id: str,
         name: str,
@@ -85,6 +87,8 @@ class Asset(DBModel):
         workflow_id: str | None = None,
         duration: float | None = None,
         size: Optional[int] = None,
+        node_id: str | None = None,
+        job_id: str | None = None,
         **kwargs,
     ):
         """Creates a new asset record in the database.
@@ -101,6 +105,8 @@ class Asset(DBModel):
             workflow_id: Optional ID of an associated workflow.
             duration: Optional duration (e.g., for video/audio assets).
             size: Optional file size in bytes (default: None for folders).
+            node_id: Optional ID of the node that created this asset.
+            job_id: Optional ID of the job that created this asset.
             **kwargs: Additional fields to set on the model.
 
         Returns:
@@ -118,6 +124,8 @@ class Asset(DBModel):
             content_type=content_type,
             duration=duration,
             size=size,
+            node_id=node_id,
+            job_id=job_id,
             created_at=datetime.now(),
             metadata=metadata,
             **kwargs,
@@ -140,13 +148,15 @@ class Asset(DBModel):
         parent_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         content_type: Optional[str] = None,
+        node_id: Optional[str] = None,
+        job_id: Optional[str] = None,
         limit: int = 100,
         start_key: str | None = None,
         reverse: bool = False,
     ):
         """
         Paginate assets for a user using boto3.
-        Applies filters for parent_id if provided.
+        Applies filters for parent_id, workflow_id, node_id, and job_id if provided.
         Returns a tuple of a list of Assets and the last evaluated key for pagination.
         Last key is "" if there are no more items to be returned.
         """
@@ -157,12 +167,16 @@ class Asset(DBModel):
             condition = condition.and_(Field("parent_id").equals(parent_id))
         if workflow_id:
             condition = condition.and_(Field("workflow_id").equals(workflow_id))
+        if node_id:
+            condition = condition.and_(Field("node_id").equals(node_id))
+        if job_id:
+            condition = condition.and_(Field("job_id").equals(job_id))
         if start_key:
             condition = condition.and_(Field("id").greater_than(start_key))
         if content_type:
             condition = condition.and_(Field("content_type").like((content_type or "") + "%"))
 
-        return await cls.query(condition, limit, reverse)
+        return await cls.query(condition, limit=limit, reverse=reverse)
 
     @classmethod
     async def get_children(cls, parent_id: str) -> Sequence["Asset"]:
@@ -173,7 +187,7 @@ class Asset(DBModel):
         return items
 
     @classmethod
-    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> Dict:
+    async def get_assets_recursive(cls, user_id: str, folder_id: str) -> dict:
         """Recursively fetches all assets within a given folder for a user.
 
         Args:
@@ -284,7 +298,7 @@ class Asset(DBModel):
         return assets, next_cursor, folder_path_list
 
     @classmethod
-    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Get folder path information for given asset IDs using batch queries to avoid N+1 problem.
 
@@ -411,7 +425,7 @@ class Asset(DBModel):
         return result
 
     @classmethod
-    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+    async def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> dict[str, dict[str, str]]:
         """
         Fallback method for get_asset_path_info when batch queries fail.
         Uses individual queries but with better error handling.

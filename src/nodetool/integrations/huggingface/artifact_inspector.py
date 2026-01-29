@@ -11,19 +11,14 @@ import json
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence, TYPE_CHECKING
 
-try:
+if TYPE_CHECKING:
     import torch
-except Exception:  # pragma: no cover - optional dependency
-    torch = None
+    from nodetool.integrations.huggingface.safetensors_inspector import (
+        DetectionResult as STFDetectionResult,
+    )
 
-from nodetool.integrations.huggingface.safetensors_inspector import (
-    DetectionResult as STFDetectionResult,
-)
-from nodetool.integrations.huggingface.safetensors_inspector import (
-    detect_model as detect_safetensors_model,
-)
 
 
 @dataclass
@@ -47,7 +42,11 @@ def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     model_index_files = [p for p in paths if str(p).lower().endswith("model_index.json")]
 
     if safetensors:
+        from nodetool.integrations.huggingface.safetensors_inspector import (
+            detect_model as detect_safetensors_model,
+        )
         res = _wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6))
+
         if res:
             return res
 
@@ -206,8 +205,11 @@ def detect_torch_bin(paths: Sequence[str | Path]) -> ArtifactDetection | None:
 
 def _sample_torch_keys(path: Path, limit: int = 200) -> list[str]:
     """Load only state_dict metadata and return a sample of keys."""
-    if torch is None:
+    try:
+        import torch
+    except ImportError:
         raise RuntimeError("torch not available for bin inspection")
+
     # torch.load with weights_only avoids materializing tensors on PyTorch>=2.3
     sd = torch.load(path, map_location="meta", weights_only=True)
     keys = list(sd.keys())

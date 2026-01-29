@@ -1,6 +1,6 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-from nodetool.types.graph import Edge, Node
+from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import get_comfy_class_by_name, get_node_class
 
 """
@@ -43,14 +43,14 @@ class GraphParsingError(Exception):
     pass
 
 
-def generate_edge_id(edges: List[Edge]) -> str:
+def generate_edge_id(edges: list[Edge]) -> str:
     """
     Finds the highest ID in the list of edges and returns a new ID that is one higher.
     """
     return str(max([int(edge.id or "0", 16) for edge in edges], default=0) + 1)
 
 
-def create_node(node_id: str, node_data: Dict[str, Any]) -> Node:
+def create_node(node_id: str, node_data: dict[str, Any]) -> Node:
     """
     Create a Node object from node data.
 
@@ -92,10 +92,10 @@ def create_node(node_id: str, node_data: Dict[str, Any]) -> Node:
 
 
 def create_edges(
-    edges: List[Edge],
+    edges: list[Edge],
     node_id: str,
-    node_data: Dict[str, Any],
-    node_by_id: Dict[str, Node],
+    node_data: dict[str, Any],
+    node_by_id: dict[str, Node],
 ):
     """
     Create Edge objects for a node's inputs.
@@ -150,7 +150,7 @@ def is_comfy_widget(type: str | list) -> bool:
     return type in ["INT", "FLOAT", "STRING", "BOOLEAN"]
 
 
-def get_edge_names(comfy_class: type) -> List[str]:
+def get_edge_names(comfy_class: type) -> list[str]:
     """
     Get the names of the input edgeds for a given node class.
 
@@ -161,12 +161,12 @@ def get_edge_names(comfy_class: type) -> List[str]:
         List[str]: A list of input names for the node class.
     """
     if comfy_class:
-        inputs = list(comfy_class.INPUT_TYPES.__func__(comfy_class).get("required", {}).items())
+        inputs = list(comfy_class.INPUT_TYPES.__func__(comfy_class).get("required", {}).items())  # type: ignore[attr-defined]
         return [name for name, value in inputs if not is_comfy_widget(value[0])]
     return []
 
 
-def get_widget_names(class_name: str) -> List[str]:
+def get_widget_names(class_name: str) -> list[str]:
     """
     Get the names of the widgets for a given node class.
 
@@ -255,7 +255,7 @@ def convert_graph(input_graph: dict[str, Any]) -> dict[str, Any]:
     return output_graph
 
 
-def read_graph(json: Dict[str, Any]) -> Tuple[List[Edge], List[Node]]:
+def read_graph(json: dict[str, Any]) -> tuple[list[Edge], list[Node]]:
     """
     This function reads a graph from a dictionary representation.
 
@@ -320,9 +320,9 @@ def read_graph(json: Dict[str, Any]) -> Tuple[List[Edge], List[Node]]:
     if "last_node_id" in json:
         json = convert_graph(json)
 
-    nodes: List[Node] = []
-    edges: List[Edge] = []
-    node_by_id: Dict[str, Node] = {}
+    nodes: list[Node] = []
+    edges: list[Edge] = []
+    node_by_id: dict[str, Node] = {}
 
     # First pass: create all nodes
     for node_id, node_data in json.items():

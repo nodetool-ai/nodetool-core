@@ -51,7 +51,7 @@ class ThreadedJobExecution(JobExecution):
 
     def _set_status(self, status: str) -> None:
         """Update both the internal and runner status consistently."""
-        self._status = status
+        self._update_status(status)
         if self.runner:
             self.runner.status = status
 
@@ -123,16 +123,62 @@ class ThreadedJobExecution(JobExecution):
                 # Check if workflow was suspended (not completed)
                 if self.runner and self.runner.status == "suspended":
                     log.info("Workflow suspended, not setting completed status")
-                    await self.job_model.update(status="suspended", finished_at=datetime.now())
+                    from nodetool.models.job import Job
+
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_suspended(
+                            node_id="",
+                            reason="Workflow suspended",
+                            state={},
+                        )
+                    await self.job_model.update(finished_at=datetime.now())
+
+                    # Post suspension message BEFORE finalize_state to avoid race condition
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="suspended",
+                            message="Workflow suspended",
+                        )
+                    )
                 else:
                     # Update job status on completion
                     self._set_status("completed")
-                    await self.job_model.update(status="completed", finished_at=datetime.now())
+                    from nodetool.models.job import Job
+
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_completed()
+                    await self.job_model.update(finished_at=datetime.now())
+
+                    # Post completion message BEFORE finalize_state to avoid race condition
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="completed",
+                            message=f"Job {self.job_id} completed successfully",
+                        )
+                    )
                 log.info(f"Background job {self.job_id} completed successfully")
 
             except asyncio.CancelledError:
                 self._set_status("cancelled")
-                await self.job_model.update(status="cancelled", finished_at=datetime.now())
+                from nodetool.models.job import Job
+
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_cancelled()
+                await self.job_model.update(finished_at=datetime.now())
+
+                # Post cancellation message BEFORE finalize_state to avoid race condition
+                self.context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="cancelled",
+                        message=f"Job {self.job_id} was cancelled",
+                    )
+                )
                 log.info(f"Background job {self.job_id} cancelled")
                 raise
             except Exception as e:
@@ -142,9 +188,13 @@ class ThreadedJobExecution(JobExecution):
                 error_text = str(e).strip()
                 error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
                 tb_text = traceback.format_exc()
-                # Track error locally for fallback reporters
                 self._error = error_msg
-                await self.job_model.update(status="failed", error=error_msg, finished_at=datetime.now())
+                from nodetool.models.job import Job
+
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_failed(error=error_msg)
+                await self.job_model.update(error=error_msg, finished_at=datetime.now())
                 log.exception("Background job %s failed: %s", self.job_id, error_msg)
                 self.context.post_message(
                     JobUpdate(
@@ -156,7 +206,6 @@ class ThreadedJobExecution(JobExecution):
                 )
                 raise
             finally:
-                # Ensure finalize_state runs while ResourceScope is active
                 await self.finalize_state()
 
     @classmethod
@@ -201,7 +250,6 @@ class ThreadedJobExecution(JobExecution):
             workflow_id=request.workflow_id,
             user_id=request.user_id,
             job_type=request.job_type,
-            status="running",
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )

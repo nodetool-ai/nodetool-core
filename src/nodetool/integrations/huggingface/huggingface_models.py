@@ -18,6 +18,7 @@ Wherever possible, the code avoids expensive I/O and network calls, preferring c
 information and shallow file inspections to keep UI interactions fast and reliable.
 """
 
+from __future__ import annotations
 import asyncio
 import json
 import os
@@ -26,20 +27,20 @@ from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Callable, List, Sequence
+from typing import Any, Sequence
 
-from huggingface_hub import HfApi, ModelInfo
+import aiofiles
+from typing import TYPE_CHECKING
 
-from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.artifact_inspector import (
-    ArtifactDetection,
-    inspect_paths,
-)
+if TYPE_CHECKING:
+    from huggingface_hub import HfApi, ModelInfo
+    from nodetool.integrations.huggingface.artifact_inspector import (
+        ArtifactDetection,
+        inspect_paths,
+    )
+
 from nodetool.integrations.huggingface.async_downloader import async_hf_download
-from nodetool.integrations.huggingface.hf_fast_cache import (
-    DEFAULT_MODEL_INFO_CACHE_TTL,
-    HfFastCache,
-)
+from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
     HuggingFaceModel,
@@ -47,7 +48,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.runtime.resources import maybe_scope
+from nodetool.config.logging_config import get_logger
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
@@ -294,7 +295,7 @@ _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING = {}
 
 
 def size_on_disk(
-    model_info: ModelInfo,
+    model_info: "ModelInfo",
     allow_patterns: list[str] | None = None,
     ignore_patterns: list[str] | None = None,
 ) -> int:
@@ -327,9 +328,10 @@ def size_on_disk(
     return total_size
 
 
-def has_model_index(model_info: ModelInfo) -> bool:
+def has_model_index(model_info: "ModelInfo") -> bool:
     """Return True when hub metadata lists a `model_index.json` sibling."""
-    return any(sib.rfilename == "model_index.json" for sib in (model_info.siblings or []))
+    siblings = getattr(model_info, "siblings", None)
+    return any(sib.rfilename == "model_index.json" for sib in (siblings or []))
 
 
 # Packaging heuristics ---------------------------------------------------------
@@ -380,7 +382,7 @@ _ADAPTER_MARKERS = (
 
 def detect_repo_packaging(
     repo_id: str,
-    model_info: ModelInfo | None,
+    model_info: "ModelInfo | None",
     file_entries: Sequence[tuple[str, int]],
 ) -> RepoPackagingHint:
     """
@@ -418,7 +420,7 @@ def _is_weight_file(file_name: str) -> bool:
     return lower.endswith(_WEIGHT_EXTENSIONS)
 
 
-def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
+def _has_bundle_metadata(model_info: "ModelInfo | None") -> bool:
     """Detect diffusers/transformers repos that advertise a full pipeline bundle."""
     if model_info is None:
         return False
@@ -560,7 +562,10 @@ async def _repo_has_diffusion_artifacts(
         return False
 
     try:
+        from nodetool.integrations.huggingface.artifact_inspector import inspect_paths
+
         detection = await asyncio.to_thread(inspect_paths, candidate_paths)
+
     except Exception as exc:  # pragma: no cover - best effort
         log.debug("inspect_paths failed for %s: %s", repo_id, exc)
         _DIFFUSION_REPO_CACHE[repo_id] = False
@@ -573,7 +578,7 @@ async def _repo_has_diffusion_artifacts(
 
 async def unified_model(
     model: HuggingFaceModel,
-    model_info: ModelInfo | None = None,
+    model_info: "ModelInfo | None" = None,
     size: int | None = None,
     user_id: str | None = None,
 ) -> UnifiedModel | None:
@@ -629,7 +634,6 @@ async def fetch_model_readme(model_id: str) -> str | None:
     """
     from huggingface_hub import (
         _CACHED_NO_EXIST,
-        hf_hub_download,
         try_to_load_from_cache,
     )
 
@@ -637,8 +641,8 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
     if isinstance(cached_path, str):
         try:
-            with open(cached_path, encoding="utf-8") as handle:
-                return handle.read()
+            async with aiofiles.open(cached_path, encoding="utf-8") as handle:
+                return await handle.read()
         except Exception as e:
             log.debug("Failed to read cached README for %s: %s", model_id, e)
     elif cached_path is _CACHED_NO_EXIST:
@@ -664,28 +668,47 @@ async def fetch_model_readme(model_id: str) -> str | None:
             repo_type="model",
             token=token,
         )
-        with open(readme_path, encoding="utf-8") as handle:
-            return handle.read()
+        async with aiofiles.open(readme_path, encoding="utf-8") as handle:
+            return await handle.read()
     except Exception as exc:  # pragma: no cover
         log.debug("Failed to download README for %s: %s", model_id, exc)
         return None
 
 
-async def fetch_model_info(model_id: str) -> ModelInfo | None:
+class _RecursiveNamespace:
+    """Read-only view of a nested dict that mimics attribute access."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    def __getattr__(self, key: str) -> Any:
+        try:
+            val = self._data[key]
+        except KeyError:
+            # Mirror standard object behavior for missing attributes
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'") from None
+
+        if isinstance(val, dict):
+            return _RecursiveNamespace(val)
+        if isinstance(val, list):
+            return [_RecursiveNamespace(x) if isinstance(x, dict) else x for x in val]
+        return val
+
+    def __repr__(self) -> str:
+        return f"_RecursiveNamespace({repr(self._data)})"
+
+
+async def fetch_model_info(model_id: str) -> "ModelInfo | None":
     """
     Fetch and cache `ModelInfo` for a repo, using the hub only when necessary.
     """
-    cache_key = f"model_info:{model_id}"
-    cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
-    if cached_result is not None:
-        log.debug("Cache hit for model info: %s", model_id)
-        return cached_result
+    from huggingface_hub import HfApi
 
     token = await get_hf_token()
     api = HfApi(token=token) if token else HfApi()
 
     try:
-        model_info: ModelInfo = await asyncio.to_thread(
+        model_info: "ModelInfo" = await asyncio.to_thread(
             api.model_info,
             model_id,
             files_metadata=True,
@@ -694,19 +717,13 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
         log.debug("fetch_model_info: failed to fetch %s: %s", model_id, exc)
         return None
 
-    HF_FAST_CACHE.model_info_cache.set(
-        cache_key,
-        model_info,
-        DEFAULT_MODEL_INFO_CACHE_TTL,
-    )
-    log.debug("Cached model info for: %s", model_id)
     return model_info
 
 
 def model_type_from_model_info(
     recommended_models: dict[str, list[UnifiedModel]],
     repo_id: str,
-    model_info: ModelInfo | None,
+    model_info: "ModelInfo | None",
 ) -> str | None:
     """
     Resolve a model's canonical hf.* type using multiple sources of truth.
@@ -822,7 +839,7 @@ async def _build_cached_repo_entry(
     recommended_models: dict[str, list[UnifiedModel]],
     snapshot_dir: Path | None = None,
     file_list: list[str] | None = None,
-    model_info: ModelInfo | None = None,
+    model_info: "ModelInfo | None" = None,
 ) -> tuple[UnifiedModel, list[tuple[str, int]]]:
     """
     Build the repo-level `UnifiedModel` plus per-file metadata for a cached HF repo.
@@ -853,7 +870,10 @@ async def _build_cached_repo_entry(
     if file_entries and snapshot_path:
         artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
         try:
+            from nodetool.integrations.huggingface.artifact_inspector import inspect_paths
+
             artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
+
         except Exception:
             artifact_detection = None
 
@@ -884,19 +904,10 @@ async def _build_cached_repo_entry(
     return repo_model, file_entries
 
 
-async def read_cached_hf_models() -> List[UnifiedModel]:
+async def read_cached_hf_models() -> list[UnifiedModel]:
     """
     Enumerate all cached HF repos and return repo-level `UnifiedModel` entries.
     """
-
-    cache_key = "cached_hf_models"
-    try:
-        cached_result = HF_FAST_CACHE.model_info_cache.get(cache_key)
-    except Exception:
-        cached_result = None
-
-    if cached_result is not None:
-        return cached_result
 
     try:
         repo_list = await HF_FAST_CACHE.discover_repos("model")
@@ -914,15 +925,6 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
             recommended_models,
         )
         models.append(repo_model)
-
-    try:
-        HF_FAST_CACHE.model_info_cache.set(
-            cache_key,
-            models,
-            DEFAULT_MODEL_INFO_CACHE_TTL,
-        )
-    except Exception:
-        pass
 
     return models
 
@@ -1411,7 +1413,7 @@ async def iter_cached_model_files(
 async def search_cached_hf_models(
     repo_patterns: Sequence[str] | None = None,
     filename_patterns: Sequence[str] | None = None,
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Search the local HF cache for repos/files using offline data only.
 
@@ -1493,7 +1495,7 @@ SUPPORTED_MODEL_TYPES = [
 ]
 
 
-async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_hf_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos containing language models.
     """
@@ -1503,8 +1505,8 @@ async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
         repo_id.split("/")[-1]
         config = await HF_FAST_CACHE.resolve(repo_id, "config.json")
         if config:
-            with open(config) as f:
-                config_data = json.load(f)
+            async with aiofiles.open(config) as f:
+                config_data = json.loads(await f.read())
             model_type = config_data.get("model_type")
             if model_type in SUPPORTED_MODEL_TYPES:
                 results.append(
@@ -1518,7 +1520,7 @@ async def get_hf_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_llamacpp_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos containing GGUF files
     that look suitable for llama.cpp.
@@ -1552,7 +1554,7 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
+async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     """
     Enumerate GGUF models in the llama.cpp native cache directory.
 
@@ -1599,6 +1601,7 @@ async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
             repo_id = f"{org}/{repo}"
         else:
             # Fallback for unexpected format
+            repo = ""
             repo_id = ""
             filename = entry
 
@@ -1626,7 +1629,7 @@ async def get_llama_cpp_models_from_cache() -> List[UnifiedModel]:
     return models
 
 
-async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_vllm_language_models_from_hf_cache() -> list[LanguageModel]:
     """Return LanguageModel entries based on cached weight files (hub-free)."""
     seen_repos: set[str] = set()
     results: list[LanguageModel] = []
@@ -1649,7 +1652,7 @@ async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
-async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
+async def get_mlx_language_models_from_hf_cache() -> list[LanguageModel]:
     """
     Return LanguageModel entries for cached Hugging Face repos that look suitable
     for MLX runtime (Apple Silicon).
@@ -1681,16 +1684,44 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     return list(result.values())
 
 
-async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
+def _is_component_only_repo(repo_id: str) -> bool:
+    """
+    Check if a repo is a component-only repo that can't be used as a standalone pipeline.
+
+    These repos contain model components (transformers, text encoders) that need to be
+    combined with base models and aren't usable as standalone image generation models.
+
+    Examples:
+    - nunchaku-tech/nunchaku-flux.1-schnell (Nunchaku FLUX transformer)
+    - nunchaku-tech/nunchaku-t5 (T5 encoder for Nunchaku)
+    """
+    repo_lower = repo_id.lower()
+    # Nunchaku repos are component-only (transformers, T5 encoders)
+    return "nunchaku" in repo_lower
+
+
+async def _get_diffusion_models_from_hf_cache(task: str) -> list[ImageModel]:
     """
     Shared helper to discover cached diffusion models for a specific task.
+
+    Returns:
+    - For component-only repos (like Nunchaku): only individual component files
+    - For normal repos with single-file checkpoints: repo entry + file entries
+    - For normal multi-file repos: just the repo entry
     """
     result: dict[str, ImageModel] = {}
     async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
         if not file_list:
             continue
-        if not await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list):
+        # Check if this is a component-only repo (e.g., Nunchaku transformers)
+        is_component_only = _is_component_only_repo(repo_id)
+        has_diffusion_artifacts = await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list)
+
+        # Skip non-component repos that don't have diffusion artifacts
+        if not is_component_only and not has_diffusion_artifacts:
             continue
+
+        # Add individual single-file checkpoints
         added_single_file = False
         for fname in file_list:
             if not _is_single_file_diffusion_weight(fname):
@@ -1705,7 +1736,11 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
                 supported_tasks=[task],
             )
             added_single_file = True
-        if added_single_file:
+
+        # Add repo-level entry for non-component repos
+        # - If they have single-file checkpoints, add as companion entry
+        # - If they're multi-file repos with diffusion artifacts, add as the main entry
+        if not is_component_only and (added_single_file or has_diffusion_artifacts):
             result.setdefault(
                 repo_id,
                 ImageModel(
@@ -1719,7 +1754,7 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> List[ImageModel]:
     return list(result.values())
 
 
-async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_text_to_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are text-to-image models,
     including single-file checkpoints stored at the repo root.
@@ -1727,7 +1762,7 @@ async def get_text_to_image_models_from_hf_cache() -> List[ImageModel]:
     return await _get_diffusion_models_from_hf_cache("text_to_image")
 
 
-async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_image_to_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are image-to-image models,
     including single-file checkpoints stored at the repo root.
@@ -1735,7 +1770,7 @@ async def get_image_to_image_models_from_hf_cache() -> List[ImageModel]:
     return await _get_diffusion_models_from_hf_cache("image_to_image")
 
 
-async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
+async def get_mlx_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are mflux models
     (MLX-compatible image generation models).
@@ -1763,7 +1798,7 @@ async def get_mlx_image_models_from_hf_cache() -> List[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
+async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list["ModelInfo"]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
@@ -1775,11 +1810,15 @@ async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[
         log.debug(
             f"_fetch_models_by_author: Fetching models for author {author} with HF_TOKEN (token length: {len(token)} chars)"
         )
+        from huggingface_hub import HfApi
+
         api = HfApi(token=token)
     else:
         log.debug(
             f"_fetch_models_by_author: Fetching models for author {author} without HF_TOKEN - gated models may not be accessible"
         )
+        from huggingface_hub import HfApi
+
         api = HfApi()
     # Run the blocking call in a thread executor
     models = await asyncio.get_event_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
@@ -1791,7 +1830,7 @@ async def get_gguf_language_models_from_authors(
     limit: int = 200,
     sort: str = "downloads",
     tags: str = "gguf",
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Fetch all HF repos authored by the given authors that include GGUF files/tags.
 
@@ -1822,7 +1861,7 @@ async def get_gguf_language_models_from_authors(
     model_infos = await asyncio.gather(*[fetch_model_info(repo.id) for repo in repos])
 
     # Collect all unified_model tasks
-    tasks: list[tuple[HuggingFaceModel, ModelInfo, int | None]] = []
+    tasks: list[tuple[HuggingFaceModel, "ModelInfo", int | None]] = []
     seen_file: set[tuple[str, str]] = set()
     for info in model_infos:
         if info is None:
@@ -1860,7 +1899,7 @@ async def get_mlx_language_models_from_authors(
     limit: int = 200,
     sort: str = "trending_score",
     tags: str = "mlx",
-) -> List[UnifiedModel]:
+) -> list[UnifiedModel]:
     """
     Fetch MLX-friendly repos authored by the given authors/orgs and return
     one LanguageModel per repo id.
@@ -1909,9 +1948,6 @@ async def delete_cached_hf_model(model_id: str) -> bool:
 
     shutil.rmtree(repo_root)
 
-    # Purge all HuggingFace caches after successful deletion
-    log.info("Purging HuggingFace model caches after model deletion")
-    HF_FAST_CACHE.model_info_cache.delete_pattern("cached_hf_*")
     await HF_FAST_CACHE.invalidate(model_id, repo_type="model")
     return True
 

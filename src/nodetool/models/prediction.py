@@ -62,7 +62,7 @@ class Prediction(DBModel):
     metadata: dict[str, Any] | None = DBField(default=None)
 
     @classmethod
-    async def create(
+    async def create(  # type: ignore[override]
         cls,
         user_id: str,
         node_id: str,
@@ -232,10 +232,15 @@ class Prediction(DBModel):
             reverse=False,
         )
 
-        total_cost = sum(p.cost or 0 for p in predictions)
-        total_input_tokens = sum(p.input_tokens or 0 for p in predictions)
-        total_output_tokens = sum(p.output_tokens or 0 for p in predictions)
-        total_tokens = sum(p.total_tokens or 0 for p in predictions)
+        total_cost = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
+        for p in predictions:
+            total_cost += p.cost or 0
+            total_input_tokens += p.input_tokens or 0
+            total_output_tokens += p.output_tokens or 0
+            total_tokens += p.total_tokens or 0
         # If total_tokens wasn't tracked, calculate from input + output
         if total_tokens == 0:
             total_tokens = total_input_tokens + total_output_tokens

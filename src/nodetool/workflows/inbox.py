@@ -74,11 +74,13 @@ class NodeInbox:
         the coroutine and task are created in the correct loop context.
         This avoids "Future attached to a different loop" errors on Windows.
         """
+
         def _schedule_notify() -> None:
             """Create and schedule the notification task on the target loop.
 
             This runs in the target loop's thread via call_soon_threadsafe.
             """
+
             async def _notify() -> None:
                 async with self._cond:
                     self._cond.notify_all()
@@ -99,6 +101,14 @@ class NodeInbox:
         self._open_counts[handle] = self._open_counts.get(handle, 0) + count
         # Ensure buffer exists
         self._buffers.setdefault(handle, deque())
+        log.debug(
+            "Inbox[%s] add_upstream: handle=%s count=%s open=%s buffer_limit=%s",
+            id(self),
+            handle,
+            count,
+            self._open_counts.get(handle, 0),
+            self._buffer_limit,
+        )
 
     async def put(self, handle: str, item: Any) -> None:
         """Enqueue an item for a handle and notify any waiters.
@@ -115,10 +125,30 @@ class NodeInbox:
 
         # Wait if buffer is full (backpressure)
         if self._buffer_limit is not None:
+            waited = False
             async with self._cond:
                 while not self._closed and len(self._buffers.get(handle, [])) >= self._buffer_limit:
                     # Block producer until consumer drains the buffer
+                    if not waited:
+                        waited = True
+                        log.debug(
+                            "Inbox[%s] put waiting: handle=%s size=%s limit=%s open=%s",
+                            id(self),
+                            handle,
+                            len(self._buffers.get(handle, [])),
+                            self._buffer_limit,
+                            self._open_counts.get(handle, 0),
+                        )
                     await self._cond.wait()
+            if waited:
+                log.debug(
+                    "Inbox[%s] put resumed: handle=%s size=%s limit=%s open=%s",
+                    id(self),
+                    handle,
+                    len(self._buffers.get(handle, [])),
+                    self._buffer_limit,
+                    self._open_counts.get(handle, 0),
+                )
 
         if self._closed:
             return
@@ -126,9 +156,14 @@ class NodeInbox:
         self._buffers.setdefault(handle, deque()).append(item)
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
-        # log.debug(
-        #     f"Inbox[{id(self)}] put: handle={handle} size={len(self._buffers.get(handle, []))}"
-        # )
+        log.debug(
+            "Inbox[%s] put: handle=%s size=%s arrival=%s open=%s",
+            id(self),
+            handle,
+            len(self._buffers.get(handle, [])),
+            len(self._arrival),
+            self._open_counts.get(handle, 0),
+        )
 
         # Notify waiters
         async with self._cond:
@@ -145,9 +180,12 @@ class NodeInbox:
         if new_val < 0:
             new_val = 0
         self._open_counts[handle] = new_val
-        # log.debug(
-        #     f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
-        # )
+        log.debug(
+            "Inbox[%s] eos: handle=%s open=%s",
+            id(self),
+            handle,
+            self._open_counts.get(handle, 0),
+        )
 
         self._notify_waiters_threadsafe()
 
@@ -187,6 +225,13 @@ class NodeInbox:
                 yield item
             # If no producers remain and buffer is empty -> EOS
             if self._closed or self._open_counts.get(handle, 0) == 0:
+                log.debug(
+                    "Inbox[%s] iter_input EOS: handle=%s closed=%s open=%s",
+                    id(self),
+                    handle,
+                    self._closed,
+                    self._open_counts.get(handle, 0),
+                )
                 return
             # Otherwise wait for more data or a producer to finish
             async with self._cond:
@@ -201,6 +246,7 @@ class NodeInbox:
         Terminates when all handles with declared upstreams have reached EOS
         and all buffers are drained, or if the inbox is closed.
         """
+        last_wait_state: str | None = None
         while True:
             # Emit quickly if something is available in arrival queue
             if self._arrival:
@@ -218,15 +264,29 @@ class NodeInbox:
             any_buffered = any(len(buf) > 0 for buf in self._buffers.values())
             any_open = any(v > 0 for v in self._open_counts.values())
             if self._closed or (not any_buffered and not any_open):
+                log.debug(
+                    "Inbox[%s] iter_any EOS: closed=%s any_buffered=%s any_open=%s",
+                    id(self),
+                    self._closed,
+                    any_buffered,
+                    any_open,
+                )
                 return
 
             # Wait for new arrivals or EOS updates
+            buffer_summary = {h: len(buf) for h, buf in self._buffers.items() if len(buf) > 0}
+            open_summary = {h: v for h, v in self._open_counts.items() if v > 0}
+            wait_state = f"arrival=0 buffered={buffer_summary} open={open_summary}"
+            if wait_state != last_wait_state:
+                log.debug("Inbox[%s] iter_any waiting: %s", id(self), wait_state)
+                last_wait_state = wait_state
             async with self._cond:
                 await self._cond.wait()
 
     async def close_all(self) -> None:
         """Close the inbox and wake any blocked consumers."""
         self._closed = True
+        log.debug("Inbox[%s] close_all", id(self))
         async with self._cond:
             self._cond.notify_all()
 
@@ -254,6 +314,35 @@ class NodeInbox:
         """
         return self._open_counts.get(handle, 0) > 0
 
+    def is_fully_drained(self) -> bool:
+        """Return True if inbox is fully drained: no buffered items and all sources done.
+
+        This is the definitive check for whether a node's inbox has completed
+        all its work - both buffered messages have been consumed AND all upstream
+        sources have signaled end-of-stream.
+
+        Returns:
+            True if the inbox is completely drained and finished.
+        """
+        if self._closed:
+            return True
+        # Check if any buffers have items
+        any_buffered = any(len(buf) > 0 for buf in self._buffers.values())
+        # Check if any sources are still open
+        any_open = any(v > 0 for v in self._open_counts.values())
+        return not any_buffered and not any_open
+
+    def has_pending_work(self) -> bool:
+        """Return True if inbox has pending work: buffered items or open sources.
+
+        This is the inverse of is_fully_drained(), useful for checking if there's
+        still work to be done.
+
+        Returns:
+            True if there are buffered items or open upstream sources.
+        """
+        return not self.is_fully_drained()
+
     # Non-blocking pop of any available item in arrival order
     def try_pop_any(self) -> tuple[str, Any] | None:
         """Pop one buffered arrival in cross-handle order without blocking.
@@ -267,6 +356,14 @@ class NodeInbox:
         buf = self._buffers.get(handle)
         if buf and len(buf) > 0:
             item = buf.popleft()
+            log.debug(
+                "Inbox[%s] try_pop_any: handle=%s size=%s open=%s arrival=%s",
+                id(self),
+                handle,
+                len(buf),
+                self._open_counts.get(handle, 0),
+                len(self._arrival),
+            )
             # Notify producers that space is available (backpressure release)
             # Note: This is synchronous, so we schedule notification without blocking
             if self._loop is not None:

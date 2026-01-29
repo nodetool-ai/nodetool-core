@@ -3,7 +3,7 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Optional
 
 import huggingface_hub.file_download as _fd
 from huggingface_hub import constants
@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 _thread_local = threading.local()
 
 
-class _CallbackTqdm(tqdm):
+class _CallbackTqdm(tqdm):  # type: ignore[misc]
     def __init__(self, *args, **kwargs):
         # Force disable display so it doesn't print to stderr
         kwargs["disable"] = True
@@ -44,8 +44,8 @@ def _download_to_tmp_and_move_with_progress(
     incomplete_path: Path,
     destination_path: Path,
     url_to_download: str,
-    proxies: Optional[Dict],
-    headers: Dict[str, str],
+    proxies: Optional[dict],
+    headers: dict[str, str],
     expected_size: Optional[int],
     filename: str,
     force_download: bool,
@@ -108,7 +108,7 @@ def _download_to_tmp_and_move_with_progress(
                     headers=headers,
                     expected_size=expected_size,
                     displayed_filename=filename,
-                    _tqdm_bar=_CallbackTqdm,
+                    _tqdm_bar=_CallbackTqdm,  # type: ignore[arg-type]
                 )
             else:
                 if xet_file_data is not None and not constants.HF_HUB_DISABLE_XET:
@@ -126,7 +126,7 @@ def _download_to_tmp_and_move_with_progress(
                     resume_size=resume_size,
                     headers=headers,
                     expected_size=expected_size,
-                    _tqdm_bar=_CallbackTqdm,
+                    _tqdm_bar=_CallbackTqdm,  # type: ignore[arg-type]
                 )
         finally:
             # Clean up thread local storage
@@ -146,8 +146,8 @@ def _hf_hub_download_to_cache_dir_with_progress(
     revision: str,
     endpoint: Optional[str],
     etag_timeout: float,
-    headers: Dict[str, str],
-    proxies: Optional[Dict],
+    headers: dict[str, str],
+    proxies: Optional[dict],
     token: Optional[bool | str],
     local_files_only: bool,
     force_download: bool,
@@ -302,8 +302,8 @@ def _hf_hub_download_to_local_dir_with_progress(
     revision: str,
     endpoint: Optional[str],
     etag_timeout: float,
-    headers: Dict[str, str],
-    proxies: Optional[Dict],
+    headers: dict[str, str],
+    proxies: Optional[dict],
     token: bool | str | None,
     cache_dir: str,
     force_download: bool,
@@ -439,13 +439,13 @@ def hf_hub_download_with_progress(
     library_version: Optional[str] = None,
     cache_dir: str | Path | None = None,
     local_dir: str | Path | None = None,
-    user_agent: Dict | str | None = None,
+    user_agent: dict | str | None = None,
     force_download: bool = False,
-    proxies: Optional[Dict] = None,
+    proxies: Optional[dict] = None,
     etag_timeout: float = constants.DEFAULT_ETAG_TIMEOUT,
     token: bool | str | None = None,
     local_files_only: bool = False,
-    headers: Optional[Dict[str, str]] = None,
+    headers: Optional[dict[str, str]] = None,
     endpoint: Optional[str] = None,
     resume_download: Optional[bool] = None,
     force_filename: Optional[str] = None,
@@ -481,7 +481,7 @@ def hf_hub_download_with_progress(
             endpoint=endpoint,
             resume_download=resume_download,
             force_filename=force_filename,
-            local_dir_use_symlinks=local_dir_use_symlinks,
+            local_dir_use_symlinks=local_dir_use_symlinks,  # type: ignore[arg-type]
         )
 
     if constants.HF_HUB_ETAG_TIMEOUT != constants.DEFAULT_ETAG_TIMEOUT:

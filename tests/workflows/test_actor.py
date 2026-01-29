@@ -3,7 +3,7 @@ from typing import AsyncGenerator, ClassVar, TypedDict
 
 import pytest
 
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
@@ -438,6 +438,8 @@ async def test_run_non_streaming_calls_runner_with_inputs_and_marks_eos():
 
     # Provide one input for 'a'
     await actor.inbox.put("a", 99)
+    # With always-on streaming, we must explicitly mark the source as done
+    actor.inbox.mark_source_done("a")
 
     called = {}
 
@@ -1099,3 +1101,122 @@ async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
 #     await actor.run()
 
 #     assert CaptureNode.seen == [10, 20]
+
+
+# --- Tests for Always-On Streaming with Sticky Inputs ---
+
+
+@pytest.mark.asyncio
+async def test_always_on_streaming_sticky_inputs():
+    """Test that non-streaming inputs are sticky and reused across executions.
+
+    Scenario:
+    - Node B has two inputs: 'a' from a streaming source, 'b' from a non-streaming source.
+    - B provides a single value that should be retained (sticky).
+    - A emits multiple values.
+    - B should run multiple times as A emits new values, with the sticky value reused.
+    """
+    # Producer A is a streaming producer (we manually feed values to the inbox)
+    producer_a = StreamingProducer(id="producer_a")  # type: ignore
+
+    # Producer C is a non-streaming producer
+    producer_c = NonStreamingProducer(id="producer_c")  # type: ignore
+
+    # Node B captures all inputs
+    target_b = CapturePairsNode(id="target_b")  # type: ignore
+    CapturePairsNode.seen = []
+
+    edges = [
+        Edge(
+            id="e1",
+            source="producer_a",
+            target="target_b",
+            sourceHandle="output",
+            targetHandle="a",
+        ),
+        Edge(
+            id="e2",
+            source="producer_c",
+            target="target_b",
+            sourceHandle="output",
+            targetHandle="b",
+        ),
+    ]
+    graph = Graph(nodes=[producer_a, producer_c, target_b], edges=edges)
+    actor, runner, ctx = await make_actor_for_target_async(graph, target_b)
+
+    # Non-streaming producer C provides a single sticky value for handle 'b'
+    await actor.inbox.put("b", 100)
+    # Mark source as done (simulating non-streaming source completion)
+    actor.inbox.mark_source_done("b")
+
+    # Streaming producer A provides multiple values
+    await actor.inbox.put("a", 1)
+    await actor.inbox.put("a", 2)
+    await actor.inbox.put("a", 3)
+    actor.inbox.mark_source_done("a")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    # Target B should have run 3 times with the sticky value 100 for 'b'
+    # With on_any mode (default), the node waits for all handles to have at least one value,
+    # then re-executes on every subsequent input, reusing sticky values for handles that don't update.
+    # So we expect: (1, 100), (2, 100), (3, 100)
+    assert len(CapturePairsNode.seen) == 3, f"Expected 3 executions, got {CapturePairsNode.seen}"
+    assert CapturePairsNode.seen[0] == (1, 100)
+    assert CapturePairsNode.seen[1] == (2, 100)
+    assert CapturePairsNode.seen[2] == (3, 100)
+
+
+@pytest.mark.asyncio
+async def test_always_on_streaming_triggers_on_every_input():
+    """Test that every input update triggers node execution.
+
+    With always-on streaming, even non-streaming handle updates should trigger re-execution.
+    """
+    producer_a = NonStreamingProducer(id="producer_a")  # type: ignore
+    producer_b = NonStreamingProducer(id="producer_b")  # type: ignore
+    target = CapturePairsNode(id="target")  # type: ignore
+    CapturePairsNode.seen = []
+
+    edges = [
+        Edge(
+            id="e1",
+            source="producer_a",
+            target="target",
+            sourceHandle="output",
+            targetHandle="a",
+        ),
+        Edge(
+            id="e2",
+            source="producer_b",
+            target="target",
+            sourceHandle="output",
+            targetHandle="b",
+        ),
+    ]
+    graph = Graph(nodes=[producer_a, producer_b, target], edges=edges)
+    actor, runner, ctx = await make_actor_for_target_async(graph, target)
+
+    # Both handles are non-streaming but treated as streaming
+    # First provide initial values for both handles
+    await actor.inbox.put("a", 1)
+    await actor.inbox.put("b", 10)
+
+    # Now provide additional values - these should also trigger executions
+    await actor.inbox.put("a", 2)
+    await actor.inbox.put("b", 20)
+    await actor.inbox.put("a", 3)
+
+    actor.inbox.mark_source_done("a")
+    actor.inbox.mark_source_done("b")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    # We expect executions:
+    # 1. After both handles have initial values: (1, 10)
+    # 2. After 'a' updates to 2: (2, 10)
+    # 3. After 'b' updates to 20: (2, 20)
+    # 4. After 'a' updates to 3: (3, 20)
+    assert len(CapturePairsNode.seen) == 4, f"Expected 4 executions, got {CapturePairsNode.seen}"
+    assert CapturePairsNode.seen == [(1, 10), (2, 10), (2, 20), (3, 20)]

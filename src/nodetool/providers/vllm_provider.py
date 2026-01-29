@@ -8,7 +8,8 @@ endpoint for serving large language models with optimized inference.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+import os
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import httpx
 import openai
@@ -18,7 +19,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
-from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk
 
 if TYPE_CHECKING:
@@ -28,7 +28,8 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 # Only register the provider if VLLM_BASE_URL is explicitly set
-_vllm_base_url = Environment.get_environment().get("VLLM_BASE_URL")
+# Use os.environ directly to avoid triggering early Environment loading
+_vllm_base_url = os.environ.get("VLLM_BASE_URL")
 
 
 def _parse_bool(value: str | None, default: bool) -> bool:
@@ -145,7 +146,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
             http_client=self._fallback_http_client,
         )
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Get available vLLM models.
 
         Queries the vLLM server's /models endpoint to discover available models.
@@ -157,7 +158,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         try:
             client = self._ensure_client()
             models_response = await client.models.list()
-            models: List[LanguageModel] = []
+            models: list[LanguageModel] = []
 
             for model in models_response.data:
                 models.append(
@@ -185,7 +186,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         """
         return super().format_tools(tools)
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -311,7 +312,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     self._log_tool_call(tool_call)
                     yield tool_call
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

@@ -30,18 +30,20 @@ Example usage:
 """
 
 import uuid
-from typing import Any, AsyncGenerator, Callable, List, Sequence, Union
+from typing import Any, AsyncGenerator, Callable, Sequence
 
 from nodetool.metadata.types import (
     LanguageModel,
     Message,
     MessageTextContent,
+    Provider,
     ToolCall,
 )
-from nodetool.providers.base import BaseProvider
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.workflows.types import Chunk
 
 
+@register_provider(Provider.Fake)
 class FakeProvider(BaseProvider):
     """
     A simplified fake chat provider for testing.
@@ -60,6 +62,7 @@ class FakeProvider(BaseProvider):
         should_stream: bool = True,
         chunk_size: int = 10,
         custom_response_fn: (Callable[[Sequence[Message], str], str | list[ToolCall]] | None) = None,
+        secrets: dict[str, str] | None = None,
     ):
         """
         Initialize the FakeProvider.
@@ -71,8 +74,9 @@ class FakeProvider(BaseProvider):
             chunk_size: Number of characters per chunk when streaming text
             custom_response_fn: Optional function that takes (messages, model) and returns
                                either a string or list[ToolCall]
+            secrets: API secrets (not used by FakeProvider, but required by BaseProvider)
         """
-        super().__init__()
+        super().__init__(secrets=secrets)
         self.text_response = text_response
         self.tool_calls = tool_calls or []
         self.should_stream = should_stream
@@ -97,11 +101,29 @@ class FakeProvider(BaseProvider):
         """Reset the call count to 0."""
         self.call_count = 0
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
-        """Fake provider has no models."""
-        return []
+    async def get_available_language_models(self) -> list[LanguageModel]:
+        """Return fake language models for testing."""
+        from nodetool.metadata.types import Provider
 
-    async def generate_message(
+        return [
+            LanguageModel(
+                id="fake-model-v1",
+                name="Fake Model v1",
+                provider=Provider.Fake,
+            ),
+            LanguageModel(
+                id="fake-model-v2",
+                name="Fake Model v2",
+                provider=Provider.Fake,
+            ),
+            LanguageModel(
+                id="fake-fast-model",
+                name="Fake Fast Model",
+                provider=Provider.Fake,
+            ),
+        ]
+
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -133,7 +155,7 @@ class FakeProvider(BaseProvider):
         else:  # Text response
             return Message(role="assistant", content=[MessageTextContent(text=response)])
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

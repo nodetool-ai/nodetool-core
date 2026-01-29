@@ -40,7 +40,7 @@ import socket
 import time
 import weakref
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import httpx
 
@@ -186,7 +186,7 @@ def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
     return None
 
 
-def _parse_model_args(model: str) -> Tuple[list[str], str]:
+def _parse_model_args(model: str) -> tuple[list[str], str]:
     """Build llama-server model arguments from a model spec.
 
     Args:
@@ -393,8 +393,8 @@ class LlamaServerManager:
         self._hf_token = Environment.get("HF_TOKEN")
         self._api_key = Environment.get("LLAMA_API_KEY")
 
-        self._servers: Dict[str, _RunningServer] = {}
-        self._model_capabilities: Dict[str, list[str]] = {}
+        self._servers: dict[str, _RunningServer] = {}
+        self._model_capabilities: dict[str, list[str]] = {}
         self._lock = asyncio.Lock()
         self._pruner_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -703,9 +703,9 @@ class LlamaServerManager:
             with suppress(Exception):
                 if getattr(self, "_shutdown_started", False):
                     return
-                self._shutdown_started = True
+                self._shutdown_started = True  # type: ignore[attr-defined]
             try:
-                self._shutdown_task = loop.create_task(self.stop_all())
+                self._shutdown_task = loop.create_task(self.stop_all())  # type: ignore[attr-defined]
             except Exception:
                 self.shutdown_sync()
 

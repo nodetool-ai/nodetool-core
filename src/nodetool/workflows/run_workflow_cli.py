@@ -24,7 +24,7 @@ from contextlib import suppress
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
@@ -132,6 +132,7 @@ async def _run(req_dict: dict[str, Any]) -> int:
 
 def main() -> int:
     import warnings
+
     warnings.warn(
         "run_workflow_cli.main() is deprecated. Use 'nodetool run --stdin --jsonl' instead.",
         DeprecationWarning,

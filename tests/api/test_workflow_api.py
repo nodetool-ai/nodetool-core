@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Node
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Edge, Node
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.workflow import WorkflowList, WorkflowRequest
 
 
@@ -157,10 +157,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
     await workflow.save()
 
     # Create a mock provider that returns a generated name
-    mock_response = Message(
-        role="assistant",
-        content="Image Processing Pipeline"
-    )
+    mock_response = Message(role="assistant", content="Image Processing Pipeline")
     mock_provider = MockProvider([mock_response])
 
     # Patch get_provider to return our mock
@@ -168,7 +165,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
         response = client.post(
             f"/api/workflows/{workflow.id}/generate-name",
             json={"provider": "openai", "model": "gpt-4"},
-            headers=headers
+            headers=headers,
         )
 
     assert response.status_code == 200
@@ -186,9 +183,7 @@ async def test_generate_workflow_name(client: TestClient, workflow: Workflow, he
 async def test_generate_workflow_name_not_found(client: TestClient, headers: dict[str, str]):
     """Test generating name for non-existent workflow returns 404."""
     response = client.post(
-        "/api/workflows/nonexistent-id/generate-name",
-        json={"provider": "openai", "model": "gpt-4"},
-        headers=headers
+        "/api/workflows/nonexistent-id/generate-name", json={"provider": "openai", "model": "gpt-4"}, headers=headers
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Workflow not found"
@@ -207,10 +202,7 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
     await workflow.save()
 
     # Create a mock provider that returns a generated name
-    mock_response = Message(
-        role="assistant",
-        content="Filter Image Processor"
-    )
+    mock_response = Message(role="assistant", content="Filter Image Processor")
     mock_provider = MockProvider([mock_response])
 
     # Patch get_provider to return our mock
@@ -218,7 +210,7 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
         response = client.post(
             f"/api/workflows/{workflow.id}/generate-name",
             json={"provider": "anthropic", "model": "claude-3"},
-            headers=headers
+            headers=headers,
         )
 
     assert response.status_code == 200
@@ -243,3 +235,183 @@ async def test_generate_workflow_name_with_description(client: TestClient, workf
 #     )
 #     assert response.status_code == 200
 #     assert response.headers["content-type"] == "application/x-ndjson"
+
+
+@pytest.mark.asyncio
+async def test_dsl_export(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test exporting a workflow to DSL Python code."""
+    await workflow.save()
+    response = client.get(f"/api/workflows/{workflow.id}/dsl-export", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+
+    # Check that the response contains valid Python DSL code
+    code = response.text
+    assert "from nodetool.dsl.graph import graph" in code
+    assert "workflow = graph(" in code
+
+
+@pytest.mark.asyncio
+async def test_dsl_export_not_found(client: TestClient, headers: dict[str, str]):
+    """Test DSL export for non-existent workflow returns 404."""
+    response = client.get("/api/workflows/nonexistent-id/dsl-export", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_dsl_export_public_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test that public workflows can be exported."""
+    workflow.access = "public"
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/dsl-export", headers=headers)
+    assert response.status_code == 200
+    assert "from nodetool.dsl.graph import graph" in response.text
+
+
+@pytest.mark.asyncio
+async def test_gradio_export(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test exporting a workflow to Gradio app Python code."""
+    await workflow.save()
+    response = client.post(
+        f"/api/workflows/{workflow.id}/gradio-export",
+        json={"app_title": "Test App", "description": "Test description"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+
+    # Check that the response contains Gradio-specific code
+    code = response.text
+    assert "from nodetool.dsl.graph import graph" in code
+    assert "GradioAppConfig" in code
+    assert "Test App" in code
+
+
+@pytest.mark.asyncio
+async def test_gradio_export_not_found(client: TestClient, headers: dict[str, str]):
+    """Test Gradio export for non-existent workflow returns 404."""
+    response = client.post(
+        "/api/workflows/nonexistent-id/gradio-export",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_gradio_export_with_defaults(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test Gradio export with default configuration."""
+    await workflow.save()
+    response = client.post(
+        f"/api/workflows/{workflow.id}/gradio-export",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "NodeTool Workflow" in response.text  # Default app title
+
+
+@pytest.mark.asyncio
+async def test_create_workflow_with_html_app(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test creating a workflow with an html_app field."""
+    html_content = "<html><body><h1>Hello World</h1></body></html>"
+    params = {
+        "name": "Test Workflow with HTML App",
+        "graph": {
+            "nodes": [],
+            "edges": [],
+        },
+        "description": "Test Workflow Description",
+        "access": "private",
+        "html_app": html_content,
+    }
+    request = WorkflowRequest(**params)
+    json = request.model_dump()
+    response = client.post("/api/workflows/", json=json, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["name"] == "Test Workflow with HTML App"
+    assert response.json()["html_app"] == html_content
+
+    w = await Workflow.get(response.json()["id"])
+    assert w is not None
+    assert w.html_app == html_content
+
+
+@pytest.mark.asyncio
+async def test_update_workflow_with_html_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test updating a workflow with an html_app field."""
+    html_content = "<html><body><h1>Updated App</h1></body></html>"
+    request = WorkflowRequest(
+        name="Updated Workflow",
+        description="Updated Workflow Description",
+        access="public",
+        graph=APIGraph(
+            nodes=[Node(**n) for n in workflow.graph["nodes"]],
+            edges=[Edge(**e) for e in workflow.graph["edges"]],
+        ),
+        html_app=html_content,
+    )
+    response = client.put(f"/api/workflows/{workflow.id}", json=request.model_dump(), headers=headers)
+    assert response.status_code == 200
+    assert response.json()["html_app"] == html_content
+
+    saved_workflow = await Workflow.get(response.json()["id"])
+    assert saved_workflow is not None
+    assert saved_workflow.html_app == html_content
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting the HTML app for a workflow with config injection."""
+    html_content = "<html><body><h1>My App</h1></body></html>"
+    workflow.html_app = html_content
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    # Verify the original content is present
+    assert "<h1>My App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_API_URL" in response.text
+    assert "window.NODETOOL_WS_URL" in response.text
+    assert f'window.NODETOOL_WORKFLOW_ID = "{workflow.id}"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app_not_found(client: TestClient, headers: dict[str, str]):
+    """Test getting HTML app for non-existent workflow returns 404."""
+    response = client.get("/api/workflows/nonexistent-id/app", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workflow not found"
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_app_no_html(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting HTML app when no html_app is configured returns 404."""
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No HTML app configured for this workflow"
+
+
+@pytest.mark.asyncio
+async def test_get_public_workflow_app(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    """Test getting HTML app for a public workflow with config injection."""
+    html_content = "<html><body><h1>Public App</h1></body></html>"
+    workflow.html_app = html_content
+    workflow.access = "public"
+    await workflow.save()
+
+    response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
+    assert response.status_code == 200
+    # Verify the original content is present
+    assert "<h1>Public App</h1>" in response.text
+    # Verify config injection
+    assert "window.NODETOOL_WORKFLOW_ID" in response.text
+
+

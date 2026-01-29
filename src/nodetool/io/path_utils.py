@@ -9,7 +9,7 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-def resolve_workspace_path(workspace_dir: str, path: str) -> str:
+def resolve_workspace_path(workspace_dir: str | None, path: str) -> str:
     """
     Resolve a path relative to the workspace directory.
     Handles paths starting with '/workspace/', 'workspace/', or absolute paths
@@ -27,8 +27,14 @@ def resolve_workspace_path(workspace_dir: str, path: str) -> str:
         The absolute path in the actual filesystem.
 
     Raises:
-        ValueError: If workspace_dir is not provided or empty.
+        PermissionError: If workspace_dir is None (no workspace assigned).
+        ValueError: If workspace_dir is empty string.
     """
+    if workspace_dir is None:
+        raise PermissionError(
+            "No workspace is assigned. File operations require a user-defined workspace. "
+            "Please configure a workspace before performing disk I/O operations."
+        )
     if not workspace_dir:
         raise ValueError("Workspace directory is required")
 

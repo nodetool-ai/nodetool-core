@@ -2,7 +2,7 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
@@ -60,7 +60,7 @@ class WorkflowNode(BaseNode):
         )
         async for msg in run_workflow(req):
             if isinstance(msg, Error):
-                raise Exception(msg.error)
+                raise Exception(msg.message)
             if isinstance(msg, OutputUpdate):
                 yield msg.output_name, msg.value
             if isinstance(msg, NodeProgress):

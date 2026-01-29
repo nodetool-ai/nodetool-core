@@ -29,6 +29,8 @@ class StepResult(BaseModel):
     result: Any
     error: str | None = None
     is_task_result: bool = False
+    thread_id: str | None = None
+    workflow_id: str | None = None
 
 
 class PlanningUpdate(BaseModel):
@@ -41,6 +43,8 @@ class PlanningUpdate(BaseModel):
 
     type: Literal["planning_update"] = "planning_update"
     node_id: str | None = None
+    thread_id: str | None = None
+    workflow_id: str | None = None
     phase: str
     status: str
     content: str | None = None
@@ -56,6 +60,7 @@ class LogUpdate(BaseModel):
     node_name: str
     content: str
     severity: Literal["info", "warning", "error"]
+    workflow_id: str | None = None
 
 
 class Notification(BaseModel):
@@ -67,6 +72,7 @@ class Notification(BaseModel):
     node_id: str
     content: str
     severity: Literal["info", "warning", "error"]
+    workflow_id: str | None = None
 
 
 class PreviewUpdate(BaseModel):
@@ -99,6 +105,8 @@ class ToolResultUpdate(BaseModel):
 
     type: Literal["tool_result_update"] = "tool_result_update"
     node_id: str
+    thread_id: str | None = None
+    workflow_id: str | None = None
     result: dict[str, Any]
 
 
@@ -112,6 +120,8 @@ class TaskUpdate(BaseModel):
 
     type: Literal["task_update"] = "task_update"
     node_id: str | None = None
+    thread_id: str | None = None
+    workflow_id: str | None = None
     task: Task
     step: Step | None = None
     event: TaskUpdateEvent
@@ -133,6 +143,7 @@ class NodeUpdate(BaseModel):
     error: str | None = None
     result: dict[str, Any] | None = None
     properties: dict[str, Any] | None = None
+    workflow_id: str | None = None
 
 
 class EdgeUpdate(BaseModel):
@@ -157,6 +168,8 @@ class ToolCallUpdate(BaseModel):
 
     type: Literal["tool_call_update"] = "tool_call_update"
     node_id: str | None = None
+    thread_id: str | None = None
+    workflow_id: str | None = None
     tool_call_id: str | None = None
     name: str
     args: dict[str, Any]
@@ -209,6 +222,7 @@ class NodeProgress(BaseModel):
     progress: int
     total: int
     chunk: str = ""
+    workflow_id: str | None = None
 
 
 class Error(BaseModel):
@@ -220,7 +234,9 @@ class Error(BaseModel):
     """
 
     type: Literal["error"] = "error"
-    error: str
+    message: str
+    thread_id: str | None = None
+    workflow_id: str | None = None
 
 
 class OutputUpdate(BaseModel):
@@ -239,6 +255,7 @@ class OutputUpdate(BaseModel):
     value: Any
     output_type: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    workflow_id: str | None = None
 
 
 ProcessingMessage = (

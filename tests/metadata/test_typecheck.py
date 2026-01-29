@@ -254,6 +254,31 @@ class TestIsAssignable:
         image_ref_list = ImageRef(data=[1, 2, 3])
         assert is_assignable(list_int, image_ref_list) is True
 
+    def test_single_value_to_list_auto_wrapping(self):
+        """Test that single values can be assigned to list types (auto-wrapping)."""
+        list_int = TypeMetadata(type="list", type_args=[TypeMetadata(type="int")])
+        list_str = TypeMetadata(type="list", type_args=[TypeMetadata(type="str")])
+        list_float = TypeMetadata(type="list", type_args=[TypeMetadata(type="float")])
+        list_image = TypeMetadata(type="list", type_args=[TypeMetadata(type="image")])
+
+        # Single values should be assignable to list types
+        assert is_assignable(list_int, 42) is True
+        assert is_assignable(list_str, "hello") is True
+        assert is_assignable(list_float, 3.14) is True
+        assert is_assignable(list_float, 42) is True  # int assignable to float
+
+        # Wrong types should not be assignable
+        assert is_assignable(list_int, "not an int") is False
+        assert is_assignable(list_str, 42) is False
+
+        # Asset types
+        assert is_assignable(list_image, ImageRef(uri="test.jpg")) is True
+        assert is_assignable(list_image, VideoRef(uri="test.mp4")) is False
+
+        # List with no type args should accept any single value
+        list_no_args = TypeMetadata(type="list", type_args=[])
+        assert is_assignable(list_no_args, 42) is False  # No auto-wrap for untyped lists
+
     def test_dict_type_assignability(self):
         """Test dict type assignability."""
         dict_str_int = TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")])
@@ -337,10 +362,9 @@ class TestIsAssignable:
 
     def test_edge_cases(self):
         """Test edge cases and error conditions."""
-        # Test None values with enum
+        # Test None values with enum - should return False instead of raising
         enum_type = TypeMetadata(type="enum", values=None)
-        with pytest.raises(AssertionError):
-            is_assignable(enum_type, "value")
+        assert is_assignable(enum_type, "value") is False
 
         # Test unknown type in NameToType
         unknown_type = TypeMetadata(type="unknown_type")
@@ -366,7 +390,9 @@ class TestIsAssignable:
         )
         assert is_assignable(list_of_lists_int, [[1, 2], [3, 4]]) is True
         assert is_assignable(list_of_lists_int, [[1, 2], ["3", "4"]]) is False
-        assert is_assignable(list_of_lists_int, [1, 2, 3]) is False
+        # With auto-wrapping: [1, 2, 3] has each element checked against list[int].
+        # Each int is assignable to list[int] via auto-wrap, so this passes.
+        assert is_assignable(list_of_lists_int, [1, 2, 3]) is True
 
         # Dict of lists
         dict_of_lists = TypeMetadata(
@@ -378,7 +404,9 @@ class TestIsAssignable:
         )
         assert is_assignable(dict_of_lists, {"a": [1, 2], "b": [3, 4]}) is True
         assert is_assignable(dict_of_lists, {"a": [1, 2], "b": ["3", "4"]}) is False
-        assert is_assignable(dict_of_lists, {"a": 1, "b": 2}) is False
+        # With auto-wrapping: each dict value (1, 2) is checked against list[int].
+        # Each int is assignable to list[int] via auto-wrap, so this passes.
+        assert is_assignable(dict_of_lists, {"a": 1, "b": 2}) is True
 
         # Union in list
         list_of_unions = TypeMetadata(

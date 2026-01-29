@@ -2,13 +2,12 @@
 
 import json
 import traceback
-from typing import List
 
 from rich.syntax import Syntax
 
 from nodetool.chat.chat_cli import ChatCLI
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import get_input_schema, get_output_schema
+from nodetool.types.api_graph import get_input_schema, get_output_schema
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 
@@ -25,7 +24,7 @@ class RunWorkflowCommand(Command):
             ["wf"],
         )
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             cli.console.print("[bold red]Usage:[/bold red] /workflow <workflow_name> [input_values_json]")
             cli.console.print('Example: /workflow "My Workflow" \'{"input1": 5, "input2": 3}\'')
@@ -44,7 +43,7 @@ class RunWorkflowCommand(Command):
 
         # Find workflow by name
         try:
-            workflows, _ = Workflow.paginate(user_id=cli.context.user_id, limit=1000)
+            workflows, _ = await Workflow.paginate(user_id=cli.context.user_id, limit=1000)
 
             # Find workflow with matching name
             found_workflow = None

@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import traceback
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import aiofiles
 import chromadb
@@ -38,7 +38,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 
@@ -50,17 +50,27 @@ class CollectionModify(BaseModel):
 class CollectionCreate(BaseModel):
     name: str
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    embedding_provider: str | None = None
 
 
 @router.post("/", response_model=CollectionResponse)
 async def create_collection(
     req: CollectionCreate,
 ) -> CollectionResponse:
-    """Create a new collection"""
+    """Create a new collection
+
+    Args:
+        req: Collection creation request with:
+            - name: Collection name
+            - embedding_model: Model ID for embeddings (e.g., "text-embedding-3-small", "nomic-embed-text")
+            - embedding_provider: Optional provider (e.g., "openai", "ollama"). Auto-detected if not specified.
+    """
     client = await get_async_chroma_client()
-    metadata = {
+    metadata: dict[str, Any] = {
         "embedding_model": req.embedding_model,
     }
+    if req.embedding_provider:
+        metadata["embedding_provider"] = req.embedding_provider
     collection = await client.create_collection(name=req.name, metadata=metadata)
     return CollectionResponse(
         name=collection.name,

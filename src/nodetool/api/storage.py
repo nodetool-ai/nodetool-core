@@ -2,7 +2,7 @@
 
 import os
 import re
-from datetime import UTC, timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from io import BytesIO
 from tempfile import SpooledTemporaryFile

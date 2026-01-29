@@ -1,9 +1,10 @@
 import asyncio
 import base64
+import logging
 import os
 import traceback
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 import openai
 import pydub
@@ -18,6 +19,8 @@ from nodetool.workflows.base_node import ApiKeyMissingError
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion
     from openai.types.images_response import ImagesResponse
+
+log = logging.getLogger(__name__)
 
 # --- New Credit-Based Pricing System ---
 # 1 credit = $0.01 USD (i.e., 1000 credits = $10 USD)
@@ -293,6 +296,24 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
     )
 
 
+async def create_moderation(prediction: Prediction, client: openai.AsyncClient):
+    """Creates a moderation check using the OpenAI API."""
+    model_id = prediction.model
+    assert model_id is not None, "Model is not set"
+    res = await client.moderations.create(
+        input=prediction.params["input"],
+        model=model_id,
+    )
+
+    prediction.cost = 0.0  # Default cost in credits
+
+    return PredictionResult(
+        prediction=prediction,
+        content=res.model_dump(),
+        encoding="json",
+    )
+
+
 async def create_chat_completion(prediction: Prediction, client: openai.AsyncClient) -> Any:
     """Creates a chat completion and calculates cost in credits."""
     model_id = prediction.model
@@ -317,14 +338,14 @@ async def create_chat_completion(prediction: Prediction, client: openai.AsyncCli
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             prediction.cost = cost_input + cost_output
         else:
-            print(
-                f"Warning: Pricing rules ('input_1k_tokens'/'output_1k_tokens') or usage data missing for tier {tier_name} (model {model_id})."
+            log.warning(
+                "Pricing rules ('input_1k_tokens'/'output_1k_tokens') or usage data missing for tier %s (model %s).",
+                tier_name,
+                model_id,
             )
-    # else:
-    #     print(f"Warning: Tier or pricing not found for chat model {model_id}.")
 
-    if not res.usage:  # Should be caught by assert above, but as a fallback
-        print(f"Warning: Usage data not returned by API for model {model_id}.")
+    if not res.usage:
+        log.warning("Usage data not returned by API for model %s.", model_id)
 
     return PredictionResult(
         prediction=prediction,
@@ -369,9 +390,9 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
             cost_per_minute = tier_pricing["per_minute"]
             prediction.cost = duration_minutes * cost_per_minute
         else:
-            print(f"Warning: Pricing rule 'per_minute' missing for tier {tier_name} (model {model_id}).")
+            log.warning("Pricing rule 'per_minute' missing for tier %s (model %s).", tier_name, model_id)
     else:
-        print(f"Warning: Tier or pricing not found for Whisper model {model_id}.")
+        log.warning("Tier or pricing not found for Whisper model %s.", model_id)
 
     # Ensure content is serializable if it's not already a dict (e.g. if it's a Pydantic model)
     response_content = res
@@ -411,25 +432,24 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
     elif quality == "high":
         selected_tier_name = "image_gpt_high"
     else:
-        print(f"Warning: Unknown image quality '{quality}'. Defaulting to medium pricing.")
-        selected_tier_name = "image_gpt_medium"  # Fallback to medium for unknown quality values
+        log.warning("Unknown image quality '%s'. Defaulting to medium pricing.", quality)
+        selected_tier_name = "image_gpt_medium"
 
     if selected_tier_name and selected_tier_name in CREDIT_PRICING_TIERS:
         tier_pricing = CREDIT_PRICING_TIERS[selected_tier_name]
         if "per_image" in tier_pricing:
             prediction.cost = tier_pricing["per_image"] * num_images
         else:
-            print(f"Warning: Pricing rule 'per_image' missing for image tier {selected_tier_name}.")
+            log.warning("Pricing rule 'per_image' missing for image tier %s.", selected_tier_name)
     else:
-        print(f"Warning: Image pricing tier '{selected_tier_name}' not found.")
+        log.warning("Image pricing tier '%s' not found.", selected_tier_name)
 
     assert images_response.data is not None
     assert len(images_response.data) > 0
     image_content = images_response.data[0].b64_json
-    if image_content is None:  # Fallback if b64_json is None, try url
+    if image_content is None:
         image_content = images_response.data[0].url
-        print(f"Warning: b64_json not available for image, using URL: {image_content}")
-        # Note: Using URL as content might require different handling downstream
+        log.warning("b64_json not available for image, using URL: %s", image_content)
 
     return PredictionResult(
         prediction=prediction,
@@ -459,15 +479,34 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 
     elif model_id.startswith("whisper-") or "transcribe" in model_id:
         yield await create_whisper(prediction, client)
+
+    elif "moderation" in model_id:
+        yield await create_moderation(prediction, client)
+
     else:
         yield await create_chat_completion(prediction, client)
 
 
-# --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
+# --- Cost Calculation Helpers (DEPRECATED) ---
+# These functions are deprecated. Please use the new centralized cost calculator instead:
+# from nodetool.providers.cost_calculator import (
+#     calculate_chat_cost,
+#     calculate_embedding_cost,
+#     calculate_speech_cost,
+#     calculate_whisper_cost,
+#     calculate_image_cost,
+# )
+# Or use BaseProvider.track_usage() for automatic cost tracking.
+
+
+import warnings
 
 
 async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> float:
     """Calculates cost in CREDITS for chat models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_chat_cost` instead.
 
     Args:
         model_id: Model identifier
@@ -478,6 +517,12 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
     Returns:
         Cost in credits
     """
+    warnings.warn(
+        "calculate_chat_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_chat_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -511,7 +556,17 @@ async def calculate_chat_cost(model_id: str, input_tokens: int, output_tokens: i
 
 
 async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
-    """Calculates cost in CREDITS for embedding models."""
+    """Calculates cost in CREDITS for embedding models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_embedding_cost` instead.
+    """
+    warnings.warn(
+        "calculate_embedding_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_embedding_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -521,16 +576,28 @@ async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
         if "per_1k_tokens" in tier_pricing:
             cost = (input_tokens / 1000) * tier_pricing["per_1k_tokens"]
         else:
-            print(
-                f"Warning (test helper): Pricing rule 'per_1k_tokens' missing for embedding tier {tier_name} (model {model_id})."
+            log.warning(
+                "Pricing rule 'per_1k_tokens' missing for embedding tier %s (model %s).",
+                tier_name,
+                model_id,
             )
     else:
-        print(f"Warning (test helper): Tier or pricing not found for embedding model {model_id}.")
+        log.warning("Tier or pricing not found for embedding model %s.", model_id)
     return cost
 
 
 async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
-    """Calculates cost in CREDITS for speech (TTS) models."""
+    """Calculates cost in CREDITS for speech (TTS) models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_speech_cost` instead.
+    """
+    warnings.warn(
+        "calculate_speech_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_speech_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -540,16 +607,28 @@ async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
         if "per_1k_chars" in tier_pricing:
             cost = (input_chars / 1000) * tier_pricing["per_1k_chars"]
         else:
-            print(
-                f"Warning (test helper): Pricing rule 'per_1k_chars' missing for TTS tier {tier_name} (model {model_id})."
+            log.warning(
+                "Pricing rule 'per_1k_chars' missing for TTS tier %s (model %s).",
+                tier_name,
+                model_id,
             )
     else:
-        print(f"Warning (test helper): Tier or pricing not found for TTS model {model_id}.")
+        log.warning("Tier or pricing not found for TTS model %s.", model_id)
     return cost
 
 
 async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> float:
-    """Calculates cost in CREDITS for Whisper models."""
+    """Calculates cost in CREDITS for Whisper models.
+
+    .. deprecated::
+        Use :func:`nodetool.providers.cost_calculator.calculate_whisper_cost` instead.
+    """
+    warnings.warn(
+        "calculate_whisper_cost from openai_prediction is deprecated. "
+        "Use nodetool.providers.cost_calculator.calculate_whisper_cost instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     model_id_lower = model_id.lower()
     tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
     cost = 0.0
@@ -560,16 +639,18 @@ async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> floa
             duration_minutes = duration_seconds / 60.0
             cost = duration_minutes * tier_pricing["per_minute"]
         else:
-            print(
-                f"Warning (test helper): Pricing rule 'per_minute' missing for Whisper tier {tier_name} (model {model_id})."
+            log.warning(
+                "Pricing rule 'per_minute' missing for Whisper tier %s (model %s).",
+                tier_name,
+                model_id,
             )
     else:
-        print(f"Warning (test helper): Tier or pricing not found for Whisper model {model_id}.")
+        log.warning("Tier or pricing not found for Whisper model %s.", model_id)
     return cost
 
 
 async def calculate_image_cost(  # Changed signature
-    model_params: Dict[str, Any],  # model_id is in params or implicit, params has quality & n
+    model_params: dict[str, Any],  # model_id is in params or implicit, params has quality & n
 ) -> float:
     """Calculates cost in CREDITS for image generation."""
     cost = 0.0
@@ -592,9 +673,9 @@ async def calculate_image_cost(  # Changed signature
         if "per_image" in tier_pricing:
             cost = tier_pricing["per_image"] * num_images
         else:
-            print(f"Warning (test helper): Pricing rule 'per_image' missing for image tier {selected_tier_name}.")
+            log.warning("Pricing rule 'per_image' missing for image tier %s.", selected_tier_name)
     else:
-        print(f"Warning (test helper): Image pricing tier '{selected_tier_name}' not found.")
+        log.warning("Image pricing tier '%s' not found.", selected_tier_name)
     return cost
 
 

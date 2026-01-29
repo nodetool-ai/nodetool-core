@@ -1,0 +1,83 @@
+name: OpenCode Research Features
+
+on:
+  schedule:
+    - cron: "0 16 * * 4" # Weekly on Thursdays at 4 PM UTC
+  workflow_dispatch:
+
+jobs:
+  opencode-research:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge main if necessary
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit || echo "Already up to date or merge not needed"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        with:
+          model: minimax/MiniMax-M2.1
+          prompt: |
+            # NodeTool Core Research Features
+
+            You are an autonomous research agent exploring experimental features for **nodetool-core**.
+
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+
+            ## Step 2: Research Areas
+            - Workflow execution enhancements
+            - Agent planning or tool orchestration improvements
+            - Developer experience for custom nodes
+            - Observability and tracing improvements
+            - Storage, caching, and scaling experiments
+
+            ## Step 3: Prototype Carefully
+            - Keep scope small and experimental
+            - Follow async-first patterns and type hints
+            - Avoid breaking existing APIs
+
+            ## Step 4: Validate
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+
+            ## Step 5: Update Memory
+            - Add insight files under `insights/<topic>/`
+            - Add issue files under `issues/<topic>/` if needed

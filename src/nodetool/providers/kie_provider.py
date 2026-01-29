@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
@@ -366,7 +366,7 @@ class KieProvider(BaseProvider):
     _poll_interval: float = 2.0
     _max_poll_attempts: int = 180  # 6 minutes max
     _image_poll_interval: float = 1.5
-    _image_max_poll_attempts: int = 60
+    _image_max_poll_attempts: int = 200  # 300 seconds (5 minutes) total
     _video_poll_interval: float = 8.0
     _video_max_poll_attempts: int = 240
 
@@ -455,7 +455,7 @@ class KieProvider(BaseProvider):
                 elif attr == "rendering_speed" and hasattr(val, "value"):
                     input_params["rendering_speed"] = val.value
                 elif attr == "model_version":
-                     # Map model_version to model in input params (e.g. for Suno)
+                    # Map model_version to model in input params (e.g. for Suno)
                     input_params["model"] = val.value if hasattr(val, "value") else val
                 elif attr == "image_url" and "image_url" not in input_params:
                     input_params["image_url"] = val
@@ -587,8 +587,21 @@ class KieProvider(BaseProvider):
         input_params: dict[str, Any],
         poll_interval: float,
         max_attempts: int,
+        timeout_s: int | None = None,
     ) -> bytes:
-        """Execute the full task workflow: submit, poll, download."""
+        """Execute the full task workflow: submit, poll, download.
+
+        Args:
+            model: Model identifier
+            input_params: Parameters for the task
+            poll_interval: Seconds between status polls
+            max_attempts: Default maximum poll attempts
+            timeout_s: Optional timeout in seconds (overrides max_attempts if provided)
+        """
+        # If timeout_s provided, calculate max_attempts from it
+        if timeout_s is not None and timeout_s > 0:
+            max_attempts = max(1, int(timeout_s / poll_interval))
+
         async with aiohttp.ClientSession() as session:
             task_id = await self._submit_task(session, model, input_params)
             await self._poll_status(session, task_id, poll_interval, max_attempts)
@@ -596,14 +609,14 @@ class KieProvider(BaseProvider):
 
     # Model Discovery Methods
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """Get available Kie.ai image generation models."""
         if not self.api_key:
             log.debug("No Kie.ai API key configured, returning empty image model list")
             return []
         return KIE_IMAGE_MODELS
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get available Kie.ai video generation models."""
         if not self.api_key:
             log.debug("No Kie.ai API key configured, returning empty video model list")
@@ -684,6 +697,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._image_poll_interval,
                 max_attempts=self._image_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of image data")
@@ -693,7 +707,7 @@ class KieProvider(BaseProvider):
             log.error(f"Kie.ai text-to-image generation failed: {e}")
             raise RuntimeError(f"Kie.ai text-to-image generation failed: {str(e)}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToImageParams,
@@ -780,6 +794,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._image_poll_interval,
                 max_attempts=self._image_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of image data")
@@ -802,17 +817,17 @@ class KieProvider(BaseProvider):
         form.add_field("fileName", filename)
 
         async with aiohttp.ClientSession() as session, session.post(upload_url, data=form, headers=headers) as response:
-                response_data = await response.json()
-                if "code" in response_data:
-                    self._check_response_status(response_data)
+            response_data = await response.json()
+            if "code" in response_data:
+                self._check_response_status(response_data)
 
-                if response.status != 200 or not response_data.get("success"):
-                    raise ValueError(f"Failed to upload image: {response.status} - {response_data}")
+            if response.status != 200 or not response_data.get("success"):
+                raise ValueError(f"Failed to upload image: {response.status} - {response_data}")
 
-                download_url = response_data.get("data", {}).get("downloadUrl")
-                if not download_url:
-                    raise ValueError(f"No downloadUrl in upload response: {response_data}")
-                return download_url
+            download_url = response_data.get("data", {}).get("downloadUrl")
+            if not download_url:
+                raise ValueError(f"No downloadUrl in upload response: {response_data}")
+            return download_url
 
     # Video Generation Methods
 
@@ -883,6 +898,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._video_poll_interval,
                 max_attempts=self._video_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of video data")
@@ -892,7 +908,7 @@ class KieProvider(BaseProvider):
             log.error(f"Kie.ai text-to-video generation failed: {e}")
             raise RuntimeError(f"Kie.ai text-to-video generation failed: {str(e)}") from e
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToVideoParams,
@@ -969,6 +985,7 @@ class KieProvider(BaseProvider):
                 input_params=input_params,
                 poll_interval=self._video_poll_interval,
                 max_attempts=self._video_max_poll_attempts,
+                timeout_s=timeout_s,
             )
 
             log.debug(f"Generated {len(result)} bytes of video data")

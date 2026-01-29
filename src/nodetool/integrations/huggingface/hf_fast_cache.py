@@ -43,14 +43,10 @@ import os
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import aiofiles
 import aiofiles.os
-
-from nodetool.ml.models.model_cache import ModelCache
-
-DEFAULT_MODEL_INFO_CACHE_TTL = 30 * 24 * 3600
 
 
 def get_default_hf_cache_dir() -> Path:
@@ -79,6 +75,27 @@ def get_default_hf_cache_dir() -> Path:
     return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+class _SimpleCache:
+    """Simple in-memory cache with get, set, and delete_pattern methods."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, object] = {}
+
+    def get(self, key: str) -> object | None:
+        return self._data.get(key)
+
+    def set(self, key: str, value: object) -> None:
+        self._data[key] = value
+
+    def delete_pattern(self, pattern: str) -> None:
+        """Delete all keys matching the given pattern (supports * wildcards)."""
+        import fnmatch
+
+        keys_to_delete = [k for k in self._data if fnmatch.fnmatch(k, pattern)]
+        for key in keys_to_delete:
+            del self._data[key]
+
+
 class HfFastCache:
     """
     Fast, read-only view over the local HF file cache (async).
@@ -93,8 +110,6 @@ class HfFastCache:
     def __init__(
         self,
         cache_dir: str | Path | None = None,
-        *,
-        model_info_cache: ModelCache | None = None,
     ) -> None:
         """Initialize a fast view over a local Hugging Face cache.
 
@@ -106,9 +121,8 @@ class HfFastCache:
         # Lazy-initialized lock to handle multiple event loops
         self._lock: Optional[asyncio.Lock] = None
         self._lock_loop_id: Optional[int] = None
-        self._repos: Dict[str, _RepoState] = {}
-        # Share the model info cache between callers so metadata lookups can leverage the disk cache.
-        self.model_info_cache = model_info_cache or ModelCache("model_info")
+        self._repos: dict[str, _RepoState] = {}
+        self.model_info_cache = _SimpleCache()
 
     def _get_lock(self) -> asyncio.Lock:
         """Get the asyncio lock, creating a new one if the event loop has changed.
@@ -195,7 +209,7 @@ class HfFastCache:
         """
         return (await self.resolve(repo_id, relpath, repo_type=repo_type)) is not None
 
-    async def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> List[str]:
+    async def list_files(self, repo_id: str, repo_type: Optional[str] = None) -> list[str]:
         """List files in the active snapshot for a repo.
 
         The first call for a given repo walks only that repo's active snapshot
@@ -219,7 +233,7 @@ class HfFastCache:
             state.snapshot_file_count = len(state.file_index)
             return list(state.file_index.keys())
 
-        files: List[str] = []
+        files: list[str] = []
         for path in await _rglob_files_async(state.snapshot_dir):
             files.append(path.relative_to(state.snapshot_dir).as_posix())
 
@@ -275,7 +289,7 @@ class HfFastCache:
         state = await self._ensure_repo_state(repo_id, repo_type)
         return str(state.snapshot_dir) if state and state.snapshot_dir else None
 
-    async def discover_repos(self, repo_type: str = "model") -> List[Tuple[str, Path]]:
+    async def discover_repos(self, repo_type: str = "model") -> list[tuple[str, Path]]:
         """Discover cached Hugging Face repos by listing the cache directory.
 
         This is lightweight compared to scan_cache_dir as it only lists directories
@@ -291,7 +305,7 @@ class HfFastCache:
             return []
 
         type_prefix = f"{repo_type}s" if not repo_type.endswith("s") else repo_type
-        repos: List[Tuple[str, Path]] = []
+        repos: list[tuple[str, Path]] = []
 
         try:
             for name in await aiofiles.os.listdir(str(self.cache_dir)):
@@ -422,10 +436,10 @@ class _RepoState:
     snapshot_dir: Optional[Path] = None
     snapshot_mtime: Optional[float] = None
     snapshot_file_count: Optional[int] = None
-    file_index: Optional[Dict[str, Path]] = field(default=None)
+    file_index: Optional[dict[str, Path]] = field(default=None)
 
 
-def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
+def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> list[str]:
     """Return ordered cache keys to try for locating a repo.
 
     The function normalizes the repo identifier and type and produces keys of
@@ -435,13 +449,13 @@ def _candidate_repo_keys(repo_id: str, repo_type: Optional[str]) -> List[str]:
     norm_type, norm_repo = _normalize_repo_id_and_type(repo_id, repo_type)
     types_to_try = [norm_type] if norm_type else ["models", "datasets", "spaces"]
 
-    keys: List[str] = []
+    keys: list[str] = []
     for repo_type_candidate in types_to_try:
         keys.append(f"{repo_type_candidate}:{norm_repo}")
     return keys
 
 
-def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> Tuple[Optional[str], str]:
+def _normalize_repo_id_and_type(repo_id: str, repo_type: Optional[str]) -> tuple[Optional[str], str]:
     """Normalize repo ID and type into a canonical pair."""
     repo_id = repo_id.strip().strip("/")
     parts = repo_id.split("/")
@@ -483,7 +497,7 @@ async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) ->
     if not repo_bits:
         return None
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     if len(repo_bits) == 1:
         candidates.append(f"{repo_type}--{repo_bits[0]}")
     else:
@@ -498,7 +512,7 @@ async def _find_repo_dir_async(cache_dir: Path, repo_id: str, repo_type: str) ->
 
 async def _read_current_ref_async(
     repo_dir: Path,
-) -> Tuple[Optional[float], Optional[str]]:
+) -> tuple[Optional[float], Optional[str]]:
     """Return the mtime and commit hash for the preferred ref."""
     refs_dir = repo_dir / "refs"
     if not await _exists(refs_dir):
@@ -604,9 +618,9 @@ async def _is_file(path: Path) -> bool:
         return False
 
 
-async def _rglob_files_async(root: Path) -> List[Path]:
+async def _rglob_files_async(root: Path) -> list[Path]:
     """Recursively collect files and symlinks under root without blocking the loop."""
-    results: List[Path] = []
+    results: list[Path] = []
 
     async def _walk(dir_path: Path) -> None:
         try:

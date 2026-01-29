@@ -19,20 +19,17 @@ import asyncio
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import List, Optional
+from typing import Optional
 
 from supabase import AsyncClient, create_async_client
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_system_data_path
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.chat_workflow_message_processor import (
     ChatWorkflowMessageProcessor,
-)
-from nodetool.messaging.claude_agent_message_processor import (
-    ClaudeAgentHelpMessageProcessor,
-    ClaudeAgentMessageProcessor,
 )
 from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
@@ -43,7 +40,7 @@ from nodetool.metadata.types import Provider
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.providers import get_provider
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
@@ -154,7 +151,6 @@ class BaseChatRunner(ABC):
             tool_calls=db_message.tool_calls,
             collections=db_message.collections,
             input_files=db_message.input_files,
-            output_files=db_message.output_files,
             created_at=(db_message.created_at.isoformat() if db_message.created_at else None),
             provider=db_message.provider,
             model=db_message.model,
@@ -223,7 +219,7 @@ class BaseChatRunner(ABC):
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
 
-    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
+    async def get_chat_history_from_db(self, thread_id: str) -> list[ApiMessage]:
         """
         Fetch chat history from the database using thread_id.
         When database is disabled, returns empty list (subclasses should override).
@@ -367,7 +363,7 @@ class BaseChatRunner(ABC):
         processor_task = asyncio.create_task(process())
         try:
             # Process messages while the processor is running
-            while processor.has_messages() or processor.is_processing:
+            while processor.is_processing:
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
@@ -379,6 +375,18 @@ class BaseChatRunner(ABC):
                         await self.send_message(message)
                 else:
                     # Small delay to avoid busy waiting
+                    await asyncio.sleep(0.01)
+
+            # Process any remaining messages after processor signals completion
+            while processor.has_messages():
+                message = await processor.get_message()
+                if message:
+                    if message["type"] == "message":
+                        await self._save_message_to_db_async(message)
+                        await self.send_message(message)
+                    else:
+                        await self.send_message(message)
+                else:
                     await asyncio.sleep(0.01)
 
             # Wait for the processor task to complete
@@ -402,13 +410,26 @@ class BaseChatRunner(ABC):
             raise ValueError("No chat history available")
 
         last_message = chat_history[-1]
-        processing_context = ProcessingContext(user_id=self.user_id)
+        # Set up workspace directory for agent mode
+        thread_id = last_message.thread_id or "default"
+        user_id = self.user_id or "default"
+        workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
+        workspace_path.mkdir(parents=True, exist_ok=True)
+
+        processing_context = ProcessingContext(
+            user_id=self.user_id,
+            workspace_dir=str(workspace_path)
+        )
 
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
+
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
 
         assert last_message.model, "Model is required"
 
@@ -424,19 +445,7 @@ class BaseChatRunner(ABC):
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
 
-            # Use Claude Agent SDK for Anthropic help requests
-            if last_message.provider.lower() == "anthropic":
-                # Get API key from the provider
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
-            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-            elif last_message.provider.lower() == "minimax":
-                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-            else:
-                processor = HelpMessageProcessor(provider)
+            processor = HelpMessageProcessor(provider)
 
             await self._run_processor(
                 processor=processor,
@@ -473,27 +482,28 @@ class BaseChatRunner(ABC):
 
         provider = await get_provider(last_message.provider)
 
-        # Use Claude Agent SDK for Anthropic agent requests
-        if last_message.provider.lower() == "anthropic":
-            # Get API key from the provider
-            api_key = getattr(provider, "api_key", None)
-            processor = ClaudeAgentMessageProcessor(api_key=api_key)
-        # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-        elif last_message.provider.lower() == "minimax":
-            from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
+        processor = AgentMessageProcessor(provider)
 
-            api_key = getattr(provider, "api_key", None)
-            processor = ClaudeAgentMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-        else:
-            processor = AgentMessageProcessor(provider)
+        # Set up workspace directory for agent mode
+        thread_id = last_message.thread_id or "default"
+        user_id = self.user_id or "default"
+        workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
+        workspace_path.mkdir(parents=True, exist_ok=True)
 
-        processing_context = ProcessingContext(user_id=self.user_id)
+        processing_context = ProcessingContext(
+            user_id=self.user_id,
+            workspace_dir=str(workspace_path)
+        )
 
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
+
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
 
         await self._run_processor(
             processor=processor,
@@ -506,7 +516,7 @@ class BaseChatRunner(ABC):
         Processes messages that are part of a defined workflow.
 
         Routes to different processors:
-        - help_mode=True: Uses HelpMessageProcessor (or ClaudeAgentHelpMessageProcessor for Anthropic/MiniMax)
+        - help_mode=True: Uses HelpMessageProcessor
         - help_mode=False and run_mode="chat": Uses ChatWorkflowMessageProcessor
         - Otherwise: Uses WorkflowMessageProcessor
         """
@@ -533,18 +543,7 @@ class BaseChatRunner(ABC):
 
             provider = await get_provider(last_message.provider)
 
-            # Use Claude Agent SDK for Anthropic help requests
-            if last_message.provider.lower() == "anthropic":
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key)
-            # Use Claude Agent SDK for MiniMax (Anthropic-compatible API)
-            elif last_message.provider.lower() == "minimax":
-                from nodetool.providers.minimax_provider import MINIMAX_BASE_URL
-
-                api_key = getattr(provider, "api_key", None)
-                processor = ClaudeAgentHelpMessageProcessor(api_key=api_key, base_url=MINIMAX_BASE_URL)
-            else:
-                processor = HelpMessageProcessor(provider)
+            processor = HelpMessageProcessor(provider)
         # Regular workflow processing
         elif workflow.run_mode == "chat":
             log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")
@@ -556,8 +555,12 @@ class BaseChatRunner(ABC):
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
             processing_context.tool_bridge = self.tool_bridge
-            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())  # type: ignore[union-attr]
             processing_context.client_tools_manifest = self.client_tools_manifest
+
+        # Set thread_id for routing tool_call messages to the frontend
+        if last_message.thread_id:
+            processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
 
         await self._run_processor(
             processor=processor,
@@ -609,6 +612,11 @@ class BaseChatRunner(ABC):
                 )
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
-            error_message = {"type": "error", "message": str(e)}
+            error_message = {
+                "type": "error",
+                "message": str(e),
+                "thread_id": last_message.thread_id,
+                "workflow_id": last_message.workflow_id,
+            }
             with suppress(Exception):
                 await self.send_message(error_message)

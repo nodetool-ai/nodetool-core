@@ -56,8 +56,13 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.job import Job
+from nodetool.models.workflow import Workflow
+from nodetool.models.workspace import Workspace
+from nodetool.observability.tracing import (
+    trace_websocket_message,
+)
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
-from nodetool.types.job import JobUpdate
+from nodetool.types.job import JobUpdate, RunStateInfo
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.job_execution_manager import (
     JobExecution,
@@ -129,6 +134,30 @@ class WebSocketMode(str, Enum):
     TEXT = "text"
 
 
+async def build_run_state_info(job_id: str) -> RunStateInfo | None:
+    """Build RunStateInfo from persisted Job for WebSocket messages."""
+    try:
+        async with ResourceScope():
+            from nodetool.models.job import Job
+
+            job = await Job.get(job_id)
+            if job:
+                log.info(f"build_run_state_info: Found Job for job {job_id}, status={job.status}")
+                return RunStateInfo(
+                    status=job.status,
+                    suspended_node_id=job.suspended_node_id,
+                    suspension_reason=job.suspension_reason,
+                    error_message=job.error_message,
+                    execution_strategy=job.execution_strategy,
+                    is_resumable=job.is_resumable(),
+                )
+            else:
+                log.warning(f"build_run_state_info: No Job found for job {job_id}")
+    except Exception as e:
+        log.error(f"build_run_state_info: Failed to build run state info for job {job_id}: {e}")
+    return None
+
+
 class ToolBridge:
     """
     Manages waiting for frontend tool results from WebSocket messages.
@@ -180,7 +209,7 @@ async def process_message(
     """
     msg = await context.pop_message_async()
     if isinstance(msg, Error):
-        raise RuntimeError(msg.error)
+        raise RuntimeError(msg.message)
     msg_dict: dict[str, Any] = msg if isinstance(msg, dict) else msg.model_dump()
 
     if explicit_types and "result" in msg_dict:
@@ -219,6 +248,7 @@ async def process_workflow_messages(
         log.debug("Finished processing workflow messages")
     except Exception as e:
         log.exception(e)
+        yield {"type": "error", "message": str(e)}
         raise
 
 
@@ -273,6 +303,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         # Chat-related
         self.heartbeat_task: asyncio.Task | None = None
+        self.chat_request_seq = 0
         self.tool_bridge = ToolBridge()
         self.client_tools_manifest: dict[str, dict] = {}
 
@@ -280,7 +311,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         if user_id:
             self.user_id = user_id
 
-    async def connect(
+    async def connect(  # type: ignore[override]
         self,
         websocket: WebSocket,
         user_id: str | None = None,
@@ -486,12 +517,30 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
             # Create processing context
             asset_mode = AssetOutputMode.DATA_URI if self.mode == WebSocketMode.TEXT else AssetOutputMode.RAW
+
+            # Resolve workspace_dir from workflow's workspace_id if available
+            workspace_dir: str | None = None
+            if req.workflow_id:
+                try:
+                    async with ResourceScope():
+                        workflow = await Workflow.find(req.user_id, req.workflow_id)
+                        if workflow and workflow.workspace_id:
+                            workspace = await Workspace.find(req.user_id, workflow.workspace_id)
+                            if workspace and workspace.is_accessible():
+                                workspace_dir = workspace.path
+                                log.info(f"Using workspace_dir from workflow: {workspace_dir}")
+                            elif workspace:
+                                log.warning(f"Workspace {workflow.workspace_id} exists but is not accessible")
+                except Exception as e:
+                    log.error(f"Error resolving workspace for workflow {req.workflow_id}: {e}")
+
             context = ProcessingContext(
                 user_id=req.user_id,
                 auth_token=req.auth_token,
                 workflow_id=req.workflow_id,
                 encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
                 asset_output_mode=asset_mode,
+                workspace_dir=workspace_dir,
             )
 
             # Start job in background via JobExecutionManager
@@ -532,12 +581,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     async def _stream_job_messages(self, job_ctx: JobStreamContext, explicit_types: bool):
         """Stream messages from a background job to the client."""
         try:
-            # Send initial job update
+            # Send initial job update with run_state
+            run_state_info = await build_run_state_info(job_ctx.job_id)
             await self.send_message(
                 JobUpdate(
                     status="running",
                     job_id=job_ctx.job_id,
                     workflow_id=job_ctx.workflow_id,
+                    run_state=run_state_info,
                 ).model_dump()
             )
 
@@ -672,21 +723,39 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             if job_execution is None:
                 async with ResourceScope():
                     db_job = await Job.get(job_id)
-                    if db_job and db_job.status in {"running", "starting", "queued"}:
-                        log.warning(
-                            "UnifiedWebSocketRunner: Job missing from manager; marking as failed",
-                            extra={"job_id": job_id},
+                    current_status = db_job.status if db_job else None
+
+                    if current_status in {"running", "scheduled", "queued", None}:
+                        log.info(
+                            "UnifiedWebSocketRunner: Job not in memory but running in DB, attempting recovery",
+                            extra={"job_id": job_id, "status": current_status},
                         )
-                        await db_job.update(
-                            status="failed",
-                            error="Job worker unavailable during reconnect",
-                            finished_at=datetime.now(),
-                        )
-                log.warning(
-                    "UnifiedWebSocketRunner: Job not found during reconnect",
-                    extra={"job_id": job_id},
-                )
-                raise ValueError(f"Job {job_id} not found")
+                        recovered = await job_manager.resume_job(job_id)
+                        if recovered:
+                            job_execution = job_manager.get_job(job_id)
+                            if job_execution:
+                                log.info(
+                                    "UnifiedWebSocketRunner: Successfully recovered job",
+                                    extra={"job_id": job_id},
+                                )
+                        if job_execution is None:
+                            log.warning(
+                                "UnifiedWebSocketRunner: Job recovery failed; marking as failed",
+                                extra={"job_id": job_id},
+                            )
+                            if db_job:
+                                await db_job.mark_failed(error="Job worker was unavailable")
+                                await db_job.update(
+                                    error="Job worker was unavailable during reconnect",
+                                    finished_at=datetime.now(),
+                                )
+
+                if job_execution is None:
+                    log.warning(
+                        "UnifiedWebSocketRunner: Job not found during reconnect",
+                        extra={"job_id": job_id},
+                    )
+                    raise ValueError(f"Job {job_id} not found")
 
             log.info(
                 "UnifiedWebSocketRunner.reconnect_job obtained job execution",
@@ -700,6 +769,26 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 },
             )
 
+            async with ResourceScope():
+                db_job = await Job.get(job_id)
+                current_status = db_job.status if db_job else None
+
+                if current_status in {"running", "scheduled", "queued"} and not job_execution.is_running():
+                    log.warning(
+                        "UnifiedWebSocketRunner: Job in memory shows completed but DB shows running, attempting recovery",
+                        extra={"job_id": job_id, "in_memory_status": job_execution.status, "db_status": current_status},
+                    )
+                    recovered = await job_manager.resume_job(job_id)
+                    if recovered:
+                        job_execution = job_manager.get_job(job_id)
+                        if job_execution:
+                            log.info(
+                                "UnifiedWebSocketRunner: Successfully recovered job after finding stale in-memory job",
+                                extra={"job_id": job_id},
+                            )
+                    if job_execution is None:
+                        raise ValueError(f"Job {job_id} recovery failed")
+
             # Use workflow_id from the job execution if not provided
             if not workflow_id:
                 workflow_id = job_execution.request.workflow_id
@@ -708,13 +797,23 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 final_status = job_execution.status
                 try:
                     await job_execution.job_model.reload()
-                    if job_execution.job_model.status in {
-                        "running",
-                        "starting",
-                        "queued",
-                    }:
+                    db_job = await Job.get(job_id)
+                    current_status = db_job.status if db_job else None
+
+                    if current_status in {"running", "scheduled", "queued"}:
+                        if final_status == "completed":
+                            if db_job:
+                                await db_job.mark_completed()
+                        elif final_status in {"error", "failed"}:
+                            err_detail = getattr(job_execution, "error", None) or getattr(
+                                job_execution.job_model, "error", None
+                            )
+                            if db_job:
+                                await db_job.mark_failed(error=str(err_detail) if err_detail else "Unknown error")
+                        elif final_status == "cancelled":
+                            if db_job:
+                                await db_job.mark_cancelled()
                         await job_execution.job_model.update(
-                            status=final_status,
                             finished_at=datetime.now(),
                         )
                 except Exception as persist_error:
@@ -741,15 +840,18 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 return
 
             # Create streaming context
+            assert job_execution is not None  # Guaranteed by checks above
             job_ctx = JobStreamContext(job_id, workflow_id, job_execution)
             self.active_jobs[job_id] = job_ctx
 
-            # Send current job status
+            # Send current job status with run_state
+            run_state_info = await build_run_state_info(job_id)
             await self.send_message(
                 JobUpdate(
                     status=job_execution.status,
                     job_id=job_id,
                     workflow_id=workflow_id,
+                    run_state=run_state_info,
                 ).model_dump()
             )
 
@@ -780,10 +882,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         except Exception as e:
             log.exception(f"Error reconnecting to job {job_id}: {e}")
+            error_message = str(e)
+            # Provide a user-friendly error message for unknown jobs
+            if "not found" in error_message.lower():
+                error_message = "This job may have expired or the link is invalid. Please start a new workflow."
             await self.send_message(
                 JobUpdate(
                     status="failed",
-                    error=str(e),
+                    error=error_message,
                     job_id=job_id,
                     workflow_id=workflow_id or "",
                 ).model_dump()
@@ -806,7 +912,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 return await self.reconnect_job(job_id, workflow_id)
 
             # Trigger resumption
-            success = await job_manager.resume_run(job_id)
+            success = await job_manager.resume_job(job_id)
 
             if not success:
                 raise ValueError(f"Failed to resume job {job_id}. Check server logs for details.")
@@ -840,10 +946,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         except Exception as e:
             log.exception(f"Error resuming job {job_id}: {e}")
+            error_message = str(e)
+            # Provide a user-friendly error message for unknown or failed jobs
+            if "not found" in error_message.lower() or "failed to resume" in error_message.lower():
+                error_message = "This job may have expired or cannot be resumed. Please start a new workflow."
             await self.send_message(
                 JobUpdate(
                     status="failed",
-                    error=str(e),
+                    error=error_message,
                     job_id=job_id,
                     workflow_id=workflow_id or "",
                 ).model_dump()
@@ -924,7 +1034,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     # Chat Message Handling (from ChatWebSocketRunner)
     # =========================================================================
 
-    async def handle_chat_message(self, data: dict):
+    async def handle_chat_message(self, data: dict, request_seq: int | None = None):
         """
         Handle an incoming chat message by saving to DB and processing using chat history from DB.
         """
@@ -964,6 +1074,11 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                         f"[handle_chat_message] Last message in history: workflow_target={getattr(last_msg, 'workflow_target', 'N/A')}, workflow_id={getattr(last_msg, 'workflow_id', 'N/A')}"
                     )
 
+                # Check if this request is still current before processing
+                if request_seq is not None and request_seq != self.chat_request_seq:
+                    log.debug(f"Skipping stale request (seq={request_seq}, current={self.chat_request_seq})")
+                    return
+
                 # Call the implementation method with the loaded messages
                 await self.handle_message_impl(chat_history)
             except asyncio.CancelledError:
@@ -1000,6 +1115,27 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         # Extract common fields
         job_id = command.data.get("job_id")
         workflow_id = command.data.get("workflow_id")
+        thread_id = command.data.get("thread_id")
+
+        # Trace the command handling
+        async with trace_websocket_message(
+            command=command.command.value,
+            direction="inbound",
+            job_id=job_id,
+            thread_id=thread_id,
+        ) as span:
+            span.set_attribute("websocket.workflow_id", workflow_id)
+            result = await self._process_command(command, job_id, workflow_id, span)
+            return result
+
+    async def _process_command(
+        self,
+        command: WebSocketCommand,
+        job_id: str | None,
+        workflow_id: str | None,
+        span: Any,  # Span | NoOpSpan from observability.tracing
+    ):
+        """Internal method to process commands with tracing span context."""
 
         if command.command == CommandType.CLEAR_MODELS:
             return await self.clear_models()
@@ -1064,11 +1200,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             try:
                 log.debug(f"STREAM_INPUT received: input={input_name} handle={handle} type={type(value)}")
                 if value and value.get("type") == "chunk":
-                    value = Chunk(
-                        content=value["content"],
-                        done=value["done"],
-                        content_type=value["content_type"],
-                    )
+                    value = Chunk(**value)
                 job_ctx.job_execution.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
                 log.debug("STREAM_INPUT enqueued to runner input queue")
                 return {
@@ -1124,7 +1256,23 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             thread_id = command.data.get("thread_id")
             if not thread_id:
                 return {"error": "thread_id is required for chat_message command"}
-            self.current_task = asyncio.create_task(self.handle_chat_message(command.data))
+
+            # Cancel any existing chat task before starting a new one
+            if self.current_task and not self.current_task.done():
+                log.debug("Cancelling previous chat task before starting new one")
+                self.current_task.cancel()
+                # Wait briefly for the task to actually cancel
+                try:
+                    await asyncio.wait_for(self.current_task, timeout=0.5)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass  # Expected - task was cancelled or timed out
+                except Exception as e:
+                    log.warning(f"Error waiting for previous task to cancel: {e}")
+
+            # Increment sequence number to invalidate any pending responses from old tasks
+            self.chat_request_seq += 1
+            current_seq = self.chat_request_seq
+            self.current_task = asyncio.create_task(self.handle_chat_message(command.data, current_seq))
             return {"message": "Chat message processing started", "thread_id": thread_id}
 
         elif command.command == CommandType.STOP:

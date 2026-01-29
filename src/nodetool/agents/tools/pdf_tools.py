@@ -2,12 +2,9 @@
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
-if TYPE_CHECKING:
-    import pymupdf
-    import pymupdf4llm
-    import pypandoc
+import aiofiles
 
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -130,8 +127,8 @@ class ExtractPDFTablesTool(Tool):
                     all_tables.append(table_data)
 
             output_file = context.resolve_workspace_path(params["output_file"])
-            with open(output_file, "w") as f:
-                json.dump(all_tables, f)
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(json.dumps(all_tables))
 
             return {"output_file": output_file}
         except Exception as e:
@@ -197,8 +194,8 @@ class ConvertPDFToMarkdownTool(Tool):
                 md_text = "\f".join(pages[start_page : end + 1])
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, "w") as f:
-                f.write(md_text)
+            async with aiofiles.open(output_file, "w") as f:
+                await f.write(md_text)
 
             return {"output_file": output_file}
         except Exception as e:
@@ -309,13 +306,17 @@ class ConvertDocumentTool(Tool):
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+            extra_args = params.get("extra_args", [])
+            if isinstance(extra_args, str):
+                extra_args = [extra_args]
+
             # Convert using pypandoc
             pypandoc.convert_file(
                 str(input_file),
                 params.get("to_format", "pdf"),
                 format=params.get("from_format", "markdown"),
                 outputfile=str(output_file),
-                extra_args=params.get("extra_args", []),
+                extra_args=extra_args,
             )
 
             return {"output_file": output_file, "status": "success"}

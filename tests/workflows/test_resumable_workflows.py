@@ -11,9 +11,9 @@ import pytest
 
 from nodetool.models.run_event import RunEvent
 from nodetool.models.run_lease import RunLease
-from nodetool.types.graph import Edge as APIEdge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge as APIEdge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.processing_context import ProcessingContext
@@ -109,19 +109,33 @@ async def test_event_logger_convenience_methods():
     run_id = "test-run-5"
     logger = WorkflowEventLogger(run_id)
 
-    # Log various events
-    await logger.log_run_created(graph={}, params={}, user_id="test-user")
-    await logger.log_node_scheduled("node1", "Multiply", attempt=1)
-    await logger.log_node_started("node1", attempt=1, inputs={})
-    await logger.log_node_completed("node1", attempt=1, outputs={}, duration_ms=100)
-    await logger.log_run_completed(outputs={}, duration_ms=1000)
+    # Start the logger to enable background flushing of non-blocking events
+    await logger.start()
+
+    try:
+        # Log various events
+        await logger.log_run_created(graph={}, params={}, user_id="test-user")
+        await logger.log_node_scheduled("node1", "Multiply", attempt=1)
+        await logger.log_node_started("node1", attempt=1, inputs={})
+        await logger.log_node_completed("node1", attempt=1, outputs={}, duration_ms=100)
+        await logger.log_run_completed(outputs={}, duration_ms=1000)
+    finally:
+        # Stop the logger to flush any remaining events
+        await logger.stop()
 
     # Verify events were logged
+    # Note: Blocking events (RunCreated, RunCompleted) get seq numbers immediately,
+    # while non-blocking events (NodeScheduled, NodeStarted, NodeCompleted) are flushed
+    # after logger.stop(), so they get later seq numbers.
     events = await RunEvent.get_events(run_id=run_id)
     assert len(events) == 5
+
+    # Check that all event types are present
+    event_types = {e.event_type for e in events}
+    assert event_types == {"RunCreated", "NodeScheduled", "NodeStarted", "NodeCompleted", "RunCompleted"}
+
+    # First event should be RunCreated (blocking, seq 0)
     assert events[0].event_type == "RunCreated"
-    assert events[1].event_type == "NodeScheduled"
-    assert events[4].event_type == "RunCompleted"
 
 
 @pytest.mark.asyncio
@@ -190,13 +204,14 @@ async def test_workflow_runner_logs_events():
 @pytest.mark.asyncio
 async def test_recovery_service_determine_resumption():
     """Test recovery service identifies incomplete nodes."""
+    from nodetool.models.job import Job
     from nodetool.models.run_node_state import RunNodeState
-    from nodetool.models.run_state import RunState
 
     run_id = "test-run-6"
 
-    # Create run state
-    await RunState.create_run(run_id=run_id, execution_strategy="threaded")
+    # Create job with scheduled status
+    job = await Job.create(workflow_id="test-workflow", user_id="test-user", execution_strategy="threaded")
+    run_id = job.id
 
     # Node 1: scheduled but never started
     node1 = await RunNodeState.get_or_create(run_id, "node1")

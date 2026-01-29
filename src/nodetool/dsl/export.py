@@ -6,9 +6,9 @@ from typing import TypeAlias
 from pydantic import BaseModel
 
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.graph import Edge as ApiEdge
-from nodetool.types.graph import Graph as ApiGraph
-from nodetool.types.graph import Node as ApiNode
+from nodetool.types.api_graph import Edge as ApiEdge
+from nodetool.types.api_graph import Graph as ApiGraph
+from nodetool.types.api_graph import Node as ApiNode
 
 DynamicOutputLike: TypeAlias = TypeMetadata | Mapping[str, object]
 DynamicOutputsMapping: TypeAlias = Mapping[str, DynamicOutputLike]
@@ -142,7 +142,7 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
     """
     Generate Python DSL code that reconstructs the provided graph.
 
-    - Accepts an API graph (``nodetool.types.graph.Graph``).
+    - Accepts an API graph (``nodetool.types.api_graph.Graph``).
     - Produces Python code using classes under ``nodetool.dsl.<namespace>`` and
       the ``graph(...)`` constructor from ``nodetool.dsl.graph``.
 
@@ -150,7 +150,7 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
         str: A Python source string.
     """
     if not isinstance(graph, ApiGraph):
-        raise TypeError("graph_to_dsl_py accepts only nodetool.types.graph.Graph instances")
+        raise TypeError("graph_to_dsl_py accepts only nodetool.types.api_graph.Graph instances")
 
     api_nodes = list(graph.nodes)
     api_edges = list(graph.edges)
@@ -276,7 +276,7 @@ def graph_to_gradio_py(
              and start the UI with ``python app.py``.
     """
     if not isinstance(graph, ApiGraph):
-        raise TypeError("graph_to_gradio_py accepts only nodetool.types.graph.Graph instances")
+        raise TypeError("graph_to_gradio_py accepts only nodetool.types.api_graph.Graph instances")
 
     api_nodes = list(graph.nodes)
     api_edges = list(graph.edges)

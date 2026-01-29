@@ -1,9 +1,7 @@
 import argparse
-import json
 import logging
-import sys
 import uuid
-from typing import Any, Dict, List
+from typing import Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -89,7 +87,7 @@ TEST_NODES = [
 ]
 
 
-def create_adhoc_workflow(node_config: Dict[str, Any]) -> Dict[str, Any]:
+def create_adhoc_workflow(node_config: dict[str, Any]) -> dict[str, Any]:
     """
     Creates an ad-hoc workflow structure.
     """
@@ -153,7 +151,7 @@ def create_adhoc_workflow(node_config: Dict[str, Any]) -> Dict[str, Any]:
     return {"id": workflow_id, "nodes": nodes, "connections": connections}
 
 
-def run_workflow(workflow: Dict[str, Any]):
+def run_workflow(workflow: dict[str, Any]):
     """
     Executes the workflow using the NodeTool engine.
     """

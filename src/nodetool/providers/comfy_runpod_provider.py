@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import random
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 
@@ -115,15 +116,15 @@ class ComfyRunpodProvider(BaseProvider):
                             results.append(r.content)
                         else:
                             log.warning("Failed to fetch S3 URL (%s): %s", r.status_code, data)
-                    except Exception as exc:
+                    except requests.RequestException as exc:
                         log.warning("Error fetching S3 URL %s: %s", data, exc)
                 else:
                     log.debug("Ignoring unsupported image type from RunPod: %s", t)
-            except Exception as exc:
+            except (KeyError, ValueError, binascii.Error) as exc:
                 log.warning("Skipping invalid image entry from RunPod: %s", exc)
         return results
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         return [
             ImageModel(
                 id="flux1-dev-fp8.safetensors",
@@ -246,7 +247,7 @@ class ComfyRunpodProvider(BaseProvider):
 
         return images[0] if images else b""
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image_bytes: bytes,
         params: ImageToImageParams,

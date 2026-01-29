@@ -17,7 +17,6 @@ from uuid import uuid4
 
 from docker.types import DeviceRequest
 
-import docker
 from nodetool.code_runners.runtime_base import (
     ContainerFailureError,
     StreamRunnerBase,
@@ -31,8 +30,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
     JobUpdate,
-    NodeProgress,
-    NodeUpdate,
     ProcessingMessage,
 )
 
@@ -386,15 +383,18 @@ class DockerJobExecution(JobExecution):
             if self._status == "running":
                 log.warning("Container finished but status still 'running' - marking as completed")
                 self._status = "completed"
+                from nodetool.models.job import Job
+
+                job = await Job.get(self.job_id)
+                if job:
+                    await job.mark_completed()
                 if self._job_model:
-                    self._job_model.status = "completed"
                     await self._job_model.save()
-                # Also send the completion update since container didn't
                 self._context.post_message(
                     JobUpdate(
                         job_id=self.job_id,
                         status="completed",
-                        workflow_id=self._job_model.workflow_id,
+                        workflow_id=self._job_model.workflow_id if self._job_model else None,
                     )
                 )
 
@@ -406,8 +406,12 @@ class DockerJobExecution(JobExecution):
                 log.warning("Docker execution failed in test mode; falling back to local workflow execution")
                 await self._execute_fallback()
                 return
+            from nodetool.models.job import Job
+
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_failed(error=str(e))
             if self._job_model:
-                self._job_model.status = "error"
                 self._job_model.error = str(e)
                 await self._job_model.save()
             raise
@@ -415,8 +419,12 @@ class DockerJobExecution(JobExecution):
             log.error(f"Docker execution error: {e}")
             self._status = "error"
             self._error = str(e)
+            from nodetool.models.job import Job
+
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_failed(error=str(e))
             if self._job_model:
-                self._job_model.status = "error"
                 self._job_model.error = str(e)
                 await self._job_model.save()
             raise
@@ -450,7 +458,12 @@ class DockerJobExecution(JobExecution):
                     # Update database
                     if self._job_model:
                         try:
-                            self._job_model.status = self._status
+                            from nodetool.models.job import Job
+
+                            job = await Job.get(self.job_id)
+                            if job:
+                                job.status = self._status
+                                await job.save()
                             if self._error:
                                 self._job_model.error = self._error
                             await self._job_model.save()
@@ -480,9 +493,23 @@ class DockerJobExecution(JobExecution):
                     await self._execution_task
 
             # Update database
+            from nodetool.models.job import Job
+
+            job = await Job.get(self.job_id)
+            if job:
+                await job.mark_cancelled()
             if self._job_model:
-                self._job_model.status = "cancelled"
                 await self._job_model.save()
+
+            # Post cancellation message to avoid race condition
+            self._context.post_message(
+                JobUpdate(
+                    job_id=self.job_id,
+                    status="cancelled",
+                    message=f"Docker job {self.job_id} was cancelled",
+                    workflow_id=self._job_model.workflow_id if self._job_model else None,
+                )
+            )
 
             return True
 
@@ -592,13 +619,12 @@ class DockerJobExecution(JobExecution):
             workflow_id=request.workflow_id,
             user_id=request.user_id,
             job_type=request.job_type,
-            status="running",
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )
 
         # In test mode, inherit db_path from current scope if available
-        from nodetool.runtime.resources import ResourceScope, maybe_scope
+        from nodetool.runtime.resources import ResourceScope
 
         async with ResourceScope():
             await job_model.save()
@@ -631,7 +657,7 @@ class DockerJobExecution(JobExecution):
         )
 
         # Set status to running
-        job_instance._status = "running"
+        job_instance._update_status("running")
 
         # Start execution task
         job_instance._execution_task = asyncio.create_task(job_instance._execute_workflow(request_json))
@@ -697,7 +723,16 @@ class DockerJobExecution(JobExecution):
             raise
         finally:
             if self._job_model:
-                self._job_model.status = self._status
+                from nodetool.models.job import Job
+
+                job = await Job.get(self.job_id)
+                if job:
+                    if self._status == "completed":
+                        await job.mark_completed()
+                    elif self._status in ("error", "failed"):
+                        await job.mark_failed(error=self._error or "Unknown error")
+                    elif self._status == "cancelled":
+                        await job.mark_cancelled()
                 self._job_model.error = self._error
                 await self._job_model.save()
 

@@ -10,8 +10,9 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
+import aiofiles
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
@@ -41,8 +42,8 @@ class AsyncReverseProxy:
         )
 
         # Precompute longest-prefix route index
-        self.services_by_name: Dict[str, ServiceConfig] = {s.name: s for s in config.services}
-        self.prefix_index: List[Tuple[str, ServiceConfig]] = sorted(
+        self.services_by_name: dict[str, ServiceConfig] = {s.name: s for s in config.services}
+        self.prefix_index: list[tuple[str, ServiceConfig]] = sorted(
             [(s.path, s) for s in config.services],
             key=lambda x: (-len(x[0]), x[1].name),  # Sort by length desc, then name
         )
@@ -77,7 +78,7 @@ class AsyncReverseProxy:
         await self.docker_manager.shutdown()
         log.info("Async proxy shutdown")
 
-    def match_service(self, incoming_path: str) -> Tuple[Optional[ServiceConfig], Optional[str]]:
+    def match_service(self, incoming_path: str) -> tuple[Optional[ServiceConfig], Optional[str]]:
         """
         Match incoming path to service using longest-prefix matching.
 
@@ -177,14 +178,14 @@ class AsyncReverseProxy:
                         if False:
                             yield b""  # Never executes
 
-                    return StreamingResponse(
+                    return StreamingResponse(  # type: ignore[return-value]
                         empty_generator(),
                         status_code=upstream_response.status_code,
                         headers=response_headers,
                     )
 
                 content = await upstream_response.aread()
-                return Response(
+                return Response(  # type: ignore[return-value]
                     content,
                     status_code=upstream_response.status_code,
                     headers=response_headers,
@@ -263,14 +264,14 @@ class AsyncReverseProxy:
         try:
 
             async def stream_file():
-                with open(challenge_path, "rb") as f:
+                async with aiofiles.open(challenge_path, "rb") as f:
                     while True:
-                        chunk = f.read(8192)
+                        chunk = await f.read(8192)
                         if not chunk:
                             break
                         yield chunk
 
-            return StreamingResponse(stream_file(), media_type="text/plain")
+            return StreamingResponse(stream_file(), media_type="text/plain")  # type: ignore[return-value]
         except OSError as e:
             log.error(f"Failed to read ACME challenge {token}: {e}")
             return PlainTextResponse("Error reading file", status_code=500)
@@ -293,14 +294,14 @@ def create_proxy_app(config: ProxyConfig) -> FastAPI:
 
     proxy = AsyncReverseProxy(config)
 
-    @app.on_event("startup")
+    @app.on_event("startup")  # type: ignore[deprecated]
     async def startup():
         await proxy.startup()
         # Ensure ACME webroot exists
         acme_root = Path(config.global_.acme_webroot)
         acme_root.mkdir(parents=True, exist_ok=True)
 
-    @app.on_event("shutdown")
+    @app.on_event("shutdown")  # type: ignore[deprecated]
     async def shutdown():
         await proxy.shutdown()
 

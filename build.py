@@ -37,14 +37,13 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 
 def _echo(message: str) -> None:
     print(message)
 
 
-def _run(cmd: list[str], *, check: bool = True, cwd: Optional[Path] = None) -> int:
+def _run(cmd: list[str], *, check: bool = True, cwd: Path | None = None) -> int:
     """Run a command, streaming output, returning the exit code.
 
     Raises SystemExit with the exit code when check=True and the command fails.
@@ -96,7 +95,7 @@ def _generate_sidecar(wheel_path: Path) -> Path:
 
 
 def cmd_build_wheel(args: argparse.Namespace) -> None:
-    expected_version: Optional[str] = args.expected_version
+    expected_version: str | None = args.expected_version
     skip_sidecar: bool = args.skip_sidecar
 
     # Determine project directory (where this script is executed)

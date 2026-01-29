@@ -49,8 +49,8 @@ def has_cached_files(repo_id: str) -> bool:
 
 def filter_repo_paths(
     items: list[RepoFile],
-    allow_patterns: list[str] | None = None,
-    ignore_patterns: list[str] | None = None,
+    allow_patterns: str | list[str] | None = None,
+    ignore_patterns: str | list[str] | None = None,
 ) -> list[RepoFile]:
     """Filter repo objects based on an allowlist and a denylist.
 

@@ -7,7 +7,6 @@ This module provides functionality to discover and list all available ASR models
 across all registered providers that support the AUTOMATIC_SPEECH_RECOGNITION capability.
 """
 
-from typing import List
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import ASRModel
@@ -15,7 +14,7 @@ from nodetool.metadata.types import ASRModel
 log = get_logger(__name__)
 
 
-async def get_all_asr_models(user_id: str) -> List[ASRModel]:
+async def get_all_asr_models(user_id: str) -> list[ASRModel]:
     """
     Get all ASR models from all registered providers.
     Results are cached for 6 hours to reduce API calls.

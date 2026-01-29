@@ -54,6 +54,7 @@ class JobExecution(ABC):
         self.runner = runner
         self.execution_id = execution_id
         self.created_at = datetime.now()
+        self.started_at: datetime | None = None
         self._status: str = "starting"
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
@@ -82,6 +83,12 @@ class JobExecution(ABC):
     def age_seconds(self) -> float:
         """Get the age of the job in seconds."""
         return (datetime.now() - self.created_at).total_seconds()
+
+    def _update_status(self, status: str) -> None:
+        """Update status and set started_at when transitioning to running."""
+        if status == "running" and self._status != "running":
+            self.started_at = datetime.now()
+        self._status = status
 
     @abstractmethod
     def is_running(self) -> bool:
@@ -160,31 +167,35 @@ class JobExecution(ABC):
         """
         Ensure finished jobs have their status written to the database.
 
-        This method updates the database if the job is in a transient state
-        or missing a finished_at timestamp.
+        This method updates Job for status, logs, and finished_at.
         """
+        from nodetool.models.job import Job
+
         try:
-            # Capture and persist logs before finalizing
             captured_logs = self._uninstall_log_handler()
 
-            # Reload to ensure we operate on latest values
-            await self.job_model.reload()
-            update_kwargs = {}
+            # Reload job_model to get latest state
+            job = await Job.get(self.job_id)
+            if job and self._status in {"completed", "failed", "cancelled"}:
+                if job.status != self._status:
+                    if self._status == "completed":
+                        await job.mark_completed()
+                    elif self._status == "failed":
+                        await job.mark_failed(error=self._error or "Unknown error")
+                    elif self._status == "cancelled":
+                        await job.mark_cancelled()
 
-            if self.job_model.status in {"running", "starting", "queued"}:
-                update_kwargs["status"] = self._status
-            if self.job_model.finished_at is None:
-                update_kwargs["finished_at"] = datetime.now()
-
-            # Add logs to the update
-            if captured_logs:
-                update_kwargs["logs"] = captured_logs
-
-            if update_kwargs:
-                await self.job_model.update(**update_kwargs)
+                # Update finished_at and logs
+                update_kwargs = {}
+                if job.finished_at is None:
+                    update_kwargs["finished_at"] = datetime.now()
+                if captured_logs:
+                    update_kwargs["logs"] = captured_logs
+                if update_kwargs:
+                    await job.update(**update_kwargs)
 
         except Exception as e:
             log.exception(
-                "JobExecution.finalize_state: failed to persist status",
+                "JobExecution.finalize_state: failed to persist state",
                 extra={"job_id": self.job_id, "error": str(e)},
             )

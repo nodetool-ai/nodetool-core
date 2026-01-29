@@ -8,7 +8,7 @@ deployments (self-hosted, RunPod, GCP) are managed through a single deployment.y
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -66,8 +66,8 @@ class ContainerConfig(BaseModel):
     name: str = Field(..., description="Container name")
     port: int = Field(..., description="Port to expose")
     gpu: Optional[str] = Field(None, description="GPU device ID(s) (e.g., '0' or '0,1')")
-    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the container")
-    workflows: Optional[List[str]] = Field(None, description="Workflow IDs to run in this container")
+    environment: Optional[dict[str, str]] = Field(None, description="Environment variables for the container")
+    workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run in this container")
 
 
 class SelfHostedPaths(BaseModel):
@@ -109,8 +109,8 @@ class ServiceSpec(BaseModel):
     path: str = Field(..., description="Path prefix to proxy (e.g., /app)")
     image: str = Field(..., description="Docker image for the service")
     auth_token: Optional[str] = Field(default=None, description="Bearer token for upstream service authentication")
-    environment: Optional[Dict[str, str]] = Field(default=None, description="Environment variables for the service")
-    volumes: Optional[Dict[str, str | Dict[str, str]]] = Field(
+    environment: Optional[dict[str, str]] = Field(default=None, description="Environment variables for the service")
+    volumes: Optional[dict[str, str | dict[str, str]]] = Field(
         default=None,
         description="Volume mounts (host -> container or detailed dict with bind/mode)",
     )
@@ -156,7 +156,7 @@ class ProxySpec(BaseModel):
         description="Seconds before idle services are stopped by the proxy",
     )
     log_level: str = Field("INFO", description="Log level for proxy process")
-    services: List[ServiceSpec] = Field(..., description="List of services managed by the proxy")
+    services: list[ServiceSpec] = Field(..., description="List of services managed by the proxy")
     auto_certbot: bool = Field(
         False,
         description="When true, run certbot on the remote host to obtain/renew TLS certificates",
@@ -240,10 +240,10 @@ class RunPodTemplateConfig(BaseModel):
     """RunPod template configuration."""
 
     name: str = Field(..., description="Template name")
-    gpu_types: List[str] = Field(default_factory=list, description="Allowed GPU types")
-    data_centers: List[str] = Field(default_factory=list, description="Preferred data center locations")
+    gpu_types: list[str] = Field(default_factory=list, description="Allowed GPU types")
+    data_centers: list[str] = Field(default_factory=list, description="Preferred data center locations")
     network_volume_id: Optional[str] = Field(None, description="Network volume ID to attach")
-    allowed_cuda_versions: List[str] = Field(default_factory=list, description="Allowed CUDA versions")
+    allowed_cuda_versions: list[str] = Field(default_factory=list, description="Allowed CUDA versions")
 
 
 class RunPodEndpointConfig(BaseModel):
@@ -282,13 +282,13 @@ class RunPodDeployment(BaseModel):
     type: Literal[DeploymentType.RUNPOD] = DeploymentType.RUNPOD
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     image: RunPodImageConfig
-    gpu_types: List[str] = Field(default_factory=list, description="Allowed GPU types")
+    gpu_types: list[str] = Field(default_factory=list, description="Allowed GPU types")
     gpu_count: Optional[int] = None
-    cpu_flavors: List[str] = Field(default_factory=list, description="Allowed CPU flavors")
+    cpu_flavors: list[str] = Field(default_factory=list, description="Allowed CPU flavors")
     vcpu_count: Optional[int] = None
-    data_centers: List[str] = Field(default_factory=list, description="Preferred data center locations")
+    data_centers: list[str] = Field(default_factory=list, description="Preferred data center locations")
     network_volume_id: Optional[str] = Field(None, description="Network volume ID to attach")
-    allowed_cuda_versions: List[str] = Field(default_factory=list, description="Allowed CUDA versions")
+    allowed_cuda_versions: list[str] = Field(default_factory=list, description="Allowed CUDA versions")
     docker: RunPodDockerConfig = RunPodDockerConfig()
     platform: str = "linux/amd64"
     template_name: Optional[str] = None
@@ -298,8 +298,8 @@ class RunPodDeployment(BaseModel):
     idle_timeout: int = 5
     execution_timeout: Optional[int] = None
     flashboot: bool = False
-    environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for the deployment")
-    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
+    environment: Optional[dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: RunPodState = Field(default=RunPodState())
 
     def get_server_url(self) -> Optional[str]:
@@ -378,7 +378,7 @@ class GCPDeployment(BaseModel):
     resources: GCPResourceConfig = Field(default_factory=GCPResourceConfig)
     storage: Optional[GCPStorageConfig] = None
     iam: GCPIAMConfig = Field(default_factory=GCPIAMConfig)
-    workflows: List[str] = Field(default_factory=list, description="Workflow IDs to deploy")
+    workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: GCPState = Field(default_factory=GCPState)
 
     def get_server_url(self) -> Optional[str]:
@@ -399,7 +399,7 @@ class DefaultsConfig(BaseModel):
     log_level: str = "INFO"
     auth_provider: str = "local"  # none, local, static, supabase
     # Can add more defaults as needed
-    extra: Dict[str, Any] = {}
+    extra: dict[str, Any] = {}
 
 
 class DeploymentConfig(BaseModel):
@@ -407,11 +407,11 @@ class DeploymentConfig(BaseModel):
 
     version: str = "1.0"
     defaults: DefaultsConfig = DefaultsConfig()
-    deployments: Dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
+    deployments: dict[str, SelfHostedDeployment | RunPodDeployment | GCPDeployment] = {}
 
     @field_validator("deployments")
     @classmethod
-    def validate_deployment_types(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_deployment_types(cls, v: dict[str, Any]) -> dict[str, Any]:
         """Ensure each deployment has a valid type."""
         for name, deployment in v.items():
             if not hasattr(deployment, "type"):
@@ -544,8 +544,8 @@ def init_deployment_config() -> DeploymentConfig:
 
 
 def merge_defaults_with_env(
-    defaults: DefaultsConfig, deployment_env: Optional[Dict[str, str]] = None
-) -> Dict[str, str]:
+    defaults: DefaultsConfig, deployment_env: Optional[dict[str, str]] = None
+) -> dict[str, str]:
     """
     Merge default environment variables with deployment-specific overrides.
 

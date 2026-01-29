@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Any
 
+from pydantic import ValidationError
+
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import ImageRef, NameToType, NPArray
 
@@ -16,6 +18,8 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     - list[str] is a subtype of list[any]
     - str is a subtype of union[str, int]
     - enum with values [1, 2] is a subtype of enum with values [1, 2, 3]
+    - float is a subtype of list[float] (single value can be wrapped into list)
+    - int is a subtype of list[int] (single value can be wrapped into list)
 
     Args:
         type1: The subtype to check.
@@ -51,9 +55,16 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
     if type2.type == "union":
         return any(typecheck(type1, t2) for t2 in type2.type_args)
 
-    # Handle union types in type1 - check if type2 accepts all members of the union
+    # Handle union types in type1 - accept if any member matches
     if type1.type == "union":
-        return all(typecheck(t1, type2) for t1 in type1.type_args)
+        return any(typecheck(t1, type2) for t1 in type1.type_args)
+
+    # Special case: T -> list[T] (single value can be wrapped into a list)
+    # This allows edges where source outputs T but target expects list[T]
+    # Only apply when list has specific type args (not list[Any])
+    if type2.type == "list" and type1.type != "list" and len(type2.type_args) > 0:
+        element_type = type2.type_args[0]
+        return typecheck(type1, element_type)
 
     # From here on, we need the base types to match for most cases
     if type1.type != type2.type:
@@ -145,15 +156,35 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     if python_type is dict and "type" in value:
         return value["type"] == type_meta.type
 
+    # Handle dict values without explicit 'type' field - check if they validate
+    # against the target model. This supports types like ToolName with default type values.
+    if python_type is dict and "type" not in value:
+        target_class = NameToType.get(type_meta.type)
+        if target_class is not None and hasattr(target_class, "model_validate"):
+            try:
+                target_class.model_validate(value)
+            except (ValidationError, ValueError, TypeError):
+                return False
+            return True
+
     # Handle list types.
     if type_meta.type == "list":
         if python_type is list:
             t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else TypeMetadata(type="any")
             return all(is_assignable(t, v) for v in value)
-        # Handle ImageRef containing a list.
+        # Handle ImageRef containing a list data field.
+        # This is a special case where ImageRef.data can hold list data.
         if python_type == ImageRef:
             assert isinstance(value, ImageRef)
-            return type(value.data) is list
+            if type(value.data) is list:
+                return True
+            # Fall through to auto-wrap check - ImageRef can be wrapped if assignable to element type
+        # Handle single value auto-wrapping: T -> list[T]
+        # A single value can be assigned to list[T] if the value is assignable to T
+        if len(type_meta.type_args) > 0:
+            element_type = type_meta.type_args[0]
+            return is_assignable(element_type, value)
+        return False
     # Handle dictionary types.
     if type_meta.type == "dict" and python_type is dict:
         if len(type_meta.type_args) != 2:
@@ -205,12 +236,13 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         return any(is_assignable(t, value) for t in type_meta.type_args)
     # Handle enum types.
     if type_meta.type == "enum":
+        if type_meta.values is None:
+            return False
         if isinstance(value, Enum):
             # Check if the enum value exists in the defined enum values.
             return value.value in type_meta.values
         else:
             # Check if the raw value exists in the defined enum values.
-            assert type_meta.values is not None
             return value in type_meta.values
 
     # Default case: check if the Python type matches the expected type.

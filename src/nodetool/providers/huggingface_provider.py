@@ -8,21 +8,18 @@ Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 import asyncio
 import base64
 import json
-import logging
 import os
 import traceback
-from typing import Any, AsyncGenerator, List, Literal, Sequence
+from typing import Any, AsyncGenerator, Literal, Sequence
 from weakref import WeakKeyDictionary
 
 import aiohttp
 import httpx
 import numpy as np
-import requests
 from huggingface_hub import AsyncInferenceClient
 from pydantic import BaseModel
 
 from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
@@ -39,7 +36,6 @@ from nodetool.metadata.types import (
 )
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.types.model import CachedFileInfo
-from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
@@ -92,13 +88,10 @@ HF_PROVIDER_MAPPING = {
 }
 
 
-def get_remote_context_window(model_id: str, token: str | None = None) -> int | None:
+async def get_remote_context_window(model_id: str, token: str | None = None) -> int | None:
     """Fetch context window info from the model's Hugging Face config, if available."""
-    # Note: We don't cache when token is provided since cache keys can't include tokens
-    # For public models (no token), we can use a simple cache
     cache_key = f"{model_id}:{bool(token)}"
 
-    # Try to get from cache if no token (public model)
     if not token:
         cached = _context_window_cache.get(cache_key)
         if cached is not None:
@@ -109,10 +102,52 @@ def get_remote_context_window(model_id: str, token: str | None = None) -> int | 
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        response = requests.get(url, headers=headers, timeout=5)
-    except Exception as exc:  # pragma: no cover - network failure fallback
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url, headers=headers)
+    except Exception as exc:
         log.debug("Failed to fetch remote config for %s: %s", model_id, exc)
         return None
+
+    if response.status_code != 200:
+        log.debug(
+            "Remote config request returned %s for model %s",
+            response.status_code,
+            model_id,
+        )
+        return None
+
+    try:
+        cfg = response.json()
+    except ValueError as exc:
+        log.debug("Invalid JSON in remote config for %s: %s", model_id, exc)
+        return None
+
+    for key in (
+        "max_position_embeddings",
+        "n_positions",
+        "sequence_length",
+        "context_length",
+    ):
+        if key in cfg:
+            value = cfg[key]
+            try:
+                result = int(value)
+                if not token:
+                    _context_window_cache[cache_key] = result
+                return result
+            except (TypeError, ValueError):
+                log.debug(
+                    "Context length key %s in %s was non-integer: %s",
+                    key,
+                    model_id,
+                    value,
+                )
+                continue
+
+    log.debug("No context length key found in remote config for %s", model_id)
+    if not token:
+        _context_window_cache[cache_key] = None
+    return None
 
     if response.status_code != 200:
         log.debug(
@@ -186,7 +221,7 @@ def _message_contains_media(message: Message) -> tuple[bool, str]:
 
 async def fetch_image_models_from_hf_provider(
     provider: str, pipeline_tag: str, token: str | None = None
-) -> List[ImageModel]:
+) -> list[ImageModel]:
     """
     Fetch image models from HuggingFace Hub API for a specific provider.
 
@@ -247,7 +282,7 @@ async def fetch_image_models_from_hf_provider(
         return []
 
 
-async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[TTSModel]:
+async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[TTSModel]:
     """
     Fetch TTS models from HuggingFace Hub API for a specific provider.
 
@@ -299,7 +334,7 @@ async def fetch_tts_models_from_hf_provider(provider: str, pipeline_tag: str) ->
         return []
 
 
-async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[VideoModel]:
+async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[VideoModel]:
     """
     Fetch video models from HuggingFace Hub API for a specific provider.
 
@@ -359,7 +394,7 @@ async def fetch_video_models_from_hf_provider(provider: str, pipeline_tag: str) 
         return []
 
 
-async def fetch_models_from_hf_provider(provider: str, pipeline_tag: str) -> List[LanguageModel]:
+async def fetch_models_from_hf_provider(provider: str, pipeline_tag: str) -> list[LanguageModel]:
     """
     Fetch language models from HuggingFace Hub API for a specific provider.
 
@@ -531,7 +566,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available HuggingFace models for this inference provider.
 
@@ -677,7 +712,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug(f"Formatted {len(formatted_tools)} tools")
         return formatted_tools
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -863,7 +898,7 @@ class HuggingFaceProvider(BaseProvider):
         log.debug("Returning generated message")
         return response_message
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1119,7 +1154,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace TTS generation failed: {e}")
             raise RuntimeError(f"HuggingFace TTS generation failed: {str(e)}") from e
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available HuggingFace TTS models.
 
@@ -1201,7 +1236,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace text-to-image generation failed: {e}")
             raise RuntimeError(f"HuggingFace text-to-image generation failed: {str(e)}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams
@@ -1246,7 +1281,7 @@ class HuggingFaceProvider(BaseProvider):
                 negative_prompt=params.negative_prompt or None,
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
-                target_size={  # pyright: ignore[reportArgumentType]
+                target_size={  # type: ignore[arg-type]
                     "width": params.target_width,
                     "height": params.target_height,
                 }
@@ -1270,7 +1305,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace image-to-image generation failed: {e}")
             raise RuntimeError(f"HuggingFace image-to-image generation failed: {str(e)}") from e
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available HuggingFace image generation models for this inference provider.
 
@@ -1307,7 +1342,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}")
             return []
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """
         Get available HuggingFace video generation models for this inference provider.
 

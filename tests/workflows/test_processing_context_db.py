@@ -16,7 +16,7 @@ from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
 from nodetool.models.workflow import Workflow
-from nodetool.types.chat import MessageCreateRequest
+from nodetool.types.message_types import MessageCreateRequest
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 

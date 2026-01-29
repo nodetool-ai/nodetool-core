@@ -56,7 +56,7 @@ The ChatInput receives messages as a list of dictionaries:
 
 import json
 import uuid
-from typing import Any, List, Optional
+from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -89,10 +89,6 @@ def _serialize_message(msg: Message) -> dict:
     """
     msg_dict = msg.model_dump()
 
-    # Convert MessageContent objects to dicts for JSON serialization
-    if "content" in msg_dict and isinstance(msg_dict["content"], list):
-        msg_dict["content"] = [c.model_dump() for c in msg_dict["content"]]
-
     return msg_dict
 
 
@@ -117,7 +113,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
 
     async def process(
         self,
-        chat_history: List[Message],
+        chat_history: list[Message],
         processing_context: ProcessingContext,
         **kwargs,
     ):
@@ -168,7 +164,16 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                     result[update.node_name] = update.value
 
             # Signal completion with job_id and workflow_id
-            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
+            )
             response_msg = self._create_response_message(result, last_message).model_dump()
             response_msg["job_id"] = job_id
             response_msg["workflow_id"] = workflow_id
@@ -183,16 +188,26 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
                     "message": f"Error processing chat workflow: {str(e)}",
                     "job_id": job_id,
                     "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
                 }
             )
             # Send completion even on error with job_id and workflow_id
-            await self.send_message({"type": "chunk", "content": "", "done": True, "job_id": job_id, "workflow_id": workflow_id})
+            await self.send_message(
+                {
+                    "type": "chunk",
+                    "content": "",
+                    "done": True,
+                    "job_id": job_id,
+                    "workflow_id": workflow_id,
+                    "thread_id": last_message.thread_id,
+                }
+            )
             raise
         finally:
             # Always mark processing as complete
             self.is_processing = False
 
-    def _prepare_workflow_params(self, chat_history: List[Message], last_message: Message) -> dict:
+    def _prepare_workflow_params(self, chat_history: list[Message], last_message: Message) -> dict:
         """
         Prepare workflow parameters from chat history and message.
 
@@ -223,7 +238,7 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
         log.debug(f"Legacy chat_input prepared with {len(chat_input_data)} messages")
         return params
 
-    def _prepare_legacy_chat_input(self, chat_history: List[Message]) -> List[dict]:
+    def _prepare_legacy_chat_input(self, chat_history: list[Message]) -> list[dict]:
         """
         Legacy format for backward compatibility with existing workflows.
 

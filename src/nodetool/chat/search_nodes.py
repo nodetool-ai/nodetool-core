@@ -5,7 +5,15 @@ from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.packages.registry import Registry
 
-registry = Registry()
+_registry: Registry | None = None
+
+
+def get_registry() -> Registry:
+    global _registry
+    if _registry is None:
+        _registry = Registry()
+    return _registry
+
 
 _CAMEL_SPLIT_1 = re.compile(r"([a-z0-9])([A-Z])")
 _CAMEL_SPLIT_2 = re.compile(r"([A-Z]+)([A-Z][a-z])")
@@ -88,7 +96,7 @@ def search_nodes(
     Returns:
         A list of search results from keyword matching.
     """
-    node_metadata_list = registry.get_all_installed_nodes()
+    node_metadata_list = get_registry().get_all_installed_nodes()
     query_tokens = _normalize_query_tokens(query)
     query_lower = [q.lower() for q in query_tokens]
     phrase_regexes = _compile_phrase_regexes(query_tokens)
@@ -113,12 +121,10 @@ def search_nodes(
         output_types = [out.type for out in node_metadata.outputs if out.type]
         if node_metadata.namespace in exclude_namespaces:
             continue
-        if input_type:
-            if not any(type_matches(t, input_type) for t in input_types):
-                continue
-        if output_type:
-            if not any(type_matches(t, output_type) for t in output_types):
-                continue
+        if input_type and not any(type_matches(t, input_type) for t in input_types):
+            continue
+        if output_type and not any(type_matches(t, output_type) for t in output_types):
+            continue
         score = 0
         # Phrase match boost: reward sequences like "text.*to.*image" across title/name.
         max_phrase_len = 0

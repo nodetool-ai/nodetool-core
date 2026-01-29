@@ -4,6 +4,7 @@ import os
 from typing import AsyncGenerator, ClassVar, Optional, TypedDict, Union
 
 import pytest
+from pydantic import Field
 
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -104,6 +105,21 @@ class CustomRoutingNode(BaseNode):
 
     def should_route_output(self, output_name: str) -> bool:
         return output_name not in self.suppressed_outputs
+
+
+class ListInputNode(BaseNode):
+    """Node with list input properties for testing auto-wrapping."""
+
+    int_list: list[int] = Field(default_factory=list)
+    str_list: list[str] = Field(default_factory=list)
+    image_list: list[ImageRef] = Field(default_factory=list)
+
+    async def process(self, context: ProcessingContext) -> dict[str, list]:
+        return {
+            "int_list": self.int_list,
+            "str_list": self.str_list,
+            "image_list": self.image_list,
+        }
 
 
 def test_node_creation():
@@ -688,3 +704,69 @@ def test_dynamic_properties_read_and_assignment():
     assert node.read_property("new_prop") == 10
     with pytest.raises(ValueError):
         _ = DummyClass().read_property("missing")
+
+
+
+def test_node_assign_property_single_value_to_list_int():
+    """Test that a single int value is auto-wrapped to list[int]."""
+    node = ListInputNode()
+    error = node.assign_property("int_list", 42)
+    assert error is None
+    assert node.int_list == [42]
+
+
+def test_node_assign_property_single_value_to_list_str():
+    """Test that a single str value is auto-wrapped to list[str]."""
+    node = ListInputNode()
+    error = node.assign_property("str_list", "hello")
+    assert error is None
+    assert node.str_list == ["hello"]
+
+
+def test_node_assign_property_single_value_to_list_imageref():
+    """Test that a single ImageRef value is auto-wrapped to list[ImageRef]."""
+    node = ListInputNode()
+    img = ImageRef(uri="test.jpg")
+    error = node.assign_property("image_list", img)
+    assert error is None
+    assert len(node.image_list) == 1
+    assert node.image_list[0].uri == "test.jpg"
+
+
+def test_node_assign_property_list_value_remains_list():
+    """Test that a list value is not double-wrapped."""
+    node = ListInputNode()
+    error = node.assign_property("int_list", [1, 2, 3])
+    assert error is None
+    assert node.int_list == [1, 2, 3]
+
+
+def test_node_assign_property_wrong_type_not_wrapped():
+    """Test that wrong types are not wrapped and result in error."""
+    node = ListInputNode()
+    error = node.assign_property("int_list", "not an int")
+    assert error is not None
+    assert "Invalid value" in error
+
+
+def test_node_set_properties_with_single_values():
+    """Test set_node_properties with single values that should be auto-wrapped."""
+    node = ListInputNode()
+    errors = node.set_node_properties({
+        "int_list": 99,
+        "str_list": "world",
+    }, skip_errors=True)
+    assert len(errors) == 0
+    assert node.int_list == [99]
+    assert node.str_list == ["world"]
+
+
+def test_node_is_assignable_single_value_to_list():
+    """Test is_assignable returns True for single value to list type."""
+    node = ListInputNode()
+    assert node.is_assignable("int_list", 42) is True
+    assert node.is_assignable("int_list", [1, 2, 3]) is True
+    assert node.is_assignable("int_list", "not an int") is False
+    assert node.is_assignable("str_list", "hello") is True
+    assert node.is_assignable("str_list", ["a", "b"]) is True
+

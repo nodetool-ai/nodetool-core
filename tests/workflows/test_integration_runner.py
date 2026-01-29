@@ -5,9 +5,9 @@ import queue
 
 import pytest
 
-from nodetool.types.graph import Edge as APIEdge
-from nodetool.types.graph import Graph as APIGraph
-from nodetool.types.graph import Node as APINode
+from nodetool.types.api_graph import Edge as APIEdge
+from nodetool.types.api_graph import Graph as APIGraph
+from nodetool.types.api_graph import Node as APINode
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import JobUpdate

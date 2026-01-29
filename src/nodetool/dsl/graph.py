@@ -8,13 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nodetool.config.logging_config import get_logger
 from nodetool.dsl.handles import DynamicOutputsProxy, OutputHandle, OutputsProxy
-from nodetool.metadata.types import OutputSlot, ToolCall
+from nodetool.metadata.types import OutputSlot
 from nodetool.runtime.resources import ResourceScope
-from nodetool.types.graph import Graph, Node
+from nodetool.types.api_graph import Graph, Node
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import (
-    AssetOutputMode,
     ProcessingContext,
 )
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -201,18 +200,25 @@ async def run_graph_async(graph: Graph, **kwargs):
         async for msg in run_workflow(req, context=context):
             if isinstance(msg, OutputUpdate):
                 res[msg.node_name] = msg.value
+                print(f"OutputUpdate: node_name={msg.node_name}, value={msg.value}")
             elif isinstance(msg, PlanningUpdate):
+                print(f"PlanningUpdate: phase={msg.phase}, status={msg.status}, content={msg.content}")
                 log.debug("planning: %s", msg.content)
             elif isinstance(msg, TaskUpdate):
+                print(f"TaskUpdate: event={msg.event}, node_id={msg.node_id}")
                 log.debug("task: %s", msg.event)
             elif isinstance(msg, NodeUpdate):
+                print(f"NodeUpdate: node_name={msg.node_name}, status={msg.status}, node_type={msg.node_type}")
                 log.debug("node update: %s %s", msg.node_name, msg.status)
             elif isinstance(msg, ToolCallUpdate):
+                print(f"ToolCallUpdate: name={msg.name}, args={msg.args}")
                 log.debug("tool call: %s", msg.message)
             elif isinstance(msg, JobUpdate):
+                print(f"JobUpdate: status={msg.status}, job_id={msg.job_id}, message={msg.message}")
                 log.debug("job update: %s", msg.status)
             elif isinstance(msg, Error):
-                raise Exception(msg.error)
+                print(f"Error: message={msg.message}")
+                raise Exception(msg.message)
         return res
 
 
@@ -253,4 +259,4 @@ async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
     Convenience helper that forwards kwargs to `run_graph`.
     """
     g = graph(node)
-    return await run_graph(g, **kwargs)
+    return await run_graph_async(g, **kwargs)

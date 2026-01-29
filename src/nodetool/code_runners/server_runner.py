@@ -87,7 +87,7 @@ class ServerDockerRunner(StreamRunnerBase):
         allow_dynamic_outputs: bool,
         stdin_stream: AsyncIterator[str] | None = None,
     ) -> None:  # type: ignore[override]
-        self._logger.debug(
+        self._logger.debug(  # type: ignore[union-attr]
             "server _docker_run() begin: code=%s image=%s port=%s",
             user_code,
             self.image,
@@ -110,7 +110,7 @@ class ServerDockerRunner(StreamRunnerBase):
             cancel_timer = None
             try:
                 # Create container with published port on host_ip and ephemeral port
-                self._logger.debug("creating server container with port mapping")
+                self._logger.debug("creating server container with port mapping")  # type: ignore[union-attr]
                 ports = {f"{self.container_port}/tcp": (self.host_ip, 0)}
                 container = client.containers.create(
                     image=image,
@@ -132,7 +132,7 @@ class ServerDockerRunner(StreamRunnerBase):
                     ports=ports,
                     ipc_mode=self.ipc_mode,
                 )
-                self._logger.debug(
+                self._logger.debug(  # type: ignore[union-attr]
                     "server container created: id=%s",
                     getattr(container, "id", "<no-id>"),
                 )
@@ -176,7 +176,7 @@ class ServerDockerRunner(StreamRunnerBase):
                     self._wait_for_container_exit(container)
 
                 self._finalize_success(queue, loop)
-                self._logger.debug("server _docker_run() completed successfully")
+                self._logger.debug("server _docker_run() completed successfully")  # type: ignore[union-attr]
             finally:
                 try:
                     self._cleanup_container(container, cancel_timer)
@@ -202,14 +202,14 @@ class ServerDockerRunner(StreamRunnerBase):
             RuntimeError: If no port binding appears within the timeout.
         """
         deadline = _time.time() + timeout
-        self._logger.debug("waiting for host port %s", self.container_port)
+        self._logger.debug("waiting for host port %s", self.container_port)  # type: ignore[union-attr]
         while _time.time() < deadline:
             try:
                 container.reload()
                 ports_info = (container.attrs or {}).get("NetworkSettings", {}).get("Ports", {})
                 if container.attrs["State"]["Status"] == "exited":
                     raise RuntimeError("Container exited before port was published")
-                self._logger.debug("container attrs: %s", container.attrs)
+                self._logger.debug("container attrs: %s", container.attrs)  # type: ignore[union-attr]
                 binds = ports_info.get(f"{self.container_port}/tcp")
                 if binds and isinstance(binds, list) and binds[0].get("HostPort"):
                     return int(binds[0]["HostPort"])  # type: ignore[arg-type]

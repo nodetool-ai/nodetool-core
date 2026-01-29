@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
+from typing import Any, Optional, Union, get_args, get_origin
 
 import aiosqlite
 from pydantic.fields import FieldInfo
@@ -77,15 +77,16 @@ def safe_json_loads(value: str) -> Any:
     return json.loads(value, object_hook=_decode_special_types)
 
 
-async def retry_on_locked(func, max_retries=15, initial_delay=0.02):
+async def retry_on_locked(func, max_retries=10, initial_delay=0.01, max_delay=0.5):
     """Retry a database operation if it fails due to database lock.
 
     Uses exponential backoff with jitter to avoid thundering herd.
 
     Args:
         func: Async function to execute
-        max_retries: Maximum number of retry attempts (default 15 for better coverage)
-        initial_delay: Initial delay in seconds (doubled each retry, starts at 20ms)
+        max_retries: Maximum number of retry attempts (default 10 for balanced throughput)
+        initial_delay: Initial delay in seconds (doubled each retry, starts at 10ms)
+        max_delay: Maximum delay cap in seconds (default 0.5s for faster recovery)
     """
     last_exception = None
     delay = initial_delay
@@ -108,7 +109,7 @@ async def retry_on_locked(func, max_retries=15, initial_delay=0.02):
                 jitter = delay * random.uniform(0.5, 1.5)
                 log.debug(f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(jitter)
-                delay = min(delay * 2, 2.0)  # Exponential backoff capped at 2 seconds
+                delay = min(delay * 2, max_delay)  # Exponential backoff capped at max_delay
             else:
                 log.error(f"Database operation failed after {max_retries} retries: {e}")
                 raise
@@ -116,7 +117,7 @@ async def retry_on_locked(func, max_retries=15, initial_delay=0.02):
     raise last_exception or Exception("Unexpected error in retry_on_locked")
 
 
-def convert_to_sqlite_format(value: Any, py_type: Type) -> int | float | str | bytes | None:
+def convert_to_sqlite_format(value: Any, py_type: type) -> int | float | str | bytes | None:
     """
     Convert a Python value to a format suitable for SQLite based on the provided Python type.
     Serialize lists and dicts to JSON strings. Encode bytes using base64.
@@ -133,7 +134,7 @@ def convert_to_sqlite_format(value: Any, py_type: Type) -> int | float | str | b
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_to_sqlite_format(value, args[0])
         else:
@@ -159,7 +160,7 @@ def convert_to_sqlite_format(value: Any, py_type: Type) -> int | float | str | b
         raise TypeError(f"Unsupported type for SQLite: {py_type}")
 
 
-def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
+def convert_from_sqlite_format(value: Any, py_type: type) -> Any:
     """
     Convert a value from SQLite to a Python type based on the provided Python type.
     Deserialize JSON strings to lists and dicts.
@@ -173,7 +174,7 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t is not type(None)]
+        args = [t for t in get_args(py_type) if t is not type(None)]
         if len(args) == 1:
             return convert_from_sqlite_format(value, args[0])
         else:
@@ -199,7 +200,7 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
         raise TypeError(f"Unsupported type for SQLite: {py_type}")
 
 
-def convert_from_sqlite_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
+def convert_from_sqlite_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
     """
     Convert a dictionary of attributes from SQLite to a dictionary of Python types based on the provided fields.
     """
@@ -213,7 +214,7 @@ def convert_from_sqlite_attributes(attributes: Dict[str, Any], fields: Dict[str,
     }
 
 
-def convert_to_sqlite_attributes(attributes: Dict[str, Any], fields: Dict[str, FieldInfo]) -> Dict[str, Any]:
+def convert_to_sqlite_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
     """
     Convert a dictionary of attributes from SQLite to a dictionary of Python types based on the provided fields.
     """
@@ -281,6 +282,26 @@ def translate_condition_to_sql(condition: str) -> str:
     return translated_condition
 
 
+VALID_COLUMN_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_column_name(column_name: str) -> str:
+    """Validate column name to prevent SQL injection.
+
+    Args:
+        column_name: The column name to validate.
+
+    Returns:
+        The validated column name.
+
+    Raises:
+        ValueError: If the column name contains invalid characters.
+    """
+    if not VALID_COLUMN_NAME_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    return column_name
+
+
 class SQLiteAdapter(DatabaseAdapter):
     """
     Provides an adapter (`SQLiteAdapter`) to interface Pydantic-based models
@@ -303,17 +324,17 @@ class SQLiteAdapter(DatabaseAdapter):
     """
 
     table_name: str
-    table_schema: Dict[str, Any]
-    indexes: List[Dict[str, Any]]
+    table_schema: dict[str, Any]
+    indexes: list[dict[str, Any]]
     _connection: aiosqlite.Connection
     query_timeout: Optional[float]
     _is_shutting_down: bool
 
     def __init__(
         self,
-        fields: Dict[str, FieldInfo],
-        table_schema: Dict[str, Any],
-        indexes: List[Dict[str, Any]],
+        fields: dict[str, FieldInfo],
+        table_schema: dict[str, Any],
+        indexes: list[dict[str, Any]],
         connection: aiosqlite.Connection,
         query_timeout: Optional[float] = None,
     ):
@@ -452,7 +473,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         await retry_on_locked(_drop)
 
-    async def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: dict[str, Any]) -> None:
         """Saves (inserts or replaces) an item into the database table.
 
         Converts the item's attributes to SQLite-compatible formats before saving.
@@ -475,7 +496,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         await retry_on_locked(_save)
 
-    async def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
         Args:
@@ -522,14 +543,18 @@ class SQLiteAdapter(DatabaseAdapter):
 
         Returns:
             A tuple containing the SQL WHERE clause string and a list of parameters.
+
+        Raises:
+            ValueError: If a column name contains invalid characters.
         """
         if isinstance(condition, Condition):
+            validated_field = _validate_column_name(condition.field)
             if condition.operator == Operator.IN:
                 placeholders = ", ".join(["?" for _ in condition.value])
-                sql = f"{condition.field} IN ({placeholders})"
+                sql = f"{validated_field} IN ({placeholders})"
                 params = condition.value
             else:
-                sql = f"{condition.field} {condition.operator.value} ?"
+                sql = f"{validated_field} {condition.operator.value} ?"
                 params = [condition.value]
             return sql, params
         else:  # ConditionGroup
@@ -554,7 +579,7 @@ class SQLiteAdapter(DatabaseAdapter):
         order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
-        columns: List[str] | None = None,
+        columns: list[str] | None = None,
     ) -> tuple[list[dict[str, Any]], str]:
         pk = self.get_primary_key()
 
@@ -594,7 +619,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return await _query()
 
-    async def execute_sql(self, sql: str, params: Optional[dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    async def execute_sql(self, sql: str, params: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
         Args:
@@ -618,7 +643,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return await _execute()
 
-    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
+    async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
         unique_str = "UNIQUE" if unique else ""
         columns_str = ", ".join(columns)
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
@@ -642,7 +667,7 @@ class SQLiteAdapter(DatabaseAdapter):
             log.error(f"SQLite error during index deletion: {e}")
             raise e
 
-    async def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> list[dict[str, Any]]:
         sql = "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name=?"
 
         try:

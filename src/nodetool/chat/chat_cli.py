@@ -23,7 +23,7 @@ import sys
 import traceback
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -168,11 +168,11 @@ class ChatCLI:
         self.debug_mode = False
 
         # Store selected LanguageModel object and model ID preference
-        self.language_models: List[LanguageModel] = []
+        self.language_models: list[LanguageModel] = []
         self.selected_model: Optional[LanguageModel] = None
         self.model_id_from_settings: Optional[str] = None
         self.selected_provider: Optional[Provider] = None
-        self._models_by_provider: dict[Provider, List[LanguageModel]] = {}
+        self._models_by_provider: dict[Provider, list[LanguageModel]] = {}
         self._completer = None
 
         # Model attributes for agent config (can be overridden)
@@ -183,9 +183,9 @@ class ChatCLI:
         self.retrieval_model_id: Optional[str] = None
 
         # Tool management
-        self.enabled_tools: Dict[str, bool] = {}  # Track enabled/disabled tools
-        self.all_tools: List = []  # Store all available tools
-        self.tools: List = []
+        self.enabled_tools: dict[str, bool] = {}  # Track enabled/disabled tools
+        self.all_tools: list = []  # Store all available tools
+        self.tools: list = []
 
         self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
         self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_history")
@@ -342,7 +342,7 @@ class ChatCLI:
 
     def _build_command_completer(self) -> NestedCompleter:
         """Construct the nested completer with provider/model/tool suggestions."""
-        command_completer: Dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
+        command_completer: dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
         provider_names = [provider.value for provider in Provider]
         model_ids = [model.id for model in self.language_models]
         all_tool_names = [tool.name for tool in self.all_tools]
@@ -732,7 +732,7 @@ class ChatCLI:
             graph=user_message.graph,
         )
 
-    def handle_workspace_command(self, cmd: str, args: List[str]) -> None:
+    def handle_workspace_command(self, cmd: str, args: list[str]) -> None:
         """Handle workspace-related commands using the process's CWD."""
         try:
             current_dir = Path(os.getcwd())  # Use actual CWD
@@ -1073,7 +1073,7 @@ class ChatCLI:
             # Keep default settings
             pass
 
-    async def handle_command(self, cmd: str, args: List[str]) -> bool:
+    async def handle_command(self, cmd: str, args: list[str]) -> bool:
         """Handle CLI commands (starting with /)."""
         # Strip the leading slash
         if cmd.startswith("/"):

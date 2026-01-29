@@ -1,7 +1,7 @@
 import asyncio
 import mimetypes
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Dict, List, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
@@ -23,7 +23,6 @@ from google.genai.types import (
     GenerateContentConfig,
     GenerateImagesConfig,
     GenerateVideosConfig,
-    ImageOrDict,
     Part,
     PrebuiltVoiceConfig,
     SpeechConfig,
@@ -33,11 +32,11 @@ from google.genai.types import (
 )
 from pydantic import BaseModel
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -46,6 +45,7 @@ from nodetool.metadata.types import (
     MessageFile,
     MessageImageContent,
     MessageTextContent,
+    MessageThoughtContent,
     Provider,
     ToolCall,
     TTSModel,
@@ -78,7 +78,6 @@ class GeminiProvider(BaseProvider):
 
     def get_client(self) -> AsyncClient:
         """Return an async Gemini client for the current event loop."""
-        from weakref import WeakKeyDictionary  # Lazy import for type hint if needed above
 
         loop = asyncio.get_running_loop()
         if loop not in self._clients:
@@ -103,7 +102,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling (all Gemini models do)")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Gemini language models.
 
@@ -128,7 +127,7 @@ class GeminiProvider(BaseProvider):
                 payload = await response.json()
                 items = payload.get("models") or payload.get("data") or []
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in items:
                     # Filter for models that support generating content (exclude embeddings, etc.)
                     methods = item.get("supportedGenerationMethods") or []
@@ -154,7 +153,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Error fetching Gemini models: {e}")
             return []
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available Gemini image models.
 
@@ -314,6 +313,16 @@ class GeminiProvider(BaseProvider):
             elif isinstance(content, MessageAudioContent):
                 log.error("Audio content is not supported")
                 raise NotImplementedError("Audio content is not supported")
+            elif isinstance(content, MessageThoughtContent):
+                # Handle thought content - pass back with thought_signature for multi-turn
+                log.debug(f"Adding thought content with signature: {content.thought_signature is not None}")
+                result.append(
+                    Part(
+                        text=content.text,
+                        thought=True,
+                        thought_signature=content.thought_signature,
+                    )
+                )
             else:
                 # Skip unsupported content types
                 log.warning(f"Skipping unsupported content type: {type(content)}")
@@ -383,7 +392,20 @@ class GeminiProvider(BaseProvider):
         if content_parts:
             for i, part in enumerate(content_parts):
                 log.debug(f"Processing part {i + 1}/{len(content_parts)}")
-                if part.text:
+
+                # Check for thought parts (Gemini thinking mode)
+                # Thought parts have thought=True and may have thought_signature
+                is_thought = getattr(part, "thought", False) is True
+                if is_thought and part.text:
+                    thought_signature = getattr(part, "thought_signature", None)
+                    log.debug(f"Found thought content with signature: {thought_signature is not None}")
+                    content.append(
+                        MessageThoughtContent(
+                            text=part.text,
+                            thought_signature=thought_signature,
+                        )
+                    )
+                elif part.text:
                     log.debug(f"Found text content: {part.text[:30]}...")
                     content.append(MessageTextContent(text=part.text))
                 elif part.function_call:
@@ -414,7 +436,7 @@ class GeminiProvider(BaseProvider):
                 else:
                     log.debug(f"Unknown part type: {type(part)}")
 
-        # Multiple content parts can be merged into a single string
+        # Multiple content parts can be merged into a single string only if all are text (not thoughts)
         if all(isinstance(c, MessageTextContent) for c in content):
             merged_content = "".join([c.text for c in content if isinstance(c, MessageTextContent)])
             log.debug(f"Merged {len(content)} text parts into single string")
@@ -426,7 +448,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Extraction complete: {len(tool_calls)} tool calls, {len(output_files)} output files")
         return content, tool_calls, output_files
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -469,6 +491,7 @@ class GeminiProvider(BaseProvider):
             max_output_tokens=max_tokens,
             response_mime_type="application/json" if response_format else None,
             response_json_schema=response_format,
+            thinking_config=kwargs.get("thinking_config"),
         )
         log.debug(f"Generated config with response format: {'json' if response_format else 'text'}")
 
@@ -509,7 +532,7 @@ class GeminiProvider(BaseProvider):
             role="assistant",
             content=content,
             tool_calls=tool_calls,
-            output_files=output_files if output_files else None,
+            output_files=output_files if output_files else None,  # type: ignore[call-arg]
         )
 
     @staticmethod
@@ -535,7 +558,7 @@ class GeminiProvider(BaseProvider):
         response = httpx.Response(status_code=status_code, request=request)
         return httpx.HTTPStatusError(message, request=request, response=response)
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -574,6 +597,7 @@ class GeminiProvider(BaseProvider):
             system_instruction=system_instruction,
             max_output_tokens=max_tokens,
             response_modalities=["text"],
+            thinking_config=kwargs.get("thinking_config"),
         )
 
         contents = await self._prepare_messages(messages)
@@ -598,7 +622,26 @@ class GeminiProvider(BaseProvider):
                     if parts:
                         log.debug(f"Processing {len(parts)} parts in chunk")
                         for part in parts:
+                            # Check for thought parts (Gemini thinking mode)
+                            is_thought = getattr(part, "thought", False) is True
                             text_value = getattr(part, "text", None)
+
+                            if is_thought and isinstance(text_value, str):
+                                # Thought content - include metadata to indicate it's a thought
+                                thought_signature = getattr(part, "thought_signature", None)
+                                log.debug(
+                                    f"Found thought content in stream, signature present: {thought_signature is not None}"
+                                )
+                                yield Chunk(
+                                    content=text_value,
+                                    done=False,
+                                    content_metadata={
+                                        "thought": True,
+                                        "thought_signature": thought_signature,
+                                    },
+                                )
+                                continue
+
                             if isinstance(text_value, str):
                                 yield Chunk(content=text_value, done=False)
                                 continue
@@ -748,7 +791,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-image generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-image generation failed: {e}") from e
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToImageParams
@@ -911,7 +954,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-speech failed: {e}")
             raise RuntimeError(f"Gemini text-to-speech generation failed: {e}") from e
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """Get available Gemini TTS models.
 
         Returns:
@@ -973,7 +1016,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Returning {len(models)} Gemini TTS models")
         return models
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """Get available Gemini ASR models.
 
         According to Gemini API docs, all Gemini models support audio input natively.
@@ -1009,7 +1052,7 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Returning {len(models)} Gemini ASR models")
         return models
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """Get available Gemini video generation models.
 
         Returns Veo video models only if GEMINI_API_KEY is configured.
@@ -1042,6 +1085,120 @@ class GeminiProvider(BaseProvider):
 
         log.debug(f"Returning {len(models)} Gemini video models")
         return models
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """Get available Gemini embedding models.
+
+        Returns embedding models only if GEMINI_API_KEY is configured.
+        Source: https://ai.google.dev/gemini-api/docs/embeddings
+
+        Returns:
+            List of EmbeddingModel instances for Gemini
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty embedding model list")
+            return []
+
+        # Gemini embedding models
+        # Source: https://ai.google.dev/gemini-api/docs/models/gemini#text-embedding
+        embedding_models_config = [
+            {
+                "id": "text-embedding-004",
+                "name": "Text Embedding 004",
+                "dimensions": 768,
+            },
+            {
+                "id": "text-embedding-005",
+                "name": "Text Embedding 005",
+                "dimensions": 768,
+            },
+            {
+                "id": "gemini-embedding-exp-03-07",
+                "name": "Gemini Embedding Experimental",
+                "dimensions": 3072,
+            },
+        ]
+
+        models: list[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=cast("str", config["id"]),
+                    name=cast("str", config["name"]),
+                    provider=Provider.Gemini,
+                    dimensions=cast("int", config["dimensions"]),
+                )
+            )
+
+        log.debug(f"Returning {len(models)} Gemini embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs: Any,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using Gemini's Embeddings API.
+
+        Uses the embed_content endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "text-embedding-004", "text-embedding-005")
+            **kwargs: Additional parameters:
+                - dimensions: Optional output dimensions (for models that support it)
+                - task_type: Optional task type for the embedding
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build optional config
+            config: dict[str, Any] = {}
+            if kwargs.get("dimensions"):
+                config["output_dimensionality"] = kwargs["dimensions"]
+            if kwargs.get("task_type"):
+                config["task_type"] = kwargs["task_type"]
+
+            # Generate embeddings using Gemini API
+            response = await client.models.embed_content(
+                model=model,
+                contents=texts,
+                config=config if config else None,
+            )
+
+            # Extract embeddings from response
+            if not response.embeddings:
+                raise RuntimeError("No embeddings returned from Gemini API")
+
+            embeddings = [emb.values for emb in response.embeddings if emb.values]
+
+            dim_str = str(len(embeddings[0])) if embeddings and embeddings[0] else "0"
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {dim_str}")
+
+            return embeddings  # type: ignore[return-value]
+
+        except Exception as e:
+            log.error(f"Gemini embedding generation failed: {e}")
+            raise RuntimeError(f"Gemini embedding generation failed: {str(e)}") from e
 
     async def automatic_speech_recognition(
         self,
@@ -1279,7 +1436,7 @@ class GeminiProvider(BaseProvider):
             log.error(f"Gemini text-to-video generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-video generation failed: {e}") from e
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: Any,  # ImageToVideoParams

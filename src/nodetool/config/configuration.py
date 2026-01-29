@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -8,7 +7,7 @@ class Setting:
     env_var: str
     group: str
     description: str
-    enum: List[str] | None
+    enum: list[str] | None
 
 
 @dataclass
@@ -19,8 +18,8 @@ class Secret:
     description: str
 
 
-_registry: List[Setting] = []
-_secrets_registry: List[Secret] = []
+_registry: list[Setting] = []
+_secrets_registry: list[Secret] = []
 
 
 def register_secret(
@@ -28,7 +27,7 @@ def register_secret(
     env_var: str,
     group: str,
     description: str,
-) -> List[Secret]:
+) -> list[Secret]:
     """Register a new secret."""
     secret = Secret(package_name=package_name, env_var=env_var, group=group, description=description)
     _secrets_registry.append(secret)
@@ -40,8 +39,8 @@ def register_setting(
     env_var: str,
     group: str,
     description: str,
-    enum: List[str] | None = None,
-) -> List[Setting]:
+    enum: list[str] | None = None,
+) -> list[Setting]:
     """Register a new setting.
 
     Parameters
@@ -73,11 +72,11 @@ def register_setting(
     return list(_registry)
 
 
-def get_settings_registry() -> List[Setting]:
+def get_settings_registry() -> list[Setting]:
     """Return the list of all registered settings."""
     return list(_registry)
 
 
-def get_secrets_registry() -> List[Secret]:
+def get_secrets_registry() -> list[Secret]:
     """Return the list of all registered secrets."""
     return list(_secrets_registry)

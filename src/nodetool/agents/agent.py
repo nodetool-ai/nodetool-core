@@ -15,7 +15,6 @@ The implementation provides:
 """
 
 import asyncio
-import datetime
 import json
 import os
 import platform
@@ -24,7 +23,7 @@ import sys
 import tempfile
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nodetool.agents.base_agent import BaseAgent
 from nodetool.agents.task_executor import TaskExecutor
@@ -34,14 +33,16 @@ from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    Chunk,
     Task,
     ToolCall,
 )
+from nodetool.observability.tracing import trace_agent_task
 from nodetool.providers import BaseProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.run_job_request import ResourceLimits
 from nodetool.workflows.types import (
-    Chunk,
     LogUpdate,
     StepResult,
     TaskUpdate,
@@ -78,7 +79,6 @@ def _create_macos_sandbox_profile(
     # Default paths where writes are allowed
     default_write_paths = [
         f"{home}/.cache",  # User cache directory
-        f"{home}/.nodetool-workspaces",  # NodeTool workspaces directory
         f"{home}/.config/nodetool",  # NodeTool config directory
         f"{home}/.local/share/nodetool",  # NodeTool data directory
         f"{home}/Library/Caches",  # macOS cache location
@@ -256,7 +256,7 @@ def _wrap_command_with_sandbox(cmd: list[str], workspace_dir: str | None = None)
         return cmd, None
 
 
-def _get_cpu_limit(resource_limits: Any | None = None) -> int | None:
+def _get_cpu_limit(resource_limits: ResourceLimits | None = None) -> int | None:
     """
     Get CPU limit percentage from resource limits or environment.
 
@@ -304,7 +304,7 @@ def _cpu_percent_to_taskpolicy_class(cpu_percent: int) -> str:
 
 
 def _wrap_command_with_cpu_limit(
-    cmd: list[str], resource_limits: Any | None = None
+    cmd: list[str], resource_limits: ResourceLimits | None = None
 ) -> tuple[list[str], dict[str, Any]]:
     """
     Wrap command with CPU limit using taskpolicy on macOS.
@@ -372,8 +372,8 @@ class AgentRunner(StreamRunnerBase):
         nano_cpus: int = 2_000_000_000,
         network_disabled: bool = False,
         mode: str = "docker",
-        resource_limits: Any | None = None,
-    ):
+        resource_limits: ResourceLimits | None = None,
+    ) -> None:
         """
         Initialize the AgentRunner.
 
@@ -414,7 +414,7 @@ class AgentRunner(StreamRunnerBase):
             user_code,
         ]
 
-    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], Any]:
+    def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], str | None]:
         """
         Wrap subprocess command with sandbox-exec and CPU limiting on macOS.
 
@@ -437,7 +437,7 @@ class AgentRunner(StreamRunnerBase):
 
         return command, sandbox_profile_path
 
-    def cleanup_subprocess_wrapper(self, cleanup_data: Any) -> None:
+    def cleanup_subprocess_wrapper(self, cleanup_data: str | None) -> None:
         """
         Clean up sandbox profile file if it was created.
 
@@ -506,14 +506,14 @@ class Agent(BaseAgent):
         max_steps: int = 10,
         max_step_iterations: int = 5,
         max_token_limit: int | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict[str, Any] | None = None,
         task: Task | None = None,  # Add optional task parameter
         verbose: bool = True,  # Add verbose flag
         docker_image: str | None = None,
         use_sandbox: bool = False,
-        resource_limits: Any | None = None,
+        resource_limits: ResourceLimits | None = None,
         display_manager: AgentConsole | None = None,
-    ):
+    ) -> None:
         """
         Initialize the base agent.
 
@@ -586,131 +586,155 @@ class Agent(BaseAgent):
                 yield item
             return
 
-        tools = list(self.tools)
-        task_planner_instance: TaskPlanner | None = None  # Keep track of planner instance
+        # Wrap execution in tracing context
+        async with trace_agent_task(
+            agent_type=self.__class__.__name__,
+            task_description=self.objective,
+            tools=[t.name for t in self.tools],
+        ) as span:
+            span.set_attribute("nodetool.agent.name", self.name)
+            span.set_attribute("nodetool.agent.model", self.model)
+            span.set_attribute("nodetool.agent.planning_model", self.planning_model)
 
-        if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
-            # If self.task was set by initial_task, we skip planning.
-            # We need to ensure it passes the None check for subsequent operations.
-            pass
-        else:
-            if self.display_manager:
-                log.debug(
-                    "Agent '%s' planning task for objective: %s",
-                    self.name,
-                    self.objective,
+            tools = list(self.tools)
+            task_planner_instance: TaskPlanner | None = None  # Keep track of planner instance
+
+            if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
+                # If self.task was set by initial_task, we skip planning.
+                # We need to ensure it passes the None check for subsequent operations.
+                span.add_event("planning_skipped", {"reason": "task_provided"})
+            else:
+                if self.display_manager:
+                    log.debug(
+                        "Agent '%s' planning task for objective: %s",
+                        self.name,
+                        self.objective,
+                    )
+
+                yield LogUpdate(
+                    node_id="agent_planner",
+                    node_name=self.name,
+                    content=f"Planning steps for objective: {self.objective[:100]}...",
+                    severity="info",
+                )
+                span.add_event("planning_started")
+
+                assert context.workspace_dir is not None, "workspace_dir is required for TaskPlanner"
+                task_planner_workspace_dir = cast("str", context.workspace_dir)
+                task_planner_instance = TaskPlanner(
+                    provider=self.provider,
+                    model=self.planning_model,
+                    reasoning_model=self.reasoning_model,
+                    objective=self.objective,
+                    workspace_dir=task_planner_workspace_dir,
+                    execution_tools=tools,
+                    inputs=self.inputs,
+                    output_schema=self.output_schema,
+                    verbose=self.verbose,
+                    display_manager=self.display_manager,
                 )
 
-            yield LogUpdate(
-                node_id="agent_planner",
-                node_name=self.name,
-                content=f"Planning steps for objective: {self.objective[:100]}...",
-                severity="info",
-            )
-            task_planner_instance = TaskPlanner(
-                provider=self.provider,
-                model=self.planning_model,
-                reasoning_model=self.reasoning_model,
-                objective=self.objective,
-                workspace_dir=context.workspace_dir,
-                execution_tools=tools,
-                inputs=self.inputs,
-                output_schema=self.output_schema,
-                verbose=self.verbose,
-                display_manager=self.display_manager,
-            )
+                async for chunk in task_planner_instance.create_task(context, self.objective):
+                    yield chunk
 
-            async for chunk in task_planner_instance.create_task(context, self.objective):
-                yield chunk
+                if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
+                    self.task = task_planner_instance.task_plan.tasks[0]
 
-            if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
-                self.task = task_planner_instance.task_plan.tasks[0]
+                span.add_event("planning_completed", {"step_count": len(self.task.steps) if self.task else 0})
 
-        assert self.task is not None, "Task was not created by planner and was not provided initially."
-        task: Task = self.task
+            assert self.task is not None, "Task was not created by planner and was not provided initially."
+            task: Task = self.task
+            span.set_attribute("nodetool.agent.task_step_count", len(task.steps))
 
-        if not self.initial_task:
-            yield TaskUpdate(
-                task=task,
-                event=TaskUpdateEvent.TASK_CREATED,
-            )
+            if not self.initial_task:
+                yield TaskUpdate(
+                    task=task,
+                    event=TaskUpdateEvent.TASK_CREATED,
+                )
 
-        if self.output_schema and len(task.steps) > 0:
-            task.steps[-1].output_schema = json.dumps(self.output_schema)
+            if self.output_schema and len(task.steps) > 0:
+                task.steps[-1].output_schema = json.dumps(self.output_schema)
 
-        tool_calls: list[ToolCall] = []
+            tool_calls: list[ToolCall] = []
 
-        # Start live display managed by AgentConsole
-        if self.display_manager:
-            self.display_manager.start_live(
-                self.display_manager.create_execution_tree(title=self.name, task=task, tool_calls=tool_calls)
-            )
-
-        try:
-            executor = TaskExecutor(
-                provider=self.provider,
-                model=self.model,
-                processing_context=context,
-                tools=list(self.tools),  # Ensure it's a list of Tool
-                task=task,
-                system_prompt=self.system_prompt,
-                inputs=self.inputs,
-                max_steps=self.max_steps,
-                max_step_iterations=self.max_step_iterations,
-                max_token_limit=self.max_token_limit or 100000,
-                parallel_execution=True,
-                display_manager=self.display_manager,
-            )
-
-            yield LogUpdate(
-                node_id="agent_executor",
-                node_name=self.name,
-                content=f"Starting execution of {len(task.steps)} steps...",
-                severity="info",
-            )
-
-            # Execute all steps within this task and yield results
-            async for item in executor.execute_tasks(context):
-                # Update tool_calls list if item is a ToolCall
-                if isinstance(item, ToolCall):
-                    tool_calls.append(item)
-
-                # Create the updated table and update the live display
-                if self.display_manager:
-                    new_table = self.display_manager.create_execution_tree(
-                        title=f"Task:\\n{self.objective}",
-                        task=task,
-                        tool_calls=tool_calls,
-                    )
-                    self.display_manager.update_live(new_table)
-
-                # Yield the item
-                if isinstance(item, ToolCall):
-                    yield item
-                elif isinstance(item, StepResult):
-                    log.debug(
-                        f"Agent: Received StepResult for step {item.step.id}. is_task_result={item.is_task_result}"
-                    )
-                    if item.is_task_result:
-                        log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
-                        self.results = item.result
-                        yield TaskUpdate(
-                            task=task,
-                            event=TaskUpdateEvent.TASK_COMPLETED,
-                        )
-                    yield item
-                elif isinstance(item, TaskUpdate | Chunk | LogUpdate):
-                    yield item
-                else:
-                    yield item
-
-        finally:
-            # Ensure live display is stopped
+            # Start live display managed by AgentConsole
             if self.display_manager:
-                self.display_manager.stop_live()
+                self.display_manager.start_live(
+                    self.display_manager.create_execution_tree(title=self.name, task=task, tool_calls=tool_calls)
+                )
 
-        if self.display_manager:
-            log.debug("Provider usage: %s", self.provider.usage)
+            try:
+                executor = TaskExecutor(
+                    provider=self.provider,
+                    model=self.model,
+                    processing_context=context,
+                    tools=list(self.tools),  # Ensure it's a list of Tool
+                    task=task,
+                    system_prompt=self.system_prompt,
+                    inputs=self.inputs,
+                    max_steps=self.max_steps,
+                    max_step_iterations=self.max_step_iterations,
+                    max_token_limit=self.max_token_limit or 100000,
+                    parallel_execution=True,
+                    display_manager=self.display_manager,
+                )
+
+                yield LogUpdate(
+                    node_id="agent_executor",
+                    node_name=self.name,
+                    content=f"Starting execution of {len(task.steps)} steps...",
+                    severity="info",
+                )
+                span.add_event("execution_started", {"step_count": len(task.steps)})
+
+                # Execute all steps within this task and yield results
+                async for item in executor.execute_tasks(context):
+                    # Update tool_calls list if item is a ToolCall
+                    if isinstance(item, ToolCall):
+                        tool_calls.append(item)
+                        span.add_event("tool_called", {"tool_name": item.name})
+
+                    # Create the updated table and update the live display
+                    if self.display_manager:
+                        new_table = self.display_manager.create_execution_tree(
+                            title=f"Task:\\n{self.objective}",
+                            task=task,
+                            tool_calls=tool_calls,
+                        )
+                        self.display_manager.update_live(new_table)
+
+                    # Yield the item
+                    if isinstance(item, ToolCall):
+                        yield item
+                    elif isinstance(item, StepResult):
+                        step_id = getattr(item.step, "id", "unknown") if item.step is not None else "unknown"
+                        log.debug(
+                            f"Agent: Received StepResult for step {step_id}. is_task_result={item.is_task_result}"
+                        )
+                        if item.is_task_result:
+                            log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
+                            self.results = item.result
+                            span.add_event("task_completed")
+                            yield TaskUpdate(
+                                task=task,
+                                event=TaskUpdateEvent.TASK_COMPLETED,
+                            )
+                        yield item
+                    elif isinstance(item, TaskUpdate | Chunk | LogUpdate):
+                        yield item
+                    else:
+                        yield item
+
+                span.set_attribute("nodetool.agent.tools_used_count", len(tool_calls))
+                span.add_event("execution_completed")
+
+            finally:
+                # Ensure live display is stopped
+                if self.display_manager:
+                    self.display_manager.stop_live()
+
+            if self.display_manager:
+                log.debug("Provider usage: %s", self.provider.usage)
 
     def get_results(self) -> Any:
         """
@@ -827,7 +851,7 @@ class Agent(BaseAgent):
         yield Chunk(content=f"\n[{mode_name} completed]\n", done=True)
 
 
-async def test_docker_feature():
+async def test_docker_feature() -> None:
     """
     Smoke test for the Docker feature in Agent.
     Tests that an Agent can be initialized with a docker_image parameter.
@@ -861,7 +885,7 @@ async def test_docker_feature():
     print("✓ Docker feature smoke test passed")
 
 
-async def test_sandbox_feature():
+async def test_sandbox_feature() -> None:
     """
     Smoke test for the Sandbox feature in Agent.
     Tests that an Agent can be initialized with use_sandbox=True parameter.

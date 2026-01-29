@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -23,6 +23,17 @@ class JobRequest(BaseModel):
     params: dict
 
 
+class RunStateInfo(BaseModel):
+    """Run state info for WebSocket messages."""
+
+    status: str
+    suspended_node_id: str | None = None
+    suspension_reason: str | None = None
+    error_message: str | None = None
+    execution_strategy: str | None = None
+    is_resumable: bool = False
+
+
 class JobUpdate(BaseModel):
     type: Literal["job_update"] = "job_update"
     status: str
@@ -32,8 +43,10 @@ class JobUpdate(BaseModel):
     result: dict | None = None
     error: str | None = None
     traceback: str | None = None
+    run_state: RunStateInfo | None = None
+    duration: float | None = None  # Duration in seconds (set on completion)
 
 
 class JobList(BaseModel):
     next: Optional[str]
-    jobs: List[Job]
+    jobs: list[Job]

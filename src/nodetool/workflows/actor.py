@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
-from nodetool.models.run_node_state import RunNodeState
+from nodetool.observability.tracing import trace_node
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
@@ -83,6 +83,10 @@ class NodeActor:
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
         self.logger.setLevel(logging.DEBUG)
+
+    def _get_list_handles(self) -> set[str]:
+        """Return handles that require multi-edge list aggregation for this node."""
+        return self.runner.multi_edge_list_inputs.get(self.node._id, set())
 
     def _filter_result(self, result: dict[str, Any]) -> dict[str, Any]:
         """Filter out chunk data from the result since chunks are streamed separately.
@@ -208,6 +212,283 @@ class NodeActor:
                 EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained"),
             )
 
+    async def _auto_save_assets(
+        self,
+        node: BaseNode,
+        result: dict[str, Any],
+        context: ProcessingContext,
+    ) -> None:
+        """Automatically save assets from node outputs when auto_save_asset is enabled.
+
+        Scans the result dictionary for AssetRef instances and saves them to storage
+        with proper tracking (node_id, job_id, workflow_id).
+
+        Args:
+            node: The node that produced the result
+            result: The result dictionary containing node outputs
+            context: The processing context with workflow/job information
+        """
+        from io import BytesIO
+
+        from nodetool.metadata.types import AssetRef
+
+        if not result:
+            return
+
+        self.logger.debug(
+            "Auto-saving assets for node %s (%s)",
+            node.get_title(),
+            node._id,
+        )
+
+        # Recursively scan result for AssetRef instances
+        def find_asset_refs(obj: Any, path: str = "") -> list[tuple[str, AssetRef]]:
+            """Recursively find all AssetRef instances in the result."""
+            refs: list[tuple[str, AssetRef]] = []
+
+            if isinstance(obj, AssetRef):
+                refs.append((path, obj))
+            elif isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_path = f"{path}.{key}" if path else key
+                    refs.extend(find_asset_refs(value, new_path))
+            elif isinstance(obj, (list, tuple)):
+                for idx, value in enumerate(obj):
+                    new_path = f"{path}[{idx}]"
+                    refs.extend(find_asset_refs(value, new_path))
+
+            return refs
+
+        asset_refs = find_asset_refs(result)
+
+        if not asset_refs:
+            self.logger.debug(
+                "No AssetRefs found in result for node %s (%s)",
+                node.get_title(),
+                node._id,
+            )
+            return
+
+        self.logger.info(
+            "Found %d asset(s) to auto-save for node %s (%s)",
+            len(asset_refs),
+            node.get_title(),
+            node._id,
+        )
+
+        # Save each asset ref
+        for path, asset_ref in asset_refs:
+            try:
+                # Skip if asset already has an asset_id (already saved)
+                if asset_ref.asset_id:
+                    self.logger.debug(
+                        "Skipping asset at %s - already has asset_id: %s",
+                        path,
+                        asset_ref.asset_id,
+                    )
+                    continue
+
+                # Skip if no data to save
+                if not asset_ref.data and not asset_ref.uri:
+                    self.logger.debug(
+                        "Skipping asset at %s - no data or uri",
+                        path,
+                    )
+                    continue
+
+                # Get content type from asset ref type
+                content_type = self._get_content_type_for_asset_ref(asset_ref)
+
+                # Generate asset name
+                asset_name = f"{node.get_title()}_{path}_{node._id[:8]}"
+
+                # Get data as BytesIO
+                if asset_ref.data:
+                    # Handle DataframeRef specially - data is list of lists, not bytes
+                    from nodetool.metadata.types import DataframeRef, JSONRef, SVGRef
+                    if isinstance(asset_ref, DataframeRef):
+                        import json
+                        # Convert DataFrame data to JSON bytes
+                        json_str = json.dumps(asset_ref.data)
+                        content = BytesIO(json_str.encode("utf-8"))
+                    elif isinstance(asset_ref, (JSONRef, SVGRef)):
+                        # JSONRef and SVGRef have string data
+                        if isinstance(asset_ref.data, str):
+                            content = BytesIO(asset_ref.data.encode("utf-8"))
+                        elif isinstance(asset_ref.data, bytes):
+                            content = BytesIO(asset_ref.data)
+                        else:
+                            self.logger.warning(
+                                "JSONRef/SVGRef data is not string or bytes at %s",
+                                path,
+                            )
+                            continue
+                    elif isinstance(asset_ref.data, bytes):
+                        content = BytesIO(asset_ref.data)
+                    else:
+                        # Try to convert to bytes
+                        try:
+                            content = BytesIO(bytes(asset_ref.data))
+                        except Exception:
+                            self.logger.warning(
+                                "Could not convert data to bytes for asset at %s",
+                                path,
+                            )
+                            continue
+                elif asset_ref.uri.startswith("memory://"):
+                    # Resolve memory URI to get the data
+                    from nodetool.runtime.resources import require_scope
+                    scope = require_scope()
+                    obj = scope.get_memory_uri_cache().get(asset_ref.uri)
+                    if obj is not None:
+                        # Convert object to bytes based on type
+                        data_bytes = self._object_to_bytes(obj, asset_ref)
+                        if data_bytes:
+                            content = BytesIO(data_bytes)
+                        else:
+                            self.logger.warning(
+                                "Could not convert memory object to bytes for asset at %s",
+                                path,
+                            )
+                            continue
+                    else:
+                        self.logger.warning(
+                            "Memory URI not found in cache for asset at %s",
+                            path,
+                        )
+                        continue
+                else:
+                    # For other URIs, we can't auto-save
+                    self.logger.debug(
+                        "Skipping asset at %s - unsupported URI type: %s",
+                        path,
+                        asset_ref.uri,
+                    )
+                    continue
+
+                # Create and save the asset
+                asset = await context.create_asset(
+                    name=asset_name,
+                    content_type=content_type,
+                    content=content,
+                    node_id=node._id,
+                )
+
+                # Update the AssetRef with the new asset_id
+                asset_ref.asset_id = asset.id
+
+                self.logger.info(
+                    "Auto-saved asset %s for node %s (%s) at %s",
+                    asset.id,
+                    node.get_title(),
+                    node._id,
+                    path,
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    "Failed to auto-save asset at %s for node %s (%s): %s",
+                    path,
+                    node.get_title(),
+                    node._id,
+                    e,
+                    exc_info=True,
+                )
+
+    def _get_content_type_for_asset_ref(self, asset_ref: Any) -> str:
+        """Get the appropriate content type for an AssetRef based on its type."""
+        from nodetool.metadata.types import (
+            AudioRef,
+            DataframeRef,
+            DocumentRef,
+            ExcelRef,
+            FolderRef,
+            ImageRef,
+            JSONRef,
+            Model3DRef,
+            SVGRef,
+            TextRef,
+            VideoRef,
+        )
+
+        if isinstance(asset_ref, ImageRef):
+            return "image/png"
+        elif isinstance(asset_ref, AudioRef):
+            return "audio/mp3"
+        elif isinstance(asset_ref, VideoRef):
+            return "video/mp4"
+        elif isinstance(asset_ref, TextRef):
+            return "text/plain"
+        elif isinstance(asset_ref, DocumentRef):
+            return "application/pdf"
+        elif isinstance(asset_ref, DataframeRef):
+            return "application/json"
+        elif isinstance(asset_ref, ExcelRef):
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif isinstance(asset_ref, Model3DRef):
+            return "model/gltf-binary"
+        elif isinstance(asset_ref, FolderRef):
+            return "folder"
+        elif isinstance(asset_ref, JSONRef):
+            return "application/json"
+        elif isinstance(asset_ref, SVGRef):
+            return "image/svg+xml"
+        else:
+            return "application/octet-stream"
+
+    def _object_to_bytes(self, obj: Any, asset_ref: Any) -> bytes | None:
+        """Convert a Python object to bytes based on the asset ref type."""
+        from nodetool.metadata.types import AudioRef, DataframeRef, ImageRef, TextRef
+
+        if isinstance(asset_ref, ImageRef):
+            # Handle PIL Image
+            try:
+                from io import BytesIO
+
+                from PIL import Image
+
+                if isinstance(obj, Image.Image):
+                    buf = BytesIO()
+                    obj.save(buf, format="PNG")
+                    return buf.getvalue()
+            except Exception as e:
+                self.logger.debug(f"Failed to convert image object: {e}")
+
+        elif isinstance(asset_ref, AudioRef):
+            # Handle AudioSegment
+            try:
+                from io import BytesIO
+
+                from pydub import AudioSegment
+
+                if isinstance(obj, AudioSegment):
+                    buf = BytesIO()
+                    obj.export(buf, format="mp3")
+                    return buf.getvalue()
+            except Exception as e:
+                self.logger.debug(f"Failed to convert audio object: {e}")
+
+        elif isinstance(asset_ref, TextRef):
+            # Handle string
+            if isinstance(obj, str):
+                return obj.encode("utf-8")
+
+        elif isinstance(asset_ref, DataframeRef):
+            # Handle pandas DataFrame
+            try:
+                import pandas as pd
+
+                if isinstance(obj, pd.DataFrame):
+                    return obj.to_json(orient="records").encode("utf-8")
+            except Exception as e:
+                self.logger.debug(f"Failed to convert dataframe object: {e}")
+
+        # For bytes, return as-is
+        if isinstance(obj, bytes):
+            return obj
+
+        return None
+
     async def process_node_with_inputs(
         self,
         inputs: dict[str, Any],
@@ -223,7 +504,26 @@ class NodeActor:
         5. Cache results when appropriate.
         6. Emit completion updates and route outputs downstream.
         """
+        # Get tracer for this job if available
+        job_id = self.runner.job_id if hasattr(self.runner, "job_id") else None
 
+        async with trace_node(
+            node_id=self.node._id,
+            node_type=self.node.get_node_type(),
+            job_id=job_id,
+        ) as span:
+            span.set_attribute("nodetool.node.title", self.node.get_title())
+            span.set_attribute("nodetool.node.input_count", len(inputs))
+            span.set_attribute("nodetool.node.requires_gpu", self.node.requires_gpu())
+
+            await self._process_node_with_inputs_impl(inputs, span)
+
+    async def _process_node_with_inputs_impl(
+        self,
+        inputs: dict[str, Any],
+        span: Any,  # Span | NoOpSpan from observability.tracing
+    ) -> None:
+        """Internal implementation of process_node_with_inputs."""
         context = self.context
         node = self.node
 
@@ -263,8 +563,10 @@ class NodeActor:
                 node.get_title(),
                 node._id,
             )
+            span.set_attribute("nodetool.node.cache_hit", True)
             result = cached_result
         else:
+            span.set_attribute("nodetool.node.cache_hit", False)
             requires_gpu = node.requires_gpu()
             driven_by_stream = context.graph.has_streaming_upstream(node._id)
 
@@ -285,7 +587,9 @@ class NodeActor:
                     release_gpu_lock,
                 )
 
+                span.add_event("gpu_lock_waiting")
                 await acquire_gpu_lock(node, context)
+                span.add_event("gpu_lock_acquired")
                 try:
                     if is_cuda_available():
                         ModelManager.free_vram_if_needed(
@@ -300,6 +604,7 @@ class NodeActor:
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
                 finally:
                     release_gpu_lock()
+                    span.add_event("gpu_lock_released")
             else:
                 await node.preload_model(context)
                 await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
@@ -312,7 +617,13 @@ class NodeActor:
                     node.get_title(),
                     node._id,
                 )
-                context.cache_result(node, result)
+                await context.cache_result_async(node, result)
+
+        span.set_attribute("nodetool.node.output_count", len(result) if result else 0)
+
+        # Auto-save assets if the node has auto_save_asset enabled
+        if node.__class__.auto_save_asset() and result:
+            await self._auto_save_assets(node, result, context)
 
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
@@ -352,7 +663,7 @@ class NodeActor:
                 else:
                     # Notify frontend of property change (if method exists)
                     if hasattr(self.runner, "send_property_update"):
-                        await self.runner.send_property_update(node, context, name)
+                        await self.runner.send_property_update(node, context, name)  # type: ignore[misc]
             except Exception as exc:
                 self.logger.error("Error assigning property %s to node %s", name, node.id)
                 raise ValueError(f"Error assigning property {name}: {exc}") from exc
@@ -456,7 +767,13 @@ class NodeActor:
 
     async def _send_completed_update(self, context: Any, node: Any, outputs: NodeOutputs) -> None:
         """Send the completed update with results."""
-        await node.send_update(context, "completed", result=self._filter_result(outputs.collected()))
+        result = self._filter_result(outputs.collected())
+
+        # Auto-save assets if the node has auto_save_asset enabled
+        if node.__class__.auto_save_asset() and result:
+            await self._auto_save_assets(node, result, context)
+
+        await node.send_update(context, "completed", result=result)
 
     async def _handle_post_execution(self, context: Any, node: Any) -> None:
         """Handle post-execution cleanup."""
@@ -476,10 +793,21 @@ class NodeActor:
         self,
         processor_override: Callable[[dict[str, Any]], Awaitable[None]] | None,
     ) -> None:
-        """Run a non-streaming-input node with fan-out per arriving input message."""
+        """Run a non-streaming-input node with fan-out per arriving input message.
+
+        Special handling for multi-edge list inputs:
+        - Handles marked for list aggregation collect ALL values from ALL upstream
+          sources until EOS, then pass the aggregated list to the processor.
+        - Non-list handles use standard on_any/zip_all semantics.
+        """
         node = self.node
 
-        self.logger.debug(f"Running batched node {node.get_title()} ({node._id})")
+        self.logger.debug(
+            "Running batched node %s (%s) sync_mode=%s",
+            node.get_title(),
+            node._id,
+            node.get_sync_mode(),
+        )
         if self._only_nonroutable_upstreams():
             await self._mark_downstream_eos()
             return
@@ -493,83 +821,261 @@ class NodeActor:
         if not handles:
             await processor({})
         else:
-            handle_streaming: dict[str, bool] = {}
-            for handle in handles:
-                edge = next(
-                    (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
-                    None,
+            # Identify handles that need list aggregation (multi-edge to list[T])
+            list_handles = self._get_list_handles() & handles
+
+            # If there are list handles that require full aggregation, use list aggregation mode
+            if list_handles:
+                self.logger.debug(
+                    "List aggregation enabled for node %s (%s): handles=%s",
+                    node.get_title(),
+                    node._id,
+                    sorted(list_handles),
                 )
-                handle_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
-
-            sync_mode = node.get_sync_mode()
-
-            if sync_mode == "zip_all" and any(handle_streaming.values()):
-                from collections import deque
-
-                buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
-                sticky_values: dict[str, Any] = {}
-                is_sticky: dict[str, bool] = {h: not handle_streaming.get(h, False) for h in handles}
-                seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
-
-                def ready_to_zip() -> bool:
-                    for handle in handles:
-                        if is_sticky.get(handle, False):
-                            if handle not in sticky_values and not buffers[handle]:
-                                return False
-                        elif not buffers[handle]:
-                            return False
-                    return True
-
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in buffers:
-                        continue
-
-                    buffers[handle].append(item)
-                    seen_counts[handle] = seen_counts.get(handle, 0) + 1
-
-                    if is_sticky.get(handle, False):
-                        sticky_values[handle] = item
-
-                    while ready_to_zip():
-                        batch: dict[str, Any] = {}
-                        for h in handles:
-                            if is_sticky.get(h, False):
-                                if buffers[h]:
-                                    sticky_values[h] = buffers[h].popleft()
-                                batch[h] = sticky_values[h]
-                                # Restore the sticky value for future batches
-                                if sticky_values[h] is not None:
-                                    buffers[h].appendleft(sticky_values[h])
-                            else:
-                                batch[h] = buffers[h].popleft()
-
-                        await processor(dict(batch))
-
-                        for h in handles:
-                            if is_sticky.get(h, False) and sticky_values.get(h) is None:
-                                sticky_values.pop(h, None)
+                await self._run_with_list_aggregation(handles, list_handles, processor)
             else:
-                current: dict[str, Any] = {}
-                pending_handles: set[str] = set(handles)
-                initial_fired: bool = False
+                # Standard behavior for non-list handles
+                self.logger.debug(
+                    "Standard batching for node %s (%s): handles=%s",
+                    node.get_title(),
+                    node._id,
+                    sorted(handles),
+                )
+                await self._run_standard_batching(handles, processor)
 
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in handles:
-                        continue
-                    current[handle] = item
-                    if not initial_fired:
-                        pending_handles.discard(handle)
-                        if pending_handles:
-                            continue
-                        await processor(dict(current))
-                        initial_fired = True
-                    else:
-                        await processor(dict(current))
-
-                    if not handle_streaming.get(handle, False):
-                        self.inbox.mark_source_done(handle)
         await node.handle_eos()
         await self._mark_downstream_eos()
+
+    async def _run_with_list_aggregation(
+        self,
+        handles: set[str],
+        list_handles: set[str],
+        processor: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Handle multi-edge list input aggregation.
+
+        For handles in `list_handles`, collect ALL values from ALL upstream sources
+        until EOS, then aggregate into a list. For other handles, collect the first
+        value (or use on_any semantics).
+
+        The processor is called once with aggregated lists for list handles and
+        single values for non-list handles.
+        """
+        node = self.node
+        self.logger.debug(
+            f"Running with list aggregation for node {node.get_title()} ({node._id}), "
+            f"list_handles={list_handles}, all_handles={handles}"
+        )
+
+        # Buffers for list handles - collect all values
+        list_buffers: dict[str, list[Any]] = {h: [] for h in list_handles}
+        # Values for non-list handles - take first value
+        non_list_values: dict[str, Any] = {}
+        non_list_handles = handles - list_handles
+        pending_non_list: set[str] = set(non_list_handles)
+
+        # Drain all inputs until EOS on all handles
+        async for handle, item in self.inbox.iter_any():
+            if handle not in handles:
+                continue
+
+            if handle in list_handles:
+                # Aggregate into list buffer - flatten if item is a list
+                if isinstance(item, list):
+                    list_buffers[handle].extend(item)
+                    self.logger.debug(f"List aggregation: {handle} extended with {len(item)} items, buffer size={len(list_buffers[handle])}")
+                else:
+                    list_buffers[handle].append(item)
+                    self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
+            else:
+                # Non-list handle: take first value (like standard on_any)
+                if handle not in non_list_values:
+                    non_list_values[handle] = item
+                    pending_non_list.discard(handle)
+                else:
+                    # Update with latest value (combineLatest semantics)
+                    non_list_values[handle] = item
+
+        # Build final inputs dict: lists for list handles, single values for others
+        inputs: dict[str, Any] = {}
+
+        # Add aggregated lists
+        for handle in list_handles:
+            inputs[handle] = list_buffers[handle]
+            self.logger.debug(f"List aggregation complete for {handle}: {len(list_buffers[handle])} items")
+
+        # Add non-list values
+        for handle, value in non_list_values.items():
+            inputs[handle] = value
+
+        # Call processor once with all aggregated inputs
+        self.logger.debug(f"Calling processor with aggregated inputs: {list(inputs.keys())}")
+        await processor(inputs)
+
+    async def _run_standard_batching(
+        self,
+        handles: set[str],
+        processor: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Standard batching behavior without list aggregation."""
+        node = self.node
+        # Track inherent streaming nature of edges for stickiness determination
+        inherent_streaming: dict[str, bool] = {}
+        for handle in handles:
+            edge = next(
+                (e for e in self.context.graph.edges if e.target == node._id and e.targetHandle == handle),
+                None,
+            )
+            # Determine if the edge is inherently streaming (from streaming source)
+            inherent_streaming[handle] = self.runner.edge_streams(edge) if edge is not None else False
+
+        # Always treat all handles as streaming for "always-on streaming" behavior.
+        # This ensures every inbound input update triggers a node execution.
+        handle_streaming: dict[str, bool] = dict.fromkeys(handles, True)
+
+        sync_mode = node.get_sync_mode()
+        self.logger.debug(
+            "Batching mode for %s (%s): sync_mode=%s handle_streaming=%s inherent_streaming=%s",
+            node.get_title(),
+            node._id,
+            sync_mode,
+            handle_streaming,
+            inherent_streaming,
+        )
+
+        if sync_mode == "zip_all" and any(handle_streaming.values()):
+            from collections import deque
+
+            buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
+            sticky_values: dict[str, Any] = {}
+            # Use inherent_streaming for stickiness: non-inherently-streaming inputs are sticky
+            is_sticky: dict[str, bool] = {h: not inherent_streaming.get(h, False) for h in handles}
+            seen_counts: dict[str, int] = dict.fromkeys(handles, 0)
+
+            def buffer_summary() -> dict[str, int]:
+                return {h: len(buf) for h, buf in buffers.items() if buf}
+
+            def ready_to_zip() -> bool:
+                # Check if we have enough data to create a batch
+                has_any_new_data = False
+                for handle in handles:
+                    if is_sticky.get(handle, False):
+                        # For sticky handles: need either a new buffered value or existing sticky value
+                        if buffers[handle]:
+                            has_any_new_data = True  # New data available
+                        elif handle not in sticky_values:
+                            return False  # No value at all for this sticky handle
+                    else:
+                        # For non-sticky handles: always need buffered items
+                        if not buffers[handle]:
+                            return False
+                        has_any_new_data = True  # Non-sticky data counts as new
+
+                # If all handles are sticky and have sticky values, we need new data to batch.
+                # This prevents infinite loops when processing only sticky values.
+                all_sticky = all(is_sticky.get(h, False) for h in handles)
+                return has_any_new_data or not all_sticky
+
+            def any_closed_and_empty() -> bool:
+                """Return True if any non-sticky handle is closed and has no buffered items.
+
+                Sticky handles are allowed to be closed and empty if they have a sticky value,
+                as they will reuse that value for future batches.
+
+                Also checks the inbox buffer in addition to the local buffer to avoid
+                premature termination when items are still pending in the inbox.
+                """
+                for h in handles:
+                    # Check if handle is closed (no more items coming from upstream)
+                    if not self.inbox.is_open(h):
+                        # Check both local buffer AND inbox buffer
+                        local_empty = not buffers[h]
+                        inbox_has_items = self.inbox.has_buffered(h)
+                        if local_empty and not inbox_has_items:
+                            # For sticky handles, check if we have a sticky value
+                            if is_sticky.get(h, False) and h in sticky_values:
+                                continue  # Sticky handle with value is OK
+                            return True
+                return False
+
+            async for handle, item in self.inbox.iter_any():
+                if handle not in buffers:
+                    continue
+
+                buffers[handle].append(item)
+                seen_counts[handle] = seen_counts.get(handle, 0) + 1
+
+                if is_sticky.get(handle, False):
+                    sticky_values[handle] = item
+
+                self.logger.debug(
+                    "zip_all received: node=%s (%s) handle=%s seen=%s buffers=%s open=%s",
+                    node.get_title(),
+                    node._id,
+                    handle,
+                    seen_counts.get(handle, 0),
+                    buffer_summary(),
+                    {h: self.inbox.is_open(h) for h in handles},
+                )
+
+                while ready_to_zip():
+                    batch: dict[str, Any] = {}
+                    for h in handles:
+                        if is_sticky.get(h, False):
+                            # For sticky handles: use new value if available, else reuse sticky value
+                            if buffers[h]:
+                                sticky_values[h] = buffers[h].popleft()
+                            batch[h] = sticky_values[h]
+                            # NOTE: We do NOT re-add the sticky value to the buffer.
+                            # The sticky value is only reused when no new value is available.
+                        else:
+                            batch[h] = buffers[h].popleft()
+
+                    self.logger.debug(
+                        "zip_all batch ready: node=%s (%s) batch_handles=%s buffers=%s",
+                        node.get_title(),
+                        node._id,
+                        list(batch.keys()),
+                        buffer_summary(),
+                    )
+                    await processor(dict(batch))
+
+                    for h in handles:
+                        if is_sticky.get(h, False) and sticky_values.get(h) is None:
+                            sticky_values.pop(h, None)
+        else:
+            current: dict[str, Any] = {}
+            pending_handles: set[str] = set(handles)
+            initial_fired: bool = False
+
+            async for handle, item in self.inbox.iter_any():
+                if handle not in handles:
+                    continue
+                current[handle] = item
+                if not initial_fired:
+                    pending_handles.discard(handle)
+                    if pending_handles:
+                        continue
+                    self.logger.debug(
+                        "on_any initial batch ready: node=%s (%s) handles=%s",
+                        node.get_title(),
+                        node._id,
+                        list(current.keys()),
+                    )
+                    await processor(dict(current))
+                    initial_fired = True
+                else:
+                    self.logger.debug(
+                        "on_any batch update: node=%s (%s) updated_handle=%s handles=%s",
+                        node.get_title(),
+                        node._id,
+                        handle,
+                        list(current.keys()),
+                    )
+                    await processor(dict(current))
+
+                # NOTE: With always-on streaming, we do NOT mark non-streaming handles
+                # as done. This keeps the node alive for re-invocations with sticky inputs.
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.

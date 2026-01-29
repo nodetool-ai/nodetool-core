@@ -8,8 +8,8 @@ import pytest
 
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
-from nodetool.types.graph import Edge, Graph
-from nodetool.types.graph import Node as GraphNode
+from nodetool.types.api_graph import Edge, Graph
+from nodetool.types.api_graph import Node as GraphNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
@@ -23,15 +23,13 @@ async def cleanup_jobs():
     """Cleanup resources after each test."""
     jobs_to_cleanup = []
     yield jobs_to_cleanup
-    # Cleanup any jobs created during tests
     for job in jobs_to_cleanup:
         try:
             job.cleanup_resources()
             if not job.is_completed():
                 job.cancel()
-        except Exception as e:
-            print(f"Error cleaning up job {job.job_id}: {e}")
-    await asyncio.sleep(0.1)
+        except Exception:
+            pass
 
 
 @pytest.fixture

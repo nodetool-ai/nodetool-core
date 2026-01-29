@@ -4,8 +4,10 @@ import asyncio
 import json
 import os
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+
+import aiofiles
 
 if TYPE_CHECKING:
     from huggingface_hub import AsyncInferenceClient
@@ -70,7 +72,7 @@ class ReaderTool:
         return f"Calling ReaderLM-v2 for input: {params.get('message', '')[:60]}..."
 
 
-def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> str:
+def generate_css_path(element_info: dict[str, Any], parent_path: str = "") -> str:
     """
     Generate a CSS selector path for an element based on its properties.
 
@@ -104,7 +106,7 @@ def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> st
     return selector
 
 
-async def get_element_info(element: "ElementHandle") -> Dict[str, Any]:
+async def get_element_info(element: "ElementHandle") -> dict[str, Any]:
     """
     Extract comprehensive information about a DOM element.
 
@@ -330,7 +332,7 @@ class BrowserTool(Tool):
         try:
             # Initialize browser using the helper function
             browser = await context.get_browser()
-            browser_context = await browser.new_context(
+            browser_context = await browser.new_context(  # type: ignore[unresolved-attribute]
                 locale="en-US",
                 timezone_id="America/New_York",
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
@@ -363,7 +365,6 @@ class BrowserTool(Tool):
             }
 
         except Exception as e:
-            print(e)
             return {"error": f"Error fetching page: {str(e)}"}
 
         finally:
@@ -430,7 +431,7 @@ class ScreenshotTool(Tool):
         try:
             # Initialize browser
             browser = await context.get_browser()
-            browser_context = await browser.new_context(
+            browser_context = await browser.new_context(  # type: ignore[unresolved-attribute]
                 bypass_csp=True,
             )
             page = await browser_context.new_page()
@@ -910,14 +911,14 @@ class DOMExtractTool(Tool):
                 full_path = context.resolve_workspace_path(output_file)
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-                with open(full_path, "w", encoding="utf-8") as f:
+                async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                     if output_file.endswith(".json"):
-                        json.dump(extracted_data, f, indent=2, ensure_ascii=False)
+                        await f.write(json.dumps(extracted_data, indent=2, ensure_ascii=False))
                     else:
                         if isinstance(extracted_data, list):
-                            f.write("\n".join(str(item) for item in extracted_data))
+                            await f.write("\n".join(str(item) for item in extracted_data))
                         else:
-                            f.write(str(extracted_data))
+                            await f.write(str(extracted_data))
 
             return {
                 "success": True,
@@ -980,7 +981,7 @@ IMPORTANT: When you find elements:
 
 Always be systematic and thorough. Return structured data when possible."""
 
-    async def extract_content(self, url: str, objective: str, selector_hint: Optional[str] = None) -> Dict[str, Any]:
+    async def extract_content(self, url: str, objective: str, selector_hint: str | None = None) -> dict[str, Any]:
         """
         Extract content from a web page based on the given objective.
 
@@ -1134,20 +1135,21 @@ class AgenticBrowserTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            with open(full_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "url": url,
-                        "objective": objective,
-                        "extracted_content": result["extracted_content"],
-                        "metadata": {
-                            "iterations": result["iterations"],
-                            "tool_calls": result["tool_calls"],
+            async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
+                await f.write(
+                    json.dumps(
+                        {
+                            "url": url,
+                            "objective": objective,
+                            "extracted_content": result["extracted_content"],
+                            "metadata": {
+                                "iterations": result["iterations"],
+                                "tool_calls": result["tool_calls"],
+                            },
                         },
-                    },
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
+                        indent=2,
+                        ensure_ascii=False,
+                    )
                 )
 
             result["output_file"] = output_file

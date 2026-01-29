@@ -1,4 +1,4 @@
-"""LM Studio OpenAI-compatible provider implementation.
+﻿"""LM Studio OpenAI-compatible provider implementation.
 
 This module implements the BaseProvider interface for LM Studio models, handling message
 conversion, streaming, and tool integration. LM Studio provides an OpenAI-compatible API
@@ -10,7 +10,7 @@ LM Studio Documentation: https://lmstudio.ai/docs/developer/openai-compat
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import httpx
 import openai
@@ -20,7 +20,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
-from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk
 
 if TYPE_CHECKING:
@@ -118,19 +117,29 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    def _create_client(self) -> openai.AsyncOpenAI:
-        """Create an OpenAI client instance configured for LM Studio."""
+    def _create_client(
+        self, max_retries: int = 2, timeout: float | None = None
+    ) -> openai.AsyncOpenAI:
+        """Create an OpenAI client instance configured for LM Studio.
+
+        Args:
+            max_retries: Maximum number of retries for failed requests (default 2).
+                        Use 0 for no retries (fail fast).
+            timeout: Optional timeout override in seconds. Defaults to self._timeout.
+        """
+        effective_timeout = timeout if timeout is not None else self._timeout
         http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._timeout),
+            timeout=httpx.Timeout(effective_timeout, connect=1.0),
             verify=self._verify_tls,
         )
         return openai.AsyncOpenAI(
             base_url=f"{self._base_url}/v1",
             api_key=self._api_key or "lm-studio",  # LM Studio doesn't require an API key
             http_client=http_client,
+            max_retries=max_retries,
         )
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """Get available LM Studio models.
 
         Returns models available in the local LM Studio installation.
@@ -140,9 +149,10 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             List of LanguageModel instances for LM Studio
         """
         try:
-            client = self._create_client()
+            # Use fast-fail settings for model listing: no retries, short timeout
+            client = self._create_client(max_retries=0, timeout=2.0)
             models_response = await client.models.list()
-            models: List[LanguageModel] = []
+            models: list[LanguageModel] = []
             for model in models_response.data:
                 model_id = model.id
                 if model_id:
@@ -156,10 +166,10 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             log.debug(f"Fetched {len(models)} LM Studio models")
             return models
         except Exception as e:
-            log.error(f"Error fetching LM Studio models: {e}")
+            log.debug(f"LM Studio not available: {e}")
             return []
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -247,7 +257,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             log.error(f"Error generating message from LM Studio: {e}")
             raise
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,

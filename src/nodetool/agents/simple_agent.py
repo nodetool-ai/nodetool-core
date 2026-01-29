@@ -4,7 +4,8 @@ Chain of Thought (CoT) Agent implementation with tool calling capabilities.
 """
 
 import json
-from typing import Any, AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any
 
 from jinja2 import BaseLoader
 from jinja2 import Environment as JinjaEnvironment
@@ -15,7 +16,6 @@ from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Step,
     Task,
-    ToolCall,
 )
 from nodetool.providers import BaseProvider
 from nodetool.workflows.processing_context import ProcessingContext

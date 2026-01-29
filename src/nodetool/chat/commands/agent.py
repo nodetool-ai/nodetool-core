@@ -1,6 +1,5 @@
 """Agent mode management commands."""
 
-from typing import List
 
 from nodetool.chat.chat_cli import ChatCLI
 
@@ -11,7 +10,7 @@ class AgentCommand(Command):
     def __init__(self):
         super().__init__("agent", "Toggle agent mode (on/off)", ["a"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             status = "[bold green]ON[/bold green]" if cli.agent_mode else "[bold red]OFF[/bold red]"
             cli.console.print(f"Agent mode is currently: {status}")

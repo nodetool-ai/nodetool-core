@@ -13,7 +13,6 @@ from nodetool.metadata.types import (
     CalendarEvent,
     DataframeRef,
     DocumentRef,
-    Email,
     FilePath,
     FolderRef,
     FontRef,
@@ -81,6 +80,7 @@ from nodetool.metadata.types import (
     InferenceProviderTextToTextModel,
     InferenceProviderTranslationModel,
     LanguageModel,
+    Model3DRef,
     ModelRef,
     NodeRef,
     NPArray,
@@ -90,7 +90,6 @@ from nodetool.metadata.types import (
     TextRef,
     VideoRef,
     WorkflowRef,
-    Model3DRef 
 )
 from nodetool.packages.registry import Registry
 from nodetool.system.system_stats import SystemStats
@@ -100,7 +99,7 @@ from nodetool.types.job import (
 from nodetool.types.prediction import Prediction
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import ProcessingMessage
+from nodetool.workflows.types import Error, ProcessingMessage
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
@@ -111,7 +110,6 @@ UnionType = (
     AssetRef
     | AudioRef
     | DataframeRef
-    | Email
     | FilePath
     | FolderRef
     | ImageRef
@@ -196,6 +194,7 @@ UnionType = (
     | InferenceProviderImageToImageModel
     | InferenceProviderImageSegmentationModel
     | ProcessingMessage
+    | Error
     | RunJobRequest
 )
 

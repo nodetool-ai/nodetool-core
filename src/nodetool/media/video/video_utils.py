@@ -3,9 +3,8 @@ Vendorized video export utilities from diffusers.
 """
 
 import io
-import os
 import tempfile
-from typing import Any, List, Optional, Union
+from typing import IO, Any, Optional, cast
 
 import numpy as np
 import PIL.Image
@@ -26,7 +25,7 @@ def _is_opencv_available() -> bool:
 
 
 def _legacy_export_to_video(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
 ) -> str:
@@ -43,11 +42,11 @@ def _legacy_export_to_video(
             output_video_path = tmp_file.name
 
     if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]
+        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
     elif isinstance(video_frames[0], PIL.Image.Image):
         video_frames = [np.array(frame) for frame in video_frames]
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter(output_video_path, fourcc, fps=fps, frameSize=(w, h))
 
@@ -60,7 +59,7 @@ def _legacy_export_to_video(
 
 
 def export_to_video(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
     quality: float = 5.0,
@@ -116,7 +115,7 @@ def export_to_video(
 
     # Convert frames to uint8 format
     if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]
+        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
     elif isinstance(video_frames[0], PIL.Image.Image):
         video_frames = [np.array(frame) for frame in video_frames]
 
@@ -129,13 +128,13 @@ def export_to_video(
         macro_block_size=macro_block_size,
     ) as writer:
         for frame in video_frames:
-            writer.append_data(frame)
+            writer.append_data(frame)  # type: ignore[attr-defined]
 
     return output_video_path
 
 
 def export_to_video_bytes(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     fps: int = 10,
     quality: float = 5.0,
     bitrate: Optional[int] = None,
@@ -185,7 +184,7 @@ def export_to_video_bytes(
 
     # Convert frames to uint8 format
     if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]
+        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
     elif isinstance(video_frames[0], PIL.Image.Image):
         video_frames = [np.array(frame) for frame in video_frames]
 
@@ -195,20 +194,20 @@ def export_to_video_bytes(
     buffer = BytesIO()
     with imageio.get_writer(
         buffer,
-        format="mp4",
+        format="mp4",  # type: ignore[arg-type]
         fps=fps,
         quality=quality,
         bitrate=bitrate,
         macro_block_size=macro_block_size,
     ) as writer:
         for frame in video_frames:
-            writer.append_data(frame)
+            writer.append_data(frame)  # type: ignore[attr-defined]
 
     return buffer.getvalue()
 
 
 def _legacy_export_to_video_bytes(
-    video_frames: List[np.ndarray] | List[PIL.Image.Image],
+    video_frames: list[np.ndarray] | list[PIL.Image.Image],
     fps: int = 10,
 ) -> bytes:
     """Legacy video export to bytes using OpenCV backend."""
@@ -220,11 +219,11 @@ def _legacy_export_to_video_bytes(
     import cv2
 
     if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]
+        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
     elif isinstance(video_frames[0], PIL.Image.Image):
         video_frames = [np.array(frame) for frame in video_frames]
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter("/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h))
 
@@ -249,7 +248,7 @@ def _legacy_export_to_video_bytes(
 def extract_video_frames(
     input_video: str | bytes,
     fps: int = 1,
-) -> List[PIL.Image.Image]:
+) -> list[PIL.Image.Image]:
     """
     Extract frames from a video at a specific fps.
 
@@ -281,21 +280,18 @@ def extract_video_frames(
 
     frames = []
 
-    # Handle bytes
-    if isinstance(input_video, bytes):
-        import io
-
-        input_video = io.BytesIO(input_video)
+    # Handle bytes - create a BytesIO for imageio
+    video_source = io.BytesIO(input_video) if isinstance(input_video, bytes) else input_video
 
     try:
-        reader = imageio.get_reader(input_video, format="ffmpeg")
+        reader = imageio.get_reader(video_source, format="ffmpeg")  # type: ignore[arg-type]
         meta = reader.get_meta_data()
         video_fps = meta.get("fps", 30)
 
         # Calculate sampling interval
         step = max(1, int(video_fps / fps))
 
-        for i, frame in enumerate(reader):
+        for i, frame in enumerate(reader):  # type: ignore[arg-type]
             if i % step == 0:
                 frames.append(PIL.Image.fromarray(frame))
 
@@ -313,7 +309,7 @@ def extract_video_frames(
 def _legacy_read_video_frames(
     input_video: str | bytes | Any,
     fps: int = 1,
-) -> List[PIL.Image.Image]:
+) -> list[PIL.Image.Image]:
     """Legacy video reading using OpenCV."""
     if not _is_opencv_available():
         raise ImportError("OpenCV is required for video reading fallback.")
@@ -327,15 +323,18 @@ def _legacy_read_video_frames(
     temp_file = None
 
     # If bytes or file-like, save to temp file because cv2 needs a path
-    if isinstance(input_video, bytes | io.BytesIO) or hasattr(input_video, "read"):
+    if isinstance(input_video, (bytes, io.BytesIO)) or hasattr(input_video, "read"):
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             if isinstance(input_video, bytes):
                 tmp.write(input_video)
+            elif isinstance(input_video, io.BytesIO):
+                tmp.write(input_video.getvalue())
             elif hasattr(input_video, "read"):
-                if hasattr(input_video, "getvalue"):
-                    tmp.write(input_video.getvalue())
+                file_like = cast("IO[bytes]", input_video)
+                if hasattr(file_like, "getvalue"):
+                    tmp.write(file_like.getvalue())  # type: ignore[attr-defined]
                 else:
-                    tmp.write(input_video.read())
+                    tmp.write(file_like.read())
             temp_file = tmp.name
         video_path = temp_file
 

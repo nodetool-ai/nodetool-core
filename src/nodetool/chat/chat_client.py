@@ -8,7 +8,7 @@ Provides an interactive chat interface that connects to a running chat server wi
 import asyncio
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import Optional
 
 from openai import AsyncOpenAI
 from openai.types.chat import (
@@ -55,7 +55,7 @@ class OpenAIChatClient:
         """
         self.server_url = server_url.rstrip("/")
         self.auth_token = auth_token
-        self.history: List[ChatCompletionMessageParam] = []
+        self.history: list[ChatCompletionMessageParam] = []
         self.current_model = model or "gpt-oss:20b"  # Default model
 
         # Initialize OpenAI client with custom base URL
@@ -76,7 +76,7 @@ class OpenAIChatClient:
         commands = ["clear", "help", "history", "model", "quit", "exit"]
 
         # Create nested completer for commands
-        command_completer: Dict[str, Optional[Completer]] = {f"/{cmd}": None for cmd in commands}
+        command_completer: dict[str, Optional[Completer]] = {f"/{cmd}": None for cmd in commands}
 
         # Create the main completer
         completer = NestedCompleter(command_completer)

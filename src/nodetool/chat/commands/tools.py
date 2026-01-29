@@ -5,7 +5,6 @@ import os
 import sys
 import termios
 import tty
-from typing import List
 
 from rich.console import Group
 from rich.live import Live
@@ -22,7 +21,7 @@ class ToolsCommand(Command):
     def __init__(self):
         super().__init__("tools", "List available tools or show details about a specific tool", ["t"])
 
-    async def execute(self, cli: ChatCLI, args: List[str]) -> bool:
+    async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
         if not args:
             table = Table(title="Available Tools", show_header=True)
             table.add_column("Tool Name", style="cyan")
@@ -72,7 +71,7 @@ class ToolEnableCommand(Command):
     def __init__(self):
         super().__init__("enable", "Enable a specific tool or all tools", ["en"])
 
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
+    async def execute(self, cli: "ChatCLI", args: list[str]) -> bool:
         if not args:
             cli.console.print("[bold red]Usage:[/bold red] /enable <tool_name> | all")
             return False
@@ -108,7 +107,7 @@ class ToolDisableCommand(Command):
     def __init__(self):
         super().__init__("disable", "Disable a specific tool or all tools", ["dis"])
 
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
+    async def execute(self, cli: "ChatCLI", args: list[str]) -> bool:
         if not args:
             cli.console.print("[bold red]Usage:[/bold red] /disable <tool_name> | all")
             return False
@@ -150,7 +149,7 @@ class ToolSearchCommand(Command):
             ["s"],
         )
 
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
+    async def execute(self, cli: "ChatCLI", args: list[str]) -> bool:
         """Execute the tool search modal."""
         await self.show_tool_search_modal(cli)
         return False

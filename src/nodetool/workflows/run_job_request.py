@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from nodetool.metadata.types import Message
-from nodetool.types.graph import Graph
+from nodetool.types.api_graph import Graph
 
 
 class ResourceLimits(BaseModel):
@@ -42,6 +42,7 @@ class RunJobRequest(BaseModel):
 
     Attributes:
         type: The type of request, always "run_job_request".
+        job_id: Optional client-provided job ID for tracking the workflow execution.
         job_type: The type of job to run, defaults to "workflow".
         execution_strategy: Strategy for executing the job (threaded, subprocess, docker).
         params: Optional parameters for the job.
@@ -56,6 +57,7 @@ class RunJobRequest(BaseModel):
     """
 
     type: Literal["run_job_request"] = "run_job_request"
+    job_id: str | None = None
     job_type: str = "workflow"
     execution_strategy: ExecutionStrategy = ExecutionStrategy.THREADED
     params: Any | None = None

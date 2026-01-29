@@ -91,7 +91,6 @@ import asyncio
 import functools
 import importlib
 import inspect
-import logging
 import re
 import traceback
 from types import UnionType
@@ -103,7 +102,6 @@ from typing import (
     Callable,
     ClassVar,
     Optional,
-    Type,
     TypedDict,
     TypeVar,
     get_args,
@@ -123,17 +121,13 @@ from nodetool.metadata.typecheck import (
 )
 from nodetool.metadata.types import (
     AssetRef,
-    AudioRef,
     ComfyData,
     ComfyModel,
     HuggingFaceModel,
-    ImageRef,
     NameToType,
     NPArray,
     OutputSlot,
-    TextRef,
     TypeToName,
-    VideoRef,
 )
 from nodetool.metadata.utils import (
     async_generator_item_type,
@@ -145,17 +139,19 @@ from nodetool.metadata.utils import (
     is_tuple_type,
     is_union_type,
 )
-from nodetool.types.graph import Edge
+from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.types import NodeUpdate
 
-try:
-    import torch
 
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+def _is_torch_available() -> bool:
+    try:
+        import torch
+        return True
+    except ImportError:
+        return False
+
 
 NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
 COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
@@ -167,7 +163,6 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
-    from .property import Property
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -205,7 +200,8 @@ def sanitize_node_name(node_name: str) -> str:
 def split_camel_case(text: str) -> str:
     """Splits a camelCase or PascalCase string into space-separated words.
 
-    Uppercase sequences are kept together. Numbers are treated as separate words.
+    Uppercase sequences are kept together. Numbers are treated as separate words,
+    except when they form common digit+acronym tokens like "3D" or "4K".
 
     Args:
         text: The input string to split.
@@ -213,8 +209,9 @@ def split_camel_case(text: str) -> str:
     Returns:
         A string with words separated by spaces.
     """
-    # Split the string into parts, keeping uppercase sequences together
-    parts = re.findall(r"[A-Z]+[a-z]*|\d+|[a-z]+", text)
+    # Split the string into parts, keeping uppercase sequences together.
+    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D".
+    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
     # Join the parts with spaces
     return " ".join(parts)
@@ -260,7 +257,7 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
         add_comfy_classname(node_class)
 
 
-def type_metadata(python_type: Type | UnionType, allow_optional: bool = True) -> TypeMetadata:
+def type_metadata(python_type: type | UnionType, allow_optional: bool = True) -> TypeMetadata:
     """Generate `TypeMetadata` for a given Python type.
 
     Supports basic types, lists, tuples, dicts, optional types, unions,
@@ -379,6 +376,7 @@ class BaseNode(BaseModel):
         _requires_grad: ClassVar[bool] (bool): Whether the node requires torch backward pass.
         _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
         _supports_dynamic_outputs: ClassVar[bool]  (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
+        _auto_save_asset: ClassVar[bool] (bool): Whether to automatically save the node output as an asset.
         _sync_mode (str): The input synchronization mode for the node.
 
     Methods:
@@ -396,6 +394,7 @@ class BaseNode(BaseModel):
     _requires_grad: ClassVar[bool] = False
     _expose_as_tool: ClassVar[bool] = False
     _supports_dynamic_outputs: ClassVar[bool] = False
+    _auto_save_asset: ClassVar[bool] = False
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
@@ -551,6 +550,15 @@ class BaseNode(BaseModel):
         return bool(getattr(attr, "default", False))
 
     @classmethod
+    def auto_save_asset(cls) -> bool:
+        """Return whether the node should automatically save its output as an asset."""
+        attr = getattr(cls, "_auto_save_asset", False)
+        if isinstance(attr, bool):
+            return attr
+        # If it's a Pydantic Field / FieldInfo return its default, else direct.
+        return bool(getattr(attr, "default", False))
+
+    @classmethod
     def layout(cls) -> str:
         attr = getattr(cls, "_layout", "default")
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -585,7 +593,8 @@ class BaseNode(BaseModel):
         # Resolve annotations robustly (handles postponed annotations)
         try:
             resolved_annotations = get_type_hints(cls)
-        except Exception:
+        except Exception as e:
+            log.debug("Failed to resolve type hints for %s: %s", cls.__name__, e)
             resolved_annotations = getattr(cls, "__annotations__", {}) or {}
         for field_type in resolved_annotations.values():
             if is_enum_type(field_type):
@@ -708,7 +717,6 @@ class BaseNode(BaseModel):
         Returns:
             list[ModelPack]: List of model packs for this node.
         """
-        from nodetool.types.model import ModelPack
 
         return []
 
@@ -728,7 +736,8 @@ class BaseNode(BaseModel):
             if include_model_info and model.repo_id:
                 try:
                     info = await fetch_model_info(model.repo_id)
-                except Exception:
+                except Exception as e:
+                    log.debug("Failed to fetch model info for %s: %s", model.repo_id, e)
                     info = None
             return await unified_model(model, model_info=info)
 
@@ -758,7 +767,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def get_metadata(cls: Type["BaseNode"], include_model_info: bool = False):
+    def get_metadata(cls: type["BaseNode"], include_model_info: bool = False):
         """
         Generate comprehensive metadata for the node class.
 
@@ -830,7 +839,8 @@ class BaseNode(BaseModel):
             if hasattr(self, name):
                 try:
                     hinted_type = self.__class__.field_types().get(name)
-                except Exception:
+                except Exception as e:
+                    log.debug("Failed to get field type for %s: %s", name, e)
                     hinted_type = None
 
                 if hinted_type is not None:
@@ -855,6 +865,9 @@ class BaseNode(BaseModel):
                             converted = python_type(value)
                         elif tm.is_list_type() and len(type_args) == 1:
                             subtype = type_args[0].get_python_type()
+                            # Auto-wrap single value into a list if it's not already a list
+                            if not isinstance(value, list):
+                                value = [value]
                             if hasattr(subtype, "from_dict") and all(
                                 isinstance(x, dict) and "type" in x for x in value
                             ):
@@ -897,6 +910,9 @@ class BaseNode(BaseModel):
                 v = python_type(value)
             elif prop.type.is_list_type() and len(type_args) == 1:
                 subtype = prop.type.type_args[0].get_python_type()
+                # Auto-wrap single value into a list if it's not already a list
+                if not isinstance(value, list):
+                    value = [value]
                 if hasattr(subtype, "from_dict") and all(isinstance(x, dict) and "type" in x for x in value):
                     # Handle lists of dicts with 'type' field as BaseType instances
                     v = [subtype.from_dict(x) for x in value]
@@ -1020,6 +1036,42 @@ class BaseNode(BaseModel):
             Dict[str, Any]: A modified version of the result suitable for status updates.
         """
 
+        # Upper bound for inlining asset bytes into websocket UI updates.
+        # Large payloads can easily crash browser tabs or blow websocket limits.
+        # Keep this generous for images/audio previews, but avoid multi-MB blobs.
+        MAX_INLINE_ASSET_BYTES = 4 * 1024 * 1024  # 4 MiB
+
+        def _maybe_strip_large_asset_data(result_dict: dict[str, Any]) -> dict[str, Any]:
+            """Best-effort: drop huge `data` blobs from an AssetRef payload."""
+            data = result_dict.get("data")
+            total_len: int | None = None
+
+            if isinstance(data, (bytes, bytearray)):
+                total_len = len(data)
+            elif isinstance(data, list) and data and all(isinstance(x, (bytes, bytearray)) for x in data):
+                total_len = sum(len(x) for x in data)
+
+            if total_len is None or total_len <= MAX_INLINE_ASSET_BYTES:
+                return result_dict
+
+            # Drop data and annotate metadata so the frontend can react gracefully.
+            metadata = result_dict.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata = dict(metadata)
+            metadata.update(
+                {
+                    "inlined_data": False,
+                    "inlined_data_size": total_len,
+                    "inlined_data_max": MAX_INLINE_ASSET_BYTES,
+                }
+            )
+
+            result_dict = dict(result_dict)
+            result_dict["data"] = None
+            result_dict["metadata"] = metadata
+            return result_dict
+
         def _scrub(obj):
             if isinstance(obj, str | int | float | bool | type(None)):
                 return obj
@@ -1060,15 +1112,15 @@ class BaseNode(BaseModel):
                         # Return dict with data field populated
                         result_dict = obj.model_dump()
                         result_dict["data"] = data_bytes
-                        return result_dict
+                        return _maybe_strip_large_asset_data(result_dict)
                     except Exception as e:
                         # If memory fetch fails, fall through to regular model dump
                         log.warning(f"Failed to populate data from memory URI {obj.uri}: {e}")
-                        return obj.model_dump()
+                        return _maybe_strip_large_asset_data(obj.model_dump())
                 else:
                     # Data already present or no memory URI - convert to dict
                     # Note: data field with bytes will be preserved as-is in the dict
-                    return obj.model_dump()
+                    return _maybe_strip_large_asset_data(obj.model_dump())
             if isinstance(obj, dict):
                 return {k: _scrub(v) for k, v in obj.items()}
             if isinstance(obj, list | tuple):
@@ -1096,7 +1148,17 @@ class BaseNode(BaseModel):
         # Include both class-declared and instance-declared dynamic outputs
         for o in self.outputs_for_instance():
             value = result.get(o.name)
-            if TORCH_AVAILABLE and isinstance(value, torch.Tensor):  # type: ignore
+            is_torch_tensor = False
+            if _is_torch_available():
+                try:
+                    import torch
+                    if isinstance(value, torch.Tensor):
+                        is_torch_tensor = True
+                except ImportError:
+                    pass
+
+            if is_torch_tensor:
+
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
@@ -1130,7 +1192,16 @@ class BaseNode(BaseModel):
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)
-                if (TORCH_AVAILABLE and isinstance(value, torch.Tensor)) or isinstance(value, ComfyData):  # type: ignore
+                is_torch_tensor = False
+                if _is_torch_available():
+                    try:
+                        import torch
+                        if isinstance(value, torch.Tensor):
+                            is_torch_tensor = True
+                    except ImportError:
+                        pass
+
+                if is_torch_tensor or isinstance(value, ComfyData):  # type: ignore
                     pass
                 elif isinstance(value, ComfyModel):
                     value_without_model = value.model_dump()
@@ -1284,7 +1355,7 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
-    def return_type(cls) -> Type | None:
+    def return_type(cls) -> type | None:
         """
         Get the return type of the node's process function.
 
@@ -1293,7 +1364,7 @@ class BaseNode(BaseModel):
             or None if no return type is specified.
         """
         if hasattr(cls, "OutputType"):
-            return cls.OutputType
+            return cls.OutputType  # type: ignore[return-value]
 
         if cls.gen_process is not BaseNode.gen_process:
             gen_return = get_return_annotation(cls.gen_process)
@@ -1346,8 +1417,8 @@ class BaseNode(BaseModel):
             if getattr(return_type, "__annotations__", None) and not issubclass(return_type, BaseModel):
                 try:
                     annotations = get_type_hints(return_type)
-                except Exception:
-                    # Fall back to raw annotations if resolution fails
+                except Exception as e:
+                    log.debug("Failed to get type hints for return type %s: %s", return_type, e)
                     annotations = return_type.__annotations__
                 return [
                     OutputSlot(
@@ -1376,7 +1447,7 @@ class BaseNode(BaseModel):
         dynamic_unique = [o for o in dynamic_outputs if o.name not in existing]
         return [*class_outputs, *dynamic_unique]
 
-    def add_output(self, name: str, python_type: Type | UnionType | None = None) -> None:
+    def add_output(self, name: str, python_type: type | UnionType | None = None) -> None:
         """
         Add a dynamic output to this instance (only effective if node is dynamic).
         """
@@ -1384,7 +1455,8 @@ class BaseNode(BaseModel):
             return
         try:
             tm = type_metadata(python_type) if python_type is not None else TypeMetadata(type="any")
-        except Exception:
+        except Exception as e:
+            log.debug("Failed to create type metadata for %s: %s", python_type, e)
             tm = TypeMetadata(type="any")
         self._dynamic_outputs[name] = tm
 
@@ -1462,11 +1534,10 @@ class BaseNode(BaseModel):
     def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
         # avoid circular import
-        from .property import Property
 
         # Get properties from parent classes
         parent_properties = {}
-        for base in cls.__bases__:
+        for base in cls.__bases__:  # type: ignore[attr-defined]
             if hasattr(base, "properties_dict"):
                 parent_properties.update(base.properties_dict())
 
@@ -1631,8 +1702,12 @@ class BaseNode(BaseModel):
         Default implementation calls the process method in inference mode.
         For training nodes, this method should be overridden.
         """
-        if TORCH_AVAILABLE:
-            with torch.no_grad():  # type: ignore
+        if _is_torch_available():
+            try:
+                import torch
+                with torch.no_grad():  # type: ignore
+                    return await self.process(context)
+            except ImportError:
                 return await self.process(context)
         else:
             return await self.process(context)

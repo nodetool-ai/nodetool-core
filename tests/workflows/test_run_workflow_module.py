@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from nodetool.types.graph import Graph as APIGraph
+from nodetool.types.api_graph import Graph as APIGraph
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
@@ -130,7 +130,7 @@ async def test_run_workflow_propagates_initialization_error():
 
     agen = run_workflow(req, runner=runner, context=context, use_thread=False)
 
-    messages: list[JobUpdate | Error] = []
+    messages: list = []
     try:
         messages.append(await agen.__anext__())
         messages.append(await agen.__anext__())
@@ -140,7 +140,7 @@ async def test_run_workflow_propagates_initialization_error():
         await agen.aclose()
 
     assert isinstance(messages[0], Error)
-    assert messages[0].error == "test.missing.module"
+    assert messages[0].message == "test.missing.module"
 
     assert isinstance(messages[1], JobUpdate)
     assert messages[1].status == "failed"

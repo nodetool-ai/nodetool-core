@@ -8,6 +8,7 @@ handling message conversion, streaming, and tool integration.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import inspect
 import io
@@ -17,8 +18,7 @@ from typing import (
     Any,
     AsyncGenerator,
     AsyncIterator,
-    Dict,
-    List,
+    Literal,
     Sequence,
     cast,
 )
@@ -33,12 +33,16 @@ from openai import Omit
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
     ChatCompletionContentPartParam,
+    ChatCompletionContentPartTextParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+from openai.types.chat.chat_completion_content_part_image_param import ImageURL
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
     ChatCompletionMessageFunctionToolCallParam,
     Function,
@@ -66,6 +70,7 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
     ASRModel,
+    EmbeddingModel,
     ImageModel,
     LanguageModel,
     Message,
@@ -78,8 +83,7 @@ from nodetool.metadata.types import (
     VideoModel,
 )
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.openai_prediction import calculate_chat_cost
-from nodetool.runtime.resources import maybe_scope, require_scope
+from nodetool.runtime.resources import require_scope
 from nodetool.workflows.types import Chunk, NodeProgress
 
 log = get_logger(__name__)
@@ -152,7 +156,6 @@ class OpenAIProvider(BaseProvider):
         Returns:
             An initialized ``openai.AsyncClient`` with reasonable timeouts.
         """
-        import httpx
 
         log.debug("Creating OpenAI async client")
 
@@ -189,7 +192,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Model {model} supports tool calling")
         return True
 
-    async def get_available_language_models(self) -> List[LanguageModel]:
+    async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available OpenAI models.
 
@@ -220,7 +223,7 @@ class OpenAIProvider(BaseProvider):
                 payload = await response.json()
                 data = payload.get("data", [])
 
-                models: List[LanguageModel] = []
+                models: list[LanguageModel] = []
                 for item in data:
                     model_id = item.get("id")
                     if not model_id:
@@ -238,7 +241,7 @@ class OpenAIProvider(BaseProvider):
             log.error(f"Error fetching OpenAI models: {e}")
             return []
 
-    async def get_available_tts_models(self) -> List[TTSModel]:
+    async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available OpenAI TTS models.
 
@@ -254,7 +257,7 @@ class OpenAIProvider(BaseProvider):
 
         # OpenAI TTS models and their voices
         # Source: https://platform.openai.com/docs/guides/text-to-speech
-        tts_models_config = [
+        tts_models_config: list[dict[str, Any]] = [
             {
                 "id": "tts-1",
                 "name": "TTS 1",
@@ -267,7 +270,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[TTSModel] = []
+        models: list[TTSModel] = []
         for config in tts_models_config:
             models.append(
                 TTSModel(
@@ -281,7 +284,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI TTS models")
         return models
 
-    async def get_available_asr_models(self) -> List[ASRModel]:
+    async def get_available_asr_models(self) -> list[ASRModel]:
         """
         Get available OpenAI ASR models.
 
@@ -304,7 +307,7 @@ class OpenAIProvider(BaseProvider):
             },
         ]
 
-        models: List[ASRModel] = []
+        models: list[ASRModel] = []
         for config in asr_models_config:
             models.append(
                 ASRModel(
@@ -317,7 +320,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI ASR models")
         return models
 
-    async def get_available_video_models(self) -> List[VideoModel]:
+    async def get_available_video_models(self) -> list[VideoModel]:
         """
         Get available OpenAI video generation models.
 
@@ -349,15 +352,15 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Returning {len(models)} OpenAI video models")
         return models
 
-    async def get_available_image_models(self) -> List[ImageModel]:
+    async def get_available_image_models(self) -> list[ImageModel]:
         """
         Get available OpenAI image generation models.
 
-        Returns DALL-E models for image generation.
+        Returns GPT Image models for image generation and editing.
         Returns an empty list if no API key is configured.
 
         Returns:
-            List of ImageModel instances for OpenAI DALL-E
+            List of ImageModel instances for OpenAI GPT Image models
         """
         if not self.api_key:
             log.debug("No OpenAI API key configured, returning empty image model list")
@@ -365,26 +368,26 @@ class OpenAIProvider(BaseProvider):
 
         # OpenAI image generation models
         # Source: https://platform.openai.com/docs/guides/images
+        # GPT Image models support both text-to-image and image-to-image (edits)
         image_models_config = [
+            {
+                "id": "gpt-image-1.5",
+                "name": "GPT Image 1.5",
+            },
             {
                 "id": "gpt-image-1",
                 "name": "GPT Image 1",
             },
             {
-                "id": "dall-e-3",
-                "name": "DALL-E 3 (legacy)",
-            },
-            {
-                "id": "dall-e-2",
-                "name": "DALL-E 2 (legacy)",
+                "id": "gpt-image-1-mini",
+                "name": "GPT Image 1 Mini",
             },
         ]
 
-        models: List[ImageModel] = []
+        models: list[ImageModel] = []
         for config in image_models_config:
             model_id = config["id"]
-            # Heuristic: GPT-Image-1 supports both generate and edit; DALL-E legacy considered text-to-image only
-            tasks = ["text_to_image", "image_to_image"] if model_id == "gpt-image-1" else ["text_to_image"]
+            tasks = ["text_to_image", "image_to_image"]
             models.append(
                 ImageModel(
                     id=model_id,
@@ -400,7 +403,7 @@ class OpenAIProvider(BaseProvider):
     def _resolve_image_size(self, width: int | None, height: int | None) -> str | None:
         """Convert requested dimensions to OpenAI-supported image sizes.
 
-        OpenAI DALL-E API supports: '1024x1024', '1024x1536', '1536x1024', 'auto'
+        OpenAI GPT Image API supports: '1024x1024', '1024x1536', '1536x1024', 'auto'
 
         Args:
             width: Requested width
@@ -647,6 +650,50 @@ class OpenAIProvider(BaseProvider):
             raise ValueError(f"Failed to resize image: {e}") from e
 
     @staticmethod
+    def _prepare_image_for_openai(image: bytes) -> tuple[str, bytes, str]:
+        """Convert image bytes to PNG format and return as OpenAI-compatible tuple.
+
+        OpenAI's image API requires files to be sent with proper MIME types.
+        The SDK accepts a tuple of (filename, contents, media_type) for explicit
+        control over the file format.
+
+        Supported formats: 'image/jpeg', 'image/png', 'image/webp'
+
+        Args:
+            image: Raw image data as bytes
+
+        Returns:
+            Tuple of (filename, png_bytes, mimetype) suitable for OpenAI API
+
+        Raises:
+            ValueError: If image cannot be processed
+        """
+        try:
+            with Image.open(io.BytesIO(image)) as img:
+                # Convert to RGB for JPEG compatibility, or RGBA for PNG with transparency
+                if img.mode == "RGBA":
+                    # Keep transparency for PNG
+                    output_mode = "RGBA"
+                elif img.mode in ("RGB", "L", "LA"):
+                    output_mode = "RGB"
+                else:
+                    output_mode = "RGB"
+
+                if img.mode != output_mode:
+                    img = img.convert(output_mode)
+
+                # Convert to PNG bytes
+                output = io.BytesIO()
+                img.save(output, format="PNG")
+                png_bytes = output.getvalue()
+
+                log.debug(f"Prepared image for OpenAI: {img.size[0]}x{img.size[1]}, {len(png_bytes)} bytes")
+                return ("image.png", png_bytes, "image/png")
+        except Exception as e:
+            log.error(f"Failed to prepare image for OpenAI: {e}")
+            raise ValueError(f"Failed to prepare image for OpenAI: {e}") from e
+
+    @staticmethod
     def _seconds_from_params(
         params: TextToVideoParams | ImageToVideoParams,
     ) -> int | None:
@@ -700,8 +747,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content.")
+                log.warning("Failed to convert audio URI %s to MP3: %s. Using original content.", uri, e)
                 content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             log.debug("Encoding content to base64")
@@ -761,8 +807,7 @@ class OpenAIProvider(BaseProvider):
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
-                log.warning(f"Failed to convert data URI audio to MP3: {e}. Using original content.")
-                print(f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content.")
+                log.warning("Failed to convert data URI audio to MP3: %s. Using original content.", e)
                 content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
         else:
             log.debug("Encoding data to base64")
@@ -779,31 +824,31 @@ class OpenAIProvider(BaseProvider):
             content: Internal message content variant (text, image, audio).
 
         Returns:
-            A content part dictionary per OpenAI's chat API specification.
+            A content part Pydantic model per OpenAI's chat API specification.
         """
         log.debug(f"Converting message content type: {type(content)}")
 
         if isinstance(content, MessageTextContent):
             log.debug(f"Converting text content: {content.text[:50]}...")
-            return {"type": "text", "text": content.text}
+            return ChatCompletionContentPartTextParam(
+                type="text",
+                text=content.text,
+            )
         elif isinstance(content, MessageAudioContent):
             log.debug("Converting audio content")
             if content.audio.uri:
-                # uri_to_base64 now handles conversion and returns MP3 data URI
                 data_uri = await self.uri_to_base64(content.audio.uri)
-                # Extract base64 data part for OpenAI API
                 base64_data = data_uri.split(",", 1)[1]
                 log.debug(f"Audio URI processed, data length: {len(base64_data)}")
-                return {
-                    "type": "input_audio",
-                    "input_audio": {
+                return ChatCompletionContentPartInputAudioParam(
+                    type="input_audio",
+                    input_audio={
                         "format": "mp3",
                         "data": base64_data,
                     },
-                }
+                )
             else:
                 log.debug("Converting raw audio data to MP3")
-                # Convert raw bytes data to MP3 using pydub
                 try:
                     audio = AudioSegment.from_file(io.BytesIO(content.audio.data))
                     with io.BytesIO() as buffer:
@@ -812,38 +857,34 @@ class OpenAIProvider(BaseProvider):
                     data = base64.b64encode(mp3_data).decode("utf-8")
                     log.debug(f"Audio converted to MP3, data length: {len(data)}")
                 except Exception as e:
-                    log.warning(f"Failed to convert raw audio data to MP3: {e}. Sending original data.")
-                    print(f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data.")
-                    # Fallback to sending original data if conversion fails
+                    log.warning("Failed to convert raw audio data to MP3: %s. Sending original data.", e)
                     data = base64.b64encode(content.audio.data).decode("utf-8")
 
-                return {
-                    "type": "input_audio",
-                    "input_audio": {
+                return ChatCompletionContentPartInputAudioParam(
+                    type="input_audio",
+                    input_audio={
                         "format": "mp3",
                         "data": data,
                     },
-                }
+                )
         elif isinstance(content, MessageImageContent):
             log.debug("Converting image content")
             if content.image.uri:
-                # For images, use the original uri_to_base64 logic (implicitly called)
                 image_url = await self.uri_to_base64(content.image.uri)
                 log.debug(f"Image URI processed: {image_url[:50]}...")
-                return {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
+                return ChatCompletionContentPartImageParam(
+                    type="image_url",
+                    image_url=ImageURL(url=image_url),
+                )
             else:
                 log.debug("Converting raw image data")
-                # Normalize to JPEG base64 using shared helper
                 data = image_data_to_base64_jpeg(content.image.data)
                 image_url = f"data:image/jpeg;base64,{data}"
                 log.debug(f"Raw image data processed, length: {len(data)}")
-                return {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
+                return ChatCompletionContentPartImageParam(
+                    type="image_url",
+                    image_url=ImageURL(url=image_url),
+                )
         else:
             log.error(f"Unknown content type {content}")
             raise ValueError(f"Unknown content type {content}")
@@ -876,13 +917,15 @@ class OpenAIProvider(BaseProvider):
             log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return ChatCompletionToolMessageParam(
-                role=message.role,
+                role=cast("Literal['tool']", message.role),
                 content=content,
                 tool_call_id=message.tool_call_id,
             )
         elif message.role == "system":
             log.debug("Converting system message")
-            return ChatCompletionSystemMessageParam(role=message.role, content=str(message.content))
+            return ChatCompletionSystemMessageParam(
+                role=cast("Literal['system']", message.role), content=str(message.content)
+            )
         elif message.role == "user":
             log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
@@ -891,11 +934,11 @@ class OpenAIProvider(BaseProvider):
                 log.debug("User message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
-            return ChatCompletionUserMessageParam(role=message.role, content=content)
+            return ChatCompletionUserMessageParam(role=cast("Literal['user']", message.role), content=content)
         elif message.role == "assistant":
             log.debug("Converting assistant message")
             tool_calls = [
@@ -916,7 +959,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Assistant message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]
+                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
             else:
                 content = None
                 log.debug("Assistant message has no content")
@@ -924,13 +967,13 @@ class OpenAIProvider(BaseProvider):
             if len(tool_calls) == 0:
                 log.debug("Returning assistant message without tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                 )
             else:
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role,
+                    role=cast("Literal['assistant']", message.role),
                     content=content,  # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )
@@ -979,7 +1022,7 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Formatted {len(formatted_tools)} tools total")
         return formatted_tools
 
-    async def generate_messages(
+    async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1094,84 +1137,102 @@ class OpenAIProvider(BaseProvider):
         current_chunk = ""
         chunk_count = 0
 
-        async for chunk in completion:
-            chunk: ChatCompletionChunk = chunk
-            chunk_count += 1
-
-            if not chunk.choices:
-                log.debug("Chunk has no choices, skipping")
-                continue
-
-            delta = chunk.choices[0].delta
-
-            if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
-                log.debug("Yielding audio chunk")
-                yield Chunk(
-                    content=delta.audio["data"],  # type: ignore
-                    content_type="audio",
-                )
-
-            # Process tool call deltas before checking finish_reason
-            if delta.tool_calls:
-                for tool_call in delta.tool_calls:
-                    tc: dict[str, Any] | None = None
-                    if tool_call.index in delta_tool_calls:
-                        tc = delta_tool_calls[tool_call.index]
-                    else:
-                        tc = {"id": tool_call.id}
-                        delta_tool_calls[tool_call.index] = tc
-                    assert tc is not None, "Tool call must not be None"
-
-                    if tool_call.id:
-                        tc["id"] = tool_call.id
-                    if tool_call.function and tool_call.function.name:
-                        tc["name"] = tool_call.function.name
-                    if tool_call.function and tool_call.function.arguments:
-                        if "function" not in tc:
-                            tc["function"] = {}
-                        if "arguments" not in tc["function"]:
-                            tc["function"]["arguments"] = ""
-                        tc["function"]["arguments"] += tool_call.function.arguments
-
-            if delta.content or chunk.choices[0].finish_reason == "stop":
-                current_chunk += delta.content or ""
-                finish_reason = chunk.choices[0].finish_reason
-                log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
-
-                if finish_reason == "stop":
-                    log.debug("Final chunk received, logging response")
-                    self._log_api_response(
-                        "chat_stream",
-                        Message(
-                            role="assistant",
-                            content=current_chunk,
-                        ),
+        try:
+            async for chunk in completion:
+                chunk: ChatCompletionChunk = chunk
+                chunk_count += 1
+    
+                if not chunk.choices:
+                    log.debug("Chunk has no choices, skipping")
+                    continue
+    
+                delta = chunk.choices[0].delta
+    
+                if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
+                    log.debug("Yielding audio chunk")
+                    yield Chunk(
+                        content=delta.audio["data"],  # type: ignore
+                        content_type="audio",
                     )
-
-                content_to_yield = delta.content or ""
-                yield Chunk(
-                    content=content_to_yield,
-                    done=finish_reason == "stop",
-                )
-
-            if chunk.choices[0].finish_reason == "tool_calls":
-                log.debug("Processing tool calls completion")
-                if delta_tool_calls:
-                    log.debug(f"Yielding {len(delta_tool_calls)} tool calls")
-                    for tc in delta_tool_calls.values():
+    
+                # Process tool call deltas before checking finish_reason
+                if delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        tc: dict[str, Any] | None = None
+                        if tool_call.index in delta_tool_calls:
+                            tc = delta_tool_calls[tool_call.index]
+                        else:
+                            tc = {"id": tool_call.id}
+                            delta_tool_calls[tool_call.index] = tc
                         assert tc is not None, "Tool call must not be None"
-                        tool_call = ToolCall(
-                            id=tc["id"],
-                            name=tc["name"],
-                            args=json.loads(tc["function"]["arguments"]),
+    
+                        if tool_call.id:
+                            tc["id"] = tool_call.id
+                        if tool_call.function and tool_call.function.name:
+                            tc["name"] = tool_call.function.name
+                        if tool_call.function and tool_call.function.arguments:
+                            if "function" not in tc:
+                                tc["function"] = {}
+                            if "arguments" not in tc["function"]:
+                                tc["function"]["arguments"] = ""
+                            tc["function"]["arguments"] += tool_call.function.arguments
+    
+                if delta.content or chunk.choices[0].finish_reason == "stop":
+                    current_chunk += delta.content or ""
+                    finish_reason = chunk.choices[0].finish_reason
+                    log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
+    
+                    if finish_reason == "stop":
+                        log.debug("Final chunk received, logging response")
+                        self._log_api_response(
+                            "chat_stream",
+                            Message(
+                                role="assistant",
+                                content=current_chunk,
+                            ),
                         )
-                        self._log_tool_call(tool_call)
-                        yield tool_call
-                else:
-                    log.error("No tool call found in delta_tool_calls")
-                    raise ValueError("No tool call found")
+    
+                    content_to_yield = delta.content or ""
+                    yield Chunk(
+                        content=content_to_yield,
+                        done=finish_reason == "stop",
+                    )
+    
+                if chunk.choices[0].finish_reason == "tool_calls":
+                    log.debug("Processing tool calls completion")
+                    if delta_tool_calls:
+                        log.debug(f"Yielding {len(delta_tool_calls)} tool calls")
+                        for tc in delta_tool_calls.values():
+                            assert tc is not None, "Tool call must not be None"
+                            tool_call = ToolCall(
+                                id=tc["id"],
+                                name=tc["name"],
+                                args=json.loads(tc["function"]["arguments"]),
+                            )
+                            self._log_tool_call(tool_call)
+                            yield tool_call
+                    else:
+                        log.error("No tool call found in delta_tool_calls")
+                        raise ValueError("No tool call found")
+    
+        except asyncio.CancelledError:
+            log.info("OpenAI streaming cancelled by user")
+            raise
+        finally:
+            # Close the stream to terminate the HTTP connection
+            if hasattr(completion, 'close'):
+                try:
+                    completion.close()
+                except Exception:
+                    pass
+            elif hasattr(completion, 'response') and hasattr(completion.response, 'close'):
+                try:
+                    await completion.response.close()
+                except Exception:
+                    pass
+            log.debug("OpenAI streaming cleanup completed")
 
-    async def generate_message(
+    async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         model: str,
@@ -1295,13 +1356,13 @@ class OpenAIProvider(BaseProvider):
         # Update cost
         if completion.usage:
             log.debug("Processing usage statistics")
-            cost = await calculate_chat_cost(
-                model,
-                completion.usage.prompt_tokens,
-                completion.usage.completion_tokens,
+            self.track_usage(
+                model=model,
+                input_tokens=completion.usage.prompt_tokens or 0,
+                output_tokens=completion.usage.completion_tokens or 0,
+                cached_tokens=getattr(completion.usage, "cached_tokens", 0) or 0,
             )
-            self.cost += cost
-            log.debug(f"Updated cost: {cost}")
+            log.debug(f"Updated cost: {self.cost}")
 
         choice = completion.choices[0]
         response_message = choice.message
@@ -1311,8 +1372,7 @@ class OpenAIProvider(BaseProvider):
             try:
                 return json.loads(args)
             except Exception:
-                log.warning(f"Error parsing tool call arguments: {args}")
-                print(f"Warning: Error parsing tool call arguments: {args}")
+                log.warning("Error parsing tool call arguments: %s", args)
                 return {}
 
         # Create tool calls if present
@@ -1372,7 +1432,29 @@ class OpenAIProvider(BaseProvider):
         context: ProcessingContext | None = None,
         node_id: str | None = None,
     ) -> bytes:
-        """Generate an image from a text prompt using OpenAI's Images API."""
+        """Generate an image from a text prompt using OpenAI's Image API.
+
+        Uses the images.generate endpoint which supports GPT Image models
+        (gpt-image-1.5, gpt-image-1, gpt-image-1-mini) as well as DALL-E models.
+
+        Args:
+            params: Text-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "gpt-image-1")
+                - prompt: Text description of the desired image
+                - negative_prompt: Elements to exclude (appended to prompt)
+                - width/height: Desired dimensions (mapped to OpenAI supported sizes)
+                - quality: Optional quality setting
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
         if not params.prompt:
             raise ValueError("The input prompt cannot be empty.")
 
@@ -1387,40 +1469,56 @@ class OpenAIProvider(BaseProvider):
         if params.negative_prompt:
             prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
 
-        size = None
-        if params.width and params.height:
-            if params.width <= 0 or params.height <= 0:
-                raise ValueError("width and height must be positive integers.")
-            size = self._resolve_image_size(int(params.width), int(params.height))
+        # Resolve size from width/height parameters
+        size = self._resolve_image_size(params.width, params.height)
+
+        # Get optional parameters from model_config extras
+        quality = getattr(params, "quality", None)
+
+        log.debug(f"Generating image with model={model_id}, size={size}, quality={quality}")
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
             client = self.get_client()
 
+            # Build API parameters
+            # Note: GPT Image models return base64 data in b64_json by default
+            api_params: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+            }
+
+            if size:
+                api_params["size"] = size
+
+            # Quality options: "low", "medium", "high", "hd", "standard"
+            # For GPT Image models, use low/medium/high
+            # For DALL-E 3, use "standard" or "hd"
+            if quality:
+                api_params["quality"] = quality
+
+            self._log_api_request("text_to_image", params=params)
+
             response = await client.images.generate(
-                model=model_id,
-                prompt=prompt,
-                n=1,
-                size=size if size else Omit,  # type: ignore
+                **api_params,
                 timeout=request_timeout,
             )
 
-            data = response.data or []
-            if len(data) == 0:
-                raise RuntimeError("OpenAI image generation returned no data.")
+            # Extract image data - GPT Image models use b64_json, DALL-E uses url
+            if response.data and response.data[0].b64_json:
+                image_b64 = response.data[0].b64_json
+                image_bytes = base64.b64decode(image_b64)
+            elif response.data and response.data[0].url:
+                # Fallback to URL if b64_json not available (e.g., older models)
+                import aiohttp
 
-            image_entry = data[0]
-            image_bytes: bytes | None = None
-            b64_data = image_entry.b64_json
-            if b64_data:
-                image_bytes = base64.b64decode(b64_data)
+                async with aiohttp.ClientSession() as session, session.get(response.data[0].url) as resp:
+                    image_bytes = await resp.read()
             else:
-                image_url = image_entry.url
-                if image_url:
-                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+                raise RuntimeError("OpenAI image generation returned no image data.")
 
-            if not image_bytes:
-                raise RuntimeError("OpenAI image generation returned no image bytes.")
+            log.debug(f"Generated image, size: {len(image_bytes)} bytes")
+            self._log_api_response("text_to_image", image_bytes=len(image_bytes))
 
             return image_bytes
 
@@ -1437,15 +1535,45 @@ class OpenAIProvider(BaseProvider):
             log.error(f"OpenAI text-to-image generation failed: {exc}")
             raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
 
-    async def image_to_image(
+    async def image_to_image(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToImageParams,
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
         node_id: str | None = None,
+        mask: bytes | None = None,
     ) -> bytes:
-        """Transform an image based on a prompt using OpenAI's image editing API."""
+        """Edit or transform an image using OpenAI's Image API.
+
+        Uses the images.edit endpoint which supports GPT Image models
+        (gpt-image-1.5, gpt-image-1, gpt-image-1-mini) for high-quality image editing.
+
+        This endpoint can:
+        - Edit existing images using prompts
+        - Perform inpainting with a mask
+
+        Args:
+            image: Primary input image as bytes
+            params: Image-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "gpt-image-1")
+                - prompt: Text description of the desired transformation
+                - negative_prompt: Elements to exclude (appended to prompt)
+                - target_width/target_height: Desired output dimensions
+                - quality: Optional quality setting
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+            mask: Optional mask image for inpainting (PNG with alpha channel).
+                Masked areas (transparent) will be replaced.
+
+        Returns:
+            Raw edited image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If editing fails
+        """
         if not image:
             raise ValueError("image must not be empty.")
 
@@ -1463,41 +1591,66 @@ class OpenAIProvider(BaseProvider):
         if params.negative_prompt:
             prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
 
-        size = None
-        if params.target_width and params.target_height:
-            if params.target_width <= 0 or params.target_height <= 0:
-                raise ValueError("target_width and target_height must be positive integers.")
-            size = self._resolve_image_size(int(params.target_width), int(params.target_height))
+        # Resolve size from target dimensions if provided
+        size = self._resolve_image_size(params.target_width, params.target_height)
+
+        # Get optional parameters from model_config extras
+        quality = getattr(params, "quality", None)
+
+        log.debug(f"Editing image with model={model_id}, size={size}, quality={quality}")
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
             client = self.get_client()
+
+            # Convert image to OpenAI-compatible format (filename, bytes, mimetype tuple)
+            # This ensures proper MIME type is sent to avoid 'unsupported_file_mimetype' errors
+            image_tuple = self._prepare_image_for_openai(image)
+
+            # Build API parameters
+            # Note: GPT Image models return base64 data by default
+            api_params: dict[str, Any] = {
+                "model": model_id,
+                "image": image_tuple,
+                "prompt": prompt,
+            }
+
+            if size:
+                api_params["size"] = size
+
+            if quality:
+                api_params["quality"] = quality
+
+            # Add mask if provided for inpainting
+            if mask:
+                mask_tuple = self._prepare_image_for_openai(mask)
+                api_params["mask"] = mask_tuple
+                log.debug("Using mask for inpainting edit")
+
+            self._log_api_request("image_to_image", params=params)
+
             response = await client.images.edit(
-                model=model_id,
-                prompt=prompt,
-                image=("image.png", image, "image/png"),
-                size=size if size else Omit,  # type: ignore
+                **api_params,
                 timeout=request_timeout,
             )
 
-            data_list = response.data or []
-            if len(data_list) == 0:
-                raise RuntimeError("OpenAI image editing returned no data.")
+            # Extract image data - GPT Image models use b64_json, older models use url
+            if response.data and response.data[0].b64_json:
+                result_b64 = response.data[0].b64_json
+                result_bytes = base64.b64decode(result_b64)
+            elif response.data and response.data[0].url:
+                # Fallback to URL if b64_json not available
+                import aiohttp
 
-            entry = data_list[0]
-            image_bytes: bytes | None = None
-            b64_data = entry.b64_json
-            if b64_data:
-                image_bytes = base64.b64decode(b64_data)
+                async with aiohttp.ClientSession() as session, session.get(response.data[0].url) as resp:
+                    result_bytes = await resp.read()
             else:
-                image_url = entry.url
-                if image_url:
-                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+                raise RuntimeError("OpenAI image editing returned no image data.")
 
-            if not image_bytes:
-                raise RuntimeError("OpenAI image editing returned no image bytes.")
+            log.debug(f"Edited image, size: {len(result_bytes)} bytes")
+            self._log_api_response("image_to_image", image_bytes=len(result_bytes))
 
-            return image_bytes
+            return result_bytes
 
         except openai.APIStatusError as api_error:
             log.error(
@@ -1740,7 +1893,7 @@ class OpenAIProvider(BaseProvider):
             },
         )
 
-    async def image_to_video(
+    async def image_to_video(  # type: ignore[override]
         self,
         image: bytes,
         params: ImageToVideoParams,
@@ -2018,6 +2171,114 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI ASR transcription failed: {e}")
             raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}") from e
+
+    async def get_available_embedding_models(self) -> list[EmbeddingModel]:
+        """
+        Get available OpenAI embedding models.
+
+        Returns embedding models available from OpenAI.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of EmbeddingModel instances for OpenAI
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty embedding model list")
+            return []
+
+        # OpenAI embedding models
+        # Source: https://platform.openai.com/docs/guides/embeddings
+        embedding_models_config = [
+            {
+                "id": "text-embedding-3-small",
+                "name": "Text Embedding 3 Small",
+                "dimensions": 1536,
+            },
+            {
+                "id": "text-embedding-3-large",
+                "name": "Text Embedding 3 Large",
+                "dimensions": 3072,
+            },
+            {
+                "id": "text-embedding-ada-002",
+                "name": "Text Embedding Ada 002",
+                "dimensions": 1536,
+            },
+        ]
+
+        models: list[EmbeddingModel] = []
+        for config in embedding_models_config:
+            models.append(
+                EmbeddingModel(
+                    id=cast("str", config["id"]),
+                    name=cast("str", config["name"]),
+                    provider=Provider.OpenAI,
+                    dimensions=cast("int", config["dimensions"]),
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI embedding models")
+        return models
+
+    async def generate_embedding(
+        self,
+        text: str | list[str],
+        model: str,
+        **kwargs,
+    ) -> list[list[float]]:
+        """Generate embedding vectors using OpenAI's Embeddings API.
+
+        Uses the embeddings endpoint to generate vector representations of text.
+
+        Args:
+            text: Single text string or list of text strings to embed
+            model: Model identifier (e.g., "text-embedding-3-small", "text-embedding-3-large")
+            **kwargs: Additional parameters:
+                - dimensions: Optional output dimensions (for text-embedding-3-* models)
+
+        Returns:
+            List of embedding vectors, one for each input text.
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If embedding generation fails
+        """
+        if not text:
+            raise ValueError("text must not be empty")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for embedding generation")
+
+        # Normalize input to list
+        texts = [text] if isinstance(text, str) else text
+
+        log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
+
+        try:
+            client = self.get_client()
+
+            # Build API parameters
+            api_params: dict[str, Any] = {
+                "input": texts,
+                "model": model,
+            }
+
+            # Add optional dimensions parameter for text-embedding-3-* models
+            if kwargs.get("dimensions"):
+                api_params["dimensions"] = kwargs["dimensions"]
+
+            response = await client.embeddings.create(**api_params)
+
+            # Extract embeddings from response
+            embeddings = [data.embedding for data in response.data]
+
+            log.debug(f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0]) if embeddings else 0}")
+
+            return embeddings
+
+        except Exception as e:
+            log.error(f"OpenAI embedding generation failed: {e}")
+            raise RuntimeError(f"OpenAI embedding generation failed: {str(e)}") from e
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Detect whether an exception represents a context window error.

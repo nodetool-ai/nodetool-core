@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import ColumnDef, RecordType
@@ -68,7 +68,7 @@ class GenerateStringTool(Tool):
     def __init__(self, description: str):
         self.description = description
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         return params
 
 
@@ -85,7 +85,7 @@ class GenerateDataTool(Tool):
             "additionalProperties": False,
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         return params
 
 

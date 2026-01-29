@@ -45,6 +45,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+supabase/.temp
 
 # Translations
 *.mo
@@ -141,3 +142,6 @@ tmp/
 *.bak2
 *.backup
 *.old
+
+# Agent
+__plans__/

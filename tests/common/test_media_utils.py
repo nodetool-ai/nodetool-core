@@ -1,4 +1,5 @@
 import os
+import shutil
 from io import BytesIO
 
 import cv2
@@ -16,6 +17,8 @@ test_mp4 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp4")
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
 test_mp3 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
 
+requires_ffprobe = pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe not installed")
+
 
 def test_get_audio_duration():
     with open(test_mp3, "rb") as f:
@@ -29,6 +32,7 @@ def test_get_audio_duration():
 
 
 @pytest.mark.asyncio
+@requires_ffprobe
 async def test_get_video_duration():
     with open(test_mp4, "rb") as f:
         video_bytes = BytesIO(f.read())
@@ -41,6 +45,7 @@ async def test_get_video_duration():
 
 
 @pytest.mark.asyncio
+@requires_ffprobe
 async def test_video_thumbnail():
     with open(test_mp4, "rb") as f:
         video_bytes = BytesIO(f.read())

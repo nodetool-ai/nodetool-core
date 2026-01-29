@@ -10,7 +10,7 @@ import pytest
 
 import docker
 from nodetool.models.job import Job
-from nodetool.types.graph import Edge, Graph, Node
+from nodetool.types.api_graph import Edge, Graph, Node
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest

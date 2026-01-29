@@ -14,14 +14,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+
+logger = logging.getLogger("nodetool.admin")
 from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
@@ -29,8 +32,6 @@ from nodetool.deploy.admin_operations import (
     download_ollama_model,
     scan_hf_cache,
 )
-from nodetool.indexing.ingestion import find_input_nodes
-from nodetool.indexing.service import index_file_to_collection
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
@@ -57,7 +58,7 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionList(BaseModel):
-    collections: List[CollectionResponse]
+    collections: list[CollectionResponse]
     count: int
 
 
@@ -67,10 +68,10 @@ class CollectionModify(BaseModel):
 
 
 class AddToCollection(BaseModel):
-    documents: List[str]
-    ids: List[str]
-    metadatas: List[dict[str, str]]
-    embeddings: List[List[float]]
+    documents: list[str]
+    ids: list[str]
+    metadatas: list[dict[str, str]]
+    embeddings: list[list[float]]
 
 
 class IndexResponse(BaseModel):
@@ -159,7 +160,7 @@ def create_admin_router() -> APIRouter:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"HuggingFace download error: {e}")
+            logger.error("HuggingFace download error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/models/ollama/download")
@@ -195,7 +196,7 @@ def create_admin_router() -> APIRouter:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Ollama download error: {e}")
+            logger.error("Ollama download error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/scan")
@@ -207,7 +208,7 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "No cache data"}
         except Exception as e:
-            print(f"Cache scan error: {e}")
+            logger.error("Cache scan error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/cache/size")
@@ -219,7 +220,7 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "No size data"}
         except Exception as e:
-            print(f"Cache size calculation error: {e}")
+            logger.error("Cache size calculation error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/models/huggingface/{repo_id:path}")
@@ -231,12 +232,12 @@ def create_admin_router() -> APIRouter:
                 results.append(chunk)
             return results[0] if results else {"status": "error", "message": "Delete failed"}
         except Exception as e:
-            print(f"HuggingFace model deletion error: {e}")
+            logger.error("HuggingFace model deletion error: %s", e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
-    async def db_save(table: str, item: Dict[str, Any]):
+    async def db_save(table: str, item: dict[str, Any]):
         """Save an item to the specified table using the database adapter."""
         try:
             adapter = await get_model_adapter(table)
@@ -416,7 +417,7 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
         user: str = Depends(current_user),
-        data: Dict[str, Any] = Body(...),
+        data: dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
         try:
@@ -485,7 +486,7 @@ def create_admin_router() -> APIRouter:
 
             deleted_asset_ids = []
 
-            async def delete_folder(uid: str, folder_id: str) -> List[str]:
+            async def delete_folder(uid: str, folder_id: str) -> list[str]:
                 ids = []
                 try:
                     assets, _ = await AssetModel.paginate(user_id=uid, parent_id=folder_id, limit=10000)

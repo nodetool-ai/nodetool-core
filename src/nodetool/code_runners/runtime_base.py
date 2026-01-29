@@ -577,7 +577,7 @@ class StreamRunnerBase:
         """
         import docker
 
-        client = docker.from_env()
+        client = docker.from_env()  # type: ignore[attr-defined]
         try:
             client.ping()
         except Exception as e:

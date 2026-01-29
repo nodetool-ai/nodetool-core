@@ -46,7 +46,7 @@ import sys
 from contextlib import suppress
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import msgpack
 import websockets
@@ -164,10 +164,7 @@ class ChatWebSocketClient:
             message["workflow_id"] = self.current_workflow
 
         # Wrap in command structure
-        command_msg = {
-            "command": "chat_message",
-            "data": message
-        }
+        command_msg = {"command": "chat_message", "data": message}
 
         # Send message in appropriate format
         try:
@@ -186,16 +183,13 @@ class ChatWebSocketClient:
                 f"Error sending message: {e}",
             )
 
-    async def send_command(self, command: str, data: Dict[str, Any]):
+    async def send_command(self, command: str, data: dict[str, Any]):
         """Send a generic command to the WebSocket server."""
         if not self.websocket:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
             return
 
-        message = {
-            "command": command,
-            "data": data
-        }
+        message = {"command": command, "data": data}
 
         try:
             if self.message_format == MessageFormat.BINARY:
@@ -212,6 +206,7 @@ class ChatWebSocketClient:
                 "system",
                 f"Error sending command {command}: {e}",
             )
+
     async def receive_messages(self):
         """Continuously receive and display messages from the server."""
         try:
@@ -240,7 +235,7 @@ class ChatWebSocketClient:
             )
             self.running = False
 
-    async def process_message(self, data: Dict[str, Any]):
+    async def process_message(self, data: dict[str, Any]):
         """Process received message based on type."""
         msg_type = data.get("type", "unknown")
         timestamp = datetime.now().strftime("%H:%M:%S")

@@ -6,9 +6,8 @@ from datetime import datetime
 from enum import EnumMeta as EnumType
 
 # mypy: ignore-errors
-from typing import Any, Dict, List, Type, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
-from postgrest.base_request_builder import APIResponse
 from pydantic.fields import FieldInfo
 
 # Assume supabase-py is installed (use async client)
@@ -30,7 +29,7 @@ log = get_logger(__name__)
 # --- Type Conversion Helpers (Similar to Postgres, adjust if needed for Supabase client) ---
 
 
-def convert_to_supabase_format(value: Any, py_type: Type | None) -> Any:
+def convert_to_supabase_format(value: Any, py_type: type | None) -> Any:
     """Converts Python types to Supabase-compatible formats (mostly handles JSON)."""
     if value is None:
         return None
@@ -41,11 +40,15 @@ def convert_to_supabase_format(value: Any, py_type: Type | None) -> Any:
         return value.isoformat()
     if hasattr(value, "value") and isinstance(type(value), EnumType):
         return value.value  # Store enum value
+    # Handle boolean to integer conversion for PostgreSQL integer columns
+    # Check for both bool and Optional[bool] (Union[bool, None])
+    if isinstance(value, bool):
+        return 1 if value else 0
     # For lists/dicts, supabase-py usually handles JSON serialization
     return value
 
 
-def convert_from_supabase_format(value: Any, py_type: Type | None) -> Any:
+def convert_from_supabase_format(value: Any, py_type: type | None) -> Any:
     """Converts Supabase return values back to Python types."""
     if value is None or py_type is None:
         return value
@@ -72,11 +75,14 @@ def convert_from_supabase_format(value: Any, py_type: Type | None) -> Any:
         except ValueError:
             log.warning(f"Could not cast value '{value}' to Enum {py_type}")
             return value
+    # Handle integer to boolean conversion for PostgreSQL integer columns
+    elif (py_type is bool or py_type == bool) and isinstance(value, int):
+        return value != 0
     # Basic types and JSON usually handled correctly by supabase-py
     return value
 
 
-def convert_from_supabase_attributes(attributes: dict[str, Any], fields: Dict[str, FieldInfo]) -> dict[str, Any]:
+def convert_from_supabase_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
     """Converts a dictionary of attributes from Supabase types."""
     return {
         key: (
@@ -93,16 +99,16 @@ class SupabaseAdapter(DatabaseAdapter):
     """Adapts DBModel operations to a Supabase backend."""
 
     table_name: str
-    table_schema: Dict[str, Any]
-    fields: Dict[str, FieldInfo]
+    table_schema: dict[str, Any]
+    fields: dict[str, FieldInfo]
     # Note: Supabase/PostgREST doesn't directly expose index management via client lib
     # Index operations might require raw SQL execution if needed.
 
     def __init__(
         self,
         client: SupabaseAsyncClient,
-        fields: Dict[str, FieldInfo],
-        table_schema: Dict[str, Any],
+        fields: dict[str, FieldInfo],
+        table_schema: dict[str, Any],
         # indexes: List[Dict[str, Any]], # Index management might differ
     ):
         """Initializes the Supabase adapter."""
@@ -141,7 +147,7 @@ class SupabaseAdapter(DatabaseAdapter):
         # If needed, implement using execute_sql: f"DROP TABLE IF EXISTS {self.table_name}"
         raise NotImplementedError("Table dropping via adapter is not standard practice for Supabase.")
 
-    async def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the Supabase table using upsert."""
         self._get_primary_key()
         # Prepare item data, converting types if necessary
@@ -171,7 +177,7 @@ class SupabaseAdapter(DatabaseAdapter):
             log.exception(f"Error saving item to Supabase table {self.table_name}: {e}")
             raise
 
-    async def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         select_columns = ", ".join(self.fields.keys())
@@ -259,8 +265,8 @@ class SupabaseAdapter(DatabaseAdapter):
         order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
-        columns: List[str] | None = None,
-    ) -> tuple[List[Dict[str, Any]], str]:
+        columns: list[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], str]:
         """Queries Supabase based on conditions."""
         pk = self._get_primary_key()
 
@@ -309,7 +315,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
     # --- Index Management (Likely requires raw SQL via execute_sql) ---
 
-    async def create_index(self, index_name: str, columns: List[str], unique: bool = False) -> None:
+    async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
         """Creates an index using raw SQL."""
         raise NotImplementedError("Index creation is not supported for Supabase.")
 
@@ -317,7 +323,7 @@ class SupabaseAdapter(DatabaseAdapter):
         """Drops an index using raw SQL."""
         raise NotImplementedError("Index creation is not supported for Supabase.")
 
-    async def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> list[dict[str, Any]]:
         """Lists indexes using raw SQL querying pg_catalog."""
         raise NotImplementedError("Index listing is not supported for Supabase.")
 

@@ -1,0 +1,83 @@
+name: OpenCode Accessibility Audit
+
+on:
+  schedule:
+    - cron: "0 12 * * 2" # Weekly on Tuesdays at noon UTC
+  workflow_dispatch:
+
+jobs:
+  opencode-accessibility:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge main if necessary
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit || echo "Already up to date or merge not needed"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        with:
+          model: minimax/MiniMax-M2.1
+          prompt: |
+            # NodeTool Core Accessibility Audit
+
+            You are an autonomous agent improving developer accessibility and usability in **nodetool-core**.
+
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+
+            ## Step 2: Accessibility Audit Areas
+            - CLI commands: help text, error messages, exit codes
+            - API responses: status codes, validation errors, clarity
+            - Logs: actionable messages, consistent formatting
+            - Configuration: defaults and env var descriptions
+            - Docs: `AGENTS.md`, README files, and docstrings
+
+            ## Step 3: Make Focused Improvements
+            - Keep changes minimal and targeted
+            - Follow existing patterns and async conventions
+            - Do not refactor unrelated code
+
+            ## Step 4: Validate
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+
+            ## Step 5: Update Memory
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`

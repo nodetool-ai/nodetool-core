@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import yaml
 
@@ -30,15 +30,37 @@ register_setting(
         "If not specified, the system will use default fonts."
     ),
 )
+
 register_setting(
     package_name="nodetool",
-    env_var="COMFY_FOLDER",
-    group="Folders",
-    description=(
-        "Location of ComfyUI folder for integration with ComfyUI models and workflows. "
-        "Set this to use models from your existing ComfyUI installation. "
-        "This allows nodetool to access resources from your ComfyUI setup without duplicating files."
-    ),
+    env_var="AUTOSAVE_ENABLED",
+    group="Autosave",
+    description="Enable automatic saving of workflow versions (default: true)",
+    enum=["true", "false"],
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_INTERVAL_MINUTES",
+    group="Autosave",
+    description="Interval in minutes between automatic workflow autosaves (default: 5, range: 1-60)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_MIN_INTERVAL_SECONDS",
+    group="Autosave",
+    description="Minimum interval in seconds between autosaves to prevent duplicates (default: 30)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_MAX_VERSIONS_PER_WORKFLOW",
+    group="Autosave",
+    description="Maximum number of autosave versions to keep per workflow (default: 20)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="AUTOSAVE_KEEP_DAYS",
+    group="Autosave",
+    description="Number of days to keep autosave versions before cleanup (default: 7)",
 )
 
 # ComfyUI settings
@@ -120,8 +142,42 @@ register_setting(
     description="Optional prefix applied to user/node Supabase tables to avoid clashes with core tables",
 )
 
+# Observability - Traceloop / OpenLLMetry
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_ENABLED",
+    group="Observability",
+    description="Enable Traceloop OpenLLMetry tracing",
+    enum=["true", "false"],
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_APP_NAME",
+    group="Observability",
+    description="Override the OpenLLMetry application name (defaults to service name)",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_BASE_URL",
+    group="Observability",
+    description="Override the Traceloop OTLP base URL",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="TRACELOOP_DISABLE_BATCH",
+    group="Observability",
+    description="Disable Traceloop batch span processing for local development",
+    enum=["true", "false"],
+)
+
 
 # Secrets
+register_secret(
+    package_name="nodetool",
+    env_var="TRACELOOP_API_KEY",
+    group="Observability",
+    description="Traceloop API key for OpenLLMetry trace export",
+)
 register_secret(
     package_name="nodetool",
     env_var="OPENAI_API_KEY",
@@ -139,6 +195,43 @@ register_secret(
     env_var="ANTHROPIC_API_KEY",
     group="Anthropic",
     description="Anthropic API key for accessing Claude models and other Anthropic services",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="CEREBRAS_API_KEY",
+    group="Cerebras",
+    description="Cerebras API key for accessing fast LLM inference on Cerebras hardware",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="TOGETHER_API_KEY",
+    group="Together",
+    description="Together AI API key for accessing open-source LLMs through Together's inference API",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="GROQ_API_KEY",
+    group="Groq",
+    description="Groq API key for accessing ultra-fast LLM inference on Groq's LPU hardware",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="ZHIPU_API_KEY",
+    group="ZAI",
+    description="Z.AI API key for accessing GLM models through Z.AI's OpenAI-compatible API",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="MISTRAL_API_KEY",
+    group="Mistral",
+    description="Mistral API key for accessing Mistral AI models through Mistral's OpenAI-compatible API",
+)
+register_setting(
+    package_name="nodetool",
+    env_var="ZAI_USE_CODING_PLAN",
+    group="ZAI",
+    description="Use Z.AI coding plan endpoint (https://api.z.ai/api/coding/paas/v4) instead of normal endpoint (https://api.z.ai/api/paas/v4)",
+    enum=["true", "false"],
 )
 register_secret(
     package_name="nodetool",
@@ -160,12 +253,6 @@ register_secret(
     env_var="REPLICATE_API_TOKEN",
     group="Replicate",
     description="Replicate API Token for running models on Replicate's cloud infrastructure",
-)
-register_secret(
-    package_name="nodetool",
-    env_var="AIME_USER",
-    group="Aime",
-    description="Aime user credential for authentication with Aime services",
 )
 register_secret(
     package_name="nodetool",
@@ -240,22 +327,19 @@ register_secret(
     description="DataForSEO password for accessing DataForSEO's API",
 )
 register_secret(
-    package_name="nodetool",
-    env_var="KIE_API_KEY",
-    group="KIE",
-    description="KIE API key for accessing kie.ai"
+    package_name="nodetool", env_var="KIE_API_KEY", group="KIE", description="KIE API key for accessing kie.ai"
 )
 register_secret(
     package_name="nodetool",
     env_var="GITHUB_CLIENT_ID",
     group="GitHub",
-    description="GitHub OAuth App Client ID for OAuth PKCE authentication flow"
+    description="GitHub OAuth App Client ID for OAuth PKCE authentication flow",
 )
 register_secret(
     package_name="nodetool",
     env_var="GITHUB_CLIENT_SECRET",
     group="GitHub",
-    description="GitHub OAuth App Client Secret for OAuth PKCE authentication flow"
+    description="GitHub OAuth App Client Secret for OAuth PKCE authentication flow",
 )
 register_secret(
     package_name="nodetool",
@@ -323,9 +407,11 @@ def get_system_data_path(filename: str) -> Path:
 
     os_name = platform.system()
     if os_name in {"Linux", "Darwin"}:
+        # This is safe (XDG standard)
         return Path.home() / ".local" / "share" / "nodetool" / filename
     elif os_name == "Windows":
-        appdata = os.getenv("LOCALAPPDATA")
+        # Use APPDATA (Roaming) instead of LOCALAPPDATA
+        appdata = os.getenv("APPDATA")
         if appdata is not None:
             return Path(appdata) / "nodetool" / filename
         return Path("data") / filename
@@ -345,13 +431,13 @@ def get_log_path(filename: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def load_settings() -> Dict[str, Any]:
+def load_settings() -> dict[str, Any]:
     """
     Load settings from YAML file.
     """
     settings_file = get_system_file_path(SETTINGS_FILE)
 
-    settings: Dict[str, Any] = {}
+    settings: dict[str, Any] = {}
 
     if settings_file.exists():
         with open(settings_file) as f:
@@ -360,7 +446,7 @@ def load_settings() -> Dict[str, Any]:
     return settings
 
 
-def save_settings(settings: Dict[str, Any]) -> None:
+def save_settings(settings: dict[str, Any]) -> None:
     """
     Save settings to YAML file.
     """
@@ -374,8 +460,8 @@ def save_settings(settings: Dict[str, Any]) -> None:
 
 def get_value(
     key: str,
-    settings: Dict[str, Any],
-    default_env: Dict[str, Any],
+    settings: dict[str, Any],
+    default_env: dict[str, Any],
     default: Any = NOT_GIVEN,
 ) -> Any:
     """

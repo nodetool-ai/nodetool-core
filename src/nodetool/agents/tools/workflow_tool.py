@@ -7,14 +7,14 @@ and uses its input schema for tool parameters.
 """
 
 import re
-from typing import Any, Dict
+from typing import Any
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
+from nodetool.types.api_graph import Edge, Node, get_input_schema, get_output_schema
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
@@ -107,8 +107,8 @@ class GraphTool(Tool):
             },
         }
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
-        from nodetool.types.graph import Graph as ApiGraph
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
+        from nodetool.types.api_graph import Graph as ApiGraph
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
@@ -344,7 +344,7 @@ class WorkflowTool(Tool):
         assert workflow.input_schema is not None, "Workflow input schema is required"
         self.input_schema = workflow.input_schema
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
         """
         Execute the workflow with the provided parameters.
 
@@ -382,7 +382,7 @@ class WorkflowTool(Tool):
                 "error": str(e),
             }
 
-    def user_message(self, params: Dict[str, Any]) -> str:
+    def user_message(self, params: dict[str, Any]) -> str:
         """
         Returns a user message for the workflow tool.
         """

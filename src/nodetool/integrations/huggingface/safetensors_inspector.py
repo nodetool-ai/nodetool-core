@@ -12,7 +12,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, Optional, Sequence
 
 try:
     from safetensors import safe_open  # type: ignore
@@ -29,8 +29,8 @@ class DetectionResult:
     family: str
     component: str
     confidence: float
-    evidence: List[str] = field(default_factory=list)
-    details: Dict[str, object] = field(default_factory=dict)
+    evidence: list[str] = field(default_factory=list)
+    details: dict[str, object] = field(default_factory=dict)
 
 
 def detect_model(
@@ -87,15 +87,15 @@ def detect_model(
 
 @dataclass
 class _Index:
-    files: List[Path]
-    keys_per_file: Dict[Path, List[str]]
-    key_to_file: Dict[str, Path]
+    files: list[Path]
+    keys_per_file: dict[Path, list[str]]
+    key_to_file: dict[str, Path]
 
 
-def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
-    paths = [Path(src)] if isinstance(src, str | os.PathLike) else [Path(p) for p in src]
+def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> list[Path]:
+    paths = [Path(src)] if isinstance(src, (str, os.PathLike)) else [Path(p) for p in src]  # type: ignore[arg-type]
 
-    out: List[Path] = []
+    out: list[Path] = []
     for path in paths:
         if path.is_dir():
             out.extend(sorted(path.glob("*.safetensors")))
@@ -107,9 +107,9 @@ def _normalize_inputs(src: PathLike | Sequence[PathLike]) -> List[Path]:
     return uniq
 
 
-def _build_index(files: List[Path], framework: str) -> _Index:
-    keys_per_file: Dict[Path, List[str]] = {}
-    key_to_file: Dict[str, Path] = {}
+def _build_index(files: list[Path], framework: str) -> _Index:
+    keys_per_file: dict[Path, list[str]] = {}
+    key_to_file: dict[str, Path] = {}
     for fp in files:
         with safe_open(fp.as_posix(), framework=framework) as handle:
             keys = list(handle.keys())
@@ -136,7 +136,7 @@ def _find_first(keys: Iterable[str], pattern: str) -> Optional[str]:
     return None
 
 
-def _get_shape(index: _Index, key: str, framework: str) -> Optional[Tuple[int, ...]]:
+def _get_shape(index: _Index, key: str, framework: str) -> Optional[tuple[int, ...]]:
     file_path = index.key_to_file.get(key)
     if not file_path:
         return None
@@ -162,7 +162,13 @@ def _infer_component(index: _Index) -> str:
         ):
             return "lora_adapter"
 
+    # Diffusers-style UNet (down_blocks, up_blocks, mid_block)
     if any(key.startswith(("down_blocks.", "up_blocks.", "mid_block.")) for key in all_keys):
+        return "unet"
+
+    # CompVis/SD-style single-file checkpoint (model.diffusion_model.*)
+    # These are commonly found in Civitai checkpoints
+    if any(key.startswith("model.diffusion_model.") for key in all_keys):
         return "unet"
 
     if any(key.startswith("transformer_blocks.") for key in all_keys) and not any(
@@ -202,7 +208,7 @@ def _infer_component(index: _Index) -> str:
 
 def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> DetectionResult:
     keys = list(index.key_to_file.keys())
-    evidence: List[str] = []
+    evidence: list[str] = []
     confidence = 0.0
     family = "unknown"
     component = _infer_component(index)
@@ -230,6 +236,29 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
         return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
 
     if component == "unet":
+        # Check for CompVis/SD-style single-file checkpoint first
+        # These use model.diffusion_model.* naming instead of diffusers-style down_blocks.*
+        if any(key.startswith("model.diffusion_model.") for key in keys):
+            # This is a single-file SD checkpoint (commonly from Civitai)
+            # Check for SDXL indicators
+            if _has_any(keys, "conditioner.embedders."):
+                family = "sdxl-base"
+                confidence = 0.90
+                evidence.append("CompVis-style checkpoint with conditioner.embedders.* (SDXL hallmark)")
+            elif _has_any(keys, "cond_stage_model.transformer."):
+                family = "sd1"
+                confidence = 0.90
+                evidence.append("CompVis-style checkpoint with cond_stage_model.transformer.* (SD1.x hallmark)")
+            elif _has_any(keys, "cond_stage_model.model."):
+                family = "sd2"
+                confidence = 0.88
+                evidence.append("CompVis-style checkpoint with cond_stage_model.model.* (SD2.x hallmark)")
+            else:
+                family = "sd1"
+                confidence = 0.80
+                evidence.append("CompVis-style checkpoint with model.diffusion_model.* (likely SD1.x)")
+            return DetectionResult(family=family, component=component, confidence=confidence, evidence=evidence)
+
         probe = _find_first(keys, r"^down_blocks\.0\.resnets\.0\.conv1\.weight$")
         read_shapes = 0
         if probe and read_shapes < max_shape_reads:
@@ -494,7 +523,7 @@ def _classify_tts(index: _Index) -> DetectionResult:
     )
 
 
-def _common_details(index: _Index, sample: int = 10) -> Dict[str, object]:
+def _common_details(index: _Index, sample: int = 10) -> dict[str, object]:
     keys = sorted(index.key_to_file.keys())
     return {
         "num_files": len(index.files),
