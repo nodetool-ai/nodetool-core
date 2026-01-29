@@ -215,6 +215,7 @@ class BaseChatRunner(ABC):
         # Run the database operation in a thread pool to avoid blocking
         # Create database message directly with async
         db_message = await DBMessage.create(thread_id=message_thread_id, user_id=self.user_id or "", **data_copy)
+        await DBMessage.index_message(db_message)
 
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
