@@ -38,9 +38,12 @@ rationale for the changes that will follow.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
+
+from pydantic import BaseModel
 
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
@@ -49,6 +52,65 @@ from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
+
+
+def _serialize_output_for_telemetry(
+    output: Any, max_string_length: int = 500, max_list_items: int = 10
+) -> Any:
+    """Serialize node output for telemetry recording.
+
+    Converts complex objects to JSON-serializable format with size limits
+    to prevent excessive data in traces.
+
+    Args:
+        output: The output value to serialize
+        max_string_length: Maximum length for string values (truncated beyond)
+        max_list_items: Maximum items to include from lists/dicts
+
+    Returns:
+        JSON-serializable representation of the output
+    """
+    if output is None:
+        return None
+
+    # Handle Pydantic models (including AssetRef and subclasses)
+    if isinstance(output, BaseModel):
+        try:
+            return output.model_dump(mode="json")
+        except Exception:
+            return {"type": type(output).__name__, "error": "serialization_failed"}
+
+    # Handle primitives
+    if isinstance(output, (int, float, bool)):
+        return output
+
+    if isinstance(output, str):
+        if len(output) > max_string_length:
+            return output[:max_string_length] + f"... (truncated, total {len(output)} chars)"
+        return output
+
+    if isinstance(output, bytes):
+        return {"type": "bytes", "size": len(output)}
+
+    # Handle lists/tuples
+    if isinstance(output, (list, tuple)):
+        items = [_serialize_output_for_telemetry(item, max_string_length, max_list_items) for item in output[:max_list_items]]
+        if len(output) > max_list_items:
+            items.append(f"... and {len(output) - max_list_items} more items")
+        return items
+
+    # Handle dicts
+    if isinstance(output, dict):
+        serialized = {}
+        for i, (key, value) in enumerate(output.items()):
+            if i >= max_list_items:
+                serialized["..."] = f"{len(output) - max_list_items} more keys"
+                break
+            serialized[str(key)] = _serialize_output_for_telemetry(value, max_string_length, max_list_items)
+        return serialized
+
+    # Fallback: return type info
+    return {"type": type(output).__name__}
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -220,274 +282,16 @@ class NodeActor:
     ) -> None:
         """Automatically save assets from node outputs when auto_save_asset is enabled.
 
-        Scans the result dictionary for AssetRef instances and saves them to storage
-        with proper tracking (node_id, job_id, workflow_id).
+        Delegates to the asset_storage module for testability.
 
         Args:
             node: The node that produced the result
             result: The result dictionary containing node outputs
             context: The processing context with workflow/job information
         """
-        from io import BytesIO
+        from nodetool.workflows.asset_storage import auto_save_assets
 
-        from nodetool.metadata.types import AssetRef
-
-        if not result:
-            return
-
-        self.logger.debug(
-            "Auto-saving assets for node %s (%s)",
-            node.get_title(),
-            node._id,
-        )
-
-        # Recursively scan result for AssetRef instances
-        def find_asset_refs(obj: Any, path: str = "") -> list[tuple[str, AssetRef]]:
-            """Recursively find all AssetRef instances in the result."""
-            refs: list[tuple[str, AssetRef]] = []
-
-            if isinstance(obj, AssetRef):
-                refs.append((path, obj))
-            elif isinstance(obj, dict):
-                for key, value in obj.items():
-                    new_path = f"{path}.{key}" if path else key
-                    refs.extend(find_asset_refs(value, new_path))
-            elif isinstance(obj, (list, tuple)):
-                for idx, value in enumerate(obj):
-                    new_path = f"{path}[{idx}]"
-                    refs.extend(find_asset_refs(value, new_path))
-
-            return refs
-
-        asset_refs = find_asset_refs(result)
-
-        if not asset_refs:
-            self.logger.debug(
-                "No AssetRefs found in result for node %s (%s)",
-                node.get_title(),
-                node._id,
-            )
-            return
-
-        self.logger.info(
-            "Found %d asset(s) to auto-save for node %s (%s)",
-            len(asset_refs),
-            node.get_title(),
-            node._id,
-        )
-
-        # Save each asset ref
-        for path, asset_ref in asset_refs:
-            try:
-                # Skip if asset already has an asset_id (already saved)
-                if asset_ref.asset_id:
-                    self.logger.debug(
-                        "Skipping asset at %s - already has asset_id: %s",
-                        path,
-                        asset_ref.asset_id,
-                    )
-                    continue
-
-                # Skip if no data to save
-                if not asset_ref.data and not asset_ref.uri:
-                    self.logger.debug(
-                        "Skipping asset at %s - no data or uri",
-                        path,
-                    )
-                    continue
-
-                # Get content type from asset ref type
-                content_type = self._get_content_type_for_asset_ref(asset_ref)
-
-                # Generate asset name
-                asset_name = f"{node.get_title()}_{path}_{node._id[:8]}"
-
-                # Get data as BytesIO
-                if asset_ref.data:
-                    # Handle DataframeRef specially - data is list of lists, not bytes
-                    from nodetool.metadata.types import DataframeRef, JSONRef, SVGRef
-                    if isinstance(asset_ref, DataframeRef):
-                        import json
-                        # Convert DataFrame data to JSON bytes
-                        json_str = json.dumps(asset_ref.data)
-                        content = BytesIO(json_str.encode("utf-8"))
-                    elif isinstance(asset_ref, (JSONRef, SVGRef)):
-                        # JSONRef and SVGRef have string data
-                        if isinstance(asset_ref.data, str):
-                            content = BytesIO(asset_ref.data.encode("utf-8"))
-                        elif isinstance(asset_ref.data, bytes):
-                            content = BytesIO(asset_ref.data)
-                        else:
-                            self.logger.warning(
-                                "JSONRef/SVGRef data is not string or bytes at %s",
-                                path,
-                            )
-                            continue
-                    elif isinstance(asset_ref.data, bytes):
-                        content = BytesIO(asset_ref.data)
-                    else:
-                        # Try to convert to bytes
-                        try:
-                            content = BytesIO(bytes(asset_ref.data))
-                        except Exception:
-                            self.logger.warning(
-                                "Could not convert data to bytes for asset at %s",
-                                path,
-                            )
-                            continue
-                elif asset_ref.uri.startswith("memory://"):
-                    # Resolve memory URI to get the data
-                    from nodetool.runtime.resources import require_scope
-                    scope = require_scope()
-                    obj = scope.get_memory_uri_cache().get(asset_ref.uri)
-                    if obj is not None:
-                        # Convert object to bytes based on type
-                        data_bytes = self._object_to_bytes(obj, asset_ref)
-                        if data_bytes:
-                            content = BytesIO(data_bytes)
-                        else:
-                            self.logger.warning(
-                                "Could not convert memory object to bytes for asset at %s",
-                                path,
-                            )
-                            continue
-                    else:
-                        self.logger.warning(
-                            "Memory URI not found in cache for asset at %s",
-                            path,
-                        )
-                        continue
-                else:
-                    # For other URIs, we can't auto-save
-                    self.logger.debug(
-                        "Skipping asset at %s - unsupported URI type: %s",
-                        path,
-                        asset_ref.uri,
-                    )
-                    continue
-
-                # Create and save the asset
-                asset = await context.create_asset(
-                    name=asset_name,
-                    content_type=content_type,
-                    content=content,
-                    node_id=node._id,
-                )
-
-                # Update the AssetRef with the new asset_id
-                asset_ref.asset_id = asset.id
-
-                self.logger.info(
-                    "Auto-saved asset %s for node %s (%s) at %s",
-                    asset.id,
-                    node.get_title(),
-                    node._id,
-                    path,
-                )
-
-            except Exception as e:
-                self.logger.error(
-                    "Failed to auto-save asset at %s for node %s (%s): %s",
-                    path,
-                    node.get_title(),
-                    node._id,
-                    e,
-                    exc_info=True,
-                )
-
-    def _get_content_type_for_asset_ref(self, asset_ref: Any) -> str:
-        """Get the appropriate content type for an AssetRef based on its type."""
-        from nodetool.metadata.types import (
-            AudioRef,
-            DataframeRef,
-            DocumentRef,
-            ExcelRef,
-            FolderRef,
-            ImageRef,
-            JSONRef,
-            Model3DRef,
-            SVGRef,
-            TextRef,
-            VideoRef,
-        )
-
-        if isinstance(asset_ref, ImageRef):
-            return "image/png"
-        elif isinstance(asset_ref, AudioRef):
-            return "audio/mp3"
-        elif isinstance(asset_ref, VideoRef):
-            return "video/mp4"
-        elif isinstance(asset_ref, TextRef):
-            return "text/plain"
-        elif isinstance(asset_ref, DocumentRef):
-            return "application/pdf"
-        elif isinstance(asset_ref, DataframeRef):
-            return "application/json"
-        elif isinstance(asset_ref, ExcelRef):
-            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        elif isinstance(asset_ref, Model3DRef):
-            return "model/gltf-binary"
-        elif isinstance(asset_ref, FolderRef):
-            return "folder"
-        elif isinstance(asset_ref, JSONRef):
-            return "application/json"
-        elif isinstance(asset_ref, SVGRef):
-            return "image/svg+xml"
-        else:
-            return "application/octet-stream"
-
-    def _object_to_bytes(self, obj: Any, asset_ref: Any) -> bytes | None:
-        """Convert a Python object to bytes based on the asset ref type."""
-        from nodetool.metadata.types import AudioRef, DataframeRef, ImageRef, TextRef
-
-        if isinstance(asset_ref, ImageRef):
-            # Handle PIL Image
-            try:
-                from io import BytesIO
-
-                from PIL import Image
-
-                if isinstance(obj, Image.Image):
-                    buf = BytesIO()
-                    obj.save(buf, format="PNG")
-                    return buf.getvalue()
-            except Exception as e:
-                self.logger.debug(f"Failed to convert image object: {e}")
-
-        elif isinstance(asset_ref, AudioRef):
-            # Handle AudioSegment
-            try:
-                from io import BytesIO
-
-                from pydub import AudioSegment
-
-                if isinstance(obj, AudioSegment):
-                    buf = BytesIO()
-                    obj.export(buf, format="mp3")
-                    return buf.getvalue()
-            except Exception as e:
-                self.logger.debug(f"Failed to convert audio object: {e}")
-
-        elif isinstance(asset_ref, TextRef):
-            # Handle string
-            if isinstance(obj, str):
-                return obj.encode("utf-8")
-
-        elif isinstance(asset_ref, DataframeRef):
-            # Handle pandas DataFrame
-            try:
-                import pandas as pd
-
-                if isinstance(obj, pd.DataFrame):
-                    return obj.to_json(orient="records").encode("utf-8")
-            except Exception as e:
-                self.logger.debug(f"Failed to convert dataframe object: {e}")
-
-        # For bytes, return as-is
-        if isinstance(obj, bytes):
-            return obj
-
-        return None
+        await auto_save_assets(node, result, context)
 
     async def process_node_with_inputs(
         self,
@@ -624,6 +428,14 @@ class NodeActor:
         # Auto-save assets if the node has auto_save_asset enabled
         if node.__class__.auto_save_asset() and result:
             await self._auto_save_assets(node, result, context)
+
+        # Record the output for telemetry (after auto_save to capture asset_id)
+        if result:
+            try:
+                serialized_output = _serialize_output_for_telemetry(result)
+                span.add_event("node_output", {"output": json.dumps(serialized_output, default=str)})
+            except Exception as e:
+                span.add_event("node_output_serialization_error", {"error": str(e)})
 
         await node.send_update(context, "completed", result=result)
         await self.runner.send_messages(node, result, context)
@@ -769,11 +581,30 @@ class NodeActor:
         """Send the completed update with results."""
         result = self._filter_result(outputs.collected())
 
-        # Auto-save assets if the node has auto_save_asset enabled
-        if node.__class__.auto_save_asset() and result:
-            await self._auto_save_assets(node, result, context)
+        # Record streaming output for telemetry
+        job_id = self.runner.job_id if hasattr(self.runner, "job_id") else None
+        async with trace_node(
+            node_id=node._id,
+            node_type=node.get_node_type(),
+            job_id=job_id,
+        ) as span:
+            span.set_attribute("nodetool.node.title", node.get_title())
+            span.set_attribute("nodetool.node.streaming", True)
+            span.set_attribute("nodetool.node.output_count", len(result) if result else 0)
 
-        await node.send_update(context, "completed", result=result)
+            # Auto-save assets if the node has auto_save_asset enabled
+            if node.__class__.auto_save_asset() and result:
+                await self._auto_save_assets(node, result, context)
+
+            # Record the output for telemetry (after auto_save to capture asset_id)
+            if result:
+                try:
+                    serialized_output = _serialize_output_for_telemetry(result)
+                    span.add_event("node_output", {"output": json.dumps(serialized_output, default=str)})
+                except Exception as e:
+                    span.add_event("node_output_serialization_error", {"error": str(e)})
+
+            await node.send_update(context, "completed", result=result)
 
     async def _handle_post_execution(self, context: Any, node: Any) -> None:
         """Handle post-execution cleanup."""

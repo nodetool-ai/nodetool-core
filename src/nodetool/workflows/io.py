@@ -166,6 +166,14 @@ class NodeOutputs:
             self.capture_only,
         )
 
+        # Auto-save assets before routing to downstream nodes (for streaming outputs)
+        # This ensures asset_id is set before downstream nodes receive the value
+        if not self.capture_only and self.node.__class__.auto_save_asset():
+            from nodetool.workflows.asset_storage import auto_save_assets
+
+            # Wrap the single value in a dict for auto_save_assets
+            await auto_save_assets(self.node, {slot: value}, self.context)
+
         # Capture outputs from OutputNode instances into runner.outputs
         if isinstance(self.node, OutputNode):
             node_name = self.node.name

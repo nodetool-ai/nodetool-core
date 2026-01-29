@@ -1119,7 +1119,14 @@ class ProcessingContext:
             asset (AssetRef): The asset to refresh.
         """
         if asset.asset_id:
-            asset.uri = await self.get_asset_url(asset.asset_id)
+            from nodetool.workflows.asset_storage import (
+                get_content_type_for_asset_ref,
+                get_extension_for_content_type,
+            )
+
+            content_type = get_content_type_for_asset_ref(asset)
+            extension = get_extension_for_content_type(content_type)
+            asset.uri = f"asset://{asset.asset_id}{extension}"
 
     async def get_job(self, job_id: str) -> Job | None:
         """
@@ -1597,11 +1604,11 @@ class ProcessingContext:
         io = await self.asset_to_io(asset_ref)
         return await _in_thread(_read_base64, io)
 
-    async def asset_to_data_uri(self, asset_ref: AssetRef) -> str:
+    async def asset_to_data_uri(self, asset_ref: AssetRef, mime_type: str = "image/png") -> str:
         """
         Converts an AssetRef to a URI.
         """
-        return f"data:image/png;base64,{await self.asset_to_base64(asset_ref)}"
+        return f"data:{mime_type};base64,{await self.asset_to_base64(asset_ref)}"
 
     async def asset_to_data(self, asset_ref: AssetRef) -> AssetRef:
         """

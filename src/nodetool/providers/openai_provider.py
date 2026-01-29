@@ -1180,10 +1180,8 @@ class OpenAIProvider(BaseProvider):
                 if delta.content or chunk.choices[0].finish_reason == "stop":
                     current_chunk += delta.content or ""
                     finish_reason = chunk.choices[0].finish_reason
-                    log.debug(f"Content chunk - finish_reason: {finish_reason}, content length: {len(delta.content or '')}")
     
                     if finish_reason == "stop":
-                        log.debug("Final chunk received, logging response")
                         self._log_api_response(
                             "chat_stream",
                             Message(
