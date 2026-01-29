@@ -683,3 +683,387 @@ class TestMiniMaxTTS:
         assert len(MINIMAX_TTS_VOICES) > 0
         assert "English_Graceful_Lady" in MINIMAX_TTS_VOICES
         assert "English_Lucky_Robot" in MINIMAX_TTS_VOICES
+
+    # Video generation tests
+    def test_video_api_url_constants(self):
+        """Test video API URL constants."""
+        from nodetool.providers.minimax_provider import (
+            MINIMAX_FILE_RETRIEVE_URL,
+            MINIMAX_VIDEO_GENERATION_URL,
+            MINIMAX_VIDEO_QUERY_URL,
+        )
+
+        assert MINIMAX_VIDEO_GENERATION_URL == "https://api.minimax.io/v1/video_generation"
+        assert MINIMAX_VIDEO_QUERY_URL == "https://api.minimax.io/v1/query/video_generation"
+        assert MINIMAX_FILE_RETRIEVE_URL == "https://api.minimax.io/v1/files/retrieve"
+
+    def test_video_models_constant(self):
+        """Test MINIMAX_VIDEO_MODELS constant."""
+        from nodetool.providers.minimax_provider import MINIMAX_VIDEO_MODELS
+
+        assert len(MINIMAX_VIDEO_MODELS) == 6
+
+        model_ids = [m.id for m in MINIMAX_VIDEO_MODELS]
+        assert "MiniMax-Hailuo-2.3" in model_ids
+        assert "MiniMax-Hailuo-02" in model_ids
+        assert "T2V-01-Director" in model_ids
+        assert "T2V-01" in model_ids
+        assert "I2V-01-Director" in model_ids
+        assert "I2V-01" in model_ids
+
+        # Check supported tasks
+        for model in MINIMAX_VIDEO_MODELS:
+            assert len(model.supported_tasks) > 0
+            for task in model.supported_tasks:
+                assert task in ["text_to_video", "image_to_video"]
+
+    @pytest.mark.asyncio
+    async def test_get_available_video_models_success(self, provider):
+        """Test getting available video models."""
+        models = await provider.get_available_video_models()
+
+        assert len(models) == 6
+        model_ids = [m.id for m in models]
+        assert "MiniMax-Hailuo-2.3" in model_ids
+        assert "I2V-01" in model_ids
+
+    @pytest.mark.asyncio
+    async def test_get_available_video_models_no_api_key(self):
+        """Test getting available video models without API key."""
+        # Create provider with empty API key via a mock
+        with patch.object(MiniMaxProvider, "__init__", lambda x, secrets: None):
+            provider = MiniMaxProvider(secrets={})
+            provider.api_key = ""
+            models = await provider.get_available_video_models()
+            assert models == []
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_empty_prompt(self, provider):
+        """Test text_to_video with empty prompt raises ValueError."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Test", provider=Provider.MiniMax),
+            prompt="",
+        )
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_no_api_key(self):
+        """Test text_to_video without API key raises ValueError."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        with patch.object(MiniMaxProvider, "__init__", lambda x, secrets: None):
+            provider = MiniMaxProvider(secrets={})
+            provider.api_key = ""
+
+            params = TextToVideoParams(
+                model=VideoModel(id="MiniMax-Hailuo-2.3", name="Test", provider=Provider.MiniMax),
+                prompt="A test video",
+            )
+
+            with pytest.raises(ValueError, match="MINIMAX_API_KEY is required"):
+                await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_success(self, provider):
+        """Test successful text-to-video generation."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        video_data = b"fake_video_data_mp4"
+
+        # Mock responses for each API call
+        task_creation_response = {
+            "task_id": "test_task_123",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        task_query_response = {
+            "status": "success",
+            "file_id": "file_123",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        file_retrieve_response = {
+            "file": {"download_url": "https://example.com/video.mp4"},
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        class MockResponse:
+            def __init__(self, status, json_data=None, content=None):
+                self.status = status
+                self._json = json_data
+                self._content = content
+
+            async def json(self):
+                return self._json
+
+            async def read(self):
+                return self._content
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        call_count = {"post": 0, "get": 0}
+
+        class MockSession:
+            def post(self, url, json, headers):
+                call_count["post"] += 1
+                return MockResponse(200, task_creation_response)
+
+            def get(self, url, headers=None):
+                call_count["get"] += 1
+                if "query/video_generation" in url:
+                    return MockResponse(200, task_query_response)
+                elif "files/retrieve" in url:
+                    return MockResponse(200, file_retrieve_response)
+                else:
+                    # Download URL
+                    return MockResponse(200, content=video_data)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Test", provider=Provider.MiniMax),
+            prompt="A beautiful sunset over mountains",
+            resolution="1080P",
+        )
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            result = await provider.text_to_video(params)
+
+        assert result == video_data
+        assert call_count["post"] == 1
+        assert call_count["get"] >= 2  # At least query + retrieve + download
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_api_error(self, provider):
+        """Test text_to_video handles API errors."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        class MockResponse:
+            status = 500
+
+            async def text(self):
+                return "Internal Server Error"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def post(self, url, json, headers):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Test", provider=Provider.MiniMax),
+            prompt="A test video",
+        )
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+            pytest.raises(RuntimeError, match="failed with status 500"),
+        ):
+            await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_image_to_video_empty_image(self, provider):
+        """Test image_to_video with empty image raises ValueError."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import ImageToVideoParams
+
+        params = ImageToVideoParams(
+            model=VideoModel(id="I2V-01", name="Test", provider=Provider.MiniMax),
+            prompt="Animate this image",
+        )
+
+        with pytest.raises(ValueError, match="Input image cannot be empty"):
+            await provider.image_to_video(image=b"", params=params)
+
+    @pytest.mark.asyncio
+    async def test_image_to_video_success(self, provider):
+        """Test successful image-to-video generation."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import ImageToVideoParams
+
+        video_data = b"fake_video_data_mp4"
+        image_data = b"fake_image_data_png"
+
+        # Mock responses for each API call
+        task_creation_response = {
+            "task_id": "test_task_456",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        task_query_response = {
+            "status": "success",
+            "file_id": "file_456",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        file_retrieve_response = {
+            "file": {"download_url": "https://example.com/video.mp4"},
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        class MockResponse:
+            def __init__(self, status, json_data=None, content=None):
+                self.status = status
+                self._json = json_data
+                self._content = content
+
+            async def json(self):
+                return self._json
+
+            async def read(self):
+                return self._content
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        captured_payload = {}
+
+        class MockSession:
+            def post(self, url, json, headers):
+                captured_payload.update(json)
+                return MockResponse(200, task_creation_response)
+
+            def get(self, url, headers=None):
+                if "query/video_generation" in url:
+                    return MockResponse(200, task_query_response)
+                elif "files/retrieve" in url:
+                    return MockResponse(200, file_retrieve_response)
+                else:
+                    return MockResponse(200, content=video_data)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        params = ImageToVideoParams(
+            model=VideoModel(id="I2V-01", name="Test", provider=Provider.MiniMax),
+            prompt="Make this image come alive",
+        )
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            result = await provider.image_to_video(image=image_data, params=params)
+
+        assert result == video_data
+        # Verify the image was base64 encoded in the payload
+        assert "first_frame_image" in captured_payload
+        import base64
+
+        assert captured_payload["first_frame_image"] == base64.b64encode(image_data).decode("utf-8")
+
+    @pytest.mark.asyncio
+    async def test_poll_video_task_timeout(self, provider):
+        """Test that polling times out correctly."""
+        from nodetool.providers.minimax_provider import (
+            MINIMAX_VIDEO_QUERY_URL,
+        )
+
+        # Mock a response that always returns "processing"
+        processing_response = {
+            "status": "processing",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        class MockResponse:
+            status = 200
+
+            async def json(self):
+                return processing_response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def get(self, url, headers=None):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+            patch("asyncio.sleep", return_value=None),  # Skip actual waiting
+            pytest.raises(TimeoutError, match="timed out"),
+        ):
+            await provider._poll_video_task("test_task", timeout_s=1, poll_interval=1)
+
+    @pytest.mark.asyncio
+    async def test_poll_video_task_failure(self, provider):
+        """Test that polling handles task failure."""
+        failed_response = {
+            "status": "failed",
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+        }
+
+        class MockResponse:
+            status = 200
+
+            async def json(self):
+                return failed_response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def get(self, url, headers=None):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            patch("aiohttp.ClientTimeout"),
+            pytest.raises(RuntimeError, match="task failed"),
+        ):
+            await provider._poll_video_task("test_task", timeout_s=60, poll_interval=1)
