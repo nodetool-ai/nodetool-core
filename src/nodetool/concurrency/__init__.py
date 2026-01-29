@@ -1,3 +1,4 @@
+from .async_buffer import AsyncBuffer, AsyncBufferFullError, BufferClosedError
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
@@ -18,6 +19,8 @@ from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
 
 __all__ = [
+    "AsyncBuffer",
+    "AsyncBufferFullError",
     "AsyncByteStream",
     "AsyncEvent",
     "AsyncLock",
@@ -26,6 +29,7 @@ __all__ = [
     "AsyncSemaphore",
     "AsyncTaskGroup",
     "AsyncTokenBucket",
+    "BufferClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
     "CircuitBreakerError",
