@@ -434,8 +434,8 @@ class LayoutElement(BaseModel):
     visible: bool = True
     locked: bool = False
     name: str = ""
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    children: List["LayoutElement"] = Field(default_factory=list)
+    properties: dict[str, Any] = Field(default_factory=dict)
+    children: list["LayoutElement"] = Field(default_factory=list)
 
 
 class ExposedInput(BaseModel):
@@ -462,8 +462,8 @@ class LayoutCanvasData(BaseType):
     height: int = 600
     backgroundColor: str = Field(default="#ffffff", alias="background_color")
     backgroundImage: Optional[str] = Field(default=None, alias="background_image")
-    elements: List[LayoutElement] = Field(default_factory=list)
-    exposedInputs: List[ExposedInput] = Field(default_factory=list, alias="exposed_inputs")
+    elements: list[LayoutElement] = Field(default_factory=list)
+    exposedInputs: list[ExposedInput] = Field(default_factory=list, alias="exposed_inputs")
 
 
 class Provider(str, enum.Enum):
