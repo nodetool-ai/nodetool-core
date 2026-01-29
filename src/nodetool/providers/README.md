@@ -40,21 +40,26 @@ The following providers are currently implemented:
 - **Ollama (`ollama_provider.py`):** Connects to a locally running Ollama instance, allowing the use of various
   open-source models.
 - **vLLM (`vllm_provider.py`):** Connects to an externally managed vLLM server that exposes an OpenAI-compatible API.
+- **xllamacpp (`xllamacpp_provider.py`):** High-performance local LLM inference using xllamacpp's Cython bindings.
+  Provides built-in GPU offloading with memory estimation, thread-safe batching, and supports multiple platforms
+  (CPU, CUDA, Vulkan, Metal).
 
 ## Feature Support Summary
 
-| Feature                      | OpenAI (`openai_provider.py`) | Anthropic (`anthropic_provider.py`) | Gemini (`gemini_provider.py`) | Ollama (`ollama_provider.py`)             | vLLM (`vllm_provider.py`)                  |
-| :--------------------------- | :---------------------------- | :---------------------------------- | :---------------------------- | :---------------------------------------- | :----------------------------------------- |
-| **Streaming**                | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                     |
-| **Tool Use (Native)**        | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                   |
-| **Tool Use (Textual)**       | No                            | No                                  | No                            | Yes ✅ (Fallback for incompatible models) | No                                         |
-| **System Prompt**            | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                     |
-| **Image Input (Multimodal)** | Yes ✅                        | Yes ✅                              | No ❌ (File input only)       | Yes ✅ (Base64)                           | Yes ✅ (OpenAI format)                     |
-| **File Input (Generic)**     | No ❌                         | No ❌                               | Yes ✅ (Via Blobs)            | No ❌                                     | No ❌                                      |
-| **JSON Mode**                | Yes ✅                        | Yes ✅ (Via Tool)                   | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                   |
-| **API Key Required**         | Yes ✅                        | Yes ✅                              | Yes ✅                        | Optional                                  | Optional                                   |
-| **Backend Type**             | Cloud ☁️                      | Cloud ☁️                            | Cloud ☁️                      | Local/Self-Hosted 🏠                      | Local/Self-Hosted / Cloud 🏠☁️             |
-| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`                          | `VLLM_BASE_URL`, `VLLM_API_KEY` (optional) |
+| Feature                      | OpenAI (`openai_provider.py`) | Anthropic (`anthropic_provider.py`) | Gemini (`gemini_provider.py`) | Ollama (`ollama_provider.py`)             | vLLM (`vllm_provider.py`)                  | xllamacpp (`xllamacpp_provider.py`)       |
+| :--------------------------- | :---------------------------- | :---------------------------------- | :---------------------------- | :---------------------------------------- | :----------------------------------------- | :---------------------------------------- |
+| **Streaming**                | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                     | Yes ✅                                    |
+| **Tool Use (Native)**        | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                   | No ❌                                     |
+| **Tool Use (Textual)**       | No                            | No                                  | No                            | Yes ✅ (Fallback for incompatible models) | No                                         | Yes ✅ (Emulation)                        |
+| **System Prompt**            | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                     | Yes ✅                                    |
+| **Image Input (Multimodal)** | Yes ✅                        | Yes ✅                              | No ❌ (File input only)       | Yes ✅ (Base64)                           | Yes ✅ (OpenAI format)                     | Yes ✅ (Base64, model dependent)          |
+| **File Input (Generic)**     | No ❌                         | No ❌                               | Yes ✅ (Via Blobs)            | No ❌                                     | No ❌                                      | No ❌                                     |
+| **JSON Mode**                | Yes ✅                        | Yes ✅ (Via Tool)                   | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                   | Yes ✅ (Grammar support)                  |
+| **API Key Required**         | Yes ✅                        | Yes ✅                              | Yes ✅                        | Optional                                  | Optional                                   | No ❌                                     |
+| **Backend Type**             | Cloud ☁️                      | Cloud ☁️                            | Cloud ☁️                      | Local/Self-Hosted 🏠                      | Local/Self-Hosted / Cloud 🏠☁️             | Local 🏠                                  |
+| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`                          | `VLLM_BASE_URL`, `VLLM_API_KEY` (optional) | `XLLAMACPP_*` environment variables       |
+| **GPU Offloading**           | N/A                           | N/A                                 | N/A                           | External                                  | External                                   | Yes ✅ (Auto-estimated)                   |
+| **Memory Estimation**        | N/A                           | N/A                                 | N/A                           | No                                        | No                                         | Yes ✅                                    |
 
 **Notes:**
 
@@ -67,6 +72,41 @@ The following providers are currently implemented:
 - **Gemini File Input:** Supports generic file input via `Blob` data, not just images embedded directly in message
   content like other providers. Image content within messages is not implemented.
 - **Multimodal:** Refers to including images directly alongside text within a single message turn.
+- **xllamacpp Provider:** High-performance local LLM inference using Cython-based llama.cpp bindings. Key features:
+  - **Pythonic Management:** No external process management - models loaded directly in Python
+  - **Memory Estimation:** Automatic GPU layer offloading using built-in memory estimation
+  - **Platform Support:** Optimized builds for CPU, CUDA (NVIDIA), Vulkan (AMD/Intel), and Metal (Apple Silicon)
+  - **Thread Safety:** Built-in continuous batching with thread-safe server
+  - **Installation:** Install platform-specific builds via pip with custom indexes (see pyproject.toml)
+  - **Tool Calling:** Uses text-based emulation (similar to Ollama fallback)
+  - **Configuration:** Use `XLLAMACPP_*` environment variables to control context size, GPU layers, threads, etc.
+
+## xllamacpp Installation
+
+xllamacpp provides pre-built wheels for multiple platforms. Choose the appropriate installation command:
+
+**CPU / Mac (default):**
+```bash
+pip install xllamacpp
+```
+
+**CUDA 12.8 (NVIDIA GPUs):**
+```bash
+pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/cu128
+```
+
+**CUDA 12.4 (NVIDIA GPUs):**
+```bash
+pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/cu124
+```
+
+**Vulkan (AMD/Intel GPUs):**
+```bash
+pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/vulkan
+```
+
+**Note:** For optimal performance on specific CPU architectures, you may want to build from source. See the
+[xllamacpp documentation](https://github.com/xorbitsai/xllamacpp) for details.
 
 This provider system allows Nodetool to flexibly leverage the capabilities of different LLMs for chat-based interactions
 and agentic workflows.

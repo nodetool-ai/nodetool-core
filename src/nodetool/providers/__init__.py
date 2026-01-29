@@ -93,6 +93,16 @@ def import_providers():
         zai_provider,
     )
 
+    # Conditionally import xllamacpp_provider
+    try:
+        from nodetool.providers import xllamacpp_provider  # type: ignore
+
+        log.debug("XLlamaCpp provider imported successfully")
+    except ImportError as e:
+        log.debug(f"XLlamaCpp provider could not be imported: {e}. Install with: pip install xllamacpp")
+    except Exception as e:
+        log.warning(f"Unexpected error importing XLlamaCpp provider: {e}")
+
     # Conditionally import llama_provider only if llama-server binary is available
     if _is_llama_server_available():
         try:
