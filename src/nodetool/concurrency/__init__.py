@@ -13,6 +13,7 @@ from .circuit_breaker import (
     CircuitState,
     MultiCircuitBreaker,
 )
+from .debounce import DebouncePolicy, async_debounce
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
@@ -31,6 +32,7 @@ __all__ = [
     "CircuitBreakerError",
     "CircuitBreakerStats",
     "CircuitState",
+    "DebouncePolicy",
     "MultiCircuitBreaker",
     "TaskExecutionError",
     "TaskResult",
@@ -38,6 +40,7 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "async_debounce",
     "batched_async_iterable",
     "gather_with_concurrency",
     "process_in_batches",
