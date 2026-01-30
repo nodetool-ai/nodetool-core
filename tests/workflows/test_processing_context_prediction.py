@@ -43,13 +43,19 @@ class MockProvider(BaseProvider):
 class TestGetProvider:
     """Tests for ProcessingContext.get_provider()."""
 
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear provider cache before each test."""
+        from nodetool.providers import clear_provider_cache
+        clear_provider_cache()
+
     @pytest.mark.asyncio
     async def test_get_provider_caching(self):
         """Provider instances should be cached."""
         ctx = ProcessingContext(user_id="test")
 
         with patch(
-            "nodetool.providers.base.get_registered_provider",
+            "nodetool.providers.get_registered_provider",
             return_value=(MockProvider, {}),
         ):
             provider1 = await ctx.get_provider(Provider.OpenAI)
@@ -63,7 +69,7 @@ class TestGetProvider:
         ctx = ProcessingContext(user_id="test")
 
         with patch(
-            "nodetool.providers.base.get_registered_provider",
+            "nodetool.providers.get_registered_provider",
             return_value=(MockProvider, {}),
         ):
             provider1 = await ctx.get_provider(Provider.OpenAI)
@@ -73,20 +79,25 @@ class TestGetProvider:
 
     @pytest.mark.asyncio
     async def test_get_provider_passes_secrets(self):
-        """Provider should receive secrets from environment."""
-        ctx = ProcessingContext(
-            user_id="test",
-            environment={"TEST_API_KEY": "test-key-123"},
-        )
+        """Provider should receive secrets from get_secret."""
+        ctx = ProcessingContext(user_id="test")
 
         class MockProviderWithSecrets(MockProvider):
             @classmethod
             def required_secrets(cls):
                 return ["TEST_API_KEY"]
 
+        async def mock_get_secret(key, user_id):
+            if key == "TEST_API_KEY":
+                return "test-key-123"
+            return None
+
         with patch(
-            "nodetool.providers.base.get_registered_provider",
+            "nodetool.providers.get_registered_provider",
             return_value=(MockProviderWithSecrets, {}),
+        ), patch(
+            "nodetool.providers.get_secret",
+            side_effect=mock_get_secret,
         ):
             provider = await ctx.get_provider(Provider.OpenAI)
             assert provider.secrets.get("TEST_API_KEY") == "test-key-123"

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, TypedDict, cast
 
 import aiohttp
 import openai
@@ -42,6 +42,14 @@ log = get_logger(__name__)
 
 
 @register_provider(Provider.Mistral)
+class _EmbeddingModelConfig(TypedDict):
+    """Type definition for embedding model configuration."""
+
+    id: str
+    name: str
+    dimensions: int
+
+
 class MistralProvider(OpenAIProvider):
     """Mistral AI implementation of the ChatProvider interface.
 
@@ -446,7 +454,7 @@ class MistralProvider(OpenAIProvider):
 
         # Mistral embedding models
         # Source: https://docs.mistral.ai/capabilities/embeddings/
-        embedding_models_config = [
+        embedding_models_config: list[_EmbeddingModelConfig] = [
             {
                 "id": "mistral-embed",
                 "name": "Mistral Embed",

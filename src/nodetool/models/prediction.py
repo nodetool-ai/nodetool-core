@@ -70,6 +70,7 @@ class Prediction(DBModel):
         model: str,
         workflow_id: str | None = None,
         status: str = "starting",
+        error: str | None = None,
         cost: float | None = None,
         duration: float | None = None,
         hardware: str | None = None,
@@ -95,6 +96,7 @@ class Prediction(DBModel):
             model: The specific model used for the prediction.
             workflow_id: Optional ID of the workflow this prediction belongs to.
             status: Initial status of the prediction (default: 'starting').
+            error: Optional error message if the prediction failed.
             cost: Optional estimated or actual cost of the prediction.
             duration: Optional duration of the prediction in seconds.
             hardware: Optional identifier for the hardware used.
@@ -125,6 +127,7 @@ class Prediction(DBModel):
             model=model,
             workflow_id=workflow_id,
             status=status,
+            error=error,
             cost=cost,
             duration=duration,
             hardware=hardware,

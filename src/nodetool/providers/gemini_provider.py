@@ -16,6 +16,7 @@ from google.genai.types import (
     Blob,
     Content,
     ContentListUnion,
+    EmbedContentConfig,
     FinishReason,
     FunctionCall,
     FunctionDeclaration,
@@ -193,14 +194,8 @@ class GeminiProvider(BaseProvider):
                 supported_tasks=["text_to_image"],
             ),
             ImageModel(
-                id="imagen-4.0-generate-preview-06-06",
-                name="Imagen 4.0 Preview",
-                provider=Provider.Gemini,
-                supported_tasks=["text_to_image"],
-            ),
-            ImageModel(
-                id="imagen-4.0-ultra-generate-preview-06-06",
-                name="Imagen 4.0 Ultra Preview",
+                id="imagen-4.0-generate-001",
+                name="Imagen 4.0",
                 provider=Provider.Gemini,
                 supported_tasks=["text_to_image"],
             ),
@@ -1000,12 +995,6 @@ class GeminiProvider(BaseProvider):
 
         models = [
             TTSModel(
-                id="gemini-2.5-flash-preview-tts",
-                name="Gemini 2.5 Flash TTS",
-                provider=Provider.Gemini,
-                voices=gemini_voices,
-            ),
-            TTSModel(
                 id="gemini-2.5-pro-preview-tts",
                 name="Gemini 2.5 Pro TTS",
                 provider=Provider.Gemini,
@@ -1033,18 +1022,13 @@ class GeminiProvider(BaseProvider):
         # Source: https://ai.google.dev/gemini-api/docs/audio
         models = [
             ASRModel(
-                id="gemini-1.5-flash",
-                name="Gemini 1.5 Flash",
+                id="gemini-2.0-flash",
+                name="Gemini 2.0 Flash",
                 provider=Provider.Gemini,
             ),
             ASRModel(
-                id="gemini-1.5-pro",
-                name="Gemini 1.5 Pro",
-                provider=Provider.Gemini,
-            ),
-            ASRModel(
-                id="gemini-2.0-flash-exp",
-                name="Gemini 2.0 Flash (Experimental)",
+                id="gemini-2.5-flash",
+                name="Gemini 2.5 Flash",
                 provider=Provider.Gemini,
             ),
         ]
@@ -1067,13 +1051,8 @@ class GeminiProvider(BaseProvider):
 
         models = [
             VideoModel(
-                id="veo-3.0-generate-001",
-                name="Veo 3.0",
-                provider=Provider.Gemini,
-            ),
-            VideoModel(
-                id="veo-3.0-fast-generate-001",
-                name="Veo 3.0 Fast",
+                id="veo-3.1-generate-preview",
+                name="Veo 3.1 Preview",
                 provider=Provider.Gemini,
             ),
             VideoModel(
@@ -1108,13 +1087,8 @@ class GeminiProvider(BaseProvider):
                 "dimensions": 768,
             },
             {
-                "id": "text-embedding-005",
-                "name": "Text Embedding 005",
-                "dimensions": 768,
-            },
-            {
-                "id": "gemini-embedding-exp-03-07",
-                "name": "Gemini Embedding Experimental",
+                "id": "gemini-embedding-001",
+                "name": "Gemini Embedding 001",
                 "dimensions": 3072,
             },
         ]
@@ -1164,25 +1138,26 @@ class GeminiProvider(BaseProvider):
             raise ValueError("GEMINI_API_KEY is required for embedding generation")
 
         # Normalize input to list
-        texts = [text] if isinstance(text, str) else text
+        texts: list[str] = [text] if isinstance(text, str) else list(text)
 
         log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
 
         try:
             client = self.get_client()
 
-            # Build optional config
-            config: dict[str, Any] = {}
-            if kwargs.get("dimensions"):
-                config["output_dimensionality"] = kwargs["dimensions"]
-            if kwargs.get("task_type"):
-                config["task_type"] = kwargs["task_type"]
+            # Build optional config using proper type
+            embed_config: EmbedContentConfig | None = None
+            if kwargs.get("dimensions") or kwargs.get("task_type"):
+                embed_config = EmbedContentConfig(
+                    output_dimensionality=kwargs.get("dimensions"),
+                    task_type=kwargs.get("task_type"),
+                )
 
             # Generate embeddings using Gemini API
             response = await client.models.embed_content(
                 model=model,
-                contents=texts,
-                config=config if config else None,
+                contents=cast("ContentListUnion", texts),
+                config=embed_config,
             )
 
             # Extract embeddings from response

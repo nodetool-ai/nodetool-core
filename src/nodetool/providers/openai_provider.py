@@ -132,10 +132,10 @@ class OpenAIProvider(BaseProvider):
 
         Reads ``OPENAI_API_KEY`` from environment.
         """
+        super().__init__(secrets)
         assert "OPENAI_API_KEY" in secrets, "OPENAI_API_KEY is required"
         self.api_key = secrets["OPENAI_API_KEY"]
         self.client = None
-        self.cost = 0.0
         log.debug("OpenAIProvider initialized. API key present: True")
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:

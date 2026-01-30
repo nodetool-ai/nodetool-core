@@ -137,6 +137,7 @@ class AnthropicProvider(BaseProvider):
 
     def __init__(self, secrets: dict[str, str]):
         """Initialize the Anthropic provider with client credentials."""
+        super().__init__(secrets)
         api_key = secrets.get("ANTHROPIC_API_KEY")
         if not api_key or not api_key.strip():
             raise ApiKeyMissingError("ANTHROPIC_API_KEY is not configured in nodetool settings")

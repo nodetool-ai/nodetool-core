@@ -136,7 +136,7 @@ class ModelTools:
             for m in all_models:
                 matched = False
                 if hasattr(m, "provider") and m.provider is not None:
-                    provider_str = m.provider.value if hasattr(m.provider, "value") else str(m.provider)
+                    provider_str = str(m.provider.value) if hasattr(m.provider, "value") else str(m.provider)
                     if provider_str.lower() == provider.lower():
                         matched = True
 

@@ -1006,50 +1006,10 @@ class NodeActor:
 
         # Record node_id for state updates via StateManager
         node_id = node._id
-
-        # Queue state update: scheduled (non-blocking via StateManager)
-        if getattr(self.runner, "state_manager", None):
-            try:
-                await self.runner.state_manager.update_node_state(
-                    node_id=node_id,
-                    status="scheduled",
-                    attempt=1,  # TODO: track attempts properly
-                    scheduled_at=datetime.now(),
-                )
-                self.logger.debug(f"Queued state update (scheduled) for node {node_id}")
-            except Exception as e:
-                self.logger.error(f"Failed to queue state update: {e}")
-                # Continue execution - state tracking failure shouldn't block workflow
-
-        # Log NodeScheduled event (audit-only, non-fatal)
-        event_logger = getattr(self.runner, "event_logger", None)
-        if event_logger:
-            try:
-                await self.runner.event_logger.log_node_scheduled(
-                    node_id=node._id,
-                    node_type=node.get_node_type(),
-                    attempt=1,  # TODO: track attempts properly
-                )
-            except Exception as e:
-                self.logger.warning(f"Failed to log NodeScheduled event (non-fatal): {e}")
-
         # Record start time for duration calculation
         start_time = asyncio.get_event_loop().time()
 
         try:
-            # Queue state update: running (non-blocking via StateManager)
-            state_manager = getattr(self.runner, "state_manager", None)
-            if state_manager:
-                try:
-                    await self.runner.state_manager.update_node_state(
-                        node_id=node_id,
-                        status="running",
-                        started_at=datetime.now(),
-                    )
-                    self.logger.debug(f"Queued state update (running) for node {node_id}")
-                except Exception as e:
-                    self.logger.error(f"Failed to queue state update: {e}")
-
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
 
@@ -1062,33 +1022,6 @@ class NodeActor:
 
             # Calculate duration
             duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-
-            # Queue state update: completed (non-blocking via StateManager)
-            state_manager = getattr(self.runner, "state_manager", None)
-            if state_manager:
-                try:
-                    await self.runner.state_manager.update_node_state(
-                        node_id=node_id,
-                        status="completed",
-                        completed_at=datetime.now(),
-                        outputs_json={},  # TODO: track actual outputs
-                    )
-                    self.logger.debug(f"Queued state update (completed) for node {node_id}")
-                except Exception as e:
-                    self.logger.error(f"Failed to queue state update: {e}")
-
-            # Log NodeCompleted event (audit-only, non-fatal)
-            event_logger = getattr(self.runner, "event_logger", None)
-            if event_logger:
-                try:
-                    await self.runner.event_logger.log_node_completed(
-                        node_id=node._id,
-                        attempt=1,  # TODO: track attempts properly
-                        outputs={},  # Outputs are tracked separately in send_messages
-                        duration_ms=duration_ms,
-                    )
-                except Exception as e:
-                    self.logger.warning(f"Failed to log NodeCompleted event (non-fatal): {e}")
 
         except asyncio.CancelledError:
             self.logger.info(
@@ -1110,21 +1043,6 @@ class NodeActor:
                 node.get_node_type(),
                 e.reason,
             )
-
-            # Queue state update: suspended (non-blocking via StateManager)
-            state_manager = getattr(self.runner, "state_manager", None)
-            if state_manager:
-                try:
-                    await self.runner.state_manager.update_node_state(
-                        node_id=node_id,
-                        status="suspended",
-                        suspended_at=datetime.now(),
-                        suspension_reason=e.reason,
-                        resume_state_json=e.state,
-                    )
-                    self.logger.debug(f"Queued state update (suspended) for node {node_id}")
-                except Exception as e2:
-                    self.logger.error(f"Failed to queue state update: {e2}")
 
             # Post suspended update (not error)
             try:
@@ -1155,34 +1073,6 @@ class NodeActor:
                 node.get_node_type(),
                 e,
             )
-
-            # Queue state update: failed (non-blocking via StateManager)
-            state_manager = getattr(self.runner, "state_manager", None)
-            if state_manager:
-                try:
-                    await self.runner.state_manager.update_node_state(
-                        node_id=node_id,
-                        status="failed",
-                        failed_at=datetime.now(),
-                        last_error=str(e)[:1000],
-                        retryable=False,  # TODO: determine retryability
-                    )
-                    self.logger.debug(f"Queued state update (failed) for node {node_id}")
-                except Exception as e2:
-                    self.logger.error(f"Failed to queue state update: {e2}")
-
-            # Log NodeFailed event (audit-only, non-fatal)
-            event_logger = getattr(self.runner, "event_logger", None)
-            if event_logger:
-                try:
-                    await self.runner.event_logger.log_node_failed(
-                        node_id=node._id,
-                        attempt=1,  # TODO: track attempts properly
-                        error=str(e)[:1000],
-                        retryable=False,  # TODO: determine retryability
-                    )
-                except Exception as e2:
-                    self.logger.warning(f"Failed to log NodeFailed event (non-fatal): {e2}")
 
             # Post error update and propagate; ensure EOS downstream
             try:
