@@ -182,6 +182,15 @@ def _load_default_routers() -> list[APIRouter]:
         routers.append(file.router)
         routers.append(collection.router)
 
+    # Add OpenClaw integration router if enabled
+    from nodetool.integrations.openclaw.config import OpenClawConfig
+
+    if OpenClawConfig.is_enabled():
+        from nodetool.integrations.openclaw import openclaw_router
+
+        routers.append(openclaw_router)
+        log.info("OpenClaw integration enabled, router loaded")
+
     return routers
 
 
