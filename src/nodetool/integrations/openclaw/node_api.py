@@ -8,7 +8,7 @@ and status reporting.
 import asyncio
 import platform
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timezone
 from typing import Any, Optional
 
 import psutil
@@ -186,7 +186,7 @@ async def register_node(request: Request) -> NodeRegistrationResponse:
         metadata={
             "platform": platform.platform(),
             "python_version": platform.python_version(),
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
         },
     )
 
@@ -262,7 +262,7 @@ async def execute_task(task_request: TaskExecutionRequest) -> TaskExecutionRespo
                 "status": "completed",
                 "capability": task_request.capability_name,
                 "parameters": task_request.parameters,
-                "executed_at": datetime.utcnow().isoformat(),
+                "executed_at": datetime.now(UTC).isoformat(),
             }
 
             _task_results[task_request.task_id] = {
@@ -343,7 +343,7 @@ async def get_node_status() -> NodeStatusResponse:
         total_tasks_completed=_stats["total_tasks_completed"],
         total_tasks_failed=_stats["total_tasks_failed"],
         system_info=get_system_info(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -389,6 +389,6 @@ async def health_check():
             "status": "healthy" if config.enabled else "disabled",
             "node_id": config.node_id,
             "uptime_seconds": OpenClawConfig.get_uptime(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     )

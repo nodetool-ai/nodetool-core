@@ -4,7 +4,7 @@ These schemas define the message formats and data structures used for
 communication with the OpenClaw Gateway according to the protocol specification.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -112,7 +112,8 @@ class NodeStatusResponse(BaseModel):
         default_factory=dict, description="System resource information"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Time of status report"
+        default_factory=lambda: datetime.now(UTC),
+        description="Time of status report",
     )
 
 
@@ -127,5 +128,6 @@ class GatewayMessage(BaseModel):
         default_factory=dict, description="Message payload"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Message timestamp"
+        default_factory=lambda: datetime.now(UTC),
+        description="Message timestamp",
     )
