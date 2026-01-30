@@ -223,7 +223,8 @@ def run_startup_security_checks(raise_on_critical: bool = False) -> list[Securit
                 else:
                     log.warning(f"SECURITY: {warning.message}")
         except Exception as e:
-            log.error(f"Error running security check {check_fn.__name__}: {e}")
+            fn_name = getattr(check_fn, "__name__", repr(check_fn))
+            log.error(f"Error running security check {fn_name}: {e}")
 
     if warnings:
         log.warning(

@@ -458,10 +458,10 @@ class MistralProvider(OpenAIProvider):
         for config in embedding_models_config:
             models.append(
                 EmbeddingModel(
-                    id=config["id"],
-                    name=config["name"],
+                    id=str(config["id"]),
+                    name=str(config["name"]),
                     provider=Provider.Mistral,
-                    dimensions=config["dimensions"],
+                    dimensions=int(config["dimensions"]),
                 )
             )
 

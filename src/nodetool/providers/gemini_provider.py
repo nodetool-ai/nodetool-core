@@ -16,6 +16,7 @@ from google.genai.types import (
     Blob,
     Content,
     ContentListUnion,
+    EmbedContentConfig,
     FinishReason,
     FunctionCall,
     FunctionDeclaration,
@@ -1164,25 +1165,26 @@ class GeminiProvider(BaseProvider):
             raise ValueError("GEMINI_API_KEY is required for embedding generation")
 
         # Normalize input to list
-        texts = [text] if isinstance(text, str) else text
+        texts: list[str] = [text] if isinstance(text, str) else list(text)
 
         log.debug(f"Generating embeddings for {len(texts)} texts with model: {model}")
 
         try:
             client = self.get_client()
 
-            # Build optional config
-            config: dict[str, Any] = {}
-            if kwargs.get("dimensions"):
-                config["output_dimensionality"] = kwargs["dimensions"]
-            if kwargs.get("task_type"):
-                config["task_type"] = kwargs["task_type"]
+            # Build optional config using proper type
+            embed_config: EmbedContentConfig | None = None
+            if kwargs.get("dimensions") or kwargs.get("task_type"):
+                embed_config = EmbedContentConfig(
+                    output_dimensionality=kwargs.get("dimensions"),
+                    task_type=kwargs.get("task_type"),
+                )
 
             # Generate embeddings using Gemini API
             response = await client.models.embed_content(
                 model=model,
-                contents=texts,
-                config=config if config else None,
+                contents=cast("ContentListUnion", texts),
+                config=embed_config,
             )
 
             # Extract embeddings from response

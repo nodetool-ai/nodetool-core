@@ -11,6 +11,7 @@ These tools provide functionality for managing NodeTool workflows including:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from nodetool.models.workflow import Workflow as WorkflowModel
