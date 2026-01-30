@@ -6,6 +6,7 @@ Uses the "Lazy Slot" algorithm for efficient connection management.
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, ClassVar, Optional
@@ -17,6 +18,23 @@ from nodetool.models.sqlite_adapter import SQLiteAdapter
 from nodetool.runtime.resources import DBResources
 
 log = get_logger(__name__)
+
+DEFAULT_POOL_ACQUIRE_TIMEOUT_S = 30.0
+DEFAULT_ROLLBACK_TIMEOUT_S = 5.0
+DEFAULT_CLOSE_TIMEOUT_S = 5.0
+DEFAULT_POOL_SIZE = 1
+
+# Guardrail: aiosqlite calls can wedge in rare cases under high contention
+# (especially on Windows). These defaults ensure we don't wait forever.
+DEFAULT_ADAPTER_QUERY_TIMEOUT_S = 30.0
+
+
+class SQLitePoolAcquireTimeoutError(TimeoutError):
+    """Raised when acquiring a pool slot exceeds the configured timeout."""
+
+    def __init__(self, message: str, *, stats: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.stats = stats or {}
 
 
 class SQLiteConnectionPool:
@@ -38,7 +56,15 @@ class SQLiteConnectionPool:
     _pools: ClassVar[dict[tuple[int, str], "SQLiteConnectionPool"]] = {}
     _loop_locks: ClassVar[dict[int, asyncio.Lock]] = {}
 
-    def __init__(self, db_path: str, pool_size: int = 5):
+    def __init__(
+        self,
+        db_path: str,
+        pool_size: int = DEFAULT_POOL_SIZE,
+        *,
+        acquire_timeout_s: float = DEFAULT_POOL_ACQUIRE_TIMEOUT_S,
+        rollback_timeout_s: float = DEFAULT_ROLLBACK_TIMEOUT_S,
+        close_timeout_s: float = DEFAULT_CLOSE_TIMEOUT_S,
+    ):
         """Initialize the connection pool with lazy slots.
 
         Args:
@@ -47,11 +73,15 @@ class SQLiteConnectionPool:
         """
         self.db_path = db_path
         self.pool_size = pool_size
+        self._acquire_timeout_s = acquire_timeout_s
+        self._rollback_timeout_s = rollback_timeout_s
+        self._close_timeout_s = close_timeout_s
         # Initialize queue with None values (lazy slots)
         self._slots: asyncio.Queue[Optional[aiosqlite.Connection]] = asyncio.Queue(maxsize=pool_size)
         for _ in range(pool_size):
             self._slots.put_nowait(None)
         self._closed = False
+        self._acquire_waiters = 0
 
     @classmethod
     def _get_loop_lock(cls, loop_id: int) -> asyncio.Lock:
@@ -61,7 +91,7 @@ class SQLiteConnectionPool:
         return cls._loop_locks[loop_id]
 
     @classmethod
-    async def get_shared(cls, db_path: str, pool_size: int = 5) -> "SQLiteConnectionPool":
+    async def get_shared(cls, db_path: str, pool_size: int | None = None) -> "SQLiteConnectionPool":
         """Get or create a shared connection pool for a database path and loop.
 
         Pools are keyed by (event_loop_id, db_path) to avoid sharing asyncio
@@ -74,6 +104,11 @@ class SQLiteConnectionPool:
         Returns:
             A SQLiteConnectionPool instance
         """
+        if pool_size is None:
+            try:
+                pool_size = int(os.environ.get("NODETOOL_SQLITE_POOL_SIZE", str(DEFAULT_POOL_SIZE)))
+            except Exception:
+                pool_size = DEFAULT_POOL_SIZE
         loop = asyncio.get_running_loop()
         loop_id = id(loop)
         pool_key = (loop_id, db_path)
@@ -92,6 +127,49 @@ class SQLiteConnectionPool:
                 log.info(f"Created SQLite connection pool for {db_path} with size {pool_size} (loop_id={loop_id})")
 
             return cls._pools[pool_key]
+
+    def _stats(self) -> dict[str, Any]:
+        # NOTE: queue size is only an approximation under concurrency, but good enough for diagnostics.
+        available = self._slots.qsize()
+        in_use = max(self.pool_size - available, 0)
+        return {
+            "db_path": self.db_path,
+            "pool_size": self.pool_size,
+            "available_slots": available,
+            "in_use": in_use,
+            "closed": self._closed,
+            "acquire_timeout_s": self._acquire_timeout_s,
+            "rollback_timeout_s": self._rollback_timeout_s,
+            "close_timeout_s": self._close_timeout_s,
+            "acquire_waiters": self._acquire_waiters,
+            "loop_id": id(asyncio.get_running_loop()),
+        }
+
+    async def _get_slot(self) -> Optional[aiosqlite.Connection]:
+        """Get a slot from the queue with a bounded wait.
+
+        Without this, if a slot is effectively leaked (e.g., coroutine stuck in rollback/close),
+        callers can block forever and wedge the whole server under bursty load.
+        """
+        if self._closed:
+            raise RuntimeError("Pool is closed")
+
+        self._acquire_waiters += 1
+        try:
+            if self._acquire_timeout_s <= 0:
+                return await self._slots.get()
+            try:
+                return await asyncio.wait_for(self._slots.get(), timeout=self._acquire_timeout_s)
+            except TimeoutError as e:
+                stats = self._stats()
+                msg = (
+                    "Timed out acquiring SQLite connection from pool. "
+                    "This usually indicates pool exhaustion or a stuck SQLite operation "
+                    f"(stats={stats})."
+                )
+                raise SQLitePoolAcquireTimeoutError(msg, stats=stats) from e
+        finally:
+            self._acquire_waiters = max(self._acquire_waiters - 1, 0)
 
     async def _create_connection(self) -> aiosqlite.Connection:
         """Create a new SQLite connection with WAL mode enabled.
@@ -114,8 +192,15 @@ class SQLiteConnectionPool:
             if not resolved_path.startswith(":memory:"):
                 Path(resolved_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # Open connection
-        connection = await aiosqlite.connect(resolved_path, **connect_kwargs)
+        # Open connection.
+        #
+        # NOTE: `aiosqlite.connect()` returns an awaitable `aiosqlite.core.Connection`
+        # which is also a `threading.Thread`. By default it is non-daemon, which means
+        # a stuck SQLite worker thread can prevent process shutdown on Windows.
+        # Set `daemon=True` *before* awaiting so the thread is created as daemon.
+        connection = aiosqlite.connect(resolved_path, **connect_kwargs)
+        connection.daemon = True
+        connection = await connection
         connection.row_factory = aiosqlite.Row
 
         # Apply pragmas for concurrency and performance with retry logic
@@ -188,9 +273,35 @@ class SQLiteConnectionPool:
             conn: The connection to close.
         """
         try:
-            await conn.close()
+            if self._close_timeout_s and self._close_timeout_s > 0:
+                await asyncio.wait_for(conn.close(), timeout=self._close_timeout_s)
+            else:
+                await conn.close()
+        except TimeoutError:
+            log.error(f"Timed out closing SQLite connection (db_path={self.db_path})")
         except Exception as e:
             log.debug(f"Error closing connection: {e}")
+
+    async def _rollback_safely(self, conn: aiosqlite.Connection, *, context: str) -> bool:
+        """Attempt to rollback without ever blocking forever."""
+        try:
+            if self._rollback_timeout_s and self._rollback_timeout_s > 0:
+                await asyncio.wait_for(conn.rollback(), timeout=self._rollback_timeout_s)
+            else:
+                await conn.rollback()
+            return True
+        except TimeoutError:
+            log.error(
+                "Timed out rolling back SQLite connection; poisoning connection. "
+                f"(context={context}, stats={self._stats()})"
+            )
+            return False
+        except Exception as e:
+            log.warning(
+                "Rollback failed; poisoning connection. "
+                f"(context={context}, error={e}, stats={self._stats()})"
+            )
+            return False
 
     async def _acquire_connection(self) -> aiosqlite.Connection:
         """Internal method to acquire a connection from the pool.
@@ -210,8 +321,8 @@ class SQLiteConnectionPool:
         if self._closed:
             raise RuntimeError("Pool is closed")
 
-        # Pop a slot from the queue (blocks if all slots are in use)
-        slot: Optional[aiosqlite.Connection] = await self._slots.get()
+        # Pop a slot from the queue (bounded wait; never block forever)
+        slot: Optional[aiosqlite.Connection] = await self._get_slot()
 
         try:
             if slot is None:
@@ -270,8 +381,12 @@ class SQLiteConnectionPool:
 
             # Success path: rollback to clean state and return connection to pool
             try:
-                await conn.rollback()
-                await self._slots.put(conn)
+                ok = await self._rollback_safely(conn, context="acquire_context(success)")
+                if ok:
+                    await self._slots.put(conn)
+                else:
+                    await self._close_connection_safely(conn)
+                    await self._slots.put(None)
             except Exception as e:
                 # Rollback failed - close connection and return None slot
                 log.warning(f"Rollback failed during release: {e}")
@@ -294,8 +409,12 @@ class SQLiteConnectionPool:
             connection: The connection to release
         """
         try:
-            await connection.rollback()
-            await self._slots.put(connection)
+            ok = await self._rollback_safely(connection, context="release(legacy)")
+            if ok:
+                await self._slots.put(connection)
+            else:
+                await self._close_connection_safely(connection)
+                await self._slots.put(None)
         except Exception as e:
             log.warning(f"Error releasing connection: {e}")
             await self._close_connection_safely(connection)
@@ -320,10 +439,13 @@ class SQLiteConnectionPool:
                         if ":memory:" not in self.db_path:
                             try:
                                 await slot.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                                await slot.commit()
+                                if self._close_timeout_s and self._close_timeout_s > 0:
+                                    await asyncio.wait_for(slot.commit(), timeout=self._close_timeout_s)
+                                else:
+                                    await slot.commit()
                             except Exception:
                                 pass
-                        await slot.close()
+                        await self._close_connection_safely(slot)
                         connections_closed += 1
                         log.debug(f"Closed SQLite connection from pool for {self.db_path}")
                     except Exception as e:
@@ -441,6 +563,7 @@ class SQLiteScopeResources(DBResources):
             fields=model_cls.db_fields(),
             table_schema=model_cls.get_table_schema(),
             indexes=model_cls.get_indexes(),
+            query_timeout=DEFAULT_ADAPTER_QUERY_TIMEOUT_S,
         )
 
         # Memoize
@@ -449,7 +572,7 @@ class SQLiteScopeResources(DBResources):
 
     async def cleanup(self) -> None:
         """Clean up scope resources.
-        
+
         Since adapters now acquire connections from the pool on-demand,
         there are no connections to release. We just clear the adapter cache.
         """
