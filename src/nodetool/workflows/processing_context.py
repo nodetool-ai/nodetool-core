@@ -1010,6 +1010,8 @@ class ProcessingContext:
 
         elif capability == ProviderCapability.IMAGE_TO_VIDEO:
             image = params.get("image")
+            if image is None:
+                raise ValueError("Image is required for IMAGE_TO_VIDEO capability")
             return await provider.image_to_video(
                 image=image,
                 params=params,
