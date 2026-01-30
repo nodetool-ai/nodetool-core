@@ -100,8 +100,15 @@ class _PooledConnectionProxy:
         if self._write_lock_held:
             return
         lock = self._pool._get_write_lock()
-        # Bound the wait so a stuck writer cannot stall other writers forever.
-        await asyncio.wait_for(asyncio.to_thread(lock.acquire), timeout=DEFAULT_WRITE_LOCK_TIMEOUT_S)
+        # IMPORTANT: Do NOT implement timeouts via wait_for(to_thread(lock.acquire)).
+        # If wait_for times out, the underlying thread keeps running and may later
+        # acquire the lock, permanently wedging all writers (nobody releases it).
+        acquired = await asyncio.to_thread(lock.acquire, timeout=DEFAULT_WRITE_LOCK_TIMEOUT_S)
+        if not acquired:
+            raise TimeoutError(
+                "Timed out acquiring SQLite global write lock "
+                f"(timeout={DEFAULT_WRITE_LOCK_TIMEOUT_S}s, db_path={self._pool.db_path})"
+            )
         self._write_lock = lock
         self._write_lock_held = True
 
