@@ -41,7 +41,6 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 
 
-@register_provider(Provider.Mistral)
 class _EmbeddingModelConfig(TypedDict):
     """Type definition for embedding model configuration."""
 
@@ -50,6 +49,7 @@ class _EmbeddingModelConfig(TypedDict):
     dimensions: int
 
 
+@register_provider(Provider.Mistral)
 class MistralProvider(OpenAIProvider):
     """Mistral AI implementation of the ChatProvider interface.
 
