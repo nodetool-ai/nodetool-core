@@ -53,7 +53,6 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
-from nodetool.workflows.event_logger import WorkflowEventLogger
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.memory_utils import (
@@ -258,7 +257,6 @@ class WorkflowRunner:
         device: str | None = None,
         disable_caching: bool = False,
         buffer_limit: int | None = 3,
-        enable_event_logging: bool = True,
     ):
         """
         Initializes a new WorkflowRunner instance.
@@ -271,7 +269,6 @@ class WorkflowRunner:
             buffer_limit (Optional[int]): Maximum number of items allowed in each per-handle inbox buffer.
                                          When a buffer reaches this limit, producers will block until consumers
                                          drain the buffer, implementing backpressure. None means unlimited.
-            enable_event_logging (bool): Whether to enable event logging for resumability.
         """
         self.job_id = job_id
         self.status = "running"
@@ -307,17 +304,8 @@ class WorkflowRunner:
         self._streaming_edges: dict[str, bool] = {}
         self._edge_counters: dict[str, int] = defaultdict(int)
 
-        # Event logging for resumability (audit-only, not source of truth)
-        self.enable_event_logging = enable_event_logging
-        self.event_logger: WorkflowEventLogger | None = None
-        if enable_event_logging:
-            self.event_logger = WorkflowEventLogger(run_id=job_id)
-
         # Job model tracking (source of truth for correctness)
         self.job_model: Job | None = None
-
-        # State manager for queue-based updates (eliminates DB write contention)
-        self.state_manager: StateManager | None = None
 
         # Multi-edge list inputs: {node_id: {handle_names requiring aggregation}}
         # Populated during graph analysis to track list-typed properties with multiple incoming edges
@@ -782,30 +770,6 @@ class WorkflowRunner:
             log.error(f"Failed to load/create job_model: {e}")
             raise
 
-        # Initialize and start StateManager (single writer for node states)
-        self.state_manager = StateManager(run_id=self.job_id)
-        await self.state_manager.start()
-        log.info(f"Started StateManager for run {self.job_id}")
-
-        # Start event logger background flush task (for non-blocking event logging)
-        if self.event_logger:
-            try:
-                await self.event_logger.start()
-                log.info(f"Started EventLogger for run {self.job_id}")
-            except Exception as e:
-                log.warning(f"Failed to start EventLogger (non-fatal): {e}")
-
-        # Log RunCreated event (audit-only, non-fatal)
-        if self.event_logger:
-            try:
-                await self.event_logger.log_run_created(
-                    graph=request.graph.model_dump() if request.graph else {},
-                    params=request.params or {},
-                    user_id=getattr(context, "user_id", ""),
-                )
-            except Exception as e:
-                log.warning(f"Failed to log RunCreated event (non-fatal): {e}")
-
         with self.torch_context(context):
             try:
                 if request.params:
@@ -939,13 +903,6 @@ class WorkflowRunner:
                     except Exception as e:
                         log.error(f"Failed to mark job_model as cancelled: {e}")
 
-                # Log RunCancelled event (audit-only, non-fatal)
-                if self.event_logger:
-                    try:
-                        await self.event_logger.log_run_cancelled(reason="Workflow execution cancelled")
-                    except Exception as e:
-                        log.warning(f"Failed to log RunCancelled event (non-fatal): {e}")
-
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="cancelled")
@@ -986,57 +943,6 @@ class WorkflowRunner:
                     log.error(f"Failed to mark node_state as suspended: {e2}")
                     raise
 
-                # Flush pending state updates from all nodes before suspending
-                if self.state_manager:
-                    try:
-                        await self.state_manager.stop(timeout=5.0)
-                        log.info(f"Flushed and stopped StateManager for run {self.job_id}")
-                        self.state_manager = None  # Prevent finally block from stopping again
-                    except Exception as e2:
-                        log.warning(f"Failed to stop StateManager: {e2}")
-
-                # Stop EventLogger for suspension
-                if self.event_logger:
-                    try:
-                        await self.event_logger.stop()
-                        log.info("EventLogger stopped for suspension")
-                        self.event_logger = None  # Prevent finally block from stopping again
-                    except Exception as e2:
-                        log.warning(f"Failed to stop EventLogger: {e2}")
-
-                # Log suspension events (audit-only, non-fatal)
-                if self.event_logger:
-                    try:
-                        # Log NodeSuspended event
-                        await self.event_logger.log_node_suspended(
-                            node_id=e.node_id,
-                            reason=e.reason,
-                            state=e.state,
-                            metadata=e.metadata,
-                        )
-
-                        # Log RunSuspended event
-                        await self.event_logger.log_run_suspended(
-                            reason=e.reason,
-                            suspended_node_id=e.node_id,
-                        )
-
-                        # Check if this is a trigger node suspension
-                        if e.metadata.get("trigger_node"):
-                            # Register with trigger wakeup service
-                            from nodetool.workflows.trigger_node import TriggerWakeupService
-
-                            wakeup_service = TriggerWakeupService.get_instance()
-                            wakeup_service.register_suspended_trigger(
-                                workflow_id=self.job_id,
-                                node_id=e.node_id,
-                                trigger_metadata=e.metadata,
-                            )
-                            log.info(f"Registered trigger node {e.node_id} for wake-up in workflow {self.job_id}")
-
-                    except Exception as e2:
-                        log.warning(f"Failed to log suspension events (non-fatal): {e2}")
-
                 if send_job_updates:
                     context.post_message(
                         JobUpdate(
@@ -1072,15 +978,6 @@ class WorkflowRunner:
                     except Exception as e2:
                         log.error(f"Failed to mark job_model as failed: {e2}")
 
-                # Log RunFailed event (audit-only, non-fatal)
-                if self.event_logger:
-                    try:
-                        await self.event_logger.log_run_failed(
-                            error=error_message_for_job_update[:1000],
-                        )
-                    except Exception as e2:
-                        log.warning(f"Failed to log RunFailed event (non-fatal): {e2}")
-
                 # Always post the error JobUpdate
                 if send_job_updates:
                     context.post_message(
@@ -1095,22 +992,6 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
-
-                # Stop StateManager and flush pending updates
-                if self.state_manager:
-                    try:
-                        await self.state_manager.stop(timeout=10.0)
-                        log.info(f"StateManager stopped for run {self.job_id}")
-                    except Exception as e:
-                        log.error(f"Error stopping StateManager: {e}")
-
-                # Stop EventLogger and flush remaining events
-                if self.event_logger:
-                    try:
-                        await self.event_logger.stop()
-                        log.info(f"EventLogger stopped for run {self.job_id}")
-                    except Exception as e:
-                        log.warning(f"Error stopping EventLogger (non-fatal): {e}")
 
                 # Stop input dispatcher if running
                 try:
@@ -1165,18 +1046,6 @@ class WorkflowRunner:
                 log.info(f"Job {self.job_id} completed successfully")
                 log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
 
-                # Log RunCompleted event (audit-only, non-fatal)
-                if self.event_logger:
-                    try:
-                        await self.event_logger.log_run_completed(
-                            outputs=self.outputs,
-                            duration_ms=int(total_time * 1000),
-                        )
-                    except Exception as e:
-                        log.warning(f"Failed to log RunCompleted event (non-fatal): {e}")
-
-                # Note: JobUpdate(status="completed") is sent in the try block before finally
-                # to ensure it's received before the WebSocket closes
             # If self.status became "error" and the exception was re-raised, we don't reach here.
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):

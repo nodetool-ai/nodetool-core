@@ -146,6 +146,9 @@ def _open_image_as_rgb(buffer: IO[bytes]) -> Any:
     with suppress(Exception):
         buffer.seek(0)
     image = PIL_Image.open(buffer)
+    # Force PIL to load the image data into memory so the buffer can be closed
+    # Without this, PIL keeps the buffer open, causing file descriptor leaks
+    image.load()
     try:
         rotated = PIL_ImageOps.exif_transpose(image)
         image = rotated if rotated is not None else image
