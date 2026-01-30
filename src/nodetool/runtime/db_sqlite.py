@@ -7,9 +7,10 @@ Uses the "Lazy Slot" algorithm for efficient connection management.
 
 import asyncio
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, ClassVar, Optional
+from typing import Any, AsyncIterator, Awaitable, ClassVar, Optional, Protocol
 
 import aiosqlite
 
@@ -22,7 +23,8 @@ log = get_logger(__name__)
 DEFAULT_POOL_ACQUIRE_TIMEOUT_S = 30.0
 DEFAULT_ROLLBACK_TIMEOUT_S = 5.0
 DEFAULT_CLOSE_TIMEOUT_S = 5.0
-DEFAULT_POOL_SIZE = 1
+DEFAULT_POOL_SIZE = 2
+DEFAULT_WRITE_LOCK_TIMEOUT_S = 30.0
 
 # Guardrail: aiosqlite calls can wedge in rare cases under high contention
 # (especially on Windows). These defaults ensure we don't wait forever.
@@ -35,6 +37,125 @@ class SQLitePoolAcquireTimeoutError(TimeoutError):
     def __init__(self, message: str, *, stats: dict[str, Any] | None = None):
         super().__init__(message)
         self.stats = stats or {}
+
+
+_WRITE_LOCKS: dict[str, threading.Lock] = {}
+_WRITE_LOCKS_LOCK = threading.Lock()
+
+
+class SQLiteConnectionLike(Protocol):
+    # aiosqlite methods return an awaitable Result wrapper; our proxy returns coroutines.
+    # Use Awaitable[...] to accept both.
+    def execute(self, sql: str, parameters: Any = ...) -> Awaitable[Any]: ...
+    def executemany(self, sql: str, seq_of_parameters: Any) -> Awaitable[Any]: ...
+    def executescript(self, sql_script: str) -> Awaitable[Any]: ...
+    def commit(self) -> Awaitable[Any]: ...
+    def rollback(self) -> Awaitable[Any]: ...
+    def close(self) -> Awaitable[Any]: ...
+
+
+def _is_write_sql(sql: str) -> bool:
+    """Best-effort classification of write vs read SQL."""
+    s = sql.lstrip().upper()
+    # Common write / DDL / maintenance operations.
+    return s.startswith(
+        (
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "REPLACE",
+            "CREATE",
+            "DROP",
+            "ALTER",
+            "VACUUM",
+            "REINDEX",
+            "ANALYZE",
+            "BEGIN",
+            "COMMIT",
+            "ROLLBACK",
+            "PRAGMA",  # can mutate DB state; conservative
+        )
+    )
+
+
+class _PooledConnectionProxy:
+    """Connection proxy that serializes write transactions across threads.
+
+    We keep SQLite connections per event loop, but the SQLite DB file is shared
+    across job threads. SQLite is single-writer, and under bursty concurrency
+    multiple writers cause extended lock contention.
+
+    This proxy:
+    - Acquires a global per-db threading lock on first write statement
+    - Releases the lock on commit/rollback/close
+    """
+
+    def __init__(self, conn: aiosqlite.Connection, pool: "SQLiteConnectionPool"):
+        self._conn = conn
+        self._pool = pool
+        self._write_lock: threading.Lock | None = None
+        self._write_lock_held = False
+
+    async def _ensure_write_lock(self) -> None:
+        if self._write_lock_held:
+            return
+        lock = self._pool._get_write_lock()
+        # Bound the wait so a stuck writer cannot stall other writers forever.
+        await asyncio.wait_for(asyncio.to_thread(lock.acquire), timeout=DEFAULT_WRITE_LOCK_TIMEOUT_S)
+        self._write_lock = lock
+        self._write_lock_held = True
+
+    def _release_write_lock_sync(self) -> None:
+        if not self._write_lock_held:
+            return
+        lock = self._write_lock
+        self._write_lock = None
+        self._write_lock_held = False
+        if lock is None:
+            return
+        try:
+            lock.release()
+        except RuntimeError:
+            pass
+
+    async def execute(self, sql: str, parameters: Any = None):  # aiosqlite signature is permissive
+        if _is_write_sql(sql):
+            await self._ensure_write_lock()
+        if parameters is None:
+            return await self._conn.execute(sql)
+        return await self._conn.execute(sql, parameters)
+
+    async def executemany(self, sql: str, seq_of_parameters: Any):
+        if _is_write_sql(sql):
+            await self._ensure_write_lock()
+        return await self._conn.executemany(sql, seq_of_parameters)
+
+    async def executescript(self, sql_script: str):
+        # scripts often contain DDL / writes
+        await self._ensure_write_lock()
+        return await self._conn.executescript(sql_script)
+
+    async def commit(self) -> None:
+        try:
+            await self._conn.commit()
+        finally:
+            self._release_write_lock_sync()
+
+    async def rollback(self) -> None:
+        try:
+            await self._conn.rollback()
+        finally:
+            self._release_write_lock_sync()
+
+    async def close(self) -> None:
+        try:
+            await self._conn.close()
+        finally:
+            self._release_write_lock_sync()
+
+    def __getattr__(self, name: str) -> Any:
+        # Delegate everything else to the underlying connection (row_factory, etc.)
+        return getattr(self._conn, name)
 
 
 class SQLiteConnectionPool:
@@ -109,9 +230,15 @@ class SQLiteConnectionPool:
                 pool_size = int(os.environ.get("NODETOOL_SQLITE_POOL_SIZE", str(DEFAULT_POOL_SIZE)))
             except Exception:
                 pool_size = DEFAULT_POOL_SIZE
+
+        # Normalize db_path to avoid accidentally creating multiple pools/locks
+        # for the same database due to "~" vs expanded paths.
+        db_path_key = db_path
+        if not db_path.startswith("file:") and ":memory:" not in db_path:
+            db_path_key = str(Path(db_path).expanduser())
         loop = asyncio.get_running_loop()
         loop_id = id(loop)
-        pool_key = (loop_id, db_path)
+        pool_key = (loop_id, db_path_key)
         loop_lock = cls._get_loop_lock(loop_id)
 
         # Return existing pool if available for this loop
@@ -122,7 +249,7 @@ class SQLiteConnectionPool:
         async with loop_lock:
             # Check again in case another coroutine just created it
             if pool_key not in cls._pools:
-                pool = cls(db_path, pool_size)
+                pool = cls(db_path_key, pool_size)
                 cls._pools[pool_key] = pool
                 log.info(f"Created SQLite connection pool for {db_path} with size {pool_size} (loop_id={loop_id})")
 
@@ -144,6 +271,52 @@ class SQLiteConnectionPool:
             "acquire_waiters": self._acquire_waiters,
             "loop_id": id(asyncio.get_running_loop()),
         }
+
+    def _write_lock_key(self) -> str:
+        # Use a stable key so all threads serialize writes to the same DB file.
+        if ":memory:" in self.db_path or self.db_path.startswith("file:"):
+            return self.db_path
+        # resolve(strict=False) normalizes without requiring file existence
+        return str(Path(self.db_path).expanduser().resolve(strict=False))
+
+    def _get_write_lock(self) -> threading.Lock:
+        key = self._write_lock_key()
+        with _WRITE_LOCKS_LOCK:
+            lock = _WRITE_LOCKS.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                _WRITE_LOCKS[key] = lock
+            return lock
+
+    @asynccontextmanager
+    async def write_lock_context(self) -> AsyncIterator[None]:
+        """Serialize SQLite writes across threads.
+
+        SQLite is single-writer. Under bursty concurrent jobs we can otherwise end up
+        with many concurrent writers across many job threads, increasing lock contention
+        and triggering timeouts.
+        """
+        if ":memory:" in self.db_path:
+            yield None
+            return
+
+        lock = self._get_write_lock()
+        await asyncio.to_thread(lock.acquire)
+        try:
+            yield None
+        finally:
+            try:
+                lock.release()
+            except RuntimeError:
+                # Shouldn't happen, but avoid cascading failures.
+                pass
+
+    async def _put_slot(self, slot: Optional[aiosqlite.Connection]) -> None:
+        """Return a slot to the pool, shielded from cancellation.
+
+        Cancellation during cleanup is a common way to leak pool capacity under load.
+        """
+        await asyncio.shield(self._slots.put(slot))
 
     async def _get_slot(self) -> Optional[aiosqlite.Connection]:
         """Get a slot from the queue with a bounded wait.
@@ -266,7 +439,7 @@ class SQLiteConnectionPool:
             log.debug(f"Connection validation failed: {e}")
             return False
 
-    async def _close_connection_safely(self, conn: aiosqlite.Connection) -> None:
+    async def _close_connection_safely(self, conn: SQLiteConnectionLike) -> None:
         """Close a connection safely, ignoring any errors.
 
         Args:
@@ -282,7 +455,7 @@ class SQLiteConnectionPool:
         except Exception as e:
             log.debug(f"Error closing connection: {e}")
 
-    async def _rollback_safely(self, conn: aiosqlite.Connection, *, context: str) -> bool:
+    async def _rollback_safely(self, conn: SQLiteConnectionLike, *, context: str) -> bool:
         """Attempt to rollback without ever blocking forever."""
         try:
             if self._rollback_timeout_s and self._rollback_timeout_s > 0:
@@ -340,7 +513,7 @@ class SQLiteConnectionPool:
                     return await self._create_connection()
         except Exception:
             # On failure, return the None slot to the pool
-            await self._slots.put(None)
+            await self._put_slot(None)
             raise
 
     async def acquire(self) -> aiosqlite.Connection:
@@ -359,7 +532,7 @@ class SQLiteConnectionPool:
         return await self._acquire_connection()
 
     @asynccontextmanager
-    async def acquire_context(self) -> AsyncIterator[aiosqlite.Connection]:
+    async def acquire_context(self) -> AsyncIterator[SQLiteConnectionLike]:
         """Acquire a connection from the pool using the context manager pattern.
 
         This implements the "Lazy Slot" algorithm with automatic cleanup:
@@ -376,27 +549,28 @@ class SQLiteConnectionPool:
             Exception: If connection creation fails.
         """
         conn = await self._acquire_connection()
+        proxy = _PooledConnectionProxy(conn, self)
         try:
-            yield conn
+            yield proxy
 
             # Success path: rollback to clean state and return connection to pool
             try:
-                ok = await self._rollback_safely(conn, context="acquire_context(success)")
+                ok = await self._rollback_safely(proxy, context="acquire_context(success)")
                 if ok:
-                    await self._slots.put(conn)
+                    await self._put_slot(conn)
                 else:
-                    await self._close_connection_safely(conn)
-                    await self._slots.put(None)
+                    await asyncio.shield(self._close_connection_safely(proxy))
+                    await self._put_slot(None)
             except Exception as e:
                 # Rollback failed - close connection and return None slot
                 log.warning(f"Rollback failed during release: {e}")
-                await self._close_connection_safely(conn)
-                await self._slots.put(None)
+                await asyncio.shield(self._close_connection_safely(proxy))
+                await self._put_slot(None)
 
         except Exception:
             # Failure/crash path: close connection and return None slot
-            await self._close_connection_safely(conn)
-            await self._slots.put(None)
+            await asyncio.shield(self._close_connection_safely(proxy))
+            await self._put_slot(None)
             raise
 
     async def release(self, connection: aiosqlite.Connection) -> None:
@@ -411,14 +585,14 @@ class SQLiteConnectionPool:
         try:
             ok = await self._rollback_safely(connection, context="release(legacy)")
             if ok:
-                await self._slots.put(connection)
+                await self._put_slot(connection)
             else:
-                await self._close_connection_safely(connection)
-                await self._slots.put(None)
+                await asyncio.shield(self._close_connection_safely(connection))
+                await self._put_slot(None)
         except Exception as e:
             log.warning(f"Error releasing connection: {e}")
-            await self._close_connection_safely(connection)
-            await self._slots.put(None)
+            await asyncio.shield(self._close_connection_safely(connection))
+            await self._put_slot(None)
 
     async def close_all(self) -> None:
         """Close all pooled connections and mark pool as closed.
