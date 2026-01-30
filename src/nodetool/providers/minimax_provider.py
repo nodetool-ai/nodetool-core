@@ -31,7 +31,7 @@ from nodetool.metadata.types import (
     TTSModel,
 )
 from nodetool.providers.anthropic_provider import AnthropicProvider
-from nodetool.providers.base import register_provider
+from nodetool.providers.base import BaseProvider, register_provider
 
 log = get_logger(__name__)
 
@@ -119,6 +119,9 @@ class MiniMaxProvider(AnthropicProvider):
         Reads ``MINIMAX_API_KEY`` from secrets and configures the Anthropic client
         with MiniMax's base URL.
         """
+        # Skip AnthropicProvider.__init__ which requires ANTHROPIC_API_KEY
+        # Call BaseProvider.__init__ directly to initialize cost and secrets
+        BaseProvider.__init__(self, secrets)
         assert "MINIMAX_API_KEY" in secrets, "MINIMAX_API_KEY is required"
         self.api_key = secrets["MINIMAX_API_KEY"]
 

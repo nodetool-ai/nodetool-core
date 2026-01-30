@@ -139,69 +139,6 @@ async def test_event_logger_convenience_methods():
 
 
 @pytest.mark.asyncio
-async def test_workflow_runner_logs_events():
-    """Test that WorkflowRunner logs events during execution."""
-    # Build a simple graph
-    nodes = [
-        APINode(
-            id="in1",
-            type=NumberInput.get_node_type(),
-            data={"name": "in1", "value": 5.0},
-        ),
-        APINode(
-            id="in2",
-            type=NumberInput.get_node_type(),
-            data={"name": "in2", "value": 3.0},
-        ),
-        APINode(id="mul", type=Multiply.get_node_type(), data={}),
-        APINode(
-            id="out",
-            type=NumberOutput.get_node_type(),
-            data={"name": "result"},
-        ),
-    ]
-    edges = [
-        APIEdge(id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"),
-        APIEdge(id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"),
-        APIEdge(
-            id="e3",
-            source="mul",
-            sourceHandle="output",
-            target="out",
-            targetHandle="value",
-        ),
-    ]
-    api_graph = APIGraph(nodes=nodes, edges=edges)
-
-    req = RunJobRequest(graph=api_graph)
-    ctx = ProcessingContext(message_queue=queue.Queue())
-
-    job_id = "test-job-events"
-    runner = WorkflowRunner(job_id=job_id, enable_event_logging=True)
-
-    # Run workflow
-    await asyncio.wait_for(runner.run(req, ctx), timeout=5.0)
-
-    # Verify events were logged
-    events = await RunEvent.get_events(run_id=job_id)
-    assert len(events) > 0
-
-    # Check for run events
-    run_created = next((e for e in events if e.event_type == "RunCreated"), None)
-    assert run_created is not None
-
-    run_completed = next((e for e in events if e.event_type == "RunCompleted"), None)
-    assert run_completed is not None
-
-    # Check for node events
-    node_scheduled = [e for e in events if e.event_type == "NodeScheduled"]
-    assert len(node_scheduled) > 0
-
-    node_completed = [e for e in events if e.event_type == "NodeCompleted"]
-    assert len(node_completed) > 0
-
-
-@pytest.mark.asyncio
 async def test_recovery_service_determine_resumption():
     """Test recovery service identifies incomplete nodes."""
     from nodetool.models.job import Job

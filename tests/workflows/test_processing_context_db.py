@@ -208,10 +208,10 @@ class TestAssetMethods:
         """Test refreshing asset URI."""
         asset_ref = AssetRef(asset_id="test_id")
 
-        with patch.object(context, "get_asset_url", return_value="http://test.com/file.png") as mock_get_url:
-            await context.refresh_uri(asset_ref)
-            mock_get_url.assert_called_once_with("test_id")
-            assert asset_ref.uri == "http://test.com/file.png"
+        await context.refresh_uri(asset_ref)
+        # refresh_uri now sets the URI directly as asset:// format
+        assert asset_ref.uri is not None
+        assert asset_ref.uri.startswith("asset://test_id")
 
 
 class TestWorkflowMethods:
