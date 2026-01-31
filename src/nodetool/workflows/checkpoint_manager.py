@@ -60,7 +60,7 @@ log = get_logger(__name__)
 class CheckpointData:
     """
     Represents a complete checkpoint of workflow state.
-    
+
     This is a lightweight in-memory representation that gets
     serialized to the database only when explicitly saved.
     """
@@ -87,7 +87,7 @@ class CheckpointData:
 class NodeStateSnapshot:
     """
     Lightweight snapshot of a node's execution state at checkpoint time.
-    
+
     Only captures what's necessary for resumption, not full execution history.
     """
 
@@ -111,18 +111,18 @@ class NodeStateSnapshot:
 class CheckpointManager:
     """
     Zero-overhead checkpoint manager for resumable workflows.
-    
+
     This manager provides explicit checkpoint save/restore functionality
     without adding any overhead to running workflows. State is only written
     to the database when explicitly requested via save_checkpoint().
-    
+
     Key Features:
     - No automatic state tracking (zero runtime overhead)
     - Explicit checkpoint saves only when requested
     - Uses existing Job and RunNodeState tables
     - Clean separation from runner and actor logic
     - Optional integration via hooks
-    
+
     Args:
         run_id: The workflow run identifier
         enabled: Whether checkpointing is enabled (default: False)
@@ -143,18 +143,18 @@ class CheckpointManager:
     ) -> bool:
         """
         Explicitly save a checkpoint of the current workflow state.
-        
+
         This is the ONLY method that writes to the database. It should be
         called explicitly at strategic points (e.g., after completing a
         batch of nodes, before/after expensive operations, etc.).
-        
+
         Args:
             graph: The workflow graph
             completed_nodes: Set of node IDs that have completed
             active_nodes: Set of node IDs currently executing
             pending_nodes: Set of node IDs not yet started
             context_data: Optional context data to persist
-            
+
         Returns:
             True if checkpoint saved successfully, False otherwise
         """
@@ -168,17 +168,17 @@ class CheckpointManager:
 
             # Capture current node states
             node_states: dict[str, NodeStateSnapshot] = {}
-            
+
             # Mark completed nodes
             if completed_nodes:
                 for node_id in completed_nodes:
                     # Get or create state record
                     state = await RunNodeState.get_or_create(self.run_id, node_id)
-                    
+
                     # Update to completed if not already
                     if state.status != "completed":
                         await state.mark_completed(outputs={})
-                    
+
                     node_states[node_id] = NodeStateSnapshot(
                         node_id=node_id,
                         status="completed",
@@ -190,12 +190,12 @@ class CheckpointManager:
             if active_nodes:
                 for node_id in active_nodes:
                     state = await RunNodeState.get_or_create(self.run_id, node_id)
-                    
+
                     # Mark as running
                     if state.status not in ["running", "completed"]:
                         await state.mark_scheduled(attempt=state.attempt)
                         await state.mark_running()
-                    
+
                     node_states[node_id] = NodeStateSnapshot(
                         node_id=node_id,
                         status="running",
@@ -206,11 +206,11 @@ class CheckpointManager:
             if pending_nodes:
                 for node_id in pending_nodes:
                     state = await RunNodeState.get_or_create(self.run_id, node_id)
-                    
+
                     # Mark as scheduled
                     if state.status == "idle":
                         await state.mark_scheduled(attempt=1)
-                    
+
                     node_states[node_id] = NodeStateSnapshot(
                         node_id=node_id,
                         status="scheduled",
@@ -225,12 +225,12 @@ class CheckpointManager:
 
             self._checkpoint_count += 1
             elapsed = (datetime.now() - start_time).total_seconds()
-            
+
             log.info(
                 f"Checkpoint saved for run {self.run_id}: "
                 f"{len(node_states)} nodes, {elapsed:.3f}s (checkpoint #{self._checkpoint_count})"
             )
-            
+
             return True
 
         except Exception as e:
@@ -240,13 +240,13 @@ class CheckpointManager:
     async def restore_checkpoint(self, graph: Graph) -> CheckpointData | None:
         """
         Restore workflow state from the last checkpoint.
-        
+
         This loads the saved state from RunNodeState table and prepares
         it for resumption.
-        
+
         Args:
             graph: The workflow graph
-            
+
         Returns:
             CheckpointData if restoration successful, None otherwise
         """
@@ -276,7 +276,7 @@ class CheckpointManager:
             # Process each node state
             for state_dict in states_data:
                 state = RunNodeState.from_dict(state_dict)
-                
+
                 snapshot = NodeStateSnapshot(
                     node_id=state.node_id,
                     status=state.status,
@@ -285,9 +285,9 @@ class CheckpointManager:
                     error=state.last_error,
                     resume_state=state.resume_state_json,
                 )
-                
+
                 node_states[state.node_id] = snapshot
-                
+
                 # Categorize nodes
                 if state.status == "completed":
                     completed_nodes.add(state.node_id)
@@ -330,7 +330,7 @@ class CheckpointManager:
     async def can_resume(self) -> bool:
         """
         Check if this workflow can be resumed from a checkpoint.
-        
+
         Returns:
             True if the workflow has a valid checkpoint and can be resumed
         """
@@ -364,10 +364,10 @@ class CheckpointManager:
     async def clear_checkpoint(self) -> bool:
         """
         Clear all checkpoint data for this workflow.
-        
+
         This removes all node state records but keeps the job record.
         Useful for cleanup after successful completion or when restarting fresh.
-        
+
         Returns:
             True if cleared successfully, False otherwise
         """
@@ -401,7 +401,7 @@ class CheckpointManager:
     def get_stats(self) -> dict[str, Any]:
         """
         Get checkpoint statistics.
-        
+
         Returns:
             Dictionary with checkpoint stats
         """
@@ -424,10 +424,10 @@ async def create_checkpoint_hook(
 ) -> None:
     """
     Optional hook to create a checkpoint during workflow execution.
-    
+
     This can be called at strategic points (e.g., after batch completion)
     without modifying the core runner logic.
-    
+
     Args:
         checkpoint_mgr: Optional checkpoint manager instance
         graph: The workflow graph
@@ -450,14 +450,14 @@ async def restore_checkpoint_hook(
 ) -> CheckpointData | None:
     """
     Optional hook to restore from checkpoint before workflow execution.
-    
+
     This can be called at workflow start to check for resumption
     without modifying the core runner logic.
-    
+
     Args:
         checkpoint_mgr: Optional checkpoint manager instance
         graph: The workflow graph
-        
+
     Returns:
         Restored checkpoint data if available, None otherwise
     """
