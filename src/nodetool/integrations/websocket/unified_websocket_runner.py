@@ -295,6 +295,9 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         super().__init__(auth_token, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode = WebSocketMode.BINARY
+        # Prevent concurrent send_bytes/send_text calls from interleaving frames when multiple
+        # jobs stream updates concurrently on the same WebSocket connection.
+        self._send_lock = asyncio.Lock()
 
         # Workflow job management
         self.active_jobs: dict[str, JobStreamContext] = {}
@@ -439,12 +442,13 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             return
 
         try:
-            if self.mode == WebSocketMode.BINARY:
-                packed_message = msgpack.packb(message, use_bin_type=True)
-                await self.websocket.send_bytes(packed_message)  # type: ignore
-            else:
-                json_text = json.dumps(message)
-                await self.websocket.send_text(json_text)
+            async with self._send_lock:
+                if self.mode == WebSocketMode.BINARY:
+                    packed_message = msgpack.packb(message, use_bin_type=True)
+                    await self.websocket.send_bytes(packed_message)  # type: ignore
+                else:
+                    json_text = json.dumps(message)
+                    await self.websocket.send_text(json_text)
         except Exception as e:
             log.error(f"Error sending message: {e}", exc_info=True)
 
