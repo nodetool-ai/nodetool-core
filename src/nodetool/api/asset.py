@@ -48,6 +48,9 @@ async def from_model(asset: AssetModel):
 
     if asset.has_thumbnail:
         thumb_url = await storage.get_url(asset.thumb_file_name)
+        # Append updated_at timestamp as cache buster
+        separator = "&" if "?" in thumb_url else "?"
+        thumb_url = f"{thumb_url}{separator}t={int(asset.updated_at.timestamp())}"
     else:
         thumb_url = None
 
@@ -384,7 +387,12 @@ async def update(
         asset.size = req.size
     if req.data:
         storage = require_scope().get_asset_storage()
-        data_bytes = req.data.encode("utf-8")
+        if req.data_encoding == "base64":
+            import base64
+
+            data_bytes = base64.b64decode(req.data)
+        else:
+            data_bytes = req.data.encode("utf-8")
         asset.size = len(data_bytes)  # Update size when data is updated
         await storage.upload(asset.file_name, BytesIO(data_bytes))
 

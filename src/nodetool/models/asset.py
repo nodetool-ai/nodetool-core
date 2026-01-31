@@ -42,9 +42,15 @@ class Asset(DBModel):
     size: Optional[int] = DBField(default=None)  # File size in bytes (None for folders)
     metadata: dict | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
+    updated_at: datetime = DBField(default_factory=datetime.now)
     duration: Optional[float] = DBField(default=None)
     node_id: str | None = DBField(default=None)
     job_id: str | None = DBField(default=None)
+
+    async def save(self):
+        """Updates the `updated_at` timestamp before saving."""
+        self.updated_at = datetime.now()
+        await super().save()
 
     @property
     def file_extension(self) -> str:

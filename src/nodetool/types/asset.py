@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
@@ -40,10 +40,11 @@ class Asset(BaseModel):
 
 
 class AssetUpdateRequest(BaseModel):
-    name: str | None
-    parent_id: str | None
-    content_type: str | None
+    name: str | None = None
+    parent_id: str | None = None
+    content_type: str | None = None
     data: str | None = None
+    data_encoding: Literal["base64"] | None = None
     metadata: dict | None = None
     duration: float | None = None
     size: int | None = None
