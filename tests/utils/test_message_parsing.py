@@ -125,16 +125,16 @@ class TestExtractJsonFromMessage:
 
     def test_empty_content(self):
         """Test that message with empty content returns None."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         msg = Message(role="assistant", content="")
         assert extract_json_from_message(msg) is None
 
     def test_json_code_fence(self):
         """Test extracting JSON from code fence."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = '''Here is some text
 ```json
@@ -147,8 +147,8 @@ More text'''
 
     def test_plain_code_fence(self):
         """Test extracting JSON from plain code fence."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = '''Here is some text
 ```
@@ -161,8 +161,8 @@ More text'''
 
     def test_raw_json(self):
         """Test extracting raw JSON without fence."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = 'Here is the result: {"key": "value"}'
         msg = Message(role="assistant", content=content)
@@ -171,8 +171,8 @@ More text'''
 
     def test_with_think_tags(self):
         """Test that think tags are removed before extraction."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = '<think>Thinking...</think>{"key": "value"}'
         msg = Message(role="assistant", content=content)
@@ -181,8 +181,8 @@ More text'''
 
     def test_no_json_found(self):
         """Test that message without JSON returns None."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = "This is just plain text without any JSON"
         msg = Message(role="assistant", content=content)
@@ -191,8 +191,8 @@ More text'''
 
     def test_list_content(self):
         """Test extracting JSON from list content."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message, MessageTextContent
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         # Use proper MessageTextContent for list content
         content = [
@@ -205,8 +205,8 @@ More text'''
 
     def test_json_with_trailing_garbage(self):
         """Test extracting JSON with trailing text."""
-        from nodetool.utils.message_parsing import extract_json_from_message
         from nodetool.metadata.types import Message
+        from nodetool.utils.message_parsing import extract_json_from_message
 
         content = '{"key": "value"} <- This is the result'
         msg = Message(role="assistant", content=content)

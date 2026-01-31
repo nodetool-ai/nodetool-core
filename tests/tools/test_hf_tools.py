@@ -2,8 +2,9 @@
 Tests for the HfTools class.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestHfToolsFunctions:
@@ -47,9 +48,8 @@ class TestInspectHfCachedModel:
         with patch(
             "nodetool.tools.hf_tools.read_cached_hf_models",
             return_value=[],
-        ):
-            with pytest.raises(ValueError, match="not found in cache"):
-                await HfTools.inspect_hf_cached_model("nonexistent/model")
+        ), pytest.raises(ValueError, match="not found in cache"):
+            await HfTools.inspect_hf_cached_model("nonexistent/model")
 
     @pytest.mark.asyncio
     async def test_model_found(self):
@@ -82,8 +82,9 @@ class TestSearchHfHubModels:
 
     def test_function_is_async(self):
         """Test that search_hf_hub_models is an async function."""
-        from nodetool.tools.hf_tools import HfTools
         import inspect
+
+        from nodetool.tools.hf_tools import HfTools
 
         assert inspect.iscoroutinefunction(HfTools.search_hf_hub_models)
 
