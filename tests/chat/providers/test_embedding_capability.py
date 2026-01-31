@@ -249,14 +249,13 @@ class TestGeminiEmbeddings:
         provider = self.create_provider()
         models = await provider.get_available_embedding_models()
 
-        assert len(models) == 3
+        assert len(models) == 2
         assert all(isinstance(m, EmbeddingModel) for m in models)
         assert all(m.provider == Provider.Gemini for m in models)
 
         model_ids = [m.id for m in models]
         assert "text-embedding-004" in model_ids
-        assert "text-embedding-005" in model_ids
-        assert "gemini-embedding-exp-03-07" in model_ids
+        assert "gemini-embedding-001" in model_ids
 
     @pytest.mark.asyncio
     async def test_get_available_embedding_models_no_api_key(self):
@@ -351,7 +350,7 @@ class TestGeminiEmbeddings:
         async def mock_embed_content(**kwargs):
             # Verify dimensions was passed via config
             assert kwargs.get("config") is not None
-            assert kwargs["config"]["output_dimensionality"] == 256
+            assert kwargs["config"].output_dimensionality == 256
             return MockResponse([mock_embedding])
 
         with patch.object(provider, "get_client") as mock_client:
