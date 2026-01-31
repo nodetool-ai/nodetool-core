@@ -195,13 +195,31 @@ class AsyncChromaClient:
         return AsyncChromaCollection(collection, self._executor)
 
     async def get_or_create_collection(
-        self, name: str, metadata: Optional[dict[str, Any]] = None
+        self,
+        name: str,
+        metadata: Optional[dict[str, Any]] = None,
+        embedding_function: Any | None = None,
     ) -> AsyncChromaCollection:
-        collection = await self._executor.run(self._client.get_or_create_collection, name=name, metadata=metadata)
+        collection = await self._executor.run(
+            self._client.get_or_create_collection,
+            name=name,
+            metadata=metadata,
+            embedding_function=embedding_function,
+        )
         return AsyncChromaCollection(collection, self._executor)
 
-    async def create_collection(self, name: str, metadata: Optional[dict[str, Any]] = None) -> AsyncChromaCollection:
-        collection = await self._executor.run(self._client.create_collection, name=name, metadata=metadata)
+    async def create_collection(
+        self,
+        name: str,
+        metadata: Optional[dict[str, Any]] = None,
+        embedding_function: Any | None = None,
+    ) -> AsyncChromaCollection:
+        collection = await self._executor.run(
+            self._client.create_collection,
+            name=name,
+            metadata=metadata,
+            embedding_function=embedding_function,
+        )
         return AsyncChromaCollection(collection, self._executor)
 
     async def delete_collection(self, name: str) -> None:
@@ -223,3 +241,19 @@ async def get_async_collection(name: str) -> AsyncChromaCollection:
     """
     client = await get_async_chroma_client()
     return await client.get_collection(name)
+
+
+async def get_or_create_async_collection(
+    name: str,
+    metadata: Optional[dict[str, Any]] = None,
+    embedding_function: Any | None = None,
+) -> AsyncChromaCollection:
+    """
+    Get or create a collection by name with optional metadata.
+    """
+    client = await get_async_chroma_client()
+    return await client.get_or_create_collection(
+        name=name,
+        metadata=metadata,
+        embedding_function=embedding_function,
+    )
