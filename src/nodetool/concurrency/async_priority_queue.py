@@ -141,7 +141,7 @@ class AsyncPriorityQueue(Generic[T]):
             if timeout <= 0:
                 raise asyncio.QueueEmpty()
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             waiter = loop.create_future()
             self._get_waiters.append(waiter)
 

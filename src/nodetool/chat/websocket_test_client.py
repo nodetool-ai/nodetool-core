@@ -357,7 +357,7 @@ class ChatWebSocketClient:
         readline.parse_and_bind("tab: complete")
 
         # Set up input loop
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         try:
             # Connect to WebSocket

@@ -1821,7 +1821,7 @@ async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[
 
         api = HfApi()
     # Run the blocking call in a thread executor
-    models = await asyncio.get_event_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
+    models = await asyncio.get_running_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
     return list(models)
 
 
