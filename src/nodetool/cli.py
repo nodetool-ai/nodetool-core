@@ -4784,5 +4784,96 @@ def proxy_validate_config(config: str):
         raise SystemExit(1) from e
 
 
+@cli.group()
+def gateway():
+    """Gateway client commands for connecting to OpenClaw Gateway.
+
+    Connect NodeTool as a node to a gateway server for distributed workflow execution."""
+    pass
+
+
+@gateway.command("connect")
+@click.option(
+    "--url",
+    required=True,
+    help="WebSocket URL of the gateway server (e.g., ws://gateway.example.com:8080)",
+)
+@click.option(
+    "--node-id",
+    default=None,
+    help="Unique identifier for this node (auto-generated if not provided)",
+)
+@click.option(
+    "--auth-token",
+    default=None,
+    help="Authentication token for gateway connection",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for workflow execution",
+)
+@click.option(
+    "--heartbeat-interval",
+    default=30.0,
+    type=float,
+    help="Seconds between heartbeat messages",
+)
+def gateway_connect(
+    url: str,
+    node_id: str | None,
+    auth_token: str | None,
+    user_id: str,
+    heartbeat_interval: float,
+):
+    """Connect to a gateway server and start accepting workflow requests.
+
+    This command starts a WebSocket client that connects to an OpenClaw Gateway
+    server, registers as a node, and begins accepting workflow execution requests.
+
+    Examples:
+        # Connect to a gateway server
+        nodetool gateway connect --url ws://gateway.example.com:8080
+
+        # Connect with authentication
+        nodetool gateway connect --url ws://gateway.example.com:8080 --auth-token your-token
+
+        # Connect with custom node ID
+        nodetool gateway connect --url ws://gateway.example.com:8080 --node-id my-node-1
+    """
+    from nodetool.gateway.client import GatewayClient
+
+    async def run_gateway_client():
+        client = GatewayClient(
+            gateway_url=url,
+            node_id=node_id,
+            auth_token=auth_token,
+            user_id=user_id,
+            heartbeat_interval=heartbeat_interval,
+        )
+
+        console.print("[bold cyan]🌐 Starting Gateway Client[/]")
+        console.print(f"Gateway URL: {url}")
+        console.print(f"Node ID: {client.node_id}")
+        console.print(f"User ID: {user_id}")
+        console.print()
+
+        try:
+            await client.run()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]⚠️  Interrupted by user[/]")
+        except Exception as e:
+            console.print(f"[red]❌ Error: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            raise SystemExit(1) from e
+        finally:
+            await client.disconnect()
+            console.print("[green]✅ Gateway client stopped[/]")
+
+    _run_async(run_gateway_client())
+
+
 if __name__ == "__main__":
     cli()
