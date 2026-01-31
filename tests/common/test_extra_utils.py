@@ -30,6 +30,51 @@ def test_wrap_primitive_types_nested():
     }
 
 
+def test_wrap_primitive_types_already_typed_dict():
+    """Test that dicts with 'type' key are left unchanged."""
+    data = {"type": "custom", "value": 123}
+    result = wrap_primitive_types(data)
+    assert result == {"type": "custom", "value": 123}
+
+
+def test_wrap_primitive_types_complex_object():
+    """Test that complex objects are returned as-is."""
+
+    class CustomClass:
+        pass
+
+    obj = CustomClass()
+    result = wrap_primitive_types(obj)
+    assert result is obj
+
+
+def test_wrap_primitive_types_empty_structures():
+    """Test empty structures."""
+    assert wrap_primitive_types([]) == {"type": "list", "value": []}
+    assert wrap_primitive_types({}) == {}
+
+
+def test_wrap_primitive_types_deeply_nested():
+    """Test deeply nested structures."""
+    data = {"level1": {"level2": {"level3": [1, 2, 3]}}}
+    result = wrap_primitive_types(data)
+    expected = {
+        "level1": {
+            "level2": {
+                "level3": {
+                    "type": "list",
+                    "value": [
+                        {"type": "integer", "value": 1},
+                        {"type": "integer", "value": 2},
+                        {"type": "integer", "value": 3},
+                    ],
+                }
+            }
+        }
+    }
+    assert result == expected
+
+
 @pytest.mark.asyncio
 async def test_async_byte_stream():
     stream = AsyncByteStream(b"hello world", chunk_size=4)
