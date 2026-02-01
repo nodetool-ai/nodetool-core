@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import mimetypes
 import os
@@ -176,13 +177,40 @@ def _load_default_routers() -> list[APIRouter]:
         settings.router,
         memory.router,
         vibecoding.router,
+        collection.router,  # Always include collection router
     ]
 
     if not Environment.is_production():
         routers.append(file.router)
-        routers.append(collection.router)
 
     return routers
+
+
+def _load_deploy_routers() -> list[APIRouter]:
+    """
+    Load deployment/admin routers.
+
+    These provide:
+    - Admin operations (model downloads, cache management)
+    - Collection management via /admin/collections/*
+    - Storage management via /admin/storage/* and /storage/*
+    - Workflow execution via /workflows/*
+    """
+    from nodetool.deploy.admin_routes import create_admin_router
+    from nodetool.deploy.collection_routes import create_collection_router
+    from nodetool.deploy.storage_routes import (
+        create_admin_storage_router,
+        create_public_storage_router,
+    )
+    from nodetool.deploy.workflow_routes import create_workflow_router
+
+    return [
+        create_admin_router(),
+        create_collection_router(),
+        create_admin_storage_router(),
+        create_public_storage_router(),
+        create_workflow_router(),
+    ]
 
 
 async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> bool:
@@ -337,6 +365,19 @@ def create_app(
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Validate production requirements
+        if Environment.is_production():
+            if not os.environ.get("SECRETS_MASTER_KEY"):
+                raise RuntimeError(
+                    "SECRETS_MASTER_KEY environment variable must be set in production. "
+                    'Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+                )
+            if not os.environ.get("ADMIN_TOKEN"):
+                log.warning(
+                    "ADMIN_TOKEN not set - admin endpoints (/admin/*) will not require "
+                    "additional admin authentication beyond standard auth"
+                )
+
         # Run database migrations before starting
         from nodetool.models.migrations import run_startup_migrations
 
@@ -431,18 +472,36 @@ def create_app(
     )
     app.middleware("http")(auth_middleware)
 
+    # Add admin token middleware for production admin endpoints
+    if Environment.is_production():
+        from nodetool.security.admin_auth import create_admin_auth_middleware
+
+        admin_auth = create_admin_auth_middleware()
+        app.middleware("http")(admin_auth)
+
     if not RUNNING_PYTEST:
         app.add_middleware(ResourceScopeMiddleware)  # type: ignore[arg-type]
 
-    # Mount OpenAI-compatible endpoints with default provider set to "ollama"
-    if not Environment.is_production():
-        app.include_router(
-            create_openai_compatible_router(
-                provider=Provider.Ollama.value,
-            )
+    # Mount OpenAI-compatible endpoints
+    # In production, use environment variables for configuration
+    default_provider = os.environ.get("CHAT_PROVIDER", Provider.Ollama.value)
+    default_model = os.environ.get("DEFAULT_MODEL", "llama3.2:latest")
+    tools_str = os.environ.get("NODETOOL_TOOLS", "")
+    tools_list = [t.strip() for t in tools_str.split(",") if t.strip()] if tools_str else []
+
+    app.include_router(
+        create_openai_compatible_router(
+            provider=default_provider,
+            default_model=default_model,
+            tools=tools_list,
         )
+    )
 
     for router in routers:
+        app.include_router(router)
+
+    # Include deploy routers for admin and production operations
+    for router in _load_deploy_routers():
         app.include_router(router)
 
     for extension_router in ExtensionRouterRegistry().get_routers():
@@ -458,6 +517,14 @@ def create_app(
     @app.get("/health")
     async def health_check() -> str:
         return "OK"
+
+    @app.get("/ping")
+    async def ping():
+        """Health check with system information."""
+        return {
+            "status": "healthy",
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
 
     @app.get("/editor/{workflow_id}")
     async def editor_redirect(workflow_id: str):
