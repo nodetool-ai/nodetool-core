@@ -130,8 +130,12 @@ RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install-deps chromium 
     TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
     rm -rf /var/tmp/* /tmp/*
 
-# Expose port for the worker
+# Expose port for the server
 EXPOSE 7777
 
-# Run the NodeTool worker
-CMD ["python", "-m", "nodetool.deploy.worker"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:7777/health || exit 1
+
+# Run the NodeTool server
+CMD ["python", "-m", "nodetool.api.run_server"]
