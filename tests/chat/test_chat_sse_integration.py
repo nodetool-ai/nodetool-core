@@ -206,7 +206,7 @@ async def test_openai_sse_streaming_performance():
         runner = ChatSSERunner()
 
         # Track timing
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         message_count = 50  # Reduced count since OpenAI chunks are larger
 
         # Mock handle_message to generate many events quickly
@@ -234,7 +234,7 @@ async def test_openai_sse_streaming_performance():
                 events.append(event)
 
             # Calculate performance
-            end_time = asyncio.get_event_loop().time()
+            end_time = asyncio.get_running_loop().time()
             duration = end_time - start_time
 
             # Verify all messages were streamed plus [DONE]
