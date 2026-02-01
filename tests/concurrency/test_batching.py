@@ -144,7 +144,7 @@ class TestProcessInBatches:
 
         async def slow_processor(batch):
             async with lock:
-                start_times.append((batch, asyncio.get_event_loop().time()))
+                start_times.append((batch, asyncio.get_running_loop().time()))
             await asyncio.sleep(0.1)
             return len(batch)
 

@@ -112,10 +112,10 @@ async def test_cancel_on_error():
     group.spawn("slow", slow_task())
     group.spawn("failing", failing_task())
 
-    start = asyncio.get_event_loop().time()
+    start = asyncio.get_running_loop().time()
     with pytest.raises(TaskExecutionError):
         await group.run(raise_on_error=True, cancel_on_error=True)
-    elapsed = asyncio.get_event_loop().time() - start
+    elapsed = asyncio.get_running_loop().time() - start
 
     assert elapsed < 2.0
     assert group.stats.cancelled == 1

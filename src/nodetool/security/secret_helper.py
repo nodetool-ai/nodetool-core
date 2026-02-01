@@ -177,20 +177,27 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
     # 3. If we have a user_id, attempt database lookup via the async helper
     if resolved_user_id is not None:
         try:
+            # Check if there's already a running event loop
             loop = asyncio.get_running_loop()
+            # We're in an async context - need to handle carefully
             try:
                 import nest_asyncio
-
                 nest_asyncio.apply()
-                # Check env will be handled by get_secret based on its logic (DB > Env)
-                # We pass check_env=True (default) so it falls back to env if not in DB
-                return loop.run_until_complete(get_secret(key, resolved_user_id, default))
+                # Use the running loop with nest_asyncio to preserve context
+                result = loop.run_until_complete(get_secret(key, resolved_user_id, default))
+                if result is not None:
+                    return result
             except ImportError:
                 log.debug(
-                    f"Running event loop detected but nest_asyncio not available. Skipping database lookup for '{key}'."
+                    f"Running event loop detected but nest_asyncio not available. "
+                    f"Skipping database lookup for '{key}'. "
+                    f"Install nest_asyncio for sync secret access in async context."
                 )
         except RuntimeError:
-            return asyncio.run(get_secret(key, resolved_user_id, default))
+            # No running event loop, safe to use asyncio.run()
+            result = asyncio.run(get_secret(key, resolved_user_id, default))
+            if result is not None:
+                return result
     else:
         log.debug(f"No user_id available for secret '{key}'. Skipping database lookup.")
 

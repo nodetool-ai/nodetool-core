@@ -62,7 +62,7 @@ class TestRetryWithExponentialBackoff:
         start_times = []
 
         async def record_time():
-            start_times.append(asyncio.get_event_loop().time())
+            start_times.append(asyncio.get_running_loop().time())
             if len(start_times) < 3:
                 raise ValueError("fail")
             return "success"
@@ -91,7 +91,7 @@ class TestRetryWithExponentialBackoff:
             return "success"
 
         async def record_time():
-            now = asyncio.get_event_loop().time()
+            now = asyncio.get_running_loop().time()
             if not delays:
                 delays.append(now)
             else:
@@ -117,7 +117,7 @@ class TestRetryWithExponentialBackoff:
         delays = []
 
         async def record_time_and_fail():
-            now = asyncio.get_event_loop().time()
+            now = asyncio.get_running_loop().time()
             delays.append(now)
             if len(delays) < 3:
                 raise ValueError("fail")
@@ -138,7 +138,7 @@ class TestRetryWithExponentialBackoff:
         delays = []
 
         async def record_time_and_fail():
-            now = asyncio.get_event_loop().time()
+            now = asyncio.get_running_loop().time()
             delays.append(now)
             if len(delays) < 5:
                 raise ValueError("fail")

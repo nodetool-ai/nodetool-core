@@ -128,12 +128,12 @@ class TestChannel:
 
         async def fast_subscriber():
             async for item in channel.subscribe("fast"):
-                fast_timestamps.append(asyncio.get_event_loop().time())
+                fast_timestamps.append(asyncio.get_running_loop().time())
                 fast_received.append(item)
 
         async def slow_subscriber():
             async for item in channel.subscribe("slow"):
-                slow_timestamps.append(asyncio.get_event_loop().time())
+                slow_timestamps.append(asyncio.get_running_loop().time())
                 slow_received.append(item)
                 await asyncio.sleep(0.1)  # Simulate slow processing
 

@@ -561,7 +561,12 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Close any lingering event loops
     try:
-        loop = asyncio.get_event_loop()
+        # Try to get running loop first (preferred in Python 3.10+)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop, try the deprecated method for cleanup purposes
+            loop = asyncio.get_event_loop_policy().get_event_loop()
         if loop.is_running():
             loop.stop()
         if not loop.is_closed():
