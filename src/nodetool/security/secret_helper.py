@@ -184,9 +184,7 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
                 import nest_asyncio
                 nest_asyncio.apply()
                 # Use the running loop with nest_asyncio to preserve context
-                result = loop.run_until_complete(get_secret(key, resolved_user_id, default))
-                if result is not None:
-                    return result
+                return loop.run_until_complete(get_secret(key, resolved_user_id, default))
             except ImportError:
                 log.debug(
                     f"Running event loop detected but nest_asyncio not available. "
@@ -195,9 +193,7 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
                 )
         except RuntimeError:
             # No running event loop, safe to use asyncio.run()
-            result = asyncio.run(get_secret(key, resolved_user_id, default))
-            if result is not None:
-                return result
+            return asyncio.run(get_secret(key, resolved_user_id, default))
     else:
         log.debug(f"No user_id available for secret '{key}'. Skipping database lookup.")
 

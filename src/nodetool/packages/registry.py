@@ -1013,7 +1013,7 @@ async def _enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool
         return_exceptions=True,
     )
 
-    model_info_map: dict[str, ModelInfo] = {}
+    model_info_map: dict[str, "ModelInfo"] = {}  # noqa: UP037
     for repo_id, info in zip(repo_ids, results, strict=False):
         if isinstance(info, Exception):
             if verbose:
