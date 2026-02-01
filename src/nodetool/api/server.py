@@ -523,7 +523,7 @@ def create_app(
         """Health check with system information."""
         return {
             "status": "healthy",
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         }
 
     @app.get("/editor/{workflow_id}")

@@ -20,6 +20,7 @@ from rich.console import Console
 from nodetool.api.server import create_app, run_uvicorn_server
 from nodetool.config.environment import Environment, load_dotenv_files
 from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import Provider
 
 console = Console()
 log = get_logger(__name__)
@@ -59,7 +60,7 @@ def run_server(
     )
 
     # Get configuration from environment
-    default_provider = os.environ.get("CHAT_PROVIDER", "ollama")
+    default_provider = os.environ.get("CHAT_PROVIDER", Provider.Ollama.value)
     default_model = os.environ.get("DEFAULT_MODEL", "llama3.2:latest")
 
     console.print(f"🚀 Starting NodeTool server on {host}:{port}")
