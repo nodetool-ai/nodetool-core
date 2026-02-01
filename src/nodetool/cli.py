@@ -2857,9 +2857,6 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
 
     if isinstance(deployment, SelfHostedDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
-        if deployment.proxy and deployment.proxy.services:
-            for service in deployment.proxy.services:
-                service.environment = _inject(service.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
@@ -3168,35 +3165,52 @@ def deploy_add(name: str, deployment_type: str):
         # Gather deployment-specific configuration
         if deployment_type == "self-hosted":
             console.print("[cyan]Self-Hosted Configuration:[/]")
+            
+            # Prompt for mode
+            from nodetool.config.deployment import SelfHostedMode
+            mode = click.prompt(
+                "Deployment mode",
+                type=click.Choice([m.value for m in SelfHostedMode]),
+                default=SelfHostedMode.DOCKER.value,
+            )
+            
             host = click.prompt("Host address", type=str)
             ssh_user = click.prompt("SSH username", type=str)
             ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
 
             # Image configuration
-            console.print()
-            console.print("[cyan]Image configuration:[/]")
-            image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
-            image_tag = click.prompt("  Docker image tag", type=str, default="latest")
+            image_name = "nodetool/nodetool"
+            image_tag = "latest"
+            
+            if mode == SelfHostedMode.DOCKER.value:
+                console.print()
+                console.print("[cyan]Image configuration:[/]")
+                image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
+                image_tag = click.prompt("  Docker image tag", type=str, default="latest")
 
             # Container configuration
             console.print()
-            console.print("[cyan]Container configuration:[/]")
+            console.print("[cyan]Container/Service configuration:[/]")
 
-            container_name = click.prompt("  Container name", type=str)
+            name_prompt = "  Container name" if mode == SelfHostedMode.DOCKER.value else "  Service identifier (for systemd)"
+            container_name = click.prompt(name_prompt, type=str)
             container_port = click.prompt("  Port", type=int)
 
-            # Optional GPU
-            use_gpu = click.confirm("  Assign GPU?", default=False)
+            # Optional Docker-specific settings
             gpu = None
-            if use_gpu:
-                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
-
-            # Optional workflows
-            has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
-            if has_workflows:
-                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
-                workflows = [w.strip() for w in workflows_str.split(",")]
+            
+            if mode == SelfHostedMode.DOCKER.value:
+                # Optional GPU
+                use_gpu = click.confirm("  Assign GPU?", default=False)
+                if use_gpu:
+                    gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+
+                # Optional workflows
+                has_workflows = click.confirm("  Assign specific workflows?", default=False)
+                if has_workflows:
+                    workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                    workflows = [w.strip() for w in workflows_str.split(",")]
 
             container = ContainerConfig(
                 name=container_name,
@@ -3206,6 +3220,7 @@ def deploy_add(name: str, deployment_type: str):
             )
 
             deployment = SelfHostedDeployment(
+                mode=mode,
                 host=host,
                 ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
                 image=ImageConfig(name=image_name, tag=image_tag),
