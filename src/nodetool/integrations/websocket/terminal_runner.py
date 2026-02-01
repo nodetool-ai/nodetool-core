@@ -241,7 +241,7 @@ class TerminalWebSocketRunner:
                 rows = int(data.get("rows", 0) or 0)
                 await self._handle_resize(cols, rows)
             elif msg_type == "ping":
-                await self._send_message({"type": "pong", "ts": asyncio.get_event_loop().time()})
+                await self._send_message({"type": "pong", "ts": asyncio.get_running_loop().time()})
             else:
                 await self._send_message({"type": "error", "message": "Unknown message type"})
 
