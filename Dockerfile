@@ -130,8 +130,8 @@ RUN TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install-deps chromium 
     TMPDIR=/var/tmp $VIRTUAL_ENV/bin/python -m playwright install && \
     rm -rf /var/tmp/* /tmp/*
 
-# Expose port for the worker
-EXPOSE 7777
+# Expose port for the worker (default 8000, configurable via PORT env var)
+EXPOSE 8000
 
 # Run the NodeTool worker
 CMD ["python", "-m", "nodetool.deploy.worker"]
