@@ -8,6 +8,7 @@ These tests verify:
 4. Deploy routers are loaded (admin, collections, storage, workflows)
 5. Admin auth middleware behavior in production vs development
 6. Environment variable configuration is applied correctly
+7. CLI serve command with --production flag
 """
 
 import os
@@ -21,6 +22,7 @@ from nodetool.api.server import (
     _load_deploy_routers,
     create_app,
 )
+from nodetool.api.run_server import run_server
 
 
 class TestServerStartup:
@@ -327,3 +329,75 @@ class TestCollectionRouterAlwaysEnabled:
         # Check for collection routes from the API collection router
         # and/or the deploy collection router
         assert any("collection" in route.lower() for route in routes)
+
+
+class TestRunServerFunction:
+    """E2E tests for the run_server function from run_server.py."""
+
+    def test_run_server_function_exists(self):
+        """Verify run_server function can be imported and called."""
+        assert callable(run_server)
+        assert run_server.__name__ == "run_server"
+
+    def test_run_server_function_signature(self):
+        """Verify run_server has correct signature."""
+        import inspect
+
+        sig = inspect.signature(run_server)
+        params = list(sig.parameters.keys())
+        assert "host" in params
+        assert "port" in params
+        assert "reload" in params
+        assert sig.parameters["host"].default == "0.0.0.0"
+        assert sig.parameters["port"].default == 7777
+        assert sig.parameters["reload"].default is False
+
+
+class TestCliServeCommandProductionFlag:
+    """E2E tests for CLI serve command with --production flag."""
+
+    def test_serve_production_flag_uses_run_server(self, monkeypatch):
+        """Verify serve --production calls run_server instead of create_app."""
+        from click.testing import CliRunner
+        from nodetool.cli import cli
+
+        run_server_called = []
+
+        def mock_run_server(host, port, reload):
+            run_server_called.append({"host": host, "port": port, "reload": reload})
+
+        monkeypatch.setattr("nodetool.api.run_server.run_server", mock_run_server)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--production", "--port", "9000"])
+
+        assert len(run_server_called) == 1
+        assert run_server_called[0]["host"] == "127.0.0.1"
+        assert run_server_called[0]["port"] == 9000
+
+    def test_serve_without_production_uses_create_app(self, monkeypatch):
+        """Verify serve without --production uses create_app."""
+        from click.testing import CliRunner
+        from nodetool.cli import cli
+
+        create_app_called = []
+        uvicorn_called = []
+
+        def mock_create_app(*args, **kwargs):
+            create_app_called.append(True)
+            from fastapi import FastAPI
+
+            return FastAPI()
+
+        def mock_run_uvicorn_server(app, host, port, reload):
+            uvicorn_called.append({"app": app, "host": host, "port": port, "reload": reload})
+
+        monkeypatch.setattr("nodetool.api.server.create_app", mock_create_app)
+        monkeypatch.setattr("nodetool.api.server.run_uvicorn_server", mock_run_uvicorn_server)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--port", "9000"])
+
+        assert len(create_app_called) == 1
+        assert len(uvicorn_called) == 1
+        assert uvicorn_called[0]["port"] == 9000

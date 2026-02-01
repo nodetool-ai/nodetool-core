@@ -349,6 +349,7 @@ def info_cmd(as_json: bool):
     console.print(keys_table)
     console.print()
 
+
 @click.group(name="workflows")
 def workflows() -> None:
     """Workflow management commands (mirrors MCP workflow tools)."""
@@ -806,8 +807,22 @@ def serve(
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
 
+    Use --production to run the production server with full admin routers.
     Use --mock to start with pre-filled test data for development and testing.
     """
+    if production:
+        from nodetool.api.run_server import run_server
+
+        if static_folder:
+            console.print("[yellow]Warning: --static-folder ignored in production mode[/]")
+        if apps_folder:
+            console.print("[yellow]Warning: --apps-folder ignored in production mode[/]")
+        if mock:
+            console.print("[yellow]Warning: --mock ignored in production mode[/]")
+
+        run_server(host=host, port=port, reload=reload)
+        return
+
     from nodetool.api.server import create_app, run_uvicorn_server
 
     # Configure logging level based on verbose flag
@@ -2420,6 +2435,7 @@ def download_ollama(
         # Download via HTTP API server
         nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:7777
     """
+
     async def run_download():
         console.print("[bold cyan]📥 Starting Ollama download...[/]")
         console.print(f"Model: {model_name}")
