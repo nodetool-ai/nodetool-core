@@ -7,14 +7,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${CHROMA_PATH:-./.cache/chroma}:/chroma-data
     command:
-      - /app/venv/bin/nodetool
-      - serve
-      - --host
-      - 0.0.0.0
-      - --port
-      - "7777"
-    expose:
-      - "7777"
+      - python
+      - "-m"
+      - nodetool.deploy.worker
+    ports:
+      - "8000:8000"
     environment:
       ENV: ${ENV:-development}
       JOB_EXECUTION_STRATEGY: ${JOB_EXECUTION_STRATEGY:-threaded}
@@ -42,8 +39,12 @@ services:
       MEMCACHE_HOST: ${MEMCACHE_HOST:-memcached}
       MEMCACHE_PORT: ${MEMCACHE_PORT:-11211}
       CHROMA_PATH: /chroma-data
+      PORT: ${PORT:-8000}
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-ollama}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-oss:20b}
+      WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:7777/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 6

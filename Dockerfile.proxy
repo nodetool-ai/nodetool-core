@@ -1,3 +1,10 @@
+# DEPRECATED: This proxy is no longer needed for production deployments
+# Use the main Dockerfile which deploys the full NodeTool worker with all features
+# including admin endpoints, authentication, and storage management.
+#
+# The worker (python -m nodetool.deploy.worker) provides everything you need
+# for a production deployment without requiring a separate proxy.
+
 FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \

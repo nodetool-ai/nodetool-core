@@ -1,13 +1,13 @@
 """
-NodeTool Worker - Deployable FastAPI Server
+NodeTool Worker - Production-Ready Deployable FastAPI Server
 
-This is the main deployable worker for NodeTool that can be deployed anywhere.
-It provides a complete FastAPI server with:
+This is the main production deployment server for NodeTool. It provides a complete,
+self-contained FastAPI server with all features needed for production deployment:
 
 1. OpenAI-compatible chat completions with SSE streaming (/v1/chat/completions)
 2. Model listing (/v1/models)
 3. Workflow execution (/workflows/*)
-4. Admin operations (/admin/*)
+4. Admin operations with token authentication (/admin/*)
    - Model downloads (HuggingFace, Ollama)
    - Cache management
    - Database operations
@@ -16,24 +16,35 @@ It provides a complete FastAPI server with:
 5. Public storage (read-only) (/storage/*)
 6. Legacy collection routes (/collections/*)
 
-This worker can be deployed to:
-- Local machines
-- Docker containers
-- RunPod serverless
-- Google Cloud Run
-- Any platform supporting Python/FastAPI
+Authentication:
+   All endpoints (except /health and /ping) require Bearer token authentication.
+   The admin token is auto-generated on first run or can be set via WORKER_AUTH_TOKEN
+   environment variable or SECRETS_MASTER_KEY for production.
+
+Deployment Targets:
+   - Local machines
+   - Docker containers (recommended for production)
+   - RunPod serverless
+   - Google Cloud Run
+   - Any platform supporting Python/FastAPI
 
 Usage:
-    # As a module
+    # As a module (recommended for Docker)
     python -m nodetool.deploy.worker
 
     # Via CLI
-    nodetool worker --port 8080
+    nodetool worker --port 8000
 
     # In code
     from nodetool.deploy.worker import create_worker_app, run_worker
     app = create_worker_app()
     run_worker(host="0.0.0.0", port=8000)
+
+Production Notes:
+    - Set SECRETS_MASTER_KEY environment variable for production
+    - Set WORKER_AUTH_TOKEN for admin endpoint authentication
+    - Use ENV=production for production mode
+    - No separate proxy needed - this server handles everything
 """
 
 import datetime

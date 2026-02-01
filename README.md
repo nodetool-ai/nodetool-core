@@ -93,6 +93,7 @@ Key resources:
 - [API Reference](https://docs.nodetool.ai/api-reference.html)
 - [Architecture](https://docs.nodetool.ai/architecture.html)
 - [Agent System](https://docs.nodetool.ai/AGENTS.html)
+- [Production Deployment Guide](DEPLOYMENT.md)
 - [Examples](examples/)
 
 ## 🏗️ Architecture

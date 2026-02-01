@@ -1,3 +1,7 @@
+# DEPRECATED: This workflow builds the proxy Docker image which is no longer needed.
+# The main worker (docker-publish.yaml) now includes all functionality.
+# This workflow is kept for backward compatibility but may be removed in the future.
+
 name: Docker Proxy
 
 on:
