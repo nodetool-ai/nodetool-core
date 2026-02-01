@@ -116,7 +116,7 @@ class TestGraphToolTransientMode:
             name="adder_tool",
             description="Add two numbers",
             initial_edges=initial_edges,
-            initial_nodes=[adder_node, adder_node],
+            initial_nodes=[adder_node, adder_node],  # One per edge for schema generation
             persistent=False,
         )
 
@@ -275,7 +275,7 @@ class TestGraphToolInputSchema:
             name="adder_tool",
             description="Add numbers",
             initial_edges=initial_edges,
-            initial_nodes=[adder_node, adder_node],
+            initial_nodes=[adder_node, adder_node],  # One per edge for schema generation
         )
 
         assert tool.input_schema is not None
