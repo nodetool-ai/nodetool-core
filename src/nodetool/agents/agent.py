@@ -563,6 +563,44 @@ class Agent(BaseAgent):
         self.resource_limits = resource_limits
         self.display_manager = display_manager
 
+        # Track persistent tools for cleanup (initialized as empty list)
+        self._persistent_tools: list[Any] = []
+
+    def register_persistent_tool(self, tool: Tool) -> None:
+        """
+        Register a persistent GraphTool for lifecycle management.
+
+        Args:
+            tool: The GraphTool instance to register
+        """
+        from nodetool.agents.tools.workflow_tool import GraphTool
+
+        if isinstance(tool, GraphTool) and tool.persistent:
+            self._persistent_tools.append(tool)
+
+    async def cleanup(self) -> None:
+        """
+        Clean up all persistent resources.
+
+        Should be called when the agent is no longer needed.
+        """
+        for tool in self._persistent_tools:
+            await tool.cleanup()
+        self._persistent_tools.clear()
+
+    async def __aenter__(self) -> "Agent":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Async context manager exit."""
+        await self.cleanup()
+
     async def execute(
         self,
         context: ProcessingContext,
