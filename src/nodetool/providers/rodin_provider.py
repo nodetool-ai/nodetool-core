@@ -1,16 +1,21 @@
-"""
-Rodin AI provider implementation for 3D model generation.
+﻿"""
+Hyper3D (Rodin) provider implementation for 3D model generation.
 
-This module implements the Provider interface for Rodin AI's 3D generation APIs:
-- Text-to-3D: Generate 3D models from text descriptions
-- Image-to-3D: Generate 3D models from images
+Hyper3D API Documentation: https://developer.hyper3d.ai/api-specification/overview
 
-Rodin AI (by Hyperhuman) API Documentation: https://hyperhuman.deemos.com/api
+Supported endpoints:
+- /api/v2/rodin (Gen-2 Generation) - text-to-3D and image-to-3D
+- /api/v2/status (Check Status)
+- /api/v2/download (Download Results)
+- /api/v2/check_balance (Check Balance)
+- /api/v2/bang (Model Segmentation)
+- /api/v2/rodin_texture_only (Generate Texture)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -30,377 +35,442 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# Rodin API endpoints
-RODIN_API_BASE_URL = "https://hyperhuman.deemos.com/api"
+HYPER3D_API_BASE_URL = "https://api.hyper3d.com/api"
 
-# Model definitions for Rodin AI
 RODIN_3D_MODELS = [
-    # Image-to-3D models (Rodin's primary capability)
     Model3DModel(
-        id="rodin-gen-1",
-        name="Rodin Gen-1 Image-to-3D",
+        id="rodin-gen-2",
+        name="Rodin Gen-2",
         provider=Provider.Rodin,
-        supported_tasks=["image_to_3d"],
-        output_formats=["glb", "fbx", "obj", "usdz"],
-    ),
-    Model3DModel(
-        id="rodin-gen-1-turbo",
-        name="Rodin Gen-1 Turbo Image-to-3D",
-        provider=Provider.Rodin,
-        supported_tasks=["image_to_3d"],
-        output_formats=["glb", "fbx", "obj", "usdz"],
-    ),
-    # Text-to-3D models
-    Model3DModel(
-        id="rodin-sketch",
-        name="Rodin Sketch Text-to-3D",
-        provider=Provider.Rodin,
-        supported_tasks=["text_to_3d"],
-        output_formats=["glb", "fbx", "obj", "usdz"],
+        supported_tasks=["text_to_3d", "image_to_3d"],
+        output_formats=["glb", "fbx", "obj", "usdz", "stl"],
     ),
 ]
 
 
 @register_provider(Provider.Rodin)
 class RodinProvider(BaseProvider):
-    """Provider for Rodin AI (Hyperhuman) 3D generation services.
-
-    Rodin AI offers high-quality image-to-3D and text-to-3D generation
-    capabilities through their API.
+    """Provider for Hyper3D (Rodin) 3D generation services.
+    
+    Pricing:
+    - Gen-2 Generation: 0.5 credits (base), +1 credit for HighPack
+    - Bang! (segmentation): 0.5 credits
+    - Texture Generation: 0.5 credits
     """
 
     provider_name = "rodin"
-
-    # Polling configuration
-    _poll_interval: float = 5.0  # seconds between status checks
-    _max_poll_attempts: int = 120  # 10 minutes max at 5s intervals
+    _poll_interval: float = 5.0
+    _max_poll_attempts: int = 120
 
     @classmethod
     def required_secrets(cls) -> list[str]:
-        """Return the required secrets for this provider."""
         return ["RODIN_API_KEY"]
 
     def __init__(self, secrets: dict[str, str] | None = None, **kwargs: Any):
-        """Initialize the Rodin provider.
-
-        Args:
-            secrets: Dictionary containing RODIN_API_KEY
-            **kwargs: Additional configuration options
-        """
         super().__init__(secrets=secrets)
         self.api_key = secrets.get("RODIN_API_KEY") if secrets else None
         if not self.api_key:
             log.warning("Rodin API key not configured")
 
-    def _get_headers(self) -> dict[str, str]:
-        """Get HTTP headers for API requests."""
+    def _get_auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _get_json_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "accept": "application/json",
         }
 
+    # =========================================================================
+    # Check Balance API
+    # =========================================================================
+    async def check_balance(self) -> int:
+        """Check remaining credits in account.
+        
+        Endpoint: GET /api/v2/check_balance
+        Cost: Free
+        
+        Returns:
+            Balance of credits
+        """
+        url = f"{HYPER3D_API_BASE_URL}/v2/check_balance"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=self._get_auth_headers()) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"Check balance failed ({response.status}): {await response.text()}")
+                result = await response.json()
+                return result.get("balance", 0)
+
+    # =========================================================================
+    # Check Status API
+    # =========================================================================
+    async def _check_status(self, session: aiohttp.ClientSession, subscription_key: str) -> dict[str, Any]:
+        """Check task status using subscription_key.
+        
+        Endpoint: POST /api/v2/status
+        Body: {"subscription_key": "..."}
+        Cost: Free
+        """
+        url = f"{HYPER3D_API_BASE_URL}/v2/status"
+        payload = {"subscription_key": subscription_key}
+        
+        async with session.post(url, json=payload, headers=self._get_json_headers()) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Status check error ({response.status}): {await response.text()}")
+            return await response.json()
+
+    async def _poll_task_status(
+        self, 
+        session: aiohttp.ClientSession, 
+        subscription_key: str, 
+        poll_interval: float, 
+        max_attempts: int
+    ) -> None:
+        """Poll for task completion."""
+        for attempt in range(max_attempts):
+            status_data = await self._check_status(session, subscription_key)
+            jobs = status_data.get("jobs", [])
+            
+            if not jobs:
+                log.debug(f"Hyper3D: No jobs yet (attempt {attempt + 1}/{max_attempts})")
+                await asyncio.sleep(poll_interval)
+                continue
+            
+            all_done = True
+            for job in jobs:
+                if isinstance(job, dict):
+                    status = job.get("status", "").lower()
+                else:
+                    status = str(job).lower()
+                    
+                if status in ("failed", "error", "cancelled"):
+                    raise RuntimeError(f"Hyper3D task failed: {job}")
+                if status not in ("done",):
+                    all_done = False
+            
+            if all_done and jobs:
+                log.debug(f"Hyper3D task completed after {attempt + 1} attempts")
+                return
+            
+            log.debug(f"Hyper3D: In progress (attempt {attempt + 1}/{max_attempts})")
+            await asyncio.sleep(poll_interval)
+        
+        raise RuntimeError(f"Task timed out after {max_attempts * poll_interval}s")
+
+    # =========================================================================
+    # Download Results API
+    # =========================================================================
+    async def _download_result(self, session: aiohttp.ClientSession, task_uuid: str) -> bytes:
+        """Download result using task_uuid.
+        
+        Endpoint: POST /api/v2/download
+        Body: {"task_uuid": "..."}
+        Cost: Free
+        """
+        url = f"{HYPER3D_API_BASE_URL}/v2/download"
+        payload = {"task_uuid": task_uuid}
+        
+        async with session.post(url, json=payload, headers=self._get_json_headers()) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Download info error ({response.status}): {await response.text()}")
+            result = await response.json()
+            
+            items = result.get("list", [])
+            model_url = None
+            
+            for item in items:
+                name = item.get("name", "").lower()
+                if any(ext in name for ext in [".glb", ".fbx", ".obj", ".usdz", ".stl"]):
+                    model_url = item.get("url")
+                    break
+            
+            if not model_url and items:
+                model_url = items[0].get("url")
+            
+            if not model_url:
+                raise RuntimeError(f"No download URL found: {result}")
+        
+        async with session.get(model_url) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Download failed ({response.status})")
+            return await response.read()
+
+    # =========================================================================
+    # Gen-2 Generation API (Text-to-3D / Image-to-3D)
+    # =========================================================================
     async def _submit_rodin_task(
         self,
         session: aiohttp.ClientSession,
-        images: list[dict[str, str]],
+        images: list[bytes] | None = None,
         prompt: str | None = None,
         seed: int | None = None,
         geometry_file_format: str = "glb",
+        tier: str = "Gen-2",
+        material: str = "PBR",
+        quality: str = "medium",
     ) -> tuple[str, str]:
-        """Submit a Rodin generation task.
-
-        Args:
-            session: aiohttp session
-            images: List of image data with type and data fields
-            prompt: Optional text prompt
-            seed: Random seed for reproducibility
-            geometry_file_format: Output format (glb, fbx, obj, usdz)
-
+        """Submit a Rodin Gen-2 generation task.
+        
+        Endpoint: POST /api/v2/rodin (multipart/form-data)
+        Cost: 0.5 credits (base)
+        
         Returns:
-            Tuple of (task_uuid, subscription_key) for polling status
+            Tuple of (task_uuid, subscription_key)
         """
-        payload: dict[str, Any] = {
-            "images": images,
-            "geometry_file_format": geometry_file_format.upper(),
-        }
-
+        url = f"{HYPER3D_API_BASE_URL}/v2/rodin"
+        data = aiohttp.FormData()
+        data.add_field("tier", tier)
+        data.add_field("geometry_file_format", geometry_file_format.lower())
+        data.add_field("material", material)
+        data.add_field("quality", quality)
+        
         if prompt:
-            payload["prompt"] = prompt
-        if seed is not None:
-            payload["seed"] = seed
+            data.add_field("prompt", prompt)
+        if seed is not None and seed >= 0:
+            data.add_field("seed", str(min(seed, 65535)))
+        
+        if images:
+            for i, image_bytes in enumerate(images):
+                if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+                    content_type, filename = "image/png", f"image_{i}.png"
+                elif image_bytes[:3] == b"\xff\xd8\xff":
+                    content_type, filename = "image/jpeg", f"image_{i}.jpg"
+                else:
+                    content_type, filename = "image/png", f"image_{i}.png"
+                data.add_field("images", image_bytes, filename=filename, content_type=content_type)
 
-        url = f"{RODIN_API_BASE_URL}/v2/rodin"
-        async with session.post(url, json=payload, headers=self._get_headers()) as response:
-            if response.status != 200 and response.status != 202:
-                error_text = await response.text()
-                raise RuntimeError(f"Rodin API error ({response.status}): {error_text}")
-            data = await response.json()
-            # Extract UUID and subscription_key from response
-            uuids = data.get("uuids", [])
-            if not uuids:
-                raise RuntimeError("No task UUID returned from Rodin API")
-            subscription_key = data.get("subscription_key", "")
+        async with session.post(url, data=data, headers=self._get_auth_headers()) as response:
+            response_text = await response.text()
+            if response.status not in (200, 202):
+                raise RuntimeError(f"Hyper3D API error ({response.status}): {response_text}")
+            result = json.loads(response_text)
+            if result.get("error"):
+                raise RuntimeError(f"Hyper3D API error: {result.get('error')} - {result.get('message')}")
+            
+            task_uuid = result.get("uuid")
+            subscription_key = result.get("jobs", {}).get("subscription_key")
+            
+            if not task_uuid:
+                raise RuntimeError(f"No task UUID returned: {result}")
             if not subscription_key:
-                raise RuntimeError("No subscription key returned from Rodin API")
-            return uuids[0], subscription_key
+                raise RuntimeError(f"No subscription key returned: {result}")
+            
+            return task_uuid, subscription_key
 
-    async def _poll_task_status(
+    # =========================================================================
+    # Bang! API (Model Segmentation)
+    # =========================================================================
+    async def bang_segment_model(
         self,
-        session: aiohttp.ClientSession,
-        subscription_key: str,
-        poll_interval: float,
-        max_attempts: int,
-    ) -> dict[str, Any]:
-        """Poll for task completion using subscription key.
-
-        Args:
-            session: aiohttp session
-            subscription_key: The subscription key for the task
-            poll_interval: Seconds between polls
-            max_attempts: Maximum polling attempts
-
-        Returns:
-            Task result data
-
-        Raises:
-            RuntimeError: If task fails or times out
-        """
-        url = f"{RODIN_API_BASE_URL}/v2/status"
-
-        for attempt in range(max_attempts):
-            payload = {"subscription_key": subscription_key}
-            async with session.post(url, json=payload, headers=self._get_headers()) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise RuntimeError(f"Rodin API poll error ({response.status}): {error_text}")
-
-                data = await response.json()
-                jobs = data.get("jobs", [])
-
-                if not jobs:
-                    log.debug(f"Rodin task status: No jobs yet (attempt {attempt + 1}/{max_attempts})")
-                    await asyncio.sleep(poll_interval)
-                    continue
-
-                job = jobs[0]
-                status = job.get("status", "").upper()
-
-                if status == "DONE":
-                    return job
-                elif status in ("FAILED", "ERROR", "CANCELLED"):
-                    error_msg = job.get("error", "Unknown error")
-                    raise RuntimeError(f"Rodin task failed: {error_msg}")
-
-                log.debug(f"Rodin task status: {status} (attempt {attempt + 1}/{max_attempts})")
-
-            await asyncio.sleep(poll_interval)
-
-        raise RuntimeError(f"Rodin task timed out after {max_attempts * poll_interval}s")
-
-    async def _download_result(
-        self,
-        session: aiohttp.ClientSession,
-        task_uuid: str,
+        asset_id: str | None = None,
+        model_bytes: bytes | None = None,
+        image_bytes: bytes | None = None,
+        prompt: str | None = None,
+        strength: int = 5,
+        geometry_file_format: str = "glb",
+        material: str = "PBR",
+        resolution: str = "Basic",
     ) -> bytes:
-        """Download the result file.
-
+        """Split a 3D model into multiple submodels using Bang! API.
+        
+        Endpoint: POST /api/v2/bang (multipart/form-data)
+        Cost: 0.5 credits
+        
         Args:
-            session: aiohttp session
-            task_uuid: The task UUID
-
+            asset_id: UUID of a previous Rodin Gen-2 task (mutually exclusive with model_bytes)
+            model_bytes: Custom model file bytes (mutually exclusive with asset_id)
+            image_bytes: Optional reference image for texture generation (only with model_bytes)
+            prompt: Optional prompt for texture generation (only with model_bytes)
+            strength: Splitting strength (2-12, default 5). Higher = more pieces
+            geometry_file_format: Output format (glb, fbx, obj, stl, usdz)
+            material: Material type (PBR, Shaded, None, All)
+            resolution: Texture resolution (Basic=2K, High=4K)
+            
         Returns:
-            Raw bytes of the 3D model
+            Raw bytes of segmented 3D model
         """
-        url = f"{RODIN_API_BASE_URL}/v2/download"
-        payload = {"task_uuid": task_uuid}
+        if not asset_id and not model_bytes:
+            raise ValueError("Either asset_id or model_bytes must be provided")
+        if asset_id and model_bytes:
+            raise ValueError("asset_id and model_bytes are mutually exclusive")
+        
+        url = f"{HYPER3D_API_BASE_URL}/v2/bang"
+        data = aiohttp.FormData()
+        data.add_field("strength", str(max(2, min(12, strength))))
+        data.add_field("geometry_file_format", geometry_file_format.lower())
+        data.add_field("material", material)
+        data.add_field("resolution", resolution)
+        
+        if asset_id:
+            data.add_field("asset_id", asset_id)
+        
+        if model_bytes:
+            data.add_field("model", model_bytes, filename="model.glb", content_type="application/octet-stream")
+            if image_bytes:
+                data.add_field("image", image_bytes, filename="reference.jpg", content_type="image/jpeg")
+            if prompt:
+                data.add_field("prompt", prompt)
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, headers=self._get_auth_headers()) as response:
+                response_text = await response.text()
+                if response.status not in (200, 202):
+                    raise RuntimeError(f"Bang! API error ({response.status}): {response_text}")
+                result = json.loads(response_text)
+                if result.get("error"):
+                    raise RuntimeError(f"Bang! API error: {result.get('error')} - {result.get('message')}")
+                
+                task_uuid = result.get("uuid")
+                subscription_key = result.get("jobs", {}).get("subscription_key")
+                
+                if not task_uuid or not subscription_key:
+                    raise RuntimeError(f"Invalid response from Bang! API: {result}")
+            
+            await self._poll_task_status(session, subscription_key, self._poll_interval, self._max_poll_attempts)
+            return await self._download_result(session, task_uuid)
 
-        async with session.post(url, json=payload, headers=self._get_headers()) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                raise RuntimeError(f"Failed to get download URL ({response.status}): {error_text}")
-            data = await response.json()
-            download_url = data.get("model_url") or data.get("url")
-
-            if not download_url:
-                raise RuntimeError("No download URL in response")
-
-        # Download the actual file
-        async with session.get(download_url) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                raise RuntimeError(f"Failed to download result ({response.status}): {error_text}")
-            return await response.read()
-
-    async def _encode_image(self, image: bytes) -> dict[str, str]:
-        """Encode an image for Rodin API.
-
+    # =========================================================================
+    # Generate Texture API
+    # =========================================================================
+    async def generate_texture(
+        self,
+        model_bytes: bytes,
+        image_bytes: bytes,
+        prompt: str | None = None,
+        seed: int | None = None,
+        reference_scale: float = 1.0,
+        geometry_file_format: str = "glb",
+        material: str = "PBR",
+        resolution: str = "Basic",
+    ) -> bytes:
+        """Generate textures for a 3D model.
+        
+        Endpoint: POST /api/v2/rodin_texture_only (multipart/form-data)
+        Cost: 0.5 credits
+        
         Args:
-            image: Image bytes
-
+            model_bytes: 3D model file bytes (max 10MB)
+            image_bytes: Reference image for texture generation
+            prompt: Optional texture description
+            seed: Random seed (0-65535)
+            reference_scale: Reference scale for texture generation
+            geometry_file_format: Output format (glb, fbx, obj, stl, usdz)
+            material: Material type (PBR, Shaded)
+            resolution: Texture resolution (Basic=2K, High=4K)
+            
         Returns:
-            Dictionary with type and base64-encoded data
+            Raw bytes of textured 3D model
         """
-        import base64
+        url = f"{HYPER3D_API_BASE_URL}/v2/rodin_texture_only"
+        data = aiohttp.FormData()
+        data.add_field("model", model_bytes, filename="model.glb", content_type="application/octet-stream")
+        data.add_field("image", image_bytes, filename="reference.jpg", content_type="image/jpeg")
+        data.add_field("reference_scale", str(reference_scale))
+        data.add_field("geometry_file_format", geometry_file_format.lower())
+        data.add_field("material", material)
+        data.add_field("resolution", resolution)
+        
+        if prompt:
+            data.add_field("prompt", prompt)
+        if seed is not None and seed >= 0:
+            data.add_field("seed", str(min(seed, 65535)))
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, headers=self._get_auth_headers()) as response:
+                response_text = await response.text()
+                if response.status not in (200, 202):
+                    raise RuntimeError(f"Texture API error ({response.status}): {response_text}")
+                result = json.loads(response_text)
+                if result.get("error"):
+                    raise RuntimeError(f"Texture API error: {result.get('error')} - {result.get('message')}")
+                
+                task_uuid = result.get("uuid")
+                subscription_key = result.get("jobs", {}).get("subscription_key")
+                
+                if not task_uuid or not subscription_key:
+                    raise RuntimeError(f"Invalid response from Texture API: {result}")
+            
+            await self._poll_task_status(session, subscription_key, self._poll_interval, self._max_poll_attempts)
+            return await self._download_result(session, task_uuid)
 
-        base64_image = base64.b64encode(image).decode("utf-8")
-
-        # Detect image type
-        if image[:8] == b"\x89PNG\r\n\x1a\n":
-            image_type = "png"
-        elif image[:3] == b"\xff\xd8\xff":
-            image_type = "jpeg"
-        else:
-            image_type = "png"  # Default to PNG
-
-        return {
-            "type": image_type,
-            "data": base64_image,
-        }
-
+    # =========================================================================
+    # BaseProvider Interface Methods
+    # =========================================================================
     async def get_available_3d_models(self) -> list[Model3DModel]:
-        """Get available Rodin 3D generation models."""
         if not self.api_key:
-            log.debug("No Rodin API key configured, returning empty 3D model list")
             return []
         return RODIN_3D_MODELS
 
     async def text_to_3d(
-        self,
-        params: TextTo3DParams,
-        timeout_s: int | None = None,
-        context: Any = None,
-        node_id: str | None = None,
+        self, 
+        params: TextTo3DParams, 
+        timeout_s: int | None = None, 
+        context: Any = None, 
+        node_id: str | None = None
     ) -> bytes:
-        """Generate a 3D model from a text prompt using Rodin AI.
-
-        Note: Rodin's text-to-3D works by generating an image from the prompt
-        first, then converting to 3D. The API handles this internally.
-
-        Args:
-            params: Text-to-3D generation parameters
-            timeout_s: Optional timeout in seconds
-            context: Processing context for asset handling
-            node_id: Optional node ID for tracking
-
-        Returns:
-            Raw 3D model bytes (GLB format by default)
-
-        Raises:
-            ValueError: If required parameters are missing
-            RuntimeError: If generation fails
+        """Generate a 3D model from text prompt.
+        
+        Cost: 0.5 credits
         """
-        log.debug(f"Generating 3D model with Rodin model: {params.model.id}")
-
+        log.info(f"Generating 3D with Hyper3D Rodin (text-to-3D)")
+        
         if not params.prompt:
             raise ValueError("prompt must not be empty")
-
         if not self.api_key:
             raise ValueError("Rodin API key is not configured")
-
-        try:
-            # Calculate max attempts from timeout if provided
-            poll_interval = self._poll_interval
-            max_attempts = self._max_poll_attempts
-            if timeout_s is not None and timeout_s > 0:
-                max_attempts = max(1, int(timeout_s / poll_interval))
-
-            async with aiohttp.ClientSession() as session:
-                # Rodin text-to-3D uses a sketch/prompt-based approach
-                # Submit with empty images but with prompt
-                task_uuid, subscription_key = await self._submit_rodin_task(
-                    session,
-                    images=[],  # Empty images for text-to-3D
-                    prompt=params.prompt,
-                    seed=params.seed,
-                    geometry_file_format=params.output_format,
-                )
-
-                log.debug(f"Rodin text-to-3D task submitted: {task_uuid}")
-
-                # Poll for completion
-                await self._poll_task_status(
-                    session,
-                    subscription_key=subscription_key,
-                    poll_interval=poll_interval,
-                    max_attempts=max_attempts,
-                )
-
-                # Download the result
-                model_bytes = await self._download_result(session, task_uuid)
-                log.debug(f"Generated {len(model_bytes)} bytes of 3D model data")
-                return model_bytes
-
-        except Exception as e:
-            log.error(f"Rodin text-to-3D generation failed: {e}")
-            raise RuntimeError(f"Rodin text-to-3D generation failed: {str(e)}") from e
+        
+        poll_interval, max_attempts = self._poll_interval, self._max_poll_attempts
+        if timeout_s and timeout_s > 0:
+            max_attempts = max(1, int(timeout_s / poll_interval))
+        
+        async with aiohttp.ClientSession() as session:
+            task_uuid, subscription_key = await self._submit_rodin_task(
+                session, 
+                images=None, 
+                prompt=params.prompt, 
+                seed=params.seed, 
+                geometry_file_format=params.output_format,
+                tier="Gen-2"
+            )
+            log.debug(f"Task submitted: uuid={task_uuid}")
+            
+            await self._poll_task_status(session, subscription_key, poll_interval, max_attempts)
+            return await self._download_result(session, task_uuid)
 
     async def image_to_3d(
-        self,
-        image: bytes,
-        params: ImageTo3DParams,
-        timeout_s: int | None = None,
-        context: Any = None,
-        node_id: str | None = None,
+        self, 
+        image: bytes, 
+        params: ImageTo3DParams, 
+        timeout_s: int | None = None, 
+        context: Any = None, 
+        node_id: str | None = None
     ) -> bytes:
-        """Generate a 3D model from an image using Rodin AI.
-
-        Args:
-            image: Input image as bytes
-            params: Image-to-3D generation parameters
-            timeout_s: Optional timeout in seconds
-            context: Processing context for asset handling
-            node_id: Optional node ID for tracking
-
-        Returns:
-            Raw 3D model bytes (GLB format by default)
-
-        Raises:
-            ValueError: If required parameters are missing
-            RuntimeError: If generation fails
+        """Generate a 3D model from image.
+        
+        Cost: 0.5 credits
         """
-        log.debug(f"Generating 3D model from image with Rodin model: {params.model.id}")
-
+        log.info(f"Generating 3D with Hyper3D Rodin (image-to-3D)")
+        
         if not image:
             raise ValueError("image must not be empty")
-
         if not self.api_key:
             raise ValueError("Rodin API key is not configured")
-
-        try:
-            # Calculate max attempts from timeout if provided
-            poll_interval = self._poll_interval
-            max_attempts = self._max_poll_attempts
-            if timeout_s is not None and timeout_s > 0:
-                max_attempts = max(1, int(timeout_s / poll_interval))
-
-            async with aiohttp.ClientSession() as session:
-                # Encode image
-                encoded_image = await self._encode_image(image)
-
-                # Submit the task and get both task_uuid and subscription_key
-                task_uuid, subscription_key = await self._submit_rodin_task(
-                    session,
-                    images=[encoded_image],
-                    prompt=params.prompt,
-                    seed=params.seed,
-                    geometry_file_format=params.output_format,
-                )
-
-                log.debug(f"Rodin image-to-3D task submitted: {task_uuid}")
-
-                # Poll for completion
-                await self._poll_task_status(
-                    session,
-                    subscription_key=subscription_key,
-                    poll_interval=poll_interval,
-                    max_attempts=max_attempts,
-                )
-
-                # Download the result
-                model_bytes = await self._download_result(session, task_uuid)
-                log.debug(f"Generated {len(model_bytes)} bytes of 3D model data")
-                return model_bytes
-
-        except Exception as e:
-            log.error(f"Rodin image-to-3D generation failed: {e}")
-            raise RuntimeError(f"Rodin image-to-3D generation failed: {str(e)}") from e
+        
+        poll_interval, max_attempts = self._poll_interval, self._max_poll_attempts
+        if timeout_s and timeout_s > 0:
+            max_attempts = max(1, int(timeout_s / poll_interval))
+        
+        async with aiohttp.ClientSession() as session:
+            task_uuid, subscription_key = await self._submit_rodin_task(
+                session, 
+                images=[image], 
+                prompt=params.prompt, 
+                seed=params.seed, 
+                geometry_file_format=params.output_format,
+                tier="Gen-2"
+            )
+            log.debug(f"Task submitted: uuid={task_uuid}")
+            
+            await self._poll_task_status(session, subscription_key, poll_interval, max_attempts)
+            return await self._download_result(session, task_uuid)
