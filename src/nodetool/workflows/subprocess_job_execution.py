@@ -621,19 +621,26 @@ class SubprocessJobExecution(JobExecution):
             returncode = await self.process.wait()
 
             # Update status based on return code
+            # Update status based on return code
             if returncode == 0:
                 # Successful completion - update both internal status and database
-                self._status = "completed"
-                await self.job_model.update(status="completed", finished_at=datetime.now())
+                # If we processed a "completed" JobUpdate from stdout, self._status is already "completed"
+                if self._status == "completed":
+                    # Update DB just in case, but DO NOT send redundant JobUpdate
+                    await self.job_model.update(status="completed", finished_at=datetime.now())
+                    log.info(f"Subprocess job {self.job_id} completed successfully (status already set)")
+                else:
+                    self._status = "completed"
+                    await self.job_model.update(status="completed", finished_at=datetime.now())
 
-                # Post completion message to avoid race condition
-                self.context.post_message(
-                    JobUpdate(
-                        job_id=self.job_id,
-                        status="completed",
-                        message=f"Subprocess job {self.job_id} completed successfully",
+                    # Post completion message to avoid race condition
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="completed",
+                            message=f"Subprocess job {self.job_id} completed successfully",
+                        )
                     )
-                )
                 log.info(f"Subprocess job {self.job_id} completed successfully")
             else:
                 # Failed completion - the subprocess may not have sent a proper update

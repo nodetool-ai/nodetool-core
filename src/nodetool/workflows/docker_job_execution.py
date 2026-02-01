@@ -397,6 +397,8 @@ class DockerJobExecution(JobExecution):
                         workflow_id=self._job_model.workflow_id if self._job_model else None,
                     )
                 )
+            elif self._status == "completed":
+                log.info(f"Docker job {self.job_id} finished successfully (status already set)")
 
         except ContainerFailureError as e:
             log.error(f"Docker execution error: {e}")

@@ -142,8 +142,29 @@ class ThreadedJobExecution(JobExecution):
                             message="Workflow suspended",
                         )
                     )
+                elif self.runner and self.runner.status == "cancelled":
+                    # Runner detected cancellation during execution
+                    self._set_status("cancelled")
+                    from nodetool.models.job import Job
+
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_cancelled()
+                    await self.job_model.update(finished_at=datetime.now())
+                    # Cancelled message likely already sent by runner or will be handled by external cancellation
+                elif self.runner and self.runner.status == "completed":
+                    # Runner completed successfully and ALREADY sent the completion update with results
+                    self._set_status("completed")
+                    from nodetool.models.job import Job
+
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_completed()
+                    await self.job_model.update(finished_at=datetime.now())
+                    # DO NOT send another JobUpdate here as the runner already did it
                 else:
-                    # Update job status on completion
+                    # Fallback for cases where runner didn't set explicit terminal status but finished without error
+                    # This shouldn't happen with correct runner implementation but we keep it for safety
                     self._set_status("completed")
                     from nodetool.models.job import Job
 
@@ -160,7 +181,7 @@ class ThreadedJobExecution(JobExecution):
                             message=f"Job {self.job_id} completed successfully",
                         )
                     )
-                log.info(f"Background job {self.job_id} completed successfully")
+                log.info(f"Background job {self.job_id} finished execution loop")
 
             except asyncio.CancelledError:
                 self._set_status("cancelled")
