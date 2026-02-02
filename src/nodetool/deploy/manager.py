@@ -18,6 +18,8 @@ from nodetool.config.deployment import (
     GCPDeployment,
     RunPodDeployment,
     SelfHostedDeployment,
+    SelfHostedDockerDeployment,
+    SelfHostedShellDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
@@ -66,9 +68,12 @@ class DeploymentManager:
             }
 
             # Add type-specific info
-            if isinstance(deployment, SelfHostedDeployment):
+            if isinstance(deployment, SelfHostedDockerDeployment):
                 info["host"] = deployment.host
                 info["container"] = deployment.container.name
+            elif isinstance(deployment, SelfHostedShellDeployment):
+                info["host"] = deployment.host
+                info["service"] = deployment.service_name
             elif isinstance(deployment, RunPodDeployment):
                 info["pod_id"] = state.get("pod_id") if state else None
             elif isinstance(deployment, GCPDeployment):
@@ -355,10 +360,16 @@ class DeploymentManager:
                     if not deployment.ssh.key_path and not deployment.ssh.password:
                         results["warnings"].append(f"{deployment_name}: No SSH authentication method configured")
 
-                    # Validate container
-                    if not deployment.container:
-                        results["errors"].append(f"{deployment_name}: No container configured")
-                        results["valid"] = False
+                    # Validate type specific requirements
+                    if isinstance(deployment, SelfHostedDockerDeployment):
+                        if not deployment.container:
+                            results["errors"].append(f"{deployment_name}: No container configured")
+                            results["valid"] = False
+                    
+                    elif isinstance(deployment, SelfHostedShellDeployment):
+                         if not deployment.port:
+                             results["errors"].append(f"{deployment_name}: No port configured")
+                             results["valid"] = False
 
             except Exception as e:
                 results["errors"].append(f"{deployment_name}: {str(e)}")

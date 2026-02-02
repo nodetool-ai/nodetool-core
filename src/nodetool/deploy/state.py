@@ -17,13 +17,13 @@ from typing import Any, Generator, Optional
 # - Unix: fcntl.flock
 # - Windows: msvcrt.locking
 try:  # pragma: no cover - platform-specific
-    import fcntl  # type: ignore
+    import fcntl
 
     _HAS_FCNTL = True
 except ModuleNotFoundError:  # pragma: no cover - Windows
     fcntl = None  # type: ignore
     _HAS_FCNTL = False
-    import msvcrt  # type: ignore
+    import msvcrt
 
 from nodetool.config.deployment import (
     DeploymentConfig,
@@ -96,9 +96,9 @@ class StateManager:
                         try:
                             if _HAS_FCNTL:
                                 # Unix-style advisory lock
-                                fcntl.flock(  # type: ignore[union-attr]
+                                fcntl.flock(
                                     lock_file.fileno(),
-                                    fcntl.LOCK_EX | fcntl.LOCK_NB,  # type: ignore[union-attr]
+                                    fcntl.LOCK_EX | fcntl.LOCK_NB,
                                 )
                             else:
                                 # Windows: lock 1 byte in the lock file (non-blocking)
@@ -107,7 +107,7 @@ class StateManager:
                                     lock_file.write("0")
                                     lock_file.flush()
                                 lock_file.seek(0)
-                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[name-defined]
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                             acquired = True
                             break
                         except OSError:
@@ -122,10 +122,10 @@ class StateManager:
                     if acquired:
                         with suppress(OSError):
                             if _HAS_FCNTL:
-                                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # type: ignore[union-attr]
+                                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
                             else:
                                 lock_file.seek(0)
-                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[name-defined]
+                                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                 lock_file.close()
 
                 # Clean up lock file
@@ -149,7 +149,7 @@ class StateManager:
         """
         with self.lock():
             # Load config from our specific path
-            import yaml
+            import yaml  # type: ignore
 
             from nodetool.config.deployment import DeploymentConfig
 
@@ -205,7 +205,7 @@ class StateManager:
             current_state.update(state_updates)
 
             # Re-validate and update
-            deployment.state = deployment.state.__class__.model_validate(current_state)  # type: ignore[assignment]
+            deployment.state = deployment.state.__class__.model_validate(current_state)
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -279,12 +279,12 @@ class StateManager:
             state_dict = deployment.state.model_dump()
             existing = state_dict.get(field_name)
             if existing:
-                return existing
+                return str(existing)
 
             secret_value = secrets.token_urlsafe(byte_length)
             state_dict[field_name] = secret_value
 
-            deployment.state = deployment.state.__class__.model_validate(state_dict)  # type: ignore[assignment]
+            deployment.state = deployment.state.__class__.model_validate(state_dict)
 
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
@@ -327,7 +327,7 @@ class StateManager:
                 raise KeyError(f"Deployment '{deployment_name}' not found")
 
             # Reset to default state for this deployment type
-            deployment.state = deployment.state.__class__()  # type: ignore[assignment]
+            deployment.state = deployment.state.__class__()
 
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
@@ -358,7 +358,7 @@ class StateManager:
             last_deployed = state["last_deployed"]
             if isinstance(last_deployed, str):
                 return datetime.fromisoformat(last_deployed.replace("Z", "+00:00"))
-            return last_deployed
+            return last_deployed  # type: ignore[no-any-return]
         return None
 
     def has_been_deployed(self, deployment_name: str) -> bool:
@@ -450,7 +450,7 @@ def restore_state_from_snapshot(
             deployment = config.deployments[name]
 
             # Restore state
-            deployment.state = deployment.state.__class__.model_validate(snapshot_state)  # type: ignore[assignment]
+            deployment.state = deployment.state.__class__.model_validate(snapshot_state)
 
         if resolved_config_path:
             import yaml

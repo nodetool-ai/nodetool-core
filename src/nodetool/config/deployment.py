@@ -8,7 +8,7 @@ deployments (self-hosted, RunPod, GCP) are managed through a single deployment.y
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -111,11 +111,11 @@ class ImageConfig(BaseModel):
 
 
 
-class SelfHostedDeployment(BaseModel):
-    """Self-hosted deployment configuration for a single container."""
+class SelfHostedDockerDeployment(BaseModel):
+    """Self-hosted deployment configuration for Docker."""
 
     type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
-    mode: SelfHostedMode = Field(SelfHostedMode.DOCKER, description="Deployment mode: 'docker' or 'shell'")
+    mode: Literal[SelfHostedMode.DOCKER] = SelfHostedMode.DOCKER
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
     ssh: SSHConfig
@@ -131,6 +131,37 @@ class SelfHostedDeployment(BaseModel):
     def get_server_url(self) -> str:
         """Get the server URL for this deployment."""
         return f"http://{self.host}:{self.container.port}"
+
+
+class SelfHostedShellDeployment(BaseModel):
+    """Self-hosted deployment configuration for Shell (systemd service)."""
+
+    type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
+    mode: Literal[SelfHostedMode.SHELL] = SelfHostedMode.SHELL
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    host: str = Field(..., description="Remote host address (IP or hostname)")
+    ssh: SSHConfig
+    paths: SelfHostedPaths = SelfHostedPaths()
+    
+    # Service configuration
+    port: int = Field(..., description="Service port")
+    service_name: Optional[str] = Field(None, description="Systemd service name")
+    gpu: Optional[str] = Field(None, description="GPU device ID(s)")
+    environment: Optional[dict[str, str]] = Field(None, description="Environment variables")
+    workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run")
+    
+    worker_auth_token: Optional[str] = Field(
+        None,
+        description="Authentication token for worker API (auto-generated if not set)",
+    )
+    state: SelfHostedState = Field(default_factory=SelfHostedState)
+
+    def get_server_url(self) -> str:
+        """Get the server URL for this deployment."""
+        return f"http://{self.host}:{self.port}"
+
+
+SelfHostedDeployment = Union[SelfHostedDockerDeployment, SelfHostedShellDeployment]
 
 
 # ============================================================================

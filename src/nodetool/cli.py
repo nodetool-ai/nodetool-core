@@ -2848,6 +2848,8 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         GCPDeployment,
         RunPodDeployment,
         SelfHostedDeployment,
+        SelfHostedDockerDeployment,
+        SelfHostedShellDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2855,29 +2857,33 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         env["SECRETS_MASTER_KEY"] = master_key
         return env
 
-    if isinstance(deployment, SelfHostedDeployment):
+    if isinstance(deployment, SelfHostedDockerDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
+    elif isinstance(deployment, SelfHostedShellDeployment):
+        deployment.environment = _inject(deployment.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
 
 async def _export_encrypted_secrets_payload(limit: int = 1000) -> list[dict[str, Any]]:
     from nodetool.models.secret import Secret
+    from nodetool.runtime.resources import ResourceScope
 
-    secrets = await Secret.list_all(limit=limit)
-    payload: list[dict[str, Any]] = []
-    for secret in secrets:
-        payload.append(
-            {
-                "user_id": secret.user_id,
-                "key": secret.key,
-                "encrypted_value": secret.encrypted_value,
-                "description": secret.description,
-                "created_at": secret.created_at.isoformat() if secret.created_at else None,
-                "updated_at": secret.updated_at.isoformat() if secret.updated_at else None,
-            }
-        )
-    return payload
+    async with ResourceScope():
+        secrets = await Secret.list_all(limit=limit)
+        payload: list[dict[str, Any]] = []
+        for secret in secrets:
+            payload.append(
+                {
+                    "user_id": secret.user_id,
+                    "key": secret.key,
+                    "encrypted_value": secret.encrypted_value,
+                    "description": secret.description,
+                    "created_at": secret.created_at.isoformat() if secret.created_at else None,
+                    "updated_at": secret.updated_at.isoformat() if secret.updated_at else None,
+                }
+            )
+        return payload
 
 
 async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: list[dict[str, Any]]) -> dict[str, Any]:
@@ -3003,8 +3009,11 @@ def deploy_show(name: str):
         content.append("")
 
         # Type-specific configuration
-        if isinstance(deployment, SelfHostedDeployment):
-            content.append("[bold]Self-Hosted Configuration:[/]")
+        # Type-specific configuration
+        from nodetool.config.deployment import SelfHostedDockerDeployment, SelfHostedShellDeployment
+
+        if isinstance(deployment, SelfHostedDockerDeployment):
+            content.append("[bold]Self-Hosted (Docker) Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
             content.append(f"  SSH User: {deployment.ssh.user}")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
@@ -3018,6 +3027,28 @@ def deploy_show(name: str):
                 content.append(f"    Workflows: {', '.join(deployment.container.workflows)}")
             if deployment.container.gpu:
                 content.append(f"    GPU: {deployment.container.gpu}")
+            content.append("")
+
+            # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+
+        elif isinstance(deployment, SelfHostedShellDeployment):
+            content.append("[bold]Self-Hosted (Shell) Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append(f"  SSH User: {deployment.ssh.user}")
+            content.append("")
+
+            # Service details
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
             content.append("")
 
             # Paths
@@ -3070,10 +3101,16 @@ def deploy_show(name: str):
         content.append("")
 
         # URLs and endpoints
-        if isinstance(deployment, SelfHostedDeployment):
+        # URLs and endpoints
+        if isinstance(deployment, SelfHostedDockerDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.container.port}"
             content.append(f"  {deployment.container.name}: {url}")
+
+        elif isinstance(deployment, SelfHostedShellDeployment):
+            content.append("[bold]Endpoints:[/]")
+            url = f"http://{deployment.host}:{deployment.port}"
+            content.append(f"  Service: {url}")
 
         elif isinstance(deployment, GCPDeployment):
             if state and state.get("service_url"):
@@ -3136,7 +3173,8 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
-        SelfHostedDeployment,
+        SelfHostedDockerDeployment,
+        SelfHostedShellDeployment,
         SSHConfig,
         get_deployment_config_path,
         load_deployment_config,
@@ -3165,15 +3203,16 @@ def deploy_add(name: str, deployment_type: str):
         # Gather deployment-specific configuration
         if deployment_type == "self-hosted":
             console.print("[cyan]Self-Hosted Configuration:[/]")
-            
+
             # Prompt for mode
             from nodetool.config.deployment import SelfHostedMode
+
             mode = click.prompt(
                 "Deployment mode",
                 type=click.Choice([m.value for m in SelfHostedMode]),
                 default=SelfHostedMode.DOCKER.value,
             )
-            
+
             host = click.prompt("Host address", type=str)
             ssh_user = click.prompt("SSH username", type=str)
             ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
@@ -3181,51 +3220,57 @@ def deploy_add(name: str, deployment_type: str):
             # Image configuration
             image_name = "nodetool/nodetool"
             image_tag = "latest"
-            
+
             if mode == SelfHostedMode.DOCKER.value:
+                # Docker Deployment
                 console.print()
                 console.print("[cyan]Image configuration:[/]")
                 image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
                 image_tag = click.prompt("  Docker image tag", type=str, default="latest")
 
-            # Container configuration
-            console.print()
-            console.print("[cyan]Container/Service configuration:[/]")
+                console.print()
+                console.print("[cyan]Container configuration:[/]")
+                container_name = click.prompt("  Container name", type=str)
+                container_port = click.prompt("  Port", type=int)
 
-            name_prompt = "  Container name" if mode == SelfHostedMode.DOCKER.value else "  Service identifier (for systemd)"
-            container_name = click.prompt(name_prompt, type=str)
-            container_port = click.prompt("  Port", type=int)
-
-            # Optional Docker-specific settings
-            gpu = None
-            workflows = None
-            
-            if mode == SelfHostedMode.DOCKER.value:
-                # Optional GPU
                 use_gpu = click.confirm("  Assign GPU?", default=False)
                 if use_gpu:
                     gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
 
-                # Optional workflows
                 has_workflows = click.confirm("  Assign specific workflows?", default=False)
                 if has_workflows:
                     workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                     workflows = [w.strip() for w in workflows_str.split(",")]
 
-            container = ContainerConfig(
-                name=container_name,
-                port=container_port,
-                gpu=gpu,
-                workflows=workflows,
-            )
+                container = ContainerConfig(
+                    name=container_name,
+                    port=container_port,
+                    gpu=gpu,
+                    workflows=workflows,
+                )
 
-            deployment = SelfHostedDeployment(
-                mode=mode,
-                host=host,
-                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
-                image=ImageConfig(name=image_name, tag=image_tag),
-                container=container,
-            )
+                deployment = SelfHostedDockerDeployment(
+                    mode=SelfHostedMode.DOCKER,
+                    host=host,
+                    ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                    image=ImageConfig(name=image_name, tag=image_tag),
+                    container=container,
+                )
+
+            else:
+                # Shell Deployment
+                console.print()
+                console.print("[cyan]Service configuration:[/]")
+                container_port = click.prompt("  Port", type=int)
+                service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+
+                deployment = SelfHostedShellDeployment(
+                    mode=SelfHostedMode.SHELL,
+                    host=host,
+                    ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                    port=container_port,
+                    service_name=service_name,
+                )
 
         elif deployment_type == "runpod":
             console.print("[cyan]RunPod Configuration:[/]")

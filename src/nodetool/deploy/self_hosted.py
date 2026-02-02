@@ -16,14 +16,18 @@ import subprocess
 import time
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, Union
 
 from nodetool.config.deployment import (
     DeploymentStatus,
     SelfHostedDeployment,
+    SelfHostedDockerDeployment,
+    SelfHostedShellDeployment,
 )
 from nodetool.deploy.ssh import SSHCommandError, SSHConnection
 from nodetool.deploy.state import StateManager
+
+Executor = Union["LocalExecutor", SSHConnection]
 
 
 def is_localhost(host: str) -> bool:
@@ -35,17 +39,18 @@ def is_localhost(host: str) -> bool:
 class LocalExecutor:
     """Executes commands locally (mimics SSHConnection interface)."""
 
-    def __enter__(self):
+    def __enter__(self) -> "LocalExecutor":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         pass
 
     def execute(self, command: str, check: bool = True, timeout: Optional[int] = None) -> tuple[int, str, str]:
         """Execute a command locally.
 
-        Security: Uses shell=False and shlex.split to prevent command injection.
-        The command is split into a list of arguments using shlex.split().
+        Matches SSHConnection behavior by running in a shell.
+        This allows shell features like pipes, redirects, &&/|| operators,
+        and environment variable assignments.
 
         Args:
             command: The command string to execute.
@@ -56,12 +61,12 @@ class LocalExecutor:
             Tuple of (returncode, stdout, stderr).
         """
         try:
-            import shlex
-
-            cmd_list = shlex.split(command)
+            # Use shell=True to mimic SSH command execution (which runs in user's shell)
+            # This is necessary for commands using pipes, redirects, env vars, etc.
             result = subprocess.run(
-                cmd_list,
-                shell=False,
+                command,
+                shell=True,
+                executable="/bin/bash",  # Prefer bash if available, else default sh
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -85,9 +90,9 @@ class LocalExecutor:
                 e.stderr.decode() if e.stderr else "",
             ) from e
 
-    def mkdir(self, path: str, parents: bool = False) -> None:
+    def mkdir(self, path: str, mode: int = 0o755, parents: bool = True) -> None:
         """Create a directory locally."""
-        os.makedirs(path, exist_ok=parents)
+        os.makedirs(path, mode=mode, exist_ok=parents)
 
 
 class SelfHostedDeployer:
@@ -122,10 +127,11 @@ class SelfHostedDeployer:
 
     def _log(self, results: dict[str, Any], message: str) -> None:
         """Log a message to results and stdout."""
-        results["steps"].append(message)
+        if "steps" in results and isinstance(results["steps"], list):
+            results["steps"].append(message)
         print(f"  {message}", flush=True)
 
-    def _get_executor(self):
+    def _get_executor(self) -> Union[LocalExecutor, SSHConnection]:
         """Get appropriate executor (SSH or local) based on host."""
         if self.is_localhost:
             return LocalExecutor()
@@ -168,9 +174,13 @@ class SelfHostedDeployer:
 
         return plan
 
-    def _plan_docker(self, plan: dict[str, Any], current_state: dict[str, Any]) -> None:
+    def _plan_docker(self, plan: dict[str, Any], current_state: Optional[dict[str, Any]]) -> None:
         """Generate plan for Docker deployment."""
-        container_name = self.deployment.container.name
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+            return
+
+        container_name = deployment.container.name
         current_hash = current_state.get("container_hash") if current_state else None
         new_hash = self._generate_container_hash()
 
@@ -189,7 +199,7 @@ class SelfHostedDeployer:
             ]
         )
 
-    def _plan_shell(self, plan: dict[str, Any], current_state: dict[str, Any]) -> None:
+    def _plan_shell(self, plan: dict[str, Any], current_state: Optional[dict[str, Any]]) -> None:
         """Generate plan for Shell deployment."""
         if not current_state or not current_state.get("last_deployed"):
             plan["changes"].append("Initial Shell deployment - will install dependencies and start service")
@@ -218,14 +228,18 @@ class SelfHostedDeployer:
         if dry_run:
             return self.plan()
 
-        if self.deployment.mode == "docker":
+        if isinstance(self.deployment, SelfHostedDockerDeployment):
             return self._apply_docker()
         else:
             return self._apply_shell()
 
     def _apply_docker(self) -> dict[str, Any]:
         """Execute Docker deployment."""
-        results = {
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             raise ValueError("Not a docker deployment")
+
+        results: dict[str, Any] = {
             "deployment_name": self.deployment_name,
             "status": "success",
             "steps": [],
@@ -250,9 +264,9 @@ class SelfHostedDeployer:
                     {
                         "status": DeploymentStatus.RUNNING.value,
                         "container_hash": container_hash,
-                        "container_name": self.deployment.container.name,
+                        "container_name": deployment.container.name,
                         "container_id": None,
-                        "url": self.deployment.get_server_url(),
+                        "url": deployment.get_server_url(),
                     },
                 )
 
@@ -266,7 +280,11 @@ class SelfHostedDeployer:
 
     def _apply_shell(self) -> dict[str, Any]:
         """Execute Shell deployment (micromamba + uv)."""
-        results = {
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             raise ValueError("Not a shell deployment")
+             
+        results: dict[str, Any] = {
             "deployment_name": self.deployment_name,
             "status": "success",
             "steps": [],
@@ -300,7 +318,7 @@ class SelfHostedDeployer:
                     {
                         "status": DeploymentStatus.RUNNING.value,
                         "container_name": None,
-                        "url": self.deployment.get_server_url(),
+                        "url": deployment.get_server_url(),
                     },
                 )
 
@@ -312,7 +330,7 @@ class SelfHostedDeployer:
 
         return results
 
-    def _identify_platform(self, ssh) -> str:
+    def _identify_platform(self, ssh: Executor) -> str:
         """Identify the target platform string for conda-lock."""
         _code, uname_s, _ = ssh.execute("uname -s", check=True)
         _code, uname_m, _ = ssh.execute("uname -m", check=True)
@@ -325,7 +343,7 @@ class SelfHostedDeployer:
             return "linux-aarch64" if "aarch64" in uname_m else "linux-64"
         return "linux-64"
 
-    def _install_micromamba(self, ssh, results: dict[str, Any]) -> None:
+    def _install_micromamba(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Install micromamba if missing."""
         self._log(results, "Checking micromamba...")
         workspace = self.deployment.paths.workspace
@@ -363,7 +381,7 @@ class SelfHostedDeployer:
                 return p
         return None
 
-    def _upload_content(self, ssh, content: str, remote_path: str) -> None:
+    def _upload_content(self, ssh: Executor, content: str, remote_path: str) -> None:
         """Upload string content to a remote file."""
         if self.is_localhost:
             # Local write
@@ -380,7 +398,7 @@ class SelfHostedDeployer:
             ssh.execute(f"mkdir -p {dir_name}", check=True)
             ssh.execute(f"echo {b64_content} | base64 -d > {remote_path}", check=True)
 
-    def _create_conda_env(self, ssh, results: dict[str, Any]) -> None:
+    def _create_conda_env(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create or update conda environment."""
         self._log(results, "Setting up conda environment...")
         workspace = self.deployment.paths.workspace
@@ -393,83 +411,59 @@ class SelfHostedDeployer:
         env_exists = stdout.strip() == "yes"
         action = "Updating" if env_exists else "Creating"
 
-        # 1. Try to find platform-specific lock file
-        platform = self._identify_platform(ssh)
-        lock_filename = f"conda-lock/environment-{platform}.lock.yml"
-        lock_file_path = self._find_local_file(lock_filename)
+        # User-defined hardcoded environment
+        env_config = {
+            "name": "nodetool",
+            "channels": ["conda-forge", "defaults"],
+            "dependencies": [
+                "python=3.11",
+                "ffmpeg>=6,<7",
+                "cairo",
+                "git",
+                "x264",
+                "x265",
+                "aom",
+                "libopus",
+                "libvorbis",
+                "libpng",
+                "libjpeg-turbo",
+                "libtiff",
+                "openjpeg",
+                "libwebp",
+                "giflib",
+                "lame",
+                "pandoc",
+                "uv",
+                "lua",
+                "nodejs>=20",
+                "pip",
+            ],
+        }
 
-        if lock_file_path:
-            self._log(results, f"  Using local lock file: {lock_file_path.name}")
-            try:
-                with open(lock_file_path, "r") as f:
-                    lock_content = f.read()
-                
-                remote_lock_path = f"{workspace}/{lock_filename}"
-                self._upload_content(ssh, lock_content, remote_lock_path)
-                
-                self._log(results, f"  {action} environment from lock file...")
-                # Note: 'install' works for both create and update with lock files usually,
-                # but explicit create might be cleaner if not existing. 
-                # Micromamba install -f works well.
-                install_cmd = "install" if env_exists else "create"
-                cmd = f"{cmd_prefix} {install_cmd} -y -p {env_dir} -f {remote_lock_path}"
-                ssh.execute(cmd, check=True, timeout=900)
-                self._log(results, "  Environment ready (locked)")
-                return
-            except Exception as e:
-                self._log(results, f"  Warning: Failed to use lock file ({e})")
+        import yaml
+        env_yaml = yaml.dump(env_config, default_flow_style=False)
+        remote_env_path = f"{workspace}/environment.yaml"
+        self._upload_content(ssh, env_yaml, remote_env_path)
 
-        # 2. Try to find environment.yml
-        env_file_path = self._find_local_file("environment.yml")
+        self._log(results, f"  {action} environment (hardcoded)...")
+        # Use install to create or update
+        # If env doesn't exist, create it. If it does, update it.
+        # micromamba create can take a generic file.
+        # But to be safe and idempotent, we check env_exists.
+        # Check if environment actually exists and is valid
+        # Just checking directory existence isn't enough - it must be a valid conda env
+        _code, stdout, _ = ssh.execute(f"[ -d {env_dir}/conda-meta ] && echo yes || echo no", check=False)
+        is_valid_env = stdout.strip() == "yes"
         
-        if env_file_path:
-            self._log(results, f"  Using local environment file: {env_file_path}")
-            try:
-                with open(env_file_path, "r") as f:
-                    env_content = f.read()
-                
-                remote_env_path = f"{workspace}/environment.yml"
-                self._upload_content(ssh, env_content, remote_env_path)
-                
-                self._log(results, f"  {action} environment from environment.yml...")
-                install_cmd = "install" if env_exists else "create"
-                cmd = f"{cmd_prefix} {install_cmd} -y -p {env_dir} -f {remote_env_path}"
-                ssh.execute(cmd, check=True, timeout=900)
-                self._log(results, "  Environment ready")
-                return
-            except Exception as e:
-                self._log(results, f"  Warning: Failed to use environment.yml ({e}), falling back to manual list")
-
-        # 3. Fallback to manual list if file not found or failed
-        self._log(results, f"  {action} environment (manual list)...")
+        op = "install" if is_valid_env else "create"
+        cmd = f"{cmd_prefix} {op} -y -p {env_dir} -f {remote_env_path}"
         
-        # Split dependencies to avoid solver timeouts/conflicts
-        # Base: runtime and core tools
-        base_deps = ["python=3.11", "pip", "uv", "nodejs>=20", "git"]
-        
-        # Media: heavy libraries
-        media_deps = [
-            "ffmpeg>=6,<7", "cairo", "x264", "x265", "aom",
-            "libopus", "libvorbis", "libpng", "libjpeg-turbo", "libtiff", 
-            "openjpeg", "libwebp", "giflib", "lame", "pandoc", "lua"
-        ]
-        
-        if not env_exists:
-            self._log(results, "  Creating base environment...")
-            cmd = f"{cmd_prefix} create -y -p {env_dir} -c conda-forge {' '.join(base_deps)}"
-            ssh.execute(cmd, check=True, timeout=600)
-        else:
-            self._log(results, "  Updating base environment...")
-            cmd = f"{cmd_prefix} install -y -p {env_dir} -c conda-forge {' '.join(base_deps)}"
-            ssh.execute(cmd, check=True, timeout=600)
-            
-        self._log(results, "  Installing media dependencies...")
-        cmd = f"{cmd_prefix} install -y -p {env_dir} -c conda-forge {' '.join(media_deps)}"
-        ssh.execute(cmd, check=True, timeout=900)
+        # Increase timeout for full env creation (media libs are heavy)
+        ssh.execute(cmd, check=True, timeout=1200)
         
         self._log(results, "  Environment ready")
 
-    def _install_python_packages(self, ssh, results: dict[str, Any]) -> None:
+    def _install_python_packages(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Install python packages using uv."""
         self._log(results, "Installing python packages...")
         workspace = self.deployment.paths.workspace
@@ -484,28 +478,32 @@ class SelfHostedDeployer:
         ssh.execute(cmd, check=True, timeout=300)
         self._log(results, "  Packages installed")
 
-    def _setup_systemd(self, ssh, results: dict[str, Any]) -> None:
+    def _setup_systemd(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create and start systemd service."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             return
+             
         # Note: This requires sudo access, which might be tricky if the SSH user doesn't have it passwordless.
         # Ideally, we should run this as a user systemd service to avoid sudo requirements.
         
         self._log(results, "Configuring systemd service...")
-        workspace = self.deployment.paths.workspace
-        service_name = f"nodetool-{self.deployment.container.name}"
+        workspace = deployment.paths.workspace
+        service_name = deployment.service_name or f"nodetool-{deployment.port}"
         
         # User-level systemd path
         systemd_dir = ".config/systemd/user"
         ssh.mkdir(systemd_dir, parents=True)
         
         service_file = f"""[Unit]
-Description=NodeTool Server ({self.deployment.container.name})
+Description=NodeTool Server ({service_name})
 After=network.target
 
 [Service]
-ExecStart={workspace}/env/bin/nodetool serve --production --host 0.0.0.0 --port {self.deployment.container.port}
+ExecStart={workspace}/env/bin/nodetool serve --production --host 0.0.0.0 --port {deployment.port}
 WorkingDirectory={workspace}
 Environment="NODETOOL_HOME={workspace}"
-Environment="HF_HOME={self.deployment.paths.hf_cache}"
+Environment="HF_HOME={deployment.paths.hf_cache}"
 Restart=always
 RestartSec=10
 
@@ -540,12 +538,16 @@ WantedBy=default.target
         
         self._log(results, f"  Service {service_name} started")
 
-    def _check_health_shell(self, ssh, results: dict[str, Any]) -> None:
+    def _check_health_shell(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Check health for shell deployment."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             return
+
         self._log(results, "Checking health...")
         time.sleep(5)
         
-        port = self.deployment.container.port
+        port = deployment.port
         health_url = f"http://127.0.0.1:{port}/health"
         
         try:
@@ -554,7 +556,7 @@ WantedBy=default.target
         except Exception as exc:
             self._log(results, f"  Warning: health check failed: {exc}")
 
-    def _create_directories(self, ssh: SSHConnection, results: dict[str, Any]) -> None:
+    def _create_directories(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create required directories on remote host."""
         self._log(results, "Creating directories...")
 
@@ -577,9 +579,13 @@ WantedBy=default.target
         ssh.mkdir(self.deployment.paths.hf_cache, parents=True)
         self._log(results, f"  Created: {self.deployment.paths.hf_cache}")
 
-    def _ensure_image(self, ssh, results: dict[str, Any]) -> None:
+    def _ensure_image(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Ensure the image exists on the target host."""
-        image = self.deployment.image.full_name
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return
+
+        image = deployment.image.full_name
         
         self._log(results, f"Checking image: {image}")
         cmd = f"docker images -q {image}"
@@ -649,11 +655,15 @@ WantedBy=default.target
         if load_proc.returncode != 0:
             raise RuntimeError(f"Failed to push image to remote host: {stderr.decode().strip()}")
 
-    def _stop_existing_container(self, ssh, results: dict[str, Any]) -> None:
+    def _stop_existing_container(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Stop and remove the existing container if present."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return
+
         results["steps"].append("Checking for existing container...")
 
-        container_name = self.deployment.container.name
+        container_name = deployment.container.name
         check_command = f"docker ps -a -q -f name={container_name}"
 
         try:
@@ -671,9 +681,13 @@ WantedBy=default.target
 
     def _generate_container_command(self) -> str:
         """Generate docker run command."""
-        container = self.deployment.container
-        paths = self.deployment.paths
-        image = self.deployment.image.full_name
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             raise ValueError("Not a docker deployment")
+
+        container = deployment.container
+        paths = deployment.paths
+        image = deployment.image.full_name
         
         parts = ["docker run", "-d"]
         parts.append(f"--name {container.name}")
@@ -705,16 +719,20 @@ WantedBy=default.target
 
     def _generate_container_hash(self) -> str:
         """Generate hash of container configuration."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return ""
+
         import hashlib
         data = {
-            "image": self.deployment.image.full_name,
-            "container": self.deployment.container.model_dump(mode="json"),
-            "paths": self.deployment.paths.model_dump(mode="json"),
+            "image": deployment.image.full_name,
+            "container": deployment.container.model_dump(mode="json"),
+            "paths": deployment.paths.model_dump(mode="json"),
         }
         payload = str(sorted(data.items()))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _start_container(self, ssh, results: dict[str, Any]) -> str:
+    def _start_container(self, ssh: Executor, results: dict[str, Any]) -> str:
         """Start the application container."""
         results["steps"].append("Starting container...")
 
@@ -734,11 +752,15 @@ WantedBy=default.target
 
         return container_hash
 
-    def _check_health_docker(self, ssh, results: dict[str, Any]) -> None:
+    def _check_health_docker(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Check container health and HTTP endpoints."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return
+
         results["steps"].append("Checking health...")
 
-        container_name = self.deployment.container.name
+        container_name = deployment.container.name
         time.sleep(5)
 
         status_cmd = (
@@ -759,7 +781,7 @@ WantedBy=default.target
         # Using exposed port is better to verify connectivity unless we are on local.
         # But for SSH, checking localhost on the remote machine via exposed port is good.
         
-        health_url = f"http://127.0.0.1:{self.deployment.container.port}/health"
+        health_url = f"http://127.0.0.1:{deployment.container.port}/health"
         try:
             # We curl on the remote machine
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
@@ -775,14 +797,18 @@ WantedBy=default.target
         Returns:
             Dictionary with destruction results
         """
-        if self.deployment.mode == "docker":
+        if isinstance(self.deployment, SelfHostedDockerDeployment):
             return self._destroy_docker()
         else:
             return self._destroy_shell()
 
     def _destroy_docker(self) -> dict[str, Any]:
         """Destroy Docker deployment."""
-        results = {
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             raise ValueError("Not a docker deployment")
+
+        results: dict[str, Any] = {
             "deployment_name": self.deployment_name,
             "status": "success",
             "steps": [],
@@ -791,7 +817,7 @@ WantedBy=default.target
 
         try:
             with self._get_executor() as ssh:
-                container_name = self.deployment.container.name
+                container_name = deployment.container.name
 
                 # Stop container
                 stop_command = f"docker stop {container_name}"
@@ -822,7 +848,11 @@ WantedBy=default.target
 
     def _destroy_shell(self) -> dict[str, Any]:
         """Destroy Shell deployment."""
-        results = {
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             raise ValueError("Not a shell deployment")
+
+        results: dict[str, Any] = {
             "deployment_name": self.deployment_name,
             "status": "success",
             "steps": [],
@@ -831,7 +861,7 @@ WantedBy=default.target
 
         try:
             with self._get_executor() as ssh:
-                service_name = f"nodetool-{self.deployment.container.name}"
+                service_name = deployment.service_name or f"nodetool-{deployment.port}"
 
                 # Stop service
                 try:
@@ -865,10 +895,14 @@ WantedBy=default.target
 
     def _status_docker(self) -> dict[str, Any]:
         """Get Docker status."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return {"error": "Not a docker deployment"}
+
         status_info = {
             "deployment_name": self.deployment_name,
-            "host": self.deployment.host,
-            "container_name": self.deployment.container.name,
+            "host": deployment.host,
+            "container_name": deployment.container.name,
             "mode": "docker",
         }
 
@@ -882,7 +916,7 @@ WantedBy=default.target
         # Try to get live status
         try:
             with self._get_executor() as ssh:
-                container_name = self.deployment.container.name
+                container_name = deployment.container.name
                 command = f"docker ps -a -f name={container_name} --format '{{{{.Status}}}}'"
                 _exit_code, stdout, _stderr = ssh.execute(command, check=False)
                 status_info["live_status"] = stdout.strip() if stdout else "Container not found"
@@ -893,9 +927,13 @@ WantedBy=default.target
 
     def _status_shell(self) -> dict[str, Any]:
         """Get Shell status."""
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             return {"error": "Not a shell deployment"}
+
         status_info = {
             "deployment_name": self.deployment_name,
-            "host": self.deployment.host,
+            "host": deployment.host,
             "mode": "shell",
         }
 
@@ -907,7 +945,7 @@ WantedBy=default.target
 
         try:
             with self._get_executor() as ssh:
-                service_name = f"nodetool-{self.deployment.container.name}"
+                service_name = deployment.service_name or f"nodetool-{deployment.port}"
                 _exit, stdout, _ = ssh.execute(f"systemctl --user is-active {service_name}", check=False)
                 status_info["live_status"] = stdout.strip()
         except Exception as e:
@@ -922,14 +960,18 @@ WantedBy=default.target
         tail: int = 100,
     ) -> str:
         """Get logs from deployed service."""
-        if self.deployment.mode == "docker":
+        if isinstance(self.deployment, SelfHostedDockerDeployment):
             return self._logs_docker(follow, tail)
         else:
             return self._logs_shell(follow, tail)
 
     def _logs_docker(self, follow: bool, tail: int) -> str:
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedDockerDeployment):
+             return "Error: Not a docker deployment"
+
         with self._get_executor() as ssh:
-            container_name = self.deployment.container.name
+            container_name = deployment.container.name
             command = f"docker logs --tail={tail}"
             if follow:
                 command += " -f"
@@ -938,8 +980,12 @@ WantedBy=default.target
             return stdout
 
     def _logs_shell(self, follow: bool, tail: int) -> str:
+        deployment = self.deployment
+        if not isinstance(deployment, SelfHostedShellDeployment):
+             return "Error: Not a shell deployment"
+
         with self._get_executor() as ssh:
-            service_name = f"nodetool-{self.deployment.container.name}"
+            service_name = deployment.service_name or f"nodetool-{deployment.port}"
             command = f"journalctl --user -u {service_name} -n {tail} --no-pager"
             if follow:
                 command += " -f"

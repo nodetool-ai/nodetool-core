@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Any, cast
 
 # Note: no need for urllib.parse after removing editable support
 from importlib import metadata as importlib_metadata
@@ -251,7 +252,7 @@ def build_docker_image(
                 files = list(dist.files or [])
             except Exception:
                 files = []
-            direct_url_rel = None
+            direct_url_rel: Any = None
             for file_path in files:
                 # importlib.metadata returns PackagePath objects
                 if str(file_path).endswith(".dist-info/direct_url.json"):
@@ -269,11 +270,11 @@ def build_docker_image(
                     return None
                 direct_url_rel = dist_info_dir / "direct_url.json"
             try:
-                direct_url_abs = dist.locate_file(direct_url_rel)
+                direct_url_abs = dist.locate_file(str(direct_url_rel))
                 if not os.path.exists(str(direct_url_abs)):
                     return None
                 with open(str(direct_url_abs), encoding="utf-8") as f:
-                    return json.load(f)
+                    return cast(dict, json.load(f))
             except Exception:
                 return None
 
@@ -281,7 +282,9 @@ def build_docker_image(
             discovered: list[dict] = []
             for dist in importlib_metadata.distributions():
                 try:
-                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""  # type: ignore[union-attr]
+                    # Cast to Any to access .get() which might be missing in strict typing
+                    metadata = cast(Any, dist.metadata)
+                    raw_name = metadata.get("Name") or metadata.get("Summary") or ""
                 except Exception:
                     continue
                 if not raw_name:
@@ -462,7 +465,7 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
 
                 # Check if there's a direct username field
                 if "username" in auth_data:
-                    return auth_data["username"]
+                    return str(auth_data["username"])
 
                 # Check if there's base64 encoded auth data
                 if "auth" in auth_data:
