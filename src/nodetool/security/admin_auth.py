@@ -7,13 +7,16 @@ In production, sensitive admin operations (/admin/*) require either:
 
 This provides defense-in-depth: users need both valid user auth AND admin token
 for sensitive operations.
+
+For multi_user auth, admin role is enforced via require_admin() dependency.
 """
 
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from nodetool.config.environment import Environment
@@ -94,3 +97,62 @@ def create_admin_auth_middleware(
         return await call_next(request)
 
     return middleware
+
+
+def is_admin_user(user_id: str) -> bool:
+    """Check if user has admin role.
+
+    Only works with multi_user auth provider. Other providers
+    return False (no admin concept).
+
+    Args:
+        user_id: User ID from auth middleware
+
+    Returns:
+        True if user is admin, False otherwise
+    """
+    auth_provider = Environment.get_auth_provider_kind()
+
+    # Only multi_user has admin roles
+    if auth_provider != "multi_user":
+        return False
+
+    # Get user info from provider
+    from nodetool.api.server import get_user_auth_provider
+
+    provider = get_user_auth_provider()
+
+    if provider is None:
+        return False
+
+    # Check if provider has multi_user capability
+    from nodetool.security.providers.multi_user import MultiUserAuthProvider
+
+    if not isinstance(provider, MultiUserAuthProvider):
+        return False
+
+    user = provider.get_user(user_id)
+    if user is None:
+        return False
+
+    return user.role == "admin"
+
+
+async def require_admin(request: Request) -> None:
+    """Dependency that enforces admin access via multi_user role.
+
+    Raises HTTPException 403 if user is not admin.
+
+    Usage:
+        @router.post("/admin/collections")
+        async def create_collection(..., _user_id: str = Depends(require_admin)):
+            # User is guaranteed to be admin here
+            pass
+    """
+    user_id = getattr(request.state, "user_id", None)
+
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    if not is_admin_user(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")

@@ -84,6 +84,35 @@ class SelfHostedPaths(BaseModel):
     hf_cache: str = "/data/hf-cache"
 
 
+class PersistentPaths(BaseModel):
+    """Persistent storage paths for deployment data.
+
+    These paths should be mounted as volumes in containerized deployments
+    to ensure data survives container restarts and redeployments.
+
+    For local/root deployments, these are direct filesystem paths.
+    For Docker/RunPod/GCP deployments, these should be mounted volumes.
+    """
+
+    users_file: str = "/workspace/users.yaml"
+    """User authentication file for multi-user bearer token auth."""
+
+    db_path: str = "/workspace/nodetool.db"
+    """SQLite database path for workflow and asset metadata."""
+
+    chroma_path: str = "/workspace/chroma"
+    """ChromaDB path for vector storage and embeddings."""
+
+    hf_cache: str = "/workspace/hf-cache"
+    """HuggingFace model cache location."""
+
+    asset_bucket: str = "/workspace/assets"
+    """Asset storage location (can be S3 bucket or filesystem path)."""
+
+    logs_path: Optional[str] = "/workspace/logs"
+    """Log files directory."""
+
+
 class SelfHostedState(BaseModel):
     """Runtime state for self-hosted deployment."""
 
@@ -108,9 +137,6 @@ class ImageConfig(BaseModel):
         return f"{self.name}:{self.tag}"
 
 
-
-
-
 class SelfHostedDockerDeployment(BaseModel):
     """Self-hosted deployment configuration for Docker."""
 
@@ -120,6 +146,10 @@ class SelfHostedDockerDeployment(BaseModel):
     host: str = Field(..., description="Remote host address (IP or hostname)")
     ssh: SSHConfig
     paths: SelfHostedPaths = SelfHostedPaths()
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     image: ImageConfig
     container: ContainerConfig = Field(..., description="Container configuration")
     worker_auth_token: Optional[str] = Field(
@@ -142,14 +172,18 @@ class SelfHostedShellDeployment(BaseModel):
     host: str = Field(..., description="Remote host address (IP or hostname)")
     ssh: SSHConfig
     paths: SelfHostedPaths = SelfHostedPaths()
-    
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
+
     # Service configuration
     port: int = Field(..., description="Service port")
     service_name: Optional[str] = Field(None, description="Systemd service name")
     gpu: Optional[str] = Field(None, description="GPU device ID(s)")
     environment: Optional[dict[str, str]] = Field(None, description="Environment variables")
     workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run")
-    
+
     worker_auth_token: Optional[str] = Field(
         None,
         description="Authentication token for worker API (auto-generated if not set)",
@@ -161,7 +195,7 @@ class SelfHostedShellDeployment(BaseModel):
         return f"http://{self.host}:{self.port}"
 
 
-SelfHostedDeployment = Union[SelfHostedDockerDeployment, SelfHostedShellDeployment]
+SelfHostedDeployment = SelfHostedDockerDeployment | SelfHostedShellDeployment
 
 
 # ============================================================================
@@ -253,6 +287,10 @@ class RunPodDeployment(BaseModel):
     execution_timeout: Optional[int] = None
     flashboot: bool = False
     environment: Optional[dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: RunPodState = Field(default=RunPodState())
 
@@ -332,6 +370,10 @@ class GCPDeployment(BaseModel):
     resources: GCPResourceConfig = Field(default_factory=GCPResourceConfig)
     storage: Optional[GCPStorageConfig] = None
     iam: GCPIAMConfig = Field(default_factory=GCPIAMConfig)
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: GCPState = Field(default_factory=GCPState)
 

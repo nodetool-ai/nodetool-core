@@ -4831,7 +4831,6 @@ def proxy_validate_config(config: str):
             f"Idle timeout: {proxy_config.global_.idle_timeout}s"
         )
 
-        # Display services
         table = Table(title="Services")
         table.add_column("Name", style="cyan")
         table.add_column("Path", style="magenta")
@@ -4858,6 +4857,307 @@ def proxy_validate_config(config: str):
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
         raise SystemExit(1) from e
+
+
+@cli.group()
+def users():
+    """User management for local NodeTool server."""
+    pass
+
+
+@users.command("add")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user", help="User role")
+def users_add(username: str, role: str):
+    """Add a new user and display their bearer token."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.add_user(username, role)
+        console.print(Panel.fit(f"[green]✅ User '{username}' added successfully[/]"))
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def users_list(as_json: bool):
+    """List all users (tokens masked)."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    users = manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found.[/]")
+        return
+
+    if as_json:
+        output = {
+            username: {
+                "user_id": user.user_id,
+                "role": user.role,
+                "token_hash": user.token_hash[:16] + "...",
+                "created_at": user.created_at,
+            }
+            for username, user in users.items()
+        }
+        click.echo(json.dumps(output, indent=2, default=_json_default))
+        return
+
+    table = Table(title="Users")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for username, user in users.items():
+        table.add_row(username, user.user_id, user.role, user.token_hash[:16] + "...", user.created_at[:19])
+
+    console.print(table)
+
+
+@users.command("remove")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def users_remove(username: str, force: bool):
+    """Remove a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}'?"):
+            return
+
+    try:
+        manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("reset-token")
+@click.argument("username")
+def users_reset_token(username: str):
+    """Generate new bearer token for a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' generated[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users")
+@click.argument("deployment_name")
+@click.pass_context
+def deploy_users(ctx: click.Context, deployment_name: str):
+    """Manage users on a remote deployment."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
+
+
+@deploy.command("users-add")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user")
+async def deploy_users_add(deployment_name: str, username: str, role: str):
+    """Add user to deployment via API (works for ALL deployment types)."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    if deployment_name not in config.deployments:
+        console.print(f"[red]❌ Deployment '{deployment_name}' not found[/]")
+        sys.exit(1)
+
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    if not server_url:
+        console.print(f"[red]❌ Deployment '{deployment_name}' has no server URL[/]")
+        sys.exit(1)
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.add_user(username, role)
+        console.print(f"[green]✅ User '{username}' added to '{deployment_name}'[/]")
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result['user_id']}[/]")
+        console.print(f"[dim]Role: {result['role']}[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+async def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    users = await manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found on deployment.[/]")
+        return
+
+    if as_json:
+        click.echo(json.dumps(users, indent=2, default=_json_default))
+        return
+
+    table = Table(title=f"Users on {deployment_name}")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for user in users:
+        table.add_row(
+            user["username"],
+            user["user_id"],
+            user["role"],
+            user.get("token_hash", "")[:16] + "...",
+            user.get("created_at", "")[:19],
+        )
+
+    console.print(table)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+async def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}' from '{deployment_name}'?"):
+            return
+
+    try:
+        result = await manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed from '{deployment_name}'[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+async def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' on '{deployment_name}'[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users list' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users remove' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users reset-token' for local user management for now[/]")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -152,7 +152,9 @@ def _load_default_routers() -> list[APIRouter]:
         oauth,
         settings,
         storage,
+        storage.temp,
         thread,
+        users,
         vibecoding,
         workflow,
         workspace,
@@ -177,11 +179,9 @@ def _load_default_routers() -> list[APIRouter]:
         settings.router,
         memory.router,
         vibecoding.router,
-        collection.router,  # Always include collection router
+        collection.router,
+        users.router,
     ]
-
-    if not Environment.is_production():
-        routers.append(file.router)
 
     return routers
 
