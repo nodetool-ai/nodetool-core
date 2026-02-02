@@ -154,9 +154,25 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             # Timeout after GPU_LOCK_TIMEOUT seconds
             if elapsed > GPU_LOCK_TIMEOUT:
                 holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                log.error(
+                    f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
+                    f"{node.get_title()}{holder_info}. Force-releasing stale lock."
+                )
+                # Force-release the stale lock and retry once
+                if force_release_gpu_lock():
+                    log.warning("Stale GPU lock force-released, retrying acquisition")
+                    try:
+                        acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=2.0))
+                    except asyncio.CancelledError:
+                        raise
+                    if acquired:
+                        _gpu_lock_holder = f"{node.get_title()} ({node.id})"
+                        _gpu_lock_holder_time = time.time()
+                        break
+                # If force-release failed or retry failed, raise
                 error_msg = (
                     f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
-                    f"{node.get_title()}{holder_info}. This may indicate a stuck previous run. "
+                    f"{node.get_title()}{holder_info}. Could not recover stale lock. "
                     f"Try restarting the nodetool server."
                 )
                 log.error(error_msg)

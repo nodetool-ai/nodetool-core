@@ -336,6 +336,13 @@ class JobExecutionManager:
             await job.cleanup_resources()
 
         self._jobs.clear()
+
+        # Force-release GPU lock as a final safety measure.
+        # If any GPU node's inference thread was stuck and didn't release the lock
+        # during job cancellation, ensure it's freed for the next server start.
+        from nodetool.workflows.workflow_runner import force_release_gpu_lock
+        force_release_gpu_lock()
+
         log.info("JobExecutionManager shutdown complete")
 
     async def _heartbeat_loop(self):
