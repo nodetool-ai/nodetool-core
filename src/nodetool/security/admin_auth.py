@@ -141,12 +141,17 @@ def is_admin_user(user_id: str) -> bool:
 async def require_admin(request: Request) -> None:
     """Dependency that enforces admin access via multi_user role.
 
-    Raises HTTPException 403 if user is not admin.
+    For multi_user auth provider:
+        - Requires user to have admin role
+        - Raises HTTPException 403 if user is not admin
+
+    For other auth providers:
+        - Allows access (X-Admin-Token middleware handles authorization)
 
     Usage:
         @router.post("/admin/collections")
-        async def create_collection(..., _user_id: str = Depends(require_admin)):
-            # User is guaranteed to be admin here
+        async def create_collection(..., _: None = Depends(require_admin)):
+            # User is guaranteed to be admin here (for multi_user auth)
             pass
     """
     user_id = getattr(request.state, "user_id", None)
@@ -154,5 +159,9 @@ async def require_admin(request: Request) -> None:
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
-    if not is_admin_user(user_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    # Only enforce admin role for multi_user auth provider
+    auth_provider = Environment.get_auth_provider_kind()
+    if auth_provider == "multi_user":
+        if not is_admin_user(user_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    # For other auth providers, X-Admin-Token middleware handles authorization

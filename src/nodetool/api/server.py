@@ -152,7 +152,6 @@ def _load_default_routers() -> list[APIRouter]:
         oauth,
         settings,
         storage,
-        storage.temp,
         thread,
         users,
         vibecoding,
