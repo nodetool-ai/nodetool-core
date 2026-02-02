@@ -228,22 +228,24 @@ class TestRequireAdminDependency:
 
         from nodetool.security.admin_auth import require_admin
 
-        with patch(
-            "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
-            return_value="multi_user",
-        ):
-            with patch(
+        with (
+            patch(
+                "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
+                return_value="multi_user",
+            ),
+            patch(
                 "nodetool.security.admin_auth.is_admin_user",
                 return_value=False,
-            ):
-                mock_request = Mock()
-                mock_request.state = Mock()
-                mock_request.state.user_id = "user_regular"
+            ),
+        ):
+            mock_request = Mock()
+            mock_request.state = Mock()
+            mock_request.state.user_id = "user_regular"
 
-                with pytest.raises(Exception) as exc_info:
-                    await require_admin(mock_request)
+            with pytest.raises(Exception) as exc_info:
+                await require_admin(mock_request)
 
-                assert exc_info.value.status_code == 403
+            assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_require_admin_allows_admin_multi_user(self):
@@ -252,20 +254,22 @@ class TestRequireAdminDependency:
 
         from nodetool.security.admin_auth import require_admin
 
-        with patch(
-            "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
-            return_value="multi_user",
-        ):
-            with patch(
+        with (
+            patch(
+                "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
+                return_value="multi_user",
+            ),
+            patch(
                 "nodetool.security.admin_auth.is_admin_user",
                 return_value=True,
-            ):
-                mock_request = Mock()
-                mock_request.state = Mock()
-                mock_request.state.user_id = "user_admin"
+            ),
+        ):
+            mock_request = Mock()
+            mock_request.state = Mock()
+            mock_request.state.user_id = "user_admin"
 
-                # Should complete without raising any exception for admin user
-                try:
-                    await require_admin(mock_request)
-                except Exception as e:
-                    pytest.fail(f"require_admin should not raise for admin user, but raised: {e}")
+            # Should complete without raising any exception for admin user
+            try:
+                await require_admin(mock_request)
+            except Exception as e:
+                pytest.fail(f"require_admin should not raise for admin user, but raised: {e}")
