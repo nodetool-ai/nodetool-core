@@ -178,3 +178,94 @@ class TestAdminTokenRequiredPaths:
         ]
         for path in expected_paths:
             assert path in ADMIN_TOKEN_REQUIRED_PATHS, f"Path {path} not found in ADMIN_TOKEN_REQUIRED_PATHS"
+
+
+class TestRequireAdminDependency:
+    """Tests for require_admin dependency function."""
+
+    @pytest.mark.asyncio
+    async def test_require_admin_raises_401_without_user_id(self):
+        """Test that require_admin raises 401 when no user_id is set."""
+        from unittest.mock import Mock
+
+        from nodetool.security.admin_auth import require_admin
+
+        mock_request = Mock()
+        mock_request.state = Mock()
+        mock_request.state.user_id = None
+
+        with pytest.raises(Exception) as exc_info:
+            await require_admin(mock_request)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_require_admin_allows_non_multi_user_auth(self):
+        """Test that require_admin allows access for non-multi_user auth providers."""
+        from unittest.mock import Mock
+
+        from nodetool.security.admin_auth import require_admin
+
+        with patch(
+            "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
+            return_value="local",
+        ):
+            mock_request = Mock()
+            mock_request.state = Mock()
+            mock_request.state.user_id = "user_123"
+
+            # Should complete without raising any exception for non-multi_user auth
+            # The function returns None on success (implicit return)
+            try:
+                await require_admin(mock_request)
+            except Exception as e:
+                pytest.fail(f"require_admin should not raise for non-multi_user auth, but raised: {e}")
+
+    @pytest.mark.asyncio
+    async def test_require_admin_raises_403_for_non_admin_multi_user(self):
+        """Test that require_admin raises 403 for non-admin users in multi_user mode."""
+        from unittest.mock import Mock
+
+        from nodetool.security.admin_auth import require_admin
+
+        with patch(
+            "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
+            return_value="multi_user",
+        ):
+            with patch(
+                "nodetool.security.admin_auth.is_admin_user",
+                return_value=False,
+            ):
+                mock_request = Mock()
+                mock_request.state = Mock()
+                mock_request.state.user_id = "user_regular"
+
+                with pytest.raises(Exception) as exc_info:
+                    await require_admin(mock_request)
+
+                assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_require_admin_allows_admin_multi_user(self):
+        """Test that require_admin allows access for admin users in multi_user mode."""
+        from unittest.mock import Mock
+
+        from nodetool.security.admin_auth import require_admin
+
+        with patch(
+            "nodetool.security.admin_auth.Environment.get_auth_provider_kind",
+            return_value="multi_user",
+        ):
+            with patch(
+                "nodetool.security.admin_auth.is_admin_user",
+                return_value=True,
+            ):
+                mock_request = Mock()
+                mock_request.state = Mock()
+                mock_request.state.user_id = "user_admin"
+
+                # Should complete without raising any exception for admin user
+                try:
+                    await require_admin(mock_request)
+                except Exception as e:
+                    pytest.fail(f"require_admin should not raise for admin user, but raised: {e}")

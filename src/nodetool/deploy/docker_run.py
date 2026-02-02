@@ -130,10 +130,10 @@ class DockerRunGenerator:
         # If persistent_paths is configured, mount as read-write for model downloads
         persistent_paths = self.deployment.persistent_paths
         if persistent_paths:
-            # For persistent deployments, hf_cache may need to be writable
+            # For persistent deployments, hf_cache must be writable to allow model downloads
             volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache")
         else:
-            # Default: read-only for safety
+            # Default: read-only for safety when not using persistent storage
             volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
 
         return volumes
