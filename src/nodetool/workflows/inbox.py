@@ -343,6 +343,55 @@ class NodeInbox:
         """
         return not self.is_fully_drained()
 
+    async def get_any(self) -> tuple[str, Any]:
+        """
+        Wait for and return the next available input from any handle.
+
+        Unlike iter_any(), this returns a single item and can be called
+        repeatedly for continuous input processing.
+
+        Returns:
+            Tuple of (handle_name, value)
+
+        Raises:
+            StopAsyncIteration: If all handles are closed with no pending items
+        """
+        while True:
+            # Check all handles for pending items in arrival order
+            if self._arrival:
+                handle = self._arrival.popleft()
+                buf = self._buffers.get(handle)
+                if buf and len(buf) > 0:
+                    item = buf.popleft()
+                    log.debug(
+                        "Inbox[%s] get_any: handle=%s size=%s open=%s",
+                        id(self),
+                        handle,
+                        len(buf),
+                        self._open_counts.get(handle, 0),
+                    )
+                    # Notify producers that space is available (backpressure release)
+                    async with self._cond:
+                        self._cond.notify_all()
+                    return handle, item
+
+            # Check if all handles are closed
+            any_buffered = any(len(buf) > 0 for buf in self._buffers.values())
+            any_open = any(v > 0 for v in self._open_counts.values())
+            if self._closed or (not any_buffered and not any_open):
+                log.debug(
+                    "Inbox[%s] get_any raising StopAsyncIteration: closed=%s any_buffered=%s any_open=%s",
+                    id(self),
+                    self._closed,
+                    any_buffered,
+                    any_open,
+                )
+                raise StopAsyncIteration
+
+            # Wait for new item
+            async with self._cond:
+                await self._cond.wait()
+
     # Non-blocking pop of any available item in arrival order
     def try_pop_any(self) -> tuple[str, Any] | None:
         """Pop one buffered arrival in cross-handle order without blocking.

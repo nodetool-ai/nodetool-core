@@ -1,13 +1,15 @@
 """
 Tool for executing specific workflows as agent tools.
 
-This module provides WorkflowTool, which allows workflows to be used as tools
-by agents. Each WorkflowTool instance is configured with a specific workflow
-and uses its input schema for tool parameters.
+This module provides GraphTool and WorkflowTool, which allow workflows to be
+used as tools by agents. GraphTool supports persistent execution for stateful
+nodes like code executors.
 """
 
+from __future__ import annotations
+
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
@@ -15,6 +17,7 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.api_graph import Edge, Node, get_input_schema, get_output_schema
+from nodetool.types.api_graph import Graph as ApiGraph
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
@@ -29,6 +32,9 @@ from nodetool.workflows.types import (
     OutputUpdate,
     ToolResultUpdate,
 )
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.sub_graph_controller import SubGraphController
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -75,7 +81,35 @@ def sanitize_workflow_name(name: str) -> str:
 
 
 class GraphTool(Tool):
-    """Tool that executes a specific graph using its input schema."""
+    """
+    Tool that executes a specific graph using its input schema.
+
+    Supports two execution modes:
+
+    1. **Transient mode** (default): Creates a new runner for each invocation.
+       Use when the graph has no stateful nodes.
+
+    2. **Persistent mode**: Maintains a running sub-graph across invocations.
+       Use when nodes need to maintain state (e.g., code executor with REPL).
+       Enable by setting `persistent=True` in the constructor.
+
+    Example:
+        ```python
+        # Transient mode (default)
+        tool = GraphTool(graph, "my_tool", "description", edges, nodes)
+
+        # Persistent mode for stateful nodes
+        tool = GraphTool(graph, "code_runner", "Execute code", edges, nodes, persistent=True)
+        ```
+
+    Attributes:
+        graph: The Graph instance to execute
+        name: Tool name for agent registration
+        description: Tool description for LLM context
+        initial_edges: Edges from external inputs to graph nodes
+        initial_nodes: Nodes receiving external inputs
+        persistent: Whether to maintain actors across invocations
+    """
 
     def __init__(
         self,
@@ -84,12 +118,28 @@ class GraphTool(Tool):
         description: str,
         initial_edges: list[Edge],
         initial_nodes: list[BaseNode],
+        persistent: bool = False,
+        result_timeout: float | None = 300.0,  # 5 minute default timeout
     ):
+        """
+        Initialize the GraphTool.
+
+        Args:
+            graph: The graph to execute
+            name: Tool name
+            description: Tool description
+            initial_edges: Edges defining input injection points
+            initial_nodes: Nodes receiving inputs
+            persistent: If True, maintain running actors across invocations
+            result_timeout: Timeout in seconds for waiting for results (persistent mode only)
+        """
         self.graph = graph
         self.name = name
         self.description = description
         self.initial_edges = initial_edges
         self.initial_nodes = initial_nodes
+        self.persistent = persistent
+        self.result_timeout = result_timeout
 
         def get_property_schema(node: BaseNode, handle: str) -> dict[str, Any]:
             for prop in node.properties():
@@ -107,7 +157,182 @@ class GraphTool(Tool):
             },
         }
 
+        # Persistent execution state (lazy initialized)
+        self._controller: SubGraphController | None = None
+        self._api_graph: ApiGraph | None = None
+
+    def _build_api_graph(self, params: dict[str, Any]) -> tuple[list[Node], list[Edge]]:
+        """
+        Build the API graph representation for execution.
+
+        Args:
+            params: Input parameters (used for property injection in transient mode)
+
+        Returns:
+            Tuple of (nodes, edges) for the API graph
+        """
+        initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
+        excluded_source_ids = {edge.source for edge in self.initial_edges}
+
+        def properties_for_node(node: BaseNode) -> dict[str, Any]:
+            props = node.node_properties()
+            if node.id in initial_edges_by_target:
+                edge = initial_edges_by_target[node.id]
+                # In persistent mode, don't inject params here - they come via inbox
+                if not self.persistent and edge.targetHandle in params:
+                    props[edge.targetHandle] = params[edge.targetHandle]
+            return props
+
+        # Build node list
+        nodes = [
+            Node(
+                id=node.id,
+                type=node.get_node_type(),
+                data=properties_for_node(node),
+                parent_id=node.parent_id,
+                ui_properties=node.ui_properties,
+                dynamic_properties=node.dynamic_properties,
+                dynamic_outputs=node.dynamic_outputs,
+            )
+            for node in self.graph.nodes
+            if node.id not in excluded_source_ids
+        ]
+
+        # Build edge list
+        edges = [
+            Edge(
+                id=edge.id,
+                source=edge.source,
+                target=edge.target,
+                sourceHandle=edge.sourceHandle,
+                targetHandle=edge.targetHandle,
+                ui_properties=edge.ui_properties,
+            )
+            for edge in self.graph.edges
+            if edge.source not in excluded_source_ids and edge.target not in excluded_source_ids
+        ]
+
+        # Ensure ToolResultNode exists
+        has_tool_result = any(
+            isinstance(node, ToolResultNode)
+            for node in self.graph.nodes
+            if node.id not in excluded_source_ids
+        )
+
+        if not has_tool_result:
+            # Auto-add ToolResultNode for single-node graphs
+            remaining_nodes = [n for n in self.graph.nodes if n.id not in excluded_source_ids]
+            if len(remaining_nodes) == 1:
+                single_node = remaining_nodes[0]
+                result_node_id = uuid4().hex
+
+                nodes.append(
+                    Node(
+                        id=result_node_id,
+                        type=ToolResultNode.get_node_type(),
+                        data={},
+                        parent_id=None,
+                        ui_properties={},
+                        dynamic_properties={},
+                        dynamic_outputs={},
+                    )
+                )
+
+                for output_slot in single_node.outputs_for_instance():
+                    edges.append(
+                        Edge(
+                            id=uuid4().hex,
+                            source=single_node.id,
+                            target=result_node_id,
+                            sourceHandle=output_slot.name,
+                            targetHandle=output_slot.name,
+                            ui_properties={},
+                        )
+                    )
+
+        return nodes, edges
+
+    async def _ensure_controller_started(self, context: ProcessingContext) -> None:
+        """
+        Ensure the SubGraphController is started (persistent mode only).
+
+        This lazily initializes the controller on first invocation.
+        """
+        from nodetool.agents.tools.sub_graph_controller import SubGraphController
+        from nodetool.types.api_graph import Graph as ApiGraph
+
+        if self._controller is not None and self._controller.is_running:
+            return
+
+        # Build API graph
+        nodes, edges = self._build_api_graph({})
+        self._api_graph = ApiGraph(nodes=nodes, edges=edges)
+
+        # Create and start controller
+        self._controller = SubGraphController(
+            api_graph=self._api_graph,
+            input_edges=self.initial_edges,
+            parent_context=context,
+        )
+
+        await self._controller.start()
+        log.info("GraphTool '%s' started persistent controller", self.name)
+
     async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
+        """
+        Execute the graph with the provided parameters.
+
+        Args:
+            context: The processing context
+            params: Input parameters matching the input schema
+
+        Returns:
+            The result from ToolResultNode
+        """
+        if self.persistent:
+            return await self._process_persistent(context, params)
+        else:
+            return await self._process_transient(context, params)
+
+    async def _process_persistent(
+        self,
+        context: ProcessingContext,
+        params: dict[str, Any],
+    ) -> Any:
+        """
+        Execute in persistent mode using SubGraphController.
+
+        The sub-graph stays running across invocations.
+        """
+        await self._ensure_controller_started(context)
+
+        assert self._controller is not None
+
+        try:
+            result = await self._controller.inject_and_wait(
+                params=params,
+                timeout=self.result_timeout,
+            )
+
+            # Normalize result values
+            normalized: dict[str, Any] = {}
+            for key, value in result.items():
+                if hasattr(value, "model_dump"):
+                    value = value.model_dump()
+                normalized[key] = value
+
+            log.debug("GraphTool '%s' persistent result: %s", self.name, list(normalized.keys()))
+            return normalized
+
+        except Exception as e:
+            log.error("GraphTool '%s' persistent execution error: %s", self.name, e)
+            return {"error": str(e)}
+
+    async def _process_transient(
+        self,
+        context: ProcessingContext,
+        params: dict[str, Any],
+    ) -> Any:
         from nodetool.types.api_graph import Graph as ApiGraph
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
@@ -323,6 +548,26 @@ class GraphTool(Tool):
 
         except Exception as e:
             return str(e)
+
+    async def cleanup(self) -> None:
+        """
+        Clean up persistent resources.
+
+        Should be called when the tool is no longer needed.
+        """
+        if self._controller is not None:
+            await self._controller.stop()
+            self._controller = None
+        self._api_graph = None
+
+    def __del__(self) -> None:
+        """Destructor - attempt to clean up if not done explicitly."""
+        if self._controller is not None:
+            log.warning(
+                "GraphTool '%s' was not cleaned up explicitly; "
+                "call cleanup() to properly release resources",
+                self.name,
+            )
 
 
 class WorkflowTool(Tool):
