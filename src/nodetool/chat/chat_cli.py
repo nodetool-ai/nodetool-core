@@ -164,7 +164,7 @@ class ChatCLI:
         # Initialize state
         self.context = ProcessingContext(user_id="1", auth_token="local_token")
         self.messages: list[Message] = []
-        self.agent_mode = False
+        self.agent_mode = True  # Default to agent mode ON - omnipotent agent
         self.debug_mode = False
 
         # Store selected LanguageModel object and model ID preference
@@ -482,7 +482,9 @@ class ChatCLI:
         if not self.selected_model:
             raise ValueError("No model selected")
 
-        tool_names = self._get_enabled_tool_names()
+        # In agent mode, we don't pass tool names - the agent gets MCP tools automatically
+        # For regular chat, we still use manually selected tools
+        tool_names = None if agent_mode else self._get_enabled_tool_names()
 
         return Message(
             role="user",
@@ -1109,16 +1111,16 @@ class ChatCLI:
             ]
         )
 
-        enabled_tools_count = len([t for t in self.enabled_tools.values() if t])
-        total_tools_count = len(self.all_tools)
+        # In agent mode, show MCP tools count instead of manual tools
+        from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
+
+        mcp_tools_count = len(get_all_mcp_tools())
 
         settings_list.extend(
             [
-                f"[bold cyan]Agent:[/bold cyan] {'ON' if self.agent_mode else 'OFF'} (/agent)",
+                f"[bold cyan]Agent:[/bold cyan] {'[bold green]OMNIPOTENT[/bold green]' if self.agent_mode else '[bold red]OFF[/bold red]'} (/agent)",
                 f"[bold cyan]Debug:[/bold cyan] {'ON' if self.debug_mode else 'OFF'} (/debug)",
-                f"[bold cyan]Tools:[/bold cyan] {enabled_tools_count}/{total_tools_count} enabled (/tools)",
-                # Span workspace across full width potentially, or keep it separate
-                # f"[bold cyan]Workspace:[/bold cyan] {str(self.context.workspace_dir)}"
+                f"[bold cyan]MCP Tools:[/bold cyan] {mcp_tools_count} available" if self.agent_mode else f"[bold cyan]Tools:[/bold cyan] {len([t for t in self.enabled_tools.values() if t])}/{len(self.all_tools)} enabled (/tools)",
             ]
         )
 
@@ -1128,9 +1130,9 @@ class ChatCLI:
         welcome_panel = Panel(
             Columns(
                 [  # Use Columns to arrange elements
-                    "[bold green]Welcome to NodeTool Chat CLI[/bold green]",
+                    "[bold green]Welcome to NodeTool Omnipotent Agent[/bold green]",
                     settings_columns,  # Add the settings columns here
-                    "Type [bold cyan]/help[/bold cyan] for application commands (/help)",
+                    "Type [bold cyan]/help[/bold cyan] for commands. Agent can run/create/debug workflows!",
                 ],
                 equal=True,
             ),  # Make columns equal width
