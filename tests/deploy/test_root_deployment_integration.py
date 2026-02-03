@@ -24,15 +24,13 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nodetool.config.deployment import (
-    ContainerConfig,
-    ImageConfig,
-    SelfHostedDeployment,
-    SelfHostedPaths,
+    RootDeployment,
+    ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.self_hosted import (
     LocalExecutor,
-    SelfHostedDeployer,
+    RootDeployer,
     is_localhost,
 )
 from nodetool.deploy.state import StateManager
@@ -123,13 +121,11 @@ class TestPlatformIdentification:
     def test_identify_platform_local(self):
         """Test platform identification on local machine."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -138,7 +134,7 @@ class TestPlatformIdentification:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -162,13 +158,11 @@ class TestDirectoryCreation:
             workspace = Path(tmpdir) / "workspace"
             hf_cache = Path(tmpdir) / "hf-cache"
 
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=str(workspace),
                     hf_cache=str(hf_cache),
                 ),
@@ -177,7 +171,7 @@ class TestDirectoryCreation:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -202,13 +196,11 @@ class TestFileUpload:
     def test_upload_content_local(self):
         """Test uploading content to local file."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -217,7 +209,7 @@ class TestFileUpload:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -243,13 +235,11 @@ class TestMicromambaInstallation:
     def test_install_micromamba(self):
         """Test installing micromamba to local directory."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -258,7 +248,7 @@ class TestMicromambaInstallation:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -282,13 +272,11 @@ class TestMicromambaInstallation:
     def test_micromamba_idempotent(self):
         """Test that installing micromamba twice is safe."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -297,7 +285,7 @@ class TestMicromambaInstallation:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -337,13 +325,11 @@ class TestCondaEnvironmentCreation:
     def test_conda_env_creation_plan(self):
         """Test that conda environment creation is planned correctly."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -352,7 +338,7 @@ class TestCondaEnvironmentCreation:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -366,13 +352,11 @@ class TestCondaEnvironmentCreation:
     def test_micromamba_and_directories_created(self):
         """Test that micromamba installation and directory creation work."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -381,7 +365,7 @@ class TestCondaEnvironmentCreation:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -413,13 +397,11 @@ class TestShellDeploymentPlan:
     def test_plan_shell_deployment(self):
         """Test generating a plan for shell deployment."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -428,7 +410,7 @@ class TestShellDeploymentPlan:
             mock_state = Mock(spec=StateManager)
             mock_state.read_state = Mock(return_value=None)
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -438,8 +420,8 @@ class TestShellDeploymentPlan:
 
             assert plan["deployment_name"] == "test"
             assert plan["host"] == "localhost"
-            assert plan["mode"] == "shell"
-            assert "Initial Shell deployment" in str(plan["changes"])
+            assert plan["type"] == "root"
+            assert "Initial Root deployment" in str(plan["changes"])
             assert any("Micromamba" in item for item in plan["will_create"])
             assert any("Conda environment" in item for item in plan["will_create"])
             assert any("Systemd service" in item for item in plan["will_create"])
@@ -451,20 +433,18 @@ class TestLocalHostDetection:
     def test_localhost_uses_local_executor(self):
         """Test that localhost deployment uses LocalExecutor."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
             )
 
             mock_state = Mock(spec=StateManager)
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -481,13 +461,11 @@ class TestShellDeploymentApplyDryRun:
     def test_apply_dry_run_returns_plan(self):
         """Test that apply with dry_run=True returns the plan."""
         with tempfile.TemporaryDirectory(prefix="nodetool_shell_test_") as tmpdir:
-            deployment = SelfHostedDeployment(
+            deployment = RootDeployment(
                 host="localhost",
+                port=7777,
                 ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
-                image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                container=ContainerConfig(name="test", port=7777),
-                mode="shell",
-                paths=SelfHostedPaths(
+                paths=ServerPaths(
                     workspace=tmpdir,
                     hf_cache=f"{tmpdir}/hf-cache",
                 ),
@@ -498,7 +476,7 @@ class TestShellDeploymentApplyDryRun:
             mock_state.update_deployment_status = Mock()
             mock_state.write_state = Mock()
 
-            deployer = SelfHostedDeployer(
+            deployer = RootDeployer(
                 deployment_name="test",
                 deployment=deployment,
                 state_manager=mock_state,
@@ -508,8 +486,7 @@ class TestShellDeploymentApplyDryRun:
 
             # Should return plan without executing
             assert "deployment_name" in result
-            assert "mode" in result
-            assert result["mode"] == "shell"
+            assert result["type"] == "root"
 
             # State manager should not be called during dry run
             mock_state.update_deployment_status.assert_not_called()

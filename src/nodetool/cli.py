@@ -781,6 +781,15 @@ mcp.add_command(jobs)
     help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
 )
 @click.option(
+    "--ui-url",
+    help="URL to download and serve the UI from (zip file).",
+)
+@click.option(
+    "--ui",
+    is_flag=True,
+    help="Download and serve the UI matching the current NodeTool version.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -800,6 +809,8 @@ def serve(
     auth_provider: str | None = None,
     apps_folder: str | None = None,
     production: bool = False,
+    ui_url: str | None = None,
+    ui: bool = False,
     verbose: bool = False,
     mock: bool = False,
 ):
@@ -845,8 +856,58 @@ def serve(
     except ImportError:
         pass
 
-    if auth_provider:
-        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+    # Handle UI download if requested
+    if ui or ui_url:
+        if ui and ui_url:
+             console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+        
+        url_to_use = ui_url
+        
+        # If --ui flag is used and no explicit URL, infer it
+        if ui and not ui_url:
+            try:
+                version = get_package_version("nodetool-core")
+                # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
+                if "rc" in version and "-" not in version:
+                     version = version.replace("rc", "-rc.")
+                
+                url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
+                console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
+            except PackageNotFoundError:
+                console.print("[red]Could not determine package version.[/]")
+                # We will try fallback below if we can't infer or if inference fails
+                pass
+
+        if static_folder:
+             console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
+
+        try:
+            if url_to_use:
+                static_folder = _download_and_cache_ui(url_to_use)
+            else:
+                raise Exception("No URL available")
+        except Exception as e:
+            if ui and not ui_url:
+                console.print(f"[yellow]Failed to download UI for current version ({e}). Trying latest release...[/]")
+                try:
+                    import httpx
+                    # Find latest tag
+                    resp = httpx.get("https://github.com/nodetool-ai/nodetool/releases/latest", follow_redirects=False)
+                    location = resp.headers.get("location", "")
+                    if "/tag/" in location:
+                        tag = location.split("/")[-1]
+                        version_str = tag.lstrip("v")
+                        latest_url = f"https://github.com/nodetool-ai/nodetool/releases/download/{tag}/nodetool-web-{version_str}.zip"
+                        console.print(f"[cyan]Downloading latest UI ({tag}): {latest_url}[/]")
+                        static_folder = _download_and_cache_ui(latest_url)
+                    else:
+                        raise Exception("Could not resolve latest release tag")
+                except Exception as inner_e:
+                     console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
+                     sys.exit(1)
+            else:
+                console.print(f"[red]Failed to download UI: {e}[/]")
+                sys.exit(1)
 
     if not reload:
         app = create_app(static_folder=static_folder, apps_folder=apps_folder)
@@ -858,6 +919,63 @@ def serve(
         app = "nodetool.api.app:app"
 
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+
+
+def _download_and_cache_ui(url: str) -> str:
+    """Download UI zip from URL and unpack to cache directory."""
+    import hashlib
+    import shutil
+    import zipfile
+    from io import BytesIO
+    import httpx
+    from nodetool.config.settings import get_system_cache_path
+
+    # Generate cache key from URL
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_dir = get_system_cache_path("ui_cache") / url_hash
+    
+    # Check if already cached
+    if cache_dir.exists() and (cache_dir / "index.html").exists():
+        console.print(f"[green]Using cached UI from {cache_dir}[/]")
+        return str(cache_dir)
+
+    console.print(f"[cyan]Downloading UI from {url}...[/]")
+    
+    # Download
+    with httpx.Client(follow_redirects=True) as client:
+        resp = client.get(url)
+        if resp.status_code == 404:
+             raise Exception("404 Not Found")
+        resp.raise_for_status()
+        
+        # Unpack
+        console.print("[cyan]Unpacking UI...[/]")
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(BytesIO(resp.content)) as z:
+            z.extractall(cache_dir)
+            
+        # Handle case where zip contains a single top-level folder
+        # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
+        items = list(cache_dir.iterdir())
+        if len(items) == 1 and items[0].is_dir():
+            subdir = items[0]
+            # Move contents to temp dir first to avoid conflicts
+            temp_dir = cache_dir.parent / f"{url_hash}_temp"
+            subdir.rename(temp_dir)
+            try:
+                shutil.rmtree(cache_dir)
+                temp_dir.rename(cache_dir)
+            except Exception:
+                # Fallback cleanup
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+                raise
+
+        console.print(f"[green]UI ready at {cache_dir}[/]")
+        return str(cache_dir)
 
 
 @cli.command()
@@ -2847,9 +2965,8 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
-        SelfHostedDockerDeployment,
-        SelfHostedShellDeployment,
+        DockerDeployment,
+        RootDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2857,9 +2974,9 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         env["SECRETS_MASTER_KEY"] = master_key
         return env
 
-    if isinstance(deployment, SelfHostedDockerDeployment):
+    if isinstance(deployment, DockerDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
-    elif isinstance(deployment, SelfHostedShellDeployment):
+    elif isinstance(deployment, RootDeployment):
         deployment.environment = _inject(deployment.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
@@ -2984,7 +3101,8 @@ def deploy_show(name: str):
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
+        DockerDeployment,
+        RootDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3009,11 +3127,8 @@ def deploy_show(name: str):
         content.append("")
 
         # Type-specific configuration
-        # Type-specific configuration
-        from nodetool.config.deployment import SelfHostedDockerDeployment, SelfHostedShellDeployment
-
-        if isinstance(deployment, SelfHostedDockerDeployment):
-            content.append("[bold]Self-Hosted (Docker) Configuration:[/]")
+        if isinstance(deployment, DockerDeployment):
+            content.append("[bold]Docker Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
             content.append(f"  SSH User: {deployment.ssh.user}")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
@@ -3034,8 +3149,8 @@ def deploy_show(name: str):
             content.append(f"  Workspace: {deployment.paths.workspace}")
             content.append(f"  HF Cache: {deployment.paths.hf_cache}")
 
-        elif isinstance(deployment, SelfHostedShellDeployment):
-            content.append("[bold]Self-Hosted (Shell) Configuration:[/]")
+        elif isinstance(deployment, RootDeployment):
+            content.append("[bold]Root Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
             content.append(f"  SSH User: {deployment.ssh.user}")
             content.append("")
@@ -3093,21 +3208,20 @@ def deploy_show(name: str):
             if state.get("last_deployed"):
                 content.append(f"  Last Deployed: {state['last_deployed']}")
 
-            if state.get("compose_hash"):
-                content.append(f"  Compose Hash: {state['compose_hash'][:12]}...")
+            if state.get("container_hash"):
+                content.append(f"  Container Hash: {state['container_hash'][:12]}...")
         else:
             content.append("  Status: [yellow]Not deployed[/]")
 
         content.append("")
 
         # URLs and endpoints
-        # URLs and endpoints
-        if isinstance(deployment, SelfHostedDockerDeployment):
+        if isinstance(deployment, DockerDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.container.port}"
             content.append(f"  {deployment.container.name}: {url}")
 
-        elif isinstance(deployment, SelfHostedShellDeployment):
+        elif isinstance(deployment, RootDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.port}"
             content.append(f"  Service: {url}")
@@ -3158,7 +3272,7 @@ def deploy_show(name: str):
 @click.option(
     "--type",
     "deployment_type",
-    type=click.Choice(["self-hosted", "runpod", "gcp"]),
+    type=click.Choice(["docker", "root", "runpod", "gcp"]),
     prompt="Deployment type",
     help="Type of deployment",
 )
@@ -3173,8 +3287,8 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
-        SelfHostedDockerDeployment,
-        SelfHostedShellDeployment,
+        DockerDeployment,
+        RootDeployment,
         SSHConfig,
         get_deployment_config_path,
         load_deployment_config,
@@ -3201,76 +3315,91 @@ def deploy_add(name: str, deployment_type: str):
         console.print()
 
         # Gather deployment-specific configuration
-        if deployment_type == "self-hosted":
-            console.print("[cyan]Self-Hosted Configuration:[/]")
+        if deployment_type == "docker":
+            console.print("[cyan]Docker Configuration:[/]")
 
-            # Prompt for mode
-            from nodetool.config.deployment import SelfHostedMode
+            host = click.prompt("Host address", type=str)
 
-            mode = click.prompt(
-                "Deployment mode",
-                type=click.Choice([m.value for m in SelfHostedMode]),
-                default=SelfHostedMode.DOCKER.value,
+            # Check if localhost to skip SSH prompts
+            ssh_user = None
+            ssh_key_path = None
+            is_localhost = host.lower() in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
+
+            if not is_localhost:
+                ssh_user = click.prompt("SSH username", type=str)
+                ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+
+            console.print()
+            console.print("[cyan]Image configuration:[/]")
+            image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
+            image_tag = click.prompt("  Docker image tag", type=str, default="latest")
+
+            console.print()
+            console.print("[cyan]Container configuration:[/]")
+            container_name = click.prompt("  Container name", type=str, default=f"nodetool-{name}")
+            container_port = click.prompt("  Port", type=int, default=8000)
+
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            container = ContainerConfig(
+                name=container_name,
+                port=container_port,
+                gpu=gpu,
+                workflows=workflows,
             )
+
+            # Create SSH config only if user provided details
+            ssh_config = None
+            if ssh_user:
+                ssh_config = SSHConfig(user=ssh_user, key_path=ssh_key_path)
+
+            deployment = DockerDeployment(
+                host=host,
+                ssh=ssh_config,
+                image=ImageConfig(name=image_name, tag=image_tag),
+                container=container,
+            )
+
+        elif deployment_type == "root":
+            console.print("[cyan]Root/Shell Configuration:[/]")
 
             host = click.prompt("Host address", type=str)
             ssh_user = click.prompt("SSH username", type=str)
             ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
 
-            # Image configuration
-            image_name = "nodetool/nodetool"
-            image_tag = "latest"
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+            
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+            
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
 
-            if mode == SelfHostedMode.DOCKER.value:
-                # Docker Deployment
-                console.print()
-                console.print("[cyan]Image configuration:[/]")
-                image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
-                image_tag = click.prompt("  Docker image tag", type=str, default="latest")
-
-                console.print()
-                console.print("[cyan]Container configuration:[/]")
-                container_name = click.prompt("  Container name", type=str)
-                container_port = click.prompt("  Port", type=int)
-
-                use_gpu = click.confirm("  Assign GPU?", default=False)
-                if use_gpu:
-                    gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
-
-                has_workflows = click.confirm("  Assign specific workflows?", default=False)
-                if has_workflows:
-                    workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
-                    workflows = [w.strip() for w in workflows_str.split(",")]
-
-                container = ContainerConfig(
-                    name=container_name,
-                    port=container_port,
-                    gpu=gpu,
-                    workflows=workflows,
-                )
-
-                deployment = SelfHostedDockerDeployment(
-                    mode=SelfHostedMode.DOCKER,
-                    host=host,
-                    ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
-                    image=ImageConfig(name=image_name, tag=image_tag),
-                    container=container,
-                )
-
-            else:
-                # Shell Deployment
-                console.print()
-                console.print("[cyan]Service configuration:[/]")
-                container_port = click.prompt("  Port", type=int)
-                service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
-
-                deployment = SelfHostedShellDeployment(
-                    mode=SelfHostedMode.SHELL,
-                    host=host,
-                    ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
-                    port=container_port,
-                    service_name=service_name,
-                )
+            deployment = RootDeployment(
+                host=host,
+                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
+            )
 
         elif deployment_type == "runpod":
             console.print("[cyan]RunPod Configuration:[/]")

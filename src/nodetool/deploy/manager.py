@@ -10,6 +10,7 @@ different platforms (self-hosted, RunPod, GCP). It handles:
 - Validation and error handling
 """
 
+
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -18,13 +19,13 @@ from nodetool.config.deployment import (
     GCPDeployment,
     RunPodDeployment,
     SelfHostedDeployment,
-    SelfHostedDockerDeployment,
-    SelfHostedShellDeployment,
+    DockerDeployment,
+    RootDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
 from nodetool.deploy.runpod import RunPodDeployer
-from nodetool.deploy.self_hosted import SelfHostedDeployer
+from nodetool.deploy.self_hosted import DockerDeployer, RootDeployer
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -68,10 +69,10 @@ class DeploymentManager:
             }
 
             # Add type-specific info
-            if isinstance(deployment, SelfHostedDockerDeployment):
+            if isinstance(deployment, DockerDeployment):
                 info["host"] = deployment.host
                 info["container"] = deployment.container.name
-            elif isinstance(deployment, SelfHostedShellDeployment):
+            elif isinstance(deployment, RootDeployment):
                 info["host"] = deployment.host
                 info["service"] = deployment.service_name
             elif isinstance(deployment, RunPodDeployment):
@@ -120,8 +121,15 @@ class DeploymentManager:
         """
         deployment = self.get_deployment(name)
 
-        if isinstance(deployment, SelfHostedDeployment):
-            deployer = SelfHostedDeployer(
+        if isinstance(deployment, DockerDeployment):
+            deployer = DockerDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.plan()
+        elif isinstance(deployment, RootDeployment):
+            deployer = RootDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -169,8 +177,15 @@ class DeploymentManager:
 
         logger.info(f"Applying deployment '{name}' (type: {deployment.type})")
 
-        if isinstance(deployment, SelfHostedDeployment):
-            deployer = SelfHostedDeployer(
+        if isinstance(deployment, DockerDeployment):
+            deployer = DockerDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.apply(dry_run=dry_run)
+        elif isinstance(deployment, RootDeployment):
+            deployer = RootDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -208,8 +223,15 @@ class DeploymentManager:
         """
         deployment = self.get_deployment(name)
 
-        if isinstance(deployment, SelfHostedDeployment):
-            deployer = SelfHostedDeployer(
+        if isinstance(deployment, DockerDeployment):
+            deployer = DockerDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.status()
+        elif isinstance(deployment, RootDeployment):
+            deployer = RootDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -257,8 +279,15 @@ class DeploymentManager:
         """
         deployment = self.get_deployment(name)
 
-        if isinstance(deployment, SelfHostedDeployment):
-            deployer = SelfHostedDeployer(
+        if isinstance(deployment, DockerDeployment):
+            deployer = DockerDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.logs(service=service, follow=follow, tail=tail)
+        elif isinstance(deployment, RootDeployment):
+            deployer = RootDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -300,8 +329,15 @@ class DeploymentManager:
 
         logger.warning(f"Destroying deployment '{name}' (type: {deployment.type})")
 
-        if isinstance(deployment, SelfHostedDeployment):
-            deployer = SelfHostedDeployer(
+        if isinstance(deployment, DockerDeployment):
+            deployer = DockerDeployer(
+                deployment_name=name,
+                deployment=deployment,
+                state_manager=self.state_manager,
+            )
+            return deployer.destroy()
+        elif isinstance(deployment, RootDeployment):
+            deployer = RootDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -361,12 +397,12 @@ class DeploymentManager:
                         results["warnings"].append(f"{deployment_name}: No SSH authentication method configured")
 
                     # Validate type specific requirements
-                    if isinstance(deployment, SelfHostedDockerDeployment):
+                    if isinstance(deployment, DockerDeployment):
                         if not deployment.container:
                             results["errors"].append(f"{deployment_name}: No container configured")
                             results["valid"] = False
                     
-                    elif isinstance(deployment, SelfHostedShellDeployment):
+                    elif isinstance(deployment, RootDeployment):
                          if not deployment.port:
                              results["errors"].append(f"{deployment_name}: No port configured")
                              results["valid"] = False

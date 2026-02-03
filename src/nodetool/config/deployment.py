@@ -16,10 +16,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from nodetool.config.settings import get_system_file_path
 
 
+
 class DeploymentType(str, Enum):
     """Supported deployment types."""
 
-    SELF_HOSTED = "self-hosted"
+    DOCKER = "docker"
+    ROOT = "root"
     RUNPOD = "runpod"
     GCP = "gcp"
 
@@ -36,13 +38,6 @@ class DeploymentStatus(str, Enum):
     ERROR = "error"
     STOPPED = "stopped"
     DESTROYED = "destroyed"
-
-
-class SelfHostedMode(str, Enum):
-    """Deployment mode for self-hosted instances."""
-
-    DOCKER = "docker"
-    SHELL = "shell"
 
 
 # ============================================================================
@@ -77,11 +72,11 @@ class ContainerConfig(BaseModel):
     workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run in this container")
 
 
-class SelfHostedPaths(BaseModel):
-    """Paths on the remote self-hosted server."""
+class ServerPaths(BaseModel):
+    """Paths on the remote server."""
 
-    workspace: str = "/data/workspace"
-    hf_cache: str = "/data/hf-cache"
+    workspace: str = "~/nodetool_data/workspace"
+    hf_cache: str = "~/nodetool_data/hf-cache"
 
 
 class PersistentPaths(BaseModel):
@@ -137,15 +132,14 @@ class ImageConfig(BaseModel):
         return f"{self.name}:{self.tag}"
 
 
-class SelfHostedDockerDeployment(BaseModel):
+class DockerDeployment(BaseModel):
     """Self-hosted deployment configuration for Docker."""
 
-    type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
-    mode: Literal[SelfHostedMode.DOCKER] = SelfHostedMode.DOCKER
+    type: Literal[DeploymentType.DOCKER] = DeploymentType.DOCKER
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
-    ssh: SSHConfig
-    paths: SelfHostedPaths = SelfHostedPaths()
+    ssh: Optional[SSHConfig] = Field(None, description="SSH configuration (required for remote hosts)")
+    paths: ServerPaths = ServerPaths()
     persistent_paths: Optional[PersistentPaths] = Field(
         None,
         description="Persistent storage paths for users, database, and cache",
@@ -163,15 +157,14 @@ class SelfHostedDockerDeployment(BaseModel):
         return f"http://{self.host}:{self.container.port}"
 
 
-class SelfHostedShellDeployment(BaseModel):
+class RootDeployment(BaseModel):
     """Self-hosted deployment configuration for Shell (systemd service)."""
 
-    type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
-    mode: Literal[SelfHostedMode.SHELL] = SelfHostedMode.SHELL
+    type: Literal[DeploymentType.ROOT] = DeploymentType.ROOT
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
     ssh: SSHConfig
-    paths: SelfHostedPaths = SelfHostedPaths()
+    paths: ServerPaths = ServerPaths()
     persistent_paths: Optional[PersistentPaths] = Field(
         None,
         description="Persistent storage paths for users, database, and cache",
@@ -195,7 +188,7 @@ class SelfHostedShellDeployment(BaseModel):
         return f"http://{self.host}:{self.port}"
 
 
-SelfHostedDeployment = SelfHostedDockerDeployment | SelfHostedShellDeployment
+SelfHostedDeployment = DockerDeployment | RootDeployment
 
 
 # ============================================================================
