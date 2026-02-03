@@ -156,9 +156,11 @@ nodetool = "nodetool.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nodetool"]
+include = [
+    "src/nodetool/package_metadata/*.json",
+]
 
 # Ruff configuration for linting and formatting
-artifacts = ["package_metadata/nodetool-core.json"]
 [tool.ruff]
 # Python version
 target-version = "py311"
