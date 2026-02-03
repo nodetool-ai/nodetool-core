@@ -182,6 +182,10 @@ def _load_default_routers() -> list[APIRouter]:
         users.router,
     ]
 
+    # Add file router only for non-production environments
+    if not Environment.is_production():
+        routers.append(file.router)
+
     return routers
 
 

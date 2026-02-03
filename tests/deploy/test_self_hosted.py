@@ -335,6 +335,7 @@ class TestDockerDeployer:
 
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""
+        import os
         mock_ssh = Mock()
         mock_ssh.mkdir = Mock()
 
@@ -349,9 +350,11 @@ class TestDockerDeployer:
 
         # Should create workspace and subdirectories - check logic matches implementation
         # DockerDeployer calls _create_specific_directories which creates proxy and acme
+        # The paths are expanded from the default "~/nodetool_data/workspace" 
+        workspace_path = os.path.expanduser("~/nodetool_data/workspace")
         assert mock_ssh.mkdir.call_count >= 2
-        mock_ssh.mkdir.assert_any_call("/data/workspace/proxy", parents=True)
-        mock_ssh.mkdir.assert_any_call("/data/workspace/acme", parents=True)
+        mock_ssh.mkdir.assert_any_call(f"{workspace_path}/proxy", parents=True)
+        mock_ssh.mkdir.assert_any_call(f"{workspace_path}/acme", parents=True)
 
     def test_create_directories_custom_paths(self, mock_state_manager):
         """Test directory creation with custom paths."""

@@ -11,8 +11,8 @@ from nodetool.config.deployment import (
     ContainerConfig,
     ImageConfig,
     PersistentPaths,
-    SelfHostedDockerDeployment,
-    SelfHostedPaths,
+    DockerDeployment,
+    ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
@@ -24,7 +24,7 @@ class TestDockerPersistentPaths:
     @pytest.fixture
     def deployment_with_persistent_paths(self):
         """Create a deployment with persistent_paths configured."""
-        return SelfHostedDockerDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -36,18 +36,18 @@ class TestDockerPersistentPaths:
                 hf_cache="/data/hf-cache",
                 asset_bucket="/data/assets",
             ),
-            paths=SelfHostedPaths(workspace="/data/workspace", hf_cache="/data/hf-cache"),
+            paths=ServerPaths(workspace="/data/workspace", hf_cache="/data/hf-cache"),
         )
 
     @pytest.fixture
     def deployment_without_persistent_paths(self):
         """Create a deployment without persistent_paths."""
-        return SelfHostedDockerDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            paths=SelfHostedPaths(workspace="/data/workspace", hf_cache="/data/hf-cache"),
+            paths=ServerPaths(workspace="/data/workspace", hf_cache="/data/hf-cache"),
         )
 
     def test_environment_with_persistent_paths(self, deployment_with_persistent_paths):
