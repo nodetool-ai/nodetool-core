@@ -391,8 +391,15 @@ class ChatCLI:
         if provider in self._models_by_provider:
             models = self._models_by_provider[provider]
         else:
-            provider_instance = await get_provider(provider, user_id="1")
-            models = await provider_instance.get_available_language_models()
+            try:
+                provider_instance = await get_provider(provider, user_id="1")
+                models = await provider_instance.get_available_language_models()
+            except Exception as e:
+                self.console.print(
+                    "[bold yellow]Warning:[/bold yellow] "
+                    f"Provider '{provider.value}' is unavailable: {e}"
+                )
+                models = []
             self._models_by_provider[provider] = models
 
         if self.selected_provider == provider:
@@ -428,6 +435,18 @@ class ChatCLI:
 
         models = await self.load_models_for_provider(self.selected_provider)
         if not models:
+            # Try other providers if the selected one is unavailable/misconfigured.
+            for fallback_provider in Provider:
+                if fallback_provider == self.selected_provider:
+                    continue
+                fallback_models = await self.load_models_for_provider(fallback_provider)
+                if fallback_models:
+                    self.console.print(
+                        "[bold yellow]Warning:[/bold yellow] "
+                        f"Falling back to provider '{fallback_provider.value}'."
+                    )
+                    self.set_selected_model(fallback_models[0])
+                    return
             raise ValueError(f"No models available for provider {self.selected_provider.value}")
 
         target_id = self.model_id_from_settings
