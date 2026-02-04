@@ -202,10 +202,13 @@ class TestFormatEnvDiagnostics:
         """Secrets should be masked in output."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-super-secret-key-12345"}):
             result = format_env_diagnostics(include_all=True)
+            # The actual secret value should never appear in output
             assert "super-secret" not in result
-            # Should show partial masked value
-            if "OPENAI_API_KEY" in result:
-                assert "sk-s" in result or "****" in result
+            # OPENAI_API_KEY is a registered secret, so it should appear in the output
+            # with a masked value (first few and last few chars visible)
+            assert "OPENAI_API_KEY" in result
+            # The masked value should show partial content (sk-s...2345)
+            assert "sk-s" in result or "****" in result
 
 
 class TestPermissionSensitiveVars:

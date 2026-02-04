@@ -152,7 +152,7 @@ def mask_value(value: str | None, is_secret: bool = False) -> str:
             pass
 
     # For paths, show the full path (helpful for debugging permission issues)
-    if value.startswith("/") or value.startswith("\\") or (len(value) > 1 and value[1] == ":"):
+    if value.startswith("/") or value.startswith("\\") or (len(value) >= 2 and value[1] == ":"):
         return value
 
     return value
