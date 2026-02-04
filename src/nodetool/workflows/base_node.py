@@ -141,7 +141,7 @@ from nodetool.metadata.utils import (
 )
 from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
-from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.inbox import MessageEnvelope, NodeInbox
 from nodetool.workflows.types import NodeUpdate
 
 
@@ -508,6 +508,47 @@ class BaseNode(BaseModel):
                 except Exception as e:
                     log.debug(f"on_input_item callback failed for handle {handle}: {e}")
             yield handle, item
+
+    async def iter_input_with_envelope(self, handle: str) -> AsyncIterator[MessageEnvelope]:
+        """Iterate envelopes for a specific input handle until EOS.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+        The envelope contains the data along with its associated metadata.
+
+        Args:
+            handle: Input handle name to read from.
+
+        Yields:
+            MessageEnvelope objects from the per-handle buffer in FIFO order.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_input_with_envelope unavailable")
+        async for envelope in self._inbox.iter_input_with_envelope(handle):
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
+            yield envelope
+
+    async def iter_any_input_with_envelope(self) -> AsyncIterator[tuple[str, MessageEnvelope]]:
+        """Iterate (handle, envelope) across all inputs in arrival order until EOS.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+        This multiplexes all inbound handles by arrival order.
+
+        Yields:
+            Tuples of (handle, MessageEnvelope) in cross-handle arrival order.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_any_input_with_envelope unavailable")
+        async for handle, envelope in self._inbox.iter_any_with_envelope():
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
+            yield handle, envelope
 
     @classmethod
     def is_streaming_input(cls) -> bool:

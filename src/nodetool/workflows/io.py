@@ -18,7 +18,7 @@ from .types import EdgeUpdate
 log = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from .inbox import NodeInbox
+    from .inbox import MessageEnvelope, NodeInbox
 
 
 class NodeInputs:
@@ -26,6 +26,11 @@ class NodeInputs:
 
     Wraps a ``NodeInbox`` to provide simple, intention-revealing methods for
     reading inputs in node implementations (e.g., inside ``BaseNode.run``).
+
+    For backward compatibility, standard methods (first, stream, any) return
+    unwrapped data. For nodes needing access to message metadata, timestamp,
+    or event_id, use the _with_envelope variants (first_with_envelope,
+    stream_with_envelope, any_with_envelope).
     """
 
     def __init__(self, inbox: NodeInbox) -> None:
@@ -44,10 +49,26 @@ class NodeInputs:
             default: Value to return if the stream reaches EOS without any item.
 
         Returns:
-            The first item from the specified handle, or ``default`` if none arrived.
+            The first item (unwrapped data) from the specified handle, or ``default`` if none arrived.
         """
         async for item in self._inbox.iter_input(name):
             return item
+        return default
+
+    async def first_with_envelope(self, name: str, default: Any | None = None) -> Any | None:
+        """Return the first available envelope for a handle, or a default.
+
+        Use this when you need access to message metadata, timestamp, or event_id.
+
+        Args:
+            name: Input handle name to read from.
+            default: Value to return if the stream reaches EOS without any item.
+
+        Returns:
+            The first MessageEnvelope from the specified handle, or ``default`` if none arrived.
+        """
+        async for envelope in self._inbox.iter_input_with_envelope(name):
+            return envelope
         return default
 
     async def stream(self, name: str) -> AsyncIterator[Any]:
@@ -57,19 +78,44 @@ class NodeInputs:
             name: Input handle name to read from.
 
         Yields:
-            Each item arriving on the specified handle in FIFO order.
+            Each item (unwrapped data) arriving on the specified handle in FIFO order.
         """
         async for item in self._inbox.iter_input(name):
             yield item
+
+    async def stream_with_envelope(self, name: str) -> AsyncIterator[MessageEnvelope]:
+        """Iterate envelopes for a specific handle until end-of-stream (EOS).
+
+        Use this when you need access to message metadata, timestamp, or event_id.
+
+        Args:
+            name: Input handle name to read from.
+
+        Yields:
+            Each MessageEnvelope arriving on the specified handle in FIFO order.
+        """
+        async for envelope in self._inbox.iter_input_with_envelope(name):
+            yield envelope
 
     async def any(self) -> AsyncIterator[tuple[str, Any]]:
         """Iterate across all handles in cross-handle arrival order.
 
         Yields:
-            Tuples of ``(handle, item)`` as items arrive from any handle.
+            Tuples of ``(handle, item)`` as items (unwrapped data) arrive from any handle.
         """
         async for handle, item in self._inbox.iter_any():
             yield handle, item
+
+    async def any_with_envelope(self) -> AsyncIterator[tuple[str, MessageEnvelope]]:
+        """Iterate across all handles in cross-handle arrival order with envelopes.
+
+        Use this when you need access to message metadata, timestamp, or event_id.
+
+        Yields:
+            Tuples of ``(handle, MessageEnvelope)`` as envelopes arrive from any handle.
+        """
+        async for handle, envelope in self._inbox.iter_any_with_envelope():
+            yield handle, envelope
 
     def has_buffered(self, name: str) -> bool:
         """Return True if the handle currently has any buffered items.
@@ -99,6 +145,9 @@ class NodeOutputs:
 
     Provides validation and routing for outputs produced by a node. In
     ``capture_only`` mode, outputs are collected but not routed downstream.
+
+    Supports attaching metadata to outgoing messages, which will be propagated
+    through the node graph via MessageEnvelopes.
     """
 
     def __init__(self, runner, node, context, capture_only: bool = False) -> None:
@@ -125,8 +174,10 @@ class NodeOutputs:
         self.capture_only = capture_only
         self._collected: dict[str, Any] = {}
 
-    async def emit(self, slot: str, value: Any) -> None:
-        """Emit a value to a specific output slot.
+    async def emit(
+        self, slot: str, value: Any, metadata: dict[str, Any] | None = None
+    ) -> None:
+        """Emit a value to a specific output slot with optional metadata.
 
         Validates the slot name against the node's declared/dynamic outputs and
         routes the value via the runner unless in capture-only mode.
@@ -134,6 +185,9 @@ class NodeOutputs:
         Args:
             slot: Output slot name (uses "output" if empty/None).
             value: Value to emit.
+            metadata: Optional metadata to attach to the outgoing message.
+                     This metadata will be available to downstream nodes
+                     that consume messages with envelope access.
 
         Raises:
             ValueError: If the slot does not exist on the node instance.
@@ -159,11 +213,12 @@ class NodeOutputs:
         # Always collect the last value per slot
         self._collected[slot] = value
         log.debug(
-            "NodeOutputs.emit: node=%s (%s) slot=%s capture_only=%s",
+            "NodeOutputs.emit: node=%s (%s) slot=%s capture_only=%s metadata=%s",
             self.node.get_title(),
             self.node._id,
             slot,
             self.capture_only,
+            metadata is not None,
         )
 
         # Auto-save assets before routing to downstream nodes (for streaming outputs)
@@ -186,9 +241,9 @@ class NodeOutputs:
         if not self.capture_only:
             send_messages = self.runner.send_messages
             if inspect.iscoroutinefunction(send_messages):
-                await send_messages(self.node, {slot: value}, self.context)
+                await send_messages(self.node, {slot: value}, self.context, metadata)
             else:
-                send_messages(self.node, {slot: value}, self.context)
+                send_messages(self.node, {slot: value}, self.context, metadata)
 
     def complete(self, slot: str) -> None:
         """Mark early end-of-stream for a specific output slot.
@@ -229,14 +284,15 @@ class NodeOutputs:
                         EdgeUpdate(workflow_id=self.context.workflow_id, edge_id=edge.id or "", status="drained")
                     )
 
-    async def default(self, value: Any) -> None:
-        """Convenience for emitting to the default slot.
+    async def default(self, value: Any, metadata: dict[str, Any] | None = None) -> None:
+        """Convenience for emitting to the default slot with optional metadata.
 
         If an "output" slot exists, use it; otherwise if there is exactly one
         declared output, use its name; else fall back to "output".
 
         Args:
             value: Value to emit.
+            metadata: Optional metadata to attach to the outgoing message.
         """
         from .base_node import BaseNode
 
@@ -248,7 +304,7 @@ class NodeOutputs:
             slot = "output"
         elif len(outputs) == 1:
             slot = outputs[0].name
-        await self.emit(slot, value)
+        await self.emit(slot, value, metadata)
 
     def collected(self) -> dict[str, Any]:
         """Return the map of collected outputs (slot -> last value).
