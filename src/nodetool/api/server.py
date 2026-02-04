@@ -328,6 +328,12 @@ def create_app(
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
 
+    # Log comprehensive environment diagnostics (secure masking of secrets)
+    # This is particularly useful for Electron, Docker, and production deployments
+    from nodetool.config.env_diagnostics import log_env_diagnostics
+
+    log_env_diagnostics(logger=log, check_permissions=True)
+
     # Run startup security checks to warn about insecure configurations
     # Import is local to avoid circular imports (security module imports config which may import api)
     from nodetool.security.startup_checks import run_startup_security_checks

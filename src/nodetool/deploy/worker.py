@@ -211,6 +211,12 @@ def run_worker(
         os.environ.get("DEBUG"),
     )
 
+    # Log comprehensive environment diagnostics (secure masking of secrets)
+    # This is particularly useful for Docker and production deployments
+    from nodetool.config.env_diagnostics import log_env_diagnostics
+
+    log_env_diagnostics(logger=log, deployment_type="docker", check_permissions=True)
+
     tools = tools or []
     workflows = workflows or []
 
