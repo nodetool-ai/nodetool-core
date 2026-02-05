@@ -96,7 +96,7 @@ dependencies = [
     "opencv-python-headless>=4.11.0.86",
 
     # Data dependencies
-    "numpy>=2.0.0",
+    "numpy>=2.0.0,<2.4",  # numba (librosa) requires numpy<2.4
     "pandas>=2.2.3",
     "llama-index-core>=0.14.4",
     "llama-index-embeddings-ollama>=0.8.3",

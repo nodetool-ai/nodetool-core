@@ -3529,7 +3529,7 @@ requires-dist = [
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "networkx", specifier = ">=3.4.2" },
-    { name = "numpy", specifier = ">=2.0.0" },
+    { name = "numpy", specifier = ">=2.0.0,<2.4" },
     { name = "nvidia-ml-py", specifier = ">=13.580.65" },
     { name = "ollama", specifier = ">=0.6.1" },
     { name = "openai", specifier = ">=2.15.0" },
