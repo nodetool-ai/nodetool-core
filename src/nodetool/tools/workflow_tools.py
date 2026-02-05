@@ -12,6 +12,7 @@ These tools provide functionality for managing NodeTool workflows including:
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from typing import Any, Optional
 
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -158,7 +159,11 @@ class WorkflowTools:
         result = {}
         preview = {}
         save = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
             from nodetool.workflows.types import PreviewUpdate, SaveUpdate, OutputUpdate, LogUpdate
@@ -219,7 +224,11 @@ class WorkflowTools:
         )
 
         result = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
             from nodetool.workflows.types import OutputUpdate
