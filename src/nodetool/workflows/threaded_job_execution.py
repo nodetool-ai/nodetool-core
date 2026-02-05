@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
-from nodetool.runtime.resources import ResourceScope
+from nodetool.runtime.resources import ResourceScope, _current_scope, maybe_scope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
@@ -48,6 +48,7 @@ class ThreadedJobExecution(JobExecution):
         super().__init__(job_id, context, request, job_model, runner=runner, execution_id=execution_id)
         self.event_loop = event_loop
         self.future: Future | None = None
+        self._db_path: str | None = None
 
     def _set_status(self, status: str) -> None:
         """Update both the internal and runner status consistently."""
@@ -110,46 +111,97 @@ class ThreadedJobExecution(JobExecution):
         resource isolation (database adapters, settings, secrets).
         """
         assert self.runner, "Runner is not set"
-        # Wrap execution in ResourceScope for per-execution isolation
-        # ResourceScope auto-detects database type and acquires from shared pools
-        # In test mode, inherit db_path from current scope if available
-        async with ResourceScope():
-            try:
-                # Load workflow graph if not already loaded
-                if self.request.graph is None:
-                    log.info(f"Loading workflow graph for {self.request.workflow_id}")
-                    workflow = await self.context.get_workflow(self.request.workflow_id)
-                    if workflow is None:
-                        raise ValueError(f"Workflow {self.request.workflow_id} not found")
-                    self.request.graph = workflow.get_api_graph()
+        # ThreadedEventLoop propagates contextvars from the parent thread,
+        # which includes _current_scope. The parent scope's DB pool uses an
+        # asyncio.Queue bound to the parent's event loop. Using it from this
+        # thread's event loop would cause RuntimeError. Clear the inherited
+        # scope and create a fresh one with a pool for THIS event loop.
+        _current_scope.set(None)
 
-                self._set_status("running")
-                await self.runner.run(self.request, self.context)
+        from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
-                # Check if workflow was suspended (not completed)
-                if self.runner and self.runner.status == "suspended":
-                    log.info("Workflow suspended, not setting completed status")
-                    from nodetool.models.job import Job
+        pool = None
+        if self._db_path:
+            pool = await SQLiteConnectionPool.get_shared(self._db_path)
 
-                    job = await Job.get(self.job_id)
-                    if job:
-                        await job.mark_suspended(
-                            node_id="",
-                            reason="Workflow suspended",
-                            state={},
+        try:
+            async with ResourceScope(pool=pool):
+                try:
+                    # Load workflow graph if not already loaded
+                    if self.request.graph is None:
+                        log.info(f"Loading workflow graph for {self.request.workflow_id}")
+                        workflow = await self.context.get_workflow(self.request.workflow_id)
+                        if workflow is None:
+                            raise ValueError(f"Workflow {self.request.workflow_id} not found")
+                        self.request.graph = workflow.get_api_graph()
+
+                    self._set_status("running")
+                    await self.runner.run(self.request, self.context)
+
+                    # Check if workflow was suspended (not completed)
+                    if self.runner and self.runner.status == "suspended":
+                        log.info("Workflow suspended, not setting completed status")
+                        from nodetool.models.job import Job
+
+                        job = await Job.get(self.job_id)
+                        if job:
+                            await job.mark_suspended(
+                                node_id="",
+                                reason="Workflow suspended",
+                                state={},
+                            )
+                        await self.job_model.update(finished_at=datetime.now())
+
+                        # Post suspension message BEFORE finalize_state to avoid race condition
+                        self.context.post_message(
+                            JobUpdate(
+                                job_id=self.job_id,
+                                status="suspended",
+                                message="Workflow suspended",
+                            )
                         )
-                    await self.job_model.update(finished_at=datetime.now())
+                    elif self.runner and self.runner.status == "cancelled":
+                        # Runner detected cancellation during execution
+                        self._set_status("cancelled")
+                        from nodetool.models.job import Job
 
-                    # Post suspension message BEFORE finalize_state to avoid race condition
-                    self.context.post_message(
-                        JobUpdate(
-                            job_id=self.job_id,
-                            status="suspended",
-                            message="Workflow suspended",
+                        job = await Job.get(self.job_id)
+                        if job:
+                            await job.mark_cancelled()
+                        await self.job_model.update(finished_at=datetime.now())
+                        # Cancelled message likely already sent by runner or will be handled by external cancellation
+                    elif self.runner and self.runner.status == "completed":
+                        # Runner completed successfully and ALREADY sent the completion update with results
+                        self._set_status("completed")
+                        from nodetool.models.job import Job
+
+                        job = await Job.get(self.job_id)
+                        if job:
+                            await job.mark_completed()
+                        await self.job_model.update(finished_at=datetime.now())
+                        # DO NOT send another JobUpdate here as the runner already did it
+                    else:
+                        # Fallback for cases where runner didn't set explicit terminal status but finished without error
+                        # This shouldn't happen with correct runner implementation but we keep it for safety
+                        self._set_status("completed")
+                        from nodetool.models.job import Job
+
+                        job = await Job.get(self.job_id)
+                        if job:
+                            await job.mark_completed()
+                        await self.job_model.update(finished_at=datetime.now())
+
+                        # Post completion message BEFORE finalize_state to avoid race condition
+                        self.context.post_message(
+                            JobUpdate(
+                                job_id=self.job_id,
+                                status="completed",
+                                message=f"Job {self.job_id} completed successfully",
+                            )
                         )
-                    )
-                elif self.runner and self.runner.status == "cancelled":
-                    # Runner detected cancellation during execution
+                    log.info(f"Background job {self.job_id} finished execution loop")
+
+                except asyncio.CancelledError:
                     self._set_status("cancelled")
                     from nodetool.models.job import Job
 
@@ -157,83 +209,53 @@ class ThreadedJobExecution(JobExecution):
                     if job:
                         await job.mark_cancelled()
                     await self.job_model.update(finished_at=datetime.now())
-                    # Cancelled message likely already sent by runner or will be handled by external cancellation
-                elif self.runner and self.runner.status == "completed":
-                    # Runner completed successfully and ALREADY sent the completion update with results
-                    self._set_status("completed")
-                    from nodetool.models.job import Job
 
-                    job = await Job.get(self.job_id)
-                    if job:
-                        await job.mark_completed()
-                    await self.job_model.update(finished_at=datetime.now())
-                    # DO NOT send another JobUpdate here as the runner already did it
-                else:
-                    # Fallback for cases where runner didn't set explicit terminal status but finished without error
-                    # This shouldn't happen with correct runner implementation but we keep it for safety
-                    self._set_status("completed")
-                    from nodetool.models.job import Job
-
-                    job = await Job.get(self.job_id)
-                    if job:
-                        await job.mark_completed()
-                    await self.job_model.update(finished_at=datetime.now())
-
-                    # Post completion message BEFORE finalize_state to avoid race condition
+                    # Post cancellation message BEFORE finalize_state to avoid race condition
                     self.context.post_message(
                         JobUpdate(
                             job_id=self.job_id,
-                            status="completed",
-                            message=f"Job {self.job_id} completed successfully",
+                            status="cancelled",
+                            message=f"Job {self.job_id} was cancelled",
                         )
                     )
-                log.info(f"Background job {self.job_id} finished execution loop")
+                    log.info(f"Background job {self.job_id} cancelled")
+                    raise
+                except Exception as e:
+                    self._set_status("error")
+                    import traceback
 
-            except asyncio.CancelledError:
-                self._set_status("cancelled")
-                from nodetool.models.job import Job
+                    error_text = str(e).strip()
+                    error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
+                    tb_text = traceback.format_exc()
+                    self._error = error_msg
+                    from nodetool.models.job import Job
 
-                job = await Job.get(self.job_id)
-                if job:
-                    await job.mark_cancelled()
-                await self.job_model.update(finished_at=datetime.now())
-
-                # Post cancellation message BEFORE finalize_state to avoid race condition
-                self.context.post_message(
-                    JobUpdate(
-                        job_id=self.job_id,
-                        status="cancelled",
-                        message=f"Job {self.job_id} was cancelled",
+                    job = await Job.get(self.job_id)
+                    if job:
+                        await job.mark_failed(error=error_msg)
+                    await self.job_model.update(error=error_msg, finished_at=datetime.now())
+                    log.exception("Background job %s failed: %s", self.job_id, error_msg)
+                    self.context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="failed",
+                            error=error_msg,
+                            traceback=tb_text,
+                        )
                     )
-                )
-                log.info(f"Background job {self.job_id} cancelled")
-                raise
-            except Exception as e:
-                self._set_status("error")
-                import traceback
-
-                error_text = str(e).strip()
-                error_msg = f"{e.__class__.__name__}: {error_text}" if error_text else repr(e)
-                tb_text = traceback.format_exc()
-                self._error = error_msg
-                from nodetool.models.job import Job
-
-                job = await Job.get(self.job_id)
-                if job:
-                    await job.mark_failed(error=error_msg)
-                await self.job_model.update(error=error_msg, finished_at=datetime.now())
-                log.exception("Background job %s failed: %s", self.job_id, error_msg)
-                self.context.post_message(
-                    JobUpdate(
-                        job_id=self.job_id,
-                        status="failed",
-                        error=error_msg,
-                        traceback=tb_text,
-                    )
-                )
-                raise
-            finally:
-                await self.finalize_state()
+                    raise
+                finally:
+                    await self.finalize_state()
+        finally:
+            # Close the per-thread pool to release SQLite connections before
+            # the threaded event loop is stopped, preventing WAL lock hangs.
+            if pool is not None:
+                try:
+                    await pool.close_all()
+                    loop_id = id(asyncio.get_running_loop())
+                    SQLiteConnectionPool._pools.pop((loop_id, pool.db_path), None)
+                except Exception as e:
+                    log.warning(f"Error closing thread-local pool: {e}")
 
     @classmethod
     async def create_and_start(
@@ -270,6 +292,15 @@ class ThreadedJobExecution(JobExecution):
 
         log.info(f"Starting background job {job_id} for workflow {request.workflow_id}")
 
+        # Capture db_path from current scope so the threaded execution can
+        # create its own pool for the same database on its own event loop.
+        db_path: str | None = None
+        scope = maybe_scope()
+        if scope and scope.db:
+            pool_obj = getattr(scope.db, "pool", None)
+            if pool_obj and hasattr(pool_obj, "db_path"):
+                db_path = pool_obj.db_path
+
         # Create the job record in database
         # We need a temporary ResourceScope for the initial Job.save()
         job_model = Job(
@@ -296,6 +327,7 @@ class ThreadedJobExecution(JobExecution):
             event_loop=event_loop,
             execution_id=execution_id,
         )
+        job_instance._db_path = db_path
 
         # Schedule execution on the persistent loop
         job_instance.future = event_loop.run_coroutine(job_instance.execute())
