@@ -7,6 +7,51 @@ import PIL.Image
 import PIL.ImageOps
 
 
+async def image_ref_to_base64_jpeg_async(image_ref, max_size: tuple[int, int] = (512, 512), quality: int = 85) -> str:
+    """
+    Convert an ImageRef to a base64-encoded JPEG string (async version).
+
+    Handles various ImageRef types:
+    - Direct data bytes
+    - data: URIs
+    - http(s) URLs (downloads the image)
+    - file:// URIs (loads from local file)
+    - asset:// URIs (fetches from storage)
+
+    Args:
+        image_ref: The ImageRef object to convert
+        max_size: Maximum size (width, height) to resize to while maintaining aspect ratio
+        quality: JPEG quality (0-100)
+
+    Returns:
+        str: Base64-encoded JPEG data
+
+    Raises:
+        ValueError: If the ImageRef cannot be processed
+    """
+    from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_async
+
+    # Handle direct data
+    if hasattr(image_ref, "data") and image_ref.data is not None:
+        return image_data_to_base64_jpeg(image_ref.data, max_size, quality)
+
+    # Handle URI-based images
+    uri = getattr(image_ref, "uri", "") if hasattr(image_ref, "uri") else ""
+
+    if not uri:
+        raise ValueError("ImageRef has no data or URI")
+
+    # Delegate URI handling to async fetch helper
+    try:
+        _mime, data = await fetch_uri_bytes_and_mime_async(uri)
+    except Exception as e:
+        if uri.startswith("http://") or uri.startswith("https://"):
+            raise ValueError(f"Failed to download image: {e}") from e
+        raise
+    # Accept only image-like content; attempt conversion regardless of mime
+    return image_data_to_base64_jpeg(data, max_size, quality)
+
+
 def numpy_to_pil_image(arr: np.ndarray) -> PIL.Image.Image:
     """
     Convert a numpy array of various common shapes/dtypes into a PIL Image.
@@ -119,49 +164,3 @@ def image_data_to_base64_jpeg(image_data: bytes, max_size: tuple[int, int] = (51
     # Open image with PIL
     with PIL.Image.open(BytesIO(image_data)) as img:
         return pil_image_to_base64_jpeg(img, max_size, quality)
-
-
-def image_ref_to_base64_jpeg(image_ref, max_size: tuple[int, int] = (512, 512), quality: int = 85) -> str:
-    """
-    Convert an ImageRef to a base64-encoded JPEG string.
-
-    Handles various ImageRef types:
-    - Direct data bytes
-    - data: URIs
-    - http(s) URLs (downloads the image)
-    - file:// URIs (loads from local file)
-    - Other URI types
-
-    Args:
-        image_ref: The ImageRef object to convert
-        max_size: Maximum size (width, height) to resize to while maintaining aspect ratio
-        quality: JPEG quality (0-100)
-
-    Returns:
-        str: Base64-encoded JPEG data
-
-    Raises:
-        ValueError: If the ImageRef cannot be processed
-    """
-    from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
-
-    # Handle direct data
-    if hasattr(image_ref, "data") and image_ref.data is not None:
-        return image_data_to_base64_jpeg(image_ref.data, max_size, quality)
-
-    # Handle URI-based images
-    uri = getattr(image_ref, "uri", "") if hasattr(image_ref, "uri") else ""
-
-    if not uri:
-        raise ValueError("ImageRef has no data or URI")
-
-    # Delegate URI handling to shared sync helper. For http(s), wrap errors with
-    # a friendlier message expected by tests.
-    try:
-        _mime, data = fetch_uri_bytes_and_mime_sync(uri)
-    except Exception as e:
-        if uri.startswith("http://") or uri.startswith("https://"):
-            raise ValueError(f"Failed to download image: {e}") from e
-        raise
-    # Accept only image-like content; attempt conversion regardless of mime
-    return image_data_to_base64_jpeg(data, max_size, quality)

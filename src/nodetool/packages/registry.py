@@ -1180,7 +1180,7 @@ def get_nodetool_package_source_folders() -> list[Path]:
     return source_folders
 
 
-def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True) -> PackageModel:
+async def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True) -> PackageModel:
     """Scan current directory for nodes and create package metadata.
 
     Args:
@@ -1318,30 +1318,11 @@ def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True)
                     )
 
         if fetch_model_info and package.nodes:
-            # Handle async execution properly - check if we're in an event loop first
-            try:
-                # Check if there's already a running event loop
-                asyncio.get_running_loop()
-                # If we get here, we're in an async context
-                # Create a new loop in a separate thread to avoid nesting
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        _enrich_nodes_with_model_info(
-                            package.nodes,
-                            verbose=verbose,  # type: ignore[arg-type]
-                        )
-                    )
-                    future.result()
-            except RuntimeError:
-                # No running event loop, safe to use asyncio.run()
-                asyncio.run(
-                    _enrich_nodes_with_model_info(
-                        package.nodes,
-                        verbose=verbose,  # type: ignore[arg-type]
-                    )
-                )
+            # Proper async: await directly since this function is now async
+            await _enrich_nodes_with_model_info(
+                package.nodes,
+                verbose=verbose,
+            )
 
         # Write the single nodes.json file in the root directory
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)

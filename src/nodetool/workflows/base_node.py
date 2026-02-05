@@ -763,6 +763,53 @@ class BaseNode(BaseModel):
 
     @classmethod
     def unified_recommended_models(cls, include_model_info: bool = False) -> list[UnifiedModel]:
+        """
+        Get recommended models for this node.
+
+        Note: If include_model_info=True, use unified_recommended_models_async() instead
+        to avoid async/sync context issues.
+
+        Args:
+            include_model_info: Whether to fetch detailed model info (requires async)
+
+        Returns:
+            List of unified model metadata (without detailed info if called from sync context)
+        """
+        from nodetool.integrations.huggingface.huggingface_models import (
+            unified_model,
+        )
+
+        recommended_models = cls.get_recommended_models()
+        if not recommended_models:
+            return []
+
+        # If include_model_info is requested from sync context, log a warning
+        # and return basic models without detailed info
+        if include_model_info:
+            log.warning(
+                "include_model_info=True was requested from sync context. "
+                "Model info will not be fetched. Use unified_recommended_models_async() instead."
+            )
+
+        # Convert models synchronously (without detailed model info from API)
+        return [
+            unified_model(model, model_info=None)
+            for model in recommended_models
+        ]
+
+    @classmethod
+    async def unified_recommended_models_async(cls, include_model_info: bool = False) -> list[UnifiedModel]:
+        """
+        Get recommended models for this node (async version).
+
+        Fetches detailed model info when include_model_info=True.
+
+        Args:
+            include_model_info: Whether to fetch detailed model info from HuggingFace API
+
+        Returns:
+            List of unified model metadata
+        """
         from nodetool.integrations.huggingface.huggingface_models import (
             fetch_model_info,
             unified_model,
@@ -779,29 +826,11 @@ class BaseNode(BaseModel):
                     info = await fetch_model_info(model.repo_id)
                 except Exception as e:
                     log.debug("Failed to fetch model info for %s: %s", model.repo_id, e)
-                    info = None
             return await unified_model(model, model_info=info)
 
-        async def fetch_all_models():
-            return await asyncio.gather(*(build_model(model) for model in recommended_models))
-
-        try:
-            asyncio.get_running_loop()
-            import concurrent.futures
-
-            future = concurrent.futures.Future()
-
-            async def run_and_set_result():
-                try:
-                    result = await fetch_all_models()
-                    future.set_result(result)
-                except Exception as e:
-                    future.set_exception(e)
-
-            cls._fetch_models_task = asyncio.create_task(run_and_set_result())
-            return future.result()
-        except RuntimeError:
-            return asyncio.run(fetch_all_models())  # type: ignore
+        # Proper async: use asyncio.gather directly, no threading
+        results = await asyncio.gather(*(build_model(model) for model in recommended_models))
+        return [m for m in results if m is not None]
 
     @classmethod
     def get_basic_fields(cls) -> list[str]:
